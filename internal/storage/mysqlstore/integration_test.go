@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
@@ -63,6 +65,7 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	}
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	testAdminPersistence(t, ctx, database, now, appID)
 	keyRepository := mysqlstore.NewKeyRepository(database, appID)
 	key := attestation.RegisteredKey{
 		AppID: appID, KeyID: "integration-key", DeviceID: "00000000-0000-4000-8000-000000000001",
@@ -202,6 +205,121 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	}
 }
 
+func testAdminPersistence(t *testing.T, ctx context.Context, database *sql.DB, now time.Time, appID string) {
+	t.Helper()
+	repository := adminauth.NewMySQLRepository(database)
+	bootstrapToken := adminauth.TokenHash("bootstrap-integration-token")
+	if err := repository.CreateBootstrapToken(ctx, bootstrapToken, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	admin := adminauth.User{
+		ID: "10000000-0000-4000-8000-000000000001", Handle: []byte("administrator-handle"),
+		DisplayName: "管理员", Role: adminauth.RoleAdmin, Status: adminauth.UserStatusActive, SessionVersion: 1,
+	}
+	if err := repository.CompleteBootstrap(ctx, bootstrapToken, admin,
+		webauthn.Credential{ID: []byte("administrator-passkey")}, now); err != nil {
+		t.Fatal(err)
+	}
+	if initialized, err := repository.Initialized(ctx); err != nil || !initialized {
+		t.Fatalf("admin bootstrap: initialized=%v err=%v", initialized, err)
+	}
+
+	inviteToken := adminauth.TokenHash("operator-integration-invitation")
+	invitation := adminauth.Invitation{
+		ID: "10000000-0000-4000-8000-000000000002", Kind: adminauth.InvitationKindCreate,
+		InvitedByID: admin.ID, DisplayName: "运营", Role: adminauth.RoleOperator, AppIDs: []string{appID},
+		CreatedAt: now, ExpiresAt: now.Add(time.Minute),
+	}
+	if err := repository.CreateInvitation(ctx, inviteToken, invitation); err != nil {
+		t.Fatal(err)
+	}
+	storedInvitation, found, err := repository.InvitationByToken(ctx, inviteToken, now)
+	if err != nil || !found || len(storedInvitation.AppIDs) != 1 || storedInvitation.AppIDs[0] != appID {
+		t.Fatalf("stored invitation: %#v found=%v err=%v", storedInvitation, found, err)
+	}
+	operatorCandidate := adminauth.User{
+		ID: "10000000-0000-4000-8000-000000000003", Handle: []byte("operator-handle"),
+	}
+	operator, err := repository.CompleteInvitation(ctx, inviteToken, storedInvitation, operatorCandidate,
+		webauthn.Credential{ID: []byte("operator-passkey-one")}, now)
+	if err != nil || operator.Role != adminauth.RoleOperator || !operator.CanAccessApp(appID) {
+		t.Fatalf("operator enrollment: %#v err=%v", operator, err)
+	}
+	operator, err = repository.UpdateUser(ctx, operator.ID, adminauth.UserUpdate{
+		DisplayName: "运营同学", Role: operator.Role, Status: operator.Status, AppIDs: operator.AppIDs,
+	}, now)
+	if err != nil || operator.SessionVersion != 1 {
+		t.Fatalf("display-name-only update invalidated sessions: %#v err=%v", operator, err)
+	}
+	operator, err = repository.UpdateUser(ctx, operator.ID, adminauth.UserUpdate{
+		DisplayName: operator.DisplayName, Role: operator.Role,
+		Status: adminauth.UserStatusDisabled, AppIDs: operator.AppIDs,
+	}, now)
+	if err != nil || operator.SessionVersion != 2 {
+		t.Fatalf("disable did not invalidate sessions: %#v err=%v", operator, err)
+	}
+	operator, err = repository.UpdateUser(ctx, operator.ID, adminauth.UserUpdate{
+		DisplayName: operator.DisplayName, Role: operator.Role,
+		Status: adminauth.UserStatusActive, AppIDs: operator.AppIDs,
+	}, now)
+	if err != nil || operator.SessionVersion != 3 {
+		t.Fatalf("re-enable did not invalidate sessions: %#v err=%v", operator, err)
+	}
+	if _, err := repository.UpdateUser(ctx, admin.ID, adminauth.UserUpdate{
+		DisplayName: admin.DisplayName, Role: adminauth.RoleOperator,
+		Status: adminauth.UserStatusActive, AppIDs: []string{appID},
+	}, now); !errors.Is(err, adminauth.ErrLastAdmin) {
+		t.Fatalf("last administrator was demoted: %v", err)
+	}
+
+	recoveryToken := adminauth.TokenHash("operator-integration-recovery")
+	recovery := adminauth.Invitation{
+		ID: "10000000-0000-4000-8000-000000000004", Kind: adminauth.InvitationKindRecovery,
+		TargetUserID: operator.ID, InvitedByID: admin.ID, DisplayName: operator.DisplayName,
+		Role: operator.Role, AppIDs: operator.AppIDs, CreatedAt: now, ExpiresAt: now.Add(time.Minute),
+	}
+	if err := repository.CreateInvitation(ctx, recoveryToken, recovery); err != nil {
+		t.Fatal(err)
+	}
+	lockedOperator, found, err := repository.UserByID(ctx, operator.ID)
+	if err != nil || !found || len(lockedOperator.Credentials) != 0 || lockedOperator.SessionVersion != 4 {
+		t.Fatalf("recovery did not revoke old access: %#v found=%v err=%v", lockedOperator, found, err)
+	}
+	storedRecovery, found, err := repository.InvitationByToken(ctx, recoveryToken, now)
+	if err != nil || !found {
+		t.Fatalf("stored recovery: found=%v err=%v", found, err)
+	}
+	recovered, err := repository.CompleteInvitation(ctx, recoveryToken, storedRecovery, lockedOperator,
+		webauthn.Credential{ID: []byte("operator-passkey-two")}, now)
+	if err != nil || recovered.SessionVersion != 5 || len(recovered.Credentials) != 1 {
+		t.Fatalf("complete recovery: %#v err=%v", recovered, err)
+	}
+	if err := repository.AddCredential(ctx, operator.ID, "过期会话",
+		webauthn.Credential{ID: []byte("stale-session-passkey")}, recovered.SessionVersion-1); !errors.Is(err, adminauth.ErrAuthorizationChanged) {
+		t.Fatalf("stale session added a passkey after recovery: %v", err)
+	}
+	if err := repository.AddCredential(ctx, operator.ID, "备用",
+		webauthn.Credential{ID: []byte("operator-passkey-three")}, recovered.SessionVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DeleteCredential(ctx, operator.ID, []byte("operator-passkey-two")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DeleteCredential(ctx, operator.ID, []byte("operator-passkey-three")); !errors.Is(err, adminauth.ErrLastCredential) {
+		t.Fatalf("last passkey was removable: %v", err)
+	}
+	if err := repository.AppendAudit(ctx, adminauth.AuditEvent{
+		UserID: admin.ID, RequestID: "10000000-0000-4000-8000-000000000005",
+		Action: "admin.integration", Outcome: "succeeded", Metadata: map[string]any{"safe": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := repository.ListAudit(ctx, admin.ID, true, 10)
+	if err != nil || len(events) != 1 || events[0].Action != "admin.integration" {
+		t.Fatalf("audit persistence: %#v err=%v", events, err)
+	}
+}
+
 func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
 	t.Helper()
 	_, err := database.ExecContext(ctx, `
@@ -209,11 +327,13 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
         TRUNCATE TABLE app_store_offer_redemptions;
         TRUNCATE TABLE admin_operations;
         TRUNCATE TABLE admin_audit_events;
-		TRUNCATE TABLE admin_app_roles;
-        TRUNCATE TABLE admin_recovery_codes;
+		TRUNCATE TABLE admin_invitation_apps;
+		TRUNCATE TABLE admin_invitations;
+		TRUNCATE TABLE admin_user_apps;
         TRUNCATE TABLE admin_webauthn_credentials;
         TRUNCATE TABLE admin_bootstrap_tokens;
         TRUNCATE TABLE admin_users;
+		UPDATE admin_control_state SET initialized_at = NULL WHERE singleton_id = 1;
         TRUNCATE TABLE app_store_notifications;
         TRUNCATE TABLE job_dispatch_outbox;
         TRUNCATE TABLE usage_ledger;

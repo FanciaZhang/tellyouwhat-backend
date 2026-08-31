@@ -192,26 +192,34 @@ CREATE TABLE IF NOT EXISTS app_store_offer_redemptions (
     CONSTRAINT app_store_offer_redemptions_app_fk FOREIGN KEY (app_id) REFERENCES apps(app_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS admin_control_state (
+    singleton_id TINYINT UNSIGNED PRIMARY KEY,
+    initialized_at DATETIME(6),
+    CHECK (singleton_id = 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO admin_control_state (singleton_id) VALUES (1)
+ON DUPLICATE KEY UPDATE singleton_id = VALUES(singleton_id);
+
 CREATE TABLE IF NOT EXISTS admin_users (
     id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     webauthn_id VARBINARY(64) NOT NULL UNIQUE,
     display_name VARCHAR(128) NOT NULL,
-	role VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'owner',
+    role VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'active',
+    session_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	CHECK (role IN ('owner')),
-	CHECK (status IN ('active', 'disabled'))
+    CHECK (role IN ('admin', 'operator')),
+    CHECK (status IN ('active', 'disabled'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS admin_app_roles (
+CREATE TABLE IF NOT EXISTS admin_user_apps (
     admin_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-    role VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     PRIMARY KEY (admin_user_id, app_id),
-    CONSTRAINT admin_roles_user_fk FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
-    CONSTRAINT admin_roles_app_fk FOREIGN KEY (app_id) REFERENCES apps(app_id) ON DELETE CASCADE,
-    CHECK (role IN ('viewer', 'operator', 'owner'))
+    CONSTRAINT admin_user_apps_user_fk FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+    CONSTRAINT admin_user_apps_app_fk FOREIGN KEY (app_id) REFERENCES apps(app_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS admin_webauthn_credentials (
@@ -224,20 +232,40 @@ CREATE TABLE IF NOT EXISTS admin_webauthn_credentials (
     CONSTRAINT admin_webauthn_credentials_user_fk FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS admin_recovery_codes (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    admin_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-    code_hash VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    consumed_at DATETIME(6),
-    CONSTRAINT admin_recovery_codes_user_fk FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE IF NOT EXISTS admin_bootstrap_tokens (
     token_hash BINARY(32) PRIMARY KEY,
     expires_at DATETIME(6) NOT NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     consumed_at DATETIME(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS admin_invitations (
+    id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    token_hash BINARY(32) NOT NULL UNIQUE,
+    kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    target_admin_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+    invited_by_admin_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+    display_name VARCHAR(128) NOT NULL,
+    role VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    consumed_at DATETIME(6),
+    revoked_at DATETIME(6),
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX admin_invitations_pending_idx (expires_at, consumed_at, revoked_at),
+    INDEX admin_invitations_recovery_idx (target_admin_user_id, kind, consumed_at, revoked_at),
+    CONSTRAINT admin_invitations_target_fk FOREIGN KEY (target_admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+    CONSTRAINT admin_invitations_actor_fk FOREIGN KEY (invited_by_admin_user_id) REFERENCES admin_users(id) ON DELETE SET NULL,
+    CHECK (kind IN ('create', 'recovery')),
+    CHECK (role IN ('admin', 'operator')),
+    CHECK ((kind = 'create' AND target_admin_user_id IS NULL) OR (kind = 'recovery' AND target_admin_user_id IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS admin_invitation_apps (
+    invitation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    PRIMARY KEY (invitation_id, app_id),
+    CONSTRAINT admin_invitation_apps_invitation_fk FOREIGN KEY (invitation_id) REFERENCES admin_invitations(id) ON DELETE CASCADE,
+    CONSTRAINT admin_invitation_apps_app_fk FOREIGN KEY (app_id) REFERENCES apps(app_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS admin_audit_events (
@@ -270,7 +298,7 @@ CREATE TABLE IF NOT EXISTS admin_operations (
     response_json JSON,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     completed_at DATETIME(6),
-	UNIQUE KEY admin_operations_idempotency_unique (admin_user_id, app_id, idempotency_key),
+    UNIQUE KEY admin_operations_idempotency_unique (admin_user_id, app_id, idempotency_key),
     INDEX admin_operations_created_idx (created_at),
     CONSTRAINT admin_operations_user_fk FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
     CONSTRAINT admin_operations_app_fk FOREIGN KEY (app_id) REFERENCES apps(app_id) ON DELETE SET NULL,

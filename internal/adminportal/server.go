@@ -98,10 +98,17 @@ func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operatio
 }
 
 func (server *Server) listApps(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, false, false); !ok {
+	authenticated, ok := server.auth.RequireAuthenticated(writer, request, false, false)
+	if !ok {
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"apps": server.config.Apps})
+	apps := make([]AdminApp, 0, len(server.config.Apps))
+	for _, app := range server.config.Apps {
+		if authenticated.User.CanAccessApp(app.ID) {
+			apps = append(apps, app)
+		}
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"apps": apps})
 }
 
 func (server *Server) offerManager(writer http.ResponseWriter, request *http.Request) (string, OfferManager, bool) {
@@ -115,11 +122,11 @@ func (server *Server) offerManager(writer http.ResponseWriter, request *http.Req
 }
 
 func (server *Server) listCodePools(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, false, false); !ok {
+	appID, offers, ok := server.offerManager(writer, request)
+	if !ok {
 		return
 	}
-	_, offers, ok := server.offerManager(writer, request)
-	if !ok {
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferRead, appID, false, false); !ok {
 		return
 	}
 	offerID := cleanID(request.PathValue("offerID"))
@@ -136,10 +143,11 @@ func (server *Server) listCodePools(writer http.ResponseWriter, request *http.Re
 }
 
 func (server *Server) downloadOneTimeCodes(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, true, true); !ok {
+	appID, offers, ok := server.offerManager(writer, request)
+	if !ok {
 		return
 	}
-	_, offers, ok := server.offerManager(writer, request)
+	authenticated, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferCodeDownload, appID, true, true)
 	if !ok {
 		return
 	}
@@ -150,6 +158,8 @@ func (server *Server) downloadOneTimeCodes(writer http.ResponseWriter, request *
 	}
 	data, err := offers.DownloadOneTimeCodes(request.Context(), batchID)
 	if err != nil {
+		server.recordMutationFailure(request, authenticated.User.ID, appID,
+			"offer_codes.download", "code_batch", batchID)
 		writeAppleFailure(writer, err)
 		return
 	}
@@ -159,14 +169,16 @@ func (server *Server) downloadOneTimeCodes(writer http.ResponseWriter, request *
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(data)
+	server.auth.RecordAudit(request.Context(), authenticated.User.ID, appID, request,
+		"offer_codes.download", "succeeded", "code_batch", batchID, nil)
 }
 
 func (server *Server) offerMetrics(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, false, false); !ok {
-		return
-	}
 	appID, _, ok := server.offerManager(writer, request)
 	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionMetricsRead, appID, false, false); !ok {
 		return
 	}
 	metrics, err := server.metrics.OfferMetrics(request.Context(), appID)
@@ -209,11 +221,11 @@ func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (server *Server) listOffers(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, false, false); !ok {
+	appID, manager, ok := server.offerManager(writer, request)
+	if !ok {
 		return
 	}
-	_, manager, ok := server.offerManager(writer, request)
-	if !ok {
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferRead, appID, false, false); !ok {
 		return
 	}
 	offers, err := manager.ListOffers(request.Context())
@@ -234,11 +246,11 @@ func (server *Server) listOffers(writer http.ResponseWriter, request *http.Reque
 }
 
 func (server *Server) previewOffer(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := server.auth.RequireAuthenticated(writer, request, true, false); !ok {
-		return
-	}
 	appID, _, ok := server.offerManager(writer, request)
 	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferManage, appID, true, false); !ok {
 		return
 	}
 	draft, ok := decodeOfferDraft(writer, request)
@@ -280,6 +292,7 @@ func (server *Server) createOffer(writer http.ResponseWriter, request *http.Requ
 	}
 	existing, err := offers.ListOffers(request.Context())
 	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.create", "offer", "")
 		writeAppleFailure(writer, err)
 		return
 	}
@@ -293,15 +306,18 @@ func (server *Server) createOffer(writer http.ResponseWriter, request *http.Requ
 		writeFailure(writer, http.StatusConflict, "active_offer_limit", "启用中的 Offer 已达到 Apple 上限")
 		return
 	}
-	if !server.beginOperation(writer, request, session.UserID, "offer.create", input) {
+	if !server.beginOperation(writer, request, session.User.ID, "offer.create", input) {
 		return
 	}
 	offer, err := offers.CreateFreeOffer(request.Context(), input.Draft)
 	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.create", "offer", "")
 		writeAppleFailure(writer, err)
 		return
 	}
-	server.completeOperation(writer, request, session.UserID, http.StatusCreated, map[string]any{"offer": offer})
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer.create", "succeeded", "offer", offer.ID, nil)
+	server.completeOperation(writer, request, session.User.ID, http.StatusCreated, map[string]any{"offer": offer})
 }
 
 func (server *Server) deactivateOffer(writer http.ResponseWriter, request *http.Request) {
@@ -309,7 +325,7 @@ func (server *Server) deactivateOffer(writer http.ResponseWriter, request *http.
 	if !ok {
 		return
 	}
-	_, offers, ok := server.offerManager(writer, request)
+	appID, offers, ok := server.offerManager(writer, request)
 	if !ok {
 		return
 	}
@@ -318,15 +334,18 @@ func (server *Server) deactivateOffer(writer http.ResponseWriter, request *http.
 		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 标识无效")
 		return
 	}
-	if !server.beginOperation(writer, request, session.UserID, "offer.deactivate", map[string]string{"offerID": offerID}) {
+	if !server.beginOperation(writer, request, session.User.ID, "offer.deactivate", map[string]string{"offerID": offerID}) {
 		return
 	}
 	offer, err := offers.DeactivateOffer(request.Context(), offerID)
 	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.deactivate", "offer", offerID)
 		writeAppleFailure(writer, err)
 		return
 	}
-	server.completeOperation(writer, request, session.UserID, http.StatusOK, map[string]any{"offer": offer})
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer.deactivate", "succeeded", "offer", offerID, nil)
+	server.completeOperation(writer, request, session.User.ID, http.StatusOK, map[string]any{"offer": offer})
 }
 
 func (server *Server) createCustomCode(writer http.ResponseWriter, request *http.Request) {
@@ -334,7 +353,7 @@ func (server *Server) createCustomCode(writer http.ResponseWriter, request *http
 	if !ok {
 		return
 	}
-	_, offers, ok := server.offerManager(writer, request)
+	appID, offers, ok := server.offerManager(writer, request)
 	if !ok {
 		return
 	}
@@ -356,15 +375,19 @@ func (server *Server) createCustomCode(writer http.ResponseWriter, request *http
 		OfferID string
 		Input   any
 	}{offerID, input}
-	if !server.beginOperation(writer, request, session.UserID, "custom-code.create", operationInput) {
+	if !server.beginOperation(writer, request, session.User.ID, "custom-code.create", operationInput) {
 		return
 	}
 	pool, err := offers.CreateCustomCode(request.Context(), offerID, input.Code, input.NumberOfCodes, input.ExpirationDate)
 	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID,
+			"offer_codes.custom_create", "offer", offerID)
 		writeAppleFailure(writer, err)
 		return
 	}
-	server.completeOperation(writer, request, session.UserID, http.StatusCreated, map[string]any{"codePool": pool})
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer_codes.custom_create", "succeeded", "offer", offerID, map[string]any{"count": input.NumberOfCodes})
+	server.completeOperation(writer, request, session.User.ID, http.StatusCreated, map[string]any{"codePool": pool})
 }
 
 func (server *Server) createOneTimeBatch(writer http.ResponseWriter, request *http.Request) {
@@ -372,7 +395,7 @@ func (server *Server) createOneTimeBatch(writer http.ResponseWriter, request *ht
 	if !ok {
 		return
 	}
-	_, offers, ok := server.offerManager(writer, request)
+	appID, offers, ok := server.offerManager(writer, request)
 	if !ok {
 		return
 	}
@@ -395,15 +418,20 @@ func (server *Server) createOneTimeBatch(writer http.ResponseWriter, request *ht
 		OfferID string
 		Input   any
 	}{offerID, input}
-	if !server.beginOperation(writer, request, session.UserID, "one-time-code-batch.create", operationInput) {
+	if !server.beginOperation(writer, request, session.User.ID, "one-time-code-batch.create", operationInput) {
 		return
 	}
 	pool, err := offers.CreateOneTimeCodeBatch(request.Context(), offerID, input.NumberOfCodes, input.ExpirationDate, input.Environment)
 	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID,
+			"offer_codes.batch_create", "offer", offerID)
 		writeAppleFailure(writer, err)
 		return
 	}
-	server.completeOperation(writer, request, session.UserID, http.StatusCreated, map[string]any{"codePool": pool})
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer_codes.batch_create", "succeeded", "offer", offerID,
+		map[string]any{"count": input.NumberOfCodes, "environment": input.Environment})
+	server.completeOperation(writer, request, session.User.ID, http.StatusCreated, map[string]any{"codePool": pool})
 }
 
 func (server *Server) beginOperation(writer http.ResponseWriter, request *http.Request, userID, action string, value any) bool {
@@ -442,16 +470,34 @@ func (server *Server) completeOperation(writer http.ResponseWriter, request *htt
 	writeJSON(writer, status, value)
 }
 
-func (server *Server) requireWrite(writer http.ResponseWriter, request *http.Request) (adminauth.Session, bool) {
+func (server *Server) recordMutationFailure(
+	request *http.Request,
+	userID string,
+	appID string,
+	action string,
+	targetType string,
+	targetID string,
+) {
+	server.auth.RecordAudit(request.Context(), userID, appID, request,
+		action, "failed", targetType, targetID, nil)
+}
+
+func (server *Server) requireWrite(writer http.ResponseWriter, request *http.Request) (adminauth.Authenticated, bool) {
+	appID := cleanID(request.PathValue("appID"))
+	authenticated, ok := server.auth.RequirePermission(
+		writer, request, adminauth.PermissionOfferManage, appID, true, true)
+	if !ok {
+		return adminauth.Authenticated{}, false
+	}
 	if !server.config.WritesEnabled {
 		writeFailure(writer, http.StatusServiceUnavailable, "writes_disabled", "生产写操作尚未启用")
-		return adminauth.Session{}, false
+		return adminauth.Authenticated{}, false
 	}
 	if !idempotencyPattern.MatchString(request.Header.Get("Idempotency-Key")) {
 		writeFailure(writer, http.StatusBadRequest, "idempotency_key_required", "缺少有效的防重复提交标识")
-		return adminauth.Session{}, false
+		return adminauth.Authenticated{}, false
 	}
-	return server.auth.RequireAuthenticated(writer, request, true, true)
+	return authenticated, true
 }
 
 type previewPayload struct {

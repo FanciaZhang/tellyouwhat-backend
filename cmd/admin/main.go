@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -21,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminportal"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
 func main() {
@@ -34,16 +34,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	database, err := sql.Open("mysql", configuration.databaseDSN)
-	if err != nil {
-		return err
-	}
-	defer database.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := database.PingContext(ctx); err != nil {
+	database, err := mysqlstore.Open(ctx, configuration.databaseDSN)
+	if err != nil {
 		return fmt.Errorf("connect admin database: %w", err)
 	}
+	defer database.Close()
 	redisOptions, err := redis.ParseURL(configuration.redisURL)
 	if err != nil {
 		return fmt.Errorf("parse admin Redis URL: %w", err)
@@ -54,12 +51,16 @@ func run() error {
 		return fmt.Errorf("connect admin Redis: %w", err)
 	}
 	repository := adminauth.NewMySQLRepository(database)
+	adminAppIDs := make([]string, 0, len(configuration.apps))
+	for _, app := range configuration.apps {
+		adminAppIDs = append(adminAppIDs, app.id)
+	}
 	authentication, err := adminauth.NewService(
 		repository,
 		adminauth.NewRedisStateStore(redisClient),
 		adminauth.Config{
 			RPID: configuration.rpID, Origin: configuration.origin,
-			DisplayName: "Tellyouwhat 管理后台", CookieSecure: configuration.cookieSecure,
+			DisplayName: "Tellyouwhat 管理后台", AppIDs: adminAppIDs,
 		},
 		time.Now,
 	)
@@ -116,7 +117,6 @@ func run() error {
 
 type config struct {
 	port, databaseDSN, redisURL, rpID, origin string
-	cookieSecure                              bool
 	apps                                      []adminAppConfig
 	previewSigningKey                         []byte
 	writesEnabled                             bool
@@ -136,7 +136,6 @@ func loadConfig() (config, error) {
 		port: value("ADMIN_PORT", "8082"), databaseDSN: os.Getenv("DATABASE_DSN"), redisURL: os.Getenv("REDIS_URL"),
 		rpID:              value("ADMIN_RP_ID", "admin.tellyouwhat.cn"),
 		origin:            value("ADMIN_ORIGIN", "https://admin.tellyouwhat.cn"),
-		cookieSecure:      !strings.EqualFold(os.Getenv("ADMIN_COOKIE_SECURE"), "false"),
 		previewSigningKey: previewSigningKey,
 		writesEnabled:     strings.EqualFold(os.Getenv("ADMIN_WRITES_ENABLED"), "true"),
 	}

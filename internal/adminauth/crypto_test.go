@@ -1,37 +1,17 @@
 package adminauth
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestRecoveryCodesRoundTripAndNormalize(t *testing.T) {
-	plain, hashes, err := NewRecoveryCodes(10)
-	if err != nil {
-		t.Fatal(err)
+func TestRandomTokensAndUUIDsHaveExpectedShape(t *testing.T) {
+	token, err := RandomToken(32)
+	if err != nil || len(token) != 43 {
+		t.Fatalf("token = %q, err = %v", token, err)
 	}
-	if len(plain) != 10 || len(hashes) != 10 {
-		t.Fatalf("unexpected recovery code count: %d/%d", len(plain), len(hashes))
+	identifier, err := NewUUID()
+	if err != nil || len(identifier) != 36 || identifier[14] != '4' {
+		t.Fatalf("uuid = %q, err = %v", identifier, err)
 	}
-	seen := map[string]bool{}
-	for index, code := range plain {
-		if seen[code] || !strings.HasPrefix(code, "HADM-") {
-			t.Fatalf("invalid or duplicate code: %q", code)
-		}
-		seen[code] = true
-		if !VerifyRecoveryCode(strings.ToLower(code), hashes[index]) {
-			t.Fatalf("code %d did not verify", index)
-		}
-		if VerifyRecoveryCode(code+"X", hashes[index]) {
-			t.Fatalf("modified code %d verified", index)
-		}
-	}
-}
-
-func TestRecoveryCodeRejectsMalformedHash(t *testing.T) {
-	for _, encoded := range []string{"", "$argon2id$", "$argon2id$v=19$m=1,t=1,p=1$bad$bad"} {
-		if VerifyRecoveryCode("HADM-AAAA-AAAA-AAAA-AAAA", encoded) {
-			t.Fatalf("malformed hash verified: %q", encoded)
-		}
+	if TokenHash(token) == TokenHash(token+"x") {
+		t.Fatal("different tokens produced the same test hash")
 	}
 }

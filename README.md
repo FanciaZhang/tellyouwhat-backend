@@ -16,7 +16,7 @@ App 由 HTTP `Host` 唯一决定：
 - App Attest 注册、断言验证和防重放；
 - App Store 交易、权益、Offer 兑换、版本化隐私同意；
 - 幂等、限流、token 配额、加密异步任务、临时媒体和用量记账；
-- 通行密钥管理后台与按 App 切换的 Offer 管理。
+- 无密码通行密钥管理后台、管理员/运营两角色、按 App 授权、人员邀请与审计；
 
 所有持久表和 Redis key 都以 `app_id` 分区。App Attest 的 Team ID、Bundle ID，App Store 的 App Apple ID、订阅产品，火山方舟密钥、模型路由和配额按 App 独立配置。共享基础设施不等于共享数据或密钥。
 
@@ -36,8 +36,8 @@ Journal 只提供 `journal.organize`。App 上传标题、正文、现有/已拒
 
 - `cmd/gateway`：公开 API，先按 Host 选 App，再进入独立运行时。
 - `cmd/worker`：Health 的加密异步 AI 任务；内部请求同时绑定 App ID 和 Job ID。
-- `cmd/admin`：共用通行密钥登录，按 App 选择 App Store Connect 资源。
-- `cmd/adminctl`：生成首个管理员的短期设置链接。
+- `cmd/admin`：无用户名 Passkey 登录、两角色授权、人员与 App Store Connect Offer 管理。
+- `cmd/adminctl`：生成首位管理员设置链接，并提供最后一名管理员的服务器侧应急恢复。
 - `cmd/migrate`：干净的 MySQL 8.4 基线 schema，直接包含 Health 和 Journal App 注册项。
 - `cmd/maintenance`：全平台的保留期清理。
 
@@ -52,6 +52,15 @@ go run ./cmd/gateway
 ```
 
 本地请求仍必须使用真实 Development App Attest。因为 Host 是安全边界，直连 localhost 时需显式传入目标 Host；不存在未鉴权调试后门。
+
+管理后台不提供密码、短信验证码、TOTP 或长期恢复码。首次运行先执行
+`adminctl bootstrap`；管理员凭证全部丢失时，使用 `adminctl users` 找到账号，
+再执行 `adminctl recover <user-id>`。完整角色和恢复边界见
+[`docs/modules/admin.md`](docs/modules/admin.md)。
+
+当前仍是早期开发基线。管理员 schema 已直接重构；如果本机数据库曾运行旧版
+`0001_initial.sql`，需要明确重建开发数据库后再运行 `cmd/migrate`，迁移器不会
+静默删除或改写旧数据。
 
 ## 单服务器部署
 

@@ -21,6 +21,25 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm --
 docker compose --env-file .env.production -f compose.production.yaml up -d gateway worker admin caddy
 ```
 
+After the first clean migration, create the initial passwordless administrator:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl bootstrap
+```
+
+The command prints a 15-minute, single-use Passkey setup URL. If the final
+administrator later loses every Passkey, list the management users and issue a
+short-lived recovery enrollment URL from the server:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl users
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl recover <user-id>
+```
+
+There is no password, TOTP, SMS, or public recovery endpoint. See
+[`../../docs/modules/admin.md`](../../docs/modules/admin.md) for the complete
+role, invitation, session, and recovery boundaries.
+
 Verify all public runtimes independently. The Health readiness check also
 verifies that the private asynchronous worker is reachable:
 

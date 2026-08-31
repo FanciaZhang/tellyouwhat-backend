@@ -12,3 +12,10 @@ Required GitHub Environment values:
 - App Store Connect admin keys: `HEALTH_APP_STORE_CONNECT_PRIVATE_KEY`, `JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY`.
 
 `PRODUCTION_ENV_FILE` follows the checked-in `.env.example`, with production values and secret paths under `/secrets`. It must define both API domains and the shared admin domain. Never commit it.
+
+After the first clean deployment, use the `adminctl` Compose service to create
+the initial Passkey administrator. The same server-only command is the final
+administrator recovery path; there is no public password or recovery-code
+endpoint. Commands and security boundaries are documented in
+[`../single-server/README.md`](../single-server/README.md) and
+[`../../docs/modules/admin.md`](../../docs/modules/admin.md).

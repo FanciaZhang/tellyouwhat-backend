@@ -1,9 +1,9 @@
 # Production deployment
 
 The launch topology is one Tencent Cloud Lighthouse instance running Caddy,
-gateway, and worker. TDSQL-C MySQL and TencentDB for Redis remain private
-managed services connected through CCN. TOS and Ark remain managed Volcengine
-services.
+gateway, worker, and the shared passwordless admin service. TDSQL-C MySQL and
+TencentDB for Redis remain private managed services connected through CCN. TOS
+and Ark remain managed Volcengine services.
 
 Use [`tencent/README.md`](tencent/README.md) for provisioning, DNS, TLS,
 migration, maintenance, acceptance, and scaling instructions.

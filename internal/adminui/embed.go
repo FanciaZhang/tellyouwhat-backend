@@ -12,7 +12,7 @@ var files embed.FS
 func Handler() http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		name := strings.TrimPrefix(request.URL.Path, "/")
-		if name == "" || name == "setup" {
+		if name == "" || name == "setup" || name == "enroll" {
 			name = "index.html"
 		}
 		data, err := files.ReadFile("static/" + name)
