@@ -61,18 +61,24 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 		aliases[alias] = b.ID
 		books = append(books, aliasedBook{alias, b.Name, b.Description, b.ContainsEntry})
 	}
-	input, _ := json.Marshal(modelInput{
+	input, err := json.Marshal(modelInput{
 		Title: request.Title, Body: request.Body,
 		ExistingTags: request.ExistingTags, RejectedTagNames: request.RejectedTagNames,
 		Books: books,
 	})
+	if err != nil {
+		return Result{}, fmt.Errorf("encode model input: %w", err)
+	}
 	payload := map[string]any{
 		"model": model, "store": false,
 		"instructions": "你为私人手记生成简洁、原文明示的标签，并推荐已有手记册或建议新手记册。不得推断疾病、诊断、政治立场或其他未明示敏感属性。不得返回 rejectedTagNames 中的标签。已有手记册只能返回输入中的别名。只输出符合 schema 的 JSON。",
 		"input":        string(input),
 		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},
 	}
-	encoded, _ := json.Marshal(payload)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return Result{}, fmt.Errorf("encode Responses API request: %w", err)
+	}
 	url := strings.TrimRight(c.config.BaseURL, "/") + "/responses"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(encoded))
 	if err != nil {
@@ -96,6 +102,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 		return Result{}, fmt.Errorf("provider status %d", resp.StatusCode)
 	}
 	var envelope struct {
+		Status string `json:"status"`
 		Output []struct {
 			Type    string                        `json:"type"`
 			Content []struct{ Type, Text string } `json:"content"`
@@ -107,6 +114,12 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return Result{}, err
+	}
+	if envelope.Status != "" && envelope.Status != "completed" {
+		return Result{}, fmt.Errorf("%w: provider response status %q", ErrInvalidResult, envelope.Status)
+	}
+	if envelope.Usage.InputTokens < 0 || envelope.Usage.OutputTokens < 0 {
+		return Result{}, fmt.Errorf("%w: provider returned negative token usage", ErrInvalidResult)
 	}
 	var text string
 	for _, output := range envelope.Output {

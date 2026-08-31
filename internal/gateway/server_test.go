@@ -45,7 +45,7 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 	organizer := &fakeJournalOrganizer{result: journalprovider.Result{
 		Value: journalcontracts.ModelResult{
 			Tags:                        []journalcontracts.Tag{{Name: "西湖", Type: "place"}},
-			ExistingBookRecommendations: []journalcontracts.ExistingBookRecommendation{{BookID: "book-1", Reason: "记录杭州生活"}},
+			ExistingBookRecommendations: []journalcontracts.ExistingBookRecommendation{{BookID: "8d43cd74-5652-4412-b097-303f563e673a", Reason: "记录杭州生活"}},
 		},
 		InputTokens: 120, OutputTokens: 30,
 	}}
@@ -62,11 +62,11 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 	})
-	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"content-hash","title":"周末","body":"今天去了西湖","existingTags":[],"rejectedTagNames":[],"books":[{"id":"book-1","name":"杭州","description":"城市生活","containsEntry":false}]}`
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"今天去了西湖","existingTags":[],"rejectedTagNames":[],"books":[{"id":"8d43cd74-5652-4412-b097-303f563e673a","name":"杭州","description":"城市生活","containsEntry":false}]}`
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
-		!strings.Contains(response.Body.String(), `"bookID":"book-1"`) ||
+		!strings.Contains(response.Body.String(), `"bookID":"8d43cd74-5652-4412-b097-303f563e673a"`) ||
 		!strings.Contains(response.Body.String(), `"dailyTokensRemaining"`) {
 		t.Fatalf("unexpected journal response: %d %s", response.Code, response.Body.String())
 	}
@@ -86,7 +86,7 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 		Consent: fakeConsentGate{granted: false}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 	})
-	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"hash","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusForbidden || organizer.calls != 0 {
@@ -114,13 +114,73 @@ func TestJournalOrganizeRejectsIdempotentReplayBeforeSecondProviderCall(t *testi
 		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 	})
-	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"hash","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	first := httptest.NewRecorder()
 	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	second := httptest.NewRecorder()
 	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if first.Code != http.StatusOK || second.Code != http.StatusConflict || organizer.calls != 1 {
 		t.Fatalf("journal request was not idempotently committed: first=%d second=%d calls=%d body=%s", first.Code, second.Code, organizer.calls, second.Body.String())
+	}
+}
+
+func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T) {
+	t.Parallel()
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{
+		DailyTokensPerTransaction: 1_000_000, MonthlyTokensPerTransaction: 2_000_000,
+	})
+	organizer := &fakeJournalOrganizer{result: journalprovider.Result{
+		Value: journalcontracts.ModelResult{
+			Tags: []journalcontracts.Tag{{Name: "西湖", Type: "place"}},
+		},
+		InputTokens: 20, OutputTokens: 5,
+	}}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: limiter, QuotaReader: failingQuotaReader{}, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
+		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
+		!strings.Contains(response.Body.String(), `"available":false`) {
+		t.Fatalf("successful model result was discarded after quota snapshot failure: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegistrationConflictsHaveDistinctErrorCodes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{name: "used challenge", err: attestation.ErrReplay, code: "replay_detected"},
+		{name: "registered key", err: attestation.ErrKeyAlreadyRegistered, code: "key_already_registered"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := New(Dependencies{Enrollment: fakeEnrollment{registerErr: test.err}})
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(
+				http.MethodPost,
+				"/v1/attest/keys",
+				strings.NewReader(`{"keyID":"key","challenge":"challenge","attestation":"attestation","build":"1"}`),
+			))
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("unexpected registration conflict: %d %s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -809,6 +869,22 @@ func (entitlement fakeEntitlements) HasManagedSubscription(context.Context, Prin
 }
 
 type fakeQuota struct{ err error }
+
+type failingQuotaReader struct{}
+
+func (failingQuotaReader) Snapshot(context.Context, string, time.Time) (quotaapi.Snapshot, error) {
+	return quotaapi.Snapshot{}, errors.New("snapshot unavailable")
+}
+
+type fakeEnrollment struct{ registerErr error }
+
+func (fakeEnrollment) IssueChallenge(context.Context, string) (attestation.Challenge, error) {
+	return attestation.Challenge{}, nil
+}
+
+func (enrollment fakeEnrollment) Register(context.Context, attestation.RegistrationRequest) (Principal, error) {
+	return Principal{}, enrollment.registerErr
+}
 
 func (value fakeQuota) Acquire(
 	context.Context,

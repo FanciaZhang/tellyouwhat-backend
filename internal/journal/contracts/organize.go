@@ -3,17 +3,28 @@ package contracts
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	platformcontracts "github.com/tellyouwhat/backend/internal/contracts"
 )
 
 const (
-	ContractVersion = "journal-organize-v1"
-	MaxBodyBytes    = 1 << 20
-	MaxBodyRunes    = 60_000
-	MaxTags         = 512
-	MaxBooks        = 128
+	ContractVersion         = "journal-organize-v1"
+	MaxBodyBytes            = 1 << 20
+	MaxTitleRunes           = 120
+	MaxBodyRunes            = 60_000
+	MaxTags                 = 512
+	MaxTagRunes             = 40
+	MaxBooks                = 128
+	MaxBookNameRunes        = 120
+	MaxBookDescriptionRunes = 600
+	MaxReasonRunes          = 240
+	MaxRelatedTags          = 8
 )
+
+var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type OrganizeRequest struct {
 	RequestID        string        `json:"requestID"`
@@ -51,8 +62,9 @@ type NewBookSuggestion struct {
 }
 
 type Quota struct {
-	DailyTokensRemaining   int `json:"dailyTokensRemaining"`
-	MonthlyTokensRemaining int `json:"monthlyTokensRemaining"`
+	DailyTokensRemaining   int  `json:"dailyTokensRemaining"`
+	MonthlyTokensRemaining int  `json:"monthlyTokensRemaining"`
+	Available              bool `json:"available"`
 }
 
 type OrganizeResponse struct {
@@ -71,11 +83,14 @@ var tagTypes = map[string]bool{
 }
 
 func (r OrganizeRequest) Validate() error {
-	if r.RequestID == "" || r.ContentHash == "" {
-		return errors.New("requestID and contentHash are required")
+	if !platformcontracts.ValidRequestID(r.RequestID) || !contentHashPattern.MatchString(r.ContentHash) {
+		return errors.New("requestID or contentHash is invalid")
 	}
 	if r.ContractVersion != ContractVersion {
 		return errors.New("unsupported contractVersion")
+	}
+	if utf8.RuneCountInString(r.Title) > MaxTitleRunes {
+		return errors.New("title exceeds 120 characters")
 	}
 	if utf8.RuneCountInString(r.Body) > MaxBodyRunes {
 		return errors.New("body exceeds 60000 characters")
@@ -89,10 +104,19 @@ func (r OrganizeRequest) Validate() error {
 	if strings.TrimSpace(r.Title) == "" && strings.TrimSpace(r.Body) == "" {
 		return errors.New("journal content is empty")
 	}
+	if err := validateTagNames(r.ExistingTags); err != nil {
+		return fmt.Errorf("invalid existing tags: %w", err)
+	}
+	if err := validateTagNames(r.RejectedTagNames); err != nil {
+		return fmt.Errorf("invalid rejected tags: %w", err)
+	}
 	seen := map[string]bool{}
 	for _, b := range r.Books {
-		if b.ID == "" || b.Name == "" {
+		if !platformcontracts.ValidRequestID(b.ID) || b.Name == "" || canonicalName(b.Name) != b.Name {
 			return errors.New("book id and name are required")
+		}
+		if utf8.RuneCountInString(b.Name) > MaxBookNameRunes || utf8.RuneCountInString(b.Description) > MaxBookDescriptionRunes {
+			return errors.New("book context exceeds text limits")
 		}
 		if seen[b.ID] {
 			return errors.New("duplicate book id")
@@ -108,8 +132,8 @@ func (r OrganizeResponse) Validate(bookIDs map[string]bool) error {
 	}
 	seenTags := map[string]bool{}
 	for _, tag := range r.Tags {
-		n := strings.ToLower(strings.TrimSpace(tag.Name))
-		if n == "" || utf8.RuneCountInString(tag.Name) > 40 || !tagTypes[tag.Type] {
+		n := normalizedName(tag.Name)
+		if n == "" || canonicalName(tag.Name) != tag.Name || utf8.RuneCountInString(tag.Name) > MaxTagRunes || !tagTypes[tag.Type] {
 			return errors.New("invalid tag")
 		}
 		if seenTags[n] {
@@ -117,17 +141,51 @@ func (r OrganizeResponse) Validate(bookIDs map[string]bool) error {
 		}
 		seenTags[n] = true
 	}
+	seenBookIDs := map[string]bool{}
 	for _, rec := range r.ExistingBookRecommendations {
-		if !bookIDs[rec.BookID] || strings.TrimSpace(rec.Reason) == "" {
+		if !bookIDs[rec.BookID] || seenBookIDs[rec.BookID] || !validExplanation(rec.Reason) {
 			return fmt.Errorf("invalid book recommendation %q", rec.BookID)
 		}
+		seenBookIDs[rec.BookID] = true
 	}
+	seenSuggestions := map[string]bool{}
 	for _, suggestion := range r.NewBookSuggestions {
-		if strings.TrimSpace(suggestion.Name) == "" || strings.TrimSpace(suggestion.Reason) == "" {
+		name := normalizedName(suggestion.Name)
+		if name == "" || canonicalName(suggestion.Name) != suggestion.Name || utf8.RuneCountInString(suggestion.Name) > MaxBookNameRunes ||
+			utf8.RuneCountInString(suggestion.Description) > MaxBookDescriptionRunes || !validExplanation(suggestion.Reason) ||
+			seenSuggestions[name] || len(suggestion.RelatedTags) > MaxRelatedTags {
 			return errors.New("invalid new book suggestion")
+		}
+		seenSuggestions[name] = true
+		if err := validateTagNames(suggestion.RelatedTags); err != nil {
+			return errors.New("invalid new book related tags")
 		}
 	}
 	return nil
+}
+
+func canonicalName(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func normalizedName(value string) string {
+	return strings.ToLower(canonicalName(value))
+}
+
+func validateTagNames(values []string) error {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		normalized := normalizedName(value)
+		if normalized == "" || canonicalName(value) != value || utf8.RuneCountInString(value) > MaxTagRunes || seen[normalized] {
+			return errors.New("tag name is empty, duplicated, or exceeds limits")
+		}
+		seen[normalized] = true
+	}
+	return nil
+}
+
+func validExplanation(value string) bool {
+	return strings.TrimSpace(value) == value && value != "" && utf8.RuneCountInString(value) <= MaxReasonRunes
 }
 
 type ModelResult struct {
@@ -137,13 +195,15 @@ type ModelResult struct {
 }
 
 func ResponseSchema() map[string]any {
-	str := func() map[string]any { return map[string]any{"type": "string"} }
+	str := func(maxLength int) map[string]any {
+		return map[string]any{"type": "string", "minLength": 1, "maxLength": maxLength}
+	}
 	tagItem := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"required":             []string{"name", "type"},
 		"properties": map[string]any{
-			"name": str(),
+			"name": str(MaxTagRunes),
 			"type": map[string]any{"type": "string", "enum": []string{"person", "place", "organization", "event", "topic", "mood", "other"}},
 		},
 	}
@@ -151,15 +211,17 @@ func ResponseSchema() map[string]any {
 		"type":                 "object",
 		"additionalProperties": false,
 		"required":             []string{"bookID", "reason"},
-		"properties":           map[string]any{"bookID": str(), "reason": str()},
+		"properties":           map[string]any{"bookID": str(16), "reason": str(MaxReasonRunes)},
 	}
 	newBookItem := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"required":             []string{"name", "description", "reason", "relatedTags"},
 		"properties": map[string]any{
-			"name": str(), "description": str(), "reason": str(),
-			"relatedTags": map[string]any{"type": "array", "items": str()},
+			"name":        str(MaxBookNameRunes),
+			"description": map[string]any{"type": "string", "maxLength": MaxBookDescriptionRunes},
+			"reason":      str(MaxReasonRunes),
+			"relatedTags": map[string]any{"type": "array", "maxItems": MaxRelatedTags, "items": str(MaxTagRunes)},
 		},
 	}
 	return map[string]any{

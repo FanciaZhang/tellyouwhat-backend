@@ -43,6 +43,7 @@ type Config struct {
 	PreviewSigningKey []byte
 	WritesEnabled     bool
 	Apps              []AdminApp
+	Readiness         func(context.Context) error
 }
 
 type AdminApp struct {
@@ -59,6 +60,7 @@ type Server struct {
 	now        func() time.Time
 	config     Config
 	limiter    *rateLimiter
+	readiness  func(context.Context) error
 }
 
 func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operations OperationStore, metrics MetricsReader, config Config, now func() time.Time) (*Server, error) {
@@ -73,9 +75,13 @@ func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operatio
 	if now == nil {
 		now = time.Now
 	}
-	server := &Server{mux: http.NewServeMux(), auth: auth, offers: offers, operations: operations, metrics: metrics, now: now, config: config, limiter: newRateLimiter(now)}
+	readiness := config.Readiness
+	if readiness == nil {
+		readiness = func(context.Context) error { return nil }
+	}
+	server := &Server{mux: http.NewServeMux(), auth: auth, offers: offers, operations: operations, metrics: metrics, now: now, config: config, limiter: newRateLimiter(now), readiness: readiness}
 	server.mux.HandleFunc("GET /healthz", server.health)
-	server.mux.HandleFunc("GET /readyz", server.health)
+	server.mux.HandleFunc("GET /readyz", server.ready)
 	server.mux.HandleFunc("GET /api/v1/apps", server.listApps)
 	server.mux.HandleFunc("GET /api/v1/apps/{appID}/offers", server.listOffers)
 	server.mux.HandleFunc("GET /api/v1/apps/{appID}/metrics/offers", server.offerMetrics)
@@ -186,6 +192,20 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
+	if server.readiness == nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "not_ready", "服务依赖尚未就绪")
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+	defer cancel()
+	if err := server.readiness(ctx); err != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "not_ready", "服务依赖尚未就绪")
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (server *Server) listOffers(writer http.ResponseWriter, request *http.Request) {

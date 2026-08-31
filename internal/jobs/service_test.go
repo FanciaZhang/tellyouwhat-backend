@@ -58,6 +58,34 @@ func TestWorkerClaimsJobAndPersistsValidatedResult(t *testing.T) {
 	}
 }
 
+func TestWorkerKeepsDurableSuccessWhenQuotaReconciliationFails(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore()
+	service := NewService(store, time.Now)
+	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}
+	job, _ := service.Enqueue(context.Background(), principal, jobRequest(), "digest-1")
+	reconciler := &failingTokenReconciler{}
+	worker := NewWorker(store, fixedJobProvider{}, reconciler)
+
+	if err := worker.Process(context.Background(), job.ID); err != nil {
+		t.Fatalf("durable success must not be redispatched after reconciliation failure: %v", err)
+	}
+	completed, err := service.Get(context.Background(), principal, job.ID)
+	if err != nil || completed.Status != StatusSucceeded || reconciler.calls != 1 {
+		t.Fatalf("unexpected completed job or reconciliation count: job=%+v calls=%d err=%v", completed, reconciler.calls, err)
+	}
+}
+
+func TestHTTPDispatcherDefaultTimeoutCoversWorkerLifetime(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := NewHTTPDispatcher("https://worker.test/v1/internal/jobs/process", "secret", "health", nil)
+	if dispatcher.client.Timeout != workerDispatchTimeout || dispatcher.client.Timeout <= 3*time.Hour {
+		t.Fatalf("default dispatch timeout is shorter than worker lifetime: %s", dispatcher.client.Timeout)
+	}
+}
+
 func TestStaleRunningLeaseCanBeReclaimedAfterWorkerCrash(t *testing.T) {
 	t.Parallel()
 
@@ -270,6 +298,13 @@ func jobRequest() contracts.Request {
 type fixedJobProvider struct{}
 
 type failingJobProvider struct{}
+
+type failingTokenReconciler struct{ calls int }
+
+func (reconciler *failingTokenReconciler) Reconcile(context.Context, string, int, int, time.Time) error {
+	reconciler.calls++
+	return errors.New("redis unavailable")
+}
 
 func (failingJobProvider) Complete(context.Context, contracts.Request) (providerapi.Response, error) {
 	return providerapi.Response{}, errors.New("upstream unavailable")

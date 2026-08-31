@@ -80,3 +80,17 @@ func TestProviderRejectsTrailingStructuredOutput(t *testing.T) {
 		t.Fatalf("expected invalid structured result, got %v", err)
 	}
 }
+
+func TestProviderRejectsIncompleteResponse(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"in_progress","output":[]}`))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL, APIKey: "secret", LiteModel: "lite", ProModel: "pro"}, server.Client())
+	_, err := client.Organize(context.Background(), contracts.OrganizeRequest{Title: "一天"}, false)
+	if !errors.Is(err, ErrInvalidResult) {
+		t.Fatalf("expected incomplete response to be rejected, got %v", err)
+	}
+}

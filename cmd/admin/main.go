@@ -83,6 +83,12 @@ func run() error {
 		PreviewSigningKey: configuration.previewSigningKey,
 		WritesEnabled:     configuration.writesEnabled,
 		Apps:              adminApps,
+		Readiness: func(ctx context.Context) error {
+			if err := database.PingContext(ctx); err != nil {
+				return err
+			}
+			return redisClient.Ping(ctx).Err()
+		},
 	}, time.Now)
 	if err != nil {
 		return err

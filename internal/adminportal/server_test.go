@@ -1,12 +1,30 @@
 package adminportal
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 )
+
+func TestReadinessChecksDependenciesWhileHealthRemainsLive(t *testing.T) {
+	t.Parallel()
+	server := &Server{readiness: func(context.Context) error { return errors.New("database unavailable") }}
+	ready := httptest.NewRecorder()
+	server.ready(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if ready.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness ignored dependency failure: %d %s", ready.Code, ready.Body.String())
+	}
+	health := httptest.NewRecorder()
+	server.health(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if health.Code != http.StatusOK {
+		t.Fatalf("liveness unexpectedly failed: %d %s", health.Code, health.Body.String())
+	}
+}
 
 func TestPreviewTokenBindsDraftAndExpires(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)

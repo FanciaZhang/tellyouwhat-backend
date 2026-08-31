@@ -150,7 +150,8 @@ jobs:
           docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps migrate
           docker compose --env-file .env.production -f compose.production.yaml up -d --no-build gateway worker admin caddy
           REMOTE
-      - name: Verify both public App runtimes
+      - name: Verify all public runtimes
         run: |
           curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://api.health.tellyouwhat.cn/readyz
           curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://api.journal.tellyouwhat.cn/readyz
+          curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://admin.tellyouwhat.cn/readyz

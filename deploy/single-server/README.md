@@ -21,11 +21,13 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm --
 docker compose --env-file .env.production -f compose.production.yaml up -d gateway worker admin caddy
 ```
 
-Verify both hosts independently:
+Verify all public runtimes independently. The Health readiness check also
+verifies that the private asynchronous worker is reachable:
 
 ```sh
 curl -fsS https://api.health.tellyouwhat.cn/readyz
 curl -fsS https://api.journal.tellyouwhat.cn/readyz
+curl -fsS https://admin.tellyouwhat.cn/readyz
 ```
 
 Use `TELLYOUWHAT_BACKUP_DIR=/var/backups/tellyouwhat deploy/single-server/backup-mysql.sh` for database backups. Keep `.env.production`, Apple `.p8` files, backup archives, and registry credentials outside source control.

@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -109,7 +111,14 @@ func run(logger *slog.Logger) error {
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
 		storage := storageForApp(platform, shared, string(appConfig.Registry.ID))
-		handler, buildErr := buildAppHandler(ctx, platform, appConfig, storage, shared.readiness, attestationRoots, tosStore, logger)
+		appReadiness := shared.readiness
+		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
+			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
+			if err != nil {
+				return err
+			}
+		}
+		handler, buildErr := buildAppHandler(ctx, platform, appConfig, storage, appReadiness, attestationRoots, tosStore, logger)
 		if buildErr != nil {
 			return fmt.Errorf("build app %s: %w", appConfig.Registry.ID, buildErr)
 		}
@@ -149,6 +158,42 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+func readinessWithWorker(base gateway.Readiness, asyncURL string, client *http.Client) (gateway.Readiness, error) {
+	workerURL, err := url.Parse(asyncURL)
+	if err != nil || (workerURL.Scheme != "http" && workerURL.Scheme != "https") || workerURL.Host == "" {
+		return nil, errors.New("WORKER_ASYNC_URL must be an absolute HTTP URL")
+	}
+	workerURL.Path = "/healthz"
+	workerURL.RawPath = ""
+	workerURL.RawQuery = ""
+	workerURL.Fragment = ""
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Second}
+	}
+	return gateway.ReadinessFunc(func(ctx context.Context) error {
+		if base == nil {
+			return errors.New("shared storage readiness is unavailable")
+		}
+		if err := base.Ready(ctx); err != nil {
+			return err
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, workerURL.String(), nil)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return fmt.Errorf("worker readiness: %w", err)
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 8<<10))
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return fmt.Errorf("worker readiness status %d", response.StatusCode)
+		}
+		return nil
+	}), nil
 }
 
 func openSharedStorage(ctx context.Context, platform config.PlatformConfig) (sharedStorage, func(), error) {

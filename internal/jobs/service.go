@@ -202,7 +202,12 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		cancel()
 	}
 	if worker.reconciler != nil {
-		return worker.reconciler.Reconcile(
+		// The result and usage ledger are already committed transactionally. A
+		// Redis reconciliation failure must not turn that terminal success back
+		// into a dispatch failure: redispatch sees a completed job and cannot
+		// replay this adjustment. Keeping the conservative reservation until its
+		// daily/monthly key expires is the safe fallback.
+		_ = worker.reconciler.Reconcile(
 			ctx,
 			transactionID,
 			contracts.ReservationTokens(job.Request),

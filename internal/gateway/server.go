@@ -406,8 +406,10 @@ func (server *Server) registerKey(writer http.ResponseWriter, request *http.Requ
 		switch {
 		case errors.Is(err, attestation.ErrUnavailable):
 			writeError(writer, http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
-		case errors.Is(err, attestation.ErrReplay), errors.Is(err, attestation.ErrKeyAlreadyRegistered):
+		case errors.Is(err, attestation.ErrReplay):
 			writeError(writer, http.StatusConflict, "replay_detected", "registration challenge was already used", "")
+		case errors.Is(err, attestation.ErrKeyAlreadyRegistered):
+			writeError(writer, http.StatusConflict, "key_already_registered", "App Attest key is already registered", "")
 		default:
 			writeError(writer, http.StatusUnauthorized, "enrollment_denied", "device enrollment denied", "")
 		}
@@ -828,11 +830,7 @@ func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.
 		actualTokens = estimatedTokens
 	}
 	lease.Release(actualTokens)
-	snapshot, err := server.quotaReader.Snapshot(request.Context(), transactionID, server.now())
-	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", input.RequestID)
-		return
-	}
+	snapshot, snapshotErr := server.quotaReader.Snapshot(request.Context(), transactionID, server.now())
 	response := journalcontracts.OrganizeResponse{
 		RequestID: input.RequestID, ContentHash: input.ContentHash,
 		AnalysisVersion:             server.journalAnalysisVersion,
@@ -842,6 +840,7 @@ func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.
 		Quota: journalcontracts.Quota{
 			DailyTokensRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
 			MonthlyTokensRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
+			Available:              snapshotErr == nil,
 		},
 	}
 	bookIDs := make(map[string]bool, len(input.Books))

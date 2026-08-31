@@ -94,9 +94,14 @@ type HTTPDispatcher struct {
 	client *http.Client
 }
 
+const workerDispatchTimeout = 3*time.Hour + 5*time.Minute
+
 func NewHTTPDispatcher(url, secret, appID string, client *http.Client) *HTTPDispatcher {
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		// The worker acknowledges only after the provider call reaches a durable
+		// terminal state. A short transport timeout cancels otherwise healthy AI
+		// jobs through the request context before their model timeout expires.
+		client = &http.Client{Timeout: workerDispatchTimeout}
 	}
 	return &HTTPDispatcher{url: url, secret: secret, appID: appID, client: client}
 }
