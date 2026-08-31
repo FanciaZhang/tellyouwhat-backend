@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>告你健康 · Offer 管理</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div><p class="eyebrow">告你健康</p><h1>Offer 管理</h1></div>
+      <button id="logout" class="quiet hidden">退出</button>
+    </header>
+    <section id="notice" class="notice hidden" role="status" aria-live="polite"></section>
+
+    <section id="auth" class="auth card">
+      <div id="login-panel">
+        <p class="eyebrow">仅限管理员</p>
+        <h2>使用通行密钥登录</h2>
+        <p class="muted">登录后可管理免费 Offer 和邀请码池。所有生产写操作都需要再次验证。</p>
+        <button id="login" class="primary">使用通行密钥</button>
+        <details><summary>无法使用通行密钥？</summary>
+          <label>一次性恢复码<input id="recovery-code" autocomplete="one-time-code" placeholder="HADM-…"></label>
+          <button id="recover" class="secondary">进入恢复模式</button>
+        </details>
+      </div>
+      <div id="setup-panel" class="hidden">
+        <p class="eyebrow">首次设置</p><h2>登记管理员通行密钥</h2>
+        <p class="muted">建议同时保存到 iCloud 钥匙串。完成后只显示一次 10 个恢复码。</p>
+        <label>显示名称<input id="display-name" value="管理员" maxlength="64"></label>
+        <button id="setup" class="primary">创建通行密钥</button>
+      </div>
+    </section>
+
+    <section id="recovery" class="card hidden">
+      <h2>重新登记通行密钥</h2><p class="muted">恢复码不能直接管理 Offer。请先创建新的通行密钥。</p>
+      <button id="add-passkey" class="primary">创建新通行密钥</button>
+    </section>
+
+    <section id="dashboard" class="hidden">
+      <div class="summary-grid">
+        <article class="card metric"><span>启用中的 Offer</span><strong id="active-count">—</strong><small>Apple 上限 <span id="active-limit">—</span></small></article>
+        <article class="card metric"><span>正式环境兑换</span><strong id="redemption-count">—</strong><small>仅匿名汇总，不保存邀请码</small></article>
+        <article class="card metric"><span>最近同步</span><strong id="synced-at">—</strong><small>以 App Store Connect 为准</small></article>
+      </div>
+      <div class="section-head"><div><h2>现有 Offer</h2><p class="muted">同一个人可以依次兑换不同 Offer 的邀请码。</p></div><button id="new-offer" class="primary">新建 Offer</button></div>
+      <div id="offers" class="offer-list"></div>
+    </section>
+  </main>
+
+  <dialog id="offer-dialog">
+    <form id="offer-form" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">免费 Offer</p><h2>新建 Offer</h2></div><button type="button" class="icon" data-close aria-label="关闭">×</button></div>
+      <label>后台名称<input name="name" required maxlength="64" placeholder="例如：九月朋友体验"></label>
+      <label>免费时长<select name="duration"><option value="ONE_MONTH">1 个月</option><option value="THREE_DAYS">3 天</option><option value="ONE_WEEK">1 周</option><option value="TWO_WEEKS">2 周</option><option value="TWO_MONTHS">2 个月</option><option value="THREE_MONTHS">3 个月</option><option value="SIX_MONTHS">6 个月</option><option value="ONE_YEAR">1 年</option></select></label>
+      <fieldset><legend>可兑换的人</legend><label class="check"><input type="checkbox" name="eligibility" value="NEW" checked> 新用户</label><label class="check"><input type="checkbox" name="eligibility" value="EXISTING" checked> 当前订阅用户</label><label class="check"><input type="checkbox" name="eligibility" value="EXPIRED" checked> 已过期用户</label></fieldset>
+      <label class="check switch"><input type="checkbox" name="autoRenewEnabled"> 免费期结束后自动续订</label>
+      <p class="warning">创建后不能修改这些设置，只能停用。下一步会先显示最终预览。</p>
+      <div class="actions"><button type="button" class="quiet" data-close>取消</button><button class="primary" value="preview">预览</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog"><div class="dialog-head"><div><p class="eyebrow">最终确认</p><h2>确认创建 Offer</h2></div><button class="icon" data-close aria-label="关闭">×</button></div><div id="preview"></div><p class="warning">确认后将直接写入 App Store Connect，且无法编辑。</p><div class="actions"><button class="quiet" data-close>返回</button><button id="confirm-create" class="danger">验证并创建</button></div></dialog>
+
+  <dialog id="codes-dialog"><form id="codes-form" method="dialog"><div class="dialog-head"><div><p class="eyebrow">邀请码池</p><h2>为 Offer 创建码池</h2></div><button type="button" class="icon" data-close>×</button></div><input type="hidden" name="offerID"><div id="code-pools" class="pool-list muted">正在读取现有码池…</div><label>类型<select name="kind"><option value="custom">自定义码</option><option value="oneTime">Apple 一次性码</option></select></label><label id="custom-code-label">自定义码<input name="code" maxlength="64" pattern="[A-Za-z0-9]{4,64}" placeholder="FRIENDS2026"></label><label>可兑换次数<input name="numberOfCodes" type="number" min="1" max="25000" value="10"></label><label>到期日<input name="expirationDate" type="date" required></label><label id="environment-label" class="hidden">环境<select name="environment"><option value="PRODUCTION">正式环境</option><option value="SANDBOX">沙盒</option></select></label><div class="actions"><button type="button" class="quiet" data-close>取消</button><button class="danger">验证并创建</button></div></form></dialog>
+
+  <dialog id="recovery-dialog"><div class="dialog-head"><h2>保存恢复码</h2></div><p class="warning">这些恢复码只显示一次。每个只能使用一次，恢复后仍必须登记新通行密钥。</p><pre id="recovery-codes"></pre><div class="actions"><button id="copy-codes" class="secondary">复制</button><button class="primary" data-close>我已安全保存</button></div></dialog>
+</body>
+</html>

@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+**/*.pem
+!deploy/Apple_App_Attestation_Root_CA.pem
+coverage.out
+gateway
+worker
+migrate
+

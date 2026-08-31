@@ -1,0 +1,96 @@
+openapi: 3.1.0
+info:
+  title: Health Managed AI Gateway
+  version: 1.0.0
+servers:
+  - url: https://replace-with-api-gateway-domain
+paths:
+  /healthz:
+    get:
+      responses:
+        "200": { description: Healthy }
+  /readyz:
+    get:
+      responses:
+        "200": { description: Ready }
+        "503": { description: Dependency unavailable }
+  /v1/attest/challenges:
+    post:
+      responses:
+        "201": { description: One-time challenge }
+  /v1/attest/keys:
+    post:
+      responses:
+        "201": { description: Registered App Attest key }
+        "401": { description: Enrollment denied }
+        "409": { description: Challenge replay }
+  /v1/dev/entitlements/activate:
+    post:
+      responses:
+        "200": { description: Development entitlement active }
+        "404": { description: Route absent in production }
+  /v1/entitlements/transactions:
+    post:
+      description: App Attest-authenticated synchronization of a StoreKit verified transaction JWS.
+      responses:
+        "200": { description: Current managed subscription confirmed by App Store Server API }
+        "401": { description: App Attest assertion rejected }
+        "403": { description: Transaction invalid or subscription inactive }
+        "503": { description: App Store or entitlement storage unavailable }
+  /v1/app-store/notifications:
+    post:
+      description: App Store Server Notifications V2 endpoint. Apple JWS verification replaces App Attest on this route.
+      responses:
+        "200": { description: Notification durably processed or already processed }
+        "400": { description: Notification JWS rejected }
+        "503": { description: App Store status refresh or entitlement storage unavailable }
+  /v1/media/upload-authorizations:
+    post:
+      responses:
+        "201": { description: Restricted TOS PUT authorization }
+        "413": { description: Media limit exceeded }
+  /v1/ai/requests:
+    post:
+      responses:
+        "200": { description: Structured AI response }
+        "426": { description: App upgrade required }
+        "429": { description: Quota exceeded }
+  /v1/ai/streams:
+    post:
+      responses:
+        "200":
+          description: Server-sent event stream
+          content:
+            text/event-stream: {}
+  /v1/ai/quota:
+    get:
+      responses:
+        "200": { description: Current daily and monthly token quota usage }
+        "401": { description: App Attest assertion rejected }
+        "403": { description: Managed subscription required }
+  /v1/ai/jobs:
+    post:
+      responses:
+        "202": { description: Background job accepted }
+        "401": { description: Invalid or expired one-time Job Capability }
+        "409": { description: Job identity or body conflicts with the durable request }
+  /v1/ai/job-capabilities:
+    post:
+      responses:
+        "201": { description: App Attest-bound one-time Job Capability }
+        "401": { description: App Attest assertion rejected }
+        "429": { description: Quota exceeded }
+  /v1/ai/jobs/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      responses:
+        "200": { description: Job status }
+        "404": { description: Job not found }
+    delete:
+      responses:
+        "204": { description: Job cancelled }
+

@@ -1,0 +1,286 @@
+{
+  "entries": [
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "voice_transcription",
+      "promptVersion": "voice-transcription-v1",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "bbef724d9d4236dc8e360d0c4c3150a0c7a0cd3708af5773171b9c7001a9bbd0"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "voice_transcription",
+      "promptVersion": "voice-transcription-v0",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_photo_capture",
+      "promptVersion": "meal-photo-v5",
+      "schemaPolicy": "structured",
+      "schemaSHA256": []
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_photo_capture",
+      "promptVersion": "meal-photo-v4",
+      "schemaPolicy": "structured",
+      "schemaSHA256": []
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_text_capture",
+      "promptVersion": "meal-text-v5",
+      "schemaPolicy": "structured",
+      "schemaSHA256": []
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_text_capture",
+      "promptVersion": "meal-text-v4",
+      "schemaPolicy": "structured",
+      "schemaSHA256": []
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": true,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_decision",
+      "promptVersion": "meal-decision-v10-fresh-exploration",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "08029df7bb44c6417123c6af7c905b0b8ddfbab47a0954dde2dd06e8b802b90a",
+        "23bdf41e5215ec378cb0098cf020fbc9461b06f7b167057e0eaf0ffa9b52fe4b",
+        "621bbcc68d1c56a0d6a1574250f002f3d4b441a379682bd43d81062590336989",
+        "69780ec902f7adfeb9771e9b2be52d662fb0ae1b3f74d6fc6d84aede46022c3f",
+        "fe155cc6b7ed0aed46833de024879adcd2b364f4eb6f9a35f3baf3089131b4de"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": true,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_decision",
+      "promptVersion": "meal-decision-v9",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "58cc11b7129437416d4da3f5dfe9f3150945af5479d92b3363bac3651873fce2",
+        "7dfaee2d0a37245fdfe0bfdbb1e7f6cefbedc64623dd2179f7f31104b565e53a",
+        "936ee4b4be7302fc1160ef1694b43c5447508d891f0ed7064960028525ef45fd",
+        "b3cc52dca7d3afba00d0aef69bb6d215efb9b9092f685131b5fb24e46c3a2d67",
+        "f044041726fe4f5d7337697b21a4843395881637729f228c521584a3ab4b4bc4"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "diet_analysis",
+      "promptVersion": "diet-day-review-v4",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "6fa6d6d3f45cdeee310577d94c546b9b5046084e067e23c08a4b232d3d2ad150",
+        "affed71f006a6bf4e94a74476ee6f033404913b9e4e4ad2c420477d4b1f830d1"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "diet_analysis",
+      "promptVersion": "diet-day-review-v3",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "2df8c4914e31ee61f1c9bed1c824d0bae3f7626335fa3b340e08594655b21ec3",
+        "d75e9ebd823d2c9cf755be87ef32aed34e6703b166b86a2f04abdc1cc9eab9eb"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "health_nutrition_analysis",
+      "promptVersion": "health-nutrition-v1",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "d4d84e4399019ffe247b0b93e8910765cd300fa94bc18d16725af2063f2bd028"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "health_nutrition_analysis",
+      "promptVersion": "health-nutrition-v0",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "924cd6a866459d0a47f45f31a175fae99fd1fcf0d5611f3e908e1e6c8df99b98"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "health_behavior_analysis",
+      "promptVersion": "health-behavior-v1",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "a7d0ad80c87c28a7668290946f3eb1dd50cc2b45898018f40378c4bc59ea07bb"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "health_behavior_analysis",
+      "promptVersion": "health-behavior-v0",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "185a0f96a2175098fce7c1f000e0e85d20b3cfb15cc2ccdef3701b5d1d19742e"
+      ]
+    }
+  ]
+}

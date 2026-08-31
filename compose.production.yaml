@@ -1,0 +1,171 @@
+name: health-ai
+
+x-app: &app
+  restart: unless-stopped
+  env_file:
+    - .env.production
+  environment:
+    DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
+  networks:
+    - health-backend
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+      - admin
+    environment:
+      HEALTH_API_DOMAIN: ${HEALTH_API_DOMAIN}
+      HEALTH_ADMIN_DOMAIN: ${HEALTH_ADMIN_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/single-server/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - health-backend
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 100
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  gateway:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-gateway:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: gateway
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
+      PORT: "8080"
+      WORKER_ASYNC_URL: http://worker:8081/internal/jobs/process
+      TRUSTED_CLIENT_IP_HEADER: X-Real-IP
+    volumes:
+      - ./secrets/SubscriptionKey.p8:/secrets/SubscriptionKey.p8:ro
+      - ./secrets/apple-app-store-roots.pem:/secrets/apple-app-store-roots.pem:ro
+    expose:
+      - "8080"
+    ports:
+      - "127.0.0.1:18080:8080/tcp"
+    stop_grace_period: 25s
+    mem_limit: 384m
+    pids_limit: 200
+
+  worker:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-worker:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: worker
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
+      PORT: "8081"
+    expose:
+      - "8081"
+    stop_grace_period: 30s
+    mem_limit: 768m
+    pids_limit: 300
+
+  admin:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-admin:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: admin
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
+      ADMIN_PORT: "8082"
+      ADMIN_RP_ID: ${HEALTH_ADMIN_DOMAIN}
+      ADMIN_ORIGIN: "https://${HEALTH_ADMIN_DOMAIN}"
+      APP_STORE_CONNECT_PRIVATE_KEY_PATH: /secrets/MarketingKey.p8
+    volumes:
+      - ./secrets/MarketingKey.p8:/secrets/MarketingKey.p8:ro
+    expose:
+      - "8082"
+    stop_grace_period: 20s
+    mem_limit: 192m
+    pids_limit: 120
+
+  adminctl:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-adminctl:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: adminctl
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    restart: "no"
+    profiles:
+      - operations
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true"
+      ADMIN_ORIGIN: "https://${HEALTH_ADMIN_DOMAIN}"
+    mem_limit: 64m
+
+  migrate:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-migrate:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: migrate
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    restart: "no"
+    profiles:
+      - operations
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    mem_limit: 128m
+
+  maintenance:
+    <<: *app
+    image: ${IMAGE_REGISTRY_PREFIX:-health-ai}-maintenance:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        SERVICE: maintenance
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    restart: "no"
+    profiles:
+      - operations
+    environment:
+      DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    mem_limit: 128m
+
+networks:
+  health-backend:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,10 @@
+{
+  "method": "post",
+  "path": "/v1/ai/requests",
+  "requestID": "request-1",
+  "nonce": "nonce-1",
+  "timestamp": "2026-08-02T08:00:00Z",
+  "bodySHA256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+  "expectedBindingSHA256": "cb470902213a004af484286941dc1a68fd84add7312a858df33ea1ef522404a3"
+}
+
