@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	adminSessionCookie = "__Host-health_admin_session"
+	adminSessionCookie = "__Host-tellyouwhat_admin_session"
 	ceremonyLifetime   = 5 * time.Minute
 	sessionIdleLimit   = 30 * time.Minute
 	sessionLifetime    = 12 * time.Hour
@@ -45,7 +45,7 @@ func NewService(repository Repository, state StateStore, config Config, now func
 		now = time.Now
 	}
 	if config.DisplayName == "" {
-		config.DisplayName = "告你健康管理后台"
+		config.DisplayName = "Tellyouwhat 管理后台"
 	}
 	webAuthn, err := webauthn.New(&webauthn.Config{
 		RPID:                  config.RPID,

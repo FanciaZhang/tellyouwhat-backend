@@ -48,10 +48,11 @@ type AppConfig struct {
 }
 
 type JournalAIConfig struct {
-	BaseURL   string
-	APIKey    string
-	LiteModel string
-	ProModel  string
+	BaseURL        string
+	APIKey         string
+	LiteModel      string
+	ProModel       string
+	TimeoutSeconds int
 }
 
 type ProductConfig struct {
@@ -194,10 +195,11 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 	}
 	if defaults.ID == appregistry.Journal {
 		config.JournalAI = JournalAIConfig{
-			BaseURL:   prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
-			APIKey:    prefixedValue(prefix, "ARK_API_KEY", ""),
-			LiteModel: prefixedValue(prefix, "ARK_LITE_MODEL_ID", ""),
-			ProModel:  prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""),
+			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+			APIKey:         prefixedValue(prefix, "ARK_API_KEY", ""),
+			LiteModel:      prefixedValue(prefix, "ARK_LITE_MODEL_ID", ""),
+			ProModel:       prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""),
+			TimeoutSeconds: timeout,
 		}
 	}
 	return config, nil
@@ -271,6 +273,9 @@ func (config AppConfig) Validate(environment string) error {
 	case appregistry.Journal:
 		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {
 			return errors.New("journal Ark Responses API configuration is incomplete")
+		}
+		if config.JournalAI.TimeoutSeconds <= 0 || config.JournalAI.TimeoutSeconds > 14*60 {
+			return errors.New("journal ARK_TIMEOUT_SECONDS must be between 1 and 840")
 		}
 	default:
 		return errors.New("unsupported app")

@@ -334,7 +334,7 @@ func buildAppHandler(
 		model := journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
-		}, &http.Client{Timeout: 60 * time.Second})
+		}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second})
 		organizer := &journalservice.Organizer{
 			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
 			AnalysisVersion: "journal-organize-2026-08-31",
