@@ -262,4 +262,3 @@ func (store *MemoryStore) RetryDispatch(_ context.Context, jobID string, now tim
 }
 
 var _ OutboxStore = (*MemoryStore)(nil)
-

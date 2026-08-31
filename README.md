@@ -1,124 +1,70 @@
-# Health Managed AI Backend
+# Tellyouwhat Backend
 
-This directory contains the constrained managed-AI path. It does not render prompts and is not an OpenAI-compatible proxy. The iOS app sends one Swift-generated artifact; the gateway accepts only the seven registered Health operations and chooses every Ark endpoint on the server.
+这是“告你健康”、“告你手记”以及未来 App 共用的后端仓库。首版是一个模块化单体，在一台服务器上运行 Caddy、gateway、worker 和 admin，并共用一套 MySQL、Redis 和 TOS。添加 App 不需要新增 ECS、MySQL 或 Redis 实例。
 
-## Deployment units
+## 边界
 
-- `cmd/gateway`: public HTTP/SSE application behind the Caddy TLS reverse proxy.
-- `cmd/worker`: private asynchronous job processor. Its payload is only `{ "jobID": "..." }`.
-- `cmd/migrate`: idempotent MySQL 8.4 schema migration.
-- `cmd/maintenance`: one-shot retention cleanup intended to run daily.
-- `cmd/admin`: separate Passkey-protected Offer management API and embedded web UI.
-- `cmd/adminctl`: one-shot command that creates the 15-minute first-owner setup link.
+App 由 HTTP `Host` 唯一决定：
 
-All images use Go 1.26.5 in the build stage and a non-root `scratch` runtime
-image containing only the service binary, system CA bundle, and fixed public
-configuration files:
+- `api.health.tellyouwhat.cn` → `health`
+- `api.journal.tellyouwhat.cn` → `journal`
 
-```sh
-docker build --build-arg SERVICE=gateway -t health-ai-gateway .
-docker build --build-arg SERVICE=worker -t health-ai-worker .
-docker build --build-arg SERVICE=migrate -t health-ai-migrate .
-docker build --build-arg SERVICE=maintenance -t health-ai-maintenance .
-docker build --build-arg SERVICE=admin -t health-ai-admin .
-docker build --build-arg SERVICE=adminctl -t health-ai-adminctl .
-```
+请求体、Header 和 Prompt 都不允许声明 `app_id`。未知 Host 返回 `421`，操作命名空间与 App 不匹配返回 `422`。
 
-The image includes Apple's public App Attestation Root CA and the release schema manifest at fixed read-only `/config` paths, with `APP_ATTEST_ROOT_PEM_PATH` and `SCHEMA_MANIFEST_PATH` defaulted accordingly. The certificate comes from Apple's [Private PKI repository](https://www.apple.com/certificateauthority/private/). Replace `deploy/schema-manifest.json` with the Swift golden release manifest before building a deployable image; do not inject either public file through a secret environment variable.
+共享的平台能力包括：
 
-## Security contract
+- App Attest 注册、断言验证和防重放；
+- App Store 交易、权益、Offer 兑换、版本化隐私同意；
+- 幂等、限流、token 配额、加密异步任务、临时媒体和用量记账；
+- 通行密钥管理后台与按 App 切换的 Offer 管理。
 
-Protected calls bind the App Attest assertion to:
+所有持久表和 Redis key 都以 `app_id` 分区。App Attest 的 Team ID、Bundle ID，App Store 的 App Apple ID、订阅产品，火山方舟密钥、模型路由和配额按 App 独立配置。共享基础设施不等于共享数据或密钥。
+
+## AI 接口
+
+管理型 AI 只提供固定业务操作，不提供“任意 Prompt + 任意模型”代理。通用路径是：
 
 ```text
-UPPERCASE_HTTP_METHOD
-ESCAPED_PATH
-REQUEST_ID
-ONE_TIME_NONCE
-RFC3339_TIMESTAMP
-LOWERCASE_BODY_SHA256
+POST /v1/ai/operations/{operation}/responses
 ```
 
-The server validates the Apple certificate chain, Team ID and Bundle ID RP hash, Development or Production AAGUID, attestation nonce extension, key ID, assertion signature, monotonic counter, five-minute timestamp window, and one-time Redis nonce. Reused nonces or counters return `409`.
+Health 仍由 Swift 根据业务状态组装 Prompt，但只能提交代码登记的 `health.*` 操作、Prompt 版本和 JSON Schema；模型、供应商密钥和工具仍由服务端选择。Health 的 BYOK 模式不经过本后端，用户密钥不上传。
 
-The request decoder rejects unknown JSON fields. There is no field for a provider URL, API key, model, headers, or arbitrary tools. Each operation has a fixed current/previous Prompt version, media policy, output limit, and Ark endpoint configured through `ARK_ENDPOINT_<OPERATION>`.
+Journal 只提供 `journal.organize`。App 上传标题、正文、现有/已拒绝标签与手记册上下文；服务端用版本化 Prompt 和严格 JSON Schema 请求火山方舟 Responses API，返回最多 8 个标签、3 个已有手记册推荐和 2 个新手记册建议。客户端不能提交 Prompt、model、provider URL、API key、Header 或 tools。
 
-`SCHEMA_MANIFEST_PATH` points to the checked-in release manifest generated from Swift-owned schemas. It binds canonical schema SHA-256 digests and permitted request options to each operation, contract version, and Prompt version. Swift and Go tests compare this exact file before release. A gateway refuses to start when either supported Prompt version is missing.
+## 运行单元
 
-`GET /v1/ai/quota` is App Attest- and entitlement-protected and returns the current transaction's daily and monthly token use and limits. It never exposes other devices or subscription transactions.
+- `cmd/gateway`：公开 API，先按 Host 选 App，再进入独立运行时。
+- `cmd/worker`：Health 的加密异步 AI 任务；内部请求同时绑定 App ID 和 Job ID。
+- `cmd/admin`：共用通行密钥登录，按 App 选择 App Store Connect 资源。
+- `cmd/adminctl`：生成首个管理员的短期设置链接。
+- `cmd/migrate`：干净的 MySQL 8.4 基线 schema，直接包含 Health 和 Journal App 注册项。
+- `cmd/maintenance`：全平台的保留期清理。
 
-`GET /v1/products/managed-ai` is the public machine-readable description of the monthly product, configured quota ceilings, provider disclosure, temporary-data retention, and canonical legal/support links. The localized price remains StoreKit-owned and is never hard-coded by the backend.
-
-`POST /v1/privacy/consents` is App Attest-protected and accepts only the published consent scopes and document versions. `DELETE /v1/privacy/data` deletes all temporary TOS objects, Redis identity/quota state, consent records, encrypted jobs, media metadata, usage, entitlement, and App Attest identity attached to the caller. When an Apple original transaction is bound, deletion covers every registered device bound to that transaction. The client must re-enroll App Attest before any later managed-AI use.
-
-Background uploads first call `/v1/ai/job-capabilities` with a normal App Attest assertion. The returned HMAC capability is bound to the server-generated job ID, request ID, operation, full body digest, media digest, and attested principal. Its Job ID, nonce, and expiry are deterministically derived from the durable admission record, so a lost `201` can be retried with a fresh App Attest assertion and returns the exact same capability without consuming media or token quota twice. `/v1/ai/jobs` validates it through `Authorization: JobCapability <token>` and `X-Health-Job-ID`, transactionally creates the Job/outbox, and only then records the capability nonce as used. A failed Job transaction therefore does not burn the retry credential; replays after a committed transaction can only return the same digest-bound Job. Its lifetime never exceeds 24 hours. This lets background `URLSession` upload without persisting a reusable App Attest assertion.
-
-Sensitive prompts and results for background jobs are encrypted with AES-256-GCM before MySQL storage, with the job ID as associated data. Job creation and its dispatch outbox entry share one InnoDB transaction. Worker claims have a two-minute lease renewed every 30 seconds; terminal writes are fenced by the claimed attempt number, stale claims are redispatched, and provider attempts stop after three failures. Losing the fenced lease cancels the older Ark request. Logs contain method, path, status, latency, and request ID only. They never contain request/response bodies, prompts, media, credentials, or health data.
-
-## Storage
-
-- MySQL 8.4/InnoDB: registered App Attest keys, entitlements, encrypted jobs, durable dispatch outbox, idempotent usage ledger, and immutable single-use media authorizations.
-- Redis: one-time assertion/capability nonces and atomic distributed request/token/concurrency quotas.
-- TOS: `ai-temp/<device>/<request>/<media>` objects. PUT URLs sign content type, size, and SHA-256 and expire after ten minutes. The gateway persists the same owner, operation, request, MIME, size, and digest, then consumes every object in a request atomically when issuing the AI request or Job Capability. Ark GET URLs expire after fifteen minutes. Successful requests delete objects best-effort; the bucket must also enforce a maximum 24-hour lifecycle rule.
-
-Run maintenance daily. Expired media metadata, terminal encrypted jobs, and idempotency records are removed at expiry without an additional grace period. Request usage and verified App Store notification records have a 400-day maximum. Expired entitlements and inactive App Attest identities are removed after 30 days. An authenticated deletion request overrides every retention maximum and deletes immediately.
-
-`STORAGE_MODE=memory` exists only for local development. Production startup rejects it.
-
-## Local infrastructure
-
-`compose.yaml` starts MySQL 8.4 and Redis bound to localhost. Configure secrets in an untracked environment file; never commit real values.
+## 本地运行
 
 ```sh
+cp .env.example .env.local
 docker compose up -d mysql redis
+set -a; source .env.local; set +a
 go run ./cmd/migrate
 go run ./cmd/gateway
 ```
 
-The development gateway still requires a real Development App Attest assertion, an allowed build number, and the rotating activation secret. It does not offer an unattested bypass.
+本地请求仍必须使用真实 Development App Attest。因为 Host 是安全边界，直连 localhost 时需显式传入目标 Host；不存在未鉴权调试后门。
 
-## Production App Store entitlement
+## 单服务器部署
 
-Release builds send StoreKit's locally verified transaction `jwsRepresentation` through the App Attest-protected `POST /v1/entitlements/transactions` route. The gateway independently verifies Apple's ES256 signature and three-certificate `x5c` chain, checks the receipt-signer and WWDR certificate OIDs, Bundle ID, environment, and fixed monthly product, then calls Get All Subscription Statuses. Only status `1` (active) and status `4` with a separately verified, unexpired Billing Grace Period grant access. The original transaction is permanently bound to the App Attest key before the entitlement becomes usable; later AI requests therefore share transaction-level quota across that subscription's registered devices.
+`compose.production.yaml` 在同一 Docker network 运行 Caddy、gateway、worker 和 admin。Caddy 同时代理 Health API、Journal API 和共享管理域名，只对外开放 80/443；应用端口不互相冲突，也不需要第二台 ECS。
 
-`POST /v1/app-store/notifications` is the public App Store Server Notifications V2 endpoint. It does not use App Attest because Apple is the caller. Instead, it verifies the outer Apple JWS and nested transaction/renewal JWS, refreshes current state through App Store Server API, and applies the result to every registered device bound to that original transaction. MySQL records `notificationUUID` in the same InnoDB transaction as the entitlement update, so Apple retries return `200` without applying the mutation twice.
+部署顺序：先运行 `migrate`，再更新 gateway/worker/admin，最后验证两个 API Host 的 `/readyz`。App Store Server Notifications 必须分别指向两个 App 域名下的 `/v1/app-store/notifications`。
 
-Production startup requires:
-
-- `APP_STORE_ENV=Both` so one endpoint can verify Production and Sandbox signed data without trusting the submitted environment;
-- App Store Connect In-App Purchase issuer ID, key ID, App Apple ID, and a read-only mounted `.p8` key;
-- a read-only PEM bundle containing the Apple public root certificates downloaded from Apple PKI;
-- App Store Connect Production and Sandbox Notifications V2 URLs both pointed at `/v1/app-store/notifications`.
-
-Apple's official App Store Server Library is available for Swift, Java, Python, and Node.js, not Go. This backend therefore owns a deliberately narrow Go implementation of the required ES256/x5c verification and Get All Subscription Statuses call instead of importing a general third-party IAP library. Keep its golden certificate/JWS tests and Apple contract review in the release gate.
-
-## Recommended production topology
-
-The first production release uses one Tencent Cloud Lighthouse instance in
-Guangzhou for Caddy, gateway, and worker. A private TDSQL-C MySQL cluster and a
-private TencentDB for Redis instance run in `health-vpc`; same-region CCN joins
-the Lighthouse VPC to that VPC. Only Caddy publishes ports. TOS stores temporary
-media and Ark runs the fixed model endpoints.
-
-Use [`deploy/tencent/README.md`](deploy/tencent/README.md) and
-`compose.production.yaml`. The production API hostname is
-`api.health.tellyouwhat.cn`; `health.tellyouwhat.cn` is reserved for the public
-product, privacy, terms, and support pages.
-
-Run `cmd/migrate` before switching traffic to a new gateway image and run `cmd/maintenance` daily. Publish the server contract manifest before releasing an app that uses a new Prompt version.
-
-## Validation
+## 验证
 
 ```sh
 go test ./...
 go test -race ./...
 go vet ./...
-staticcheck ./...
-govulncheck ./...
 ```
 
-The repository tests cover contract allowlists, current/previous version handling, 426 responses, generic-proxy field rejection, body and media limits, App Attest chain/assertion primitives, nonce/counter replay, entitlement expiry, quota dimensions, encrypted job payloads, Ark route ownership, SSE framing, job idempotency, and worker result persistence.
-
-Live acceptance still requires cloud resources and a physical iPhone: real App Attest registration/assertions, TOS PUT/cleanup, Ark sync/SSE, worker delivery, StoreKit Sandbox and Production notification verification, restart recovery, and HTTPS streaming cannot be proven by local unit tests.
-
-Production does not expose `/v1/dev/entitlements/activate`; development does not expose the production transaction and notification processors because those dependencies are injected only for their matching environment.
+本地测试覆盖 Host/操作隔离、App Attest、权益、同意、配额、严格合约、Journal Responses API 结构化输出、幂等任务、数据分区和管理预览的跨 App 绑定。真实 App Attest、StoreKit Sandbox、TOS、方舟模型和 HTTPS 流式输出仍需要云端密钥与真机验收。

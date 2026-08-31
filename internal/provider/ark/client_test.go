@@ -177,4 +177,3 @@ func validArkRequest() contracts.Request {
 		SemanticSignature: "sha256:abc",
 	}
 }
-

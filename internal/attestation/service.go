@@ -35,12 +35,14 @@ type RequestProof struct {
 }
 
 type Principal struct {
+	AppID         string
 	KeyID         string
 	DeviceID      string
 	TransactionID string
 }
 
 type RegisteredKey struct {
+	AppID         string
 	KeyID         string
 	DeviceID      string
 	TransactionID string
@@ -154,6 +156,7 @@ func (service *Service) Authenticate(ctx context.Context, proof RequestProof) (P
 		return Principal{}, fmt.Errorf("%w: advance assertion counter: %v", ErrUnavailable, err)
 	}
 	return Principal{
+		AppID:         key.AppID,
 		KeyID:         key.KeyID,
 		DeviceID:      key.DeviceID,
 		TransactionID: key.TransactionID,
@@ -174,4 +177,3 @@ func decodeBase64(value string) ([]byte, error) {
 	}
 	return nil, ErrAuthentication
 }
-

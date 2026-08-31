@@ -10,10 +10,13 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 )
 
-type NonceStore struct{ client *redis.Client }
+type NonceStore struct {
+	client *redis.Client
+	prefix string
+}
 
-func NewNonceStore(client *redis.Client) *NonceStore {
-	return &NonceStore{client: client}
+func NewNonceStore(client *redis.Client, appID string) *NonceStore {
+	return &NonceStore{client: client, prefix: "platform:" + appID + ":"}
 }
 
 func (store *NonceStore) Issue(
@@ -27,7 +30,7 @@ func (store *NonceStore) Issue(
 		return "", err
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(random)
-	if err := store.client.Set(ctx, "health:attest:nonce:"+nonce, keyID, ttl).Err(); err != nil {
+	if err := store.client.Set(ctx, store.prefix+"attest:nonce:"+nonce, keyID, ttl).Err(); err != nil {
 		return "", err
 	}
 	return nonce, nil
@@ -59,7 +62,7 @@ func (store *NonceStore) Consume(
 	result, err := consumeNonceScript.Run(
 		ctx,
 		store.client,
-		[]string{"health:attest:nonce:" + nonce},
+		[]string{store.prefix + "attest:nonce:" + nonce},
 		keyID,
 	).Int()
 	if err != nil {
@@ -76,4 +79,3 @@ func (store *NonceStore) Consume(
 }
 
 var _ attestation.NonceStore = (*NonceStore)(nil)
-

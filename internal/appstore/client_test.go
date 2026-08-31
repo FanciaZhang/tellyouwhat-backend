@@ -161,4 +161,3 @@ func verifyTestJWTSignature(t *testing.T, publicKey *ecdsa.PublicKey, segments [
 		t.Fatal("bearer JWT signature did not verify")
 	}
 }
-

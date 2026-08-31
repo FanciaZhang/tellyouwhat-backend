@@ -55,7 +55,7 @@ func (service *Service) Authorize(
 	principal attestation.Principal,
 	request UploadRequest,
 ) (UploadAuthorization, error) {
-	if service == nil || service.presigner == nil || service.registry == nil || principal.KeyID == "" || !pathSegmentPattern.MatchString(principal.DeviceID) ||
+	if service == nil || service.presigner == nil || service.registry == nil || principal.AppID == "" || !pathSegmentPattern.MatchString(principal.AppID) || principal.KeyID == "" || !pathSegmentPattern.MatchString(principal.DeviceID) ||
 		!contracts.ValidRequestID(request.RequestID) || !pathSegmentPattern.MatchString(request.MediaID) {
 		return UploadAuthorization{}, fmt.Errorf("%w: invalid media scope", contracts.ErrContractViolation)
 	}
@@ -70,7 +70,7 @@ func (service *Service) Authorize(
 	if err := contracts.ValidateMediaForOperation(request.Operation, media); err != nil {
 		return UploadAuthorization{}, err
 	}
-	objectID := fmt.Sprintf("ai-temp/%s/%s/%s", principal.DeviceID, request.RequestID, request.MediaID)
+	objectID := fmt.Sprintf("ai-temp/%s/%s/%s/%s", principal.AppID, principal.DeviceID, request.RequestID, request.MediaID)
 	now := service.now()
 	if err := service.registry.Register(ctx, Record{
 		ObjectID:      objectID,
@@ -188,4 +188,3 @@ func (service *Service) Admit(
 		CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour),
 	}, now)
 }
-

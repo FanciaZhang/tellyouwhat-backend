@@ -286,4 +286,3 @@ func (fixedJobProvider) Complete(context.Context, contracts.Request) (providerap
 func (fixedJobProvider) Stream(context.Context, contracts.Request, func(providerapi.StreamEvent) error) error {
 	return errors.New("not used")
 }
-

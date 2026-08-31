@@ -124,7 +124,7 @@ func TestManifestValidatesStructuredMealSchema(t *testing.T) {
 func TestStructuredManifestEntryRequiresEmptyDigests(t *testing.T) {
 	t.Parallel()
 
-	raw := `{"entries":[{"operation":"meal_photo_capture","contractVersion":"ai-request-v1","promptVersion":"meal-photo-v5","schemaPolicy":"structured","schemaSHA256":["cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"],"maxTemperature":1,"allowedReasoningEfforts":[""],"allowStream":true,"allowWebSearch":false}]}`
+	raw := `{"entries":[{"operation":"health.meal.photo-capture","contractVersion":"ai-request-v1","promptVersion":"meal-photo-v5","schemaPolicy":"structured","schemaSHA256":["cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"],"maxTemperature":1,"allowedReasoningEfforts":[""],"allowStream":true,"allowWebSearch":false}]}`
 	if _, err := ParseManifest([]byte(raw)); err == nil {
 		t.Fatal("structured entry with digests must be rejected")
 	}

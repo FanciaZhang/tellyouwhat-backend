@@ -73,4 +73,3 @@ func TestAppleAssertionVerifierRejectsTamperedClientDataHash(t *testing.T) {
 		t.Fatal("tampered request hash must be rejected")
 	}
 }
-

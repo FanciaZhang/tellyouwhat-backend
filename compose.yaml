@@ -2,19 +2,19 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_DATABASE: health_ai
-      MYSQL_USER: health_ai
+      MYSQL_DATABASE: tellyouwhat
+      MYSQL_USER: tellyouwhat
       MYSQL_PASSWORD: local-only-password
       MYSQL_ROOT_PASSWORD: local-only-root-password
     ports:
       - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=local-only-password mysqladmin ping -h 127.0.0.1 -u health_ai --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=local-only-password mysqladmin ping -h 127.0.0.1 -u tellyouwhat --silent"]
       interval: 3s
       timeout: 3s
       retries: 20
     volumes:
-      - health-ai-mysql:/var/lib/mysql
+      - tellyouwhat-mysql:/var/lib/mysql
 
   redis:
     image: redis:8-alpine
@@ -27,8 +27,8 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - health-ai-redis:/data
+      - tellyouwhat-redis:/data
 
 volumes:
-  health-ai-mysql:
-  health-ai-redis:
+  tellyouwhat-mysql:
+  tellyouwhat-redis:

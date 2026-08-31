@@ -59,24 +59,30 @@ func run() error {
 		adminauth.NewRedisStateStore(redisClient),
 		adminauth.Config{
 			RPID: configuration.rpID, Origin: configuration.origin,
-			DisplayName: "告你健康管理后台", CookieSecure: configuration.cookieSecure,
+			DisplayName: "Tellyouwhat 管理后台", CookieSecure: configuration.cookieSecure,
 		},
 		time.Now,
 	)
 	if err != nil {
 		return err
 	}
-	offerClient, err := appstoreconnect.NewClient(appstoreconnect.Config{
-		BaseURL: configuration.appStoreBaseURL, IssuerID: configuration.appStoreIssuerID,
-		KeyID: configuration.appStoreKeyID, SubscriptionID: configuration.subscriptionID,
-		SigningKey: configuration.appStoreKey,
-	})
-	if err != nil {
-		return err
+	offerClients := make(map[string]adminportal.OfferManager, len(configuration.apps))
+	adminApps := make([]adminportal.AdminApp, 0, len(configuration.apps))
+	for _, app := range configuration.apps {
+		client, err := appstoreconnect.NewClient(appstoreconnect.Config{
+			BaseURL: app.baseURL, IssuerID: app.issuerID, KeyID: app.keyID,
+			SubscriptionID: app.subscriptionID, SigningKey: app.signingKey,
+		})
+		if err != nil {
+			return fmt.Errorf("configure App Store Connect for %s: %w", app.id, err)
+		}
+		offerClients[app.id] = client
+		adminApps = append(adminApps, adminportal.AdminApp{ID: app.id, DisplayName: app.displayName})
 	}
-	portal, err := adminportal.NewServer(authentication, offerClient, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
+	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		PreviewSigningKey: configuration.previewSigningKey,
 		WritesEnabled:     configuration.writesEnabled,
+		Apps:              adminApps,
 	}, time.Now)
 	if err != nil {
 		return err
@@ -105,45 +111,64 @@ func run() error {
 type config struct {
 	port, databaseDSN, redisURL, rpID, origin string
 	cookieSecure                              bool
-	appStoreBaseURL, appStoreIssuerID         string
-	appStoreKeyID, subscriptionID             string
-	appStoreKey                               *ecdsa.PrivateKey
+	apps                                      []adminAppConfig
 	previewSigningKey                         []byte
 	writesEnabled                             bool
 }
 
+type adminAppConfig struct {
+	id, displayName, baseURL, issuerID, keyID, subscriptionID string
+	signingKey                                                *ecdsa.PrivateKey
+}
+
 func loadConfig() (config, error) {
-	privateKeyPath := strings.TrimSpace(os.Getenv("APP_STORE_CONNECT_PRIVATE_KEY_PATH"))
-	privateKeyPEM, err := os.ReadFile(privateKeyPath)
-	if err != nil {
-		return config{}, fmt.Errorf("read App Store Connect private key: %w", err)
-	}
-	privateKey, err := appstore.ParseSigningKeyPEM(privateKeyPEM)
-	if err != nil {
-		return config{}, errors.New("APP_STORE_CONNECT_PRIVATE_KEY_PATH is not a valid P-256 private key")
-	}
 	previewSigningKey, err := base64.RawStdEncoding.DecodeString(strings.TrimSpace(os.Getenv("ADMIN_PREVIEW_SIGNING_KEY")))
 	if err != nil || len(previewSigningKey) < 32 {
 		return config{}, errors.New("ADMIN_PREVIEW_SIGNING_KEY must be at least 32 random bytes encoded as unpadded base64")
 	}
 	configuration := config{
 		port: value("ADMIN_PORT", "8082"), databaseDSN: os.Getenv("DATABASE_DSN"), redisURL: os.Getenv("REDIS_URL"),
-		rpID:              value("ADMIN_RP_ID", "admin.health.tellyouwhat.cn"),
-		origin:            value("ADMIN_ORIGIN", "https://admin.health.tellyouwhat.cn"),
+		rpID:              value("ADMIN_RP_ID", "admin.tellyouwhat.cn"),
+		origin:            value("ADMIN_ORIGIN", "https://admin.tellyouwhat.cn"),
 		cookieSecure:      !strings.EqualFold(os.Getenv("ADMIN_COOKIE_SECURE"), "false"),
-		appStoreBaseURL:   value("APP_STORE_CONNECT_BASE_URL", "https://api.appstoreconnect.apple.com"),
-		appStoreIssuerID:  os.Getenv("APP_STORE_CONNECT_ISSUER_ID"),
-		appStoreKeyID:     os.Getenv("APP_STORE_CONNECT_KEY_ID"),
-		subscriptionID:    os.Getenv("APP_STORE_CONNECT_SUBSCRIPTION_ID"),
-		appStoreKey:       privateKey,
 		previewSigningKey: previewSigningKey,
 		writesEnabled:     strings.EqualFold(os.Getenv("ADMIN_WRITES_ENABLED"), "true"),
 	}
-	if _, err := mysql.ParseDSN(configuration.databaseDSN); err != nil || configuration.redisURL == "" ||
-		configuration.appStoreIssuerID == "" || configuration.appStoreKeyID == "" || configuration.subscriptionID == "" {
-		return config{}, errors.New("admin database, Redis, and App Store Connect configuration are required")
+	if _, err := mysql.ParseDSN(configuration.databaseDSN); err != nil || configuration.redisURL == "" {
+		return config{}, errors.New("admin database and Redis configuration are required")
+	}
+	for _, definition := range []struct{ prefix, id, name string }{
+		{"HEALTH", "health", "告你健康"}, {"JOURNAL", "journal", "告你手记"},
+	} {
+		app, err := loadAdminApp(definition.prefix, definition.id, definition.name)
+		if err != nil {
+			return config{}, err
+		}
+		configuration.apps = append(configuration.apps, app)
 	}
 	return configuration, nil
+}
+
+func loadAdminApp(prefix, id, displayName string) (adminAppConfig, error) {
+	read := func(key string) string { return strings.TrimSpace(os.Getenv(prefix + "_" + key)) }
+	privateKeyPEM, err := os.ReadFile(read("APP_STORE_CONNECT_PRIVATE_KEY_PATH"))
+	if err != nil {
+		return adminAppConfig{}, fmt.Errorf("read %s App Store Connect private key: %w", id, err)
+	}
+	privateKey, err := appstore.ParseSigningKeyPEM(privateKeyPEM)
+	if err != nil {
+		return adminAppConfig{}, fmt.Errorf("%s App Store Connect key is not a valid P-256 private key", id)
+	}
+	app := adminAppConfig{
+		id: id, displayName: displayName,
+		baseURL:  value(prefix+"_APP_STORE_CONNECT_BASE_URL", "https://api.appstoreconnect.apple.com"),
+		issuerID: read("APP_STORE_CONNECT_ISSUER_ID"), keyID: read("APP_STORE_CONNECT_KEY_ID"),
+		subscriptionID: read("APP_STORE_CONNECT_SUBSCRIPTION_ID"), signingKey: privateKey,
+	}
+	if app.issuerID == "" || app.keyID == "" || app.subscriptionID == "" {
+		return adminAppConfig{}, fmt.Errorf("%s App Store Connect configuration is required", id)
+	}
+	return app, nil
 }
 
 func value(key string, fallback string) string {

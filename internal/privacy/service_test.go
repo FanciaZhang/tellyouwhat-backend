@@ -29,6 +29,36 @@ func TestRecordConsentsRequiresKnownVersionedScopes(t *testing.T) {
 	}
 }
 
+func TestRequiredConsentsMustAllBeExplicitlyGranted(t *testing.T) {
+	t.Parallel()
+	repository := NewMemoryRepository()
+	service := NewService(repository, noopObjectCleaner{}, nil, time.Now)
+	principal := attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1"}
+	if _, err := service.RecordConsents(context.Background(), principal, []Consent{
+		{Scope: ManagedAIScope, DocumentVersion: AIDocumentVersion, Granted: true},
+		{Scope: SensitiveHealthScope, DocumentVersion: AIDocumentVersion, Granted: false},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	granted, err := service.HasRequiredConsents(
+		context.Background(), principal, []string{ManagedAIScope, SensitiveHealthScope},
+	)
+	if err != nil || granted {
+		t.Fatalf("expected sensitive AI consent to be denied: granted=%v err=%v", granted, err)
+	}
+	if _, err := service.RecordConsents(context.Background(), principal, []Consent{
+		{Scope: SensitiveHealthScope, DocumentVersion: AIDocumentVersion, Granted: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	granted, err = service.HasRequiredConsents(
+		context.Background(), principal, []string{ManagedAIScope, SensitiveHealthScope},
+	)
+	if err != nil || !granted {
+		t.Fatalf("expected both consents to be granted: granted=%v err=%v", granted, err)
+	}
+}
+
 type noopObjectCleaner struct{}
 
 func (noopObjectCleaner) DeleteObject(context.Context, string) error { return nil }

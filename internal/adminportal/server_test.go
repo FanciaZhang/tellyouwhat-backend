@@ -12,17 +12,20 @@ func TestPreviewTokenBindsDraftAndExpires(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	server := &Server{now: func() time.Time { return now }, config: Config{PreviewSigningKey: []byte("01234567890123456789012345678901")}}
 	draft := appstoreconnect.OfferDraft{Name: "朋友体验", Duration: "ONE_MONTH", CustomerEligibilities: []string{"NEW"}}
-	token, _, err := server.signPreview(draft)
-	if err != nil || !server.verifyPreview(draft, token) {
+	token, _, err := server.signPreview("health", draft)
+	if err != nil || !server.verifyPreview("health", draft, token) {
 		t.Fatalf("valid token failed: %v", err)
 	}
 	changed := draft
 	changed.Duration = "ONE_YEAR"
-	if server.verifyPreview(changed, token) {
+	if server.verifyPreview("health", changed, token) {
 		t.Fatal("token accepted a changed draft")
 	}
+	if server.verifyPreview("journal", draft, token) {
+		t.Fatal("token crossed application boundary")
+	}
 	now = now.Add(10 * time.Minute)
-	if server.verifyPreview(draft, token) {
+	if server.verifyPreview("health", draft, token) {
 		t.Fatal("expired token was accepted")
 	}
 }

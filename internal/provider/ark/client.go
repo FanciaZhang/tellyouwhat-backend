@@ -216,7 +216,7 @@ func (client *Client) makeRequest(
 		"text": map[string]any{
 			"format": map[string]any{
 				"type":   "json_schema",
-				"name":   string(request.Operation),
+				"name":   schemaName(request.Operation),
 				"strict": true,
 				"schema": schema,
 			},
@@ -263,6 +263,10 @@ func (client *Client) makeRequest(
 	return httpRequest, cancel, nil
 }
 
+func schemaName(operation contracts.Operation) string {
+	return strings.NewReplacer(".", "_", "-", "_").Replace(string(operation))
+}
+
 func parseResponse(body []byte) (providerapi.Response, error) {
 	var value struct {
 		OutputText string `json:"output_text"`
@@ -303,4 +307,3 @@ func parseResponse(body []byte) (providerapi.Response, error) {
 }
 
 var _ providerapi.Client = (*Client)(nil)
-

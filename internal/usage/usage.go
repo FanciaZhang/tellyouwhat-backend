@@ -40,4 +40,3 @@ func (recorder *MemoryRecorder) Record(_ context.Context, record Record) error {
 	recorder.mu.Unlock()
 	return nil
 }
-

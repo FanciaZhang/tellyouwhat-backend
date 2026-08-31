@@ -24,7 +24,7 @@ func TestAuthenticateBindsAssertionToBodyAndAdvancesCounter(t *testing.T) {
 
 	principal, err := service.Authenticate(context.Background(), RequestProof{
 		Method:     "POST",
-		Path:       "/v1/ai/requests",
+		Path:       "/v1/ai/operations/health.meal.text-capture/responses",
 		RequestID:  "request-1",
 		KeyID:      "key-1",
 		Assertion:  base64.StdEncoding.EncodeToString([]byte("assertion")),
@@ -118,7 +118,7 @@ func TestAuthenticatePreservesKeyStoreInfrastructureFailure(t *testing.T) {
 func validProof(now time.Time, nonce string) RequestProof {
 	return RequestProof{
 		Method:     "POST",
-		Path:       "/v1/ai/requests",
+		Path:       "/v1/ai/operations/health.meal.text-capture/responses",
 		RequestID:  "request-1",
 		KeyID:      "key-1",
 		Assertion:  base64.StdEncoding.EncodeToString([]byte("assertion")),

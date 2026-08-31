@@ -165,4 +165,3 @@ func attestationCertificateNonce(certificate *x509.Certificate) ([]byte, error) 
 	}
 	return nil, errors.New("app attest nonce extension missing")
 }
-

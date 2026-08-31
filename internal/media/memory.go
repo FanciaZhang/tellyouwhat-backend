@@ -73,4 +73,3 @@ func sameAuthorization(left, right Record) bool {
 		left.Kind == right.Kind && left.MIMEType == right.MIMEType && left.SHA256 == right.SHA256 &&
 		left.SizeBytes == right.SizeBytes
 }
-

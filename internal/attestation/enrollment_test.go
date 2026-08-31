@@ -16,6 +16,7 @@ func TestDevelopmentEnrollmentConsumesChallengeAndPinsVerifiedKey(t *testing.T) 
 	keys := NewMemoryKeyStore()
 	verifier := &fakeAttestationObjectVerifier{}
 	enrollment := NewEnrollmentService(EnrollmentConfig{
+		AppID:             "health",
 		Environment:       EnvironmentDevelopment,
 		DevelopmentSecret: "rotate-me",
 		AllowedBuilds:     map[string]struct{}{"100": {}},
@@ -52,4 +53,3 @@ func (verifier *fakeAttestationObjectVerifier) Verify(_ string, _ []byte, client
 	verifier.clientDataHash = append([]byte(nil), clientDataHash...)
 	return VerifiedAttestation{PublicKey: []byte("verified-public-key"), Receipt: []byte("receipt")}, nil
 }
-

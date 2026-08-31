@@ -67,7 +67,7 @@ func (service *Service) Issue(principal attestation.Principal, binding Binding) 
 }
 
 func (service *Service) IssueAt(principal attestation.Principal, binding Binding, issuedAt time.Time) (Issued, error) {
-	if service == nil || len(service.secret) < 32 || service.uses == nil || principal.KeyID == "" || principal.DeviceID == "" {
+	if service == nil || len(service.secret) < 32 || service.uses == nil || principal.AppID == "" || principal.KeyID == "" || principal.DeviceID == "" {
 		return Issued{}, ErrInvalid
 	}
 	if !validBinding(binding, false) {
@@ -156,7 +156,7 @@ func (service *Service) validate(token string, expected Binding) (claims, time.T
 }
 
 func validClaims(value claims) bool {
-	return value.Principal.KeyID != "" && value.Principal.DeviceID != "" && value.Nonce != "" && validBinding(value.Binding, true)
+	return value.Principal.AppID != "" && value.Principal.KeyID != "" && value.Principal.DeviceID != "" && value.Nonce != "" && validBinding(value.Binding, true)
 }
 
 func validBinding(value Binding, requireJobID bool) bool {
@@ -217,4 +217,3 @@ func (service *Service) derivedIdentifier(label string, principal attestation.Pr
 	}
 	return string(hex[0:8]) + "-" + string(hex[8:12]) + "-" + string(hex[12:16]) + "-" + string(hex[16:20]) + "-" + string(hex[20:32]), nil
 }
-

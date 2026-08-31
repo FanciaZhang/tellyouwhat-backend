@@ -1,7 +1,7 @@
 {
   "request": {
     "requestID": "19be2f9e-bd92-4699-b561-e3816092114c",
-    "operation": "meal_text_capture",
+    "operation": "health.meal.text-capture",
     "contractVersion": "ai-request-v1",
     "promptVersion": "meal-text-v4",
     "prompt": "记录了一碗面",
@@ -25,7 +25,7 @@
     "media": [],
     "semanticSignature": "sha256:test"
   },
-    "expectedCanonicalBodySHA256": "745e65788f32b713f731ef1f917cad1fda480c1d86e71a22024d84da9c87e989",
+    "expectedCanonicalBodySHA256": "525445cdaeabaa62c7dd53f499514f8f730db5263735a58a0517167c69d4c096",
   "upgradeRequiredError": {
     "status": 426,
     "body": {
@@ -37,4 +37,3 @@
     }
   }
 }
-

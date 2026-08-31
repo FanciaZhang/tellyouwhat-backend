@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>告你健康 · Offer 管理</title>
+  <title>Tellyouwhat · Offer 管理</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
-      <div><p class="eyebrow">告你健康</p><h1>Offer 管理</h1></div>
+      <div><p class="eyebrow">Tellyouwhat</p><h1>Offer 管理</h1></div>
       <button id="logout" class="quiet hidden">退出</button>
     </header>
     <section id="notice" class="notice hidden" role="status" aria-live="polite"></section>
@@ -41,6 +41,7 @@
     </section>
 
     <section id="dashboard" class="hidden">
+	  <label class="app-picker">App<select id="app-picker" aria-label="选择 App"></select></label>
       <div class="summary-grid">
         <article class="card metric"><span>启用中的 Offer</span><strong id="active-count">—</strong><small>Apple 上限 <span id="active-limit">—</span></small></article>
         <article class="card metric"><span>正式环境兑换</span><strong id="redemption-count">—</strong><small>仅匿名汇总，不保存邀请码</small></article>

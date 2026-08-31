@@ -15,7 +15,7 @@ type OfferMetric struct {
 }
 
 type MetricsReader interface {
-	OfferMetrics(context.Context) ([]OfferMetric, error)
+	OfferMetrics(context.Context, string) ([]OfferMetric, error)
 }
 
 type MySQLMetricsReader struct{ database *sql.DB }
@@ -24,12 +24,13 @@ func NewMySQLMetricsReader(database *sql.DB) *MySQLMetricsReader {
 	return &MySQLMetricsReader{database: database}
 }
 
-func (reader *MySQLMetricsReader) OfferMetrics(ctx context.Context) ([]OfferMetric, error) {
+func (reader *MySQLMetricsReader) OfferMetrics(ctx context.Context, appID string) ([]OfferMetric, error) {
 	rows, err := reader.database.QueryContext(ctx, `
 		SELECT offer_identifier, environment, COUNT(*), COUNT(DISTINCT original_transaction_hash), MAX(redeemed_at)
 		FROM app_store_offer_redemptions
+		WHERE app_id = ?
 		GROUP BY offer_identifier, environment
-		ORDER BY MAX(redeemed_at) DESC`)
+		ORDER BY MAX(redeemed_at) DESC`, appID)
 	if err != nil {
 		return nil, err
 	}

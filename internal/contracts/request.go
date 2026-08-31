@@ -24,13 +24,13 @@ var (
 type Operation string
 
 const (
-	OperationVoiceTranscription      Operation = "voice_transcription"
-	OperationMealPhotoCapture        Operation = "meal_photo_capture"
-	OperationMealTextCapture         Operation = "meal_text_capture"
-	OperationMealDecision            Operation = "meal_decision"
-	OperationDietAnalysis            Operation = "diet_analysis"
-	OperationHealthNutritionAnalysis Operation = "health_nutrition_analysis"
-	OperationHealthBehaviorAnalysis  Operation = "health_behavior_analysis"
+	OperationVoiceTranscription      Operation = "health.voice.transcription"
+	OperationMealPhotoCapture        Operation = "health.meal.photo-capture"
+	OperationMealTextCapture         Operation = "health.meal.text-capture"
+	OperationMealDecision            Operation = "health.meal.decision"
+	OperationDietAnalysis            Operation = "health.diet.analysis"
+	OperationHealthNutritionAnalysis Operation = "health.nutrition.analysis"
+	OperationHealthBehaviorAnalysis  Operation = "health.behavior.analysis"
 )
 
 type Request struct {

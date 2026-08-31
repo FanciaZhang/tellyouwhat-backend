@@ -21,4 +21,3 @@ func TestRecoverPanicsReturns500(t *testing.T) {
 		t.Fatalf("expected 500, got %d", response.Code)
 	}
 }
-

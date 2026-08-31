@@ -18,4 +18,3 @@ func Open(ctx context.Context, redisURL string) (*redis.Client, error) {
 	}
 	return client, nil
 }
-

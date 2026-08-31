@@ -29,4 +29,3 @@ func (store *MemoryUseStore) Consume(_ context.Context, nonce string, expiresAt,
 	store.used[nonce] = expiresAt
 	return true, nil
 }
-

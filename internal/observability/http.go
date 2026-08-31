@@ -19,7 +19,7 @@ func RecoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 				logger.ErrorContext(request.Context(), "http handler panic",
 					"panic_type", panicType(value),
 					"stack", string(debug.Stack()),
-					"request_id", request.Header.Get("X-Health-Request-ID"),
+					"request_id", request.Header.Get("X-Tellyouwhat-Request-ID"),
 				)
 				http.Error(writer, "internal server error", http.StatusInternalServerError)
 			}
@@ -60,8 +60,7 @@ func HTTPLogger(logger *slog.Logger, next http.Handler) http.Handler {
 			"path", request.URL.EscapedPath(),
 			"status", captured.status,
 			"duration_ms", time.Since(startedAt).Milliseconds(),
-			"request_id", request.Header.Get("X-Health-Request-ID"),
+			"request_id", request.Header.Get("X-Tellyouwhat-Request-ID"),
 		)
 	})
 }
-

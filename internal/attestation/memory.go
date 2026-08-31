@@ -136,4 +136,3 @@ func (store *MemoryKeyStore) BindTransaction(
 	store.keys[keyID] = key
 	return nil
 }
-

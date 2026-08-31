@@ -14,7 +14,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	quotaapi "github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
@@ -24,13 +27,68 @@ func TestAIRequestRequiresAssertion(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer()
-	request := httptest.NewRequest(http.MethodPost, "/v1/ai/requests", strings.NewReader(validBody()))
+	request := httptest.NewRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", strings.NewReader(validBody()))
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testing.T) {
+	t.Parallel()
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{
+		DailyTokensPerTransaction: 1_000_000, MonthlyTokensPerTransaction: 2_000_000,
+	})
+	organizer := &fakeJournalOrganizer{result: journalprovider.Result{
+		Value: journalcontracts.ModelResult{
+			Tags:                        []journalcontracts.Tag{{Name: "西湖", Type: "place"}},
+			ExistingBookRecommendations: []journalcontracts.ExistingBookRecommendation{{BookID: "book-1", Reason: "记录杭州生活"}},
+		},
+		InputTokens: 120, OutputTokens: 30,
+	}}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
+		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"content-hash","title":"周末","body":"今天去了西湖","existingTags":[],"rejectedTagNames":[],"books":[{"id":"book-1","name":"杭州","description":"城市生活","containsEntry":false}]}`
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
+		!strings.Contains(response.Body.String(), `"bookID":"book-1"`) {
+		t.Fatalf("unexpected journal response: %d %s", response.Code, response.Body.String())
+	}
+	if organizer.request.Body != "今天去了西湖" {
+		t.Fatalf("journal input did not reach fixed organizer: %+v", organizer.request)
+	}
+}
+
+func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1_000_000, MonthlyTokensPerTransaction: 2_000_000})
+	organizer := &fakeJournalOrganizer{}
+	server := New(Dependencies{
+		App:           appregistry.App{ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"}, TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal."},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), JournalOrganizer: organizer,
+		Consent: fakeConsentGate{granted: false}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"hash","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusForbidden || organizer.calls != 0 {
+		t.Fatalf("consent was not enforced: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
 	}
 }
 
@@ -157,7 +215,7 @@ func TestAIRequestMapsAttestationInfrastructureFailureToServiceUnavailable(t *te
 
 	server := newTestServer()
 	server.authenticator = fakeAuthenticator{err: attestation.ErrUnavailable}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
@@ -170,7 +228,7 @@ func TestAIRequestRejectsUnknownVersionAsUpgradeRequired(t *testing.T) {
 
 	server := newTestServer()
 	body := strings.Replace(validBody(), "meal-decision-v10-fresh-exploration", "meal-decision-v999", 1)
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", body)
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -185,7 +243,7 @@ func TestAIRequestRejectsClientSelectedModel(t *testing.T) {
 
 	server := newTestServer()
 	body := strings.Replace(validBody(), `"prompt":"choose dinner"`, `"prompt":"choose dinner","model":"stolen"`, 1)
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", body)
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -200,7 +258,7 @@ func TestAIRequestRejectsSchemaOutsideServerManifest(t *testing.T) {
 
 	server := newTestServer()
 	server.contracts = rejectingContractValidator{}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -215,7 +273,7 @@ func TestAIRequestChecksManagedEntitlement(t *testing.T) {
 
 	server := newTestServer()
 	server.entitlements = fakeEntitlements{allowed: false}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -232,7 +290,7 @@ func TestAIRequestEnforcesQuotaBeforeCallingArk(t *testing.T) {
 	server := newTestServer()
 	server.provider = provider
 	server.quota = fakeQuota{err: ErrQuotaExceeded}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -250,7 +308,7 @@ func TestAIRequestExplainsDailySafetyLimit(t *testing.T) {
 
 	server := newTestServer()
 	server.quota = fakeQuota{err: quotaapi.Exceeded(quotaapi.LimitDailyTokens)}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -267,7 +325,7 @@ func TestAIRequestForwardsOnlyValidatedArtifactToFixedProvider(t *testing.T) {
 	provider := &fakeProvider{}
 	server := newTestServer()
 	server.provider = provider
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -288,7 +346,7 @@ func TestAIRequestDeliversCompletedResultWhenUsageLedgerIsUnavailable(t *testing
 
 	server := newTestServer()
 	server.usage = failingUsageRecorder{}
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody())
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"content":"fixed result"`) {
@@ -303,9 +361,9 @@ func TestAIRequestRejectsRepeatedRequestIDBeforeSecondProviderCost(t *testing.T)
 	server := newTestServer()
 	server.provider = provider
 	first := httptest.NewRecorder()
-	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
+	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody()))
 	second := httptest.NewRecorder()
-	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
+	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", validBody()))
 
 	if first.Code != http.StatusOK || second.Code != http.StatusConflict {
 		t.Fatalf("unexpected statuses: first=%d second=%d (%s)", first.Code, second.Code, second.Body.String())
@@ -319,8 +377,8 @@ func TestAIRequestRejectsMediaOwnedByAnotherDevice(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer()
-	body := strings.Replace(validPhotoBody(), "ai-temp/device-1/", "ai-temp/stolen-device/", 1)
-	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
+	body := strings.Replace(validPhotoBody(), "ai-temp/health/device-1/", "ai-temp/stolen-device/", 1)
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/responses", body)
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -334,7 +392,7 @@ func TestAIStreamUsesSSEAndFlushesDeltas(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer()
-	request := authorizedRequest(http.MethodPost, "/v1/ai/streams", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/streams", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -360,7 +418,7 @@ func TestBackgroundJobDispatchesOnlyServerJobID(t *testing.T) {
 	server.dispatcher = dispatcher
 	request := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
 	request.Header.Set("Authorization", "JobCapability valid-token")
-	request.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	request.Header.Set("X-Tellyouwhat-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -385,7 +443,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 
 	first := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
 	first.Header.Set("Authorization", "JobCapability valid-token")
-	first.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	first.Header.Set("X-Tellyouwhat-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	firstResponse := httptest.NewRecorder()
 	server.ServeHTTP(firstResponse, first)
 	if firstResponse.Code != http.StatusServiceUnavailable {
@@ -397,7 +455,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 
 	second := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
 	second.Header.Set("Authorization", "JobCapability valid-token")
-	second.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	second.Header.Set("X-Tellyouwhat-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	secondResponse := httptest.NewRecorder()
 	server.ServeHTTP(secondResponse, second)
 	if secondResponse.Code != http.StatusAccepted {
@@ -409,7 +467,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 
 	replay := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
 	replay.Header.Set("Authorization", "JobCapability valid-token")
-	replay.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	replay.Header.Set("X-Tellyouwhat-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	replayResponse := httptest.NewRecorder()
 	server.ServeHTTP(replayResponse, replay)
 	if replayResponse.Code != http.StatusAccepted {
@@ -425,7 +483,7 @@ func TestBackgroundJobCapabilityRequiresAppAttestAndBindsArtifact(t *testing.T) 
 	server.dispatcher = &fakeDispatcher{}
 	capabilities := &fakeCapabilities{}
 	server.capabilities = capabilities
-	request := authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody())
+	request := authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/job-capabilities", validBody())
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -452,9 +510,9 @@ func TestBackgroundJobCapabilityCanBeReissuedAfterLostResponse(t *testing.T) {
 	capabilities := &fakeCapabilities{}
 	server.capabilities = capabilities
 	first := httptest.NewRecorder()
-	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/job-capabilities", validBody()))
 	second := httptest.NewRecorder()
-	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/job-capabilities", validBody()))
 	if first.Code != http.StatusCreated || second.Code != http.StatusCreated || first.Body.String() != second.Body.String() {
 		t.Fatalf("lost capability response was not idempotently recoverable: first=%d %s second=%d %s", first.Code, first.Body.String(), second.Code, second.Body.String())
 	}
@@ -475,7 +533,7 @@ func TestCapabilityMediaReplayCannotRefundOwnedQuotaReservation(t *testing.T) {
 	server.media = authorizer
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", body))
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/job-capabilities", body))
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
@@ -499,7 +557,7 @@ func TestCapabilityAdmissionFailureRetainsReservationForConcurrentRetry(t *testi
 	server.media = authorizer
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/health.meal.decision/job-capabilities", validBody()))
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
@@ -515,7 +573,7 @@ func TestMediaAuthorizationRequiresManagedEntitlement(t *testing.T) {
 	server := newTestServer()
 	server.media = newFakeMediaAuthorizer()
 	server.entitlements = fakeEntitlements{allowed: false}
-	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","operation":"meal_photo_capture","mediaID":"photo-1","kind":"image","mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}`
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","operation":"health.meal.photo-capture","mediaID":"photo-1","kind":"image","mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}`
 	request := authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", body)
 	response := httptest.NewRecorder()
 
@@ -533,7 +591,7 @@ func TestMediaAuthorizationMapsStorageOrPresignFailureToServiceUnavailable(t *te
 	mediaService := newFakeMediaAuthorizer()
 	mediaService.authorizeErr = errors.New("tos unavailable")
 	server.media = mediaService
-	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","operation":"meal_photo_capture","mediaID":"photo-1","kind":"image","mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}`
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","operation":"health.meal.photo-capture","mediaID":"photo-1","kind":"image","mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}`
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", body))
 	if response.Code != http.StatusServiceUnavailable {
@@ -579,17 +637,17 @@ func newTestServer() *Server {
 
 func authorizedRequest(method, path, body string) *http.Request {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
-	request.Header.Set("X-Health-Key-ID", "valid-key")
-	request.Header.Set("X-Health-Assertion", "valid-assertion")
-	request.Header.Set("X-Health-Nonce", "valid-nonce")
-	request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
-	request.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	request.Header.Set("X-Tellyouwhat-Key-ID", "valid-key")
+	request.Header.Set("X-Tellyouwhat-Assertion", "valid-assertion")
+	request.Header.Set("X-Tellyouwhat-Nonce", "valid-nonce")
+	request.Header.Set("X-Tellyouwhat-Timestamp", "2026-08-02T08:00:00Z")
+	request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	return request
 }
 
 func validBody() string {
 	return `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c",` +
-		`"operation":"meal_decision",` +
+		`"operation":"health.meal.decision",` +
 		`"contractVersion":"ai-request-v1",` +
 		`"promptVersion":"meal-decision-v10-fresh-exploration",` +
 		`"prompt":"choose dinner",` +
@@ -601,19 +659,22 @@ func validBody() string {
 
 func validPhotoBody() string {
 	return `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c",` +
-		`"operation":"meal_photo_capture",` +
+		`"operation":"health.meal.photo-capture",` +
 		`"contractVersion":"ai-request-v1",` +
 		`"promptVersion":"meal-photo-v4",` +
 		`"prompt":"identify dinner",` +
 		`"responseSchema":{"type":"object","additionalProperties":false},` +
 		`"options":{},` +
 		`"media":[{"id":"photo-1","kind":"image","mimeType":"image/jpeg",` +
-		`"objectID":"ai-temp/device-1/19be2f9e-bd92-4699-b561-e3816092114c/photo-1",` +
+		`"objectID":"ai-temp/health/device-1/19be2f9e-bd92-4699-b561-e3816092114c/photo-1",` +
 		`"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}],` +
 		`"semanticSignature":"sha256:abc"}`
 }
 
-type fakeAuthenticator struct{ err error }
+type fakeAuthenticator struct {
+	err   error
+	appID string
+}
 
 type allowingContractValidator struct{}
 
@@ -627,15 +688,19 @@ func (rejectingContractValidator) Validate(contracts.Request) error {
 
 func (authenticator fakeAuthenticator) Authenticate(_ context.Context, proof RequestProof) (Principal, error) {
 	if authenticator.err != nil {
-		return Principal{}, authenticator.err
+		return Principal{AppID: "health"}, authenticator.err
 	}
 	if proof.KeyID == "" || proof.Assertion == "" || proof.Nonce == "" {
-		return Principal{}, ErrAuthentication
+		return Principal{AppID: "health"}, ErrAuthentication
 	}
 	if proof.RequestID != "19be2f9e-bd92-4699-b561-e3816092114c" {
-		return Principal{}, ErrAuthentication
+		return Principal{AppID: "health"}, ErrAuthentication
 	}
-	return Principal{KeyID: proof.KeyID, DeviceID: "device-1", TransactionID: "transaction-1"}, nil
+	appID := authenticator.appID
+	if appID == "" {
+		appID = "health"
+	}
+	return Principal{AppID: appID, KeyID: proof.KeyID, DeviceID: "device-1", TransactionID: "transaction-1"}, nil
 }
 
 type fakeEntitlements struct{ allowed bool }
@@ -644,6 +709,28 @@ type fakePrivacyManager struct {
 	principal Principal
 	consents  []privacy.Consent
 	deleted   bool
+}
+
+type fakeConsentGate struct {
+	granted bool
+	err     error
+}
+
+func (gate fakeConsentGate) HasRequiredConsents(context.Context, Principal, []string) (bool, error) {
+	return gate.granted, gate.err
+}
+
+type fakeJournalOrganizer struct {
+	request journalcontracts.OrganizeRequest
+	result  journalprovider.Result
+	err     error
+	calls   int
+}
+
+func (organizer *fakeJournalOrganizer) Organize(_ context.Context, request journalcontracts.OrganizeRequest) (journalprovider.Result, error) {
+	organizer.calls++
+	organizer.request = request
+	return organizer.result, organizer.err
 }
 
 func (manager *fakePrivacyManager) RecordConsents(_ context.Context, principal Principal, consents []privacy.Consent) (time.Time, error) {
@@ -788,21 +875,21 @@ func (service *fakeCapabilities) IssueAt(_ Principal, binding capability.Binding
 
 func (service *fakeCapabilities) Consume(_ context.Context, token string, binding capability.Binding) (Principal, error) {
 	if token != "valid-token" || binding.JobID == "" {
-		return Principal{}, capability.ErrInvalid
+		return Principal{AppID: "health"}, capability.ErrInvalid
 	}
 	service.consumeCalls++
 	if service.consumed {
-		return Principal{}, capability.ErrReplay
+		return Principal{AppID: "health"}, capability.ErrReplay
 	}
 	service.consumed = true
-	return Principal{KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
+	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
 }
 
 func (*fakeCapabilities) Validate(token string, binding capability.Binding) (Principal, error) {
 	if token != "valid-token" || binding.JobID == "" {
-		return Principal{}, capability.ErrInvalid
+		return Principal{AppID: "health"}, capability.ErrInvalid
 	}
-	return Principal{KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
+	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
 }
 
 type fakeMediaAuthorizer struct {

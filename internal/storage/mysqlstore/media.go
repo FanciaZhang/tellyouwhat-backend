@@ -10,20 +10,23 @@ import (
 	"github.com/tellyouwhat/backend/internal/media"
 )
 
-type MediaRepository struct{ database *sql.DB }
+type MediaRepository struct {
+	database *sql.DB
+	appID    string
+}
 
-func NewMediaRepository(database *sql.DB) *MediaRepository {
-	return &MediaRepository{database: database}
+func NewMediaRepository(database *sql.DB, appID string) *MediaRepository {
+	return &MediaRepository{database: database, appID: appID}
 }
 
 func (repository *MediaRepository) Register(ctx context.Context, record media.Record) error {
 	count, err := affectedRows(repository.database.ExecContext(ctx, `
         INSERT INTO media_objects
-            (object_id, owner_key_id, owner_device_id, request_id, operation, media_id,
+			(app_id, object_id, owner_key_id, owner_device_id, request_id, operation, media_id,
              kind, sha256, size_bytes, mime_type, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE object_id = VALUES(object_id)`,
-		record.ObjectID, record.OwnerKeyID, record.OwnerDeviceID, record.RequestID,
+		repository.appID, record.ObjectID, record.OwnerKeyID, record.OwnerDeviceID, record.RequestID,
 		record.Operation, record.MediaID, record.Kind, record.SHA256, record.SizeBytes,
 		record.MIMEType, record.ExpiresAt,
 	))
@@ -41,7 +44,7 @@ func (repository *MediaRepository) Register(ctx context.Context, record media.Re
 }
 
 func (repository *MediaRepository) Get(ctx context.Context, objectID string) (media.Record, error) {
-	record, err := scanMediaRecord(repository.database.QueryRowContext(ctx, mediaSelect+` WHERE object_id = ?`, objectID))
+	record, err := scanMediaRecord(repository.database.QueryRowContext(ctx, mediaSelect+` WHERE app_id = ? AND object_id = ?`, repository.appID, objectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return media.Record{}, media.ErrNotAuthorized
 	}
@@ -70,10 +73,10 @@ func (repository *MediaRepository) CommitAttempt(ctx context.Context, expected [
 	}
 	defer func() { _ = transaction.Rollback() }()
 	count, err := affectedRows(transaction.ExecContext(ctx, `
-        INSERT INTO idempotency_records (request_id, owner_key_id, body_digest, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?)
+		INSERT INTO idempotency_records (app_id, request_id, owner_key_id, body_digest, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE request_id = VALUES(request_id)`,
-		attempt.RequestID, attempt.OwnerKeyID, attempt.BodyDigest, attempt.ExpiresAt, attempt.CreatedAt,
+		repository.appID, attempt.RequestID, attempt.OwnerKeyID, attempt.BodyDigest, attempt.ExpiresAt, attempt.CreatedAt,
 	))
 	if err != nil {
 		return media.AttemptRecord{}, false, err
@@ -83,7 +86,7 @@ func (repository *MediaRepository) CommitAttempt(ctx context.Context, expected [
 		var expiresAt, createdAt time.Time
 		err := transaction.QueryRowContext(ctx, `
             SELECT owner_key_id, body_digest, expires_at, created_at
-            FROM idempotency_records WHERE request_id = ? FOR UPDATE`, attempt.RequestID).Scan(
+			FROM idempotency_records WHERE app_id = ? AND request_id = ? FOR UPDATE`, repository.appID, attempt.RequestID).Scan(
 			&ownerKeyID, &bodyDigest, &expiresAt, &createdAt,
 		)
 		if err != nil {
@@ -93,8 +96,8 @@ func (repository *MediaRepository) CommitAttempt(ctx context.Context, expected [
 			if _, err := transaction.ExecContext(ctx, `
                 UPDATE idempotency_records
                 SET owner_key_id = ?, body_digest = ?, expires_at = ?, created_at = ?
-                WHERE request_id = ?`,
-				attempt.OwnerKeyID, attempt.BodyDigest, attempt.ExpiresAt, attempt.CreatedAt, attempt.RequestID,
+				WHERE app_id = ? AND request_id = ?`,
+				attempt.OwnerKeyID, attempt.BodyDigest, attempt.ExpiresAt, attempt.CreatedAt, repository.appID, attempt.RequestID,
 			); err != nil {
 				return media.AttemptRecord{}, false, err
 			}
@@ -108,13 +111,14 @@ func (repository *MediaRepository) CommitAttempt(ctx context.Context, expected [
 		}
 	}
 	if len(expected) > 0 {
-		arguments := make([]any, 0, len(objectIDs)+1)
+		arguments := make([]any, 0, len(objectIDs)+2)
+		arguments = append(arguments, repository.appID)
 		for _, objectID := range objectIDs {
 			arguments = append(arguments, objectID)
 		}
 		arguments = append(arguments, now)
 		rows, err := transaction.QueryContext(ctx, mediaSelect+`
-            WHERE object_id IN (`+placeholders(len(objectIDs))+`)
+			WHERE app_id = ? AND object_id IN (`+placeholders(len(objectIDs))+`)
               AND consumed_at IS NULL AND deleted_at IS NULL AND expires_at > ?
             FOR UPDATE`, arguments...)
 		if err != nil {
@@ -143,13 +147,14 @@ func (repository *MediaRepository) CommitAttempt(ctx context.Context, expected [
 		}
 	}
 	if len(objectIDs) > 0 {
-		arguments := make([]any, 0, len(objectIDs)+1)
+		arguments := make([]any, 0, len(objectIDs)+2)
 		arguments = append(arguments, now)
+		arguments = append(arguments, repository.appID)
 		for _, objectID := range objectIDs {
 			arguments = append(arguments, objectID)
 		}
 		count, err = affectedRows(transaction.ExecContext(ctx,
-			`UPDATE media_objects SET consumed_at = ? WHERE object_id IN (`+placeholders(len(objectIDs))+`)`,
+			`UPDATE media_objects SET consumed_at = ? WHERE app_id = ? AND object_id IN (`+placeholders(len(objectIDs))+`)`,
 			arguments...,
 		))
 		if err != nil {

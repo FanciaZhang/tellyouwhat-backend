@@ -195,4 +195,3 @@ func (client *APIClient) bearerToken() (string, error) {
 func fillPaddedInteger(destination []byte, value *big.Int) {
 	value.FillBytes(destination)
 }
-

@@ -3,7 +3,7 @@
     email {$ACME_EMAIL}
 }
 
-{$HEALTH_API_DOMAIN} {
+{$HEALTH_API_DOMAIN}, {$JOURNAL_API_DOMAIN} {
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
@@ -20,7 +20,7 @@
     }
 }
 
-{$HEALTH_ADMIN_DOMAIN} {
+{$ADMIN_DOMAIN} {
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"

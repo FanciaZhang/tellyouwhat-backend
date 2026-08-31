@@ -7,10 +7,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type CapabilityUseStore struct{ client *redis.Client }
+type CapabilityUseStore struct {
+	client *redis.Client
+	prefix string
+}
 
-func NewCapabilityUseStore(client *redis.Client) *CapabilityUseStore {
-	return &CapabilityUseStore{client: client}
+func NewCapabilityUseStore(client *redis.Client, appID string) *CapabilityUseStore {
+	return &CapabilityUseStore{client: client, prefix: "platform:" + appID + ":"}
 }
 
 func (store *CapabilityUseStore) Consume(
@@ -23,6 +26,5 @@ func (store *CapabilityUseStore) Consume(
 	if ttl <= 0 {
 		return false, nil
 	}
-	return store.client.SetNX(ctx, "health:job-capability:used:"+nonce, "1", ttl).Result()
+	return store.client.SetNX(ctx, store.prefix+"job-capability:used:"+nonce, "1", ttl).Result()
 }
-

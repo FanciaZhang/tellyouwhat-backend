@@ -12,7 +12,7 @@ import (
 //go:embed *.sql
 var migrationFiles embed.FS
 
-const migrationLockName = "health_schema_migrations"
+const migrationLockName = "tellyouwhat_platform_schema_migrations"
 
 func Run(ctx context.Context, database *sql.DB) error {
 	connection, err := database.Conn(ctx)

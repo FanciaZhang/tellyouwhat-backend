@@ -16,7 +16,7 @@ func TestAuthorizeScopesObjectToDeviceRequestAndOperationLimits(t *testing.T) {
 
 	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
 	service := NewService(fakePresigner{}, NewMemoryRegistry(), func() time.Time { return now })
-	principal := attestation.Principal{DeviceID: "device-1", KeyID: "key-1"}
+	principal := attestation.Principal{AppID: "health", DeviceID: "device-1", KeyID: "key-1"}
 	authorization, err := service.Authorize(context.Background(), principal, UploadRequest{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c",
 		Operation: contracts.OperationMealPhotoCapture,
@@ -41,7 +41,7 @@ func TestAuthorizeRejectsOversizedOrUnsupportedMedia(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(fakePresigner{}, NewMemoryRegistry(), time.Now)
-	principal := attestation.Principal{DeviceID: "device-1", KeyID: "key-1"}
+	principal := attestation.Principal{AppID: "health", DeviceID: "device-1", KeyID: "key-1"}
 	_, err := service.Authorize(context.Background(), principal, UploadRequest{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c",
 		Operation: contracts.OperationMealPhotoCapture,
@@ -61,7 +61,7 @@ func TestAuthorizedMediaMetadataIsImmutableAndRequiredAtSubmission(t *testing.T)
 
 	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
 	service := NewService(fakePresigner{}, NewMemoryRegistry(), func() time.Time { return now })
-	principal := attestation.Principal{DeviceID: "device-1", KeyID: "key-1"}
+	principal := attestation.Principal{AppID: "health", DeviceID: "device-1", KeyID: "key-1"}
 	upload := UploadRequest{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c", Operation: contracts.OperationMealPhotoCapture,
 		MediaID: "photo-1", Kind: "image", MIMEType: "image/jpeg", SHA256: strings.Repeat("a", 64), SizeBytes: 1024,
@@ -88,7 +88,7 @@ func TestMediaAuthorizationCanBeConsumedOnlyOnce(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(fakePresigner{}, NewMemoryRegistry(), time.Now)
-	principal := attestation.Principal{DeviceID: "device-1", KeyID: "key-1"}
+	principal := attestation.Principal{AppID: "health", DeviceID: "device-1", KeyID: "key-1"}
 	upload := UploadRequest{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c", Operation: contracts.OperationMealPhotoCapture,
 		MediaID: "photo-1", Kind: "image", MIMEType: "image/jpeg", SHA256: strings.Repeat("a", 64), SizeBytes: 1024,
@@ -158,7 +158,7 @@ func TestMediaValidationPreservesRegistryInfrastructureFailure(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(fakePresigner{}, failingRegistry{}, time.Now)
-	err := service.Validate(context.Background(), attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}, contracts.Request{
+	err := service.Validate(context.Background(), attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1"}, contracts.Request{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c", Operation: contracts.OperationMealPhotoCapture,
 		Media: []contracts.Media{{ID: "photo-1", ObjectID: "object-1"}},
 	})

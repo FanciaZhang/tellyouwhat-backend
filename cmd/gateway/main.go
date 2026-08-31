@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	redis "github.com/redis/go-redis/v9"
 
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/attestation"
@@ -19,8 +23,11 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -40,6 +47,29 @@ type entitlementRepository interface {
 	entitlement.NotificationStore
 }
 
+type sharedStorage struct {
+	database  *sql.DB
+	redis     *redis.Client
+	cipher    *mysqlstore.PayloadCipher
+	readiness gateway.Readiness
+}
+
+type appStorage struct {
+	nonces         attestation.NonceStore
+	keys           keyRepository
+	entitlements   entitlementRepository
+	jobs           jobs.Store
+	outbox         jobs.OutboxStore
+	limiter        gateway.Quota
+	quotaReader    quota.Reader
+	reconciler     quota.TokenReconciler
+	capabilityUses capability.UseStore
+	media          media.Registry
+	usage          usage.Recorder
+	privacy        privacy.Repository
+	privacyCache   privacy.CacheCleaner
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
@@ -49,270 +79,63 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	serviceConfig, err := config.Load()
+	platform, err := config.LoadPlatform()
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	contractManifest, err := contracts.LoadManifest(serviceConfig.SchemaManifestPath)
-	if err != nil {
-		return err
-	}
 
-	rootPEM, err := os.ReadFile(serviceConfig.AppAttestRootPEMPath)
+	rootPEM, err := os.ReadFile(platform.AppAttestRootPEMPath)
 	if err != nil {
 		return err
 	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(rootPEM) {
+	attestationRoots := x509.NewCertPool()
+	if !attestationRoots.AppendCertsFromPEM(rootPEM) {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH contains no certificates")
 	}
-
-	var nonceStore attestation.NonceStore
-	var keys keyRepository
-	var entitlementStore entitlementRepository
-	var jobStore jobs.Store
-	var limiter gateway.Quota
-	var quotaReader quota.Reader
-	var capabilityUses capability.UseStore
-	var mediaRegistry media.Registry
-	var usageRecorder usage.Recorder
-	var outboxStore jobs.OutboxStore
-	var tokenReconciler quota.TokenReconciler
-	var readiness gateway.Readiness
-	var privacyRepository privacy.Repository
-	var privacyCache privacy.CacheCleaner
-	var closeStorage func()
-	if serviceConfig.StorageMode == "memory" {
-		nonceStore = attestation.NewMemoryNonceStore()
-		keys = attestation.NewMemoryKeyStore()
-		entitlementStore = entitlement.NewMemoryStore()
-		jobStore = jobs.NewMemoryStore()
-		memoryLimiter := quota.NewMemoryLimiter(serviceConfig.Quota)
-		limiter = memoryLimiter
-		quotaReader = memoryLimiter
-		tokenReconciler = memoryLimiter
-		capabilityUses = capability.NewMemoryUseStore()
-		mediaRegistry = media.NewMemoryRegistry()
-		usageRecorder = usage.NewMemoryRecorder()
-		readiness = gateway.ReadinessFunc(func(context.Context) error { return nil })
-		privacyRepository = privacy.NewMemoryRepository()
-		closeStorage = func() {}
-	} else {
-		database, openErr := mysqlstore.Open(ctx, serviceConfig.DatabaseDSN)
-		if openErr != nil {
-			return openErr
-		}
-		redisClient, openErr := redisstore.Open(ctx, serviceConfig.RedisURL)
-		if openErr != nil {
-			_ = database.Close()
-			return openErr
-		}
-		payloadCipher, cipherErr := mysqlstore.NewPayloadCipher(serviceConfig.PayloadEncryptionKey)
-		if cipherErr != nil {
-			_ = database.Close()
-			_ = redisClient.Close()
-			return cipherErr
-		}
-		nonceStore = redisstore.NewNonceStore(redisClient)
-		keys = mysqlstore.NewKeyRepository(database)
-		entitlementStore = mysqlstore.NewEntitlementRepository(database)
-		jobRepository := mysqlstore.NewJobRepository(database, payloadCipher)
-		jobStore = jobRepository
-		outboxStore = jobRepository
-		redisLimiter := redisstore.NewQuotaLimiter(redisClient, serviceConfig.Quota)
-		limiter = redisLimiter
-		quotaReader = redisLimiter
-		tokenReconciler = redisLimiter
-		capabilityUses = redisstore.NewCapabilityUseStore(redisClient)
-		mediaRegistry = mysqlstore.NewMediaRepository(database)
-		usageRecorder = mysqlstore.NewUsageRepository(database)
-		privacyRepository = mysqlstore.NewPrivacyRepository(database)
-		privacyCache = redisstore.NewPrivacyCleaner(redisClient)
-		readiness = gateway.ReadinessFunc(func(readyContext context.Context) error {
-			if pingErr := database.PingContext(readyContext); pingErr != nil {
-				return pingErr
-			}
-			return redisClient.Ping(readyContext).Err()
-		})
-		closeStorage = func() {
-			_ = database.Close()
-			_ = redisClient.Close()
-		}
+	tosStore, err := media.NewTOSStore(platform.TOS)
+	if err != nil {
+		return err
+	}
+	shared, closeStorage, err := openSharedStorage(ctx, platform)
+	if err != nil {
+		return err
 	}
 	defer closeStorage()
 
-	attestationVerifier := attestation.NewAppleAttestationVerifier(
-		serviceConfig.TeamID,
-		serviceConfig.BundleID,
-		serviceConfig.AttestationEnvironment,
-		roots,
-	)
-	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
-		Environment:       serviceConfig.AttestationEnvironment,
-		DevelopmentSecret: serviceConfig.DevelopmentSecret,
-		AllowedBuilds:     serviceConfig.AllowedBuilds,
-	}, nonceStore, keys, attestationVerifier, time.Now)
-	authenticator := attestation.NewService(
-		nonceStore,
-		keys,
-		attestation.NewAppleAssertionVerifier(serviceConfig.TeamID, serviceConfig.BundleID),
-		time.Now,
-	).RequireEnvironment(serviceConfig.AttestationEnvironment)
-	entitlementChecker := entitlement.NewChecker(entitlementStore, time.Now)
-	var activator gateway.EntitlementActivator
-	var productionEntitlement gateway.ProductionEntitlementSync
-	var appStoreNotifications gateway.AppStoreNotificationProcessor
-	if serviceConfig.Environment == "development" {
-		activator = entitlement.NewDevelopmentService(
-			entitlementStore,
-			serviceConfig.DevelopmentSecret,
-			30*24*time.Hour,
-			time.Now,
-		)
-	} else {
-		appStoreRootPEM, readErr := os.ReadFile(serviceConfig.AppStore.RootPEMPath)
-		if readErr != nil {
-			return readErr
+	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
+	handlers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
+	for _, appConfig := range platform.Apps {
+		registryEntries = append(registryEntries, appConfig.Registry)
+		storage := storageForApp(platform, shared, string(appConfig.Registry.ID))
+		handler, buildErr := buildAppHandler(ctx, platform, appConfig, storage, shared.readiness, attestationRoots, tosStore, logger)
+		if buildErr != nil {
+			return fmt.Errorf("build app %s: %w", appConfig.Registry.ID, buildErr)
 		}
-		appStoreRoots := x509.NewCertPool()
-		if !appStoreRoots.AppendCertsFromPEM(appStoreRootPEM) {
-			return errors.New("APP_STORE_ROOT_PEM_PATH contains no certificates")
-		}
-		privateKeyPEM, readErr := os.ReadFile(serviceConfig.AppStore.PrivateKeyPath)
-		if readErr != nil {
-			return readErr
-		}
-		signingKey, parseErr := appstore.ParseSigningKeyPEM(privateKeyPEM)
-		if parseErr != nil {
-			return parseErr
-		}
-		appStoreEnvironments := []string{serviceConfig.AppStore.Environment}
-		if serviceConfig.AppStore.Environment == "Both" {
-			appStoreEnvironments = []string{"Production", "Sandbox"}
-		}
-		appStoreResolvers := make([]appstore.SubscriptionResolving, 0, len(appStoreEnvironments))
-		notificationProcessors := make([]appstore.NotificationProcessing, 0, len(appStoreEnvironments))
-		for _, appStoreEnvironment := range appStoreEnvironments {
-			appStoreBaseURL := "https://api.storekit.apple.com"
-			if appStoreEnvironment == "Sandbox" {
-				appStoreBaseURL = "https://api.storekit-sandbox.apple.com"
-			}
-			appStoreVerifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{
-				Roots:       appStoreRoots,
-				BundleID:    serviceConfig.BundleID,
-				AppAppleID:  serviceConfig.AppStore.AppAppleID,
-				Environment: appStoreEnvironment,
-				ProductID:   appstore.ManagedSubscriptionProductID,
-				Now:         time.Now,
-			})
-			appStoreAPI := appstore.NewAPIClient(appstore.APIClientConfig{
-				BaseURL:     appStoreBaseURL,
-				KeyID:       serviceConfig.AppStore.KeyID,
-				IssuerID:    serviceConfig.AppStore.IssuerID,
-				BundleID:    serviceConfig.BundleID,
-				AppAppleID:  serviceConfig.AppStore.AppAppleID,
-				Environment: appStoreEnvironment,
-				SigningKey:  signingKey,
-				HTTPClient:  &http.Client{Timeout: 30 * time.Second},
-				Now:         time.Now,
-			})
-			appStoreResolver := appstore.NewSubscriptionResolver(appStoreVerifier, appStoreAPI, time.Now)
-			appStoreResolvers = append(appStoreResolvers, appStoreResolver)
-			notificationProcessors = append(
-				notificationProcessors,
-				appstore.NewNotificationProcessor(appStoreVerifier, appStoreResolver),
-			)
-		}
-		appStoreResolver := appstore.NewMultiEnvironmentSubscriptionResolver(appStoreResolvers...)
-		productionEntitlement = entitlement.NewProductionService(
-			entitlementStore,
-			entitlement.NewAppStoreSubscriptionResolver(appStoreResolver),
-			time.Now,
-		).WithTransactionBinder(keys)
-		notificationProcessor := appstore.NewMultiEnvironmentNotificationProcessor(notificationProcessors...)
-		appStoreNotifications = entitlement.NewNotificationService(
-			entitlementStore,
-			entitlement.NewAppStoreNotificationResolver(notificationProcessor),
-		)
+		handlers[appConfig.Registry.ID] = handler
 	}
-	tosStore, err := media.NewTOSStore(serviceConfig.TOS)
+	registry, err := appregistry.New(registryEntries)
 	if err != nil {
 		return err
 	}
-	mediaService := media.NewService(tosStore, mediaRegistry, time.Now)
-	arkClient := ark.New(serviceConfig.Ark, http.DefaultClient, tosStore)
-	jobService := jobs.NewService(jobStore, time.Now)
-	jobCapabilities := capability.NewService([]byte(serviceConfig.JobCapabilitySecret), capabilityUses, time.Now)
-	var dispatcher jobs.Dispatcher
-	if serviceConfig.StorageMode == "memory" {
-		dispatcher = jobs.NewLocalDispatcher(jobs.NewWorker(jobStore, arkClient, tokenReconciler))
-	} else {
-		workerInvoker := jobs.NewHTTPDispatcher(
-			serviceConfig.WorkerAsyncURL,
-			serviceConfig.WorkerSecret,
-			nil,
-		)
-		pump := jobs.NewOutboxPump(outboxStore, workerInvoker, time.Now)
-		go func() {
-			if pumpErr := pump.Run(ctx); pumpErr != nil && !errors.Is(pumpErr, context.Canceled) {
-				logger.Error("job outbox pump stopped", "error", pumpErr)
-			}
-		}()
-		dispatcher = jobs.DurableQueueDispatcher{}
+	hostMux, err := appregistry.NewHostMux(registry, handlers)
+	if err != nil {
+		return err
 	}
 
-	dependencies := gateway.Dependencies{
-		Authenticator:         authenticator,
-		Entitlements:          entitlementChecker,
-		Quota:                 limiter,
-		QuotaReader:           quotaReader,
-		Provider:              arkClient,
-		Enrollment:            enrollment,
-		Activator:             activator,
-		ProductionEntitlement: productionEntitlement,
-		AppStoreNotifications: appStoreNotifications,
-		Media:                 mediaService,
-		Jobs:                  jobService,
-		Dispatcher:            dispatcher,
-		Capabilities:          jobCapabilities,
-		Contracts:             contractManifest,
-		Usage:                 usageRecorder,
-		Readiness:             readiness,
-		Privacy:               privacy.NewService(privacyRepository, tosStore, privacyCache, time.Now),
-		ManagedProduct: gateway.ManagedProduct{
-			ProductID: "health.ai.subscription.monthly", BillingPeriod: "P1M",
-			DailyTokenLimit:   serviceConfig.Quota.DailyTokensPerTransaction,
-			MonthlyTokenLimit: serviceConfig.Quota.MonthlyTokensPerTransaction,
-			Provider:          "Volcengine Ark", ModelDisclosure: "The server selects a model for each feature and may update it without changing the product.",
-			MediaRetention: "up to 24 hours", JobRetention: "up to 24 hours",
-			PrivacyURL: "https://health.tellyouwhat.cn/privacy", TermsURL: "https://health.tellyouwhat.cn/terms",
-			PrivacyChoicesURL: "https://health.tellyouwhat.cn/privacy-choices", SupportURL: "https://health.tellyouwhat.cn/support",
-		},
-	}
-	if serviceConfig.TrustedIPHeader != "" {
-		dependencies.IPResolver = func(request *http.Request) string {
-			if value := request.Header.Get(serviceConfig.TrustedIPHeader); value != "" {
-				return value
-			}
-			return request.RemoteAddr
-		}
-	}
-	handler := observability.HTTPLogger(logger, observability.RecoverPanics(logger, gateway.New(dependencies)))
 	server := &http.Server{
-		Addr:              ":" + serviceConfig.Port,
-		Handler:           handler,
+		Addr:              ":" + platform.Port,
+		Handler:           observability.HTTPLogger(logger, observability.RecoverPanics(logger, hostMux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      0,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    32 << 10,
 	}
-
 	errChannel := make(chan error, 1)
 	go func() {
-		logger.Info("gateway listening", "port", serviceConfig.Port, "environment", serviceConfig.Environment)
+		logger.Info("gateway listening", "port", platform.Port, "environment", platform.Environment, "apps", len(platform.Apps))
 		errChannel <- server.ListenAndServe()
 	}()
 	select {
@@ -326,4 +149,224 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+func openSharedStorage(ctx context.Context, platform config.PlatformConfig) (sharedStorage, func(), error) {
+	if platform.StorageMode == "memory" {
+		return sharedStorage{readiness: gateway.ReadinessFunc(func(context.Context) error { return nil })}, func() {}, nil
+	}
+	database, err := mysqlstore.Open(ctx, platform.DatabaseDSN)
+	if err != nil {
+		return sharedStorage{}, nil, err
+	}
+	redisClient, err := redisstore.Open(ctx, platform.RedisURL)
+	if err != nil {
+		_ = database.Close()
+		return sharedStorage{}, nil, err
+	}
+	cipher, err := mysqlstore.NewPayloadCipher(platform.PayloadEncryptionKey)
+	if err != nil {
+		_ = database.Close()
+		_ = redisClient.Close()
+		return sharedStorage{}, nil, err
+	}
+	readiness := gateway.ReadinessFunc(func(readyContext context.Context) error {
+		if err := database.PingContext(readyContext); err != nil {
+			return err
+		}
+		return redisClient.Ping(readyContext).Err()
+	})
+	return sharedStorage{database: database, redis: redisClient, cipher: cipher, readiness: readiness}, func() {
+		_ = database.Close()
+		_ = redisClient.Close()
+	}, nil
+}
+
+func storageForApp(platform config.PlatformConfig, shared sharedStorage, appID string) appStorage {
+	limits := appQuota(platform, appID)
+	if platform.StorageMode == "memory" {
+		limiter := quota.NewMemoryLimiter(limits)
+		return appStorage{
+			nonces: attestation.NewMemoryNonceStore(), keys: attestation.NewMemoryKeyStore(),
+			entitlements: entitlement.NewMemoryStore(), jobs: jobs.NewMemoryStore(),
+			limiter: limiter, quotaReader: limiter, reconciler: limiter,
+			capabilityUses: capability.NewMemoryUseStore(), media: media.NewMemoryRegistry(),
+			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(),
+		}
+	}
+	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
+	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
+	return appStorage{
+		nonces: redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
+		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
+		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
+		capabilityUses: redisstore.NewCapabilityUseStore(shared.redis, appID),
+		media:          mysqlstore.NewMediaRepository(shared.database, appID), usage: mysqlstore.NewUsageRepository(shared.database, appID),
+		privacy: mysqlstore.NewPrivacyRepository(shared.database, appID), privacyCache: redisstore.NewPrivacyCleaner(shared.redis, appID),
+	}
+}
+
+func buildAppHandler(
+	ctx context.Context,
+	platform config.PlatformConfig,
+	appConfig config.AppConfig,
+	storage appStorage,
+	readiness gateway.Readiness,
+	attestationRoots *x509.CertPool,
+	tosStore *media.TOSStore,
+	logger *slog.Logger,
+) (http.Handler, error) {
+	app := appConfig.Registry
+	attestationVerifier := attestation.NewAppleAttestationVerifier(app.TeamID, app.BundleID, appConfig.AttestationEnvironment, attestationRoots)
+	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
+		AppID: string(app.ID), Environment: appConfig.AttestationEnvironment,
+		DevelopmentSecret: appConfig.DevelopmentSecret, AllowedBuilds: appConfig.AllowedBuilds,
+	}, storage.nonces, storage.keys, attestationVerifier, time.Now)
+	authenticator := attestation.NewService(
+		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
+	).RequireEnvironment(appConfig.AttestationEnvironment)
+	entitlementChecker := entitlement.NewChecker(storage.entitlements, time.Now)
+	activator, productionSync, notifications, err := commerceServices(platform.Environment, appConfig, storage.keys, storage.entitlements)
+	if err != nil {
+		return nil, err
+	}
+	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
+
+	dependencies := gateway.Dependencies{
+		App: app, Authenticator: authenticator, Entitlements: entitlementChecker,
+		Quota: storage.limiter, QuotaReader: storage.quotaReader,
+		Enrollment: enrollment, Activator: activator, ProductionEntitlement: productionSync,
+		AppStoreNotifications: notifications, Usage: storage.usage, Readiness: readiness,
+		Privacy: privacyService, Consent: privacyService,
+		ManagedProduct: gateway.ManagedProduct{
+			ProductID: app.ManagedAIProductID, BillingPeriod: appConfig.Product.BillingPeriod,
+			DailyTokenLimit: appConfig.Quota.DailyTokensPerTransaction, MonthlyTokenLimit: appConfig.Quota.MonthlyTokensPerTransaction,
+			Provider: "Volcengine Ark", ModelDisclosure: "The server selects a model for each fixed application operation.",
+			MediaRetention: "up to 24 hours", JobRetention: "up to 24 hours",
+			PrivacyURL: appConfig.Product.PrivacyURL, TermsURL: appConfig.Product.TermsURL,
+			PrivacyChoicesURL: appConfig.Product.PrivacyChoicesURL, SupportURL: appConfig.Product.SupportURL,
+		},
+	}
+	if platform.TrustedIPHeader != "" {
+		dependencies.IPResolver = func(request *http.Request) string {
+			if value := request.Header.Get(platform.TrustedIPHeader); value != "" {
+				return value
+			}
+			return request.RemoteAddr
+		}
+	}
+
+	switch app.ID {
+	case appregistry.Health:
+		manifest, err := contracts.LoadManifest(appConfig.SchemaManifestPath)
+		if err != nil {
+			return nil, err
+		}
+		provider := ark.New(appConfig.Ark, http.DefaultClient, tosStore)
+		mediaService := media.NewService(tosStore, storage.media, time.Now)
+		jobService := jobs.NewService(storage.jobs, time.Now)
+		capabilities := capability.NewService([]byte(platform.JobCapabilitySecret), storage.capabilityUses, time.Now)
+		var dispatcher jobs.Dispatcher
+		if platform.StorageMode == "memory" {
+			dispatcher = jobs.NewLocalDispatcher(jobs.NewWorker(storage.jobs, provider, storage.reconciler))
+		} else {
+			workerInvoker := jobs.NewHTTPDispatcher(platform.WorkerAsyncURL, platform.WorkerSecret, string(app.ID), nil)
+			pump := jobs.NewOutboxPump(storage.outbox, workerInvoker, time.Now)
+			go func() {
+				if err := pump.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					logger.Error("job outbox pump stopped", "app_id", app.ID, "error", err)
+				}
+			}()
+			dispatcher = jobs.DurableQueueDispatcher{}
+		}
+		dependencies.Provider = provider
+		dependencies.Media = mediaService
+		dependencies.Jobs = jobService
+		dependencies.Dispatcher = dispatcher
+		dependencies.Capabilities = capabilities
+		dependencies.Contracts = manifest
+		dependencies.RequiredConsentScopes = []string{privacy.ManagedAIScope, privacy.SensitiveHealthScope}
+	case appregistry.Journal:
+		model := journalprovider.New(journalprovider.Config{
+			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
+			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
+		}, &http.Client{Timeout: 60 * time.Second})
+		organizer := &journalservice.Organizer{
+			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
+			AnalysisVersion: "journal-organize-2026-08-31",
+		}
+		dependencies.JournalOrganizer = organizer
+		dependencies.JournalAnalysisVersion = organizer.AnalysisVersion
+		dependencies.RequiredConsentScopes = []string{privacy.ManagedAIScope}
+	default:
+		return nil, errors.New("unsupported app runtime")
+	}
+	return gateway.New(dependencies), nil
+}
+
+func commerceServices(
+	environment string,
+	appConfig config.AppConfig,
+	keys keyRepository,
+	store entitlementRepository,
+) (gateway.EntitlementActivator, gateway.ProductionEntitlementSync, gateway.AppStoreNotificationProcessor, error) {
+	if environment == "development" {
+		return entitlement.NewDevelopmentService(store, appConfig.DevelopmentSecret, 30*24*time.Hour, time.Now), nil, nil, nil
+	}
+	rootPEM, err := os.ReadFile(appConfig.AppStore.RootPEMPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(rootPEM) {
+		return nil, nil, nil, errors.New("App Store root PEM contains no certificates")
+	}
+	privateKeyPEM, err := os.ReadFile(appConfig.AppStore.PrivateKeyPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	signingKey, err := appstore.ParseSigningKeyPEM(privateKeyPEM)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	environments := []string{appConfig.AppStore.Environment}
+	if appConfig.AppStore.Environment == "Both" {
+		environments = []string{"Production", "Sandbox"}
+	}
+	resolvers := make([]appstore.SubscriptionResolving, 0, len(environments))
+	processors := make([]appstore.NotificationProcessing, 0, len(environments))
+	for _, appStoreEnvironment := range environments {
+		baseURL := "https://api.storekit.apple.com"
+		if appStoreEnvironment == "Sandbox" {
+			baseURL = "https://api.storekit-sandbox.apple.com"
+		}
+		verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{
+			Roots: roots, BundleID: appConfig.Registry.BundleID, AppAppleID: appConfig.Registry.AppAppleID,
+			Environment: appStoreEnvironment, ProductID: appConfig.Registry.ManagedAIProductID, Now: time.Now,
+		})
+		api := appstore.NewAPIClient(appstore.APIClientConfig{
+			BaseURL: baseURL, KeyID: appConfig.AppStore.KeyID, IssuerID: appConfig.AppStore.IssuerID,
+			BundleID: appConfig.Registry.BundleID, AppAppleID: appConfig.Registry.AppAppleID,
+			Environment: appStoreEnvironment, SigningKey: signingKey,
+			HTTPClient: &http.Client{Timeout: 30 * time.Second}, Now: time.Now,
+		})
+		resolver := appstore.NewSubscriptionResolver(verifier, api, time.Now)
+		resolvers = append(resolvers, resolver)
+		processors = append(processors, appstore.NewNotificationProcessor(verifier, resolver))
+	}
+	resolver := appstore.NewMultiEnvironmentSubscriptionResolver(resolvers...)
+	production := entitlement.NewProductionService(store, entitlement.NewAppStoreSubscriptionResolver(resolver), time.Now).WithTransactionBinder(keys)
+	notifications := entitlement.NewNotificationService(
+		store, entitlement.NewAppStoreNotificationResolver(appstore.NewMultiEnvironmentNotificationProcessor(processors...)),
+	)
+	return nil, production, notifications, nil
+}
+
+func appQuota(platform config.PlatformConfig, appID string) quota.Limits {
+	for _, app := range platform.Apps {
+		if string(app.Registry.ID) == appID {
+			return app.Quota
+		}
+	}
+	return quota.Limits{}
 }

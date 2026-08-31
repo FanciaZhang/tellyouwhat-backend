@@ -15,12 +15,13 @@ import (
 type QuotaLimiter struct {
 	client *redis.Client
 	limits quota.Limits
+	prefix string
 }
 
 const concurrencyLeaseTTL = 16 * time.Minute
 
-func NewQuotaLimiter(client *redis.Client, limits quota.Limits) *QuotaLimiter {
-	return &QuotaLimiter{client: client, limits: limits}
+func NewQuotaLimiter(client *redis.Client, limits quota.Limits, appID string) *QuotaLimiter {
+	return &QuotaLimiter{client: client, limits: limits, prefix: "platform:" + appID + ":"}
 }
 
 var acquireQuotaScript = redis.NewScript(`
@@ -71,13 +72,13 @@ func (limiter *QuotaLimiter) Acquire(
 	day := now.UTC().Format("20060102")
 	month := now.UTC().Format("200601")
 	keys := []string{
-		"health:quota:minute:ip:" + minute + ":" + identity.IP,
-		"health:quota:minute:device:" + minute + ":" + identity.DeviceID,
-		"health:quota:minute:operation:" + minute + ":" + identity.TransactionID + ":" + string(operation),
-		"health:quota:day:" + day + ":" + identity.TransactionID,
-		"health:quota:month:" + month + ":" + identity.TransactionID,
-		"health:quota:concurrent:" + identity.DeviceID,
-		"health:quota:reservation:" + reservationID,
+		limiter.prefix + "quota:minute:ip:" + minute + ":" + identity.IP,
+		limiter.prefix + "quota:minute:device:" + minute + ":" + identity.DeviceID,
+		limiter.prefix + "quota:minute:operation:" + minute + ":" + identity.TransactionID + ":" + string(operation),
+		limiter.prefix + "quota:day:" + day + ":" + identity.TransactionID,
+		limiter.prefix + "quota:month:" + month + ":" + identity.TransactionID,
+		limiter.prefix + "quota:concurrent:" + identity.DeviceID,
+		limiter.prefix + "quota:reservation:" + reservationID,
 	}
 	nextDay := now.UTC().Truncate(24 * time.Hour).Add(25 * time.Hour)
 	nextMonth := time.Date(now.UTC().Year(), now.UTC().Month()+1, 1, 1, 0, 0, 0, time.UTC)
@@ -201,8 +202,8 @@ func (limiter *QuotaLimiter) Reconcile(
 	day := now.UTC().Format("20060102")
 	month := now.UTC().Format("200601")
 	return reconcileTokensScript.Run(ctx, limiter.client, []string{
-		"health:quota:day:" + day + ":" + transactionID,
-		"health:quota:month:" + month + ":" + transactionID,
+		limiter.prefix + "quota:day:" + day + ":" + transactionID,
+		limiter.prefix + "quota:month:" + month + ":" + transactionID,
 	}, actual-reserved).Err()
 }
 
@@ -216,8 +217,8 @@ func (limiter *QuotaLimiter) Snapshot(
 	}
 	utc := now.UTC()
 	values, err := limiter.client.MGet(ctx,
-		"health:quota:day:"+utc.Format("20060102")+":"+transactionID,
-		"health:quota:month:"+utc.Format("200601")+":"+transactionID,
+		limiter.prefix+"quota:day:"+utc.Format("20060102")+":"+transactionID,
+		limiter.prefix+"quota:month:"+utc.Format("200601")+":"+transactionID,
 	).Result()
 	if err != nil {
 		return quota.Snapshot{}, err

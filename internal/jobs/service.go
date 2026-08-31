@@ -37,6 +37,7 @@ const (
 )
 
 type Job struct {
+	AppID              string
 	ID                 string
 	RequestID          string
 	BodyDigest         string
@@ -107,6 +108,7 @@ func (service *Service) EnqueueWithID(
 	}
 	now := service.now()
 	job := Job{
+		AppID:              principal.AppID,
 		ID:                 jobID,
 		RequestID:          request.RequestID,
 		BodyDigest:         bodyDigest,
@@ -247,4 +249,3 @@ func newJobID() (string, error) {
 	encoded := hex.EncodeToString(value)
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
 }
-

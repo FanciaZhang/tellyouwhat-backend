@@ -17,7 +17,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -108,6 +111,14 @@ type PrivacyManager interface {
 	DeletePrincipal(context.Context, Principal) error
 }
 
+type ConsentGate interface {
+	HasRequiredConsents(context.Context, Principal, []string) (bool, error)
+}
+
+type JournalOrganizer interface {
+	Organize(context.Context, journalcontracts.OrganizeRequest) (journalprovider.Result, error)
+}
+
 type ManagedProduct struct {
 	ProductID         string `json:"productID"`
 	BillingPeriod     string `json:"billingPeriod"`
@@ -124,75 +135,97 @@ type ManagedProduct struct {
 }
 
 type Dependencies struct {
-	Authenticator         Authenticator
-	Entitlements          EntitlementChecker
-	Quota                 Quota
-	QuotaReader           quota.Reader
-	Provider              Provider
-	IPResolver            func(*http.Request) string
-	Now                   func() time.Time
-	Enrollment            Enrollment
-	Activator             EntitlementActivator
-	ProductionEntitlement ProductionEntitlementSync
-	AppStoreNotifications AppStoreNotificationProcessor
-	Media                 MediaAuthorizer
-	Jobs                  JobService
-	Dispatcher            JobDispatcher
-	Capabilities          JobCapabilityService
-	Contracts             ContractValidator
-	Usage                 usage.Recorder
-	Readiness             Readiness
-	Privacy               PrivacyManager
-	ManagedProduct        ManagedProduct
+	App                    appregistry.App
+	Authenticator          Authenticator
+	Entitlements           EntitlementChecker
+	Quota                  Quota
+	QuotaReader            quota.Reader
+	Provider               Provider
+	IPResolver             func(*http.Request) string
+	Now                    func() time.Time
+	Enrollment             Enrollment
+	Activator              EntitlementActivator
+	ProductionEntitlement  ProductionEntitlementSync
+	AppStoreNotifications  AppStoreNotificationProcessor
+	Media                  MediaAuthorizer
+	Jobs                   JobService
+	Dispatcher             JobDispatcher
+	Capabilities           JobCapabilityService
+	Contracts              ContractValidator
+	Usage                  usage.Recorder
+	Readiness              Readiness
+	Privacy                PrivacyManager
+	Consent                ConsentGate
+	RequiredConsentScopes  []string
+	JournalOrganizer       JournalOrganizer
+	JournalAnalysisVersion string
+	ManagedProduct         ManagedProduct
 }
 
 type Server struct {
-	authenticator         Authenticator
-	entitlements          EntitlementChecker
-	quota                 Quota
-	quotaReader           quota.Reader
-	provider              Provider
-	ipResolver            func(*http.Request) string
-	now                   func() time.Time
-	enrollment            Enrollment
-	activator             EntitlementActivator
-	productionEntitlement ProductionEntitlementSync
-	appStoreNotifications AppStoreNotificationProcessor
-	media                 MediaAuthorizer
-	jobs                  JobService
-	dispatcher            JobDispatcher
-	capabilities          JobCapabilityService
-	contracts             ContractValidator
-	usage                 usage.Recorder
-	readiness             Readiness
-	privacy               PrivacyManager
-	managedProduct        ManagedProduct
-	mux                   *http.ServeMux
+	app                    appregistry.App
+	authenticator          Authenticator
+	entitlements           EntitlementChecker
+	quota                  Quota
+	quotaReader            quota.Reader
+	provider               Provider
+	ipResolver             func(*http.Request) string
+	now                    func() time.Time
+	enrollment             Enrollment
+	activator              EntitlementActivator
+	productionEntitlement  ProductionEntitlementSync
+	appStoreNotifications  AppStoreNotificationProcessor
+	media                  MediaAuthorizer
+	jobs                   JobService
+	dispatcher             JobDispatcher
+	capabilities           JobCapabilityService
+	contracts              ContractValidator
+	usage                  usage.Recorder
+	readiness              Readiness
+	privacy                PrivacyManager
+	consent                ConsentGate
+	requiredConsentScopes  []string
+	journalOrganizer       JournalOrganizer
+	journalAnalysisVersion string
+	managedProduct         ManagedProduct
+	mux                    *http.ServeMux
 }
 
 func New(dependencies Dependencies) *Server {
+	if dependencies.App.ID == "" {
+		dependencies.App = appregistry.App{
+			ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.tellyouwhat.cn"},
+			TeamID: "test", BundleID: "cn.tellyouwhat.healthapp", ManagedAIProductID: "health.ai.subscription.monthly",
+			AllowedOperationPrefix: "health.",
+		}
+	}
 	server := &Server{
-		authenticator:         dependencies.Authenticator,
-		entitlements:          dependencies.Entitlements,
-		quota:                 dependencies.Quota,
-		quotaReader:           dependencies.QuotaReader,
-		provider:              dependencies.Provider,
-		ipResolver:            dependencies.IPResolver,
-		now:                   dependencies.Now,
-		enrollment:            dependencies.Enrollment,
-		activator:             dependencies.Activator,
-		productionEntitlement: dependencies.ProductionEntitlement,
-		appStoreNotifications: dependencies.AppStoreNotifications,
-		media:                 dependencies.Media,
-		jobs:                  dependencies.Jobs,
-		dispatcher:            dependencies.Dispatcher,
-		capabilities:          dependencies.Capabilities,
-		contracts:             dependencies.Contracts,
-		usage:                 dependencies.Usage,
-		readiness:             dependencies.Readiness,
-		privacy:               dependencies.Privacy,
-		managedProduct:        dependencies.ManagedProduct,
-		mux:                   http.NewServeMux(),
+		app:                    dependencies.App,
+		authenticator:          dependencies.Authenticator,
+		entitlements:           dependencies.Entitlements,
+		quota:                  dependencies.Quota,
+		quotaReader:            dependencies.QuotaReader,
+		provider:               dependencies.Provider,
+		ipResolver:             dependencies.IPResolver,
+		now:                    dependencies.Now,
+		enrollment:             dependencies.Enrollment,
+		activator:              dependencies.Activator,
+		productionEntitlement:  dependencies.ProductionEntitlement,
+		appStoreNotifications:  dependencies.AppStoreNotifications,
+		media:                  dependencies.Media,
+		jobs:                   dependencies.Jobs,
+		dispatcher:             dependencies.Dispatcher,
+		capabilities:           dependencies.Capabilities,
+		contracts:              dependencies.Contracts,
+		usage:                  dependencies.Usage,
+		readiness:              dependencies.Readiness,
+		privacy:                dependencies.Privacy,
+		consent:                dependencies.Consent,
+		requiredConsentScopes:  append([]string(nil), dependencies.RequiredConsentScopes...),
+		journalOrganizer:       dependencies.JournalOrganizer,
+		journalAnalysisVersion: dependencies.JournalAnalysisVersion,
+		managedProduct:         dependencies.ManagedProduct,
+		mux:                    http.NewServeMux(),
 	}
 	if server.ipResolver == nil {
 		server.ipResolver = remoteIP
@@ -211,19 +244,24 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 func (server *Server) routes() {
 	server.mux.HandleFunc("GET /healthz", server.health)
 	server.mux.HandleFunc("GET /readyz", server.ready)
-	server.mux.HandleFunc("POST /v1/ai/requests", server.complete)
-	server.mux.HandleFunc("POST /v1/ai/streams", server.stream)
 	server.mux.HandleFunc("GET /v1/ai/quota", server.quotaStatus)
 	server.mux.HandleFunc("POST /v1/attest/challenges", server.issueChallenge)
 	server.mux.HandleFunc("POST /v1/attest/keys", server.registerKey)
 	server.mux.HandleFunc("POST /v1/dev/entitlements/activate", server.activateDevelopmentEntitlement)
 	server.mux.HandleFunc("POST /v1/entitlements/transactions", server.syncProductionEntitlement)
 	server.mux.HandleFunc("POST /v1/app-store/notifications", server.processAppStoreNotification)
-	server.mux.HandleFunc("POST /v1/media/upload-authorizations", server.authorizeMediaUpload)
-	server.mux.HandleFunc("POST /v1/ai/jobs", server.enqueueJob)
-	server.mux.HandleFunc("POST /v1/ai/job-capabilities", server.issueJobCapability)
-	server.mux.HandleFunc("GET /v1/ai/jobs/{id}", server.getJob)
-	server.mux.HandleFunc("DELETE /v1/ai/jobs/{id}", server.cancelJob)
+	if server.app.ID == appregistry.Health {
+		server.mux.HandleFunc("POST /v1/media/upload-authorizations", server.authorizeMediaUpload)
+		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/responses", server.complete)
+		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/streams", server.stream)
+		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/job-capabilities", server.issueJobCapability)
+		server.mux.HandleFunc("POST /v1/ai/jobs", server.enqueueJob)
+		server.mux.HandleFunc("GET /v1/ai/jobs/{id}", server.getJob)
+		server.mux.HandleFunc("DELETE /v1/ai/jobs/{id}", server.cancelJob)
+	}
+	if server.app.ID == appregistry.Journal {
+		server.mux.HandleFunc("POST /v1/ai/operations/journal.organize/responses", server.organizeJournal)
+	}
 	server.mux.HandleFunc("POST /v1/privacy/consents", server.recordPrivacyConsents)
 	server.mux.HandleFunc("DELETE /v1/privacy/data", server.deletePrivacyData)
 	server.mux.HandleFunc("GET /v1/products/managed-ai", server.managedAIProduct)
@@ -234,8 +272,11 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
-	if server.authenticator == nil || server.entitlements == nil || server.quota == nil || server.quotaReader == nil || server.provider == nil ||
-		server.enrollment == nil || server.media == nil || server.jobs == nil || server.dispatcher == nil || server.capabilities == nil || server.contracts == nil || server.usage == nil || server.readiness == nil || server.privacy == nil {
+	commonUnavailable := server.authenticator == nil || server.entitlements == nil || server.quota == nil || server.quotaReader == nil ||
+		server.enrollment == nil || server.usage == nil || server.readiness == nil || server.privacy == nil || server.consent == nil
+	healthUnavailable := server.app.ID == appregistry.Health && (server.provider == nil || server.media == nil || server.jobs == nil || server.dispatcher == nil || server.capabilities == nil || server.contracts == nil)
+	journalUnavailable := server.app.ID == appregistry.Journal && server.journalOrganizer == nil
+	if commonUnavailable || healthUnavailable || journalUnavailable {
 		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", "")
 		return
 	}
@@ -254,7 +295,7 @@ func (server *Server) managedAIProduct(writer http.ResponseWriter, _ *http.Reque
 
 func (server *Server) recordPrivacyConsents(writer http.ResponseWriter, request *http.Request) {
 	if server.privacy == nil {
-		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	body, principal, ok := server.authenticateRequest(writer, request, 16<<10)
@@ -265,16 +306,16 @@ func (server *Server) recordPrivacyConsents(writer http.ResponseWriter, request 
 		Consents []privacy.Consent `json:"consents"`
 	}
 	if err := decodeStrictBytes(body, &input); err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	recordedAt, err := server.privacy.RecordConsents(request.Context(), principal, input.Consents)
 	if errors.Is(err, privacy.ErrInvalidConsent) {
-		writeError(writer, http.StatusUnprocessableEntity, "invalid_consent", "consent scope or document version is invalid", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusUnprocessableEntity, "invalid_consent", "consent scope or document version is invalid", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"recordedAt": recordedAt, "count": len(input.Consents)})
@@ -282,7 +323,7 @@ func (server *Server) recordPrivacyConsents(writer http.ResponseWriter, request 
 
 func (server *Server) deletePrivacyData(writer http.ResponseWriter, request *http.Request) {
 	if server.privacy == nil {
-		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	_, principal, ok := server.authenticateRequest(writer, request, 1<<10)
@@ -290,7 +331,7 @@ func (server *Server) deletePrivacyData(writer http.ResponseWriter, request *htt
 		return
 	}
 	if err := server.privacy.DeletePrincipal(request.Context(), principal); err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be completed", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be completed", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -298,7 +339,7 @@ func (server *Server) deletePrivacyData(writer http.ResponseWriter, request *htt
 
 func (server *Server) quotaStatus(writer http.ResponseWriter, request *http.Request) {
 	if server.quotaReader == nil || server.entitlements == nil {
-		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	_, principal, ok := server.authenticateRequest(writer, request, 1<<10)
@@ -307,11 +348,11 @@ func (server *Server) quotaStatus(writer http.ResponseWriter, request *http.Requ
 	}
 	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
 	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	if !allowed {
-		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	transactionID := principal.TransactionID
@@ -320,7 +361,7 @@ func (server *Server) quotaStatus(writer http.ResponseWriter, request *http.Requ
 	}
 	snapshot, err := server.quotaReader.Snapshot(request.Context(), transactionID, server.now())
 	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	writeJSON(writer, http.StatusOK, snapshot)
@@ -390,13 +431,13 @@ func (server *Server) activateDevelopmentEntitlement(writer http.ResponseWriter,
 	expiresAt, err := server.activator.Activate(
 		request.Context(),
 		principal,
-		request.Header.Get("X-Health-Dev-Activation"),
+		request.Header.Get("X-Tellyouwhat-Dev-Activation"),
 	)
 	if err != nil {
 		if errors.Is(err, entitlement.ErrActivationDenied) {
-			writeError(writer, http.StatusForbidden, "activation_denied", "development entitlement activation denied", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusForbidden, "activation_denied", "development entitlement activation denied", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		} else {
-			writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		}
 		return
 	}
@@ -416,7 +457,7 @@ func (server *Server) syncProductionEntitlement(writer http.ResponseWriter, requ
 		SignedTransaction string `json:"signedTransaction"`
 	}
 	if err := decodeStrictBytes(body, &input); err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	expiresAt, err := server.productionEntitlement.Sync(
@@ -427,11 +468,11 @@ func (server *Server) syncProductionEntitlement(writer http.ResponseWriter, requ
 	if err != nil {
 		switch {
 		case errors.Is(err, entitlement.ErrProductionSyncDenied):
-			writeError(writer, http.StatusForbidden, "transaction_verification_failed", "subscription transaction verification failed", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusForbidden, "transaction_verification_failed", "subscription transaction verification failed", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		case errors.Is(err, entitlement.ErrSubscriptionInactive):
-			writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		default:
-			writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		}
 		return
 	}
@@ -467,7 +508,7 @@ func (server *Server) processAppStoreNotification(writer http.ResponseWriter, re
 
 func (server *Server) authorizeMediaUpload(writer http.ResponseWriter, request *http.Request) {
 	if server.media == nil || server.entitlements == nil {
-		writeError(writer, http.StatusServiceUnavailable, "media_unavailable", "media service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "media_unavailable", "media service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	body, principal, ok := server.authenticateRequest(writer, request, 64<<10)
@@ -476,16 +517,16 @@ func (server *Server) authorizeMediaUpload(writer http.ResponseWriter, request *
 	}
 	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
 	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	if !allowed {
-		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	var input media.UploadRequest
 	if err := decodeStrictBytes(body, &input); err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	authorization, err := server.media.Authorize(request.Context(), principal, input)
@@ -505,24 +546,24 @@ func (server *Server) authorizeMediaUpload(writer http.ResponseWriter, request *
 
 func (server *Server) enqueueJob(writer http.ResponseWriter, request *http.Request) {
 	if server.jobs == nil || server.dispatcher == nil || server.capabilities == nil || server.entitlements == nil || server.contracts == nil || server.media == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	body, err := readBody(request.Body, contracts.DefaultBodyLimit)
 	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	artifact, err := contracts.DecodeAndValidate(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	if err := server.contracts.Validate(artifact); err != nil {
 		writeMappedError(writer, err, artifact.RequestID)
 		return
 	}
-	jobID := request.Header.Get("X-Health-Job-ID")
+	jobID := request.Header.Get("X-Tellyouwhat-Job-ID")
 	token := strings.TrimPrefix(request.Header.Get("Authorization"), "JobCapability ")
 	mediaDigest, err := contracts.MediaDigest(artifact.Media)
 	if err != nil {
@@ -541,6 +582,10 @@ func (server *Server) enqueueJob(writer http.ResponseWriter, request *http.Reque
 		writeError(writer, http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
 		return
 	}
+	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
+		writeError(writer, http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
+		return
+	}
 	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
 	if err != nil {
 		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", artifact.RequestID)
@@ -548,6 +593,9 @@ func (server *Server) enqueueJob(writer http.ResponseWriter, request *http.Reque
 	}
 	if !allowed {
 		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", artifact.RequestID)
+		return
+	}
+	if !server.requireConsent(writer, request, principal, artifact.RequestID) {
 		return
 	}
 	job, err := server.jobs.EnqueueWithID(request.Context(), principal, jobID, artifact, contracts.BodySHA256(body))
@@ -572,7 +620,7 @@ func (server *Server) enqueueJob(writer http.ResponseWriter, request *http.Reque
 
 func (server *Server) issueJobCapability(writer http.ResponseWriter, request *http.Request) {
 	if server.capabilities == nil || server.jobs == nil || server.dispatcher == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	artifact, body, principal, ok := server.validateAIRequest(writer, request)
@@ -619,7 +667,7 @@ func (server *Server) issueJobCapability(writer http.ResponseWriter, request *ht
 
 func (server *Server) getJob(writer http.ResponseWriter, request *http.Request) {
 	if server.jobs == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	_, principal, ok := server.authenticateRequest(writer, request, 0)
@@ -629,9 +677,9 @@ func (server *Server) getJob(writer http.ResponseWriter, request *http.Request) 
 	job, err := server.jobs.Get(request.Context(), principal, request.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, jobs.ErrNotFound) {
-			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		} else {
-			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		}
 		return
 	}
@@ -640,7 +688,7 @@ func (server *Server) getJob(writer http.ResponseWriter, request *http.Request) 
 
 func (server *Server) cancelJob(writer http.ResponseWriter, request *http.Request) {
 	if server.jobs == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return
 	}
 	_, principal, ok := server.authenticateRequest(writer, request, 0)
@@ -650,11 +698,11 @@ func (server *Server) cancelJob(writer http.ResponseWriter, request *http.Reques
 	if err := server.jobs.Cancel(request.Context(), principal, request.PathValue("id")); err != nil {
 		switch {
 		case errors.Is(err, jobs.ErrNotFound):
-			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		case errors.Is(err, jobs.ErrJobNotClaimable):
-			writeError(writer, http.StatusConflict, "job_not_cancellable", "job is already complete", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusConflict, "job_not_cancellable", "job is already complete", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		default:
-			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Health-Request-ID"))
+			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		}
 		return
 	}
@@ -707,6 +755,109 @@ func (server *Server) complete(writer http.ResponseWriter, request *http.Request
 			"outputTokens": response.OutputTokens,
 		},
 	})
+}
+
+func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.Request) {
+	if server.journalOrganizer == nil || server.entitlements == nil || server.quota == nil || server.usage == nil {
+		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", requestID(request))
+		return
+	}
+	body, principal, ok := server.authenticateRequest(writer, request, journalcontracts.MaxBodyBytes)
+	if !ok {
+		return
+	}
+	var input journalcontracts.OrganizeRequest
+	if err := decodeStrictBytes(body, &input); err != nil || input.Validate() != nil {
+		writeError(writer, http.StatusUnprocessableEntity, "contract_violation", "request violates the journal organization contract", requestID(request))
+		return
+	}
+	if input.RequestID != requestID(request) || !server.app.AllowsOperation("journal.organize") {
+		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestID(request))
+		return
+	}
+	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", input.RequestID)
+		return
+	}
+	if !allowed {
+		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", input.RequestID)
+		return
+	}
+	if !server.requireConsent(writer, request, principal, input.RequestID) {
+		return
+	}
+	transactionID := principal.TransactionID
+	if transactionID == "" {
+		transactionID = principal.KeyID
+	}
+	estimatedTokens := journalReservationTokens(input)
+	lease, err := server.quota.Acquire(request.Context(), quota.Identity{
+		DeviceID: principal.DeviceID, TransactionID: transactionID, IP: server.ipResolver(request),
+	}, contracts.Operation("journal.organize"), estimatedTokens, "", server.now())
+	if err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			code, message := quotaExceededResponse(err)
+			writeError(writer, http.StatusTooManyRequests, code, message, input.RequestID)
+		} else {
+			writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", input.RequestID)
+		}
+		return
+	}
+	result, err := server.journalOrganizer.Organize(request.Context(), input)
+	if err != nil {
+		lease.Release(0)
+		writeError(writer, http.StatusBadGateway, "upstream_error", "managed AI provider failed", input.RequestID)
+		return
+	}
+	actualTokens := result.InputTokens + result.OutputTokens
+	if err := server.usage.Record(request.Context(), usage.Record{
+		RequestID: input.RequestID, KeyID: principal.KeyID, DeviceID: principal.DeviceID,
+		TransactionID: transactionID, Operation: contracts.Operation("journal.organize"),
+		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens, OccurredAt: server.now(),
+	}); err != nil {
+		actualTokens = estimatedTokens
+	}
+	lease.Release(actualTokens)
+	snapshot, err := server.quotaReader.Snapshot(request.Context(), transactionID, server.now())
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", input.RequestID)
+		return
+	}
+	response := journalcontracts.OrganizeResponse{
+		RequestID: input.RequestID, ContentHash: input.ContentHash,
+		AnalysisVersion:             server.journalAnalysisVersion,
+		Tags:                        result.Value.Tags,
+		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
+		NewBookSuggestions:          result.Value.NewBookSuggestions,
+		Quota: journalcontracts.Quota{
+			DailyRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
+			MonthlyRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
+		},
+	}
+	bookIDs := make(map[string]bool, len(input.Books))
+	for _, book := range input.Books {
+		bookIDs[book.ID] = true
+	}
+	if err := response.Validate(bookIDs); err != nil {
+		writeError(writer, http.StatusBadGateway, "invalid_model_result", "managed AI returned an invalid result", input.RequestID)
+		return
+	}
+	writeJSON(writer, http.StatusOK, response)
+}
+
+func journalReservationTokens(input journalcontracts.OrganizeRequest) int {
+	value := len(input.Title) + len(input.Body) + 8_192
+	for _, tag := range input.ExistingTags {
+		value += len(tag)
+	}
+	for _, tag := range input.RejectedTagNames {
+		value += len(tag)
+	}
+	for _, book := range input.Books {
+		value += len(book.Name) + len(book.Description) + 64
+	}
+	return value
 }
 
 func (server *Server) stream(writer http.ResponseWriter, request *http.Request) {
@@ -806,22 +957,26 @@ func (server *Server) validateAIRequest(
 	}
 	body, err := readBody(request.Body, contracts.DefaultBodyLimit)
 	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return contracts.Request{}, nil, Principal{}, false
 	}
 	proof := RequestProof{
 		Method:     request.Method,
 		Path:       request.URL.EscapedPath(),
-		RequestID:  request.Header.Get("X-Health-Request-ID"),
-		KeyID:      request.Header.Get("X-Health-Key-ID"),
-		Assertion:  request.Header.Get("X-Health-Assertion"),
-		Nonce:      request.Header.Get("X-Health-Nonce"),
-		Timestamp:  request.Header.Get("X-Health-Timestamp"),
+		RequestID:  request.Header.Get("X-Tellyouwhat-Request-ID"),
+		KeyID:      request.Header.Get("X-Tellyouwhat-Key-ID"),
+		Assertion:  request.Header.Get("X-Tellyouwhat-Assertion"),
+		Nonce:      request.Header.Get("X-Tellyouwhat-Nonce"),
+		Timestamp:  request.Header.Get("X-Tellyouwhat-Timestamp"),
 		BodySHA256: contracts.BodySHA256(body),
 	}
 	principal, err := server.authenticator.Authenticate(request.Context(), proof)
 	if err != nil {
 		writeAuthenticationError(writer, err, proof.RequestID)
+		return contracts.Request{}, nil, Principal{}, false
+	}
+	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
+		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
 		return contracts.Request{}, nil, Principal{}, false
 	}
 	artifact, err := contracts.DecodeAndValidate(bytes.NewReader(body), int64(len(body)))
@@ -837,6 +992,11 @@ func (server *Server) validateAIRequest(
 		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
 		return contracts.Request{}, nil, Principal{}, false
 	}
+	pathOperation := request.PathValue("operation")
+	if pathOperation == "" || pathOperation != string(artifact.Operation) || !server.app.AllowsOperation(pathOperation) {
+		writeError(writer, http.StatusUnprocessableEntity, "operation_mismatch", "request operation does not match the endpoint", artifact.RequestID)
+		return contracts.Request{}, nil, Principal{}, false
+	}
 	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
 	if err != nil {
 		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", artifact.RequestID)
@@ -846,7 +1006,35 @@ func (server *Server) validateAIRequest(
 		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", artifact.RequestID)
 		return contracts.Request{}, nil, Principal{}, false
 	}
+	if !server.requireConsent(writer, request, principal, artifact.RequestID) {
+		return contracts.Request{}, nil, Principal{}, false
+	}
 	return artifact, body, principal, true
+}
+
+func (server *Server) requireConsent(
+	writer http.ResponseWriter,
+	request *http.Request,
+	principal Principal,
+	requestID string,
+) bool {
+	if len(server.requiredConsentScopes) == 0 {
+		return true
+	}
+	if server.consent == nil {
+		writeError(writer, http.StatusServiceUnavailable, "consent_unavailable", "privacy consent service unavailable", requestID)
+		return false
+	}
+	granted, err := server.consent.HasRequiredConsents(request.Context(), principal, server.requiredConsentScopes)
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "consent_unavailable", "privacy consent service unavailable", requestID)
+		return false
+	}
+	if !granted {
+		writeError(writer, http.StatusForbidden, "consent_required", "required privacy consent has not been granted", requestID)
+		return false
+	}
+	return true
 }
 
 func (server *Server) acquireQuota(
@@ -939,22 +1127,22 @@ func (server *Server) authenticateRequest(
 	maxBodyBytes int64,
 ) ([]byte, Principal, bool) {
 	if server.authenticator == nil {
-		writeError(writer, http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", request.Header.Get("X-Health-Request-ID"))
+		writeError(writer, http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return nil, Principal{}, false
 	}
 	body, err := readBody(request.Body, maxBodyBytes)
 	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Health-Request-ID"))
+		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
 		return nil, Principal{}, false
 	}
 	proof := RequestProof{
 		Method:     request.Method,
 		Path:       request.URL.EscapedPath(),
-		RequestID:  request.Header.Get("X-Health-Request-ID"),
-		KeyID:      request.Header.Get("X-Health-Key-ID"),
-		Assertion:  request.Header.Get("X-Health-Assertion"),
-		Nonce:      request.Header.Get("X-Health-Nonce"),
-		Timestamp:  request.Header.Get("X-Health-Timestamp"),
+		RequestID:  request.Header.Get("X-Tellyouwhat-Request-ID"),
+		KeyID:      request.Header.Get("X-Tellyouwhat-Key-ID"),
+		Assertion:  request.Header.Get("X-Tellyouwhat-Assertion"),
+		Nonce:      request.Header.Get("X-Tellyouwhat-Nonce"),
+		Timestamp:  request.Header.Get("X-Tellyouwhat-Timestamp"),
 		BodySHA256: contracts.BodySHA256(body),
 	}
 	principal, err := server.authenticator.Authenticate(request.Context(), proof)
@@ -962,7 +1150,15 @@ func (server *Server) authenticateRequest(
 		writeAuthenticationError(writer, err, proof.RequestID)
 		return nil, Principal{}, false
 	}
+	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
+		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
+		return nil, Principal{}, false
+	}
 	return body, principal, true
+}
+
+func requestID(request *http.Request) string {
+	return request.Header.Get("X-Tellyouwhat-Request-ID")
 }
 
 func writeAuthenticationError(writer http.ResponseWriter, err error, requestID string) {

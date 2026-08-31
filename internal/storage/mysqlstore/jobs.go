@@ -18,10 +18,11 @@ const jobClaimLease = 2 * time.Minute
 type JobRepository struct {
 	database *sql.DB
 	cipher   *PayloadCipher
+	appID    string
 }
 
-func NewJobRepository(database *sql.DB, cipher *PayloadCipher) *JobRepository {
-	return &JobRepository{database: database, cipher: cipher}
+func NewJobRepository(database *sql.DB, cipher *PayloadCipher, appID string) *JobRepository {
+	return &JobRepository{database: database, cipher: cipher, appID: appID}
 }
 
 func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) (jobs.Job, error) {
@@ -40,10 +41,11 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 	defer func() { _ = transaction.Rollback() }()
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         INSERT INTO ai_jobs
-            (id, request_id, body_digest, owner_key_id, owner_device_id, owner_transaction_id,
+			(app_id, id, request_id, body_digest, owner_key_id, owner_device_id, owner_transaction_id,
              request_ciphertext, request_nonce, status, created_at, updated_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE request_id = VALUES(request_id)`,
+		repository.appID,
 		job.ID,
 		job.RequestID,
 		job.BodyDigest,
@@ -61,7 +63,7 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 		return jobs.Job{}, err
 	}
 	if count == 1 {
-		if _, err := transaction.ExecContext(ctx, `INSERT INTO job_dispatch_outbox (job_id, available_at) VALUES (?, ?)`, job.ID, job.CreatedAt); err != nil {
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO job_dispatch_outbox (app_id, job_id, available_at) VALUES (?, ?, ?)`, repository.appID, job.ID, job.CreatedAt); err != nil {
 			return jobs.Job{}, err
 		}
 		if err := transaction.Commit(); err != nil {
@@ -69,7 +71,7 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 		}
 		return job, nil
 	}
-	existing, err := repository.scanJob(transaction.QueryRowContext(ctx, jobSelect+` WHERE request_id = ?`, job.RequestID))
+	existing, err := repository.scanJob(transaction.QueryRowContext(ctx, jobSelect+` WHERE app_id = ? AND request_id = ?`, repository.appID, job.RequestID))
 	if err != nil {
 		return jobs.Job{}, err
 	}
@@ -78,8 +80,8 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 	}
 	if existing.Status == jobs.StatusQueued || existing.Status == jobs.StatusRunning {
 		if _, err := transaction.ExecContext(ctx, `
-            INSERT INTO job_dispatch_outbox (job_id, available_at)
-            VALUES (?, ?) ON DUPLICATE KEY UPDATE job_id = VALUES(job_id)`, existing.ID, job.CreatedAt); err != nil {
+			INSERT INTO job_dispatch_outbox (app_id, job_id, available_at)
+			VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE job_id = VALUES(job_id)`, repository.appID, existing.ID, job.CreatedAt); err != nil {
 			return jobs.Job{}, err
 		}
 	}
@@ -90,7 +92,7 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 }
 
 func (repository *JobRepository) Get(ctx context.Context, jobID string) (jobs.Job, error) {
-	return repository.scanJob(repository.database.QueryRowContext(ctx, jobSelect+` WHERE id = ?`, jobID))
+	return repository.scanJob(repository.database.QueryRowContext(ctx, jobSelect+` WHERE app_id = ? AND id = ?`, repository.appID, jobID))
 }
 
 func (repository *JobRepository) Claim(ctx context.Context, jobID string, now time.Time) (jobs.Job, error) {
@@ -98,10 +100,10 @@ func (repository *JobRepository) Claim(ctx context.Context, jobID string, now ti
         UPDATE ai_jobs
         SET status = 'running', attempt_count = attempt_count + 1,
             claim_expires_at = ?, updated_at = ?
-        WHERE id = ?
+		WHERE app_id = ? AND id = ?
           AND (status = 'queued' OR (status = 'running' AND claim_expires_at <= ?))
           AND attempt_count < 3 AND expires_at > ?`,
-		now.Add(jobClaimLease), now, jobID, now, now,
+		now.Add(jobClaimLease), now, repository.appID, jobID, now, now,
 	))
 	if err != nil {
 		return jobs.Job{}, err
@@ -116,8 +118,8 @@ func (repository *JobRepository) ExtendLease(ctx context.Context, jobID string, 
 	count, err := affectedRows(repository.database.ExecContext(ctx, `
         UPDATE ai_jobs
         SET claim_expires_at = ?, updated_at = ?
-        WHERE id = ? AND status = 'running' AND attempt_count = ?`,
-		now.Add(jobClaimLease), now, jobID, attempt,
+		WHERE app_id = ? AND id = ? AND status = 'running' AND attempt_count = ?`,
+		now.Add(jobClaimLease), now, repository.appID, jobID, attempt,
 	))
 	if err != nil {
 		return err
@@ -149,8 +151,8 @@ func (repository *JobRepository) Succeed(
         UPDATE ai_jobs
         SET status = 'succeeded', result_ciphertext = ?, result_nonce = ?,
             input_tokens = ?, output_tokens = ?, claim_expires_at = NULL, updated_at = ?
-        WHERE id = ? AND status = 'running' AND attempt_count = ?`,
-		ciphertext, nonce, response.InputTokens, response.OutputTokens, now, jobID, attempt,
+		WHERE app_id = ? AND id = ? AND status = 'running' AND attempt_count = ?`,
+		ciphertext, nonce, response.InputTokens, response.OutputTokens, now, repository.appID, jobID, attempt,
 	))
 	if err != nil {
 		return err
@@ -163,16 +165,16 @@ func (repository *JobRepository) Succeed(
 	}
 	if _, err := transaction.ExecContext(ctx, `
         INSERT INTO usage_ledger
-            (request_id, key_id, device_id, original_transaction_id, operation,
+			(app_id, request_id, key_id, device_id, original_transaction_id, operation,
              input_tokens, output_tokens, occurred_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE request_id = VALUES(request_id)`,
-		usageRecord.RequestID, usageRecord.KeyID, usageRecord.DeviceID, usageRecord.TransactionID,
+		repository.appID, usageRecord.RequestID, usageRecord.KeyID, usageRecord.DeviceID, usageRecord.TransactionID,
 		usageRecord.Operation, usageRecord.InputTokens, usageRecord.OutputTokens, usageRecord.OccurredAt,
 	); err != nil {
 		return err
 	}
-	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE job_id = ?`, jobID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID); err != nil {
 		return err
 	}
 	return transaction.Commit()
@@ -187,14 +189,14 @@ func (repository *JobRepository) Fail(ctx context.Context, jobID string, attempt
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         UPDATE ai_jobs
         SET status = 'failed', failure_category = ?, claim_expires_at = NULL, updated_at = ?
-        WHERE id = ? AND status = 'running' AND attempt_count = ?`, category, now, jobID, attempt))
+		WHERE app_id = ? AND id = ? AND status = 'running' AND attempt_count = ?`, category, now, repository.appID, jobID, attempt))
 	if err != nil {
 		return err
 	}
 	if count != 1 {
 		return jobs.ErrJobNotClaimable
 	}
-	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE job_id = ?`, jobID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID); err != nil {
 		return err
 	}
 	return transaction.Commit()
@@ -209,7 +211,7 @@ func (repository *JobRepository) RetryOrFail(ctx context.Context, jobID string, 
 	var storedAttempt int
 	var currentStatus jobs.Status
 	err = transaction.QueryRowContext(ctx, `
-        SELECT attempt_count, status FROM ai_jobs WHERE id = ? FOR UPDATE`, jobID).Scan(&storedAttempt, &currentStatus)
+		SELECT attempt_count, status FROM ai_jobs WHERE app_id = ? AND id = ? FOR UPDATE`, repository.appID, jobID).Scan(&storedAttempt, &currentStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, jobs.ErrJobNotClaimable
 	}
@@ -226,8 +228,8 @@ func (repository *JobRepository) RetryOrFail(ctx context.Context, jobID string, 
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         UPDATE ai_jobs
         SET status = ?, failure_category = ?, claim_expires_at = NULL, updated_at = ?
-        WHERE id = ? AND status = 'running' AND attempt_count = ?`,
-		nextStatus, category, now, jobID, attempt,
+		WHERE app_id = ? AND id = ? AND status = 'running' AND attempt_count = ?`,
+		nextStatus, category, now, repository.appID, jobID, attempt,
 	))
 	if err != nil {
 		return false, err
@@ -236,12 +238,12 @@ func (repository *JobRepository) RetryOrFail(ctx context.Context, jobID string, 
 		return false, jobs.ErrJobNotClaimable
 	}
 	if nextStatus == jobs.StatusFailed {
-		_, err = transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE job_id = ?`, jobID)
+		_, err = transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID)
 	} else {
 		_, err = transaction.ExecContext(ctx, `
-            INSERT INTO job_dispatch_outbox (job_id, available_at)
-            VALUES (?, ?)
-            ON DUPLICATE KEY UPDATE available_at = VALUES(available_at), claimed_until = NULL`, jobID, now)
+			INSERT INTO job_dispatch_outbox (app_id, job_id, available_at)
+			VALUES (?, ?, ?)
+			ON DUPLICATE KEY UPDATE available_at = VALUES(available_at), claimed_until = NULL`, repository.appID, jobID, now)
 	}
 	if err != nil {
 		return false, err
@@ -261,14 +263,14 @@ func (repository *JobRepository) Cancel(ctx context.Context, jobID string, now t
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         UPDATE ai_jobs
         SET status = 'cancelled', claim_expires_at = NULL, updated_at = ?
-        WHERE id = ? AND status IN ('queued', 'running')`, now, jobID))
+		WHERE app_id = ? AND id = ? AND status IN ('queued', 'running')`, now, repository.appID, jobID))
 	if err != nil {
 		return err
 	}
 	if count != 1 {
 		return jobs.ErrJobNotClaimable
 	}
-	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE job_id = ?`, jobID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID); err != nil {
 		return err
 	}
 	return transaction.Commit()
@@ -285,6 +287,7 @@ type rowScanner interface{ Scan(...any) error }
 
 func (repository *JobRepository) scanJob(row rowScanner) (jobs.Job, error) {
 	var job jobs.Job
+	job.AppID = repository.appID
 	var requestCiphertext, requestNonce, resultCiphertext, resultNonce []byte
 	var claimExpiresAt sql.NullTime
 	err := row.Scan(

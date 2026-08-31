@@ -140,4 +140,3 @@ func makeAttestationFixture(t *testing.T, appID string, environment Environment)
 	}
 	return attestationFixture{keyID: keyID, object: object, clientDataHash: clientDataHash, roots: roots}
 }
-

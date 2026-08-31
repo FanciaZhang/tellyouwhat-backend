@@ -15,7 +15,7 @@ func TestJobCapabilityBindsJobOperationBodyMediaAndIsSingleUse(t *testing.T) {
 
 	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
 	service := NewService([]byte("01234567890123456789012345678901"), NewMemoryUseStore(), func() time.Time { return now })
-	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1", TransactionID: "transaction-1"}
+	principal := attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1", TransactionID: "transaction-1"}
 	issued, err := service.Issue(principal, Binding{
 		RequestID:   "19be2f9e-bd92-4699-b561-e3816092114c",
 		Operation:   contracts.OperationMealDecision,
@@ -57,7 +57,7 @@ func TestJobCapabilityRejectsTamperedBodyDigest(t *testing.T) {
 	t.Parallel()
 
 	service := NewService([]byte("01234567890123456789012345678901"), NewMemoryUseStore(), time.Now)
-	issued, _ := service.Issue(attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}, Binding{
+	issued, _ := service.Issue(attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1"}, Binding{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c", Operation: contracts.OperationMealDecision, BodyDigest: "body", MediaDigest: "media",
 	})
 	_, err := service.Consume(context.Background(), issued.Token, Binding{
@@ -74,7 +74,7 @@ func TestJobCapabilityReissuesSameTokenForPersistedAdmissionTime(t *testing.T) {
 	issuedAt := time.Date(2026, 8, 2, 8, 0, 0, 123456000, time.UTC)
 	now := issuedAt.Add(time.Minute)
 	service := NewService([]byte("01234567890123456789012345678901"), NewMemoryUseStore(), func() time.Time { return now })
-	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1", TransactionID: "transaction-1"}
+	principal := attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1", TransactionID: "transaction-1"}
 	binding := Binding{
 		RequestID: "19be2f9e-bd92-4699-b561-e3816092114c", Operation: contracts.OperationMealDecision,
 		BodyDigest: "body-digest", MediaDigest: "media-digest",
@@ -91,4 +91,3 @@ func TestJobCapabilityReissuesSameTokenForPersistedAdmissionTime(t *testing.T) {
 		t.Fatalf("same durable admission produced different capabilities: %+v != %+v", first, second)
 	}
 }
-

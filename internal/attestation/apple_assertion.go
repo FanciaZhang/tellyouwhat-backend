@@ -62,4 +62,3 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 }
 
 var _ AssertionVerifier = (*AppleAssertionVerifier)(nil)
-

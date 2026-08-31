@@ -25,6 +25,18 @@ func (repository *MemoryRepository) RecordConsents(_ context.Context, records []
 	return nil
 }
 
+func (repository *MemoryRepository) HasGrantedConsents(_ context.Context, keyID string, requirements []Consent) (bool, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	for _, requirement := range requirements {
+		record, ok := repository.records[keyID+"\x00"+requirement.Scope+"\x00"+requirement.DocumentVersion]
+		if !ok || !record.Granted {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (*MemoryRepository) PlanDeletion(_ context.Context, principal attestation.Principal) (DeletionPlan, error) {
 	return DeletionPlan{Principals: []attestation.Principal{principal}}, nil
 }

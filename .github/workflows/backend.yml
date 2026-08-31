@@ -1,0 +1,156 @@
+name: Backend CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy verified images to the production server
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/tellyouwhat-ai
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build ./cmd/...
+      - name: Validate deployment files
+        run: |
+          touch .env.production
+          docker compose -f compose.production.yaml config --quiet
+        env:
+          HEALTH_API_DOMAIN: api.health.example
+          JOURNAL_API_DOMAIN: api.journal.example
+          ADMIN_DOMAIN: admin.example
+          ACME_EMAIL: ops@example.com
+          MYSQL_USER: app
+          MYSQL_PASSWORD: placeholder
+          MYSQL_DATABASE: app
+          REDIS_PASSWORD: placeholder
+
+  container:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, worker, admin, adminctl, migrate, maintenance]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@650006c6eb7dba73a995cc03cf7ad053ef454303e
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:main
+          build-args: SERVICE=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: container
+    if: >-
+      github.event_name != 'pull_request' &&
+      ((github.event_name == 'push' && vars.PRODUCTION_DEPLOY_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.deploy))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Materialize protected deployment inputs
+        env:
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          HEALTH_SUBSCRIPTION_KEY: ${{ secrets.HEALTH_APP_STORE_PRIVATE_KEY }}
+          JOURNAL_SUBSCRIPTION_KEY: ${{ secrets.JOURNAL_APP_STORE_PRIVATE_KEY }}
+          HEALTH_MARKETING_KEY: ${{ secrets.HEALTH_APP_STORE_CONNECT_PRIVATE_KEY }}
+          JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
+          printf '%s\n' "$PRODUCTION_ENV_FILE" > "$RUNNER_TEMP/.env.production"
+          printf '%s\n' "$HEALTH_SUBSCRIPTION_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/health-subscription.p8"
+          printf '%s\n' "$JOURNAL_SUBSCRIPTION_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/journal-subscription.p8"
+          printf '%s\n' "$HEALTH_MARKETING_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/health-marketing.p8"
+          printf '%s\n' "$JOURNAL_MARKETING_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/journal-marketing.p8"
+          chmod 600 "$RUNNER_TEMP/.env.production" "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8
+          grep -q '^HEALTH_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
+          grep -q '^JOURNAL_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
+          grep -q '^ADMIN_DOMAIN=' "$RUNNER_TEMP/.env.production"
+          for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/tellyouwhat-production
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/tellyouwhat-production
+      - name: Upload deployment files
+        env:
+          HOST: ${{ vars.PRODUCTION_HOST }}
+          USER: ${{ vars.PRODUCTION_USER }}
+        run: |
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" 'install -d -m 700 /opt/tellyouwhat/backend/secrets && install -d -m 755 /opt/tellyouwhat/backend/deploy/single-server'
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$USER@$HOST:/opt/tellyouwhat/backend/compose.production.yaml"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile "$USER@$HOST:/opt/tellyouwhat/backend/deploy/single-server/Caddyfile"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$USER@$HOST:/opt/tellyouwhat/backend/.env.production"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$USER@$HOST:/opt/tellyouwhat/backend/secrets/"
+      - name: Migrate and restart the single server
+        env:
+          HOST: ${{ vars.PRODUCTION_HOST }}
+          USER: ${{ vars.PRODUCTION_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" bash -s -- "${GITHUB_SHA}" "${IMAGE_PREFIX}" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/tellyouwhat/backend
+          chmod 600 .env.production secrets/*.p8
+          export IMAGE_TAG="$1" IMAGE_REGISTRY_PREFIX="$2"
+          docker compose --env-file .env.production -f compose.production.yaml pull gateway worker admin adminctl migrate maintenance
+          docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps migrate
+          docker compose --env-file .env.production -f compose.production.yaml up -d --no-build gateway worker admin caddy
+          REMOTE
+      - name: Verify both public App runtimes
+        run: |
+          curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://api.health.tellyouwhat.cn/readyz
+          curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://api.journal.tellyouwhat.cn/readyz

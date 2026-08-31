@@ -18,6 +18,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
@@ -32,37 +33,44 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	serviceConfig, err := config.LoadWorker()
+	platform, err := config.LoadWorkerPlatform()
 	if err != nil {
 		return err
 	}
-	if serviceConfig.StorageMode != "mysql" {
-		return errors.New("distributed worker requires mysql storage")
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	database, err := mysqlstore.Open(ctx, serviceConfig.DatabaseDSN)
+	database, err := mysqlstore.Open(ctx, platform.DatabaseDSN)
 	if err != nil {
 		return err
 	}
 	defer database.Close()
-	redisClient, err := redisstore.Open(ctx, serviceConfig.RedisURL)
+	redisClient, err := redisstore.Open(ctx, platform.RedisURL)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = redisClient.Close() }()
-	payloadCipher, err := mysqlstore.NewPayloadCipher(serviceConfig.PayloadEncryptionKey)
+	cipher, err := mysqlstore.NewPayloadCipher(platform.PayloadEncryptionKey)
 	if err != nil {
 		return err
 	}
-	jobStore := mysqlstore.NewJobRepository(database, payloadCipher)
-	tosStore, err := media.NewTOSStore(serviceConfig.TOS)
+	tosStore, err := media.NewTOSStore(platform.TOS)
 	if err != nil {
 		return err
 	}
-	provider := ark.New(serviceConfig.Ark, http.DefaultClient, tosStore)
-	reconciler := redisstore.NewQuotaLimiter(redisClient, serviceConfig.Quota)
-	worker := jobs.NewWorker(jobStore, provider, reconciler)
+	workers := make(map[appregistry.AppID]*jobs.Worker)
+	for _, app := range platform.Apps {
+		if app.Registry.ID != appregistry.Health {
+			continue
+		}
+		appID := string(app.Registry.ID)
+		store := mysqlstore.NewJobRepository(database, cipher, appID)
+		provider := ark.New(app.Ark, http.DefaultClient, tosStore)
+		reconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
+		workers[app.Registry.ID] = jobs.NewWorker(store, provider, reconciler)
+	}
+	if len(workers) == 0 {
+		return errors.New("no asynchronous application workers are configured")
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
@@ -70,8 +78,8 @@ func run(logger *slog.Logger) error {
 		_, _ = writer.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("POST /internal/jobs/process", func(writer http.ResponseWriter, request *http.Request) {
-		provided := []byte(request.Header.Get("X-Health-Worker-Secret"))
-		expected := []byte(serviceConfig.WorkerSecret)
+		provided := []byte(request.Header.Get("X-Tellyouwhat-Worker-Secret"))
+		expected := []byte(platform.WorkerSecret)
 		if len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {
 			http.Error(writer, "unauthorized", http.StatusUnauthorized)
 			return
@@ -82,14 +90,16 @@ func run(logger *slog.Logger) error {
 			return
 		}
 		var input struct {
-			JobID string `json:"jobID"`
+			AppID appregistry.AppID `json:"appID"`
+			JobID string            `json:"jobID"`
 		}
 		decoder := json.NewDecoder(bytes.NewReader(body))
 		decoder.DisallowUnknownFields()
 		decoderErr := decoder.Decode(&input)
 		var extra json.RawMessage
 		trailingErr := decoder.Decode(&extra)
-		if decoderErr != nil || !errors.Is(trailingErr, io.EOF) || input.JobID == "" {
+		worker := workers[input.AppID]
+		if decoderErr != nil || !errors.Is(trailingErr, io.EOF) || input.JobID == "" || worker == nil {
 			http.Error(writer, "invalid job", http.StatusUnprocessableEntity)
 			return
 		}
@@ -101,7 +111,7 @@ func run(logger *slog.Logger) error {
 	})
 
 	server := &http.Server{
-		Addr:              ":" + serviceConfig.Port,
+		Addr:              ":" + platform.Port,
 		Handler:           observability.HTTPLogger(logger, observability.RecoverPanics(logger, mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

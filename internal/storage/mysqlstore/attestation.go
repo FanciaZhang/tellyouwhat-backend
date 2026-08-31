@@ -8,18 +8,22 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 )
 
-type KeyRepository struct{ database *sql.DB }
+type KeyRepository struct {
+	database *sql.DB
+	appID    string
+}
 
-func NewKeyRepository(database *sql.DB) *KeyRepository {
-	return &KeyRepository{database: database}
+func NewKeyRepository(database *sql.DB, appID string) *KeyRepository {
+	return &KeyRepository{database: database, appID: appID}
 }
 
 func (repository *KeyRepository) Register(ctx context.Context, key attestation.RegisteredKey) error {
 	count, err := affectedRows(repository.database.ExecContext(ctx, `
         INSERT INTO app_attest_keys
-            (key_id, device_id, transaction_id, public_key_der, assertion_counter, environment, receipt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE key_id = VALUES(key_id)`,
+			(app_id, key_id, device_id, transaction_id, public_key_der, assertion_counter, environment, receipt)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE key_id = VALUES(key_id)`,
+		repository.appID,
 		key.KeyID,
 		key.DeviceID,
 		key.TransactionID,
@@ -39,12 +43,13 @@ func (repository *KeyRepository) Register(ctx context.Context, key attestation.R
 
 func (repository *KeyRepository) Get(ctx context.Context, keyID string) (attestation.RegisteredKey, error) {
 	var key attestation.RegisteredKey
+	key.AppID = repository.appID
 	var counter int64
 	err := repository.database.QueryRowContext(ctx, `
         SELECT key_id, device_id, transaction_id, public_key_der,
                assertion_counter, environment, receipt
         FROM app_attest_keys
-        WHERE key_id = ?`, keyID).Scan(
+		WHERE app_id = ? AND key_id = ?`, repository.appID, keyID).Scan(
 		&key.KeyID,
 		&key.DeviceID,
 		&key.TransactionID,
@@ -72,8 +77,8 @@ func (repository *KeyRepository) AdvanceCounter(
 	count, err := affectedRows(repository.database.ExecContext(ctx, `
         UPDATE app_attest_keys
         SET assertion_counter = ?, updated_at = UTC_TIMESTAMP(6)
-        WHERE key_id = ? AND assertion_counter = ? AND ? > ?`,
-		next, keyID, expected, next, expected,
+		WHERE app_id = ? AND key_id = ? AND assertion_counter = ? AND ? > ?`,
+		next, repository.appID, keyID, expected, next, expected,
 	))
 	if err != nil {
 		return err
@@ -92,8 +97,8 @@ func (repository *KeyRepository) BindTransaction(
 	result, err := repository.database.ExecContext(ctx, `
         UPDATE app_attest_keys
         SET transaction_id = ?, updated_at = UTC_TIMESTAMP(6)
-        WHERE key_id = ? AND (transaction_id = '' OR transaction_id = ?)`,
-		transactionID, keyID, transactionID)
+		WHERE app_id = ? AND key_id = ? AND (transaction_id = '' OR transaction_id = ?)`,
+		transactionID, repository.appID, keyID, transactionID)
 	if err != nil {
 		return err
 	}
@@ -106,7 +111,7 @@ func (repository *KeyRepository) BindTransaction(
 	}
 	var existing string
 	if err := repository.database.QueryRowContext(ctx,
-		`SELECT transaction_id FROM app_attest_keys WHERE key_id = ?`, keyID,
+		`SELECT transaction_id FROM app_attest_keys WHERE app_id = ? AND key_id = ?`, repository.appID, keyID,
 	).Scan(&existing); err != nil || existing != transactionID {
 		return attestation.ErrTransactionBindingConflict
 	}

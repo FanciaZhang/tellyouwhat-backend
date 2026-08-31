@@ -10,10 +10,13 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 )
 
-type EntitlementRepository struct{ database *sql.DB }
+type EntitlementRepository struct {
+	database *sql.DB
+	appID    string
+}
 
-func NewEntitlementRepository(database *sql.DB) *EntitlementRepository {
-	return &EntitlementRepository{database: database}
+func NewEntitlementRepository(database *sql.DB, appID string) *EntitlementRepository {
+	return &EntitlementRepository{database: database, appID: appID}
 }
 
 func (repository *EntitlementRepository) ApplyNotification(
@@ -27,9 +30,10 @@ func (repository *EntitlementRepository) ApplyNotification(
 	defer func() { _ = transaction.Rollback() }()
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         INSERT INTO app_store_notifications
-            (notification_uuid, original_transaction_id, environment, expires_at)
-        VALUES (?, ?, ?, ?)
+			(app_id, notification_uuid, original_transaction_id, environment, expires_at)
+		VALUES (?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE notification_uuid = VALUES(notification_uuid)`,
+		repository.appID,
 		state.NotificationUUID,
 		state.OriginalTransactionID,
 		state.Environment,
@@ -47,14 +51,15 @@ func (repository *EntitlementRepository) ApplyNotification(
 	if _, err := transaction.ExecContext(ctx, `
         UPDATE managed_entitlements
         SET environment = ?, expires_at = ?, updated_at = UTC_TIMESTAMP(6)
-        WHERE original_transaction_id = ?`,
+		WHERE app_id = ? AND original_transaction_id = ?`,
 		state.Environment,
 		state.ExpiresAt,
+		repository.appID,
 		state.OriginalTransactionID,
 	); err != nil {
 		return false, err
 	}
-	if err := insertOfferRedemption(ctx, transaction, state.Environment, state.TransactionID,
+	if err := insertOfferRedemption(ctx, transaction, repository.appID, state.Environment, state.TransactionID,
 		state.OriginalTransactionID, state.OfferIdentifier, state.OfferType, state.SignedAt, state.ExpiresAt); err != nil {
 		return false, err
 	}
@@ -72,13 +77,14 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 	defer func() { _ = transaction.Rollback() }()
 	if _, err = transaction.ExecContext(ctx, `
         INSERT INTO managed_entitlements
-            (key_id, original_transaction_id, environment, expires_at, updated_at)
-        VALUES (?, ?, ?, ?, UTC_TIMESTAMP(6))
+			(app_id, key_id, original_transaction_id, environment, expires_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
         ON DUPLICATE KEY UPDATE
             original_transaction_id = VALUES(original_transaction_id),
             environment = VALUES(environment),
             expires_at = VALUES(expires_at),
             updated_at = UTC_TIMESTAMP(6)`,
+		repository.appID,
 		record.KeyID,
 		record.TransactionID,
 		record.Environment,
@@ -86,14 +92,14 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 	); err != nil {
 		return err
 	}
-	if err := insertOfferRedemption(ctx, transaction, record.Environment, record.OfferTransactionID,
+	if err := insertOfferRedemption(ctx, transaction, repository.appID, record.Environment, record.OfferTransactionID,
 		record.TransactionID, record.OfferIdentifier, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
 		return err
 	}
 	return transaction.Commit()
 }
 
-func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, environment, transactionID,
+func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, environment, transactionID,
 	originalTransactionID, offerIdentifier string, offerType int32, signedAt, expiresAt time.Time) error {
 	if transactionID == "" || originalTransactionID == "" || offerIdentifier == "" || offerType <= 0 || signedAt.IsZero() {
 		return nil
@@ -102,10 +108,10 @@ func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, environment
 	originalHash := sha256.Sum256([]byte(originalTransactionID))
 	_, err := transaction.ExecContext(ctx, `
 		INSERT INTO app_store_offer_redemptions
-			(environment, transaction_hash, original_transaction_hash, offer_identifier, offer_type, redeemed_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+			(app_id, environment, transaction_hash, original_transaction_hash, offer_identifier, offer_type, redeemed_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE expires_at = GREATEST(expires_at, VALUES(expires_at))`,
-		environment, transactionHash[:], originalHash[:], offerIdentifier, offerType, signedAt.UTC(), expiresAt.UTC())
+		appID, environment, transactionHash[:], originalHash[:], offerIdentifier, offerType, signedAt.UTC(), expiresAt.UTC())
 	return err
 }
 
@@ -118,7 +124,7 @@ func (repository *EntitlementRepository) Get(
 	err := repository.database.QueryRowContext(ctx, `
         SELECT original_transaction_id, environment, expires_at
         FROM managed_entitlements
-        WHERE key_id = ?`, keyID).Scan(
+		WHERE app_id = ? AND key_id = ?`, repository.appID, keyID).Scan(
 		&record.TransactionID,
 		&record.Environment,
 		&record.ExpiresAt,

@@ -22,8 +22,8 @@ type OperationResult struct {
 }
 
 type OperationStore interface {
-	Begin(context.Context, string, string, string, [32]byte) (*OperationResult, error)
-	Complete(context.Context, string, string, int, []byte, time.Time) error
+	Begin(context.Context, string, string, string, string, [32]byte) (*OperationResult, error)
+	Complete(context.Context, string, string, string, int, []byte, time.Time) error
 }
 
 type MySQLOperationStore struct{ database *sql.DB }
@@ -32,10 +32,10 @@ func NewMySQLOperationStore(database *sql.DB) *MySQLOperationStore {
 	return &MySQLOperationStore{database: database}
 }
 
-func (store *MySQLOperationStore) Begin(ctx context.Context, userID, key, action string, hash [32]byte) (*OperationResult, error) {
+func (store *MySQLOperationStore) Begin(ctx context.Context, userID, appID, key, action string, hash [32]byte) (*OperationResult, error) {
 	_, err := store.database.ExecContext(ctx, `
-		INSERT INTO admin_operations (admin_user_id, idempotency_key, action, request_hash)
-		VALUES (?, ?, ?, ?)`, userID, key, action, hash[:])
+		INSERT INTO admin_operations (admin_user_id, app_id, idempotency_key, action, request_hash)
+		VALUES (?, ?, ?, ?, ?)`, userID, appID, key, action, hash[:])
 	if err == nil {
 		return nil, nil
 	}
@@ -49,7 +49,7 @@ func (store *MySQLOperationStore) Begin(ctx context.Context, userID, key, action
 	var body []byte
 	if err := store.database.QueryRowContext(ctx, `
 		SELECT action, request_hash, state, response_status, response_json
-		FROM admin_operations WHERE admin_user_id = ? AND idempotency_key = ?`, userID, key).
+		FROM admin_operations WHERE admin_user_id = ? AND app_id = ? AND idempotency_key = ?`, userID, appID, key).
 		Scan(&storedAction, &storedHash, &state, &status, &body); err != nil {
 		return nil, err
 	}
@@ -62,11 +62,11 @@ func (store *MySQLOperationStore) Begin(ctx context.Context, userID, key, action
 	return &OperationResult{Status: int(status.Int64), Body: body}, nil
 }
 
-func (store *MySQLOperationStore) Complete(ctx context.Context, userID, key string, status int, body []byte, now time.Time) error {
+func (store *MySQLOperationStore) Complete(ctx context.Context, userID, appID, key string, status int, body []byte, now time.Time) error {
 	result, err := store.database.ExecContext(ctx, `
 		UPDATE admin_operations
 		SET state = 'completed', response_status = ?, response_json = ?, completed_at = ?
-		WHERE admin_user_id = ? AND idempotency_key = ? AND state = 'processing'`, status, body, now.UTC(), userID, key)
+		WHERE admin_user_id = ? AND app_id = ? AND idempotency_key = ? AND state = 'processing'`, status, body, now.UTC(), userID, appID, key)
 	if err != nil {
 		return err
 	}

@@ -90,21 +90,22 @@ func (pump *OutboxPump) drain(ctx context.Context) error {
 type HTTPDispatcher struct {
 	url    string
 	secret string
+	appID  string
 	client *http.Client
 }
 
-func NewHTTPDispatcher(url, secret string, client *http.Client) *HTTPDispatcher {
+func NewHTTPDispatcher(url, secret, appID string, client *http.Client) *HTTPDispatcher {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &HTTPDispatcher{url: url, secret: secret, client: client}
+	return &HTTPDispatcher{url: url, secret: secret, appID: appID, client: client}
 }
 
 func (dispatcher *HTTPDispatcher) Dispatch(ctx context.Context, jobID string) error {
-	if dispatcher == nil || dispatcher.url == "" || dispatcher.secret == "" || jobID == "" {
+	if dispatcher == nil || dispatcher.url == "" || dispatcher.secret == "" || dispatcher.appID == "" || jobID == "" {
 		return errors.New("worker dispatcher is not configured")
 	}
-	body, err := json.Marshal(map[string]string{"jobID": jobID})
+	body, err := json.Marshal(map[string]string{"appID": dispatcher.appID, "jobID": jobID})
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,7 @@ func (dispatcher *HTTPDispatcher) Dispatch(ctx context.Context, jobID string) er
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Health-Worker-Secret", dispatcher.secret)
+	request.Header.Set("X-Tellyouwhat-Worker-Secret", dispatcher.secret)
 	response, err := dispatcher.client.Do(request)
 	if err != nil {
 		return err
@@ -147,4 +148,3 @@ func (dispatcher *LocalDispatcher) Dispatch(ctx context.Context, jobID string) e
 	}()
 	return nil
 }
-

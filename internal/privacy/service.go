@@ -20,6 +20,7 @@ const (
 )
 
 var ErrInvalidConsent = errors.New("invalid privacy consent")
+var ErrConsentUnavailable = errors.New("privacy consent status unavailable")
 
 type Consent struct {
 	Scope           string `json:"scope"`
@@ -40,6 +41,10 @@ type Repository interface {
 	RecordConsents(context.Context, []Record) error
 	PlanDeletion(context.Context, attestation.Principal) (DeletionPlan, error)
 	DeletePrincipal(context.Context, attestation.Principal) error
+}
+
+type ConsentReader interface {
+	HasGrantedConsents(context.Context, string, []Consent) (bool, error)
 }
 
 type DeletionPlan struct {
@@ -94,6 +99,39 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 		return time.Time{}, err
 	}
 	return recordedAt, nil
+}
+
+func (service *Service) HasRequiredConsents(
+	ctx context.Context,
+	principal attestation.Principal,
+	scopes []string,
+) (bool, error) {
+	if service == nil || principal.KeyID == "" || len(scopes) == 0 {
+		return false, ErrConsentUnavailable
+	}
+	reader, ok := service.repository.(ConsentReader)
+	if !ok {
+		return false, ErrConsentUnavailable
+	}
+	requirements := make([]Consent, 0, len(scopes))
+	seen := make(map[string]struct{}, len(scopes))
+	for _, scope := range scopes {
+		if _, exists := seen[scope]; exists {
+			continue
+		}
+		seen[scope] = struct{}{}
+		requirement := Consent{Scope: scope, Granted: true}
+		switch scope {
+		case AdultScope, PrivacyTermsScope:
+			requirement.DocumentVersion = GeneralDocumentVersion
+		case LifetimeBYOKScope, ManagedAIScope, SensitiveHealthScope:
+			requirement.DocumentVersion = AIDocumentVersion
+		default:
+			return false, ErrInvalidConsent
+		}
+		requirements = append(requirements, requirement)
+	}
+	return reader.HasGrantedConsents(ctx, principal.KeyID, requirements)
 }
 
 func (service *Service) DeletePrincipal(ctx context.Context, principal attestation.Principal) error {

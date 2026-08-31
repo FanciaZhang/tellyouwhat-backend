@@ -16,6 +16,7 @@ const registrationChallengeTTL = 5 * time.Minute
 var ErrEnrollmentDenied = errors.New("app attest enrollment denied")
 
 type EnrollmentConfig struct {
+	AppID             string
 	Environment       Environment
 	DevelopmentSecret string
 	AllowedBuilds     map[string]struct{}
@@ -79,7 +80,7 @@ func (service *EnrollmentService) Register(
 	ctx context.Context,
 	request RegistrationRequest,
 ) (Principal, error) {
-	if service == nil || service.nonces == nil || service.keys == nil || service.verifier == nil ||
+	if service == nil || service.config.AppID == "" || service.nonces == nil || service.keys == nil || service.verifier == nil ||
 		request.KeyID == "" || request.Challenge == "" || request.Attestation == "" {
 		return Principal{}, ErrEnrollmentDenied
 	}
@@ -115,6 +116,7 @@ func (service *EnrollmentService) Register(
 		return Principal{}, fmt.Errorf("%w: generate device ID: %v", ErrUnavailable, err)
 	}
 	key := RegisteredKey{
+		AppID:       service.config.AppID,
 		KeyID:       request.KeyID,
 		DeviceID:    deviceID,
 		PublicKey:   verified.PublicKey,
@@ -128,7 +130,7 @@ func (service *EnrollmentService) Register(
 		}
 		return Principal{}, fmt.Errorf("%w: register app attest key: %v", ErrUnavailable, err)
 	}
-	return Principal{KeyID: key.KeyID, DeviceID: deviceID}, nil
+	return Principal{AppID: key.AppID, KeyID: key.KeyID, DeviceID: deviceID}, nil
 }
 
 func newDeviceID() (string, error) {
@@ -141,4 +143,3 @@ func newDeviceID() (string, error) {
 	encoded := hex.EncodeToString(value)
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
 }
-

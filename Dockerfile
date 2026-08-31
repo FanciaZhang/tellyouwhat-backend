@@ -14,7 +14,8 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 COPY --from=build /out/service /service
 COPY deploy/schema-manifest.json /config/schema-manifest.json
 COPY deploy/Apple_App_Attestation_Root_CA.pem /config/Apple_App_Attestation_Root_CA.pem
-ENV SCHEMA_MANIFEST_PATH=/config/schema-manifest.json
+COPY deploy/apple-app-store-roots.pem /config/apple-app-store-roots.pem
+ENV HEALTH_SCHEMA_MANIFEST_PATH=/config/schema-manifest.json
 ENV APP_ATTEST_ROOT_PEM_PATH=/config/Apple_App_Attestation_Root_CA.pem
 USER 65532:65532
 EXPOSE 8080

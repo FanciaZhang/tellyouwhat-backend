@@ -179,4 +179,3 @@ func containsRemoteReference(value any) bool {
 	}
 	return false
 }
-

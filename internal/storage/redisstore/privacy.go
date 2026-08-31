@@ -8,10 +8,13 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 )
 
-type PrivacyCleaner struct{ client *redis.Client }
+type PrivacyCleaner struct {
+	client *redis.Client
+	prefix string
+}
 
-func NewPrivacyCleaner(client *redis.Client) *PrivacyCleaner {
-	return &PrivacyCleaner{client: client}
+func NewPrivacyCleaner(client *redis.Client, appID string) *PrivacyCleaner {
+	return &PrivacyCleaner{client: client, prefix: "platform:" + appID + ":"}
 }
 
 func (cleaner *PrivacyCleaner) DeletePrincipal(ctx context.Context, principal attestation.Principal) error {
@@ -19,13 +22,13 @@ func (cleaner *PrivacyCleaner) DeletePrincipal(ctx context.Context, principal at
 		return nil
 	}
 	patterns := []string{
-		"health:quota:*:" + principal.DeviceID,
-		"health:quota:*:" + principal.DeviceID + ":*",
+		cleaner.prefix + "quota:*:" + principal.DeviceID,
+		cleaner.prefix + "quota:*:" + principal.DeviceID + ":*",
 	}
 	if principal.TransactionID != "" {
 		patterns = append(patterns,
-			"health:quota:*:"+principal.TransactionID,
-			"health:quota:*:"+principal.TransactionID+":*",
+			cleaner.prefix+"quota:*:"+principal.TransactionID,
+			cleaner.prefix+"quota:*:"+principal.TransactionID+":*",
 		)
 	}
 	for _, pattern := range patterns {
@@ -33,7 +36,7 @@ func (cleaner *PrivacyCleaner) DeletePrincipal(ctx context.Context, principal at
 			return err
 		}
 	}
-	return cleaner.deleteMatching(ctx, "health:attest:nonce:*", func(key string) (bool, error) {
+	return cleaner.deleteMatching(ctx, cleaner.prefix+"attest:nonce:*", func(key string) (bool, error) {
 		value, err := cleaner.client.Get(ctx, key).Result()
 		if err == redis.Nil {
 			return false, nil
@@ -50,7 +53,7 @@ func (cleaner *PrivacyCleaner) deleteMatching(ctx context.Context, pattern strin
 			return err
 		}
 		for _, key := range keys {
-			if !strings.HasPrefix(key, "health:") {
+			if !strings.HasPrefix(key, cleaner.prefix) {
 				continue
 			}
 			allowed := true

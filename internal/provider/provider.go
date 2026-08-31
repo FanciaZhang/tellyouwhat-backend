@@ -25,4 +25,3 @@ type Client interface {
 type ManagedMediaCleaner interface {
 	CleanupManagedMedia(context.Context, []contracts.Media)
 }
-

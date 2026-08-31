@@ -45,4 +45,3 @@ type Registry interface {
 	Get(context.Context, string) (Record, error)
 	CommitAttempt(context.Context, []Record, AttemptRecord, time.Time) (AttemptRecord, bool, error)
 }
-
