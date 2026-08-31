@@ -36,14 +36,17 @@ func New(config Config, client *http.Client) *Client {
 }
 
 type aliasedBook struct {
-	ID, Name, Description string
-	ContainsEntry         bool
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	ContainsEntry bool   `json:"containsEntry"`
 }
 type modelInput struct {
-	Title                          string `json:"title"`
-	Body                           string `json:"body"`
-	ExistingTags, RejectedTagNames []string
-	Books                          []aliasedBook `json:"books"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	ExistingTags     []string      `json:"existingTags"`
+	RejectedTagNames []string      `json:"rejectedTagNames"`
+	Books            []aliasedBook `json:"books"`
 }
 
 func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest, pro bool) (Result, error) {
@@ -58,7 +61,11 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 		aliases[alias] = b.ID
 		books = append(books, aliasedBook{alias, b.Name, b.Description, b.ContainsEntry})
 	}
-	input, _ := json.Marshal(modelInput{request.Title, request.Body, request.ExistingTags, request.RejectedTagNames, books})
+	input, _ := json.Marshal(modelInput{
+		Title: request.Title, Body: request.Body,
+		ExistingTags: request.ExistingTags, RejectedTagNames: request.RejectedTagNames,
+		Books: books,
+	})
 	payload := map[string]any{
 		"model": model, "store": false,
 		"instructions": "你为私人手记生成简洁、原文明示的标签，并推荐已有手记册或建议新手记册。不得推断疾病、诊断、政治立场或其他未明示敏感属性。不得返回 rejectedTagNames 中的标签。已有手记册只能返回输入中的别名。只输出符合 schema 的 JSON。",
@@ -120,6 +127,9 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrInvalidResult, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Result{}, fmt.Errorf("%w: trailing structured output", ErrInvalidResult)
 	}
 	for i := range result.ExistingBookRecommendations {
 		id, ok := aliases[result.ExistingBookRecommendations[i].BookID]

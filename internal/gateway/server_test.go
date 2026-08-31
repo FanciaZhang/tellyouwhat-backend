@@ -57,6 +57,7 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 		},
 		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
 		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
+		Media:            newFakeMediaAuthorizer(),
 		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
 		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
@@ -65,7 +66,8 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
-		!strings.Contains(response.Body.String(), `"bookID":"book-1"`) {
+		!strings.Contains(response.Body.String(), `"bookID":"book-1"`) ||
+		!strings.Contains(response.Body.String(), `"dailyTokensRemaining"`) {
 		t.Fatalf("unexpected journal response: %d %s", response.Code, response.Body.String())
 	}
 	if organizer.request.Body != "今天去了西湖" {
@@ -80,7 +82,7 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 	server := New(Dependencies{
 		App:           appregistry.App{ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"}, TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal."},
 		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
-		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), JournalOrganizer: organizer,
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(), JournalOrganizer: organizer,
 		Consent: fakeConsentGate{granted: false}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 	})
@@ -89,6 +91,36 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusForbidden || organizer.calls != 0 {
 		t.Fatalf("consent was not enforced: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
+	}
+}
+
+func TestJournalOrganizeRejectsIdempotentReplayBeforeSecondProviderCall(t *testing.T) {
+	t.Parallel()
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{
+		DailyTokensPerTransaction: 1_000_000, MonthlyTokensPerTransaction: 2_000_000,
+	})
+	organizer := &fakeJournalOrganizer{result: journalprovider.Result{
+		Value: journalcontracts.ModelResult{}, InputTokens: 20, OutputTokens: 5,
+	}}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
+		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"hash","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	first := httptest.NewRecorder()
+	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	second := httptest.NewRecorder()
+	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if first.Code != http.StatusOK || second.Code != http.StatusConflict || organizer.calls != 1 {
+		t.Fatalf("journal request was not idempotently committed: first=%d second=%d calls=%d body=%s", first.Code, second.Code, organizer.calls, second.Body.String())
 	}
 }
 

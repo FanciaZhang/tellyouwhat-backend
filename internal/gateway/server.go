@@ -275,7 +275,7 @@ func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
 	commonUnavailable := server.authenticator == nil || server.entitlements == nil || server.quota == nil || server.quotaReader == nil ||
 		server.enrollment == nil || server.usage == nil || server.readiness == nil || server.privacy == nil || server.consent == nil
 	healthUnavailable := server.app.ID == appregistry.Health && (server.provider == nil || server.media == nil || server.jobs == nil || server.dispatcher == nil || server.capabilities == nil || server.contracts == nil)
-	journalUnavailable := server.app.ID == appregistry.Journal && server.journalOrganizer == nil
+	journalUnavailable := server.app.ID == appregistry.Journal && (server.journalOrganizer == nil || server.media == nil)
 	if commonUnavailable || healthUnavailable || journalUnavailable {
 		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", "")
 		return
@@ -758,7 +758,7 @@ func (server *Server) complete(writer http.ResponseWriter, request *http.Request
 }
 
 func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.Request) {
-	if server.journalOrganizer == nil || server.entitlements == nil || server.quota == nil || server.usage == nil {
+	if server.journalOrganizer == nil || server.entitlements == nil || server.quota == nil || server.quotaReader == nil || server.media == nil || server.usage == nil {
 		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", requestID(request))
 		return
 	}
@@ -804,6 +804,15 @@ func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.
 		}
 		return
 	}
+	artifact := contracts.Request{
+		RequestID: input.RequestID,
+		Operation: contracts.Operation("journal.organize"),
+	}
+	if err := server.media.Consume(request.Context(), principal, artifact, contracts.BodySHA256(body)); err != nil {
+		lease.Release(0)
+		server.writeAdmissionError(writer, err, input.RequestID)
+		return
+	}
 	result, err := server.journalOrganizer.Organize(request.Context(), input)
 	if err != nil {
 		lease.Release(0)
@@ -831,8 +840,8 @@ func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.
 		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
 		NewBookSuggestions:          result.Value.NewBookSuggestions,
 		Quota: journalcontracts.Quota{
-			DailyRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
-			MonthlyRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
+			DailyTokensRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
+			MonthlyTokensRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
 		},
 	}
 	bookIDs := make(map[string]bool, len(input.Books))
@@ -1092,7 +1101,7 @@ func (server *Server) writeAdmissionError(writer http.ResponseWriter, err error,
 	case errors.Is(err, media.ErrIdempotencyReplay), errors.Is(err, media.ErrIdempotencyConflict):
 		writeError(writer, http.StatusConflict, "idempotency_conflict", "requestID was already used", requestID)
 	case errors.Is(err, media.ErrNotAuthorized):
-		writeError(writer, http.StatusUnprocessableEntity, "contract_violation", "request violates the managed media contract", requestID)
+		writeError(writer, http.StatusUnprocessableEntity, "contract_violation", "request violates the request authorization contract", requestID)
 	default:
 		writeError(writer, http.StatusServiceUnavailable, "request_commit_unavailable", "request authorization could not be committed", requestID)
 	}

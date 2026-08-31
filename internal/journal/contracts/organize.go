@@ -51,8 +51,8 @@ type NewBookSuggestion struct {
 }
 
 type Quota struct {
-	DailyRemaining   int `json:"dailyRemaining"`
-	MonthlyRemaining int `json:"monthlyRemaining"`
+	DailyTokensRemaining   int `json:"dailyTokensRemaining"`
+	MonthlyTokensRemaining int `json:"monthlyTokensRemaining"`
 }
 
 type OrganizeResponse struct {

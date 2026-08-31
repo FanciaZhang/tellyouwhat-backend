@@ -231,13 +231,14 @@ func buildAppHandler(
 		return nil, err
 	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
+	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
 	dependencies := gateway.Dependencies{
 		App: app, Authenticator: authenticator, Entitlements: entitlementChecker,
 		Quota: storage.limiter, QuotaReader: storage.quotaReader,
 		Enrollment: enrollment, Activator: activator, ProductionEntitlement: productionSync,
 		AppStoreNotifications: notifications, Usage: storage.usage, Readiness: readiness,
-		Privacy: privacyService, Consent: privacyService,
+		Privacy: privacyService, Consent: privacyService, Media: mediaService,
 		ManagedProduct: gateway.ManagedProduct{
 			ProductID: app.ManagedAIProductID, BillingPeriod: appConfig.Product.BillingPeriod,
 			DailyTokenLimit: appConfig.Quota.DailyTokensPerTransaction, MonthlyTokenLimit: appConfig.Quota.MonthlyTokensPerTransaction,
@@ -263,7 +264,6 @@ func buildAppHandler(
 			return nil, err
 		}
 		provider := ark.New(appConfig.Ark, http.DefaultClient, tosStore)
-		mediaService := media.NewService(tosStore, storage.media, time.Now)
 		jobService := jobs.NewService(storage.jobs, time.Now)
 		capabilities := capability.NewService([]byte(platform.JobCapabilitySecret), storage.capabilityUses, time.Now)
 		var dispatcher jobs.Dispatcher
@@ -280,7 +280,6 @@ func buildAppHandler(
 			dispatcher = jobs.DurableQueueDispatcher{}
 		}
 		dependencies.Provider = provider
-		dependencies.Media = mediaService
 		dependencies.Jobs = jobService
 		dependencies.Dispatcher = dispatcher
 		dependencies.Capabilities = capabilities
