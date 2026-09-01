@@ -33,16 +33,29 @@ type App struct {
 	AppAppleID             int64
 	ManagedAIProductID     string
 	AllowedOperationPrefix string
+	AllowedOperations      []string
 }
 
 func (app App) Validate() error {
 	if app.ID == "" || strings.TrimSpace(app.DisplayName) == "" || len(app.Hosts) == 0 ||
 		strings.TrimSpace(app.TeamID) == "" || strings.TrimSpace(app.BundleID) == "" ||
-		strings.TrimSpace(app.ManagedAIProductID) == "" || strings.TrimSpace(app.AllowedOperationPrefix) == "" {
+		strings.TrimSpace(app.ManagedAIProductID) == "" ||
+		(strings.TrimSpace(app.AllowedOperationPrefix) == "" && len(app.AllowedOperations) == 0) {
 		return errors.New("app registry entry is incomplete")
 	}
-	if !strings.HasSuffix(app.AllowedOperationPrefix, ".") {
+	if app.AllowedOperationPrefix != "" && !strings.HasSuffix(app.AllowedOperationPrefix, ".") {
 		return errors.New("operation prefix must end in a dot")
+	}
+	seenOperations := make(map[string]struct{}, len(app.AllowedOperations))
+	for _, operation := range app.AllowedOperations {
+		operation = strings.TrimSpace(operation)
+		if operation == "" {
+			return errors.New("allowed operation is invalid")
+		}
+		if _, duplicate := seenOperations[operation]; duplicate {
+			return errors.New("allowed operations contain a duplicate")
+		}
+		seenOperations[operation] = struct{}{}
 	}
 	for _, host := range app.Hosts {
 		if normalizeHost(host) == "" {
@@ -53,7 +66,14 @@ func (app App) Validate() error {
 }
 
 func (app App) AllowsOperation(operation string) bool {
-	return strings.HasPrefix(operation, app.AllowedOperationPrefix) && len(operation) > len(app.AllowedOperationPrefix)
+	for _, allowed := range app.AllowedOperations {
+		if operation == allowed {
+			return true
+		}
+	}
+	return app.AllowedOperationPrefix != "" &&
+		strings.HasPrefix(operation, app.AllowedOperationPrefix) &&
+		len(operation) > len(app.AllowedOperationPrefix)
 }
 
 type Registry struct {

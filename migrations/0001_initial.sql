@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS apps (
 
 INSERT INTO apps (app_id, display_name, bundle_id, managed_product_id)
 VALUES
-    ('health', '告你健康', 'cn.tellyouwhat.healthapp', 'health.ai.subscription.monthly'),
+    ('health', '告你健康', 'cn.tellyouwhat.healthapp', 'health.premium.subscription.monthly'),
     ('journal', '告你手记', 'cn.tellyouwhat.journalapp', 'journal.ai.subscription.monthly')
 ON DUPLICATE KEY UPDATE
     display_name = VALUES(display_name),
@@ -173,7 +173,15 @@ CREATE TABLE IF NOT EXISTS privacy_consents (
     PRIMARY KEY (app_id, key_id, scope, document_version),
     INDEX privacy_consents_recorded_idx (app_id, recorded_at),
     CONSTRAINT privacy_consents_key_fk FOREIGN KEY (app_id, key_id)
-        REFERENCES app_attest_keys(app_id, key_id) ON DELETE CASCADE
+        REFERENCES app_attest_keys(app_id, key_id) ON DELETE CASCADE,
+    CHECK (scope IN (
+        'adult',
+        'privacy_and_terms',
+        'lifetime_byok',
+        'managed_subscription',
+        'free_managed_recognition',
+        'sensitive_health_ai'
+    ))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS app_store_offer_redemptions (

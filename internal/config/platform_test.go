@@ -34,6 +34,7 @@ func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
 		DevelopmentSecret:      "development-secret",
 		AllowedBuilds:          map[string]struct{}{"100": {}},
+		ManagedAIProductIDs:    []string{"journal.ai.monthly"},
 		JournalAI: JournalAIConfig{
 			BaseURL: "https://ark.test/api/v3", APIKey: "secret",
 			LiteModel: "lite", ProModel: "pro", TimeoutSeconds: 90,

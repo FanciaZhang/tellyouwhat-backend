@@ -47,6 +47,8 @@ func TestInitialSchemaUsesTwoRolesAndPasswordlessRecoveryInvitations(t *testing.
 		"CREATE TABLE IF NOT EXISTS admin_invitation_apps",
 		"CREATE TABLE IF NOT EXISTS admin_audit_events",
 		"session_version BIGINT UNSIGNED",
+		"'health.premium.subscription.monthly'",
+		"'free_managed_recognition'",
 	} {
 		if !strings.Contains(schema, required) {
 			t.Fatalf("initial schema is missing %q", required)

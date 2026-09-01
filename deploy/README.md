@@ -8,9 +8,11 @@ and Ark remain managed Volcengine services.
 Use [`tencent/README.md`](tencent/README.md) for provisioning, DNS, TLS,
 migration, maintenance, acceptance, and scaling instructions.
 
-The previous all-in-one topology remains available in
-[`single-server/README.md`](single-server/README.md). Its MySQL and Redis
-services use the `local-storage` Compose profile.
+The application-container topology and operational commands live in
+[`single-server/README.md`](single-server/README.md). MySQL and Redis are not
+part of the production Compose project.
 
-`api-contract.yaml` remains the public HTTP contract reference. It is not
-imported into an API Gateway for the Lighthouse topology.
+[`../Contracts/HTTP/HealthAPI/openapi.yaml`](../Contracts/HTTP/HealthAPI/openapi.yaml)
+is the canonical Health public HTTP contract. It generates the Gin router and
+Swift client; it is not imported into an API Gateway for this topology. Journal
+currently exposes only its fixed, typed `journal.organize` transport.

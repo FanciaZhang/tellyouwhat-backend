@@ -41,6 +41,7 @@ type AttestationObjectVerifier interface {
 
 type EnrollmentKeyStore interface {
 	Register(context.Context, RegisteredKey) error
+	Get(context.Context, string) (RegisteredKey, error)
 }
 
 type EnrollmentService struct {
@@ -97,7 +98,17 @@ func (service *EnrollmentService) Register(
 		}
 	}
 	if err := service.nonces.Consume(ctx, request.Challenge, request.KeyID, service.now()); err != nil {
-		if errors.Is(err, ErrAuthentication) || errors.Is(err, ErrReplay) {
+		if errors.Is(err, ErrReplay) {
+			principal, found, lookupErr := service.registeredPrincipal(ctx, request.KeyID)
+			if lookupErr != nil {
+				return Principal{}, lookupErr
+			}
+			if found {
+				return principal, nil
+			}
+			return Principal{}, ErrReplay
+		}
+		if errors.Is(err, ErrAuthentication) {
 			return Principal{}, err
 		}
 		return Principal{}, fmt.Errorf("%w: consume enrollment challenge: %v", ErrUnavailable, err)
@@ -126,11 +137,40 @@ func (service *EnrollmentService) Register(
 	}
 	if err := service.keys.Register(ctx, key); err != nil {
 		if errors.Is(err, ErrKeyAlreadyRegistered) {
-			return Principal{}, err
+			principal, found, lookupErr := service.registeredPrincipal(ctx, request.KeyID)
+			if lookupErr != nil {
+				return Principal{}, lookupErr
+			}
+			if found {
+				return principal, nil
+			}
+			return Principal{}, fmt.Errorf("%w: registered app attest key could not be read", ErrUnavailable)
 		}
 		return Principal{}, fmt.Errorf("%w: register app attest key: %v", ErrUnavailable, err)
 	}
 	return Principal{AppID: key.AppID, KeyID: key.KeyID, DeviceID: deviceID}, nil
+}
+
+func (service *EnrollmentService) registeredPrincipal(
+	ctx context.Context,
+	keyID string,
+) (Principal, bool, error) {
+	key, err := service.keys.Get(ctx, keyID)
+	if errors.Is(err, ErrKeyNotFound) {
+		return Principal{}, false, nil
+	}
+	if err != nil {
+		return Principal{}, false, fmt.Errorf("%w: read registered app attest key: %v", ErrUnavailable, err)
+	}
+	if key.KeyID != keyID || key.DeviceID == "" {
+		return Principal{}, false, fmt.Errorf("%w: registered app attest key is invalid", ErrUnavailable)
+	}
+	return Principal{
+		AppID:         key.AppID,
+		KeyID:         key.KeyID,
+		DeviceID:      key.DeviceID,
+		TransactionID: key.TransactionID,
+	}, true, nil
 }
 
 func newDeviceID() (string, error) {

@@ -153,7 +153,7 @@ func TestRequestRejectsDuplicateMediaIdentifiers(t *testing.T) {
 
 func validRequestJSON(promptVersion string) string {
 	return `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c",` +
-		`"operation":"health.meal.decision",` +
+		`"operation":"meal_decision",` +
 		`"contractVersion":"ai-request-v1",` +
 		`"promptVersion":"` + promptVersion + `",` +
 		`"prompt":"choose dinner",` +

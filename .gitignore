@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcresult
+.env
+.env.*
+!.env.example
+!*.env.example
+secrets/
+*.p8

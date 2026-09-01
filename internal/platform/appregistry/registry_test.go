@@ -8,7 +8,7 @@ import (
 
 func fixtureApps() []App {
 	return []App{
-		{ID: Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"}, TeamID: "TEAM", BundleID: "health.bundle", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
+		{ID: Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"}, TeamID: "TEAM", BundleID: "health.bundle", ManagedAIProductID: "health.ai.monthly", AllowedOperations: []string{"meal_decision", "meal_photo_capture"}},
 		{ID: Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"}, TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal."},
 	}
 }
@@ -20,8 +20,12 @@ func TestRegistryRejectsDuplicateHostAndCrossAppOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	health, _ := registry.ResolveHost("API.HEALTH.TEST:443")
-	if health.ID != Health || !health.AllowsOperation("health.meal.decision") || health.AllowsOperation("journal.organize") {
+	if health.ID != Health || !health.AllowsOperation("meal_decision") || health.AllowsOperation("meal") || health.AllowsOperation("journal.organize") {
 		t.Fatal("host or operation isolation failed")
+	}
+	journal, _ := registry.ResolveHost("api.journal.test")
+	if !journal.AllowsOperation("journal.organize") || journal.AllowsOperation("journal.") || journal.AllowsOperation("meal_decision") {
+		t.Fatal("journal operation-prefix isolation failed")
 	}
 	apps[1].Hosts = []string{"api.health.test"}
 	if _, err := New(apps); err == nil {

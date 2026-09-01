@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
@@ -24,14 +23,8 @@ import (
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
+	"github.com/tellyouwhat/backend/internal/recognitionquota"
 	"github.com/tellyouwhat/backend/internal/usage"
-)
-
-var (
-	ErrAuthentication = errors.New("authentication failed")
-	ErrNoEntitlement  = errors.New("managed subscription required")
-	ErrQuotaExceeded  = errors.New("quota exceeded")
-	ErrUpstream       = errors.New("upstream provider error")
 )
 
 type Principal = attestation.Principal
@@ -135,97 +128,109 @@ type ManagedProduct struct {
 }
 
 type Dependencies struct {
-	App                    appregistry.App
-	Authenticator          Authenticator
-	Entitlements           EntitlementChecker
-	Quota                  Quota
-	QuotaReader            quota.Reader
-	Provider               Provider
-	IPResolver             func(*http.Request) string
-	Now                    func() time.Time
-	Enrollment             Enrollment
-	Activator              EntitlementActivator
-	ProductionEntitlement  ProductionEntitlementSync
-	AppStoreNotifications  AppStoreNotificationProcessor
-	Media                  MediaAuthorizer
-	Jobs                   JobService
-	Dispatcher             JobDispatcher
-	Capabilities           JobCapabilityService
-	Contracts              ContractValidator
-	Usage                  usage.Recorder
-	Readiness              Readiness
-	Privacy                PrivacyManager
-	Consent                ConsentGate
-	RequiredConsentScopes  []string
-	JournalOrganizer       JournalOrganizer
-	JournalAnalysisVersion string
-	ManagedProduct         ManagedProduct
+	App                        appregistry.App
+	Authenticator              Authenticator
+	Entitlements               EntitlementChecker
+	Quota                      Quota
+	QuotaReader                quota.Reader
+	FreeRecognitionQuota       Quota
+	FreeRecognitionQuotaReader quota.Reader
+	RecognitionSessions        recognitionquota.Store
+	Provider                   Provider
+	IPResolver                 func(*http.Request) string
+	Now                        func() time.Time
+	Enrollment                 Enrollment
+	Activator                  EntitlementActivator
+	ProductionEntitlement      ProductionEntitlementSync
+	AppStoreNotifications      AppStoreNotificationProcessor
+	Media                      MediaAuthorizer
+	Jobs                       JobService
+	Dispatcher                 JobDispatcher
+	Capabilities               JobCapabilityService
+	Contracts                  ContractValidator
+	Usage                      usage.Recorder
+	Readiness                  Readiness
+	Privacy                    PrivacyManager
+	Consent                    ConsentGate
+	RequiredConsentScopes      []string
+	JournalOrganizer           JournalOrganizer
+	JournalAnalysisVersion     string
+	ManagedProduct             ManagedProduct
 }
 
 type Server struct {
-	app                    appregistry.App
-	authenticator          Authenticator
-	entitlements           EntitlementChecker
-	quota                  Quota
-	quotaReader            quota.Reader
-	provider               Provider
-	ipResolver             func(*http.Request) string
-	now                    func() time.Time
-	enrollment             Enrollment
-	activator              EntitlementActivator
-	productionEntitlement  ProductionEntitlementSync
-	appStoreNotifications  AppStoreNotificationProcessor
-	media                  MediaAuthorizer
-	jobs                   JobService
-	dispatcher             JobDispatcher
-	capabilities           JobCapabilityService
-	contracts              ContractValidator
-	usage                  usage.Recorder
-	readiness              Readiness
-	privacy                PrivacyManager
-	consent                ConsentGate
-	requiredConsentScopes  []string
-	journalOrganizer       JournalOrganizer
-	journalAnalysisVersion string
-	managedProduct         ManagedProduct
-	mux                    *http.ServeMux
+	app                        appregistry.App
+	authenticator              Authenticator
+	entitlements               EntitlementChecker
+	quota                      Quota
+	quotaReader                quota.Reader
+	freeRecognitionQuota       Quota
+	freeRecognitionQuotaReader quota.Reader
+	recognitionSessions        recognitionquota.Store
+	provider                   Provider
+	ipResolver                 func(*http.Request) string
+	now                        func() time.Time
+	enrollment                 Enrollment
+	activator                  EntitlementActivator
+	productionEntitlement      ProductionEntitlementSync
+	appStoreNotifications      AppStoreNotificationProcessor
+	media                      MediaAuthorizer
+	jobs                       JobService
+	dispatcher                 JobDispatcher
+	capabilities               JobCapabilityService
+	contracts                  ContractValidator
+	usage                      usage.Recorder
+	readiness                  Readiness
+	privacy                    PrivacyManager
+	consent                    ConsentGate
+	requiredConsentScopes      []string
+	journalOrganizer           JournalOrganizer
+	journalAnalysisVersion     string
+	managedProduct             ManagedProduct
+	handler                    http.Handler
 }
 
 func New(dependencies Dependencies) *Server {
 	if dependencies.App.ID == "" {
+		allowedOperations := make([]string, 0, len(contracts.OperationValues()))
+		for _, operation := range contracts.OperationValues() {
+			allowedOperations = append(allowedOperations, string(operation))
+		}
 		dependencies.App = appregistry.App{
 			ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.tellyouwhat.cn"},
-			TeamID: "test", BundleID: "cn.tellyouwhat.healthapp", ManagedAIProductID: "health.ai.subscription.monthly",
-			AllowedOperationPrefix: "health.",
+			TeamID: "test", BundleID: "cn.tellyouwhat.healthapp", ManagedAIProductID: "health.premium.subscription.monthly",
+			AllowedOperations: allowedOperations,
 		}
 	}
 	server := &Server{
-		app:                    dependencies.App,
-		authenticator:          dependencies.Authenticator,
-		entitlements:           dependencies.Entitlements,
-		quota:                  dependencies.Quota,
-		quotaReader:            dependencies.QuotaReader,
-		provider:               dependencies.Provider,
-		ipResolver:             dependencies.IPResolver,
-		now:                    dependencies.Now,
-		enrollment:             dependencies.Enrollment,
-		activator:              dependencies.Activator,
-		productionEntitlement:  dependencies.ProductionEntitlement,
-		appStoreNotifications:  dependencies.AppStoreNotifications,
-		media:                  dependencies.Media,
-		jobs:                   dependencies.Jobs,
-		dispatcher:             dependencies.Dispatcher,
-		capabilities:           dependencies.Capabilities,
-		contracts:              dependencies.Contracts,
-		usage:                  dependencies.Usage,
-		readiness:              dependencies.Readiness,
-		privacy:                dependencies.Privacy,
-		consent:                dependencies.Consent,
-		requiredConsentScopes:  append([]string(nil), dependencies.RequiredConsentScopes...),
-		journalOrganizer:       dependencies.JournalOrganizer,
-		journalAnalysisVersion: dependencies.JournalAnalysisVersion,
-		managedProduct:         dependencies.ManagedProduct,
-		mux:                    http.NewServeMux(),
+		app:                        dependencies.App,
+		authenticator:              dependencies.Authenticator,
+		entitlements:               dependencies.Entitlements,
+		quota:                      dependencies.Quota,
+		quotaReader:                dependencies.QuotaReader,
+		freeRecognitionQuota:       dependencies.FreeRecognitionQuota,
+		freeRecognitionQuotaReader: dependencies.FreeRecognitionQuotaReader,
+		recognitionSessions:        dependencies.RecognitionSessions,
+		provider:                   dependencies.Provider,
+		ipResolver:                 dependencies.IPResolver,
+		now:                        dependencies.Now,
+		enrollment:                 dependencies.Enrollment,
+		activator:                  dependencies.Activator,
+		productionEntitlement:      dependencies.ProductionEntitlement,
+		appStoreNotifications:      dependencies.AppStoreNotifications,
+		media:                      dependencies.Media,
+		jobs:                       dependencies.Jobs,
+		dispatcher:                 dependencies.Dispatcher,
+		capabilities:               dependencies.Capabilities,
+		contracts:                  dependencies.Contracts,
+		usage:                      dependencies.Usage,
+		readiness:                  dependencies.Readiness,
+		privacy:                    dependencies.Privacy,
+		consent:                    dependencies.Consent,
+		requiredConsentScopes:      append([]string(nil), dependencies.RequiredConsentScopes...),
+		journalOrganizer:           dependencies.JournalOrganizer,
+		journalAnalysisVersion:     dependencies.JournalAnalysisVersion,
+		managedProduct:             dependencies.ManagedProduct,
 	}
 	if server.ipResolver == nil {
 		server.ipResolver = remoteIP
@@ -233,38 +238,35 @@ func New(dependencies Dependencies) *Server {
 	if server.now == nil {
 		server.now = time.Now
 	}
-	server.routes()
+	if server.app.ID == appregistry.Health {
+		server.handler = server.newHTTPRouter()
+	} else {
+		server.handler = server.newJournalRouter()
+	}
 	return server
 }
 
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	server.mux.ServeHTTP(writer, request)
+	server.handler.ServeHTTP(writer, request)
 }
 
-func (server *Server) routes() {
-	server.mux.HandleFunc("GET /healthz", server.health)
-	server.mux.HandleFunc("GET /readyz", server.ready)
-	server.mux.HandleFunc("GET /v1/ai/quota", server.quotaStatus)
-	server.mux.HandleFunc("POST /v1/attest/challenges", server.issueChallenge)
-	server.mux.HandleFunc("POST /v1/attest/keys", server.registerKey)
-	server.mux.HandleFunc("POST /v1/dev/entitlements/activate", server.activateDevelopmentEntitlement)
-	server.mux.HandleFunc("POST /v1/entitlements/transactions", server.syncProductionEntitlement)
-	server.mux.HandleFunc("POST /v1/app-store/notifications", server.processAppStoreNotification)
-	if server.app.ID == appregistry.Health {
-		server.mux.HandleFunc("POST /v1/media/upload-authorizations", server.authorizeMediaUpload)
-		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/responses", server.complete)
-		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/streams", server.stream)
-		server.mux.HandleFunc("POST /v1/ai/operations/{operation}/job-capabilities", server.issueJobCapability)
-		server.mux.HandleFunc("POST /v1/ai/jobs", server.enqueueJob)
-		server.mux.HandleFunc("GET /v1/ai/jobs/{id}", server.getJob)
-		server.mux.HandleFunc("DELETE /v1/ai/jobs/{id}", server.cancelJob)
-	}
+func (server *Server) newJournalRouter() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", server.health)
+	mux.HandleFunc("GET /readyz", server.ready)
+	mux.HandleFunc("GET /v1/ai/quota", server.quotaStatus)
+	mux.HandleFunc("POST /v1/attest/challenges", server.issueChallenge)
+	mux.HandleFunc("POST /v1/attest/keys", server.registerKey)
+	mux.HandleFunc("POST /v1/dev/entitlements/activate", server.activateDevelopmentEntitlement)
+	mux.HandleFunc("POST /v1/entitlements/transactions", server.syncProductionEntitlement)
+	mux.HandleFunc("POST /v1/app-store/notifications", server.processAppStoreNotification)
 	if server.app.ID == appregistry.Journal {
-		server.mux.HandleFunc("POST /v1/ai/operations/journal.organize/responses", server.organizeJournal)
+		mux.HandleFunc("POST /v1/ai/operations/journal.organize/responses", server.organizeJournal)
 	}
-	server.mux.HandleFunc("POST /v1/privacy/consents", server.recordPrivacyConsents)
-	server.mux.HandleFunc("DELETE /v1/privacy/data", server.deletePrivacyData)
-	server.mux.HandleFunc("GET /v1/products/managed-ai", server.managedAIProduct)
+	mux.HandleFunc("POST /v1/privacy/consents", server.recordPrivacyConsents)
+	mux.HandleFunc("DELETE /v1/privacy/data", server.deletePrivacyData)
+	mux.HandleFunc("GET /v1/products/managed-ai", server.managedAIProduct)
+	return mux
 }
 
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
@@ -508,257 +510,6 @@ func (server *Server) processAppStoreNotification(writer http.ResponseWriter, re
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (server *Server) authorizeMediaUpload(writer http.ResponseWriter, request *http.Request) {
-	if server.media == nil || server.entitlements == nil {
-		writeError(writer, http.StatusServiceUnavailable, "media_unavailable", "media service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	body, principal, ok := server.authenticateRequest(writer, request, 64<<10)
-	if !ok {
-		return
-	}
-	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
-	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	if !allowed {
-		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	var input media.UploadRequest
-	if err := decodeStrictBytes(body, &input); err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	authorization, err := server.media.Authorize(request.Context(), principal, input)
-	if err != nil {
-		switch {
-		case errors.Is(err, contracts.ErrContractViolation), errors.Is(err, contracts.ErrPayloadTooLarge):
-			writeMappedError(writer, err, input.RequestID)
-		case errors.Is(err, media.ErrAuthorizationConflict):
-			writeError(writer, http.StatusConflict, "media_authorization_conflict", "media authorization already exists with different metadata", input.RequestID)
-		default:
-			writeError(writer, http.StatusServiceUnavailable, "media_unavailable", "media service unavailable", input.RequestID)
-		}
-		return
-	}
-	writeJSON(writer, http.StatusCreated, authorization)
-}
-
-func (server *Server) enqueueJob(writer http.ResponseWriter, request *http.Request) {
-	if server.jobs == nil || server.dispatcher == nil || server.capabilities == nil || server.entitlements == nil || server.contracts == nil || server.media == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	body, err := readBody(request.Body, contracts.DefaultBodyLimit)
-	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	artifact, err := contracts.DecodeAndValidate(bytes.NewReader(body), int64(len(body)))
-	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	if err := server.contracts.Validate(artifact); err != nil {
-		writeMappedError(writer, err, artifact.RequestID)
-		return
-	}
-	jobID := request.Header.Get("X-Tellyouwhat-Job-ID")
-	token := strings.TrimPrefix(request.Header.Get("Authorization"), "JobCapability ")
-	mediaDigest, err := contracts.MediaDigest(artifact.Media)
-	if err != nil {
-		writeError(writer, http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)
-		return
-	}
-	binding := capability.Binding{
-		JobID:       jobID,
-		RequestID:   artifact.RequestID,
-		Operation:   artifact.Operation,
-		BodyDigest:  contracts.BodySHA256(body),
-		MediaDigest: mediaDigest,
-	}
-	principal, err := server.capabilities.Validate(token, binding)
-	if err != nil {
-		writeError(writer, http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
-		return
-	}
-	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
-		writeError(writer, http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
-		return
-	}
-	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
-	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", artifact.RequestID)
-		return
-	}
-	if !allowed {
-		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", artifact.RequestID)
-		return
-	}
-	if !server.requireConsent(writer, request, principal, artifact.RequestID) {
-		return
-	}
-	job, err := server.jobs.EnqueueWithID(request.Context(), principal, jobID, artifact, contracts.BodySHA256(body))
-	if err != nil {
-		if errors.Is(err, jobs.ErrIdempotencyConflict) {
-			writeError(writer, http.StatusConflict, "idempotency_conflict", "requestID was already used with different content", artifact.RequestID)
-		} else {
-			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
-		}
-		return
-	}
-	// Consume only after the job and its outbox row are durable. Replays and
-	// transient use-store failures remain safe because the signed capability is
-	// bound to the same job ID and request digest, and EnqueueWithID is idempotent.
-	_, _ = server.capabilities.Consume(request.Context(), token, binding)
-	if err := server.dispatcher.Dispatch(request.Context(), job.ID); err != nil {
-		// The transactional outbox owns eventual dispatch; this call is only an
-		// eager wake-up and must not turn a durable accepted job into an error.
-	}
-	writeJSON(writer, http.StatusAccepted, publicJob(job))
-}
-
-func (server *Server) issueJobCapability(writer http.ResponseWriter, request *http.Request) {
-	if server.capabilities == nil || server.jobs == nil || server.dispatcher == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	artifact, body, principal, ok := server.validateAIRequest(writer, request)
-	if !ok {
-		return
-	}
-	bodyDigest := contracts.BodySHA256(body)
-	lease, ok := server.acquireQuota(writer, request, principal, artifact, capabilityQuotaReservationID(principal, artifact.RequestID, bodyDigest))
-	if !ok {
-		return
-	}
-	attempt, _, err := server.media.Admit(request.Context(), principal, artifact, bodyDigest)
-	if err != nil {
-		// A stable capability reservation can be shared by concurrent exact
-		// retries. Keep it conservatively even when this caller's admission
-		// attempt fails; another no-op lease may already have admitted the same
-		// artifact. The reservation expires with the quota window.
-		lease.Release(contracts.ReservationTokens(artifact))
-		server.writeAdmissionError(writer, err, artifact.RequestID)
-		return
-	}
-	// The quota layer owns reservation idempotency. Any successful admission
-	// retains exactly one conservative reservation; a replay lease is a no-op.
-	// Basing this decision on the media replay bit is unsafe because concurrent
-	// callers can acquire and admit in opposite orders.
-	lease.Release(contracts.ReservationTokens(artifact))
-	mediaDigest, err := contracts.MediaDigest(artifact.Media)
-	if err != nil {
-		writeError(writer, http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)
-		return
-	}
-	issued, err := server.capabilities.IssueAt(principal, capability.Binding{
-		RequestID:   artifact.RequestID,
-		Operation:   artifact.Operation,
-		BodyDigest:  bodyDigest,
-		MediaDigest: mediaDigest,
-	}, attempt.CreatedAt)
-	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
-		return
-	}
-	writeJSON(writer, http.StatusCreated, issued)
-}
-
-func (server *Server) getJob(writer http.ResponseWriter, request *http.Request) {
-	if server.jobs == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	_, principal, ok := server.authenticateRequest(writer, request, 0)
-	if !ok {
-		return
-	}
-	job, err := server.jobs.Get(request.Context(), principal, request.PathValue("id"))
-	if err != nil {
-		if errors.Is(err, jobs.ErrNotFound) {
-			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		} else {
-			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		}
-		return
-	}
-	writeJSON(writer, http.StatusOK, publicJob(job))
-}
-
-func (server *Server) cancelJob(writer http.ResponseWriter, request *http.Request) {
-	if server.jobs == nil {
-		writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return
-	}
-	_, principal, ok := server.authenticateRequest(writer, request, 0)
-	if !ok {
-		return
-	}
-	if err := server.jobs.Cancel(request.Context(), principal, request.PathValue("id")); err != nil {
-		switch {
-		case errors.Is(err, jobs.ErrNotFound):
-			writeError(writer, http.StatusNotFound, "job_not_found", "job not found", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		case errors.Is(err, jobs.ErrJobNotClaimable):
-			writeError(writer, http.StatusConflict, "job_not_cancellable", "job is already complete", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		default:
-			writeError(writer, http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", request.Header.Get("X-Tellyouwhat-Request-ID"))
-		}
-		return
-	}
-	writer.WriteHeader(http.StatusNoContent)
-}
-
-func publicJob(job jobs.Job) map[string]any {
-	value := map[string]any{
-		"jobID":     job.ID,
-		"requestID": job.RequestID,
-		"status":    job.Status,
-		"createdAt": job.CreatedAt,
-		"updatedAt": job.UpdatedAt,
-	}
-	if job.Status == jobs.StatusSucceeded {
-		value["content"] = job.Result
-		value["usage"] = map[string]int{"inputTokens": job.InputTokens, "outputTokens": job.OutputTokens}
-	}
-	if job.Status == jobs.StatusFailed {
-		value["errorCategory"] = job.FailureCategory
-	}
-	return value
-}
-
-func (server *Server) complete(writer http.ResponseWriter, request *http.Request) {
-	artifact, _, principal, lease, ok := server.authorizeAIRequest(writer, request)
-	if !ok {
-		return
-	}
-	response, err := server.provider.Complete(request.Context(), artifact)
-	if err != nil {
-		lease.Release(contracts.ReservationTokens(artifact))
-		writeError(writer, http.StatusBadGateway, "upstream_error", "managed AI provider failed", artifact.RequestID)
-		return
-	}
-	actualTokens := response.InputTokens + response.OutputTokens
-	if err := server.recordUsage(request.Context(), principal, artifact, response.InputTokens, response.OutputTokens); err != nil {
-		// Ark already returned a valid result. Deliver it so the client does not
-		// repeat a billable request; retaining the conservative reservation is
-		// the safe accounting fallback when the durable ledger is unavailable.
-		actualTokens = contracts.ReservationTokens(artifact)
-	}
-	cleanupManagedMedia(request.Context(), server.provider, artifact.Media)
-	lease.Release(actualTokens)
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"requestID": artifact.RequestID,
-		"content":   response.Content,
-		"usage": map[string]int{
-			"inputTokens":  response.InputTokens,
-			"outputTokens": response.OutputTokens,
-		},
-	})
-}
-
 func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.Request) {
 	if server.journalOrganizer == nil || server.entitlements == nil || server.quota == nil || server.quotaReader == nil || server.media == nil || server.usage == nil {
 		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", requestID(request))
@@ -799,7 +550,7 @@ func (server *Server) organizeJournal(writer http.ResponseWriter, request *http.
 	}, contracts.Operation("journal.organize"), estimatedTokens, "", server.now())
 	if err != nil {
 		if errors.Is(err, quota.ErrExceeded) {
-			code, message := quotaExceededResponse(err)
+			code, message := journalQuotaExceededResponse(err)
 			writeError(writer, http.StatusTooManyRequests, code, message, input.RequestID)
 		} else {
 			writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", input.RequestID)
@@ -868,158 +619,6 @@ func journalReservationTokens(input journalcontracts.OrganizeRequest) int {
 	return value
 }
 
-func (server *Server) stream(writer http.ResponseWriter, request *http.Request) {
-	artifact, _, principal, lease, ok := server.authorizeAIRequest(writer, request)
-	if !ok {
-		return
-	}
-	flusher, ok := writer.(http.Flusher)
-	if !ok {
-		lease.Release(0)
-		writeError(writer, http.StatusServiceUnavailable, "stream_unavailable", "streaming is unavailable", artifact.RequestID)
-		return
-	}
-	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache, no-transform")
-	writer.Header().Set("Connection", "keep-alive")
-	writer.WriteHeader(http.StatusOK)
-	flusher.Flush()
-	actualTokens := contracts.ReservationTokens(artifact)
-
-	err := server.provider.Stream(request.Context(), artifact, func(event StreamEvent) error {
-		switch {
-		case event.Completed != nil:
-			if err := server.recordUsage(request.Context(), principal, artifact, event.Completed.InputTokens, event.Completed.OutputTokens); err == nil {
-				actualTokens = event.Completed.InputTokens + event.Completed.OutputTokens
-			}
-			if err := writeSSE(writer, "completed", map[string]any{
-				"requestID": artifact.RequestID,
-				"content":   event.Completed.Content,
-				"usage": map[string]int{
-					"inputTokens":  event.Completed.InputTokens,
-					"outputTokens": event.Completed.OutputTokens,
-				},
-			}); err != nil {
-				return err
-			}
-		case event.Delta != "":
-			if err := writeSSE(writer, "delta", map[string]string{"delta": event.Delta}); err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
-		flusher.Flush()
-		return nil
-	})
-	if err == nil {
-		cleanupManagedMedia(request.Context(), server.provider, artifact.Media)
-	}
-	lease.Release(actualTokens)
-	if err != nil {
-		_ = writeSSE(writer, "error", map[string]string{
-			"code":      "upstream_error",
-			"requestID": artifact.RequestID,
-		})
-		flusher.Flush()
-	}
-}
-
-func cleanupManagedMedia(ctx context.Context, provider Provider, values []contracts.Media) {
-	cleaner, ok := provider.(providerapi.ManagedMediaCleaner)
-	if !ok || len(values) == 0 {
-		return
-	}
-	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	cleaner.CleanupManagedMedia(cleanupContext, values)
-}
-
-func (server *Server) authorizeAIRequest(
-	writer http.ResponseWriter,
-	request *http.Request,
-) (contracts.Request, []byte, Principal, quota.Releaser, bool) {
-	artifact, body, principal, ok := server.validateAIRequest(writer, request)
-	if !ok {
-		return contracts.Request{}, nil, Principal{}, nil, false
-	}
-	lease, ok := server.acquireQuota(writer, request, principal, artifact, "")
-	if !ok {
-		return contracts.Request{}, nil, Principal{}, nil, false
-	}
-	if err := server.media.Consume(request.Context(), principal, artifact, contracts.BodySHA256(body)); err != nil {
-		lease.Release(0)
-		server.writeAdmissionError(writer, err, artifact.RequestID)
-		return contracts.Request{}, nil, Principal{}, nil, false
-	}
-	return artifact, body, principal, lease, true
-}
-
-func (server *Server) validateAIRequest(
-	writer http.ResponseWriter,
-	request *http.Request,
-) (contracts.Request, []byte, Principal, bool) {
-	if server.authenticator == nil || server.entitlements == nil || server.quota == nil || server.provider == nil || server.contracts == nil || server.media == nil || server.usage == nil {
-		writeError(writer, http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", "")
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	body, err := readBody(request.Body, contracts.DefaultBodyLimit)
-	if err != nil {
-		writeMappedError(writer, err, request.Header.Get("X-Tellyouwhat-Request-ID"))
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	proof := RequestProof{
-		Method:     request.Method,
-		Path:       request.URL.EscapedPath(),
-		RequestID:  request.Header.Get("X-Tellyouwhat-Request-ID"),
-		KeyID:      request.Header.Get("X-Tellyouwhat-Key-ID"),
-		Assertion:  request.Header.Get("X-Tellyouwhat-Assertion"),
-		Nonce:      request.Header.Get("X-Tellyouwhat-Nonce"),
-		Timestamp:  request.Header.Get("X-Tellyouwhat-Timestamp"),
-		BodySHA256: contracts.BodySHA256(body),
-	}
-	principal, err := server.authenticator.Authenticate(request.Context(), proof)
-	if err != nil {
-		writeAuthenticationError(writer, err, proof.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
-		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	artifact, err := contracts.DecodeAndValidate(bytes.NewReader(body), int64(len(body)))
-	if err != nil {
-		writeMappedError(writer, err, proof.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	if err := server.contracts.Validate(artifact); err != nil {
-		writeMappedError(writer, err, proof.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	if proof.RequestID != artifact.RequestID {
-		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	pathOperation := request.PathValue("operation")
-	if pathOperation == "" || pathOperation != string(artifact.Operation) || !server.app.AllowsOperation(pathOperation) {
-		writeError(writer, http.StatusUnprocessableEntity, "operation_mismatch", "request operation does not match the endpoint", artifact.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	allowed, err := server.entitlements.HasManagedSubscription(request.Context(), principal)
-	if err != nil {
-		writeError(writer, http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", artifact.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	if !allowed {
-		writeError(writer, http.StatusForbidden, "managed_subscription_required", "managed subscription required", artifact.RequestID)
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	if !server.requireConsent(writer, request, principal, artifact.RequestID) {
-		return contracts.Request{}, nil, Principal{}, false
-	}
-	return artifact, body, principal, true
-}
-
 func (server *Server) requireConsent(
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -1045,35 +644,7 @@ func (server *Server) requireConsent(
 	return true
 }
 
-func (server *Server) acquireQuota(
-	writer http.ResponseWriter,
-	request *http.Request,
-	principal Principal,
-	artifact contracts.Request,
-	reservationID string,
-) (quota.Releaser, bool) {
-	transactionID := principal.TransactionID
-	if transactionID == "" {
-		transactionID = principal.KeyID
-	}
-	lease, err := server.quota.Acquire(request.Context(), quota.Identity{
-		DeviceID:      principal.DeviceID,
-		TransactionID: transactionID,
-		IP:            server.ipResolver(request),
-	}, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
-	if err != nil {
-		if errors.Is(err, quota.ErrExceeded) || errors.Is(err, ErrQuotaExceeded) {
-			code, message := quotaExceededResponse(err)
-			writeError(writer, http.StatusTooManyRequests, code, message, artifact.RequestID)
-		} else {
-			writeError(writer, http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", artifact.RequestID)
-		}
-		return nil, false
-	}
-	return lease, true
-}
-
-func quotaExceededResponse(err error) (string, string) {
+func journalQuotaExceededResponse(err error) (string, string) {
 	scope, _ := quota.ExceededScope(err)
 	switch scope {
 	case quota.LimitDailyTokens:
@@ -1091,10 +662,6 @@ func quotaExceededResponse(err error) (string, string) {
 	}
 }
 
-func capabilityQuotaReservationID(principal Principal, requestID, bodyDigest string) string {
-	return contracts.BodySHA256([]byte("job-capability\n" + principal.KeyID + "\n" + requestID + "\n" + bodyDigest))
-}
-
 func (server *Server) writeAdmissionError(writer http.ResponseWriter, err error, requestID string) {
 	switch {
 	case errors.Is(err, media.ErrIdempotencyReplay), errors.Is(err, media.ErrIdempotencyConflict):
@@ -1104,29 +671,6 @@ func (server *Server) writeAdmissionError(writer http.ResponseWriter, err error,
 	default:
 		writeError(writer, http.StatusServiceUnavailable, "request_commit_unavailable", "request authorization could not be committed", requestID)
 	}
-}
-
-func (server *Server) recordUsage(
-	ctx context.Context,
-	principal Principal,
-	request contracts.Request,
-	inputTokens,
-	outputTokens int,
-) error {
-	transactionID := principal.TransactionID
-	if transactionID == "" {
-		transactionID = principal.KeyID
-	}
-	return server.usage.Record(ctx, usage.Record{
-		RequestID:     request.RequestID,
-		KeyID:         principal.KeyID,
-		DeviceID:      principal.DeviceID,
-		TransactionID: transactionID,
-		Operation:     request.Operation,
-		InputTokens:   inputTokens,
-		OutputTokens:  outputTokens,
-		OccurredAt:    server.now(),
-	})
 }
 
 func (server *Server) authenticateRequest(
@@ -1158,7 +702,7 @@ func (server *Server) authenticateRequest(
 		writeAuthenticationError(writer, err, proof.RequestID)
 		return nil, Principal{}, false
 	}
-	if principal.AppID != "" && principal.AppID != string(server.app.ID) {
+	if principal.AppID != string(server.app.ID) {
 		writeError(writer, http.StatusUnauthorized, "authentication_failed", "request authentication failed", proof.RequestID)
 		return nil, Principal{}, false
 	}
@@ -1235,9 +779,7 @@ func writeMappedError(writer http.ResponseWriter, err error, requestID string) {
 func writeError(writer http.ResponseWriter, status int, code, message, requestID string) {
 	writeJSON(writer, status, map[string]any{
 		"error": map[string]string{
-			"code":      code,
-			"message":   message,
-			"requestID": requestID,
+			"code": code, "message": message, "requestID": requestID,
 		},
 	})
 }
@@ -1246,16 +788,4 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(value)
-}
-
-func writeSSE(writer io.Writer, event string, value any) error {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	if strings.ContainsAny(event, "\r\n") {
-		return errors.New("invalid SSE event")
-	}
-	_, err = fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", event, encoded)
-	return err
 }

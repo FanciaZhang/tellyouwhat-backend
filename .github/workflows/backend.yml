@@ -35,6 +35,8 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./cmd/...
+      - run: make verify-generated
+      - run: swift test --package-path Contracts/HTTP
       - name: Validate deployment files
         run: |
           touch .env.production
@@ -129,11 +131,14 @@ jobs:
           HOST: ${{ vars.PRODUCTION_HOST }}
           USER: ${{ vars.PRODUCTION_USER }}
         run: |
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" 'install -d -m 700 /opt/tellyouwhat/backend/secrets && install -d -m 755 /opt/tellyouwhat/backend/deploy/single-server'
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$USER@$HOST:/opt/tellyouwhat/backend/compose.production.yaml"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile "$USER@$HOST:/opt/tellyouwhat/backend/deploy/single-server/Caddyfile"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$USER@$HOST:/opt/tellyouwhat/backend/.env.production"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$USER@$HOST:/opt/tellyouwhat/backend/secrets/"
+          remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$USER@$HOST:$remote_stage/compose.production.yaml"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile "$USER@$HOST:$remote_stage/deploy/single-server/Caddyfile"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh "$USER@$HOST:$remote_stage/deploy/tencent/deploy-production.sh"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$USER@$HOST:$remote_stage/.env.production"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$USER@$HOST:$remote_stage/secrets/"
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" "set -e; install -d -m 700 /opt/tellyouwhat/backend/secrets; install -d -m 755 /opt/tellyouwhat/backend/deploy/single-server /opt/tellyouwhat/backend/deploy/tencent; install -m 644 '$remote_stage/compose.production.yaml' /opt/tellyouwhat/backend/compose.production.yaml; install -m 644 '$remote_stage/deploy/single-server/Caddyfile' /opt/tellyouwhat/backend/deploy/single-server/Caddyfile; install -m 755 '$remote_stage/deploy/tencent/deploy-production.sh' /opt/tellyouwhat/backend/deploy/tencent/deploy-production.sh; install -m 600 '$remote_stage/.env.production' /opt/tellyouwhat/backend/.env.production; install -m 600 '$remote_stage'/secrets/*.p8 /opt/tellyouwhat/backend/secrets/; rm -rf '$remote_stage'"
       - name: Migrate and restart the single server
         env:
           HOST: ${{ vars.PRODUCTION_HOST }}
@@ -141,15 +146,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" bash -s -- "${GITHUB_SHA}" "${IMAGE_PREFIX}" <<'REMOTE'
-          set -euo pipefail
-          cd /opt/tellyouwhat/backend
-          chmod 600 .env.production secrets/*.p8
-          export IMAGE_TAG="$1" IMAGE_REGISTRY_PREFIX="$2"
-          docker compose --env-file .env.production -f compose.production.yaml pull gateway worker admin adminctl migrate maintenance
-          docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps migrate
-          docker compose --env-file .env.production -f compose.production.yaml up -d --no-build gateway worker admin caddy
-          REMOTE
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$USER@$HOST" /opt/tellyouwhat/backend/deploy/tencent/deploy-production.sh "${GITHUB_SHA}" "${IMAGE_PREFIX}"
       - name: Verify all public runtimes
         run: |
           curl --fail --show-error --silent --retry 10 --retry-all-errors --max-time 10 https://api.health.tellyouwhat.cn/readyz

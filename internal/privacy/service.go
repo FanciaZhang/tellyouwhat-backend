@@ -13,6 +13,7 @@ const (
 	PrivacyTermsScope    = "privacy_and_terms"
 	LifetimeBYOKScope    = "lifetime_byok"
 	ManagedAIScope       = "managed_subscription"
+	FreeRecognitionScope = "free_managed_recognition"
 	SensitiveHealthScope = "sensitive_health_ai"
 
 	GeneralDocumentVersion = "2026-08-24"
@@ -75,7 +76,7 @@ func NewService(repository Repository, objects ObjectCleaner, cache CacheCleaner
 }
 
 func (service *Service) RecordConsents(ctx context.Context, principal attestation.Principal, values []Consent) (time.Time, error) {
-	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 5 {
+	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 6 {
 		return time.Time{}, ErrInvalidConsent
 	}
 	recordedAt := service.now().UTC().Truncate(time.Microsecond)
@@ -124,7 +125,7 @@ func (service *Service) HasRequiredConsents(
 		switch scope {
 		case AdultScope, PrivacyTermsScope:
 			requirement.DocumentVersion = GeneralDocumentVersion
-		case LifetimeBYOKScope, ManagedAIScope, SensitiveHealthScope:
+		case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
 			requirement.DocumentVersion = AIDocumentVersion
 		default:
 			return false, ErrInvalidConsent
@@ -161,7 +162,7 @@ func validConsent(value Consent) bool {
 	switch value.Scope {
 	case AdultScope, PrivacyTermsScope:
 		return value.DocumentVersion == GeneralDocumentVersion
-	case LifetimeBYOKScope, ManagedAIScope, SensitiveHealthScope:
+	case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
 		return value.DocumentVersion == AIDocumentVersion
 	default:
 		return false

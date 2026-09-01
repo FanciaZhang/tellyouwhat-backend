@@ -57,7 +57,6 @@ var mealRootVariants = map[Operation][][]string{
 		{"box", "default_recipe_variant_id", "food_context", "food_id", "grams", "image_index", "kcal", "name", "nutrition", "part_analysis", "recipe_variants"},
 		{"components", "confidence", "containers", "context_analysis", "diet_evidence", "items", "plain_water_candidates", "summary"},
 		{"consumption_components", "consumption_options", "grams", "kcal", "name", "nutrition"},
-		{"basis", "capacity_ml", "confidence", "lower_bound_ml", "recognized", "suggested_name", "upper_bound_ml"},
 	},
 	OperationMealTextCapture: {
 		{"foods", "meal_context", "water_candidates"},

@@ -43,7 +43,9 @@ type AppConfig struct {
 	Ark                    ark.Config
 	JournalAI              JournalAIConfig
 	Quota                  quota.Limits
+	FreeRecognitionQuota   quota.Limits
 	AppStore               AppStoreConfig
+	ManagedAIProductIDs    []string
 	Product                ProductConfig
 }
 
@@ -111,8 +113,9 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 
 	health, err := loadPlatformApp("HEALTH", appDefaults{
 		ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
-		BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.ai.subscription.monthly",
-		OperationPrefix: "health.", PrivacyBaseURL: "https://health.tellyouwhat.cn",
+		BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
+		ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
+		AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
 	}, environment, commonTeamID)
 	if err != nil {
 		return PlatformConfig{}, err
@@ -120,7 +123,8 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 	journal, err := loadPlatformApp("JOURNAL", appDefaults{
 		ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
 		BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
-		OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.tellyouwhat.cn",
+		ProductIDs: []string{"journal.ai.subscription.monthly"}, OperationPrefix: "journal.",
+		PrivacyBaseURL: "https://journal.tellyouwhat.cn",
 	}, environment, commonTeamID)
 	if err != nil {
 		return PlatformConfig{}, err
@@ -130,13 +134,15 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 }
 
 type appDefaults struct {
-	ID              appregistry.AppID
-	DisplayName     string
-	Host            string
-	BundleID        string
-	ProductID       string
-	OperationPrefix string
-	PrivacyBaseURL  string
+	ID                appregistry.AppID
+	DisplayName       string
+	Host              string
+	BundleID          string
+	ProductID         string
+	ProductIDs        []string
+	OperationPrefix   string
+	AllowedOperations []string
+	PrivacyBaseURL    string
 }
 
 func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
@@ -154,6 +160,11 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		return AppConfig{}, err
 	}
 	base := defaults.PrivacyBaseURL
+	managedProductID := prefixedValue(prefix, "MANAGED_AI_PRODUCT_ID", defaults.ProductID)
+	managedProductIDs := splitList(prefixedValue(prefix, "MANAGED_AI_PRODUCT_IDS", strings.Join(defaults.ProductIDs, ",")))
+	if !containsString(managedProductIDs, managedProductID) {
+		managedProductIDs = append([]string{managedProductID}, managedProductIDs...)
+	}
 	config := AppConfig{
 		Registry: appregistry.App{
 			ID:                     defaults.ID,
@@ -162,14 +173,16 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 			TeamID:                 prefixedValue(prefix, "APPLE_TEAM_ID", commonTeamID),
 			BundleID:               prefixedValue(prefix, "APPLE_BUNDLE_ID", defaults.BundleID),
 			AppAppleID:             appAppleID,
-			ManagedAIProductID:     prefixedValue(prefix, "MANAGED_AI_PRODUCT_ID", defaults.ProductID),
+			ManagedAIProductID:     managedProductID,
 			AllowedOperationPrefix: defaults.OperationPrefix,
+			AllowedOperations:      append([]string(nil), defaults.AllowedOperations...),
 		},
 		AttestationEnvironment: attestationEnvironment,
 		DevelopmentSecret:      prefixedValue(prefix, "DEV_ACTIVATION_SECRET", ""),
 		AllowedBuilds:          splitSet(prefixedValue(prefix, "ALLOWED_APP_BUILDS", "")),
 		SchemaManifestPath:     prefixedValue(prefix, "SCHEMA_MANIFEST_PATH", ""),
 		Quota:                  quotaLimits,
+		ManagedAIProductIDs:    managedProductIDs,
 		AppStore: AppStoreConfig{
 			Environment:    prefixedValue(prefix, "APP_STORE_ENV", ""),
 			IssuerID:       prefixedValue(prefix, "APP_STORE_ISSUER_ID", ""),
@@ -187,6 +200,11 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		},
 	}
 	if defaults.ID == appregistry.Health {
+		freeRecognitionQuota, err := loadFreeRecognitionQuota(prefix, quotaLimits)
+		if err != nil {
+			return AppConfig{}, err
+		}
+		config.FreeRecognitionQuota = freeRecognitionQuota
 		config.Ark = ark.Config{
 			BaseURL: prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com"),
 			APIKey:  prefixedValue(prefix, "ARK_API_KEY", ""),
@@ -248,6 +266,25 @@ func (config AppConfig) Validate(environment string) error {
 	if err := config.Registry.Validate(); err != nil {
 		return err
 	}
+	if len(config.ManagedAIProductIDs) == 0 {
+		return errors.New("MANAGED_AI_PRODUCT_IDS must contain the primary product")
+	}
+	seenProductIDs := make(map[string]struct{}, len(config.ManagedAIProductIDs))
+	primaryProductConfigured := false
+	for _, productID := range config.ManagedAIProductIDs {
+		productID = strings.TrimSpace(productID)
+		if productID == "" {
+			return errors.New("MANAGED_AI_PRODUCT_IDS contains an empty product")
+		}
+		if _, duplicate := seenProductIDs[productID]; duplicate {
+			return errors.New("MANAGED_AI_PRODUCT_IDS contains a duplicate product")
+		}
+		seenProductIDs[productID] = struct{}{}
+		primaryProductConfigured = primaryProductConfigured || productID == config.Registry.ManagedAIProductID
+	}
+	if !primaryProductConfigured {
+		return errors.New("MANAGED_AI_PRODUCT_IDS must contain MANAGED_AI_PRODUCT_ID")
+	}
 	if config.AttestationEnvironment != attestation.EnvironmentDevelopment && config.AttestationEnvironment != attestation.EnvironmentProduction {
 		return errors.New("APP_ATTEST_ENV must be development or production")
 	}
@@ -269,6 +306,13 @@ func (config AppConfig) Validate(environment string) error {
 		}
 		if err := validateArkConfig(config.Ark); err != nil {
 			return err
+		}
+		minimumDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+		if config.FreeRecognitionQuota.DailyTokensPerTransaction < minimumDailyTokens {
+			return fmt.Errorf("FREE_RECOGNITION_DAILY_TOKENS must be at least %d", minimumDailyTokens)
+		}
+		if config.FreeRecognitionQuota.MonthlyTokensPerTransaction < config.FreeRecognitionQuota.DailyTokensPerTransaction {
+			return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
 		}
 	case appregistry.Journal:
 		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {
@@ -332,6 +376,21 @@ func loadPrefixedQuota(prefix string) (quota.Limits, error) {
 	return result, nil
 }
 
+func loadFreeRecognitionQuota(prefix string, base quota.Limits) (quota.Limits, error) {
+	minimumDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+	daily, err := prefixedInt(prefix, "FREE_RECOGNITION_DAILY_TOKENS", minimumDailyTokens)
+	if err != nil {
+		return quota.Limits{}, err
+	}
+	monthly, err := prefixedInt(prefix, "FREE_RECOGNITION_MONTHLY_TOKENS", daily*31)
+	if err != nil {
+		return quota.Limits{}, err
+	}
+	base.DailyTokensPerTransaction = daily
+	base.MonthlyTokensPerTransaction = monthly
+	return base, nil
+}
+
 func prefixedArkRoutes(prefix string, timeout int) map[contracts.Operation]ark.Route {
 	routes := make(map[contracts.Operation]ark.Route)
 	for _, operation := range contracts.OperationValues() {
@@ -390,4 +449,21 @@ func splitList(raw string) []string {
 		}
 	}
 	return values
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func operationStrings(values []contracts.Operation) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, string(value))
+	}
+	return result
 }

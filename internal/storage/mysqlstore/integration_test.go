@@ -60,7 +60,7 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	const appID = "health"
 	if _, err := database.ExecContext(ctx, `
 		INSERT INTO apps (app_id, display_name, bundle_id, managed_product_id)
-		VALUES (?, ?, ?, ?)`, appID, "告你健康", "cn.tellyouwhat.healthapp", "health.ai.subscription.monthly"); err != nil {
+		VALUES (?, ?, ?, ?)`, appID, "告你健康", "cn.tellyouwhat.healthapp", "health.premium.subscription.monthly"); err != nil {
 		t.Fatal(err)
 	}
 

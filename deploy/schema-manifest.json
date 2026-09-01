@@ -13,7 +13,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.voice.transcription",
+      "operation": "voice_transcription",
       "promptVersion": "voice-transcription-v1",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -33,7 +33,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.voice.transcription",
+      "operation": "voice_transcription",
       "promptVersion": "voice-transcription-v0",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -53,7 +53,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.photo-capture",
+      "operation": "meal_photo_capture",
       "promptVersion": "meal-photo-v5",
       "schemaPolicy": "structured",
       "schemaSHA256": []
@@ -71,7 +71,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.photo-capture",
+      "operation": "meal_photo_capture",
       "promptVersion": "meal-photo-v4",
       "schemaPolicy": "structured",
       "schemaSHA256": []
@@ -89,7 +89,47 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.text-capture",
+      "operation": "hydration_cup_estimate",
+      "promptVersion": "hydration-cup-estimate-v1",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "264c9e250af1d35cd1d6e4e0cc18ebc773481b9d93557cf7e44683c078f82a05"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "hydration_cup_estimate",
+      "promptVersion": "hydration-cup-estimate-v0",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "264c9e250af1d35cd1d6e4e0cc18ebc773481b9d93557cf7e44683c078f82a05"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "meal_text_capture",
       "promptVersion": "meal-text-v5",
       "schemaPolicy": "structured",
       "schemaSHA256": []
@@ -107,7 +147,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.text-capture",
+      "operation": "meal_text_capture",
       "promptVersion": "meal-text-v4",
       "schemaPolicy": "structured",
       "schemaSHA256": []
@@ -125,7 +165,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.decision",
+      "operation": "meal_decision",
       "promptVersion": "meal-decision-v10-fresh-exploration",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -149,7 +189,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.meal.decision",
+      "operation": "meal_decision",
       "promptVersion": "meal-decision-v9",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -173,7 +213,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.diet.analysis",
+      "operation": "diet_analysis",
       "promptVersion": "diet-day-review-v4",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -194,7 +234,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.diet.analysis",
+      "operation": "diet_analysis",
       "promptVersion": "diet-day-review-v3",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -215,7 +255,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.nutrition.analysis",
+      "operation": "health_nutrition_analysis",
       "promptVersion": "health-nutrition-v1",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -235,7 +275,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.nutrition.analysis",
+      "operation": "health_nutrition_analysis",
       "promptVersion": "health-nutrition-v0",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -255,7 +295,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.behavior.analysis",
+      "operation": "health_behavior_analysis",
       "promptVersion": "health-behavior-v1",
       "schemaPolicy": "exact",
       "schemaSHA256": [
@@ -275,7 +315,7 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
-      "operation": "health.behavior.analysis",
+      "operation": "health_behavior_analysis",
       "promptVersion": "health-behavior-v0",
       "schemaPolicy": "exact",
       "schemaSHA256": [

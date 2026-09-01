@@ -1,0 +1,11 @@
+package: httpapi
+output: generated.go
+generate:
+  models: true
+  gin-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  skip-prune: true
+  user-templates:
+    imports.tmpl: templates/imports.tmpl

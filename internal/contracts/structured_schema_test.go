@@ -2,6 +2,7 @@ package contracts
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -9,9 +10,6 @@ import (
 func TestStructuredMealSchemaAcceptsRegisteredShapes(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateStructuredMealSchema([]byte(validHydrationSchemaJSON()), OperationMealPhotoCapture); err != nil {
-		t.Fatalf("hydration schema rejected: %v", err)
-	}
 	for _, operation := range []Operation{OperationMealPhotoCapture, OperationMealTextCapture} {
 		if err := ValidateStructuredMealSchema([]byte(validV5MealSchemaJSON()), operation); err != nil {
 			t.Fatalf("v5 meal schema rejected for %s: %v", operation, err)
@@ -19,6 +17,17 @@ func TestStructuredMealSchemaAcceptsRegisteredShapes(t *testing.T) {
 		if err := ValidateStructuredMealSchema([]byte(validV5SpecifiedFoodSchemaJSON()), operation); err != nil {
 			t.Fatalf("extended specified-food schema rejected for %s: %v", operation, err)
 		}
+	}
+}
+
+func TestStructuredMealSchemaRejectsHydrationCupEstimateRoot(t *testing.T) {
+	t.Parallel()
+
+	if err := ValidateStructuredMealSchema(
+		[]byte(validHydrationSchemaJSON()),
+		OperationMealPhotoCapture,
+	); err == nil {
+		t.Fatal("cup-capacity schema must not be accepted as meal recognition")
 	}
 }
 
@@ -56,27 +65,26 @@ func TestStructuredMealSchemaRejectsUnknownNutritionField(t *testing.T) {
 func TestStructuredMealSchemaRejectsDangerousSchemas(t *testing.T) {
 	t.Parallel()
 
-	base := validHydrationSchemaJSON()
 	cases := map[string]string{
-		"remote reference": strings.Replace(base,
-			`"recognized":{"type":"boolean"}`,
-			`"recognized":{"$ref":"https://evil.example/schema"}`,
+		"remote reference": strings.Replace(validV5MealSchemaJSON(),
+			`"foods":{"type":"array","maxItems":12,"items":{"type":"string","maxLength":1024}}`,
+			`"foods":{"type":"array","maxItems":12,"items":{"$ref":"https://evil.example/schema"}}`,
 			1),
-		"unbounded string": strings.Replace(base,
-			`"basis":{"type":"string","maxLength":1024}`,
-			`"basis":{"type":"string"}`,
+		"unbounded string": strings.Replace(validV5MealSchemaJSON(),
+			`"dining_scene":{"type":"string","maxLength":64,"enum":["unknown"]}`,
+			`"dining_scene":{"type":"string","enum":["unknown"]}`,
 			1),
-		"unbounded array": strings.Replace(base,
-			`"confidence":{"type":"string","maxLength":64,"enum":["low","medium","high"]}`,
-			`"confidence":{"type":"array","items":{"type":"string","maxLength":64},"maxItems":100}`,
+		"oversized array": strings.Replace(validV5MealSchemaJSON(),
+			`"water_candidates":{"type":"array","maxItems":6`,
+			`"water_candidates":{"type":"array","maxItems":100`,
 			1),
-		"negative minimum": strings.Replace(base,
-			`"capacity_ml":{"type":"number","minimum":50,"maximum":3000}`,
-			`"capacity_ml":{"type":"number","minimum":-5,"maximum":3000}`,
+		"negative minimum": strings.Replace(validV5SpecifiedFoodSchemaJSON(),
+			`"protein":{"type":"number","minimum":0}`,
+			`"protein":{"type":"number","minimum":-5}`,
 			1),
-		"missing root key": strings.Replace(base,
-			`"basis":{"type":"string","maxLength":1024}`,
-			`"other":{"type":"string","maxLength":1024}`,
+		"missing root key": strings.Replace(validV5MealSchemaJSON(),
+			`"meal_context":{"type":"object"`,
+			`"other":{"type":"object"`,
 			1),
 	}
 	for name, raw := range cases {
@@ -97,10 +105,10 @@ func TestManifestValidatesStructuredMealSchema(t *testing.T) {
 		Operation:       OperationMealPhotoCapture,
 		ContractVersion: ContractVersionV1,
 		PromptVersion:   "meal-photo-v5",
-		ResponseSchema:  []byte(validHydrationSchemaJSON()),
+		ResponseSchema:  []byte(validV5MealSchemaJSON()),
 	}
 	if err := manifest.Validate(request); err != nil {
-		t.Fatalf("structured hydration schema rejected: %v", err)
+		t.Fatalf("structured meal schema rejected: %v", err)
 	}
 
 	invalidNutrition := strings.Replace(
@@ -121,10 +129,43 @@ func TestManifestValidatesStructuredMealSchema(t *testing.T) {
 	}
 }
 
+func TestManifestValidatesHydrationCupEstimateAsIndependentExactSchema(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../../deploy/schema-manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ParseManifest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{
+		Operation:       OperationHydrationCupEstimate,
+		ContractVersion: ContractVersionV1,
+		PromptVersion:   "hydration-cup-estimate-v1",
+		ResponseSchema:  []byte(validHydrationSchemaJSON()),
+	}
+	if err := manifest.Validate(request); err != nil {
+		digest, _ := CanonicalJSONSHA256(request.ResponseSchema)
+		t.Fatalf("registered hydration cup schema rejected: %v (digest %s)", err, digest)
+	}
+
+	request.ResponseSchema = []byte(strings.Replace(
+		validHydrationSchemaJSON(),
+		`"maximum":3000`,
+		`"maximum":5000`,
+		1,
+	))
+	if err := manifest.Validate(request); !errors.Is(err, ErrContractViolation) {
+		t.Fatalf("changed hydration cup schema must be rejected, got %v", err)
+	}
+}
+
 func TestStructuredManifestEntryRequiresEmptyDigests(t *testing.T) {
 	t.Parallel()
 
-	raw := `{"entries":[{"operation":"health.meal.photo-capture","contractVersion":"ai-request-v1","promptVersion":"meal-photo-v5","schemaPolicy":"structured","schemaSHA256":["cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"],"maxTemperature":1,"allowedReasoningEfforts":[""],"allowStream":true,"allowWebSearch":false}]}`
+	raw := `{"entries":[{"operation":"meal_photo_capture","contractVersion":"ai-request-v1","promptVersion":"meal-photo-v5","schemaPolicy":"structured","schemaSHA256":["cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"],"maxTemperature":1,"allowedReasoningEfforts":[""],"allowStream":true,"allowWebSearch":false}]}`
 	if _, err := ParseManifest([]byte(raw)); err == nil {
 		t.Fatal("structured entry with digests must be rejected")
 	}
@@ -173,14 +214,14 @@ func validHydrationSchemaJSON() string {
 	return `{
 		"type":"object",
 		"additionalProperties":false,
-		"required":["recognized","suggested_name","capacity_ml","lower_bound_ml","upper_bound_ml","confidence","basis"],
+			"required":["basis","capacity_ml","confidence","lower_bound_ml","recognized","suggested_name","upper_bound_ml"],
 		"properties":{
 			"recognized":{"type":"boolean"},
 			"suggested_name":{"type":"string","maxLength":1024},
 			"capacity_ml":{"type":"number","minimum":50,"maximum":3000},
 			"lower_bound_ml":{"type":"number","minimum":50,"maximum":3000},
 			"upper_bound_ml":{"type":"number","minimum":50,"maximum":3000},
-			"confidence":{"type":"string","maxLength":64,"enum":["low","medium","high"]},
+				"confidence":{"type":"string","maxLength":6,"enum":["high","medium","low"]},
 			"basis":{"type":"string","maxLength":1024}
 		}
 	}`

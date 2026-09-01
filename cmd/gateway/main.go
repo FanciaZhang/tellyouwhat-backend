@@ -33,6 +33,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
+	"github.com/tellyouwhat/backend/internal/recognitionquota"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
 	"github.com/tellyouwhat/backend/internal/usage"
@@ -57,19 +58,22 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
-	nonces         attestation.NonceStore
-	keys           keyRepository
-	entitlements   entitlementRepository
-	jobs           jobs.Store
-	outbox         jobs.OutboxStore
-	limiter        gateway.Quota
-	quotaReader    quota.Reader
-	reconciler     quota.TokenReconciler
-	capabilityUses capability.UseStore
-	media          media.Registry
-	usage          usage.Recorder
-	privacy        privacy.Repository
-	privacyCache   privacy.CacheCleaner
+	nonces                     attestation.NonceStore
+	keys                       keyRepository
+	entitlements               entitlementRepository
+	jobs                       jobs.Store
+	outbox                     jobs.OutboxStore
+	limiter                    gateway.Quota
+	quotaReader                quota.Reader
+	freeRecognitionLimiter     gateway.Quota
+	freeRecognitionQuotaReader quota.Reader
+	recognitionSessions        recognitionquota.Store
+	reconciler                 quota.TokenReconciler
+	capabilityUses             capability.UseStore
+	media                      media.Registry
+	usage                      usage.Recorder
+	privacy                    privacy.Repository
+	privacyCache               privacy.CacheCleaner
 }
 
 func main() {
@@ -110,7 +114,7 @@ func run(logger *slog.Logger) error {
 	handlers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
-		storage := storageForApp(platform, shared, string(appConfig.Registry.ID))
+		storage := storageForApp(platform, shared, appConfig)
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -227,21 +231,30 @@ func openSharedStorage(ctx context.Context, platform config.PlatformConfig) (sha
 	}, nil
 }
 
-func storageForApp(platform config.PlatformConfig, shared sharedStorage, appID string) appStorage {
-	limits := appQuota(platform, appID)
+func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConfig config.AppConfig) appStorage {
+	appID := string(appConfig.Registry.ID)
+	limits := appConfig.Quota
 	if platform.StorageMode == "memory" {
 		limiter := quota.NewMemoryLimiter(limits)
-		return appStorage{
+		storage := appStorage{
 			nonces: attestation.NewMemoryNonceStore(), keys: attestation.NewMemoryKeyStore(),
 			entitlements: entitlement.NewMemoryStore(), jobs: jobs.NewMemoryStore(),
 			limiter: limiter, quotaReader: limiter, reconciler: limiter,
 			capabilityUses: capability.NewMemoryUseStore(), media: media.NewMemoryRegistry(),
 			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(),
 		}
+		if appConfig.Registry.ID == appregistry.Health {
+			freeLimiter := quota.NewMemoryLimiter(appConfig.FreeRecognitionQuota)
+			storage.freeRecognitionLimiter = freeLimiter
+			storage.freeRecognitionQuotaReader = freeLimiter
+			storage.recognitionSessions = recognitionquota.NewMemoryStore()
+			storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
+		}
+		return storage
 	}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
-	return appStorage{
+	storage := appStorage{
 		nonces: redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
 		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
 		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
@@ -249,6 +262,14 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appID s
 		media:          mysqlstore.NewMediaRepository(shared.database, appID), usage: mysqlstore.NewUsageRepository(shared.database, appID),
 		privacy: mysqlstore.NewPrivacyRepository(shared.database, appID), privacyCache: redisstore.NewPrivacyCleaner(shared.redis, appID),
 	}
+	if appConfig.Registry.ID == appregistry.Health {
+		freeLimiter := redisstore.NewQuotaLimiter(shared.redis, appConfig.FreeRecognitionQuota, appID)
+		storage.freeRecognitionLimiter = freeLimiter
+		storage.freeRecognitionQuotaReader = freeLimiter
+		storage.recognitionSessions = redisstore.NewRecognitionQuotaStore(shared.redis, appID)
+		storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
+	}
+	return storage
 }
 
 func buildAppHandler(
@@ -325,11 +346,14 @@ func buildAppHandler(
 			dispatcher = jobs.DurableQueueDispatcher{}
 		}
 		dependencies.Provider = provider
+		dependencies.FreeRecognitionQuota = storage.freeRecognitionLimiter
+		dependencies.FreeRecognitionQuotaReader = storage.freeRecognitionQuotaReader
+		dependencies.RecognitionSessions = storage.recognitionSessions
 		dependencies.Jobs = jobService
 		dependencies.Dispatcher = dispatcher
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
-		dependencies.RequiredConsentScopes = []string{privacy.ManagedAIScope, privacy.SensitiveHealthScope}
+		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
 		model := journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
@@ -386,7 +410,7 @@ func commerceServices(
 		}
 		verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{
 			Roots: roots, BundleID: appConfig.Registry.BundleID, AppAppleID: appConfig.Registry.AppAppleID,
-			Environment: appStoreEnvironment, ProductID: appConfig.Registry.ManagedAIProductID, Now: time.Now,
+			Environment: appStoreEnvironment, ProductIDs: appConfig.ManagedAIProductIDs, Now: time.Now,
 		})
 		api := appstore.NewAPIClient(appstore.APIClientConfig{
 			BaseURL: baseURL, KeyID: appConfig.AppStore.KeyID, IssuerID: appConfig.AppStore.IssuerID,
@@ -404,13 +428,4 @@ func commerceServices(
 		store, entitlement.NewAppStoreNotificationResolver(appstore.NewMultiEnvironmentNotificationProcessor(processors...)),
 	)
 	return nil, production, notifications, nil
-}
-
-func appQuota(platform config.PlatformConfig, appID string) quota.Limits {
-	for _, app := range platform.Apps {
-		if string(app.Registry.ID) == appID {
-			return app.Quota
-		}
-	}
-	return quota.Limits{}
 }

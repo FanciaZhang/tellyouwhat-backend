@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
+	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
 )
@@ -65,13 +66,14 @@ func run(logger *slog.Logger) error {
 		appID := string(app.Registry.ID)
 		store := mysqlstore.NewJobRepository(database, cipher, appID)
 		provider := ark.New(app.Ark, http.DefaultClient, tosStore)
-		reconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
+		managedReconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
+		freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, app.FreeRecognitionQuota, appID)
+		reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)
 		workers[app.Registry.ID] = jobs.NewWorker(store, provider, reconciler)
 	}
 	if len(workers) == 0 {
 		return errors.New("no asynchronous application workers are configured")
 	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")

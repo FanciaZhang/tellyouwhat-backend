@@ -51,6 +51,7 @@ func validateArkConfig(config ark.Config) error {
 var arkEndpointEnvironmentKeys = map[contracts.Operation]string{
 	contracts.OperationVoiceTranscription:      "ARK_ENDPOINT_VOICE_TRANSCRIPTION",
 	contracts.OperationMealPhotoCapture:        "ARK_ENDPOINT_MEAL_PHOTO_CAPTURE",
+	contracts.OperationHydrationCupEstimate:    "ARK_ENDPOINT_HYDRATION_CUP_ESTIMATE",
 	contracts.OperationMealTextCapture:         "ARK_ENDPOINT_MEAL_TEXT_CAPTURE",
 	contracts.OperationMealDecision:            "ARK_ENDPOINT_MEAL_DECISION",
 	contracts.OperationDietAnalysis:            "ARK_ENDPOINT_DIET_ANALYSIS",
