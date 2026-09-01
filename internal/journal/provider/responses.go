@@ -155,8 +155,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	for _, book := range request.Books {
 		bookIDs[book.ID] = true
 	}
-	validation := contracts.OrganizeResponse{Tags: result.Tags, ExistingBookRecommendations: result.ExistingBookRecommendations, NewBookSuggestions: result.NewBookSuggestions}
-	if err := validation.Validate(bookIDs); err != nil {
+	if err := result.Validate(bookIDs); err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}
 	return Result{Value: result, InputTokens: envelope.Usage.InputTokens, OutputTokens: envelope.Usage.OutputTokens}, nil

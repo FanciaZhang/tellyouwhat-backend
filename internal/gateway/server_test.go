@@ -84,7 +84,8 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 	server := New(Dependencies{
 		App:           appregistry.App{ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"}, TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal."},
 		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
-		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(), JournalOrganizer: organizer,
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
 		Consent: fakeConsentGate{granted: false}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
 		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 	})
@@ -155,6 +156,81 @@ func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
 		!strings.Contains(response.Body.String(), `"available":false`) {
 		t.Fatalf("successful model result was discarded after quota snapshot failure: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestJournalStrictRouterRejectsUnknownRequestFields(t *testing.T) {
+	t.Parallel()
+	organizer := &fakeJournalOrganizer{}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		JournalOrganizer: organizer,
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[],"unexpected":true}`
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"contract_violation"`) || organizer.calls != 0 {
+		t.Fatalf("unknown field reached Journal handler: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
+	}
+}
+
+func TestJournalStrictRouterRejectsCompatibilityActivationBody(t *testing.T) {
+	t.Parallel()
+	server := New(Dependencies{App: appregistry.App{
+		ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+		TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+		ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+	}})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/dev/entitlements/activate", `{}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"unexpected_body"`) {
+		t.Fatalf("compatibility activation body was accepted: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestJournalStrictRouterUsesOnlyJournalAttestationHeaders(t *testing.T) {
+	t.Parallel()
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		QuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1, MonthlyTokensPerTransaction: 1}),
+	})
+	request := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
+	request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	request.Header.Set("X-Health-Key-ID", "valid-key")
+	request.Header.Set("X-Health-Assertion", "valid-assertion")
+	request.Header.Set("X-Health-Nonce", "valid-nonce")
+	request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("Health proof authenticated against Journal: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestJournalStrictRouterRejectsPrincipalFromAnotherApp(t *testing.T) {
+	t.Parallel()
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "health"}, Entitlements: fakeEntitlements{allowed: true},
+		QuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1, MonthlyTokensPerTransaction: 1}),
+	})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-app principal authenticated: %d %s", response.Code, response.Body.String())
 	}
 }
 

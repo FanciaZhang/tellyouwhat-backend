@@ -48,7 +48,8 @@ func TestRequestRejectsMalformedIdentifiersAndUnboundedContext(t *testing.T) {
 }
 
 func TestContractRejectsUnknownBook(t *testing.T) {
-	r := OrganizeResponse{ExistingBookRecommendations: []ExistingBookRecommendation{{BookID: "b2", Reason: "相关"}}}
+	r := validResponse()
+	r.ExistingBookRecommendations = []ExistingBookRecommendation{{BookID: "b2", Reason: "相关"}}
 	if r.Validate(map[string]bool{"b1": true}) == nil {
 		t.Fatal("expected invalid book")
 	}
@@ -57,12 +58,20 @@ func TestContractRejectsUnknownBook(t *testing.T) {
 func TestContractRejectsDuplicateOrOversizedSuggestions(t *testing.T) {
 	t.Parallel()
 	tests := []OrganizeResponse{
-		{Tags: []Tag{{Name: "", Type: "topic"}}},
-		{ExistingBookRecommendations: []ExistingBookRecommendation{{BookID: "b1", Reason: "相关"}, {BookID: "b1", Reason: "仍相关"}}},
-		{ExistingBookRecommendations: []ExistingBookRecommendation{{BookID: "b1", Reason: strings.Repeat("长", MaxReasonRunes+1)}}},
-		{NewBookSuggestions: []NewBookSuggestion{{Name: "旅行", Reason: "相关"}, {Name: "旅行", Reason: "仍相关"}}},
-		{NewBookSuggestions: []NewBookSuggestion{{Name: "", Reason: "相关"}}},
-		{NewBookSuggestions: []NewBookSuggestion{{Name: "旅行", Reason: "相关", RelatedTags: make([]string, MaxRelatedTags+1)}}},
+		withResponse(func(r *OrganizeResponse) { r.Tags = []Tag{{Name: "", Type: "topic"}} }),
+		withResponse(func(r *OrganizeResponse) {
+			r.ExistingBookRecommendations = []ExistingBookRecommendation{{BookID: "b1", Reason: "相关"}, {BookID: "b1", Reason: "仍相关"}}
+		}),
+		withResponse(func(r *OrganizeResponse) {
+			r.ExistingBookRecommendations = []ExistingBookRecommendation{{BookID: "b1", Reason: strings.Repeat("长", MaxReasonRunes+1)}}
+		}),
+		withResponse(func(r *OrganizeResponse) {
+			r.NewBookSuggestions = []NewBookSuggestion{{Name: "旅行", Reason: "相关"}, {Name: "旅行", Reason: "仍相关"}}
+		}),
+		withResponse(func(r *OrganizeResponse) { r.NewBookSuggestions = []NewBookSuggestion{{Name: "", Reason: "相关"}} }),
+		withResponse(func(r *OrganizeResponse) {
+			r.NewBookSuggestions = []NewBookSuggestion{{Name: "旅行", Reason: "相关", RelatedTags: make([]string, MaxRelatedTags+1)}}
+		}),
 	}
 	for _, response := range tests {
 		if response.Validate(map[string]bool{"b1": true}) == nil {
@@ -75,4 +84,26 @@ func TestSchemaIsStrict(t *testing.T) {
 	if s["additionalProperties"] != false {
 		t.Fatal("root schema must be strict")
 	}
+	properties := s["properties"].(map[string]any)
+	recommendations := properties["existingBookRecommendations"].(map[string]any)
+	item := recommendations["items"].(map[string]any)
+	itemProperties := item["properties"].(map[string]any)
+	bookID := itemProperties["bookID"].(map[string]any)
+	if bookID["maxLength"] != 16 {
+		t.Fatalf("model book alias maxLength = %v, want 16", bookID["maxLength"])
+	}
+}
+
+func validResponse() OrganizeResponse {
+	return OrganizeResponse{
+		RequestID:       "19be2f9e-bd92-4699-b561-e3816092114c",
+		ContentHash:     strings.Repeat("a", 64),
+		AnalysisVersion: "journal-organize-v1",
+	}
+}
+
+func withResponse(mutate func(*OrganizeResponse)) OrganizeResponse {
+	response := validResponse()
+	mutate(&response)
+	return response
 }

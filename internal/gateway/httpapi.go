@@ -68,7 +68,9 @@ func captureRawRequestBody() gin.HandlerFunc {
 		limit := requestBodyLimit(context.Request.Method, context.Request.URL.Path)
 		body, err := readLimitedBody(context.Request.Body, limit)
 		if err != nil {
-			if errors.Is(err, contracts.ErrPayloadTooLarge) {
+			if limit == 0 && errors.Is(err, contracts.ErrPayloadTooLarge) {
+				writeTransportError(context, http.StatusUnprocessableEntity, "unexpected_body", "this operation does not accept a request body")
+			} else if errors.Is(err, contracts.ErrPayloadTooLarge) {
 				writeTransportError(context, http.StatusRequestEntityTooLarge, "payload_too_large", "request exceeds the operation limit")
 			} else {
 				writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request body could not be read")
@@ -124,7 +126,10 @@ func readLimitedBody(reader io.ReadCloser, limit int64) ([]byte, error) {
 func rawRequestBody(context *gin.Context) []byte {
 	value, exists := context.Get(rawRequestBodyKey)
 	if !exists {
-		return nil
+		value, exists = context.Get(journalRawRequestBodyKey)
+		if !exists {
+			return nil
+		}
 	}
 	body, _ := value.([]byte)
 	return body

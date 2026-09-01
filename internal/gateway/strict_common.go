@@ -17,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/httpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -56,14 +57,18 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 	}
 	ginContext := strictGinContext(ctx)
 	body := rawRequestBody(ginContext)
+	headerPrefix := "X-Health-"
+	if server.app.ID == appregistry.Journal {
+		headerPrefix = "X-Tellyouwhat-"
+	}
 	proof := RequestProof{
 		Method:     ginContext.Request.Method,
 		Path:       ginContext.Request.URL.EscapedPath(),
 		RequestID:  requestIDString,
-		KeyID:      ginContext.GetHeader("X-Health-Key-ID"),
-		Assertion:  ginContext.GetHeader("X-Health-Assertion"),
-		Nonce:      ginContext.GetHeader("X-Health-Nonce"),
-		Timestamp:  ginContext.GetHeader("X-Health-Timestamp"),
+		KeyID:      ginContext.GetHeader(headerPrefix + "Key-ID"),
+		Assertion:  ginContext.GetHeader(headerPrefix + "Assertion"),
+		Nonce:      ginContext.GetHeader(headerPrefix + "Nonce"),
+		Timestamp:  ginContext.GetHeader(headerPrefix + "Timestamp"),
 		BodySHA256: contracts.BodySHA256(body),
 	}
 	principal, err := server.authenticator.Authenticate(ctx, proof)

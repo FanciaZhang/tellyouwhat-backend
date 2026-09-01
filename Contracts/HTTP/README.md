@@ -1,11 +1,12 @@
-# Health HTTP contracts
+# Tellyouwhat HTTP contracts
 
-`HealthAPI/openapi.yaml` is the canonical public gateway contract. It generates:
+`HealthAPI/openapi.yaml` and `JournalAPI/openapi.yaml` are the canonical public
+gateway contracts. Each contract generates:
 
 - the Gin router, Go wire models, and strict server interface in
-  `internal/httpapi`;
-- the `HealthAPI` Swift package at build time, imported directly by the iOS
-  managed-AI transport;
+  `internal/httpapi` or `internal/journalhttpapi`;
+- the `HealthAPI` or `JournalAPI` Swift product at build time, imported directly
+  by the corresponding iOS managed-AI transport;
 - the future TypeScript Fetch client through the pinned OpenAPI Generator
   command documented below.
 
@@ -16,8 +17,7 @@ must be updated.
 ## Go server
 
 ```sh
-cd Backend
-go generate ./internal/httpapi
+go generate ./internal/httpapi ./internal/journalhttpapi
 ```
 
 ## Swift client
@@ -27,10 +27,10 @@ swift build --package-path Contracts/HTTP
 ```
 
 Swift OpenAPI Generator runs as a build plugin, so generated Swift code is not
-committed and cannot drift from the contract. `ManagedGatewayTransport` calls
-the generated `Client` for every gateway operation. Its App Attest, SSE, TOS,
-and background `URLSession` code are platform adapters around serialized
-generated requests; they must not define a second set of routes or JSON bodies.
+committed and cannot drift from the contract. Each app calls its generated
+`Client` for every gateway operation. App Attest, SSE, TOS, and background
+`URLSession` code are platform adapters around serialized generated requests;
+they must not define a second set of routes or JSON bodies.
 
 ## TypeScript Fetch client
 
@@ -47,5 +47,7 @@ docker run --rm \
   --additional-properties=useSingleRequestParameter=true,supportsES6=true
 ```
 
-The generated TypeScript directory belongs to the future Web target and should
-be regenerated in CI. Do not introduce a second hand-maintained Web schema.
+Repeat the command with `JournalAPI/openapi.yaml` and a `JournalAPI` output
+directory for Journal Web surfaces. Generated TypeScript belongs to the future
+Web target and should be regenerated in CI. Do not introduce a second
+hand-maintained Web schema.

@@ -13,7 +13,7 @@ gateway 在认证和读取请求体之前，仅根据 HTTP `Host` 选择 App：
 
 ## HTTP 与 AI 合约
 
-Health 的公开合约位于 [`Contracts/HTTP/HealthAPI/openapi.yaml`](Contracts/HTTP/HealthAPI/openapi.yaml)。它生成 Gin Router、Go wire model、strict server interface 和 Swift client；[`internal/httpapi/generated.go`](internal/httpapi/generated.go) 不允许手工编辑。
+两个 App 的公开合约分别位于 [`Contracts/HTTP/HealthAPI/openapi.yaml`](Contracts/HTTP/HealthAPI/openapi.yaml) 和 [`Contracts/HTTP/JournalAPI/openapi.yaml`](Contracts/HTTP/JournalAPI/openapi.yaml)。两份 IDL 都生成 Gin Router、Go wire model、strict server interface 和 Swift client；[`internal/httpapi/generated.go`](internal/httpapi/generated.go) 与 [`internal/journalhttpapi/generated.go`](internal/journalhttpapi/generated.go) 不允许手工编辑。
 
 ```sh
 make generate-api
@@ -23,7 +23,7 @@ make swift-client
 
 Health 只接受代码登记的八个操作：`voice_transcription`、`meal_photo_capture`、`hydration_cup_estimate`、`meal_text_capture`、`meal_decision`、`diet_analysis`、`health_nutrition_analysis`、`health_behavior_analysis`。模型、方舟接入点、密钥、工具与配额均由服务端选择。
 
-Journal 目前只公开固定的 `journal.organize` 路由。它接收标题、正文、标签和手记册上下文，使用服务端版本化 Prompt 与严格 JSON Schema 返回整理建议；客户端不能提交 Prompt、model、provider URL、API key、Header 或 tools。
+Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正文、标签和手记册上下文，使用服务端版本化 Prompt 与严格 JSON Schema 返回整理建议；客户端不能提交 Prompt、model、provider URL、API key、Header 或 tools。Journal 的所有公开路由与请求/响应也由 IDL 生成，不保留手写兼容路由或备用 JSON 签名。
 
 [`deploy/schema-manifest.json`](deploy/schema-manifest.json) 只管理 Health 的 Prompt 版本、JSON Schema 摘要和模型策略，不是 HTTP IDL，不能与 OpenAPI 合并。
 
@@ -70,4 +70,4 @@ make verify-generated
 swift test --package-path Contracts/HTTP
 ```
 
-测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。
+测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health/Journal 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。

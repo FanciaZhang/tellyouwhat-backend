@@ -22,6 +22,7 @@ const (
 	MaxBookDescriptionRunes = 600
 	MaxReasonRunes          = 240
 	MaxRelatedTags          = 8
+	MaxAnalysisVersionRunes = 128
 )
 
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -127,6 +128,23 @@ func (r OrganizeRequest) Validate() error {
 }
 
 func (r OrganizeResponse) Validate(bookIDs map[string]bool) error {
+	if !platformcontracts.ValidRequestID(r.RequestID) || !contentHashPattern.MatchString(r.ContentHash) {
+		return errors.New("requestID or contentHash is invalid")
+	}
+	if r.AnalysisVersion == "" || strings.TrimSpace(r.AnalysisVersion) != r.AnalysisVersion || utf8.RuneCountInString(r.AnalysisVersion) > MaxAnalysisVersionRunes {
+		return errors.New("analysisVersion is invalid")
+	}
+	if r.Quota.DailyTokensRemaining < 0 || r.Quota.MonthlyTokensRemaining < 0 {
+		return errors.New("quota is invalid")
+	}
+	return (ModelResult{
+		Tags:                        r.Tags,
+		ExistingBookRecommendations: r.ExistingBookRecommendations,
+		NewBookSuggestions:          r.NewBookSuggestions,
+	}).Validate(bookIDs)
+}
+
+func (r ModelResult) Validate(bookIDs map[string]bool) error {
 	if len(r.Tags) > 8 || len(r.ExistingBookRecommendations) > 3 || len(r.NewBookSuggestions) > 2 {
 		return errors.New("model result exceeds item limits")
 	}

@@ -1,0 +1,588 @@
+openapi: 3.1.0
+info:
+  title: Journal Managed AI API
+  version: 1.0.0
+  description: Canonical HTTP contract for the 告你手记 managed-AI gateway.
+servers:
+  - url: https://api.journal.tellyouwhat.cn
+    description: Production
+  - url: http://127.0.0.1:8080
+    description: Local development
+tags:
+  - name: Service
+  - name: Products
+  - name: Attestation
+  - name: Entitlements
+  - name: Privacy
+  - name: AI
+  - name: Apple
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [Service]
+      security: []
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceStatus" }
+        default: { $ref: "#/components/responses/Error" }
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags: [Service]
+      security: []
+      responses:
+        "200":
+          description: All required Journal dependencies are ready.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceStatus" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/products/managed-ai:
+    get:
+      operationId: getManagedAIProduct
+      tags: [Products]
+      security: []
+      responses:
+        "200":
+          description: Public product and policy metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedAIProduct" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/attest/challenges:
+    post:
+      operationId: issueAttestationChallenge
+      tags: [Attestation]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttestationChallengeRequest" }
+      responses:
+        "201":
+          description: A one-time challenge was issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttestationChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/attest/keys:
+    post:
+      operationId: registerAttestationKey
+      tags: [Attestation]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttestationRegistrationRequest" }
+      responses:
+        "201":
+          description: The App Attest key was registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttestationRegistrationResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/dev/entitlements/activate:
+    post:
+      operationId: activateDevelopmentEntitlement
+      tags: [Entitlements]
+      description: Returns 404 when the production dependency set is active.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+          DevelopmentActivation: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+        - { $ref: "#/components/parameters/DevelopmentActivationHeader" }
+      responses:
+        "200":
+          description: The development entitlement is active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntitlementStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/entitlements/transactions:
+    post:
+      operationId: synchronizeSubscriptionTransaction
+      tags: [Entitlements]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscriptionTransactionRequest" }
+      responses:
+        "200":
+          description: The current managed subscription was confirmed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntitlementStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/app-store/notifications:
+    post:
+      operationId: processAppStoreNotification
+      tags: [Apple]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppStoreNotificationRequest" }
+      responses:
+        "200":
+          description: The notification was processed idempotently.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OKStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/privacy/consents:
+    post:
+      operationId: recordPrivacyConsents
+      tags: [Privacy]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrivacyConsentRequest" }
+      responses:
+        "200":
+          description: Consent records were stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivacyConsentResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/privacy/data:
+    delete:
+      operationId: deletePrivacyData
+      tags: [Privacy]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+      responses:
+        "204": { description: All managed-service data for the caller was deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/ai/quota:
+    get:
+      operationId: getAIQuota
+      tags: [AI]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+      responses:
+        "200":
+          description: Current token quota for the subscription.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuotaSnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/ai/operations/journal.organize/responses:
+    post:
+      operationId: organizeJournal
+      tags: [AI]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestIDHeader" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizeRequest" }
+      responses:
+        "200":
+          description: A validated set of tags and book suggestions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizeResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    AppAttestKeyID:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Key-ID
+    AppAttestAssertion:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Assertion
+    AppAttestNonce:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Nonce
+    AppAttestTimestamp:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Timestamp
+    AppAttestRequestID:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Request-ID
+    DevelopmentActivation:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Dev-Activation
+  parameters:
+    RequestIDHeader:
+      name: X-Tellyouwhat-Request-ID
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+    DevelopmentActivationHeader:
+      name: X-Tellyouwhat-Dev-Activation
+      in: header
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: App Attest authentication failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Entitlement or privacy consent is missing.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Route or resource unavailable.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Replay or idempotency conflict.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    PayloadTooLarge:
+      description: Request exceeds the route limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    UnprocessableEntity:
+      description: Request violates the transport or business contract.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    TooManyRequests:
+      description: Quota or concurrency limit reached.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadGateway:
+      description: Provider failed or returned an invalid result.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ServiceUnavailable:
+      description: A required service is unavailable.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+  schemas:
+    ServiceStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, ready] }
+    OKStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { $ref: "#/components/schemas/ErrorDetail" }
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestID]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        requestID: { type: string }
+    ManagedAIProduct:
+      type: object
+      additionalProperties: false
+      required: [productID, billingPeriod, dailyTokenLimit, monthlyTokenLimit, provider, modelDisclosure, mediaRetention, jobRetention, privacyURL, termsURL, privacyChoicesURL, supportURL]
+      properties:
+        productID: { type: string }
+        billingPeriod: { type: string }
+        dailyTokenLimit: { type: integer, minimum: 0 }
+        monthlyTokenLimit: { type: integer, minimum: 0 }
+        provider: { type: string }
+        modelDisclosure: { type: string }
+        mediaRetention: { type: string }
+        jobRetention: { type: string }
+        privacyURL: { type: string, format: uri }
+        termsURL: { type: string, format: uri }
+        privacyChoicesURL: { type: string, format: uri }
+        supportURL: { type: string, format: uri }
+    AttestationChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [keyID]
+      properties:
+        keyID: { type: string, minLength: 1, maxLength: 512 }
+    AttestationChallenge:
+      type: object
+      additionalProperties: false
+      required: [challenge, expiresAt]
+      properties:
+        challenge: { type: string, minLength: 1 }
+        expiresAt: { type: string, format: date-time }
+    AttestationRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [keyID, challenge, attestation, build, activationSecret]
+      properties:
+        keyID: { type: string, minLength: 1, maxLength: 512 }
+        challenge: { type: string, minLength: 1 }
+        attestation: { type: string, minLength: 1, contentEncoding: base64 }
+        build: { type: string }
+        activationSecret: { type: string }
+    AttestationRegistrationResponse:
+      type: object
+      additionalProperties: false
+      required: [keyID, deviceID]
+      properties:
+        keyID: { type: string }
+        deviceID: { type: string, format: uuid }
+    SubscriptionTransactionRequest:
+      type: object
+      additionalProperties: false
+      required: [signedTransaction]
+      properties:
+        signedTransaction: { type: string, minLength: 1 }
+    EntitlementStatus:
+      type: object
+      additionalProperties: false
+      required: [status, expiresAt]
+      properties:
+        status: { type: string, const: active }
+        expiresAt: { type: string, format: date-time }
+    AppStoreNotificationRequest:
+      type: object
+      additionalProperties: false
+      required: [signedPayload]
+      properties:
+        signedPayload: { type: string, minLength: 1 }
+    PrivacyConsentRequest:
+      type: object
+      additionalProperties: false
+      required: [consents]
+      properties:
+        consents:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: { $ref: "#/components/schemas/PrivacyConsent" }
+    PrivacyConsent:
+      type: object
+      additionalProperties: false
+      required: [scope, documentVersion, granted]
+      properties:
+        scope: { type: string, const: managed_subscription }
+        documentVersion: { type: string, minLength: 1, maxLength: 32 }
+        granted: { type: boolean }
+    PrivacyConsentResponse:
+      type: object
+      additionalProperties: false
+      required: [recordedAt, count]
+      properties:
+        recordedAt: { type: string, format: date-time }
+        count: { type: integer, minimum: 1, maximum: 1 }
+    QuotaSnapshot:
+      type: object
+      additionalProperties: false
+      required: [dailyUsed, dailyLimit, dailyResetAt, monthlyUsed, monthlyLimit, monthlyResetAt]
+      properties:
+        dailyUsed: { type: integer, minimum: 0 }
+        dailyLimit: { type: integer, minimum: 0 }
+        dailyResetAt: { type: string, format: date-time }
+        monthlyUsed: { type: integer, minimum: 0 }
+        monthlyLimit: { type: integer, minimum: 0 }
+        monthlyResetAt: { type: string, format: date-time }
+    OrganizeRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, contractVersion, contentHash, title, body, existingTags, rejectedTagNames, books]
+      properties:
+        requestID: { type: string, format: uuid }
+        contractVersion: { type: string, const: journal-organize-v1 }
+        contentHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        title: { type: string, maxLength: 120 }
+        body: { type: string, maxLength: 60000 }
+        existingTags:
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 40 }
+        rejectedTagNames:
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 40 }
+        books:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/BookContext" }
+    BookContext:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, containsEntry]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 600 }
+        containsEntry: { type: boolean }
+    OrganizeResponse:
+      type: object
+      additionalProperties: false
+      required: [requestID, contentHash, analysisVersion, tags, existingBookRecommendations, newBookSuggestions, quota]
+      properties:
+        requestID: { type: string, format: uuid }
+        contentHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        analysisVersion: { type: string, minLength: 1, maxLength: 128 }
+        tags:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/Tag" }
+        existingBookRecommendations:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/ExistingBookRecommendation" }
+        newBookSuggestions:
+          type: array
+          maxItems: 2
+          items: { $ref: "#/components/schemas/NewBookSuggestion" }
+        quota: { $ref: "#/components/schemas/OrganizeQuota" }
+    Tag:
+      type: object
+      additionalProperties: false
+      required: [name, type]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 40 }
+        type: { type: string, enum: [person, place, organization, event, topic, mood, other] }
+    ExistingBookRecommendation:
+      type: object
+      additionalProperties: false
+      required: [bookID, reason]
+      properties:
+        bookID: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 240 }
+    NewBookSuggestion:
+      type: object
+      additionalProperties: false
+      required: [name, description, reason, relatedTags]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 600 }
+        reason: { type: string, minLength: 1, maxLength: 240 }
+        relatedTags:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 40 }
+    OrganizeQuota:
+      type: object
+      additionalProperties: false
+      required: [dailyTokensRemaining, monthlyTokensRemaining, available]
+      properties:
+        dailyTokensRemaining: { type: integer, minimum: 0 }
+        monthlyTokensRemaining: { type: integer, minimum: 0 }
+        available: { type: boolean }

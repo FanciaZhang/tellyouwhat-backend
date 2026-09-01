@@ -3,13 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "HealthHTTPContract",
+    name: "TellyouwhatHTTPContracts",
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
     ],
     products: [
         .library(name: "HealthAPI", targets: ["HealthAPI"]),
+        .library(name: "JournalAPI", targets: ["JournalAPI"]),
     ],
     dependencies: [
         .package(
@@ -37,9 +38,24 @@ let package = Package(
                 .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
             ]
         ),
+        .target(
+            name: "JournalAPI",
+            dependencies: [
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            path: "JournalAPI",
+            plugins: [
+                .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
+            ]
+        ),
         .testTarget(
             name: "HealthAPITests",
             dependencies: ["HealthAPI"]
+        ),
+        .testTarget(
+            name: "JournalAPITests",
+            dependencies: ["JournalAPI"]
         ),
     ]
 )

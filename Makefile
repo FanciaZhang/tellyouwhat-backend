@@ -10,10 +10,10 @@ vet:
 	go vet ./...
 
 generate-api:
-	go generate ./internal/httpapi
+	go generate ./internal/httpapi ./internal/journalhttpapi
 
 verify-generated: generate-api
-	git diff --exit-code -- internal/httpapi/generated.go
+	git diff --exit-code -- internal/httpapi/generated.go internal/journalhttpapi/generated.go
 
 swift-client:
 	swift build --package-path Contracts/HTTP
