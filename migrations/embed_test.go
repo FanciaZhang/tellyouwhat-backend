@@ -12,7 +12,7 @@ func TestEmbeddedMigrationsAreOrderedAndIncludeRetentionCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []string{"0001_initial.sql", "0002_retention.sql", "0003_privacy.sql", "0004_admin_portal.sql", "0005_admin_operations.sql", "0006_offer_redemptions.sql"}
+	expected := []string{"0001_initial.sql", "0002_retention.sql", "0003_privacy.sql", "0004_admin_portal.sql", "0005_admin_operations.sql", "0006_offer_redemptions.sql", "0007_free_recognition_consent.sql"}
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}

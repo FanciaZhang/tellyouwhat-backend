@@ -35,6 +35,7 @@ type Config struct {
 	Ark                    ark.Config
 	TOS                    media.TOSConfig
 	Quota                  quota.Limits
+	FreeRecognitionQuota   quota.Limits
 	AppStore               AppStoreConfig
 }
 
@@ -109,6 +110,15 @@ func loadUnchecked() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	minimumFreeRecognitionDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+	freeRecognitionDaily, err := parsedInt("FREE_RECOGNITION_DAILY_TOKENS", minimumFreeRecognitionDailyTokens)
+	if err != nil {
+		return Config{}, err
+	}
+	freeRecognitionMonthly, err := parsedInt("FREE_RECOGNITION_MONTHLY_TOKENS", freeRecognitionDaily*31)
+	if err != nil {
+		return Config{}, err
+	}
 	appAppleID, err := parsedInt64Optional("APP_STORE_APP_APPLE_ID")
 	if err != nil {
 		return Config{}, err
@@ -149,6 +159,14 @@ func loadUnchecked() (Config, error) {
 			RequestsPerMinutePerOperation: quotaOperation,
 			DailyTokensPerTransaction:     quotaDaily,
 			MonthlyTokensPerTransaction:   quotaMonthly,
+			MaxConcurrentPerDevice:        quotaConcurrent,
+		},
+		FreeRecognitionQuota: quota.Limits{
+			RequestsPerMinutePerIP:        quotaIP,
+			RequestsPerMinutePerDevice:    quotaDevice,
+			RequestsPerMinutePerOperation: quotaOperation,
+			DailyTokensPerTransaction:     freeRecognitionDaily,
+			MonthlyTokensPerTransaction:   freeRecognitionMonthly,
 			MaxConcurrentPerDevice:        quotaConcurrent,
 		},
 		AppStore: AppStoreConfig{
@@ -211,6 +229,13 @@ func (config Config) Validate() error {
 	if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
 		return errors.New("tos bucket credentials are required")
 	}
+	minimumFreeRecognitionDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+	if config.FreeRecognitionQuota.DailyTokensPerTransaction < minimumFreeRecognitionDailyTokens {
+		return fmt.Errorf("FREE_RECOGNITION_DAILY_TOKENS must be at least %d", minimumFreeRecognitionDailyTokens)
+	}
+	if config.FreeRecognitionQuota.MonthlyTokensPerTransaction < config.FreeRecognitionQuota.DailyTokensPerTransaction {
+		return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
+	}
 	return nil
 }
 
@@ -246,6 +271,7 @@ func validateArkConfig(config ark.Config) error {
 var arkEndpointEnvironmentKeys = map[contracts.Operation]string{
 	contracts.OperationVoiceTranscription:      "ARK_ENDPOINT_VOICE_TRANSCRIPTION",
 	contracts.OperationMealPhotoCapture:        "ARK_ENDPOINT_MEAL_PHOTO_CAPTURE",
+	contracts.OperationHydrationCupEstimate:    "ARK_ENDPOINT_HYDRATION_CUP_ESTIMATE",
 	contracts.OperationMealTextCapture:         "ARK_ENDPOINT_MEAL_TEXT_CAPTURE",
 	contracts.OperationMealDecision:            "ARK_ENDPOINT_MEAL_DECISION",
 	contracts.OperationDietAnalysis:            "ARK_ENDPOINT_DIET_ANALYSIS",

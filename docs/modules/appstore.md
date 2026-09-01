@@ -21,7 +21,7 @@ Allowed dependencies are the Go standard library, configured Apple root certific
 
 - Accept only ES256 compact JWS with the three-certificate `x5c` chain Apple documents and uses in its official server libraries.
 - Require the Apple receipt-signing leaf OID and WWDR intermediate OID, validate the chain to configured Apple roots, and verify the JWS signature.
-- Require the configured bundle ID, App Apple ID in production, environment, and `health.ai.subscription.monthly` product ID.
+- Require the configured bundle ID, App Apple ID in production, environment, and either the `health.premium.subscription.monthly` or `health.premium.subscription.annual` managed-subscription product ID.
 - A client transaction is evidence for an identifier, not proof of current access; App Store Server API remains the source of current expiry/revocation status.
 - Notification processing is idempotent by Apple `notificationUUID`; the nested signed transaction is independently verified before storage changes.
 - No JWS, private key, subscription payload, or transaction identifier is written to ordinary logs.
@@ -29,4 +29,3 @@ Allowed dependencies are the Go standard library, configured Apple root certific
 ## Error model
 
 Malformed or untrusted Apple data is a permanent verification denial. Apple network/rate-limit/server failures are retryable service-unavailable errors. A valid but inactive subscription produces a forbidden entitlement result. Duplicate notifications acknowledge success without applying a second mutation.
-

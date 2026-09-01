@@ -17,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	quotaapi "github.com/tellyouwhat/backend/internal/quota"
+	"github.com/tellyouwhat/backend/internal/recognitionquota"
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
@@ -25,6 +26,7 @@ func TestAIRequestRequiresAssertion(t *testing.T) {
 
 	server := newTestServer()
 	request := httptest.NewRequest(http.MethodPost, "/v1/ai/requests", strings.NewReader(validBody()))
+	request.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)
@@ -39,7 +41,9 @@ func TestQuotaStatusRequiresAssertionAndReturnsSubscriptionLimits(t *testing.T) 
 
 	server := newTestServer()
 	unauthorized := httptest.NewRecorder()
-	server.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil))
+	unauthorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
+	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	server.ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
 	}
@@ -50,8 +54,93 @@ func TestQuotaStatusRequiresAssertionAndReturnsSubscriptionLimits(t *testing.T) 
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
 	if !strings.Contains(response.Body.String(), `"dailyLimit":1000000000`) ||
-		!strings.Contains(response.Body.String(), `"monthlyLimit":2000000000`) {
+		!strings.Contains(response.Body.String(), `"monthlyLimit":2000000000`) ||
+		!strings.Contains(response.Body.String(), `"plan":"managed_subscription"`) ||
+		!strings.Contains(response.Body.String(), `"recognitionRemaining":3`) {
 		t.Fatalf("unexpected quota snapshot: %s", response.Body.String())
+	}
+}
+
+func TestFreeRecognitionSessionIsSharedAcrossRetriesAndRejectsFourthMeal(t *testing.T) {
+	server := newTestServer()
+	server.entitlements = fakeEntitlements{allowed: false}
+	sessions := []string{
+		"10000000-0000-4000-8000-000000000001",
+		"10000000-0000-4000-8000-000000000002",
+		"10000000-0000-4000-8000-000000000003",
+		"10000000-0000-4000-8000-000000000004",
+	}
+
+	for index, sessionID := range sessions {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, authorizedRequest(
+			http.MethodPost,
+			"/v1/media/upload-authorizations",
+			validFreeMediaAuthorizationBody(sessionID),
+		))
+		if index < 3 && response.Code != http.StatusCreated {
+			t.Fatalf("session %d was rejected: %d %s", index+1, response.Code, response.Body.String())
+		}
+		if index == 3 && (response.Code != http.StatusTooManyRequests || !strings.Contains(response.Body.String(), "free_recognition_quota_exceeded")) {
+			t.Fatalf("fourth concurrent meal was not rejected: %d %s", response.Code, response.Body.String())
+		}
+	}
+
+	retry := httptest.NewRecorder()
+	server.ServeHTTP(retry, authorizedRequest(
+		http.MethodPost,
+		"/v1/media/upload-authorizations",
+		validFreeMediaAuthorizationBody(sessions[0]),
+	))
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("same-session retry consumed another meal: %d %s", retry.Code, retry.Body.String())
+	}
+}
+
+func TestFreeRecognitionCompletionAndCancellationUpdateQuotaIdempotently(t *testing.T) {
+	server := newTestServer()
+	server.entitlements = fakeEntitlements{allowed: false}
+	completedID := "10000000-0000-4000-8000-000000000011"
+	cancelledID := "10000000-0000-4000-8000-000000000012"
+	for _, sessionID := range []string{completedID, cancelledID} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", validFreeMediaAuthorizationBody(sessionID)))
+		if response.Code != http.StatusCreated {
+			t.Fatalf("reserve %s: %d %s", sessionID, response.Code, response.Body.String())
+		}
+	}
+	for range 2 {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/recognition-sessions/"+completedID+"/complete", ""))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"completed":1`) {
+			t.Fatalf("completion was not idempotent: %d %s", response.Code, response.Body.String())
+		}
+	}
+	cancelled := httptest.NewRecorder()
+	server.ServeHTTP(cancelled, authorizedRequest(http.MethodDelete, "/v1/ai/recognition-sessions/"+cancelledID, ""))
+	if cancelled.Code != http.StatusNoContent {
+		t.Fatalf("cancel failed: %d %s", cancelled.Code, cancelled.Body.String())
+	}
+	quotaResponse := httptest.NewRecorder()
+	server.ServeHTTP(quotaResponse, authorizedRequest(http.MethodGet, "/v1/ai/quota?businessDayStartHour=4&timeZoneIdentifier=Asia%2FShanghai", ""))
+	if quotaResponse.Code != http.StatusOK ||
+		!strings.Contains(quotaResponse.Body.String(), `"plan":"free"`) ||
+		!strings.Contains(quotaResponse.Body.String(), `"recognitionCompleted":1`) ||
+		!strings.Contains(quotaResponse.Body.String(), `"recognitionReserved":0`) ||
+		!strings.Contains(quotaResponse.Body.String(), `"recognitionRemaining":2`) {
+		t.Fatalf("unexpected free quota: %d %s", quotaResponse.Code, quotaResponse.Body.String())
+	}
+}
+
+func TestFreeUserCannotCallNonRecognitionAIOrRecognitionWithoutSession(t *testing.T) {
+	server := newTestServer()
+	server.entitlements = fakeEntitlements{allowed: false}
+	for _, body := range []string{validBody(), validTextBodyWithoutSession()} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/requests", body))
+		if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "premium_required") {
+			t.Fatalf("unentitled request bypassed gate: %d %s", response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -60,7 +149,7 @@ func TestManagedProductPublishesLimitsAndLegalLinksWithoutAuthentication(t *test
 	server := newTestServer()
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/products/managed-ai", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"productID":"health.ai.subscription.monthly"`) ||
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"productID":"health.premium.subscription.monthly"`) ||
 		!strings.Contains(response.Body.String(), `"privacyURL":"https://health.tellyouwhat.cn/privacy"`) {
 		t.Fatalf("unexpected product response: %d %s", response.Code, response.Body.String())
 	}
@@ -93,11 +182,13 @@ func TestProductionEntitlementSyncRequiresAssertionAndVerifiedTransaction(t *tes
 	syncer := &fakeProductionEntitlementSync{}
 	server.productionEntitlement = syncer
 	unauthorized := httptest.NewRecorder()
-	server.ServeHTTP(unauthorized, httptest.NewRequest(
+	unauthorizedRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/v1/entitlements/transactions",
 		strings.NewReader(`{"signedTransaction":"signed-transaction"}`),
-	))
+	)
+	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	server.ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
 	}
@@ -359,7 +450,7 @@ func TestBackgroundJobDispatchesOnlyServerJobID(t *testing.T) {
 	server.jobs = jobService
 	server.dispatcher = dispatcher
 	request := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
-	request.Header.Set("Authorization", "JobCapability valid-token")
+	request.Header.Set("X-Health-Job-Capability", "valid-token")
 	request.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
@@ -384,7 +475,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	server.capabilities = capabilities
 
 	first := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
-	first.Header.Set("Authorization", "JobCapability valid-token")
+	first.Header.Set("X-Health-Job-Capability", "valid-token")
 	first.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	firstResponse := httptest.NewRecorder()
 	server.ServeHTTP(firstResponse, first)
@@ -396,7 +487,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	}
 
 	second := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
-	second.Header.Set("Authorization", "JobCapability valid-token")
+	second.Header.Set("X-Health-Job-Capability", "valid-token")
 	second.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	secondResponse := httptest.NewRecorder()
 	server.ServeHTTP(secondResponse, second)
@@ -408,7 +499,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	}
 
 	replay := authorizedRequest(http.MethodPost, "/v1/ai/jobs", validBody())
-	replay.Header.Set("Authorization", "JobCapability valid-token")
+	replay.Header.Set("X-Health-Job-Capability", "valid-token")
 	replay.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	replayResponse := httptest.NewRecorder()
 	server.ServeHTTP(replayResponse, replay)
@@ -558,20 +649,27 @@ func newTestServer() *Server {
 		DailyTokensPerTransaction:   1_000_000_000,
 		MonthlyTokensPerTransaction: 2_000_000_000,
 	})
+	freeLimiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{
+		DailyTokensPerTransaction:   1_000_000_000,
+		MonthlyTokensPerTransaction: 2_000_000_000,
+	})
 	return New(Dependencies{
-		Authenticator: fakeAuthenticator{},
-		Entitlements:  fakeEntitlements{allowed: true},
-		Quota:         limiter,
-		QuotaReader:   limiter,
-		Provider:      &fakeProvider{},
-		Capabilities:  &fakeCapabilities{},
-		Contracts:     allowingContractValidator{},
-		Media:         newFakeMediaAuthorizer(),
-		Usage:         usage.NewMemoryRecorder(),
-		Readiness:     ReadinessFunc(func(context.Context) error { return nil }),
-		Privacy:       &fakePrivacyManager{},
+		Authenticator:              fakeAuthenticator{},
+		Entitlements:               fakeEntitlements{allowed: true},
+		Quota:                      limiter,
+		QuotaReader:                limiter,
+		FreeRecognitionQuota:       freeLimiter,
+		FreeRecognitionQuotaReader: freeLimiter,
+		RecognitionSessions:        recognitionquota.NewMemoryStore(),
+		Provider:                   &fakeProvider{},
+		Capabilities:               &fakeCapabilities{},
+		Contracts:                  allowingContractValidator{},
+		Media:                      newFakeMediaAuthorizer(),
+		Usage:                      usage.NewMemoryRecorder(),
+		Readiness:                  ReadinessFunc(func(context.Context) error { return nil }),
+		Privacy:                    &fakePrivacyManager{},
 		ManagedProduct: ManagedProduct{
-			ProductID:  "health.ai.subscription.monthly",
+			ProductID:  "health.premium.subscription.monthly",
 			PrivacyURL: "https://health.tellyouwhat.cn/privacy",
 		},
 	})
@@ -611,6 +709,24 @@ func validPhotoBody() string {
 		`"objectID":"ai-temp/device-1/19be2f9e-bd92-4699-b561-e3816092114c/photo-1",` +
 		`"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}],` +
 		`"semanticSignature":"sha256:abc"}`
+}
+
+func validTextBodyWithoutSession() string {
+	return `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c",` +
+		`"operation":"meal_text_capture",` +
+		`"contractVersion":"ai-request-v1",` +
+		`"promptVersion":"meal-text-v5",` +
+		`"prompt":"rice and egg",` +
+		`"responseSchema":{"type":"object","additionalProperties":false},` +
+		`"options":{},"media":[],"semanticSignature":"sha256:abc"}`
+}
+
+func validFreeMediaAuthorizationBody(sessionID string) string {
+	return `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c",` +
+		`"operation":"meal_photo_capture","mediaID":"photo-1","kind":"image",` +
+		`"mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",` +
+		`"sizeBytes":1024,"recognitionSession":{"sessionID":"` + sessionID +
+		`","businessDayStartHour":4,"timeZoneIdentifier":"Asia/Shanghai"}}`
 }
 
 type fakeAuthenticator struct{ err error }

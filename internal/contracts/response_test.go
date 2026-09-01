@@ -89,4 +89,3 @@ func TestCanonicalizeFoodGroupSynonymsLeavesCanonicalAndUnknownUntouched(t *test
 		t.Fatalf("canonical and unknown values must not be rewritten: %q %v", canonicalized, ok)
 	}
 }
-

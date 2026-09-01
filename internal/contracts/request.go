@@ -26,6 +26,7 @@ type Operation string
 const (
 	OperationVoiceTranscription      Operation = "voice_transcription"
 	OperationMealPhotoCapture        Operation = "meal_photo_capture"
+	OperationHydrationCupEstimate    Operation = "hydration_cup_estimate"
 	OperationMealTextCapture         Operation = "meal_text_capture"
 	OperationMealDecision            Operation = "meal_decision"
 	OperationDietAnalysis            Operation = "diet_analysis"
@@ -34,15 +35,22 @@ const (
 )
 
 type Request struct {
-	RequestID         string          `json:"requestID"`
-	Operation         Operation       `json:"operation"`
-	ContractVersion   string          `json:"contractVersion"`
-	PromptVersion     string          `json:"promptVersion"`
-	Prompt            string          `json:"prompt"`
-	ResponseSchema    json.RawMessage `json:"responseSchema"`
-	Options           RequestOptions  `json:"options"`
-	Media             []Media         `json:"media"`
-	SemanticSignature string          `json:"semanticSignature"`
+	RequestID          string                     `json:"requestID"`
+	Operation          Operation                  `json:"operation"`
+	ContractVersion    string                     `json:"contractVersion"`
+	PromptVersion      string                     `json:"promptVersion"`
+	Prompt             string                     `json:"prompt"`
+	ResponseSchema     json.RawMessage            `json:"responseSchema"`
+	Options            RequestOptions             `json:"options"`
+	Media              []Media                    `json:"media"`
+	SemanticSignature  string                     `json:"semanticSignature"`
+	RecognitionSession *RecognitionSessionContext `json:"recognitionSession,omitempty"`
+}
+
+type RecognitionSessionContext struct {
+	SessionID            string `json:"sessionID"`
+	BusinessDayStartHour int    `json:"businessDayStartHour"`
+	TimeZoneIdentifier   string `json:"timeZoneIdentifier"`
 }
 
 type RequestOptions struct {
@@ -133,6 +141,16 @@ func (request Request) Validate() error {
 	if len(request.SemanticSignature) == 0 || len(request.SemanticSignature) > 256 {
 		return fmt.Errorf("%w: semantic signature", ErrContractViolation)
 	}
+	if request.RecognitionSession != nil {
+		if !IsMealRecognitionOperation(request.Operation) ||
+			!uuidPattern.MatchString(request.RecognitionSession.SessionID) ||
+			request.RecognitionSession.BusinessDayStartHour < 0 ||
+			request.RecognitionSession.BusinessDayStartHour > 23 ||
+			len(request.RecognitionSession.TimeZoneIdentifier) == 0 ||
+			len(request.RecognitionSession.TimeZoneIdentifier) > 64 {
+			return fmt.Errorf("%w: recognition session", ErrContractViolation)
+		}
+	}
 	if request.Options.Temperature != nil && (*request.Options.Temperature < 0 || *request.Options.Temperature > 2) {
 		return fmt.Errorf("%w: temperature", ErrContractViolation)
 	}
@@ -190,6 +208,10 @@ func PolicyFor(operation Operation) (OperationPolicy, bool) {
 		policy.MaxMediaCount = 4
 		policy.MaxMediaBytes = 20 << 20
 		policy.AllowedMedia = allowedMedia("image", "image/jpeg", "image/heic", "image/png")
+	case OperationHydrationCupEstimate:
+		policy.MaxMediaCount = 1
+		policy.MaxMediaBytes = 8 << 20
+		policy.AllowedMedia = allowedMedia("image", "image/jpeg", "image/heic", "image/png")
 	case OperationMealDecision:
 		policy.MaxMediaCount = 4
 		policy.MaxMediaBytes = 20 << 20
@@ -203,6 +225,7 @@ func OperationValues() []Operation {
 	return []Operation{
 		OperationVoiceTranscription,
 		OperationMealPhotoCapture,
+		OperationHydrationCupEstimate,
 		OperationMealTextCapture,
 		OperationMealDecision,
 		OperationDietAnalysis,
@@ -223,6 +246,15 @@ func ValidRequestID(value string) bool {
 	return uuidPattern.MatchString(value)
 }
 
+func IsMealRecognitionOperation(operation Operation) bool {
+	switch operation {
+	case OperationVoiceTranscription, OperationMealPhotoCapture, OperationMealTextCapture:
+		return true
+	default:
+		return false
+	}
+}
+
 // ReservationTokens deliberately overestimates text and schema tokens by
 // counting UTF-8 bytes one-for-one, then adds a fixed output and modality
 // budget. This prevents the post-response reconciliation from being the first
@@ -240,9 +272,12 @@ func ReservationTokens(request Request) int {
 	return reserved
 }
 
+const MaxFreeRecognitionSessionReservationTokens = (512 << 10) + (128 << 10) + 4_096 + 1_024 + (4 * 32_768)
+
 var promptContracts = map[Operation]PromptContract{
 	OperationVoiceTranscription:      {Current: "voice-transcription-v1", Previous: "voice-transcription-v0"},
 	OperationMealPhotoCapture:        {Current: "meal-photo-v5", Previous: "meal-photo-v4"},
+	OperationHydrationCupEstimate:    {Current: "hydration-cup-estimate-v1", Previous: "hydration-cup-estimate-v0"},
 	OperationMealTextCapture:         {Current: "meal-text-v5", Previous: "meal-text-v4"},
 	OperationMealDecision:            {Current: "meal-decision-v10-fresh-exploration", Previous: "meal-decision-v9"},
 	OperationDietAnalysis:            {Current: "diet-day-review-v4", Previous: "diet-day-review-v3"},

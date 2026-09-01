@@ -162,4 +162,3 @@ func validRequestJSON(promptVersion string) string {
 		`"media":[],` +
 		`"semanticSignature":"sha256:abc"}`
 }
-

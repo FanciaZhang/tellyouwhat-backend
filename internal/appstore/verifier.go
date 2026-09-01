@@ -17,12 +17,21 @@ import (
 )
 
 const (
-	ManagedSubscriptionProductID = "health.ai.subscription.monthly"
-	expectedJWSAlgorithm         = "ES256"
-	expectedJWSSegments          = 3
-	expectedJWSChainLength       = 3
-	maximumSignedDataBytes       = 1 << 20
+	ManagedMonthlySubscriptionProductID = "health.premium.subscription.monthly"
+	ManagedAnnualSubscriptionProductID  = "health.premium.subscription.annual"
+	ManagedSubscriptionProductID        = ManagedMonthlySubscriptionProductID
+	expectedJWSAlgorithm                = "ES256"
+	expectedJWSSegments                 = 3
+	expectedJWSChainLength              = 3
+	maximumSignedDataBytes              = 1 << 20
 )
+
+func ManagedSubscriptionProductIDs() []string {
+	return []string{
+		ManagedMonthlySubscriptionProductID,
+		ManagedAnnualSubscriptionProductID,
+	}
+}
 
 var (
 	ErrInvalidSignedData = errors.New("invalid App Store signed data")
@@ -36,6 +45,7 @@ type VerifierConfig struct {
 	AppAppleID  int64
 	Environment string
 	ProductID   string
+	ProductIDs  []string
 	Now         func() time.Time
 }
 
@@ -62,7 +72,8 @@ type Renewal struct {
 }
 
 type TransactionVerifier struct {
-	config VerifierConfig
+	config            VerifierConfig
+	allowedProductIDs map[string]struct{}
 }
 
 type transactionPayload struct {
@@ -96,12 +107,24 @@ func NewTransactionVerifier(config VerifierConfig) *TransactionVerifier {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &TransactionVerifier{config: config}
+	allowedProductIDs := make(map[string]struct{}, len(config.ProductIDs))
+	if config.ProductID != "" {
+		allowedProductIDs[config.ProductID] = struct{}{}
+	}
+	for _, productID := range config.ProductIDs {
+		if productID != "" {
+			allowedProductIDs[productID] = struct{}{}
+		}
+	}
+	return &TransactionVerifier{
+		config:            config,
+		allowedProductIDs: allowedProductIDs,
+	}
 }
 
 func (verifier *TransactionVerifier) VerifyTransaction(signedData string) (Transaction, error) {
 	if verifier == nil || verifier.config.Roots == nil || verifier.config.BundleID == "" ||
-		verifier.config.ProductID == "" || len(signedData) == 0 || len(signedData) > maximumSignedDataBytes {
+		len(verifier.allowedProductIDs) == 0 || len(signedData) == 0 || len(signedData) > maximumSignedDataBytes {
 		return Transaction{}, ErrInvalidSignedData
 	}
 	header, payload, segments, err := decodeTransactionJWS(signedData)
@@ -122,7 +145,7 @@ func (verifier *TransactionVerifier) VerifyTransaction(signedData string) (Trans
 }
 
 func (verifier *TransactionVerifier) VerifyRenewal(signedData string) (Renewal, error) {
-	if verifier == nil || verifier.config.Roots == nil || verifier.config.ProductID == "" ||
+	if verifier == nil || verifier.config.Roots == nil || len(verifier.allowedProductIDs) == 0 ||
 		len(signedData) == 0 || len(signedData) > maximumSignedDataBytes {
 		return Renewal{}, ErrInvalidSignedData
 	}
@@ -137,7 +160,7 @@ func (verifier *TransactionVerifier) VerifyRenewal(signedData string) (Renewal, 
 	if err := verifyJWSSignature(certificates[0], segments); err != nil {
 		return Renewal{}, ErrInvalidSignedData
 	}
-	if payload.OriginalTransactionID == "" || payload.AutoRenewProductID != verifier.config.ProductID ||
+	if payload.OriginalTransactionID == "" || !verifier.acceptsProductID(payload.AutoRenewProductID) ||
 		!strings.EqualFold(payload.Environment, verifier.config.Environment) || payload.SignedDate <= 0 ||
 		time.UnixMilli(payload.SignedDate).After(verifier.config.Now().Add(5*time.Minute)) {
 		return Renewal{}, ErrInvalidSignedData
@@ -242,7 +265,7 @@ func (verifier *TransactionVerifier) verifyCertificateChain(
 }
 
 func (verifier *TransactionVerifier) matchesTransaction(payload transactionPayload) bool {
-	if payload.BundleID != verifier.config.BundleID || payload.ProductID != verifier.config.ProductID ||
+	if payload.BundleID != verifier.config.BundleID || !verifier.acceptsProductID(payload.ProductID) ||
 		payload.OriginalTransactionID == "" || payload.TransactionID == "" || payload.ExpiresDate <= 0 {
 		return false
 	}
@@ -251,6 +274,14 @@ func (verifier *TransactionVerifier) matchesTransaction(payload transactionPaylo
 	}
 	signedAt := time.UnixMilli(payload.SignedDate)
 	return !signedAt.After(verifier.config.Now().Add(5 * time.Minute))
+}
+
+func (verifier *TransactionVerifier) acceptsProductID(productID string) bool {
+	if verifier == nil {
+		return false
+	}
+	_, allowed := verifier.allowedProductIDs[productID]
+	return allowed
 }
 
 func normalizedTransaction(payload transactionPayload) Transaction {

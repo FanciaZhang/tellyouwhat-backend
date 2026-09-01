@@ -12,5 +12,6 @@ The previous all-in-one topology remains available in
 [`single-server/README.md`](single-server/README.md). Its MySQL and Redis
 services use the `local-storage` Compose profile.
 
-`api-contract.yaml` remains the public HTTP contract reference. It is not
-imported into an API Gateway for the Lighthouse topology.
+[`../Contracts/HTTP/HealthAPI/openapi.yaml`](../Contracts/HTTP/HealthAPI/openapi.yaml)
+is the canonical public HTTP contract. It generates the Gin router and client
+SDKs; it is not imported into an API Gateway for the Lighthouse topology.

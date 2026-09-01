@@ -24,6 +24,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
+	"github.com/tellyouwhat/backend/internal/recognitionquota"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
 	"github.com/tellyouwhat/backend/internal/usage"
@@ -75,11 +76,15 @@ func run(logger *slog.Logger) error {
 	var jobStore jobs.Store
 	var limiter gateway.Quota
 	var quotaReader quota.Reader
+	var freeRecognitionLimiter gateway.Quota
+	var freeRecognitionQuotaReader quota.Reader
+	var recognitionSessions recognitionquota.Store
 	var capabilityUses capability.UseStore
 	var mediaRegistry media.Registry
 	var usageRecorder usage.Recorder
 	var outboxStore jobs.OutboxStore
-	var tokenReconciler quota.TokenReconciler
+	var managedTokenReconciler quota.TokenReconciler
+	var freeRecognitionTokenReconciler quota.TokenReconciler
 	var readiness gateway.Readiness
 	var privacyRepository privacy.Repository
 	var privacyCache privacy.CacheCleaner
@@ -92,7 +97,12 @@ func run(logger *slog.Logger) error {
 		memoryLimiter := quota.NewMemoryLimiter(serviceConfig.Quota)
 		limiter = memoryLimiter
 		quotaReader = memoryLimiter
-		tokenReconciler = memoryLimiter
+		managedTokenReconciler = memoryLimiter
+		freeMemoryLimiter := quota.NewMemoryLimiter(serviceConfig.FreeRecognitionQuota)
+		freeRecognitionLimiter = freeMemoryLimiter
+		freeRecognitionQuotaReader = freeMemoryLimiter
+		freeRecognitionTokenReconciler = freeMemoryLimiter
+		recognitionSessions = recognitionquota.NewMemoryStore()
 		capabilityUses = capability.NewMemoryUseStore()
 		mediaRegistry = media.NewMemoryRegistry()
 		usageRecorder = usage.NewMemoryRecorder()
@@ -124,7 +134,12 @@ func run(logger *slog.Logger) error {
 		redisLimiter := redisstore.NewQuotaLimiter(redisClient, serviceConfig.Quota)
 		limiter = redisLimiter
 		quotaReader = redisLimiter
-		tokenReconciler = redisLimiter
+		managedTokenReconciler = redisLimiter
+		freeRedisLimiter := redisstore.NewQuotaLimiter(redisClient, serviceConfig.FreeRecognitionQuota)
+		freeRecognitionLimiter = freeRedisLimiter
+		freeRecognitionQuotaReader = freeRedisLimiter
+		freeRecognitionTokenReconciler = freeRedisLimiter
+		recognitionSessions = redisstore.NewRecognitionQuotaStore(redisClient)
 		capabilityUses = redisstore.NewCapabilityUseStore(redisClient)
 		mediaRegistry = mysqlstore.NewMediaRepository(database)
 		usageRecorder = mysqlstore.NewUsageRepository(database)
@@ -142,6 +157,7 @@ func run(logger *slog.Logger) error {
 		}
 	}
 	defer closeStorage()
+	tokenReconciler := quota.NewRoutedTokenReconciler(managedTokenReconciler, freeRecognitionTokenReconciler)
 
 	attestationVerifier := attestation.NewAppleAttestationVerifier(
 		serviceConfig.TeamID,
@@ -204,7 +220,7 @@ func run(logger *slog.Logger) error {
 				BundleID:    serviceConfig.BundleID,
 				AppAppleID:  serviceConfig.AppStore.AppAppleID,
 				Environment: appStoreEnvironment,
-				ProductID:   appstore.ManagedSubscriptionProductID,
+				ProductIDs:  appstore.ManagedSubscriptionProductIDs(),
 				Now:         time.Now,
 			})
 			appStoreAPI := appstore.NewAPIClient(appstore.APIClientConfig{
@@ -264,25 +280,28 @@ func run(logger *slog.Logger) error {
 	}
 
 	dependencies := gateway.Dependencies{
-		Authenticator:         authenticator,
-		Entitlements:          entitlementChecker,
-		Quota:                 limiter,
-		QuotaReader:           quotaReader,
-		Provider:              arkClient,
-		Enrollment:            enrollment,
-		Activator:             activator,
-		ProductionEntitlement: productionEntitlement,
-		AppStoreNotifications: appStoreNotifications,
-		Media:                 mediaService,
-		Jobs:                  jobService,
-		Dispatcher:            dispatcher,
-		Capabilities:          jobCapabilities,
-		Contracts:             contractManifest,
-		Usage:                 usageRecorder,
-		Readiness:             readiness,
-		Privacy:               privacy.NewService(privacyRepository, tosStore, privacyCache, time.Now),
+		Authenticator:              authenticator,
+		Entitlements:               entitlementChecker,
+		Quota:                      limiter,
+		QuotaReader:                quotaReader,
+		FreeRecognitionQuota:       freeRecognitionLimiter,
+		FreeRecognitionQuotaReader: freeRecognitionQuotaReader,
+		RecognitionSessions:        recognitionSessions,
+		Provider:                   arkClient,
+		Enrollment:                 enrollment,
+		Activator:                  activator,
+		ProductionEntitlement:      productionEntitlement,
+		AppStoreNotifications:      appStoreNotifications,
+		Media:                      mediaService,
+		Jobs:                       jobService,
+		Dispatcher:                 dispatcher,
+		Capabilities:               jobCapabilities,
+		Contracts:                  contractManifest,
+		Usage:                      usageRecorder,
+		Readiness:                  readiness,
+		Privacy:                    privacy.NewService(privacyRepository, tosStore, privacyCache, time.Now),
 		ManagedProduct: gateway.ManagedProduct{
-			ProductID: "health.ai.subscription.monthly", BillingPeriod: "P1M",
+			ProductID: "health.premium.subscription.monthly", BillingPeriod: "P1M",
 			DailyTokenLimit:   serviceConfig.Quota.DailyTokensPerTransaction,
 			MonthlyTokenLimit: serviceConfig.Quota.MonthlyTokensPerTransaction,
 			Provider:          "Volcengine Ark", ModelDisclosure: "The server selects a model for each feature and may update it without changing the product.",

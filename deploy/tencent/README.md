@@ -51,13 +51,13 @@ MySQL 和 Redis 不开启公网。它们的安全组只允许来源 `10.1.0.16/3
 避免 `proxy.golang.org` 的网络超时。然后：
 
 ```sh
-cd Backend
+cd /opt/tellyouwhat/backend
 cp deploy/tencent/production.env.example .env.production
 mkdir -p secrets
 chmod 600 .env.production
 ```
 
-填写 `.env.production`，并把以下只读文件放入 `Backend/secrets/`：
+填写 `.env.production`，并把以下只读文件放入 `secrets/`：
 
 - `SubscriptionKey.p8`：App Store Connect In-App Purchase 私钥；
 - `MarketingKey.p8`：只供 Offer 管理后台使用的 App Store Connect
@@ -113,6 +113,8 @@ Secrets 生成权限为 600 的 `.env.production`，并校验 Apple 私钥格式
 根证书随仓库发布，所有私密值均不写入 Git、不打进镜像、不输出到日志。
 工作流拉取私有 GHCR 镜像时只临时使用本次任务的 `GITHUB_TOKEN`，完成部署
 后立即退出 registry 登录。
+迁移、重启和回环健康检查集中在
+`deploy/tencent/deploy-production.sh`，工作流将它作为独立文件上传后执行。
 
 ## 6. 首次连通性与启动
 
@@ -152,7 +154,7 @@ https://api.health.tellyouwhat.cn/v1/app-store/notifications
 每天运行数据清理：
 
 ```sh
-cd Backend
+cd /opt/tellyouwhat/backend
 docker compose --env-file .env.production -f compose.production.yaml run --rm maintenance
 ```
 

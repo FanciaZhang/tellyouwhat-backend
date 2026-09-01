@@ -27,7 +27,7 @@ func TestTransactionVerifierAcceptsAppleChainAndExpectedAppContract(t *testing.T
 		OriginalTransactionID: "original-transaction-1",
 		TransactionID:         "transaction-2",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(30 * 24 * time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -37,7 +37,7 @@ func TestTransactionVerifierAcceptsAppleChainAndExpectedAppContract(t *testing.T
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	})
 
@@ -48,6 +48,64 @@ func TestTransactionVerifierAcceptsAppleChainAndExpectedAppContract(t *testing.T
 	if transaction.OriginalTransactionID != "original-transaction-1" ||
 		transaction.TransactionID != "transaction-2" {
 		t.Fatalf("unexpected transaction: %+v", transaction)
+	}
+}
+
+func TestTransactionVerifierAcceptsAnnualManagedSubscription(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	fixture := newSignedTransactionFixture(t, now, transactionPayload{
+		OriginalTransactionID: "annual-original-transaction",
+		TransactionID:         "annual-transaction",
+		BundleID:              "cn.tellyouwhat.healthapp",
+		ProductID:             ManagedAnnualSubscriptionProductID,
+		Environment:           "Production",
+		ExpiresDate:           now.Add(365 * 24 * time.Hour).UnixMilli(),
+		SignedDate:            now.UnixMilli(),
+	})
+	verifier := NewTransactionVerifier(VerifierConfig{
+		Roots:       fixture.roots,
+		BundleID:    "cn.tellyouwhat.healthapp",
+		AppAppleID:  1234567890,
+		Environment: "Production",
+		ProductIDs:  ManagedSubscriptionProductIDs(),
+		Now:         func() time.Time { return now },
+	})
+
+	transaction, err := verifier.VerifyTransaction(fixture.signed)
+	if err != nil {
+		t.Fatalf("verify annual transaction: %v", err)
+	}
+	if transaction.ProductID != ManagedAnnualSubscriptionProductID {
+		t.Fatalf("unexpected annual transaction: %+v", transaction)
+	}
+}
+
+func TestTransactionVerifierRejectsProductOutsideManagedSubscriptionAllowlist(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	fixture := newSignedTransactionFixture(t, now, transactionPayload{
+		OriginalTransactionID: "unrelated-original-transaction",
+		TransactionID:         "unrelated-transaction",
+		BundleID:              "cn.tellyouwhat.healthapp",
+		ProductID:             "health.premium.subscription.quarterly",
+		Environment:           "Production",
+		ExpiresDate:           now.Add(90 * 24 * time.Hour).UnixMilli(),
+		SignedDate:            now.UnixMilli(),
+	})
+	verifier := NewTransactionVerifier(VerifierConfig{
+		Roots:       fixture.roots,
+		BundleID:    "cn.tellyouwhat.healthapp",
+		AppAppleID:  1234567890,
+		Environment: "Production",
+		ProductIDs:  ManagedSubscriptionProductIDs(),
+		Now:         func() time.Time { return now },
+	})
+
+	if _, err := verifier.VerifyTransaction(fixture.signed); !errors.Is(err, ErrInvalidSignedData) {
+		t.Fatalf("unexpected product accepted: %v", err)
 	}
 }
 
@@ -93,7 +151,7 @@ func TestTransactionVerifierRejectsTamperingAndWrongAppIdentity(t *testing.T) {
 		OriginalTransactionID: "original-transaction-1",
 		TransactionID:         "transaction-2",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(30 * 24 * time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -103,7 +161,7 @@ func TestTransactionVerifierRejectsTamperingAndWrongAppIdentity(t *testing.T) {
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	}
 	segments := strings.Split(fixture.signed, ".")
@@ -132,7 +190,7 @@ func TestSubscriptionResolverConfirmsCurrentActiveStatusWithAppleAPI(t *testing.
 		OriginalTransactionID: "original-transaction-1",
 		TransactionID:         "transaction-2",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(30 * 24 * time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -142,7 +200,7 @@ func TestSubscriptionResolverConfirmsCurrentActiveStatusWithAppleAPI(t *testing.
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	})
 	statusClient := &fakeStatusClient{statuses: []SubscriptionStatus{{
@@ -164,6 +222,51 @@ func TestSubscriptionResolverConfirmsCurrentActiveStatusWithAppleAPI(t *testing.
 	}
 }
 
+func TestSubscriptionResolverAcceptsMonthlyToAnnualCrossgrade(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	fixture := newSignedTransactionFixture(t, now, transactionPayload{
+		OriginalTransactionID: "crossgrade-original",
+		TransactionID:         "monthly-transaction",
+		BundleID:              "cn.tellyouwhat.healthapp",
+		ProductID:             ManagedMonthlySubscriptionProductID,
+		Environment:           "Production",
+		ExpiresDate:           now.Add(30 * 24 * time.Hour).UnixMilli(),
+		SignedDate:            now.UnixMilli(),
+	})
+	annualExpiry := now.Add(365 * 24 * time.Hour)
+	annualTransaction := fixture.signPayload(t, transactionPayload{
+		OriginalTransactionID: "crossgrade-original",
+		TransactionID:         "annual-transaction",
+		BundleID:              "cn.tellyouwhat.healthapp",
+		ProductID:             ManagedAnnualSubscriptionProductID,
+		Environment:           "Production",
+		ExpiresDate:           annualExpiry.UnixMilli(),
+		SignedDate:            now.UnixMilli(),
+	})
+	verifier := NewTransactionVerifier(VerifierConfig{
+		Roots:       fixture.roots,
+		BundleID:    "cn.tellyouwhat.healthapp",
+		AppAppleID:  1234567890,
+		Environment: "Production",
+		ProductIDs:  ManagedSubscriptionProductIDs(),
+		Now:         func() time.Time { return now },
+	})
+	resolver := NewSubscriptionResolver(verifier, &fakeStatusClient{statuses: []SubscriptionStatus{{
+		Status:            statusActive,
+		SignedTransaction: annualTransaction,
+	}}}, func() time.Time { return now })
+
+	state, err := resolver.Resolve(context.Background(), fixture.signed)
+	if err != nil {
+		t.Fatalf("resolve crossgrade: %v", err)
+	}
+	if state.TransactionID != "annual-transaction" || !state.ExpiresAt.Equal(annualExpiry) {
+		t.Fatalf("unexpected crossgrade state: %+v", state)
+	}
+}
+
 func TestSubscriptionResolverHonorsVerifiedBillingGracePeriod(t *testing.T) {
 	t.Parallel()
 
@@ -172,7 +275,7 @@ func TestSubscriptionResolverHonorsVerifiedBillingGracePeriod(t *testing.T) {
 		OriginalTransactionID: "original-transaction-1",
 		TransactionID:         "transaction-2",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(-time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -180,7 +283,7 @@ func TestSubscriptionResolverHonorsVerifiedBillingGracePeriod(t *testing.T) {
 	graceExpiry := now.Add(3 * 24 * time.Hour)
 	signedRenewal := fixture.signPayload(t, renewalPayload{
 		OriginalTransactionID:  "original-transaction-1",
-		AutoRenewProductID:     "health.ai.subscription.monthly",
+		AutoRenewProductID:     "health.premium.subscription.monthly",
 		Environment:            "Production",
 		GracePeriodExpiresDate: graceExpiry.UnixMilli(),
 		SignedDate:             now.UnixMilli(),
@@ -190,7 +293,7 @@ func TestSubscriptionResolverHonorsVerifiedBillingGracePeriod(t *testing.T) {
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	})
 	resolver := NewSubscriptionResolver(verifier, &fakeStatusClient{statuses: []SubscriptionStatus{{
@@ -245,7 +348,7 @@ func TestNotificationProcessorHandlesRenewalAndOfferCodeNotifications(t *testing
 		OriginalTransactionID: "original-transaction-1",
 		TransactionID:         "transaction-2",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(30 * 24 * time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -255,7 +358,7 @@ func TestNotificationProcessorHandlesRenewalAndOfferCodeNotifications(t *testing
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	})
 	resolver := NewSubscriptionResolver(verifier, &fakeStatusClient{statuses: []SubscriptionStatus{{
@@ -307,7 +410,7 @@ func TestNotificationProcessorAcceptsAppleTestNotificationWithoutTransaction(t *
 		OriginalTransactionID: "fixture-original",
 		TransactionID:         "fixture-transaction",
 		BundleID:              "cn.tellyouwhat.healthapp",
-		ProductID:             "health.ai.subscription.monthly",
+		ProductID:             "health.premium.subscription.monthly",
 		Environment:           "Production",
 		ExpiresDate:           now.Add(time.Hour).UnixMilli(),
 		SignedDate:            now.UnixMilli(),
@@ -328,7 +431,7 @@ func TestNotificationProcessorAcceptsAppleTestNotificationWithoutTransaction(t *
 		BundleID:    "cn.tellyouwhat.healthapp",
 		AppAppleID:  1234567890,
 		Environment: "Production",
-		ProductID:   "health.ai.subscription.monthly",
+		ProductID:   "health.premium.subscription.monthly",
 		Now:         func() time.Time { return now },
 	})
 	processor := NewNotificationProcessor(

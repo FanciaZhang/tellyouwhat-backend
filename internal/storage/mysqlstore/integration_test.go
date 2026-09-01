@@ -51,8 +51,8 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 2 {
-		t.Fatalf("expected 2 recorded migrations, got %d", migrationCount)
+	if migrationCount != 7 {
+		t.Fatalf("expected 7 recorded migrations, got %d", migrationCount)
 	}
 	resetMySQLTables(t, ctx, database)
 

@@ -41,4 +41,3 @@ func MediaDigest(media []Media) (string, error) {
 	}
 	return BodySHA256(encoded), nil
 }
-

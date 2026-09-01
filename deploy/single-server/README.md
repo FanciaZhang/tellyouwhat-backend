@@ -36,13 +36,13 @@ dig +short NS tellyouwhat.cn
 安装 Docker Engine 和 Compose 插件，将仓库放在服务器固定目录，然后：
 
 ```sh
-cd Backend
+cd /opt/tellyouwhat/backend
 cp deploy/single-server/production.env.example .env.production
 mkdir -p secrets
 chmod 600 .env.production
 ```
 
-填写 `.env.production`，并把以下文件放入 `Backend/secrets/`：
+填写 `.env.production`，并把以下文件放入 `secrets/`：
 
 - `SubscriptionKey.p8`：App Store Connect 的 In-App Purchase 私钥；
 - `MarketingKey.p8`：只供管理后台使用的 App Store Connect Marketing 私钥；
@@ -87,7 +87,7 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm ad
 每天运行数据清理：
 
 ```sh
-cd Backend
+cd /opt/tellyouwhat/backend
 docker compose --env-file .env.production -f compose.production.yaml run --rm maintenance
 ```
 

@@ -19,6 +19,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
+	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
 )
@@ -61,7 +62,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	provider := ark.New(serviceConfig.Ark, http.DefaultClient, tosStore)
-	reconciler := redisstore.NewQuotaLimiter(redisClient, serviceConfig.Quota)
+	managedReconciler := redisstore.NewQuotaLimiter(redisClient, serviceConfig.Quota)
+	freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, serviceConfig.FreeRecognitionQuota)
+	reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)
 	worker := jobs.NewWorker(jobStore, provider, reconciler)
 
 	mux := http.NewServeMux()

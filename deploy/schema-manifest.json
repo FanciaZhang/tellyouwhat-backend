@@ -89,6 +89,46 @@
       ],
       "contractVersion": "ai-request-v1",
       "maxTemperature": 1,
+      "operation": "hydration_cup_estimate",
+      "promptVersion": "hydration-cup-estimate-v1",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "264c9e250af1d35cd1d6e4e0cc18ebc773481b9d93557cf7e44683c078f82a05"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
+      "operation": "hydration_cup_estimate",
+      "promptVersion": "hydration-cup-estimate-v0",
+      "schemaPolicy": "exact",
+      "schemaSHA256": [
+        "264c9e250af1d35cd1d6e4e0cc18ebc773481b9d93557cf7e44683c078f82a05"
+      ]
+    },
+    {
+      "allowStream": true,
+      "allowWebSearch": false,
+      "allowedReasoningEfforts": [
+        "",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "contractVersion": "ai-request-v1",
+      "maxTemperature": 1,
       "operation": "meal_text_capture",
       "promptVersion": "meal-text-v5",
       "schemaPolicy": "structured",

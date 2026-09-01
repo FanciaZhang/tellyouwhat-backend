@@ -9,6 +9,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
+	"github.com/tellyouwhat/backend/internal/quota"
 )
 
 func TestDevelopmentConfigRequiresExplicitBuildAllowlist(t *testing.T) {
@@ -142,5 +143,9 @@ func validDevelopmentConfig() Config {
 		SchemaManifestPath:     "/config/schema-manifest.json",
 		Ark:                    ark.Config{APIKey: "ark-secret", Routes: routes},
 		TOS:                    media.TOSConfig{Bucket: "bucket", AccessKey: "access", SecretKey: "secret"},
+		FreeRecognitionQuota: quota.Limits{
+			DailyTokensPerTransaction:   6 * contracts.MaxFreeRecognitionSessionReservationTokens,
+			MonthlyTokensPerTransaction: 31 * 6 * contracts.MaxFreeRecognitionSessionReservationTokens,
+		},
 	}
 }
