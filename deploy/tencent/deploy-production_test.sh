@@ -3,8 +3,16 @@
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd -- "$script_dir/../.." && pwd)
 test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT
+
+for certificate in \
+  deploy/Apple_App_Attestation_Root_CA.pem \
+  deploy/apple-app-store-roots.pem; do
+  test -s "$repo_dir/$certificate"
+  grep -Fxq "!$certificate" "$repo_dir/.dockerignore"
+done
 
 backend_dir="$test_dir/backend"
 fake_bin="$test_dir/bin"

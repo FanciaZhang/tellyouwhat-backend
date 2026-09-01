@@ -4,8 +4,8 @@
 !.env.example
 **/*.pem
 !deploy/Apple_App_Attestation_Root_CA.pem
+!deploy/apple-app-store-roots.pem
 coverage.out
 gateway
 worker
 migrate
-

@@ -37,6 +37,7 @@ jobs:
       - run: go build ./cmd/...
       - run: make verify-generated
       - run: swift test --package-path Contracts/HTTP
+      - run: bash deploy/tencent/deploy-production_test.sh
       - name: Validate deployment files
         run: |
           touch .env.production
