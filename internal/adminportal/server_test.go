@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 )
 
@@ -15,15 +17,34 @@ func TestReadinessChecksDependenciesWhileHealthRemainsLive(t *testing.T) {
 	t.Parallel()
 	server := &Server{readiness: func(context.Context) error { return errors.New("database unavailable") }}
 	ready := httptest.NewRecorder()
-	server.ready(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	server.GetAdminReadiness(portalTestContext(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil)))
 	if ready.Code != http.StatusServiceUnavailable {
 		t.Fatalf("readiness ignored dependency failure: %d %s", ready.Code, ready.Body.String())
 	}
 	health := httptest.NewRecorder()
-	server.health(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	server.GetAdminHealth(portalTestContext(health, httptest.NewRequest(http.MethodGet, "/healthz", nil)))
 	if health.Code != http.StatusOK {
 		t.Fatalf("liveness unexpectedly failed: %d %s", health.Code, health.Body.String())
 	}
+}
+
+func TestGeneratedAdminRouterOwnsServiceRoutes(t *testing.T) {
+	t.Parallel()
+	router := gin.New()
+	server := &Server{}
+	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: server})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("generated health route = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func portalTestContext(response *httptest.ResponseRecorder, request *http.Request) *gin.Context {
+	context, _ := gin.CreateTestContext(response)
+	context.Request = request
+	return context
 }
 
 func TestPreviewTokenBindsDraftAndExpires(t *testing.T) {

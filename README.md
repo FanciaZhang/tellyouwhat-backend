@@ -13,7 +13,7 @@ gateway 在认证和读取请求体之前，仅根据 HTTP `Host` 选择 App：
 
 ## HTTP 与 AI 合约
 
-两个 App 的公开合约分别位于 [`Contracts/HTTP/HealthAPI/openapi.yaml`](Contracts/HTTP/HealthAPI/openapi.yaml) 和 [`Contracts/HTTP/JournalAPI/openapi.yaml`](Contracts/HTTP/JournalAPI/openapi.yaml)。两份 IDL 都生成 Gin Router、Go wire model、strict server interface 和 Swift client；[`internal/httpapi/generated.go`](internal/httpapi/generated.go) 与 [`internal/journalhttpapi/generated.go`](internal/journalhttpapi/generated.go) 不允许手工编辑。
+两个 App 的公开合约分别位于 [`Contracts/HTTP/HealthAPI/openapi.yaml`](Contracts/HTTP/HealthAPI/openapi.yaml) 和 [`Contracts/HTTP/JournalAPI/openapi.yaml`](Contracts/HTTP/JournalAPI/openapi.yaml)。管理后台和 Worker 也分别拥有独立的 [`AdminAPI`](Contracts/HTTP/AdminAPI/openapi.yaml) 与 [`WorkerAPI`](Contracts/HTTP/WorkerAPI/openapi.yaml) IDL。四份 IDL 统一生成 Gin Router 和 Go wire model；公开 App 与 Worker 使用生成的 strict server interface，管理后台直接实现生成的 Gin server interface。仓库不保留手写 `ServeMux`、`gin.WrapH` 或备用路由表。
 
 ```sh
 make generate-api
@@ -30,8 +30,8 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 ## 运行单元
 
 - `cmd/gateway`：公开 API；先按 Host 选 App，再进入对应运行时。
-- `cmd/worker`：Health 加密异步 AI 任务；内部请求绑定 App ID 与 Job ID。
-- `cmd/admin`：Passkey 登录、管理员/运营角色、人员与 App Store Connect Offer 管理。
+- `cmd/worker`：Health 加密异步 AI 任务；内部请求绑定 App ID 与 Job ID，并由 Worker OpenAPI IDL 生成 strict Gin 路由。
+- `cmd/admin`：Passkey 登录、管理员/运营角色、人员与 App Store Connect Offer 管理；全部 API 路由由 Admin OpenAPI IDL 生成。
 - `cmd/adminctl`：创建首位管理员和服务器侧应急恢复链接。
 - `cmd/migrate`：MySQL 8.4 基线 schema，包含 Health 与 Journal 注册项。
 - `cmd/maintenance`：按保留期清理临时媒体、任务、幂等和用量数据。

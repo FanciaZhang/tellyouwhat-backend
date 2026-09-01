@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -150,6 +151,7 @@ type Dependencies struct {
 	JournalOrganizer           JournalOrganizer
 	JournalAnalysisVersion     string
 	ManagedProduct             ManagedProduct
+	HTTPMiddleware             []gin.HandlerFunc
 }
 
 type Server struct {
@@ -181,7 +183,8 @@ type Server struct {
 	journalOrganizer           JournalOrganizer
 	journalAnalysisVersion     string
 	managedProduct             ManagedProduct
-	handler                    http.Handler
+	httpMiddleware             []gin.HandlerFunc
+	handler                    *gin.Engine
 }
 
 func New(dependencies Dependencies) *Server {
@@ -225,6 +228,7 @@ func New(dependencies Dependencies) *Server {
 		journalOrganizer:           dependencies.JournalOrganizer,
 		journalAnalysisVersion:     dependencies.JournalAnalysisVersion,
 		managedProduct:             dependencies.ManagedProduct,
+		httpMiddleware:             append([]gin.HandlerFunc(nil), dependencies.HTTPMiddleware...),
 	}
 	if server.ipResolver == nil {
 		server.ipResolver = remoteIP
@@ -240,8 +244,9 @@ func New(dependencies Dependencies) *Server {
 	return server
 }
 
-func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	server.handler.ServeHTTP(writer, request)
+// Router exposes the generated Gin runtime for production composition.
+func (server *Server) Router() *gin.Engine {
+	return server.handler
 }
 
 func journalReservationTokens(input journalcontracts.OrganizeRequest) int {

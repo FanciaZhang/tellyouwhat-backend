@@ -32,7 +32,7 @@ func TestAIRequestRequiresAssertion(t *testing.T) {
 	request.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", response.Code, response.Body.String())
@@ -66,7 +66,7 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"今天去了西湖","existingTags":[],"rejectedTagNames":[],"books":[{"id":"8d43cd74-5652-4412-b097-303f563e673a","name":"杭州","description":"城市生活","containsEntry":false}]}`
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
 		!strings.Contains(response.Body.String(), `"bookID":"8d43cd74-5652-4412-b097-303f563e673a"`) ||
 		!strings.Contains(response.Body.String(), `"dailyTokensRemaining"`) {
@@ -91,7 +91,7 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusForbidden || organizer.calls != 0 {
 		t.Fatalf("consent was not enforced: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
 	}
@@ -119,9 +119,9 @@ func TestJournalOrganizeRejectsIdempotentReplayBeforeSecondProviderCall(t *testi
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	first := httptest.NewRecorder()
-	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	second := httptest.NewRecorder()
-	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if first.Code != http.StatusOK || second.Code != http.StatusConflict || organizer.calls != 1 {
 		t.Fatalf("journal request was not idempotently committed: first=%d second=%d calls=%d body=%s", first.Code, second.Code, organizer.calls, second.Body.String())
 	}
@@ -152,7 +152,7 @@ func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
 		!strings.Contains(response.Body.String(), `"available":false`) {
 		t.Fatalf("successful model result was discarded after quota snapshot failure: %d %s", response.Code, response.Body.String())
@@ -172,7 +172,7 @@ func TestJournalStrictRouterRejectsUnknownRequestFields(t *testing.T) {
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[],"unexpected":true}`
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"contract_violation"`) || organizer.calls != 0 {
 		t.Fatalf("unknown field reached Journal handler: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
 	}
@@ -186,7 +186,7 @@ func TestJournalStrictRouterRejectsCompatibilityActivationBody(t *testing.T) {
 		ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
 	}})
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/dev/entitlements/activate", `{}`))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/dev/entitlements/activate", `{}`))
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"unexpected_body"`) {
 		t.Fatalf("compatibility activation body was accepted: %d %s", response.Code, response.Body.String())
 	}
@@ -210,7 +210,7 @@ func TestJournalStrictRouterUsesOnlyJournalAttestationHeaders(t *testing.T) {
 	request.Header.Set("X-Health-Nonce", "valid-nonce")
 	request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("Health proof authenticated against Journal: %d %s", response.Code, response.Body.String())
 	}
@@ -228,7 +228,7 @@ func TestJournalStrictRouterRejectsPrincipalFromAnotherApp(t *testing.T) {
 		QuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1, MonthlyTokensPerTransaction: 1}),
 	})
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("cross-app principal authenticated: %d %s", response.Code, response.Body.String())
 	}
@@ -250,7 +250,7 @@ func TestRegistrationConflictsHaveDistinctErrorCodes(t *testing.T) {
 			t.Parallel()
 			server := New(Dependencies{Enrollment: fakeEnrollment{registerErr: test.err}})
 			response := httptest.NewRecorder()
-			server.ServeHTTP(response, httptest.NewRequest(
+			server.Router().ServeHTTP(response, httptest.NewRequest(
 				http.MethodPost,
 				"/v1/attest/keys",
 				strings.NewReader(`{"keyID":"key","challenge":"challenge","attestation":"YQ==","build":"1","activationSecret":""}`),
@@ -269,13 +269,13 @@ func TestQuotaStatusRequiresAssertionAndReturnsSubscriptionLimits(t *testing.T) 
 	unauthorized := httptest.NewRecorder()
 	unauthorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
 	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
-	server.ServeHTTP(unauthorized, unauthorizedRequest)
+	server.Router().ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
 	}
@@ -299,7 +299,7 @@ func TestFreeRecognitionSessionIsSharedAcrossRetriesAndRejectsFourthMeal(t *test
 
 	for index, sessionID := range sessions {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, authorizedRequest(
+		server.Router().ServeHTTP(response, authorizedRequest(
 			http.MethodPost,
 			"/v1/media/upload-authorizations",
 			validFreeMediaAuthorizationBody(sessionID),
@@ -313,7 +313,7 @@ func TestFreeRecognitionSessionIsSharedAcrossRetriesAndRejectsFourthMeal(t *test
 	}
 
 	retry := httptest.NewRecorder()
-	server.ServeHTTP(retry, authorizedRequest(
+	server.Router().ServeHTTP(retry, authorizedRequest(
 		http.MethodPost,
 		"/v1/media/upload-authorizations",
 		validFreeMediaAuthorizationBody(sessions[0]),
@@ -330,25 +330,25 @@ func TestFreeRecognitionCompletionAndCancellationUpdateQuotaIdempotently(t *test
 	cancelledID := "10000000-0000-4000-8000-000000000012"
 	for _, sessionID := range []string{completedID, cancelledID} {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", validFreeMediaAuthorizationBody(sessionID)))
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", validFreeMediaAuthorizationBody(sessionID)))
 		if response.Code != http.StatusCreated {
 			t.Fatalf("reserve %s: %d %s", sessionID, response.Code, response.Body.String())
 		}
 	}
 	for range 2 {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/recognition-sessions/"+completedID+"/complete", ""))
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/recognition-sessions/"+completedID+"/complete", ""))
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"completed":1`) {
 			t.Fatalf("completion was not idempotent: %d %s", response.Code, response.Body.String())
 		}
 	}
 	cancelled := httptest.NewRecorder()
-	server.ServeHTTP(cancelled, authorizedRequest(http.MethodDelete, "/v1/ai/recognition-sessions/"+cancelledID, ""))
+	server.Router().ServeHTTP(cancelled, authorizedRequest(http.MethodDelete, "/v1/ai/recognition-sessions/"+cancelledID, ""))
 	if cancelled.Code != http.StatusNoContent {
 		t.Fatalf("cancel failed: %d %s", cancelled.Code, cancelled.Body.String())
 	}
 	quotaResponse := httptest.NewRecorder()
-	server.ServeHTTP(quotaResponse, authorizedRequest(http.MethodGet, "/v1/ai/quota?businessDayStartHour=4&timeZoneIdentifier=Asia%2FShanghai", ""))
+	server.Router().ServeHTTP(quotaResponse, authorizedRequest(http.MethodGet, "/v1/ai/quota?businessDayStartHour=4&timeZoneIdentifier=Asia%2FShanghai", ""))
 	if quotaResponse.Code != http.StatusOK ||
 		!strings.Contains(quotaResponse.Body.String(), `"plan":"free"`) ||
 		!strings.Contains(quotaResponse.Body.String(), `"recognitionCompleted":1`) ||
@@ -363,7 +363,7 @@ func TestFreeUserCannotCallNonRecognitionAIOrRecognitionWithoutSession(t *testin
 	server.entitlements = fakeEntitlements{allowed: false}
 	for _, body := range []string{validBody(), validTextBodyWithoutSession()} {
 		response := httptest.NewRecorder()
-		server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/requests", body))
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/requests", body))
 		if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "premium_required") {
 			t.Fatalf("unentitled request bypassed gate: %d %s", response.Code, response.Body.String())
 		}
@@ -374,7 +374,7 @@ func TestManagedProductPublishesLimitsAndLegalLinksWithoutAuthentication(t *test
 	t.Parallel()
 	server := newTestServer()
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/products/managed-ai", nil))
+	server.Router().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/products/managed-ai", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"productID":"health.premium.subscription.monthly"`) ||
 		!strings.Contains(response.Body.String(), `"privacyURL":"https://health.tellyouwhat.cn/privacy"`) {
 		t.Fatalf("unexpected product response: %d %s", response.Code, response.Body.String())
@@ -388,14 +388,14 @@ func TestPrivacyEndpointsRequireAssertionAndUseAttestedPrincipal(t *testing.T) {
 	server.privacy = manager
 
 	consent := httptest.NewRecorder()
-	server.ServeHTTP(consent, authorizedRequest(http.MethodPost, "/v1/privacy/consents",
+	server.Router().ServeHTTP(consent, authorizedRequest(http.MethodPost, "/v1/privacy/consents",
 		`{"consents":[{"scope":"managed_subscription","documentVersion":"2026-08-24","granted":true}]}`))
 	if consent.Code != http.StatusOK || manager.principal.KeyID != "valid-key" || len(manager.consents) != 1 {
 		t.Fatalf("unexpected consent result: %d %s manager=%+v", consent.Code, consent.Body.String(), manager)
 	}
 
 	deleted := httptest.NewRecorder()
-	server.ServeHTTP(deleted, authorizedRequest(http.MethodDelete, "/v1/privacy/data", ""))
+	server.Router().ServeHTTP(deleted, authorizedRequest(http.MethodDelete, "/v1/privacy/data", ""))
 	if deleted.Code != http.StatusNoContent || !manager.deleted {
 		t.Fatalf("unexpected deletion result: %d %s manager=%+v", deleted.Code, deleted.Body.String(), manager)
 	}
@@ -414,13 +414,13 @@ func TestProductionEntitlementSyncRequiresAssertionAndVerifiedTransaction(t *tes
 		strings.NewReader(`{"signedTransaction":"signed-transaction"}`),
 	)
 	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
-	server.ServeHTTP(unauthorized, unauthorizedRequest)
+	server.Router().ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(
+	server.Router().ServeHTTP(response, authorizedRequest(
 		http.MethodPost,
 		"/v1/entitlements/transactions",
 		`{"signedTransaction":"signed-transaction"}`,
@@ -440,7 +440,7 @@ func TestAppStoreNotificationAcceptsOnlyVerifiedProcessorResult(t *testing.T) {
 	processor := &fakeAppStoreNotificationProcessor{}
 	server.appStoreNotifications = processor
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(
+	server.Router().ServeHTTP(response, httptest.NewRequest(
 		http.MethodPost,
 		"/v1/app-store/notifications",
 		strings.NewReader(`{"signedPayload":"signed-notification"}`),
@@ -459,7 +459,7 @@ func TestAppStoreNotificationRejectsMalformedEnvelopeAsBadRequest(t *testing.T) 
 	server := newTestServer()
 	server.appStoreNotifications = &fakeAppStoreNotificationProcessor{}
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(
+	server.Router().ServeHTTP(response, httptest.NewRequest(
 		http.MethodPost,
 		"/v1/app-store/notifications",
 		strings.NewReader(`{"signedPayload":`),
@@ -476,7 +476,7 @@ func TestAIRequestMapsAttestationInfrastructureFailureToServiceUnavailable(t *te
 	server.authenticator = fakeAuthenticator{err: attestation.ErrUnavailable}
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
 	}
@@ -490,7 +490,7 @@ func TestAIRequestRejectsUnknownVersionAsUpgradeRequired(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUpgradeRequired {
 		t.Fatalf("expected 426, got %d: %s", response.Code, response.Body.String())
@@ -505,7 +505,7 @@ func TestAIRequestRejectsClientSelectedModel(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", response.Code, response.Body.String())
@@ -520,7 +520,7 @@ func TestAIRequestRejectsSchemaOutsideServerManifest(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", response.Code, response.Body.String())
@@ -535,7 +535,7 @@ func TestAIRequestChecksManagedEntitlement(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", response.Code, response.Body.String())
@@ -552,7 +552,7 @@ func TestAIRequestEnforcesQuotaBeforeCallingArk(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d: %s", response.Code, response.Body.String())
@@ -570,7 +570,7 @@ func TestAIRequestExplainsDailySafetyLimit(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusTooManyRequests ||
 		!strings.Contains(response.Body.String(), `"code":"daily_quota_exceeded"`) {
@@ -587,7 +587,7 @@ func TestAIRequestForwardsOnlyValidatedArtifactToFixedProvider(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
@@ -607,7 +607,7 @@ func TestAIRequestDeliversCompletedResultWhenUsageLedgerIsUnavailable(t *testing
 	server.usage = failingUsageRecorder{}
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody())
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"content":"fixed result"`) {
 		t.Fatalf("billable completed result was discarded: %d %s", response.Code, response.Body.String())
 	}
@@ -620,9 +620,9 @@ func TestAIRequestRejectsRepeatedRequestIDBeforeSecondProviderCost(t *testing.T)
 	server := newTestServer()
 	server.provider = provider
 	first := httptest.NewRecorder()
-	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
+	server.Router().ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
 	second := httptest.NewRecorder()
-	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
+	server.Router().ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
 
 	if first.Code != http.StatusOK || second.Code != http.StatusConflict {
 		t.Fatalf("unexpected statuses: first=%d second=%d (%s)", first.Code, second.Code, second.Body.String())
@@ -640,7 +640,7 @@ func TestAIRequestRejectsMediaOwnedByAnotherDevice(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/requests", body)
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", response.Code, response.Body.String())
@@ -654,7 +654,7 @@ func TestAIStreamUsesSSEAndFlushesDeltas(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/ai/streams", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
@@ -680,7 +680,7 @@ func TestBackgroundJobDispatchesOnlyServerJobID(t *testing.T) {
 	request.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", response.Code, response.Body.String())
@@ -704,7 +704,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	first.Header.Set("X-Health-Job-Capability", "valid-token")
 	first.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	firstResponse := httptest.NewRecorder()
-	server.ServeHTTP(firstResponse, first)
+	server.Router().ServeHTTP(firstResponse, first)
 	if firstResponse.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected retryable 503, got %d: %s", firstResponse.Code, firstResponse.Body.String())
 	}
@@ -716,7 +716,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	second.Header.Set("X-Health-Job-Capability", "valid-token")
 	second.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	secondResponse := httptest.NewRecorder()
-	server.ServeHTTP(secondResponse, second)
+	server.Router().ServeHTTP(secondResponse, second)
 	if secondResponse.Code != http.StatusAccepted {
 		t.Fatalf("retry should be accepted, got %d: %s", secondResponse.Code, secondResponse.Body.String())
 	}
@@ -728,7 +728,7 @@ func TestBackgroundJobCapabilitySurvivesTransientJobInsertFailure(t *testing.T) 
 	replay.Header.Set("X-Health-Job-Capability", "valid-token")
 	replay.Header.Set("X-Health-Job-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	replayResponse := httptest.NewRecorder()
-	server.ServeHTTP(replayResponse, replay)
+	server.Router().ServeHTTP(replayResponse, replay)
 	if replayResponse.Code != http.StatusAccepted {
 		t.Fatalf("same signed job replay must return the durable job, got %d: %s", replayResponse.Code, replayResponse.Body.String())
 	}
@@ -745,7 +745,7 @@ func TestBackgroundJobCapabilityRequiresAppAttestAndBindsArtifact(t *testing.T) 
 	request := authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody())
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
@@ -769,9 +769,9 @@ func TestBackgroundJobCapabilityCanBeReissuedAfterLostResponse(t *testing.T) {
 	capabilities := &fakeCapabilities{}
 	server.capabilities = capabilities
 	first := httptest.NewRecorder()
-	server.ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.Router().ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
 	second := httptest.NewRecorder()
-	server.ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.Router().ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
 	if first.Code != http.StatusCreated || second.Code != http.StatusCreated || first.Body.String() != second.Body.String() {
 		t.Fatalf("lost capability response was not idempotently recoverable: first=%d %s second=%d %s", first.Code, first.Body.String(), second.Code, second.Body.String())
 	}
@@ -792,7 +792,7 @@ func TestCapabilityMediaReplayCannotRefundOwnedQuotaReservation(t *testing.T) {
 	server.media = authorizer
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", body))
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
@@ -816,7 +816,7 @@ func TestCapabilityAdmissionFailureRetainsReservationForConcurrentRetry(t *testi
 	server.media = authorizer
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/job-capabilities", validBody()))
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
@@ -836,7 +836,7 @@ func TestMediaAuthorizationRequiresManagedEntitlement(t *testing.T) {
 	request := authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", body)
 	response := httptest.NewRecorder()
 
-	server.ServeHTTP(response, request)
+	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", response.Code, response.Body.String())
@@ -852,7 +852,7 @@ func TestMediaAuthorizationMapsStorageOrPresignFailureToServiceUnavailable(t *te
 	server.media = mediaService
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","operation":"meal_photo_capture","mediaID":"photo-1","kind":"image","mimeType":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sizeBytes":1024}`
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/media/upload-authorizations", body))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
 	}
@@ -864,7 +864,7 @@ func TestJobLookupMapsStorageFailureToServiceUnavailable(t *testing.T) {
 	server := newTestServer()
 	server.jobs = &fakeJobService{getErr: errors.New("database unavailable")}
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/jobs/19be2f9e-bd92-4699-b561-e3816092114c", ""))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/jobs/19be2f9e-bd92-4699-b561-e3816092114c", ""))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
 	}

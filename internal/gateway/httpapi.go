@@ -19,7 +19,7 @@ const rawRequestBodyKey = "health.raw-request-body"
 var _ httpapi.StrictServerInterface = (*Server)(nil)
 var configureGinOnce sync.Once
 
-func (server *Server) newHTTPRouter() http.Handler {
+func (server *Server) newHTTPRouter() *gin.Engine {
 	configureGinOnce.Do(func() {
 		gin.SetMode(gin.ReleaseMode)
 		binding.EnableDecoderDisallowUnknownFields = true
@@ -32,6 +32,7 @@ func (server *Server) newHTTPRouter() http.Handler {
 	router.HandleMethodNotAllowed = true
 	router.UseRawPath = true
 	router.UnescapePathValues = false
+	router.Use(server.httpMiddleware...)
 	router.Use(captureRawRequestBody())
 
 	strict := httpapi.NewStrictHandlerWithOptions(server, nil, httpapi.StrictGinServerOptions{

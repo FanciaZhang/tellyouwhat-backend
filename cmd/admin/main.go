@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,16 +20,19 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminportal"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(logger); err != nil {
+		logger.Error("admin stopped", "error", err)
+		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(logger *slog.Logger) error {
 	configuration, err := loadConfig()
 	if err != nil {
 		return err
@@ -90,12 +93,13 @@ func run() error {
 			}
 			return redisClient.Ping(ctx).Err()
 		},
+		HTTPMiddleware: observability.Middleware(logger),
 	}, time.Now)
 	if err != nil {
 		return err
 	}
 	server := &http.Server{
-		Addr: ":" + configuration.port, Handler: portal,
+		Addr: ":" + configuration.port, Handler: portal.Router(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
@@ -107,7 +111,7 @@ func run() error {
 		defer cancel()
 		_ = server.Shutdown(ctx)
 	}()
-	log.Printf("admin service listening on %s", server.Addr)
+	logger.Info("admin service listening", "address", server.Addr)
 	err = server.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

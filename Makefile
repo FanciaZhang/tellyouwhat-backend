@@ -1,4 +1,4 @@
-.PHONY: test race vet generate-api verify-generated swift-client build-gateway build-worker
+.PHONY: test race vet generate-api verify-generated swift-client build-gateway build-worker build-admin
 
 test:
 	go test ./...
@@ -10,10 +10,10 @@ vet:
 	go vet ./...
 
 generate-api:
-	go generate ./internal/httpapi ./internal/journalhttpapi
+	go generate ./internal/httpapi ./internal/journalhttpapi ./internal/adminhttpapi ./internal/workerhttpapi
 
 verify-generated: generate-api
-	git diff --exit-code -- internal/httpapi/generated.go internal/journalhttpapi/generated.go
+	git diff --exit-code -- internal/httpapi/generated.go internal/journalhttpapi/generated.go internal/adminhttpapi/generated.go internal/workerhttpapi/generated.go
 
 swift-client:
 	swift build --package-path Contracts/HTTP
@@ -23,3 +23,6 @@ build-gateway:
 
 build-worker:
 	go build ./cmd/worker
+
+build-admin:
+	go build ./cmd/admin

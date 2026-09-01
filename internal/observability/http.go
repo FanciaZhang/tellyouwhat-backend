@@ -5,27 +5,34 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func RecoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+// Recovery is Gin-native panic recovery for every HTTP runtime.
+func Recovery(logger *slog.Logger) gin.HandlerFunc {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(context *gin.Context) {
 		defer func() {
 			if value := recover(); value != nil {
-				logger.ErrorContext(request.Context(), "http handler panic",
+				logger.ErrorContext(context.Request.Context(), "http handler panic",
 					"panic_type", panicType(value),
 					"stack", string(debug.Stack()),
-					"request_id", request.Header.Get("X-Tellyouwhat-Request-ID"),
+					"request_id", requestID(context.Request),
 				)
-				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				if !context.Writer.Written() {
+					context.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+						"error": gin.H{"code": "internal_error", "message": "internal server error"},
+					})
+				} else {
+					context.Abort()
+				}
 			}
 		}()
-		next.ServeHTTP(writer, request)
-	})
+		context.Next()
+	}
 }
 
 func panicType(value any) string {
@@ -39,28 +46,33 @@ func panicType(value any) string {
 	}
 }
 
-func (writer *statusWriter) WriteHeader(status int) {
-	writer.status = status
-	writer.ResponseWriter.WriteHeader(status)
-}
-
-func (writer *statusWriter) Flush() {
-	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
+// Logger records a request after Gin has completed its handler chain.
+func Logger(logger *slog.Logger) gin.HandlerFunc {
+	if logger == nil {
+		logger = slog.Default()
 	}
-}
-
-func HTTPLogger(logger *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	return func(context *gin.Context) {
 		startedAt := time.Now()
-		captured := &statusWriter{ResponseWriter: writer, status: http.StatusOK}
-		next.ServeHTTP(captured, request)
+		context.Next()
+		request := context.Request
 		logger.InfoContext(request.Context(), "http request",
 			"method", request.Method,
 			"path", request.URL.EscapedPath(),
-			"status", captured.status,
+			"status", context.Writer.Status(),
 			"duration_ms", time.Since(startedAt).Milliseconds(),
-			"request_id", request.Header.Get("X-Tellyouwhat-Request-ID"),
+			"request_id", requestID(request),
 		)
-	})
+	}
+}
+
+// Middleware returns the common Gin middleware in request order.
+func Middleware(logger *slog.Logger) []gin.HandlerFunc {
+	return []gin.HandlerFunc{Logger(logger), Recovery(logger)}
+}
+
+func requestID(request *http.Request) string {
+	if value := request.Header.Get("X-Tellyouwhat-Request-ID"); value != "" {
+		return value
+	}
+	return request.Header.Get("X-Request-ID")
 }

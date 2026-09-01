@@ -1,10 +1,12 @@
 # Tellyouwhat HTTP contracts
 
 `HealthAPI/openapi.yaml` and `JournalAPI/openapi.yaml` are the canonical public
-gateway contracts. Each contract generates:
+gateway contracts. `AdminAPI/openapi.yaml` and `WorkerAPI/openapi.yaml` are
+server-only contracts for the other HTTP runtimes. The contracts generate:
 
-- the Gin router, Go wire models, and strict server interface in
-  `internal/httpapi` or `internal/journalhttpapi`;
+- the Gin router and Go wire models in the matching `internal/*httpapi`
+  package; public App and worker runtimes also implement the generated strict
+  server interface;
 - the `HealthAPI` or `JournalAPI` Swift product at build time, imported directly
   by the corresponding iOS managed-AI transport;
 - the future TypeScript Fetch client through the pinned OpenAPI Generator
@@ -17,7 +19,7 @@ must be updated.
 ## Go server
 
 ```sh
-go generate ./internal/httpapi ./internal/journalhttpapi
+go generate ./internal/httpapi ./internal/journalhttpapi ./internal/adminhttpapi ./internal/workerhttpapi
 ```
 
 ## Swift client

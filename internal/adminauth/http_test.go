@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 )
 
 func TestRolePolicySeparatesGlobalAdministrationFromAssignedApps(t *testing.T) {
@@ -57,11 +59,9 @@ func TestServiceRejectsInsecureOrAmbiguousPasskeyOrigins(t *testing.T) {
 func TestDiscoverableLoginDoesNotRequireAUsernameOrCredentialAllowList(t *testing.T) {
 	t.Parallel()
 	service, _, _ := newTestService(t, User{})
-	mux := http.NewServeMux()
-	service.RegisterRoutes(mux)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login/options", bytes.NewReader([]byte(`{}`)))
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, request)
+	service.BeginLogin(testGinContext(response, request))
 	if response.Code != http.StatusOK {
 		t.Fatalf("login options = %d %s", response.Code, response.Body.String())
 	}
@@ -93,7 +93,7 @@ func TestSessionRejectsDisabledUsersAndAuthorizationVersionChanges(t *testing.T)
 			token := seedTestSession(t, service, store, 1, true)
 			request := authenticatedRequest(http.MethodGet, "/api/v1/session", token, false)
 			response := httptest.NewRecorder()
-			service.sessionStatus(response, request)
+			service.GetSession(testGinContext(response, request))
 			if response.Code != http.StatusUnauthorized {
 				t.Fatalf("session remained valid: %d %s", response.Code, response.Body.String())
 			}
@@ -115,7 +115,7 @@ func TestTemporaryUserStoreFailureDoesNotDestroyAValidSession(t *testing.T) {
 	repository.userByIDErr = errors.New("database unavailable")
 	request := authenticatedRequest(http.MethodGet, "/api/v1/session", token, false)
 	response := httptest.NewRecorder()
-	service.sessionStatus(response, request)
+	service.GetSession(testGinContext(response, request))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("database outage returned %d %s", response.Code, response.Body.String())
 	}
@@ -133,7 +133,7 @@ func TestPermissionDenialIsServerEnforcedAndAudited(t *testing.T) {
 	request := authenticatedRequest(http.MethodGet, "/api/v1/admin/users", token, false)
 	request.Header.Set("X-Request-ID", "not-a-database-safe-request-id")
 	response := httptest.NewRecorder()
-	service.listUsers(response, request)
+	service.ListAdminUsers(testGinContext(response, request))
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("operator opened user administration: %d %s", response.Code, response.Body.String())
 	}
@@ -152,7 +152,7 @@ func TestReauthenticationRequiresSameOriginCSRF(t *testing.T) {
 	token := seedTestSession(t, service, store, 1, true)
 	request := authenticatedRequest(http.MethodPost, "/api/v1/auth/reauth/options", token, false)
 	response := httptest.NewRecorder()
-	service.beginReauthentication(response, request)
+	service.BeginReauthentication(testGinContext(response, request), adminhttpapi.BeginReauthenticationParams{})
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin reauthentication start returned %d %s", response.Code, response.Body.String())
 	}
@@ -177,9 +177,8 @@ func TestDeletePasskeyDistinguishesConflictsMissingRowsAndStorageFailures(t *tes
 			repository.deleteCredentialErr = test.repository
 			token := seedTestSession(t, service, store, 1, true)
 			request := authenticatedRequest(http.MethodDelete, "/api/v1/security/passkeys/Y3JlZA", token, true)
-			request.SetPathValue("credentialID", "Y3JlZA")
 			response := httptest.NewRecorder()
-			service.deletePasskey(response, request)
+			service.DeletePasskey(testGinContext(response, request), "Y3JlZA", adminhttpapi.DeletePasskeyParams{})
 			if response.Code != test.status {
 				t.Fatalf("delete error %v returned %d %s", test.repository, response.Code, response.Body.String())
 			}
@@ -224,15 +223,13 @@ func TestAdminCanCreateScopedInvitationOnlyAfterRecentPasskeyVerification(t *tes
 	admin := User{ID: "admin", DisplayName: "管理员", Role: RoleAdmin,
 		Status: UserStatusActive, SessionVersion: 1}
 	service, store, repository := newTestService(t, admin)
-	mux := http.NewServeMux()
-	service.RegisterRoutes(mux)
 	token := seedTestSession(t, service, store, 1, true)
 	body := []byte(`{"displayName":"小林","role":"operator","appIDs":["health"]}`)
 	request := authenticatedRequest(http.MethodPost, "/api/v1/admin/invitations", token, true)
 	request.Body = ioNopCloser{bytes.NewReader(body)}
 	request.ContentLength = int64(len(body))
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, request)
+	service.CreateUserInvitation(testGinContext(response, request), adminhttpapi.CreateUserInvitationParams{})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create invitation = %d %s", response.Code, response.Body.String())
 	}
@@ -253,7 +250,7 @@ func TestAdminCanCreateScopedInvitationOnlyAfterRecentPasskeyVerification(t *tes
 	staleRequest.Body = ioNopCloser{bytes.NewReader(body)}
 	staleRequest.ContentLength = int64(len(body))
 	staleResponse := httptest.NewRecorder()
-	mux.ServeHTTP(staleResponse, staleRequest)
+	service.CreateUserInvitation(testGinContext(staleResponse, staleRequest), adminhttpapi.CreateUserInvitationParams{})
 	if staleResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("invitation did not require recent passkey verification: %d", staleResponse.Code)
 	}
@@ -261,16 +258,21 @@ func TestAdminCanCreateScopedInvitationOnlyAfterRecentPasskeyVerification(t *tes
 
 func TestPasswordAndRecoveryCodeRoutesDoNotExist(t *testing.T) {
 	t.Parallel()
-	service, _, _ := newTestService(t, User{})
-	mux := http.NewServeMux()
-	service.RegisterRoutes(mux)
+	document, err := adminhttpapi.GetSwagger()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{"/api/v1/auth/password", "/api/v1/auth/recovery", "/api/v1/security/recovery-codes"} {
-		response := httptest.NewRecorder()
-		mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("legacy secret route %s returned %d", path, response.Code)
+		if document.Paths.Map()[path] != nil {
+			t.Fatalf("legacy secret route %s exists in the administration contract", path)
 		}
 	}
+}
+
+func testGinContext(response *httptest.ResponseRecorder, request *http.Request) *gin.Context {
+	context, _ := gin.CreateTestContext(response)
+	context.Request = request
+	return context
 }
 
 type ioNopCloser struct{ *bytes.Reader }

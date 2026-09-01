@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func fixtureApps() []App {
@@ -35,11 +37,14 @@ func TestRegistryRejectsDuplicateHostAndCrossAppOperation(t *testing.T) {
 
 func TestHostMuxRejectsUnknownHostAndDispatchesKnownHost(t *testing.T) {
 	registry, _ := New(fixtureApps())
-	handlers := map[AppID]http.Handler{
-		Health:  http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(204) }),
-		Journal: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(202) }),
+	healthRouter := gin.New()
+	healthRouter.NoRoute(func(context *gin.Context) { context.Status(http.StatusNoContent) })
+	journalRouter := gin.New()
+	journalRouter.NoRoute(func(context *gin.Context) { context.Status(http.StatusAccepted) })
+	routers := map[AppID]*gin.Engine{
+		Health: healthRouter, Journal: journalRouter,
 	}
-	mux, err := NewHostMux(registry, handlers)
+	mux, err := NewHostMux(registry, routers)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,137 @@
+openapi: 3.1.0
+info:
+  title: Tellyouwhat Worker API
+  version: 1.0.0
+  description: Internal contract used by the gateway to invoke durable AI jobs.
+servers:
+  - url: http://worker:8081
+    description: Private container network
+tags:
+  - name: Service
+  - name: Jobs
+paths:
+  /healthz:
+    get:
+      operationId: getWorkerHealth
+      tags: [Service]
+      security: []
+      responses:
+        "200":
+          description: The worker process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceStatus"
+        default:
+          $ref: "#/components/responses/Error"
+  /internal/jobs/process:
+    post:
+      operationId: processJob
+      tags: [Jobs]
+      security:
+        - WorkerSecret: []
+      parameters:
+        - $ref: "#/components/parameters/WorkerSecret"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessJobRequest"
+      responses:
+        "204":
+          description: The job finished successfully.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    WorkerSecret:
+      type: apiKey
+      in: header
+      name: X-Tellyouwhat-Worker-Secret
+  parameters:
+    WorkerSecret:
+      name: X-Tellyouwhat-Worker-Secret
+      in: header
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+  responses:
+    Error:
+      description: Request failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: The worker secret is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: The request body exceeds the worker limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: The job reference is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadGateway:
+      description: The job could not be processed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ServiceStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ProcessJobRequest:
+      type: object
+      additionalProperties: false
+      required: [appID, jobID]
+      properties:
+        appID:
+          type: string
+          enum: [health]
+        jobID:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1

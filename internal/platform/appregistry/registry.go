@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 type AppID string
@@ -140,19 +142,19 @@ func normalizeHost(value string) string {
 
 type HostMux struct {
 	registry *Registry
-	handlers map[AppID]http.Handler
+	routers  map[AppID]*gin.Engine
 }
 
-func NewHostMux(registry *Registry, handlers map[AppID]http.Handler) (*HostMux, error) {
+func NewHostMux(registry *Registry, routers map[AppID]*gin.Engine) (*HostMux, error) {
 	if registry == nil {
 		return nil, errors.New("app registry is required")
 	}
 	for _, app := range registry.Apps() {
-		if handlers[app.ID] == nil {
-			return nil, fmt.Errorf("handler for app %q is required", app.ID)
+		if routers[app.ID] == nil {
+			return nil, fmt.Errorf("Gin router for app %q is required", app.ID)
 		}
 	}
-	return &HostMux{registry: registry, handlers: handlers}, nil
+	return &HostMux{registry: registry, routers: routers}, nil
 }
 
 func (mux *HostMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -161,5 +163,5 @@ func (mux *HostMux) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		http.Error(writer, "unknown application host", http.StatusMisdirectedRequest)
 		return
 	}
-	mux.handlers[app.ID].ServeHTTP(writer, request)
+	mux.routers[app.ID].ServeHTTP(writer, request)
 }

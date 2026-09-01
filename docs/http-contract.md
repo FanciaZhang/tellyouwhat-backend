@@ -7,8 +7,11 @@ contract responsibilities stay separate:
 
 - OpenAPI owns paths, methods, operation IDs, wire models, status codes, and
   authentication header declarations.
-- `oapi-codegen` generates the Gin router, Go wire types, and strict server
-  interface.
+- `oapi-codegen` generates the Gin router and Go wire types for every HTTP
+  runtime. Public App APIs and the worker implement its strict server
+  interface. The administration service implements the generated Gin server
+  interface directly because WebAuthn verification consumes the original HTTP
+  credential request.
 - Swift OpenAPI Generator generates the Apple client and types at build time.
 - OpenAPI Generator generates a TypeScript Fetch client when a Web target is
   introduced.
@@ -24,7 +27,11 @@ OpenAPI runtime.
 
 ## Contract boundaries
 
-`Contracts/HTTP/HealthAPI/openapi.yaml` is the public transport contract.
+`Contracts/HTTP/HealthAPI/openapi.yaml` and
+`Contracts/HTTP/JournalAPI/openapi.yaml` are the public transport contracts.
+`Contracts/HTTP/AdminAPI/openapi.yaml` and
+`Contracts/HTTP/WorkerAPI/openapi.yaml` are isolated internal contracts; they
+are never included in App clients.
 `deploy/schema-manifest.json` is the managed-AI business contract. The
 manifest binds operation and prompt versions to JSON Schema digests and model
 policies. They are intentionally separate and must not duplicate each other.
@@ -52,8 +59,9 @@ adopts a generator with compatible typed-SSE output.
 1. Add the operation to the canonical OpenAPI document with a stable
    `operationId`, closed request/response schemas, and explicit error statuses.
 2. Run `make generate-api` in `Backend`.
-3. Implement the newly required generated strict Go server method and return
-   only generated response objects.
+3. Implement the newly required generated Go server method. Public App and
+   worker operations return only generated strict response objects; Admin
+   operations are native Gin methods registered only by generated code.
 4. Build the Swift contract package and regenerate the Web client when present.
 5. Add contract, handler, and client adapter tests.
 6. Run `make verify-generated`, `go test ./...`, `go test -race ./...`, and
@@ -66,6 +74,9 @@ the check must not be bypassed by maintaining an alternate schema.
 ## Multiple apps
 
 Each app gets a separately named public OpenAPI document and generated client
-package. Shared error, attestation, entitlement, and media schemas can later move
-to a referenced common document. Admin and worker APIs remain separate contracts
-so public app clients never receive internal operations or credentials.
+package. Admin and worker have separately named, server-only OpenAPI documents,
+so public app clients never receive internal operations or credentials. The Go
+standard `http.Server` remains the network host for Gin, and the gateway's small
+Host mux selects one App before dispatch because Health and Journal intentionally
+reuse paths. Neither layer defines endpoints or adapts legacy business handlers;
+all endpoint registration comes from generated Gin routers.

@@ -16,7 +16,7 @@ import (
 
 const journalRawRequestBodyKey = "journal.raw-request-body"
 
-func (server *Server) newJournalHTTPRouter() http.Handler {
+func (server *Server) newJournalHTTPRouter() *gin.Engine {
 	configureGinOnce.Do(func() {
 		gin.SetMode(gin.ReleaseMode)
 		binding.EnableDecoderDisallowUnknownFields = true
@@ -29,6 +29,7 @@ func (server *Server) newJournalHTTPRouter() http.Handler {
 	router.HandleMethodNotAllowed = true
 	router.UseRawPath = true
 	router.UnescapePathValues = false
+	router.Use(server.httpMiddleware...)
 	router.Use(captureJournalRawRequestBody())
 
 	strictServer := &journalStrictServer{server: server}

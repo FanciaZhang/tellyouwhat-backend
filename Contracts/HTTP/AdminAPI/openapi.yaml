@@ -1,0 +1,586 @@
+openapi: 3.1.0
+info:
+  title: Tellyouwhat Administration API
+  version: 1.0.0
+  description: Canonical contract for the Passkey-only administration service.
+servers:
+  - url: https://admin.tellyouwhat.cn
+    description: Production
+tags:
+  - name: Service
+  - name: Authentication
+  - name: Security
+  - name: Administration
+  - name: Offers
+security:
+  - AdminSession: []
+paths:
+  /healthz:
+    get:
+      operationId: getAdminHealth
+      tags: [Service]
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /readyz:
+    get:
+      operationId: getAdminReadiness
+      tags: [Service]
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/setup/options:
+    post:
+      operationId: beginSetup
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/setup/finish:
+    post:
+      operationId: finishSetup
+      tags: [Authentication]
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/CeremonyID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/login/options:
+    post:
+      operationId: beginLogin
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmptyObject" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/login/finish:
+    post:
+      operationId: finishLogin
+      tags: [Authentication]
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/CeremonyID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/enroll/options:
+    post:
+      operationId: beginEnrollment
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnrollmentRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/enroll/finish:
+    post:
+      operationId: finishEnrollment
+      tags: [Authentication]
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/CeremonyID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [Authentication]
+      parameters:
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/session:
+    get:
+      operationId: getSession
+      tags: [Authentication]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/reauth/options:
+    post:
+      operationId: beginReauthentication
+      tags: [Authentication]
+      parameters:
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/auth/reauth/finish:
+    post:
+      operationId: finishReauthentication
+      tags: [Authentication]
+      parameters:
+        - { $ref: "#/components/parameters/CeremonyID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/security/passkeys:
+    get:
+      operationId: listPasskeys
+      tags: [Security]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/security/passkeys/options:
+    post:
+      operationId: beginAdditionalPasskey
+      tags: [Security]
+      parameters:
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyNameRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/security/passkeys/finish:
+    post:
+      operationId: finishAdditionalPasskey
+      tags: [Security]
+      parameters:
+        - { $ref: "#/components/parameters/CeremonyID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/security/passkeys/{credentialID}:
+    delete:
+      operationId: deletePasskey
+      tags: [Security]
+      parameters:
+        - { $ref: "#/components/parameters/CredentialID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users/{userID}:
+    patch:
+      operationId: updateAdminUser
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/UserID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdateRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/invitations:
+    post:
+      operationId: createUserInvitation
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvitationRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/invitations/{invitationID}:
+    delete:
+      operationId: revokeUserInvitation
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/InvitationID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/users/{userID}/recovery-invitations:
+    post:
+      operationId: createRecoveryInvitation
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/UserID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admin/audit:
+    get:
+      operationId: listAudit
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps:
+    get:
+      operationId: listAdminApps
+      tags: [Offers]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers:
+    get:
+      operationId: listOffers
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createOffer
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOfferRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/metrics/offers:
+    get:
+      operationId: getOfferMetrics
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/preview:
+    post:
+      operationId: previewOffer
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfferDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/deactivate:
+    post:
+      operationId: deactivateOffer
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/custom-codes:
+    post:
+      operationId: createCustomCode
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomCodeRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/one-time-code-batches:
+    post:
+      operationId: createOneTimeCodeBatch
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OneTimeCodeBatchRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/code-pools:
+    get:
+      operationId: listCodePools
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/one-time-code-batches/{batchID}/download:
+    post:
+      operationId: downloadOneTimeCodes
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/BatchID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "200":
+          description: One-time offer codes as CSV.
+          content:
+            text/csv:
+              schema:
+                type: string
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    AdminSession:
+      type: apiKey
+      in: cookie
+      name: __Host-tellyouwhat_admin_session
+  parameters:
+    AppID:
+      name: appID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._:-]{1,128}$" }
+    OfferID:
+      name: offerID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._:-]{1,128}$" }
+    BatchID:
+      name: batchID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._:-]{1,128}$" }
+    CredentialID:
+      name: credentialID
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 2048 }
+    UserID:
+      name: userID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }
+    InvitationID:
+      name: invitationID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{1,128}$" }
+    CeremonyID:
+      name: X-Admin-Ceremony-ID
+      in: header
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    Origin:
+      name: Origin
+      in: header
+      schema: { type: string, format: uri }
+    CSRFToken:
+      name: X-Admin-CSRF
+      in: header
+      schema: { type: string, minLength: 1, maxLength: 256 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: { type: string, pattern: "^[A-Za-z0-9._:-]{8,128}$" }
+  responses:
+    OK:
+      description: Request completed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JSONDocument" }
+    Created:
+      description: Resource created.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JSONDocument" }
+    NoContent:
+      description: Request completed without a response body.
+    Error:
+      description: Request failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+  schemas:
+    JSONDocument:
+      type: object
+      additionalProperties: true
+    EmptyObject:
+      type: object
+      additionalProperties: false
+    WebAuthnCredential:
+      type: object
+      additionalProperties: true
+    SetupRequest:
+      type: object
+      additionalProperties: false
+      required: [bootstrapToken, displayName]
+      properties:
+        bootstrapToken: { type: string, minLength: 1, maxLength: 512 }
+        displayName: { type: string, minLength: 1, maxLength: 256 }
+    EnrollmentRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 1, maxLength: 512 }
+    PasskeyNameRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 256 }
+    InvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, role, appIDs]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 256 }
+        role: { type: string, enum: [admin, operator] }
+        appIDs:
+          type: array
+          maxItems: 64
+          items: { type: string }
+    UserUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, role, status, appIDs]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 256 }
+        role: { type: string, enum: [admin, operator] }
+        status: { type: string, enum: [active, disabled] }
+        appIDs:
+          type: array
+          maxItems: 64
+          items: { type: string }
+    OfferDraft:
+      type: object
+      additionalProperties: false
+      required: [name, customerEligibilities, duration, autoRenewEnabled]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 256 }
+        customerEligibilities:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [NEW, EXISTING, EXPIRED] }
+        duration:
+          type: string
+          enum: [THREE_DAYS, ONE_WEEK, TWO_WEEKS, ONE_MONTH, TWO_MONTHS, THREE_MONTHS, SIX_MONTHS, ONE_YEAR]
+        autoRenewEnabled: { type: boolean }
+    CreateOfferRequest:
+      type: object
+      additionalProperties: false
+      required: [draft, previewToken]
+      properties:
+        draft: { $ref: "#/components/schemas/OfferDraft" }
+        previewToken: { type: string, minLength: 1, maxLength: 4096 }
+    CustomCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [code, numberOfCodes]
+      properties:
+        code: { type: string, pattern: "^[A-Za-z0-9]{4,64}$" }
+        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        expirationDate: { type: string, format: date }
+    OneTimeCodeBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [numberOfCodes, expirationDate, environment]
+      properties:
+        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        expirationDate: { type: string, format: date }
+        environment: { type: string, enum: [PRODUCTION, SANDBOX] }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string, minLength: 1 }
+        message: { type: string, minLength: 1 }

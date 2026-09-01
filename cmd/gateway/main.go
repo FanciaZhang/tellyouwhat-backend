@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	redis "github.com/redis/go-redis/v9"
 
 	"github.com/tellyouwhat/backend/internal/appstore"
@@ -111,7 +112,7 @@ func run(logger *slog.Logger) error {
 	defer closeStorage()
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
-	handlers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
+	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
 		storage := storageForApp(platform, shared, appConfig)
@@ -122,24 +123,24 @@ func run(logger *slog.Logger) error {
 				return err
 			}
 		}
-		handler, buildErr := buildAppHandler(ctx, platform, appConfig, storage, appReadiness, attestationRoots, tosStore, logger)
+		router, buildErr := buildAppHandler(ctx, platform, appConfig, storage, appReadiness, attestationRoots, tosStore, logger)
 		if buildErr != nil {
 			return fmt.Errorf("build app %s: %w", appConfig.Registry.ID, buildErr)
 		}
-		handlers[appConfig.Registry.ID] = handler
+		routers[appConfig.Registry.ID] = router
 	}
 	registry, err := appregistry.New(registryEntries)
 	if err != nil {
 		return err
 	}
-	hostMux, err := appregistry.NewHostMux(registry, handlers)
+	hostMux, err := appregistry.NewHostMux(registry, routers)
 	if err != nil {
 		return err
 	}
 
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           observability.HTTPLogger(logger, observability.RecoverPanics(logger, hostMux)),
+		Handler:           hostMux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      0,
@@ -281,7 +282,7 @@ func buildAppHandler(
 	attestationRoots *x509.CertPool,
 	tosStore *media.TOSStore,
 	logger *slog.Logger,
-) (http.Handler, error) {
+) (*gin.Engine, error) {
 	app := appConfig.Registry
 	attestationVerifier := attestation.NewAppleAttestationVerifier(app.TeamID, app.BundleID, appConfig.AttestationEnvironment, attestationRoots)
 	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
@@ -313,6 +314,7 @@ func buildAppHandler(
 			PrivacyURL: appConfig.Product.PrivacyURL, TermsURL: appConfig.Product.TermsURL,
 			PrivacyChoicesURL: appConfig.Product.PrivacyChoicesURL, SupportURL: appConfig.Product.SupportURL,
 		},
+		HTTPMiddleware: observability.Middleware(logger),
 	}
 	if platform.TrustedIPHeader != "" {
 		dependencies.IPResolver = func(request *http.Request) string {
@@ -369,7 +371,7 @@ func buildAppHandler(
 	default:
 		return nil, errors.New("unsupported app runtime")
 	}
-	return gateway.New(dependencies), nil
+	return gateway.New(dependencies).Router(), nil
 }
 
 func commerceServices(

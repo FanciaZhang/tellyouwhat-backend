@@ -24,6 +24,11 @@
 权限由 Go 代码中的固定类型常量维护，暂不提供数据库驱动的细粒度权限编辑器。
 前端隐藏入口只是交互层；每个 API 都会在服务端重新校验角色和 App 范围。
 
+管理 API 的路径、方法、参数和请求结构以
+`Contracts/HTTP/AdminAPI/openapi.yaml` 为唯一来源。`oapi-codegen` 生成 Gin
+Router，认证与 Offer 业务直接实现生成的 Gin 接口；不再存在手写
+`http.ServeMux` 或把旧 `net/http` Handler 包进 Gin 的兼容层。
+
 无论哪种角色，都不能通过管理后台读取手记正文、健康数据、原始 AI 请求、
 部署凭证、大模型供应商密钥或 App Store Connect 私钥。
 

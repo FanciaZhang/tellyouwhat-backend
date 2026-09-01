@@ -4,18 +4,13 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 )
 
-func (service *Service) registerManagementRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/users", service.listUsers)
-	mux.HandleFunc("PATCH /api/v1/admin/users/{userID}", service.updateUser)
-	mux.HandleFunc("POST /api/v1/admin/invitations", service.createUserInvitation)
-	mux.HandleFunc("DELETE /api/v1/admin/invitations/{invitationID}", service.revokeInvitation)
-	mux.HandleFunc("POST /api/v1/admin/users/{userID}/recovery-invitations", service.createRecoveryInvitation)
-	mux.HandleFunc("GET /api/v1/admin/audit", service.listAudit)
-}
-
-func (service *Service) listUsers(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) ListAdminUsers(context *gin.Context) {
+	writer, request := context.Writer, context.Request
 	if _, ok := service.RequirePermission(writer, request, PermissionUsersManage, "", false, false); !ok {
 		return
 	}
@@ -32,44 +27,43 @@ func (service *Service) listUsers(writer http.ResponseWriter, request *http.Requ
 	writeJSON(writer, http.StatusOK, map[string]any{"users": users, "invitations": invitations})
 }
 
-func (service *Service) createUserInvitation(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) CreateUserInvitation(context *gin.Context, _ adminhttpapi.CreateUserInvitationParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequirePermission(writer, request, PermissionUsersManage, "", true, true)
 	if !ok {
 		return
 	}
-	var input struct {
-		DisplayName string   `json:"displayName"`
-		Role        Role     `json:"role"`
-		AppIDs      []string `json:"appIDs"`
-	}
+	var input adminhttpapi.InvitationRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
 	displayName := cleanDisplayName(input.DisplayName)
-	appIDs, valid := service.normalizedAppIDs(input.Role, input.AppIDs)
-	if displayName == "" || !input.Role.Valid() || !valid {
+	role := Role(input.Role)
+	appIDs, valid := service.normalizedAppIDs(role, input.AppIDs)
+	if displayName == "" || !input.Role.Valid() || !role.Valid() || !valid {
 		writeFailure(writer, http.StatusBadRequest, "invalid_invitation", "人员名称、角色或 App 范围无效")
 		return
 	}
 	invitation, token, err := service.issueInvitation(
-		request, authenticated.User.ID, InvitationKindCreate, "", displayName, input.Role, appIDs)
+		request, authenticated.User.ID, InvitationKindCreate, "", displayName, role, appIDs)
 	if err != nil {
 		writeFailure(writer, http.StatusServiceUnavailable, "invitation_unavailable", "暂时无法创建邀请")
 		return
 	}
 	service.audit(request.Context(), authenticated.User.ID, "", request, "admin.invitation.create",
-		"succeeded", "invitation", invitation.ID, map[string]any{"role": input.Role, "appIDs": appIDs})
+		"succeeded", "invitation", invitation.ID, map[string]any{"role": role, "appIDs": appIDs})
 	writeJSON(writer, http.StatusCreated, map[string]any{
 		"invitation": invitation, "enrollmentURL": service.config.Origin + "/enroll#token=" + token,
 	})
 }
 
-func (service *Service) createRecoveryInvitation(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) CreateRecoveryInvitation(context *gin.Context, rawUserID adminhttpapi.UserID, _ adminhttpapi.CreateRecoveryInvitationParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequirePermission(writer, request, PermissionUsersManage, "", true, true)
 	if !ok {
 		return
 	}
-	targetID := cleanIdentifier(request.PathValue("userID"))
+	targetID := cleanIdentifier(rawUserID)
 	if targetID == "" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_user", "人员标识无效")
 		return
@@ -133,12 +127,13 @@ func (service *Service) issueInvitation(
 	return invitation, token, nil
 }
 
-func (service *Service) revokeInvitation(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) RevokeUserInvitation(context *gin.Context, rawInvitationID adminhttpapi.InvitationID, _ adminhttpapi.RevokeUserInvitationParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequirePermission(writer, request, PermissionUsersManage, "", true, true)
 	if !ok {
 		return
 	}
-	invitationID := cleanIdentifier(request.PathValue("invitationID"))
+	invitationID := cleanIdentifier(rawInvitationID)
 	if invitationID == "" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_invitation", "邀请标识无效")
 		return
@@ -156,33 +151,30 @@ func (service *Service) revokeInvitation(writer http.ResponseWriter, request *ht
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (service *Service) updateUser(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) UpdateAdminUser(context *gin.Context, rawUserID adminhttpapi.UserID, _ adminhttpapi.UpdateAdminUserParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequirePermission(writer, request, PermissionUsersManage, "", true, true)
 	if !ok {
 		return
 	}
-	userID := cleanIdentifier(request.PathValue("userID"))
+	userID := cleanIdentifier(rawUserID)
 	if userID == "" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_user", "人员标识无效")
 		return
 	}
-	var input struct {
-		DisplayName string     `json:"displayName"`
-		Role        Role       `json:"role"`
-		Status      UserStatus `json:"status"`
-		AppIDs      []string   `json:"appIDs"`
-	}
+	var input adminhttpapi.UserUpdateRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
 	displayName := cleanDisplayName(input.DisplayName)
-	appIDs, valid := service.normalizedAppIDs(input.Role, input.AppIDs)
-	if displayName == "" || !input.Role.Valid() || !input.Status.Valid() || !valid {
+	role, status := Role(input.Role), UserStatus(input.Status)
+	appIDs, valid := service.normalizedAppIDs(role, input.AppIDs)
+	if displayName == "" || !input.Role.Valid() || !input.Status.Valid() || !role.Valid() || !status.Valid() || !valid {
 		writeFailure(writer, http.StatusBadRequest, "invalid_user", "人员名称、角色、状态或 App 范围无效")
 		return
 	}
 	updated, err := service.repository.UpdateUser(request.Context(), userID, UserUpdate{
-		DisplayName: displayName, Role: input.Role, Status: input.Status, AppIDs: appIDs,
+		DisplayName: displayName, Role: role, Status: status, AppIDs: appIDs,
 	}, service.now())
 	if err != nil {
 		switch {
@@ -212,7 +204,8 @@ func (service *Service) updateUser(writer http.ResponseWriter, request *http.Req
 	writeJSON(writer, http.StatusOK, response)
 }
 
-func (service *Service) listAudit(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) ListAudit(context *gin.Context) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, false, false)
 	if !ok {
 		return

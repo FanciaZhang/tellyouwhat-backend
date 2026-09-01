@@ -14,8 +14,10 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 )
 
 const (
@@ -79,29 +81,9 @@ func NewService(repository Repository, state StateStore, config Config, now func
 	return &Service{repository: repository, state: state, webauthn: webAuthn, now: now, config: config}, nil
 }
 
-func (service *Service) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/auth/setup/options", service.beginSetup)
-	mux.HandleFunc("POST /api/v1/auth/setup/finish", service.finishSetup)
-	mux.HandleFunc("POST /api/v1/auth/login/options", service.beginLogin)
-	mux.HandleFunc("POST /api/v1/auth/login/finish", service.finishLogin)
-	mux.HandleFunc("POST /api/v1/auth/enroll/options", service.beginEnrollment)
-	mux.HandleFunc("POST /api/v1/auth/enroll/finish", service.finishEnrollment)
-	mux.HandleFunc("POST /api/v1/auth/logout", service.logout)
-	mux.HandleFunc("GET /api/v1/session", service.sessionStatus)
-	mux.HandleFunc("POST /api/v1/auth/reauth/options", service.beginReauthentication)
-	mux.HandleFunc("POST /api/v1/auth/reauth/finish", service.finishReauthentication)
-	mux.HandleFunc("GET /api/v1/security/passkeys", service.listPasskeys)
-	mux.HandleFunc("POST /api/v1/security/passkeys/options", service.beginAdditionalPasskey)
-	mux.HandleFunc("POST /api/v1/security/passkeys/finish", service.finishAdditionalPasskey)
-	mux.HandleFunc("DELETE /api/v1/security/passkeys/{credentialID}", service.deletePasskey)
-	service.registerManagementRoutes(mux)
-}
-
-func (service *Service) beginSetup(writer http.ResponseWriter, request *http.Request) {
-	var input struct {
-		BootstrapToken string `json:"bootstrapToken"`
-		DisplayName    string `json:"displayName"`
-	}
+func (service *Service) BeginSetup(context *gin.Context) {
+	writer, request := context.Writer, context.Request
+	var input adminhttpapi.SetupRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
@@ -138,7 +120,8 @@ func (service *Service) beginSetup(writer http.ResponseWriter, request *http.Req
 	}, options.Response)
 }
 
-func (service *Service) finishSetup(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) FinishSetup(context *gin.Context, _ adminhttpapi.FinishSetupParams) {
+	writer, request := context.Writer, context.Request
 	ceremony, ok := service.takeCeremony(writer, request, "setup")
 	if !ok {
 		return
@@ -164,7 +147,8 @@ func (service *Service) finishSetup(writer http.ResponseWriter, request *http.Re
 	service.completeAuthentication(writer, request, user, "admin.bootstrap", http.StatusCreated)
 }
 
-func (service *Service) beginLogin(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) BeginLogin(context *gin.Context) {
+	writer, request := context.Writer, context.Request
 	if request.ContentLength > 0 {
 		var empty struct{}
 		if !decodeJSON(writer, request, &empty) {
@@ -182,7 +166,8 @@ func (service *Service) beginLogin(writer http.ResponseWriter, request *http.Req
 	}, options.Response)
 }
 
-func (service *Service) finishLogin(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) FinishLogin(context *gin.Context, _ adminhttpapi.FinishLoginParams) {
+	writer, request := context.Writer, context.Request
 	ceremony, ok := service.takeCeremony(writer, request, "login")
 	if !ok {
 		return
@@ -214,10 +199,9 @@ func (service *Service) finishLogin(writer http.ResponseWriter, request *http.Re
 	service.completeAuthentication(writer, request, user, "admin.login", http.StatusOK)
 }
 
-func (service *Service) beginEnrollment(writer http.ResponseWriter, request *http.Request) {
-	var input struct {
-		Token string `json:"token"`
-	}
+func (service *Service) BeginEnrollment(context *gin.Context) {
+	writer, request := context.Writer, context.Request
+	var input adminhttpapi.EnrollmentRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
@@ -261,7 +245,8 @@ func (service *Service) beginEnrollment(writer http.ResponseWriter, request *htt
 	}, options.Response)
 }
 
-func (service *Service) finishEnrollment(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) FinishEnrollment(context *gin.Context, _ adminhttpapi.FinishEnrollmentParams) {
+	writer, request := context.Writer, context.Request
 	ceremony, ok := service.takeCeremony(writer, request, "enroll")
 	if !ok {
 		return
@@ -292,7 +277,8 @@ func (service *Service) finishEnrollment(writer http.ResponseWriter, request *ht
 	service.completeAuthentication(writer, request, user, action, http.StatusCreated)
 }
 
-func (service *Service) beginReauthentication(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) BeginReauthentication(context *gin.Context, _ adminhttpapi.BeginReauthenticationParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, false)
 	if !ok {
 		return
@@ -308,7 +294,8 @@ func (service *Service) beginReauthentication(writer http.ResponseWriter, reques
 	}, options.Response)
 }
 
-func (service *Service) finishReauthentication(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) FinishReauthentication(context *gin.Context, _ adminhttpapi.FinishReauthenticationParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, false)
 	if !ok {
 		return
@@ -344,7 +331,8 @@ func (service *Service) finishReauthentication(writer http.ResponseWriter, reque
 	})
 }
 
-func (service *Service) listPasskeys(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) ListPasskeys(context *gin.Context) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, false, false)
 	if !ok {
 		return
@@ -357,14 +345,13 @@ func (service *Service) listPasskeys(writer http.ResponseWriter, request *http.R
 	writeJSON(writer, http.StatusOK, map[string]any{"passkeys": credentials})
 }
 
-func (service *Service) beginAdditionalPasskey(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) BeginAdditionalPasskey(context *gin.Context, _ adminhttpapi.BeginAdditionalPasskeyParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, true)
 	if !ok {
 		return
 	}
-	var input struct {
-		DisplayName string `json:"displayName"`
-	}
+	var input adminhttpapi.PasskeyNameRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
@@ -386,7 +373,8 @@ func (service *Service) beginAdditionalPasskey(writer http.ResponseWriter, reque
 	}, options.Response)
 }
 
-func (service *Service) finishAdditionalPasskey(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) FinishAdditionalPasskey(context *gin.Context, _ adminhttpapi.FinishAdditionalPasskeyParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, true)
 	if !ok {
 		return
@@ -422,12 +410,13 @@ func (service *Service) finishAdditionalPasskey(writer http.ResponseWriter, requ
 	writeJSON(writer, http.StatusCreated, map[string]any{"created": true})
 }
 
-func (service *Service) deletePasskey(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) DeletePasskey(context *gin.Context, rawCredentialID adminhttpapi.CredentialID, _ adminhttpapi.DeletePasskeyParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, true)
 	if !ok {
 		return
 	}
-	credentialID, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(request.PathValue("credentialID")))
+	credentialID, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(rawCredentialID))
 	if err != nil || len(credentialID) == 0 || len(credentialID) > 1024 {
 		writeFailure(writer, http.StatusBadRequest, "invalid_passkey", "通行密钥标识无效")
 		return
@@ -451,7 +440,8 @@ func (service *Service) deletePasskey(writer http.ResponseWriter, request *http.
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (service *Service) sessionStatus(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) GetSession(context *gin.Context) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, false, false)
 	if !ok {
 		return
@@ -459,7 +449,8 @@ func (service *Service) sessionStatus(writer http.ResponseWriter, request *http.
 	writeJSON(writer, http.StatusOK, service.sessionPayload(authenticated.User, authenticated.Session))
 }
 
-func (service *Service) logout(writer http.ResponseWriter, request *http.Request) {
+func (service *Service) Logout(context *gin.Context, _ adminhttpapi.LogoutParams) {
+	writer, request := context.Writer, context.Request
 	authenticated, ok := service.RequireAuthenticated(writer, request, true, false)
 	if !ok {
 		return

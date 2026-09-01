@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/subtle"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,7 +13,6 @@ import (
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
-	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -74,47 +69,11 @@ func run(logger *slog.Logger) error {
 	if len(workers) == 0 {
 		return errors.New("no asynchronous application workers are configured")
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"status":"ok"}`))
-	})
-	mux.HandleFunc("POST /internal/jobs/process", func(writer http.ResponseWriter, request *http.Request) {
-		provided := []byte(request.Header.Get("X-Tellyouwhat-Worker-Secret"))
-		expected := []byte(platform.WorkerSecret)
-		if len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {
-			http.Error(writer, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		body, readErr := io.ReadAll(io.LimitReader(request.Body, (8<<10)+1))
-		if readErr != nil || len(body) > 8<<10 {
-			http.Error(writer, "payload too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		var input struct {
-			AppID appregistry.AppID `json:"appID"`
-			JobID string            `json:"jobID"`
-		}
-		decoder := json.NewDecoder(bytes.NewReader(body))
-		decoder.DisallowUnknownFields()
-		decoderErr := decoder.Decode(&input)
-		var extra json.RawMessage
-		trailingErr := decoder.Decode(&extra)
-		worker := workers[input.AppID]
-		if decoderErr != nil || !errors.Is(trailingErr, io.EOF) || input.JobID == "" || worker == nil {
-			http.Error(writer, "invalid job", http.StatusUnprocessableEntity)
-			return
-		}
-		if processErr := worker.Process(request.Context(), input.JobID); processErr != nil {
-			http.Error(writer, "job failed", http.StatusBadGateway)
-			return
-		}
-		writer.WriteHeader(http.StatusNoContent)
-	})
+	router := newWorkerRouter(platform.WorkerSecret, workers, logger)
 
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           observability.HTTPLogger(logger, observability.RecoverPanics(logger, mux)),
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      3 * time.Hour,
