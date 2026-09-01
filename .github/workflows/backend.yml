@@ -51,6 +51,16 @@ jobs:
           MYSQL_PASSWORD: placeholder
           MYSQL_DATABASE: app
           REDIS_PASSWORD: placeholder
+      - name: Validate Caddy configuration
+        run: >-
+          docker run --rm --entrypoint caddy
+          -e HEALTH_API_DOMAIN=api.health.example
+          -e JOURNAL_API_DOMAIN=api.journal.example
+          -e ADMIN_DOMAIN=admin.example
+          -e ACME_EMAIL=ops@example.com
+          -v "${{ github.workspace }}/deploy/single-server/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2-alpine
+          validate --config /etc/caddy/Caddyfile
 
   container:
     needs: verify

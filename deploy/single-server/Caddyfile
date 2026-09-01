@@ -1,42 +1,42 @@
 {
-    admin off
-    email {$ACME_EMAIL}
+	admin off
+	email {$ACME_EMAIL}
 }
 
 (public_api) {
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer"
-        -Server
-    }
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
 
-    @internal path /internal/*
-    respond @internal 404
+	@internal path /internal/*
+	respond @internal 404
 
-    reverse_proxy gateway:8080 {
-        header_up X-Real-IP {remote_host}
-        flush_interval -1
-    }
+	reverse_proxy gateway:8080 {
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+	}
 }
 
 {$HEALTH_API_DOMAIN} {
-    import public_api
+	import public_api
 }
 
 {$JOURNAL_API_DOMAIN} {
-    import public_api
+	import public_api
 }
 
 {$ADMIN_DOMAIN} {
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer"
-        -Server
-    }
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
 
-    reverse_proxy admin:8082 {
-        header_up X-Real-IP {remote_host}
-    }
+	reverse_proxy admin:8082 {
+		header_up X-Real-IP {remote_host}
+	}
 }
