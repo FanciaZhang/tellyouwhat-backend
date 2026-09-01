@@ -34,6 +34,7 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             path: "HealthAPI",
+            exclude: ["app.openapi.yaml"],
             plugins: [
                 .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
             ]
@@ -45,6 +46,7 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             path: "JournalAPI",
+            exclude: ["app.openapi.yaml"],
             plugins: [
                 .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
             ]

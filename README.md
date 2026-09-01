@@ -13,7 +13,9 @@ gateway 在认证和读取请求体之前，仅根据 HTTP `Host` 选择 App：
 
 ## HTTP 与 AI 合约
 
-两个 App 的公开合约分别位于 [`Contracts/HTTP/HealthAPI/openapi.yaml`](Contracts/HTTP/HealthAPI/openapi.yaml) 和 [`Contracts/HTTP/JournalAPI/openapi.yaml`](Contracts/HTTP/JournalAPI/openapi.yaml)。管理后台和 Worker 也分别拥有独立的 [`AdminAPI`](Contracts/HTTP/AdminAPI/openapi.yaml) 与 [`WorkerAPI`](Contracts/HTTP/WorkerAPI/openapi.yaml) IDL。四份 IDL 统一生成 Gin Router 和 Go wire model；公开 App 与 Worker 使用生成的 strict server interface，管理后台直接实现生成的 Gin server interface。仓库不保留手写 `ServeMux`、`gin.WrapH` 或备用路由表。
+公开 HTTP 合约由一份 [`PlatformAPI`](Contracts/HTTP/PlatformAPI/openapi.yaml) 和每个 App 的专属 IDL 组成。PlatformAPI 唯一定义 App Attest、权益、隐私、产品信息、配额和健康检查；[`Health App IDL`](Contracts/HTTP/HealthAPI/app.openapi.yaml) 与 [`Journal App IDL`](Contracts/HTTP/JournalAPI/app.openapi.yaml) 只定义业务操作。构建时生成完整的 [`Health 公共合约`](Contracts/HTTP/HealthAPI/openapi.yaml) 与 [`Journal 公共合约`](Contracts/HTTP/JournalAPI/openapi.yaml)，供 Swift/Web 客户端使用。服务端则把一套生成的 Platform strict Gin Router 与当前 App 的 strict Gin Router 组合到同一个 Host 运行时中，公共接口不在各 App 重复实现。
+
+所有 App Attest 和公共幂等 Header 统一使用 `X-Tellyouwhat-*`。管理后台和 Worker 分别拥有独立的 [`AdminAPI`](Contracts/HTTP/AdminAPI/openapi.yaml) 与 [`WorkerAPI`](Contracts/HTTP/WorkerAPI/openapi.yaml) IDL。仓库不保留手写 `ServeMux`、`gin.WrapH` 或备用路由表。
 
 ```sh
 make generate-api
@@ -29,7 +31,7 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 ## 运行单元
 
-- `cmd/gateway`：公开 API；先按 Host 选 App，再进入对应运行时。
+- `cmd/gateway`：公开 API；先按 Host 选 App，再组合 Platform 与对应 App 的生成路由。
 - `cmd/worker`：Health 加密异步 AI 任务；内部请求绑定 App ID 与 Job ID，并由 Worker OpenAPI IDL 生成 strict Gin 路由。
 - `cmd/admin`：Passkey 登录、管理员/运营角色、人员与 App Store Connect Offer 管理；全部 API 路由由 Admin OpenAPI IDL 生成。
 - `cmd/adminctl`：创建首位管理员和服务器侧应急恢复链接。
@@ -58,7 +60,7 @@ go run ./cmd/gateway
 
 ## 生产部署
 
-首发使用一台腾讯云 CVM 或轻量服务器运行 Caddy、gateway、worker 和 admin，并连接同地域私网中的托管 MySQL 与 Redis。Caddy 仅开放 80/443，同时代理两个 API 域名和 `admin.tellyouwhat.cn`。完整配置、CI/CD、首次管理员和验收步骤见 [`deploy/tencent/README.md`](deploy/tencent/README.md)。
+首发使用一台腾讯云 CVM 或轻量服务器运行 Caddy、gateway、worker 和 admin，并连接同地域私网中的托管 MySQL 与 Redis。Caddy 仅开放 80/443；Health 与 Journal 使用显式、独立的站点块并复用公共安全配置，因此以后可以分别配置限流、超时和上传策略，而不需要增加服务器。完整配置、CI/CD、首次管理员和验收步骤见 [`deploy/tencent/README.md`](deploy/tencent/README.md)。
 
 ## 验证
 

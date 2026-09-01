@@ -24,8 +24,8 @@ struct HealthAPITransportTests {
         )
 
         _ = try await client.activateDevelopmentEntitlement(headers: .init(
-            xHealthRequestID: requestID.uuidString.lowercased(),
-            xHealthDevActivation: "development-secret"
+            xTellyouwhatRequestID: requestID.uuidString.lowercased(),
+            xTellyouwhatDevActivation: "development-secret"
         ))
 
         let request = try #require(await recorder.request)
@@ -33,8 +33,8 @@ struct HealthAPITransportTests {
         #expect(request.method == "POST")
         #expect(request.path == "/v1/dev/entitlements/activate")
         #expect(request.body.isEmpty)
-        #expect(request.header(named: "X-Health-Request-ID") == requestID.uuidString.lowercased())
-        #expect(request.header(named: "X-Health-Dev-Activation") == "development-secret")
+        #expect(request.header(named: "X-Tellyouwhat-Request-ID") == requestID.uuidString.lowercased())
+        #expect(request.header(named: "X-Tellyouwhat-Dev-Activation") == "development-secret")
     }
 
     @Test("streaming response remains incremental")
@@ -91,12 +91,12 @@ struct HealthAPITransportTests {
         let request = try sampleAIRequest()
 
         _ = try await client.issueAIJobCapability(
-            headers: .init(xHealthRequestID: request.requestID),
+            headers: .init(xTellyouwhatRequestID: request.requestID),
             body: .json(request)
         )
         _ = try await client.enqueueAIJob(
             headers: .init(
-                xHealthRequestID: request.requestID,
+                xTellyouwhatRequestID: request.requestID,
                 xHealthJobID: "4d88fba4-48f1-447d-a72a-af0449ad90b3",
                 xHealthJobCapability: "one-time-capability"
             ),
@@ -130,7 +130,7 @@ struct HealthAPITransportTests {
         )
 
         let output = try await client.completeAIRequest(
-            headers: .init(xHealthRequestID: "6d4e5a47-4c66-42d0-81c0-8d12c4425239"),
+            headers: .init(xTellyouwhatRequestID: "6d4e5a47-4c66-42d0-81c0-8d12c4425239"),
             body: .json(try sampleAIRequest())
         )
 

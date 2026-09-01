@@ -148,6 +148,7 @@ type Dependencies struct {
 	Privacy                    PrivacyManager
 	Consent                    ConsentGate
 	RequiredConsentScopes      []string
+	AllowedConsentScopes       []string
 	JournalOrganizer           JournalOrganizer
 	JournalAnalysisVersion     string
 	ManagedProduct             ManagedProduct
@@ -180,6 +181,7 @@ type Server struct {
 	privacy                    PrivacyManager
 	consent                    ConsentGate
 	requiredConsentScopes      []string
+	allowedConsentScopes       map[string]struct{}
 	journalOrganizer           JournalOrganizer
 	journalAnalysisVersion     string
 	managedProduct             ManagedProduct
@@ -198,6 +200,20 @@ func New(dependencies Dependencies) *Server {
 			TeamID: "test", BundleID: "cn.tellyouwhat.healthapp", ManagedAIProductID: "health.premium.subscription.monthly",
 			AllowedOperations: allowedOperations,
 		}
+	}
+	if len(dependencies.AllowedConsentScopes) == 0 {
+		if dependencies.App.ID == appregistry.Journal {
+			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		} else {
+			dependencies.AllowedConsentScopes = []string{
+				privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+				privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
+			}
+		}
+	}
+	allowedConsentScopes := make(map[string]struct{}, len(dependencies.AllowedConsentScopes))
+	for _, scope := range dependencies.AllowedConsentScopes {
+		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
 		app:                        dependencies.App,
@@ -225,6 +241,7 @@ func New(dependencies Dependencies) *Server {
 		privacy:                    dependencies.Privacy,
 		consent:                    dependencies.Consent,
 		requiredConsentScopes:      append([]string(nil), dependencies.RequiredConsentScopes...),
+		allowedConsentScopes:       allowedConsentScopes,
 		journalOrganizer:           dependencies.JournalOrganizer,
 		journalAnalysisVersion:     dependencies.JournalAnalysisVersion,
 		managedProduct:             dependencies.ManagedProduct,
@@ -236,11 +253,7 @@ func New(dependencies Dependencies) *Server {
 	if server.now == nil {
 		server.now = time.Now
 	}
-	if server.app.ID == appregistry.Health {
-		server.handler = server.newHTTPRouter()
-	} else {
-		server.handler = server.newJournalHTTPRouter()
-	}
+	server.handler = server.newHTTPRouter()
 	return server
 }
 

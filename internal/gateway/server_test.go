@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -17,6 +18,7 @@ import (
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	quotaapi "github.com/tellyouwhat/backend/internal/quota"
@@ -29,13 +31,51 @@ func TestAIRequestRequiresAssertion(t *testing.T) {
 
 	server := newTestServer()
 	request := httptest.NewRequest(http.MethodPost, "/v1/ai/requests", strings.NewReader(validBody()))
-	request.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	response := httptest.NewRecorder()
 
 	server.Router().ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSamePlatformPathIsIsolatedByApplicationHost(t *testing.T) {
+	t.Parallel()
+	healthApp := appregistry.App{
+		ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"},
+		TeamID: "TEAM", BundleID: "cn.tellyouwhat.healthapp",
+		ManagedAIProductID: "health.ai.monthly", AllowedOperations: []string{"meal_decision"},
+	}
+	journalApp := appregistry.App{
+		ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+		TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+		ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal.",
+	}
+	registry, err := appregistry.New([]appregistry.App{healthApp, journalApp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := New(Dependencies{App: healthApp, ManagedProduct: ManagedProduct{ProductID: "health.ai.monthly"}})
+	journal := New(Dependencies{App: journalApp, ManagedProduct: ManagedProduct{ProductID: "journal.ai.monthly"}})
+	mux, err := appregistry.NewHostMux(registry, map[appregistry.AppID]*gin.Engine{
+		appregistry.Health: health.Router(), appregistry.Journal: journal.Router(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for host, productID := range map[string]string{
+		"api.health.test":  "health.ai.monthly",
+		"api.journal.test": "journal.ai.monthly",
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "https://"+host+"/v1/products/managed-ai", nil)
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"productID":"`+productID+`"`) {
+			t.Fatalf("%s reached the wrong App runtime: %d %s", host, response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -192,27 +232,71 @@ func TestJournalStrictRouterRejectsCompatibilityActivationBody(t *testing.T) {
 	}
 }
 
-func TestJournalStrictRouterUsesOnlyJournalAttestationHeaders(t *testing.T) {
+func TestEveryAppUsesOnlyPlatformAttestationHeaders(t *testing.T) {
 	t.Parallel()
+	servers := map[string]*Server{
+		"health": newTestServer(),
+		"journal": New(Dependencies{
+			App: appregistry.App{
+				ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+				TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+				ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+			},
+			Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+			QuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1, MonthlyTokensPerTransaction: 1}),
+		}),
+	}
+	for name, server := range servers {
+		request := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
+		request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+		request.Header.Set("X-Health-Key-ID", "valid-key")
+		request.Header.Set("X-Health-Assertion", "valid-assertion")
+		request.Header.Set("X-Health-Nonce", "valid-nonce")
+		request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
+		response := httptest.NewRecorder()
+		server.Router().ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("legacy proof authenticated against %s: %d %s", name, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestJournalRejectsConsentScopesOwnedByAnotherApp(t *testing.T) {
+	t.Parallel()
+	privacyManager := &fakePrivacyManager{}
 	server := New(Dependencies{
 		App: appregistry.App{
 			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
 			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
 			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
 		},
-		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
-		QuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1, MonthlyTokensPerTransaction: 1}),
+		Authenticator: fakeAuthenticator{appID: "journal"}, Privacy: privacyManager,
+		AllowedConsentScopes: []string{privacy.ManagedAIScope},
 	})
-	request := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
-	request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
-	request.Header.Set("X-Health-Key-ID", "valid-key")
-	request.Header.Set("X-Health-Assertion", "valid-assertion")
-	request.Header.Set("X-Health-Nonce", "valid-nonce")
-	request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
+	request := authorizedRequest(http.MethodPost, "/v1/privacy/consents", `{"consents":[{"scope":"sensitive_health_ai","documentVersion":"2026-08-24","granted":true}]}`)
 	response := httptest.NewRecorder()
 	server.Router().ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("Health proof authenticated against Journal: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "consent scope is not available") {
+		t.Fatalf("cross-App consent scope was accepted: %d %s", response.Code, response.Body.String())
+	}
+	if len(privacyManager.consents) != 0 {
+		t.Fatal("rejected consent reached persistence")
+	}
+}
+
+func TestGeneratedRouteAnnotatesOperationID(t *testing.T) {
+	t.Parallel()
+	operationID := ""
+	server := New(Dependencies{
+		HTTPMiddleware: []gin.HandlerFunc{func(context *gin.Context) {
+			context.Next()
+			operationID = context.GetString(observability.OperationIDContextKey)
+		}},
+	})
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if response.Code != http.StatusOK || operationID != "getHealth" {
+		t.Fatalf("generated operation identity missing: status=%d operation=%q", response.Code, operationID)
 	}
 }
 
@@ -268,7 +352,7 @@ func TestQuotaStatusRequiresAssertionAndReturnsSubscriptionLimits(t *testing.T) 
 	server := newTestServer()
 	unauthorized := httptest.NewRecorder()
 	unauthorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/ai/quota", nil)
-	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	unauthorizedRequest.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	server.Router().ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
@@ -282,8 +366,52 @@ func TestQuotaStatusRequiresAssertionAndReturnsSubscriptionLimits(t *testing.T) 
 	if !strings.Contains(response.Body.String(), `"dailyLimit":1000000000`) ||
 		!strings.Contains(response.Body.String(), `"monthlyLimit":2000000000`) ||
 		!strings.Contains(response.Body.String(), `"plan":"managed_subscription"`) ||
-		!strings.Contains(response.Body.String(), `"recognitionRemaining":3`) {
+		!strings.Contains(response.Body.String(), `"recognition":{"completed":0,"remaining":3,"reserved":0`) {
 		t.Fatalf("unexpected quota snapshot: %s", response.Body.String())
+	}
+}
+
+func TestHealthQuotaFailsClosedWhenRecognitionDependenciesAreMissing(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	server.freeRecognitionQuotaReader = nil
+	server.recognitionSessions = nil
+
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "quota_unavailable") {
+		t.Fatalf("Health quota did not fail closed: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestJournalQuotaNeverLeaksHealthRecognitionCounters(t *testing.T) {
+	t.Parallel()
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator:              fakeAuthenticator{appID: "journal"},
+		Entitlements:               fakeEntitlements{allowed: true},
+		QuotaReader:                quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 100, MonthlyTokensPerTransaction: 200}),
+		FreeRecognitionQuotaReader: quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 10, MonthlyTokensPerTransaction: 20}),
+		RecognitionSessions:        recognitionquota.NewMemoryStore(),
+	})
+
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "recognition") {
+		t.Fatalf("Journal quota exposed Health counters: %d %s", response.Code, response.Body.String())
+	}
+
+	server.entitlements = fakeEntitlements{allowed: false}
+	response = httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodGet, "/v1/ai/quota", ""))
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "managed_subscription_required") {
+		t.Fatalf("Journal accepted Health free quota dependencies: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -351,9 +479,7 @@ func TestFreeRecognitionCompletionAndCancellationUpdateQuotaIdempotently(t *test
 	server.Router().ServeHTTP(quotaResponse, authorizedRequest(http.MethodGet, "/v1/ai/quota?businessDayStartHour=4&timeZoneIdentifier=Asia%2FShanghai", ""))
 	if quotaResponse.Code != http.StatusOK ||
 		!strings.Contains(quotaResponse.Body.String(), `"plan":"free"`) ||
-		!strings.Contains(quotaResponse.Body.String(), `"recognitionCompleted":1`) ||
-		!strings.Contains(quotaResponse.Body.String(), `"recognitionReserved":0`) ||
-		!strings.Contains(quotaResponse.Body.String(), `"recognitionRemaining":2`) {
+		!strings.Contains(quotaResponse.Body.String(), `"recognition":{"completed":1,"remaining":2,"reserved":0`) {
 		t.Fatalf("unexpected free quota: %d %s", quotaResponse.Code, quotaResponse.Body.String())
 	}
 }
@@ -413,7 +539,7 @@ func TestProductionEntitlementSyncRequiresAssertionAndVerifiedTransaction(t *tes
 		"/v1/entitlements/transactions",
 		strings.NewReader(`{"signedTransaction":"signed-transaction"}`),
 	)
-	unauthorizedRequest.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+	unauthorizedRequest.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	server.Router().ServeHTTP(unauthorized, unauthorizedRequest)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
@@ -905,11 +1031,6 @@ func newTestServer() *Server {
 
 func authorizedRequest(method, path, body string) *http.Request {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
-	request.Header.Set("X-Health-Key-ID", "valid-key")
-	request.Header.Set("X-Health-Assertion", "valid-assertion")
-	request.Header.Set("X-Health-Nonce", "valid-nonce")
-	request.Header.Set("X-Health-Timestamp", "2026-08-02T08:00:00Z")
-	request.Header.Set("X-Health-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
 	request.Header.Set("X-Tellyouwhat-Key-ID", "valid-key")
 	request.Header.Set("X-Tellyouwhat-Assertion", "valid-assertion")
 	request.Header.Set("X-Tellyouwhat-Nonce", "valid-nonce")

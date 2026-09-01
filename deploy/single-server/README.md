@@ -12,7 +12,7 @@ Internet
                                            worker :8081 (private)
 ```
 
-Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 App。`/internal/*` 不对公网开放；gateway、worker 与 admin 只在 Docker network 内通信，只有 Caddy 暴露 80/443。
+Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 App。Health 与 Journal 使用两个显式站点块，通过 Caddy snippet 复用安全 Header 和反向代理配置；以后可以按 App 单独增加限流、超时或上传约束。`/internal/*` 不对公网开放；gateway、worker 与 admin 只在 Docker network 内通信，只有 Caddy 暴露 80/443。
 
 服务器固定目录为 `/opt/tellyouwhat/backend`。该目录包含 `compose.production.yaml`、Caddyfile、未纳入版本控制的 `.env.production` 和 `secrets/`：
 

@@ -1,0 +1,726 @@
+openapi: 3.1.0
+info:
+  title: Health Managed AI API
+  version: 1.0.0
+  description: |
+    Canonical App-specific operations for the 告你健康 managed-AI gateway.
+    The generated public contract also includes the shared PlatformAPI.
+servers:
+- url: https://api.health.tellyouwhat.cn
+  description: Production
+- url: http://127.0.0.1:8080
+  description: Local development
+tags:
+- name: Health
+- name: Media
+- name: AI
+- name: Jobs
+paths:
+  "/v1/media/upload-authorizations":
+    post:
+      operationId: authorizeMediaUpload
+      tags:
+      - Health
+      - Media
+      summary: Authorize a restricted temporary TOS upload
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MediaUploadAuthorizationRequest"
+      responses:
+        '201':
+          description: A restricted temporary upload was authorized.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/MediaUploadAuthorization"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/requests":
+    post:
+      operationId: completeAIRequest
+      tags:
+      - Health
+      - AI
+      summary: Complete a constrained managed-AI request
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AIRequest"
+      responses:
+        '200':
+          description: A schema-validated managed-AI result.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AIResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '426':
+          "$ref": "#/components/responses/UpgradeRequired"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '502':
+          "$ref": "#/components/responses/BadGateway"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/streams":
+    post:
+      operationId: streamAIRequest
+      tags:
+      - Health
+      - AI
+      summary: Stream a constrained managed-AI request as server-sent events
+      description: |
+        Emits `delta`, then one terminal `completed` event. An `error` event can
+        terminate a stream after response headers have already been sent.
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AIRequest"
+      responses:
+        '200':
+          description: A server-sent event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                completion:
+                  value: |-
+                    event: delta
+                    data: {"delta":"..."}
+
+                    event: completed
+                    data: {"requestID":"00000000-0000-4000-8000-000000000000","content":"{}","usage":{"inputTokens":1,"outputTokens":1}}
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '426':
+          "$ref": "#/components/responses/UpgradeRequired"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/recognition-sessions/{id}":
+    delete:
+      operationId: cancelRecognitionSession
+      tags:
+      - Health
+      - AI
+      summary: Release an unfinished free meal-recognition reservation
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Reservation released, or was already absent/completed.
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/recognition-sessions/{id}/complete":
+    post:
+      operationId: completeRecognitionSession
+      tags:
+      - Health
+      - AI
+      summary: Commit one successfully saved free meal-recognition session
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Recognition session committed, including idempotent replays.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RecognitionQuotaSnapshot"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/job-capabilities":
+    post:
+      operationId: issueAIJobCapability
+      tags:
+      - Health
+      - Jobs
+      summary: Issue an App Attest-bound one-time background job capability
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AIRequest"
+      responses:
+        '201':
+          description: A digest-bound one-time job capability.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/JobCapability"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '426':
+          "$ref": "#/components/responses/UpgradeRequired"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/jobs":
+    post:
+      operationId: enqueueAIJob
+      tags:
+      - Health
+      - Jobs
+      summary: Enqueue a background managed-AI job
+      security:
+      - JobCapabilityAuthentication: []
+        JobID: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      - "$ref": "#/components/parameters/JobIDHeader"
+      - "$ref": "#/components/parameters/JobCapabilityHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AIRequest"
+      responses:
+        '202':
+          description: The durable background job was accepted.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AIJob"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '426':
+          "$ref": "#/components/responses/UpgradeRequired"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/ai/jobs/{id}":
+    parameters:
+    - "$ref": "#/components/parameters/JobIDPath"
+    get:
+      operationId: getAIJob
+      tags:
+      - Health
+      - Jobs
+      summary: Read a background job
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      responses:
+        '200':
+          description: Current background job state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AIJob"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+    delete:
+      operationId: cancelAIJob
+      tags:
+      - Health
+      - Jobs
+      summary: Cancel a queued or running background job
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      responses:
+        '204':
+          description: The job was cancelled.
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+components:
+  securitySchemes:
+    JobCapabilityAuthentication:
+      type: apiKey
+      in: header
+      name: X-Health-Job-Capability
+      description: Digest-bound one-time background job capability.
+    JobID:
+      type: apiKey
+      in: header
+      name: X-Health-Job-ID
+      description: Job UUID bound into the one-time capability.
+  parameters:
+    JobIDHeader:
+      in: header
+      name: X-Health-Job-ID
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobCapabilityHeader:
+      in: header
+      name: X-Health-Job-Capability
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    JobIDPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    UpgradeRequired:
+      description: The contract or prompt version is no longer supported.
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: A rate, concurrency, daily, or monthly safety limit was reached.
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+    BadGateway:
+      description: The managed AI provider failed.
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+  schemas:
+    MediaUploadAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - requestID
+      - operation
+      - mediaID
+      - kind
+      - mimeType
+      - sha256
+      - sizeBytes
+      properties:
+        requestID:
+          type: string
+          format: uuid
+        operation:
+          "$ref": "#/components/schemas/AIOperation"
+        mediaID:
+          type: string
+          minLength: 1
+          maxLength: 96
+        kind:
+          type: string
+          enum:
+          - image
+          - audio
+        mimeType:
+          type: string
+          enum:
+          - image/jpeg
+          - image/heic
+          - image/png
+          - audio/m4a
+          - audio/mp4
+          - audio/mpeg
+          - audio/wav
+        sha256:
+          "$ref": "#/components/schemas/SHA256"
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 26214400
+        recognitionSession:
+          "$ref": "#/components/schemas/RecognitionSessionContext"
+    MediaUploadAuthorization:
+      type: object
+      additionalProperties: false
+      required:
+      - objectID
+      - uploadURL
+      - requiredHeaders
+      - expiresAt
+      properties:
+        objectID:
+          type: string
+        uploadURL:
+          type: string
+          format: uri
+        requiredHeaders:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    AIRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - requestID
+      - operation
+      - contractVersion
+      - promptVersion
+      - prompt
+      - responseSchema
+      - options
+      - media
+      - semanticSignature
+      properties:
+        requestID:
+          type: string
+          format: uuid
+        operation:
+          "$ref": "#/components/schemas/AIOperation"
+        contractVersion:
+          type: string
+          const: ai-request-v1
+        promptVersion:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 524288
+        responseSchema:
+          type: object
+          description: Inline strict JSON Schema selected by the registered prompt
+            contract.
+          additionalProperties: true
+        options:
+          "$ref": "#/components/schemas/AIRequestOptions"
+        media:
+          type: array
+          maxItems: 4
+          items:
+            "$ref": "#/components/schemas/AIMedia"
+        semanticSignature:
+          type: string
+          minLength: 1
+          maxLength: 256
+        recognitionSession:
+          "$ref": "#/components/schemas/RecognitionSessionContext"
+    RecognitionSessionContext:
+      type: object
+      additionalProperties: false
+      required:
+      - sessionID
+      - businessDayStartHour
+      - timeZoneIdentifier
+      properties:
+        sessionID:
+          type: string
+          format: uuid
+        businessDayStartHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        timeZoneIdentifier:
+          type: string
+          minLength: 1
+          maxLength: 64
+    AIOperation:
+      type: string
+      enum:
+      - voice_transcription
+      - meal_photo_capture
+      - hydration_cup_estimate
+      - meal_text_capture
+      - meal_decision
+      - diet_analysis
+      - health_nutrition_analysis
+      - health_behavior_analysis
+    AIRequestOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        temperature:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 2
+        stream:
+          type: boolean
+          default: false
+        reasoningEffort:
+          type: string
+          enum:
+          - minimal
+          - low
+          - medium
+          - high
+          - max
+        webSearchEnabled:
+          type: boolean
+          default: false
+    AIMedia:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - kind
+      - mimeType
+      - objectID
+      - sha256
+      - sizeBytes
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 96
+        kind:
+          type: string
+          enum:
+          - image
+          - audio
+        mimeType:
+          type: string
+        objectID:
+          type: string
+          minLength: 1
+        sha256:
+          "$ref": "#/components/schemas/SHA256"
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 26214400
+    SHA256:
+      type: string
+      pattern: "^[a-f0-9]{64}$"
+    TokenUsage:
+      type: object
+      additionalProperties: false
+      required:
+      - inputTokens
+      - outputTokens
+      properties:
+        inputTokens:
+          type: integer
+          minimum: 0
+        outputTokens:
+          type: integer
+          minimum: 0
+    AIResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - requestID
+      - content
+      - usage
+      properties:
+        requestID:
+          type: string
+          format: uuid
+        content:
+          type: string
+        usage:
+          "$ref": "#/components/schemas/TokenUsage"
+    JobCapability:
+      type: object
+      additionalProperties: false
+      required:
+      - jobID
+      - token
+      - expiresAt
+      properties:
+        jobID:
+          type: string
+          format: uuid
+        token:
+          type: string
+          minLength: 1
+        expiresAt:
+          type: string
+          format: date-time
+    AIJob:
+      type: object
+      additionalProperties: false
+      required:
+      - jobID
+      - requestID
+      - status
+      - createdAt
+      - updatedAt
+      properties:
+        jobID:
+          type: string
+          format: uuid
+        requestID:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          - cancelled
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        content:
+          type: string
+        usage:
+          "$ref": "#/components/schemas/TokenUsage"
+        errorCategory:
+          type: string

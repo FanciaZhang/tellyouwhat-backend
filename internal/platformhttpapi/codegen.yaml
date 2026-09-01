@@ -1,4 +1,4 @@
-package: journalhttpapi
+package: platformhttpapi
 output: generated.go
 generate:
   models: true
@@ -6,7 +6,6 @@ generate:
   strict-server: true
   embedded-spec: true
 output-options:
-  exclude-tags:
-    - Platform
+  skip-prune: true
   user-templates:
     imports.tmpl: templates/imports.tmpl

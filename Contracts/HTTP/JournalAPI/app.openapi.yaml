@@ -1,0 +1,264 @@
+openapi: 3.1.0
+info:
+  title: Journal Managed AI API
+  version: 1.0.0
+  description: >-
+    Canonical App-specific operations for the 告你手记 managed-AI gateway.
+    The generated public contract also includes the shared PlatformAPI.
+servers:
+- url: https://api.journal.tellyouwhat.cn
+  description: Production
+- url: http://127.0.0.1:8080
+  description: Local development
+tags:
+- name: Journal
+- name: AI
+paths:
+  "/v1/ai/operations/journal.organize/responses":
+    post:
+      operationId: organizeJournal
+      tags:
+      - Journal
+      - AI
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizeRequest"
+      responses:
+        '200':
+          description: A validated set of tags and book suggestions.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/OrganizeResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '502':
+          "$ref": "#/components/responses/BadGateway"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+components:
+  responses:
+    TooManyRequests:
+      description: Quota or concurrency limit reached.
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+    BadGateway:
+      description: Provider failed or returned an invalid result.
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+  schemas:
+    OrganizeRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - requestID
+      - contractVersion
+      - contentHash
+      - title
+      - body
+      - existingTags
+      - rejectedTagNames
+      - books
+      properties:
+        requestID:
+          type: string
+          format: uuid
+        contractVersion:
+          type: string
+          const: journal-organize-v1
+        contentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        title:
+          type: string
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 60000
+        existingTags:
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+        rejectedTagNames:
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+        books:
+          type: array
+          maxItems: 128
+          items:
+            "$ref": "#/components/schemas/BookContext"
+    BookContext:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - description
+      - containsEntry
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 600
+        containsEntry:
+          type: boolean
+    OrganizeResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - requestID
+      - contentHash
+      - analysisVersion
+      - tags
+      - existingBookRecommendations
+      - newBookSuggestions
+      - quota
+      properties:
+        requestID:
+          type: string
+          format: uuid
+        contentHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        analysisVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        tags:
+          type: array
+          maxItems: 8
+          items:
+            "$ref": "#/components/schemas/Tag"
+        existingBookRecommendations:
+          type: array
+          maxItems: 3
+          items:
+            "$ref": "#/components/schemas/ExistingBookRecommendation"
+        newBookSuggestions:
+          type: array
+          maxItems: 2
+          items:
+            "$ref": "#/components/schemas/NewBookSuggestion"
+        quota:
+          "$ref": "#/components/schemas/OrganizeQuota"
+    Tag:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        type:
+          type: string
+          enum:
+          - person
+          - place
+          - organization
+          - event
+          - topic
+          - mood
+          - other
+    ExistingBookRecommendation:
+      type: object
+      additionalProperties: false
+      required:
+      - bookID
+      - reason
+      properties:
+        bookID:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 240
+    NewBookSuggestion:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - description
+      - reason
+      - relatedTags
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 600
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 240
+        relatedTags:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+    OrganizeQuota:
+      type: object
+      additionalProperties: false
+      required:
+      - dailyTokensRemaining
+      - monthlyTokensRemaining
+      - available
+      properties:
+        dailyTokensRemaining:
+          type: integer
+          minimum: 0
+        monthlyTokensRemaining:
+          type: integer
+          minimum: 0
+        available:
+          type: boolean

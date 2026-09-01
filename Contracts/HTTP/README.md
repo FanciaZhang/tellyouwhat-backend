@@ -1,8 +1,14 @@
 # Tellyouwhat HTTP contracts
 
-`HealthAPI/openapi.yaml` and `JournalAPI/openapi.yaml` are the canonical public
-gateway contracts. `AdminAPI/openapi.yaml` and `WorkerAPI/openapi.yaml` are
-server-only contracts for the other HTTP runtimes. The contracts generate:
+`PlatformAPI/openapi.yaml` is the canonical contract for capabilities shared
+by every App. `HealthAPI/app.openapi.yaml` and `JournalAPI/app.openapi.yaml`
+contain only App-specific operations. The `openapi-compose` build tool merges
+those sources into the generated, self-contained `HealthAPI/openapi.yaml` and
+`JournalAPI/openapi.yaml` public client contracts. Never edit those two bundles
+directly.
+
+`AdminAPI/openapi.yaml` and `WorkerAPI/openapi.yaml` are server-only contracts
+for the other HTTP runtimes. The contracts generate:
 
 - the Gin router and Go wire models in the matching `internal/*httpapi`
   package; public App and worker runtimes also implement the generated strict
@@ -12,14 +18,15 @@ server-only contracts for the other HTTP runtimes. The contracts generate:
 - the future TypeScript Fetch client through the pinned OpenAPI Generator
   command documented below.
 
-Do not edit generated Go or client code. Change the OpenAPI document, regenerate,
-and let compile failures identify every server and client implementation that
-must be updated.
+Do not edit generated Go, generated public bundles, or client code. Change the
+Platform or App source IDL, regenerate, and let compile failures identify every
+server and client implementation that must be updated. Component and path
+collisions fail composition instead of silently overriding a definition.
 
 ## Go server
 
 ```sh
-go generate ./internal/httpapi ./internal/journalhttpapi ./internal/adminhttpapi ./internal/workerhttpapi
+make generate-api
 ```
 
 ## Swift client

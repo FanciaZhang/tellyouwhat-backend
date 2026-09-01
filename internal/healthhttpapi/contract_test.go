@@ -1,4 +1,4 @@
-package httpapi
+package healthhttpapi
 
 import (
 	"context"
@@ -16,7 +16,7 @@ func TestEmbeddedContractIsValidAndEveryOperationIsNamed(t *testing.T) {
 		t.Fatalf("validate embedded OpenAPI contract: %v", err)
 	}
 
-	const expectedOperationCount = 20
+	const expectedOperationCount = 9
 	operationIDs := make(map[string]struct{}, expectedOperationCount)
 	operationCount := 0
 	for path, item := range document.Paths.Map() {

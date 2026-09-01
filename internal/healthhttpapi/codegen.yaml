@@ -1,4 +1,4 @@
-package: httpapi
+package: healthhttpapi
 output: generated.go
 generate:
   models: true
@@ -6,6 +6,7 @@ generate:
   strict-server: true
   embedded-spec: true
 output-options:
-  skip-prune: true
+  exclude-tags:
+    - Platform
   user-templates:
     imports.tmpl: templates/imports.tmpl

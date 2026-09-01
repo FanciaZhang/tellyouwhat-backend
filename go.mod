@@ -13,6 +13,7 @@ require (
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.8
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

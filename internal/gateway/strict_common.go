@@ -14,10 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
-	"github.com/tellyouwhat/backend/internal/httpapi"
+	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
-	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -36,8 +36,14 @@ func newAPIFailure(status int, code, message, requestID string) *apiFailure {
 	return &apiFailure{status: status, code: code, message: message, requestID: strings.ToLower(requestID)}
 }
 
-func (failure *apiFailure) response() httpapi.ErrorResponse {
-	return httpapi.ErrorResponse{Error: httpapi.ErrorDetail{
+func (failure *apiFailure) platformResponse() platformhttpapi.ErrorResponse {
+	return platformhttpapi.ErrorResponse{Error: platformhttpapi.ErrorDetail{
+		Code: failure.code, Message: failure.message, RequestID: failure.requestID,
+	}}
+}
+
+func healthErrorResponse(failure *apiFailure) healthhttpapi.ErrorResponse {
+	return healthhttpapi.ErrorResponse{Error: healthhttpapi.ErrorDetail{
 		Code: failure.code, Message: failure.message, RequestID: failure.requestID,
 	}}
 }
@@ -57,18 +63,14 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 	}
 	ginContext := strictGinContext(ctx)
 	body := rawRequestBody(ginContext)
-	headerPrefix := "X-Health-"
-	if server.app.ID == appregistry.Journal {
-		headerPrefix = "X-Tellyouwhat-"
-	}
 	proof := RequestProof{
 		Method:     ginContext.Request.Method,
 		Path:       ginContext.Request.URL.EscapedPath(),
 		RequestID:  requestIDString,
-		KeyID:      ginContext.GetHeader(headerPrefix + "Key-ID"),
-		Assertion:  ginContext.GetHeader(headerPrefix + "Assertion"),
-		Nonce:      ginContext.GetHeader(headerPrefix + "Nonce"),
-		Timestamp:  ginContext.GetHeader(headerPrefix + "Timestamp"),
+		KeyID:      ginContext.GetHeader("X-Tellyouwhat-Key-ID"),
+		Assertion:  ginContext.GetHeader("X-Tellyouwhat-Assertion"),
+		Nonce:      ginContext.GetHeader("X-Tellyouwhat-Nonce"),
+		Timestamp:  ginContext.GetHeader("X-Tellyouwhat-Timestamp"),
 		BodySHA256: contracts.BodySHA256(body),
 	}
 	principal, err := server.authenticator.Authenticate(ctx, proof)
@@ -113,7 +115,7 @@ func (server *Server) apiManagedEntitlement(ctx context.Context, principal Princ
 func (server *Server) apiValidateAIRequest(
 	ctx context.Context,
 	requestID uuid.UUID,
-	body *httpapi.AIRequest,
+	body *healthhttpapi.AIRequest,
 ) (contracts.Request, []byte, Principal, bool, *apiFailure) {
 	requestIDString := requestID.String()
 	if server.authenticator == nil || server.entitlements == nil || server.quota == nil || server.provider == nil || server.contracts == nil || server.media == nil || server.usage == nil {
@@ -145,7 +147,7 @@ func (server *Server) apiValidateAIRequest(
 	return artifact, rawRequestBody(strictGinContext(ctx)), principal, managed, nil
 }
 
-func apiRequest(body *httpapi.AIRequest, requestID string) (contracts.Request, *apiFailure) {
+func apiRequest(body *healthhttpapi.AIRequest, requestID string) (contracts.Request, *apiFailure) {
 	if body == nil {
 		return contracts.Request{}, newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request body is required", requestID)
 	}
@@ -387,22 +389,22 @@ func cleanupManagedMedia(ctx context.Context, provider Provider, values []contra
 	cleaner.CleanupManagedMedia(cleanupContext, values)
 }
 
-func apiJob(job jobs.Job) (httpapi.AIJob, error) {
+func apiJob(job jobs.Job) (healthhttpapi.AIJob, error) {
 	jobID, err := uuid.Parse(job.ID)
 	if err != nil {
-		return httpapi.AIJob{}, fmt.Errorf("parse job ID: %w", err)
+		return healthhttpapi.AIJob{}, fmt.Errorf("parse job ID: %w", err)
 	}
 	requestID, err := uuid.Parse(job.RequestID)
 	if err != nil {
-		return httpapi.AIJob{}, fmt.Errorf("parse job request ID: %w", err)
+		return healthhttpapi.AIJob{}, fmt.Errorf("parse job request ID: %w", err)
 	}
-	value := httpapi.AIJob{
-		JobID: jobID, RequestID: requestID, Status: httpapi.AIJobStatus(job.Status),
+	value := healthhttpapi.AIJob{
+		JobID: jobID, RequestID: requestID, Status: healthhttpapi.AIJobStatus(job.Status),
 		CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt,
 	}
 	if job.Status == jobs.StatusSucceeded {
 		value.Content = &job.Result
-		value.Usage = &httpapi.TokenUsage{InputTokens: job.InputTokens, OutputTokens: job.OutputTokens}
+		value.Usage = &healthhttpapi.TokenUsage{InputTokens: job.InputTokens, OutputTokens: job.OutputTokens}
 	}
 	if job.Status == jobs.StatusFailed {
 		value.ErrorCategory = &job.FailureCategory

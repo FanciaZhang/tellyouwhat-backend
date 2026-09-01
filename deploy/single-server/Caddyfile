@@ -3,7 +3,7 @@
     email {$ACME_EMAIL}
 }
 
-{$HEALTH_API_DOMAIN}, {$JOURNAL_API_DOMAIN} {
+(public_api) {
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
@@ -18,6 +18,14 @@
         header_up X-Real-IP {remote_host}
         flush_interval -1
     }
+}
+
+{$HEALTH_API_DOMAIN} {
+    import public_api
+}
+
+{$JOURNAL_API_DOMAIN} {
+    import public_api
 }
 
 {$ADMIN_DOMAIN} {

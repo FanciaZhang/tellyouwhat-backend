@@ -8,8 +8,8 @@ contract responsibilities stay separate:
 - OpenAPI owns paths, methods, operation IDs, wire models, status codes, and
   authentication header declarations.
 - `oapi-codegen` generates the Gin router and Go wire types for every HTTP
-  runtime. Public App APIs and the worker implement its strict server
-  interface. The administration service implements the generated Gin server
+  runtime. One shared Platform handler and each App-specific handler implement
+  their generated strict server interfaces. The administration service implements the generated Gin server
   interface directly because WebAuthn verification consumes the original HTTP
   credential request.
 - Swift OpenAPI Generator generates the Apple client and types at build time.
@@ -27,8 +27,13 @@ OpenAPI runtime.
 
 ## Contract boundaries
 
-`Contracts/HTTP/HealthAPI/openapi.yaml` and
-`Contracts/HTTP/JournalAPI/openapi.yaml` are the public transport contracts.
+`Contracts/HTTP/PlatformAPI/openapi.yaml` owns shared public paths, schemas,
+security schemes, and the vendor-wide `X-Tellyouwhat-*` headers.
+`Contracts/HTTP/HealthAPI/app.openapi.yaml` and
+`Contracts/HTTP/JournalAPI/app.openapi.yaml` own only product-specific paths and
+components. The self-contained `HealthAPI/openapi.yaml` and
+`JournalAPI/openapi.yaml` files are generated client artifacts, not additional
+sources of truth.
 `Contracts/HTTP/AdminAPI/openapi.yaml` and
 `Contracts/HTTP/WorkerAPI/openapi.yaml` are isolated internal contracts; they
 are never included in App clients.
@@ -56,7 +61,8 @@ adopts a generator with compatible typed-SSE output.
 
 ## Adding an endpoint
 
-1. Add the operation to the canonical OpenAPI document with a stable
+1. Add a shared operation to PlatformAPI or a product operation to the matching
+   App IDL with a stable
    `operationId`, closed request/response schemas, and explicit error statuses.
 2. Run `make generate-api` in `Backend`.
 3. Implement the newly required generated Go server method. Public App and
@@ -73,10 +79,15 @@ the check must not be bypassed by maintaining an alternate schema.
 
 ## Multiple apps
 
-Each app gets a separately named public OpenAPI document and generated client
-package. Admin and worker have separately named, server-only OpenAPI documents,
-so public app clients never receive internal operations or credentials. The Go
-standard `http.Server` remains the network host for Gin, and the gateway's small
-Host mux selects one App before dispatch because Health and Journal intentionally
-reuse paths. Neither layer defines endpoints or adapts legacy business handlers;
-all endpoint registration comes from generated Gin routers.
+Each App gets a separately named, composed public OpenAPI document and generated
+client package. The Host mux selects one App before authentication, then that
+App's Gin engine registers the generated Platform router and exactly one
+generated product router. Reusing `/v1/attest/*`, `/v1/privacy/*`, and other
+platform paths across domains is intentional; their contract and implementation
+remain singular. Adding an App costs one product IDL and handler rather than a
+copy of every platform endpoint.
+
+Every gateway access log includes `app_id`, `host`, `operation_id`, and
+`request_id`, so identical paths on different domains remain distinguishable.
+Admin and worker keep separately named, server-only OpenAPI documents, and no
+public App client receives their operations or credentials.

@@ -314,7 +314,7 @@ func buildAppHandler(
 			PrivacyURL: appConfig.Product.PrivacyURL, TermsURL: appConfig.Product.TermsURL,
 			PrivacyChoicesURL: appConfig.Product.PrivacyChoicesURL, SupportURL: appConfig.Product.SupportURL,
 		},
-		HTTPMiddleware: observability.Middleware(logger),
+		HTTPMiddleware: observability.MiddlewareForApp(logger, string(app.ID)),
 	}
 	if platform.TrustedIPHeader != "" {
 		dependencies.IPResolver = func(request *http.Request) string {
@@ -327,6 +327,10 @@ func buildAppHandler(
 
 	switch app.ID {
 	case appregistry.Health:
+		dependencies.AllowedConsentScopes = []string{
+			privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+			privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
+		}
 		manifest, err := contracts.LoadManifest(appConfig.SchemaManifestPath)
 		if err != nil {
 			return nil, err
@@ -357,6 +361,7 @@ func buildAppHandler(
 		dependencies.Contracts = manifest
 		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
 		model := journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
