@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/tellyouwhat-ai
+  IMAGE_PREFIX: ghcr.io/fanciazhang/tellyouwhat-ai
 
 jobs:
   verify:
