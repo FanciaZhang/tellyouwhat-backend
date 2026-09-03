@@ -38,7 +38,8 @@ https://api.journal.tellyouwhat.cn/v1/app-store/notifications
 
 Repository variable:
 
-- `PRODUCTION_DEPLOY_ENABLED`：首次公网验收前保持 `false`；设为 `true` 后，`main` push 自动执行完整公网发布。该变量用于 job 启动条件，必须设置在仓库级。
+- `PRODUCTION_DEPLOY_ENABLED`：设为 `true` 后，`main` push 自动发布，定时运维检查同时启用。
+- `PRODUCTION_ACCEPTANCE_STAGE`：`internal` 自动发布并验收服务器内部服务；`public` 额外验收三个公网 HTTPS 入口。备案完成前使用 `internal`，备案和首次公网验收完成后切换为 `public`。这两个变量必须设置在仓库级。
 
 Environment variables:
 
@@ -64,8 +65,8 @@ Pull Request 与 `main` push 会执行：
 1. 使用独立 MySQL 8.4、Redis 8 的 Go 测试、`go vet`、所有命令构建、OpenAPI 生成一致性检查和 Swift contract 测试；
 2. gateway、worker、admin、adminctl、migrate、maintenance 六个容器镜像构建；
 3. 非 PR 构建发布提交 SHA 和 `main` 标签到 GHCR；
-4. 仅当 production gate 开启或手动选择部署阶段时，上传 Compose、Caddyfile、部署脚本、生产环境与四个 Apple 私钥；
-5. 服务器拉取绑定提交 SHA 的镜像集并运行迁移，启动 gateway、worker、admin，验证两个 App 的就绪状态、Worker 存活和管理后台就绪状态；
+4. 仅当 production gate 开启或手动选择部署阶段时，将 Compose、Caddyfile、部署脚本、生产环境与四个 Apple 私钥上传到独立候选目录；
+5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证两个 App、Worker 和管理后台；
 6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 验证三个域名的真实 DNS、可信 TLS、HTTP 200 和 `status: ready` 响应。
 
 手动运行仅允许 `main` 分支，`deployment` 输入有三个值：
@@ -82,9 +83,9 @@ gh workflow run backend.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f
 
 内部验收不依赖 DNS 或证书签发，不启动 Caddy，也不占用公网 80/443。已运行的公网代理不会因选择内部验收而关闭；该模式仍然更新同一套应用服务。
 
-内部验收通过后，部署脚本把提交 SHA 和镜像仓库前缀保存到服务器 `.env.production`。后续 `adminctl` 和 `maintenance` 使用同一版本镜像；内部验收失败不会更新保存的版本。
+内部验收通过后，部署脚本把提交 SHA 和镜像仓库前缀保存到服务器 `.env.production`。后续 `adminctl` 和 `maintenance` 使用同一版本镜像。迁移失败不会覆盖活动配置；切换后的就绪检查失败会恢复先前的镜像、环境、Compose 和密钥文件，并再次检查恢复后的服务。
 
-首次部署前，服务器安装 Docker Engine、Compose 插件、curl、jq、OpenSSL，并创建固定目录。腾讯云大陆实例可使用内网 Docker Hub 镜像加速和腾讯 Go module proxy：
+首次部署前，服务器安装 Docker Engine、Compose 插件、Python 3.10 以上、curl、jq、OpenSSL，并创建固定目录。腾讯云大陆实例可使用内网 Docker Hub 镜像加速和腾讯 Go module proxy：
 
 ```sh
 sudo install -d -m 755 /opt/tellyouwhat/backend/deploy/single-server
@@ -136,6 +137,31 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 
 ## 6. Operations
 
-每天运行 maintenance。托管 MySQL 与 Redis 不属于 Compose 项目，更新或清理应用容器不会删除数据库。首发先使用云数据库自动备份；扩大规模时只需水平扩展无状态 gateway/worker，数据库地址和 App 合约无需改变。
+发布成功后安装三个 systemd timer，均使用北京时间：每日 03:05 加密备份、每日 03:25 保留期清理、周日 04:05 隔离恢复演练，允许两分钟随机延迟。补跑由 `Persistent=true` 管理。运行记录保存在权限受限的 `.operations`；备份位于 `/var/backups/tellyouwhat`，保留 14 天。
+
+清理任务先删除过期 TOS 对象，再删除数据库元数据；存储故障会保留记录以便重试。身份清理必须同时满足 30 天未活动、无有效权益、无待删除媒体，且仅操作所属 App 的身份。
+
+`Backend Operations` 每 15 分钟从 GitHub Runner 通过固定 SSH host key 检查服务及依赖、磁盘余量和备份/清理/恢复记录的新鲜度。失败产生失败的 Actions 运行和错误注释；收件人应在 GitHub 通知设置中启用 Actions 失败通知。公开仓库长时间无活动时 GitHub 可能暂停计划运行，服务器本地的三个 timer 不受影响。云平台主机告警可作为独立通道。
+
+手动检查和演练：
+
+```sh
+gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f operation=health
+gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f operation=backup
+gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f operation=restore
+gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f operation=providers
+```
+
+`restore` 校验备份的 HMAC、文件摘要、表集合和每张表的行数，导入临时 MySQL 容器的 tmpfs；该容器无网络和生产数据库挂载，结束后删除。`providers` 使用少量合成文本和图片验证 TOS 私有读写及 Health/Journal 方舟模型，不执行用户购买或修改真实权益。
+
+镜像及配置回滚：
+
+```sh
+gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f operation=rollback
+```
+
+回滚仅恢复上一版已验证的代码与运行配置，不回退数据库迁移。迁移必须保持前后版本兼容；涉及破坏性 schema 变更时应另行准备数据迁移与恢复方案。前一版恢复失败时，会重新启动当前版并检查就绪。再次执行回滚可以切回刚才的版本。每次成功的发布记录均包含两版的准确 SHA。
+
+托管 MySQL 与 Redis 不属于 Compose 项目，更新或清理应用容器不会删除数据库。服务器重启后 Docker 自动启动三个应用容器，systemd 恢复定时任务。依赖故障应由就绪检查报错并保留失败任务的重试状态；不要用删除数据库或清空队列处理依赖故障。
 
 首次管理员创建与应急恢复命令见 [`../single-server/README.md`](../single-server/README.md)。

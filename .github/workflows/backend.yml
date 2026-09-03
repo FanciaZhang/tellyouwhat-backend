@@ -74,7 +74,7 @@ jobs:
       - run: swift test --package-path Contracts/HTTP
       - run: bash deploy/tencent/deploy-production_test.sh
       - run: bash deploy/tencent/verify-public_test.sh
-      - name: Test backup and restore protections
+      - name: Test operations and rollback protections
         run: python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
       - name: Validate deployment files
         run: |
@@ -190,7 +190,7 @@ jobs:
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/compose.production.yaml"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/operations.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/secrets/"
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$remote_stage" <<'REMOTE'
@@ -198,32 +198,42 @@ jobs:
           stage="$1"
           backend_dir=/opt/tellyouwhat/backend
           install -d -m 750 "$backend_dir/secrets"
-          install -d -m 755 "$backend_dir/deploy/single-server" "$backend_dir/deploy/tencent"
-          install -m 644 "$stage/compose.production.yaml" "$backend_dir/compose.production.yaml"
-          install -m 644 "$stage/deploy/single-server/Caddyfile" "$backend_dir/deploy/single-server/Caddyfile"
-          install -m 644 "$stage/deploy/single-server/Caddyfile.external" "$backend_dir/deploy/single-server/Caddyfile.external"
-          install -m 755 "$stage/deploy/tencent/"*.sh "$backend_dir/deploy/tencent/"
-          install -m 600 "$stage/.env.production" "$backend_dir/.env.production"
-          install -m 640 "$stage/secrets/"*.p8 "$backend_dir/secrets/"
-          sudo -n chgrp 65532 "$backend_dir/secrets" "$backend_dir/secrets/"*.p8
-          rm -rf -- "$stage"
+          chmod 600 "$stage/.env.production"
+          chmod 750 "$stage/secrets"
+          chmod 640 "$stage/secrets/"*.p8
+          chmod 755 "$stage/deploy/tencent/"*.sh
+          sudo -n chgrp 65532 "$backend_dir/secrets" "$stage/secrets" "$stage/secrets/"*.p8
+          sudo -n chmod 2750 "$backend_dir/secrets"
           REMOTE
+      - name: Back up database before migration
+        env:
+          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
+        run: |
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" python3 "/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}/deploy/tencent/operations.py" backup
       - name: Deploy and verify internal services
         env:
           DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
           DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEPLOYMENT_MODE: ${{ github.event_name == 'push' && 'public' || inputs.deployment }}
+          DEPLOYMENT_MODE: ${{ github.event_name == 'push' && (vars.PRODUCTION_ACCEPTANCE_STAGE || 'internal') || inputs.deployment }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" /opt/tellyouwhat/backend/deploy/tencent/deploy-production.sh "${GITHUB_SHA}" "${IMAGE_PREFIX}" "$DEPLOYMENT_MODE"
+          remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "$remote_stage/deploy/tencent/deploy-production.sh" "${GITHUB_SHA}" "${IMAGE_PREFIX}" "$DEPLOYMENT_MODE" "$remote_stage"
           printf 'Internal services verified for `%s`. Requested stage: `%s`.\n' "$GITHUB_SHA" "$DEPLOYMENT_MODE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Enable scheduled operations
+        env:
+          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
+        run: |
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash /opt/tellyouwhat/backend/deploy/tencent/install-operations.sh
 
   verify-public:
     needs: deploy
     if: >-
       needs.deploy.result == 'success' &&
-      (github.event_name == 'push' || inputs.deployment == 'public')
+      ((github.event_name == 'push' && vars.PRODUCTION_ACCEPTANCE_STAGE == 'public') || inputs.deployment == 'public')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

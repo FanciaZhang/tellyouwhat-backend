@@ -1,0 +1,55 @@
+name: Backend Operations
+
+on:
+  schedule:
+    - cron: '13,28,43,58 * * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Production operation (restore uses an isolated temporary database)
+        required: true
+        default: health
+        type: choice
+        options: [health, backup, restore, maintenance, providers, rollback]
+
+permissions:
+  contents: read
+
+jobs:
+  operate:
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    concurrency:
+      group: backend-production
+      cancel-in-progress: false
+    steps:
+      - name: Configure pinned SSH connection
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/tellyouwhat-production
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/tellyouwhat-production
+      - name: Run and verify operation
+        env:
+          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
+          OPERATION: ${{ github.event_name == 'schedule' && 'health' || inputs.operation }}
+        run: |
+          case "$OPERATION" in
+            health|backup|restore|maintenance|providers) script=operations.py ;;
+            rollback) script=release.py ;;
+            *) exit 2 ;;
+          esac
+          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            "$DEPLOY_USER@$DEPLOY_HOST" python3 "/opt/tellyouwhat/backend/deploy/tencent/$script" "$OPERATION" | tee "$RUNNER_TEMP/operation.json"
+          cat "$RUNNER_TEMP/operation.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report failed operational check
+        if: failure()
+        run: |
+          echo '::error::Backend operation failed. Inspect the failed step and private server diagnostics under /opt/tellyouwhat/backend/.operations.'
+          echo 'Backend operation failed. The failed workflow participates in GitHub Actions notifications; production credentials and records are not uploaded.' >> "$GITHUB_STEP_SUMMARY"
