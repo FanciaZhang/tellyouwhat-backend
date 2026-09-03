@@ -203,6 +203,9 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	if usageCount != 1 || outboxCount != 0 {
 		t.Fatalf("atomic job completion: usage=%d outbox=%d", usageCount, outboxCount)
 	}
+	t.Run("maintenance_media_retry_and_app_isolation", func(t *testing.T) {
+		testMaintenance(t, ctx, database, now, key)
+	})
 	t.Run("reject_legacy_migration_collision", func(t *testing.T) {
 		testLegacyMigrationCollision(t, ctx, database)
 	})
