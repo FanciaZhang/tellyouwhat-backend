@@ -203,6 +203,64 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	if usageCount != 1 || outboxCount != 0 {
 		t.Fatalf("atomic job completion: usage=%d outbox=%d", usageCount, outboxCount)
 	}
+	t.Run("reject_legacy_migration_collision", func(t *testing.T) {
+		testLegacyMigrationCollision(t, ctx, database)
+	})
+}
+
+func testLegacyMigrationCollision(t *testing.T, ctx context.Context, database *sql.DB) {
+	t.Helper()
+	if _, err := database.ExecContext(ctx, `
+        RENAME TABLE apps TO migration_guard_saved_apps,
+                     app_attest_keys TO migration_guard_saved_keys`); err != nil {
+		t.Fatal(err)
+	}
+	legacyCreated := false
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if legacyCreated {
+			if _, err := database.ExecContext(cleanupCtx, `DROP TABLE app_attest_keys`); err != nil {
+				t.Errorf("remove legacy test fixture: %v", err)
+				return
+			}
+		}
+		if _, err := database.ExecContext(cleanupCtx, `
+            RENAME TABLE migration_guard_saved_apps TO apps,
+                         migration_guard_saved_keys TO app_attest_keys`); err != nil {
+			t.Errorf("restore shared test schema: %v", err)
+		}
+	}()
+	if _, err := database.ExecContext(ctx, `
+        CREATE TABLE app_attest_keys (key_id VARCHAR(64) PRIMARY KEY, public_key_der LONGBLOB NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	legacyCreated = true
+	if _, err := database.ExecContext(ctx, `INSERT INTO app_attest_keys VALUES ('legacy-test-key', 'legacy-test-value')`); err != nil {
+		t.Fatal(err)
+	}
+	var beforeMigrations int
+	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&beforeMigrations); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Run(ctx, database); err == nil || !strings.Contains(err.Error(), "legacy single-app schema") {
+		t.Fatalf("expected legacy schema rejection despite an applied initial migration, got %v", err)
+	}
+	var storedKey string
+	if err := database.QueryRowContext(ctx, `SELECT public_key_der FROM app_attest_keys WHERE key_id = 'legacy-test-key'`).Scan(&storedKey); err != nil || storedKey != "legacy-test-value" {
+		t.Fatalf("legacy data must remain unchanged: value=%q err=%v", storedKey, err)
+	}
+	var appsTables, afterMigrations int
+	if err := database.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'apps'`).Scan(&appsTables); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&afterMigrations); err != nil {
+		t.Fatal(err)
+	}
+	if appsTables != 0 || afterMigrations != beforeMigrations {
+		t.Fatalf("legacy rejection mutated the schema: apps=%d migrations=%d (before %d)", appsTables, afterMigrations, beforeMigrations)
+	}
 }
 
 func testAdminPersistence(t *testing.T, ctx context.Context, database *sql.DB, now time.Time, appID string) {

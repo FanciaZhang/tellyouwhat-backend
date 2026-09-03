@@ -96,7 +96,7 @@ sudo chown -R "$USER":"$USER" /opt/tellyouwhat/backend
 
 ## 5. Acceptance
 
-MySQL 必须使用符合共享后端 schema 的独立数据库。旧单 App 数据库不能直接作为共享后端数据库；不要通过删除旧表或迁移记录来使检查通过。
+MySQL 必须使用符合共享后端 schema 的独立数据库。迁移会先检查核心业务表的 `app_id` 隔离列；即使迁移编号已经登记，也会拒绝旧单 App schema，且不修改其表结构或迁移记录。旧单 App 数据库不能直接作为共享后端数据库；不要通过删除旧表或迁移记录来使检查通过。
 
 先验证私网依赖：
 

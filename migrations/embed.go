@@ -30,6 +30,22 @@ func Run(ctx context.Context, database *sql.DB) error {
 	defer func() {
 		_, _ = connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, migrationLockName)
 	}()
+	var unscopedTables int
+	if err := connection.QueryRowContext(ctx, `
+        SELECT COUNT(*) FROM information_schema.tables AS existing
+        WHERE existing.table_schema = DATABASE()
+          AND existing.table_name IN ('apps', 'app_attest_keys', 'managed_entitlements')
+          AND NOT EXISTS (
+              SELECT 1 FROM information_schema.columns AS columns_in_table
+              WHERE columns_in_table.table_schema = existing.table_schema
+                AND columns_in_table.table_name = existing.table_name
+                AND columns_in_table.column_name = 'app_id'
+          )`).Scan(&unscopedTables); err != nil {
+		return fmt.Errorf("inspect database app isolation: %w", err)
+	}
+	if unscopedTables > 0 {
+		return fmt.Errorf("refusing to migrate a legacy single-app schema: use a separate database for the shared backend")
+	}
 	if _, err := connection.ExecContext(ctx, `
         CREATE TABLE IF NOT EXISTS schema_migrations (
             name VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
