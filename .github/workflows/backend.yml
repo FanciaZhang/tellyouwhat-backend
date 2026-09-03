@@ -26,13 +26,44 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: tellyouwhat_test
+          MYSQL_USER: tellyouwhat_test
+          MYSQL_PASSWORD: ci-test-password
+          MYSQL_ROOT_PASSWORD: ci-test-root-password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - run: go test ./...
+      - name: Test with MySQL and Redis
+        run: |
+          test -n "$MYSQL_TEST_DSN"
+          test -n "$REDIS_TEST_URL"
+          go test -count=1 -v ./...
+        env:
+          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
       - run: go vet ./...
       - run: go build ./cmd/...
       - run: make verify-generated

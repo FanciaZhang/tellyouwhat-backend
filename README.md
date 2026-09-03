@@ -73,3 +73,5 @@ swift test --package-path Contracts/HTTP
 ```
 
 测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health/Journal 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。
+
+CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机未提供这两个变量时，对应测试会跳过；MySQL 集成测试会重置测试表，数据库名必须以 `_test` 结尾，禁止使用业务数据库。
