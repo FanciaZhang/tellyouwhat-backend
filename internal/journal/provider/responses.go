@@ -71,6 +71,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	}
 	payload := map[string]any{
 		"model": model, "store": false,
+		"thinking":     map[string]any{"type": "disabled"},
 		"instructions": "你为私人手记生成简洁、原文明示的标签，并推荐已有手记册或建议新手记册。不得推断疾病、诊断、政治立场或其他未明示敏感属性。不得返回 rejectedTagNames 中的标签。已有手记册只能返回输入中的别名。只输出符合 schema 的 JSON。",
 		"input":        string(input),
 		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},

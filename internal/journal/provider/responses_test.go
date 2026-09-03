@@ -32,6 +32,10 @@ func TestProviderUsesAliasesAndDisablesStorage(t *testing.T) {
 	if payload["store"] != false {
 		t.Fatal("provider storage must be disabled")
 	}
+	thinking, ok := payload["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatal("journal organization must disable deep thinking")
+	}
 	textConfig, ok := payload["text"].(map[string]any)
 	if !ok {
 		t.Fatalf("provider text configuration is malformed: %#v", payload["text"])
