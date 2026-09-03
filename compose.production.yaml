@@ -89,6 +89,7 @@ services:
       DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
       REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
       PORT: "8081"
+      WORKER_ASYNC_URL: http://worker:8081/internal/jobs/process
     expose:
       - "8081"
     ports:
