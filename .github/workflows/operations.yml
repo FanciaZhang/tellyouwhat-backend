@@ -40,6 +40,7 @@ jobs:
           DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
           OPERATION: ${{ github.event_name == 'schedule' && 'health' || inputs.operation }}
         run: |
+          set -euo pipefail
           case "$OPERATION" in
             health|backup|restore|maintenance|providers) script=operations.py ;;
             rollback) script=release.py ;;
