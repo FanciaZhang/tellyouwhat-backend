@@ -71,4 +71,8 @@ bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.telly
 docker compose --env-file .env.production -f compose.production.yaml run --rm maintenance
 ```
 
-托管 MySQL 的备份应优先使用云数据库自动备份。确需补充服务器侧逻辑备份时，设置 `TELLYOUWHAT_BACKUP_DIR` 后运行 `deploy/single-server/backup-mysql.sh`。`.env.production`、`.p8`、备份文件和 registry credential 均不得进入源码仓库。
+托管 MySQL 保留云数据库自动备份。服务器侧逻辑备份使用独立随机 `BACKUP_ENCRYPTION_KEY` 加密，并对备份内容和表记录数清单做完整性认证。将该密钥保存在生产配置和受保护的发布 Secret 中。运行 `deploy/single-server/backup-mysql.sh` 创建备份，默认保留 14 天；导出失败不会发布备份文件。
+
+运行 `python3 deploy/tencent/operations.py restore --backend-dir "$PWD"`，可把最近一次备份恢复到无网络、无宿主机数据库卷的临时 MySQL 容器，逐表核对记录数，随后删除测试容器。该命令不会恢复到生产数据库。备份和恢复结果保存在 `.operations/`，数据库内容和密钥不会进入日志。
+
+`.env.production`、`.p8`、备份文件和 registry credential 均不得进入源码仓库。

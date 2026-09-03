@@ -74,6 +74,8 @@ jobs:
       - run: swift test --package-path Contracts/HTTP
       - run: bash deploy/tencent/deploy-production_test.sh
       - run: bash deploy/tencent/verify-public_test.sh
+      - name: Test backup and restore protections
+        run: python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
       - name: Validate deployment files
         run: |
           touch .env.production

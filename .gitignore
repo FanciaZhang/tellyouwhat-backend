@@ -9,3 +9,5 @@ DerivedData/
 !*.env.example
 secrets/
 *.p8
+__pycache__/
+*.pyc
