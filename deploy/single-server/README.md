@@ -12,7 +12,7 @@ Internet
                                            worker :8081 (private)
 ```
 
-Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 App。Health 与 Journal 使用两个显式站点块，通过 Caddy snippet 复用安全 Header 和反向代理配置；以后可以按 App 单独增加限流、超时或上传约束。`/internal/*` 不对公网开放；gateway、worker 与 admin 只在 Docker network 内通信，只有 Caddy 暴露 80/443。
+Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 App。Health 与 Journal 使用两个显式站点块，通过 Caddy snippet 复用安全 Header 和反向代理配置；以后可以按 App 单独增加限流、超时或上传约束。`/internal/*` 不对公网开放。gateway、worker、admin 分别在服务器回环地址的 18080、18081、18082 端口提供验收入口；只有 Caddy 暴露公网 80/443。Caddy 属于 `public` Compose profile，内部部署只启动应用服务。
 
 服务器固定目录为 `/opt/tellyouwhat/backend`。该目录包含 `compose.production.yaml`、Caddyfile、未纳入版本控制的 `.env.production` 和 `secrets/`：
 
@@ -20,8 +20,11 @@ Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 
 cd /opt/tellyouwhat/backend
 cp deploy/single-server/production.env.example .env.production
 mkdir -p secrets
-chmod 600 .env.production secrets/*.p8
-docker compose --env-file .env.production -f compose.production.yaml config
+chmod 600 .env.production
+chmod 750 secrets
+chmod 640 secrets/*.p8
+sudo chgrp 65532 secrets secrets/*.p8
+docker compose --env-file .env.production -f compose.production.yaml config --quiet
 ```
 
 四个私钥文件分别是：
@@ -33,12 +36,13 @@ docker compose --env-file .env.production -f compose.production.yaml config
 
 Apple 公共根证书、App Attest 根证书和 Health schema manifest 已固定打入服务镜像，不作为 GitHub Secret 上传。
 
-首次发布先执行迁移，再无构建启动服务：
+使用已验证提交的镜像先完成内部部署：
 
 ```sh
-docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps migrate
-docker compose --env-file .env.production -f compose.production.yaml up -d --no-build gateway worker admin caddy
+bash deploy/tencent/deploy-production.sh <verified-commit-sha> ghcr.io/fanciazhang/tellyouwhat-ai internal
 ```
+
+内部服务验收成功后，脚本将镜像版本写入 `.env.production`，后续运维命令自动使用该版本。
 
 创建首位 Passkey 管理员：
 
@@ -55,12 +59,10 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm --
 
 完整权限与恢复边界见 [`../../docs/modules/admin.md`](../../docs/modules/admin.md)。
 
-分别验收三个公网运行时：
+DNS 和可信证书条件满足后，通过 CI 的 `deployment=public` 运行完成公网代理激活和独立 HTTPS 验收。手动验收命令：
 
 ```sh
-curl -fsS https://api.health.tellyouwhat.cn/readyz
-curl -fsS https://api.journal.tellyouwhat.cn/readyz
-curl -fsS https://admin.tellyouwhat.cn/readyz
+bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
 ```
 
 每天运行一次保留期清理：
