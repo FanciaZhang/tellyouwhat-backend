@@ -123,7 +123,7 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 	journal, err := loadPlatformApp("JOURNAL", appDefaults{
 		ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
 		BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
-		ProductIDs: []string{"journal.ai.subscription.monthly"}, OperationPrefix: "journal.",
+		ProductIDs: []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"}, OperationPrefix: "journal.",
 		PrivacyBaseURL: "https://journal.tellyouwhat.cn",
 	}, environment, commonTeamID)
 	if err != nil {

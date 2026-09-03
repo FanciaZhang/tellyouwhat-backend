@@ -82,6 +82,46 @@ func TestTransactionVerifierAcceptsAnnualManagedSubscription(t *testing.T) {
 	}
 }
 
+func TestTransactionVerifierRestrictsJournalSubscriptionPlans(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		productID string
+		accepted  bool
+	}{
+		{"journal.ai.subscription.monthly", true},
+		{"journal.ai.subscription.annual", true},
+		{"health.premium.subscription.annual", false},
+		{"journal.ai.subscription.quarterly", false},
+	} {
+		t.Run(test.productID, func(t *testing.T) {
+			fixture := newSignedTransactionFixture(t, now, transactionPayload{
+				OriginalTransactionID: "journal-original-transaction",
+				TransactionID:         "journal-transaction",
+				BundleID:              "cn.tellyouwhat.journalapp",
+				ProductID:             test.productID,
+				Environment:           "Production",
+				ExpiresDate:           now.Add(365 * 24 * time.Hour).UnixMilli(),
+				SignedDate:            now.UnixMilli(),
+			})
+			verifier := NewTransactionVerifier(VerifierConfig{
+				Roots: fixture.roots, BundleID: "cn.tellyouwhat.journalapp",
+				AppAppleID: 6808104188, Environment: "Production",
+				ProductIDs: []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"},
+				Now:        func() time.Time { return now },
+			})
+			transaction, err := verifier.VerifyTransaction(fixture.signed)
+			if test.accepted {
+				if err != nil || transaction.ProductID != test.productID {
+					t.Fatalf("Journal plan rejected: product=%s error=%v", transaction.ProductID, err)
+				}
+			} else if !errors.Is(err, ErrInvalidSignedData) {
+				t.Fatalf("unconfigured Journal plan accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestTransactionVerifierRejectsProductOutsideManagedSubscriptionAllowlist(t *testing.T) {
 	t.Parallel()
 

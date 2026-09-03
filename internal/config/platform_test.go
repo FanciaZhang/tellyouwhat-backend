@@ -1,12 +1,34 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 )
+
+func TestJournalDefaultPlansRemainSeparateFromHealth(t *testing.T) {
+	t.Setenv("JOURNAL_MANAGED_AI_PRODUCT_ID", "")
+	t.Setenv("JOURNAL_MANAGED_AI_PRODUCT_IDS", "")
+	platform, err := loadPlatformUnchecked()
+	if err != nil {
+		t.Fatalf("load platform: %v", err)
+	}
+	for _, app := range platform.Apps {
+		if app.Registry.ID != appregistry.Journal {
+			continue
+		}
+		if !slices.Equal(app.ManagedAIProductIDs, []string{
+			"journal.ai.subscription.monthly", "journal.ai.subscription.annual",
+		}) {
+			t.Fatalf("unexpected Journal subscription allowlist: %v", app.ManagedAIProductIDs)
+		}
+		return
+	}
+	t.Fatal("Journal app is missing")
+}
 
 func TestJournalAIConfigRetainsConfiguredTimeout(t *testing.T) {
 	t.Setenv("JOURNAL_ARK_TIMEOUT_SECONDS", "135")

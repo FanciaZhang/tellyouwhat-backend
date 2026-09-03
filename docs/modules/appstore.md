@@ -21,7 +21,7 @@ Allowed dependencies are the Go standard library, configured Apple root certific
 
 - Accept only ES256 compact JWS with the three-certificate `x5c` chain Apple documents and uses in its official server libraries.
 - Require the Apple receipt-signing leaf OID and WWDR intermediate OID, validate the chain to configured Apple roots, and verify the JWS signature.
-- Require the configured bundle ID, App Apple ID in production, environment, and either the `health.premium.subscription.monthly` or `health.premium.subscription.annual` managed-subscription product ID.
+- Require the configured bundle ID, App Apple ID in production, environment, and the current App's subscription allowlist. Health accepts `health.premium.subscription.monthly` and `health.premium.subscription.annual`; Journal accepts `journal.ai.subscription.monthly` and `journal.ai.subscription.annual`.
 - A client transaction is evidence for an identifier, not proof of current access; App Store Server API remains the source of current expiry/revocation status.
 - Notification processing is idempotent by Apple `notificationUUID`; the nested signed transaction is independently verified before storage changes.
 - No JWS, private key, subscription payload, or transaction identifier is written to ordinary logs.
