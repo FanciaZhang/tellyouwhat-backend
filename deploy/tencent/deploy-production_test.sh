@@ -83,6 +83,27 @@ run_deploy public
 grep -Fq 'pull caddy' "$command_log"
 grep -Fq 'up -d --no-build caddy' "$command_log"
 
+reset_environment
+printf 'PUBLIC_PROXY_MODE=external\n' >> "$backend_dir/.env.production"
+run_deploy public
+grep -Fq 'up -d --no-build gateway worker admin' "$command_log"
+for port in 18080 18081 18082; do grep -Fq "127.0.0.1:$port" "$command_log"; done
+if grep -Eq 'up .*caddy|pull caddy' "$command_log"; then
+  echo 'External proxy deployment must not start a competing Caddy container.' >&2
+  exit 1
+fi
+
+reset_environment
+printf 'PUBLIC_PROXY_MODE=invalid\n' >> "$backend_dir/.env.production"
+if run_deploy public > "$test_dir/output" 2>&1; then
+  echo 'Deployment accepted an invalid public proxy mode.' >&2
+  exit 1
+fi
+if grep -Eq 'pull |run --rm|up -d' "$command_log"; then
+  echo 'Invalid proxy mode changed running services.' >&2
+  exit 1
+fi
+
 for failure in admin worker redirect not-ready migration; do
   reset_environment
   if run_deploy public "$failure" > "$test_dir/output" 2>&1; then

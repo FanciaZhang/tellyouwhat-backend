@@ -53,6 +53,13 @@ if [[ -z "$health_api_domain" || -z "$journal_api_domain" || -z "$admin_domain" 
   exit 1
 fi
 
+public_proxy_mode=$(sed -n 's/^PUBLIC_PROXY_MODE=//p' .env.production)
+public_proxy_mode="${public_proxy_mode:-docker}"
+if [[ "$public_proxy_mode" != docker && "$public_proxy_mode" != external ]]; then
+  echo 'PUBLIC_PROXY_MODE must be docker or external.' >&2
+  exit 64
+fi
+
 attempts="${READINESS_ATTEMPTS:-18}"
 if [[ ! "$attempts" =~ ^[1-9][0-9]*$ ]]; then
   echo 'READINESS_ATTEMPTS must be a positive integer.' >&2
@@ -61,7 +68,9 @@ fi
 
 "${compose[@]}" config --quiet
 "${compose[@]}" pull gateway worker admin adminctl migrate maintenance
-if [[ "$deployment_mode" == public ]]; then "${compose[@]}" pull caddy; fi
+if [[ "$deployment_mode" == public && "$public_proxy_mode" == docker ]]; then
+  "${compose[@]}" pull caddy
+fi
 "${compose[@]}" run --rm --no-deps migrate
 "${compose[@]}" up -d --no-build gateway worker admin
 
@@ -98,8 +107,12 @@ deployment_env=''
 
 printf 'Internal deployment verified: %s\n' "$image_tag"
 if [[ "$deployment_mode" == public ]]; then
-  "${compose[@]}" up -d --no-build caddy
-  echo 'Public proxy started. Public HTTPS verification is required separately.'
+  if [[ "$public_proxy_mode" == docker ]]; then
+    "${compose[@]}" up -d --no-build caddy
+    echo 'Public proxy started. Public HTTPS verification is required separately.'
+  else
+    echo 'Existing public proxy retained. Public HTTPS verification is required separately.'
+  fi
 else
   echo 'Public proxy activation and public HTTPS verification remain pending.'
 fi

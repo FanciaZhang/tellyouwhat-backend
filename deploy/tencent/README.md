@@ -114,7 +114,9 @@ curl -fsS http://127.0.0.1:18081/healthz
 curl -fsS -H 'Host: admin.tellyouwhat.cn' http://127.0.0.1:18082/readyz
 ```
 
-公网 80/443 交由本部署的 Caddy 管理。若服务器已有原生 Caddy 或其他代理，先完成现有站点的配置迁移与端口归属核对，再选择 `public`；不要直接停掉服务于其他站点的代理。
+`PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过三个公网 HTTPS 入口的验收。
+
+原生 Caddy 可在现有配置中导入 [`Caddyfile.external`](../single-server/Caddyfile.external)，保留原有站点。该文件将两个 App 的域名转发到 `127.0.0.1:18080`，管理后台转发到 `127.0.0.1:18082`，并屏蔽 App 入口的 `/internal/*`。将 `HEALTH_API_DOMAIN`、`JOURNAL_API_DOMAIN`、`ADMIN_DOMAIN` 和 `ACME_EMAIL` 渲染为实际值，或仅将这四个非密钥变量提供给 Caddy 服务。不要让 Caddy 加载完整生产环境文件。先用 `caddy validate` 验证包含原站点的完整配置，再通过 `systemctl reload caddy` 加载；核对原站点仍正常响应。
 
 DNS、备案接入和证书签发条件满足后，执行完整公网发布：
 

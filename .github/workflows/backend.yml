@@ -88,15 +88,16 @@ jobs:
           MYSQL_DATABASE: app
           REDIS_PASSWORD: placeholder
       - name: Validate Caddy configuration
-        run: >-
-          docker run --rm --entrypoint caddy
-          -e HEALTH_API_DOMAIN=api.health.example
-          -e JOURNAL_API_DOMAIN=api.journal.example
-          -e ADMIN_DOMAIN=admin.example
-          -e ACME_EMAIL=ops@example.com
-          -v "${{ github.workspace }}/deploy/single-server/Caddyfile:/etc/caddy/Caddyfile:ro"
-          caddy:2-alpine
-          validate --config /etc/caddy/Caddyfile
+        run: |
+          for config in Caddyfile Caddyfile.external; do
+            docker run --rm --entrypoint caddy \
+              -e HEALTH_API_DOMAIN=api.health.example \
+              -e JOURNAL_API_DOMAIN=api.journal.example \
+              -e ADMIN_DOMAIN=admin.example \
+              -e ACME_EMAIL=ops@example.com \
+              -v "${{ github.workspace }}/deploy/single-server/$config:/etc/caddy/Caddyfile:ro" \
+              caddy:2-alpine validate --config /etc/caddy/Caddyfile
+          done
 
   container:
     needs: verify
@@ -186,7 +187,7 @@ jobs:
           remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/compose.production.yaml"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/Caddyfile"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/secrets/"
@@ -198,6 +199,7 @@ jobs:
           install -d -m 755 "$backend_dir/deploy/single-server" "$backend_dir/deploy/tencent"
           install -m 644 "$stage/compose.production.yaml" "$backend_dir/compose.production.yaml"
           install -m 644 "$stage/deploy/single-server/Caddyfile" "$backend_dir/deploy/single-server/Caddyfile"
+          install -m 644 "$stage/deploy/single-server/Caddyfile.external" "$backend_dir/deploy/single-server/Caddyfile.external"
           install -m 755 "$stage/deploy/tencent/"*.sh "$backend_dir/deploy/tencent/"
           install -m 600 "$stage/.env.production" "$backend_dir/.env.production"
           install -m 640 "$stage/secrets/"*.p8 "$backend_dir/secrets/"
