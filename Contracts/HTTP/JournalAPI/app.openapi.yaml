@@ -14,6 +14,54 @@ tags:
 - name: Journal
 - name: AI
 paths:
+  "/v1/journal/voice/sessions":
+    post:
+      operationId: createJournalVoiceSession
+      tags: [Journal]
+      summary: Admit an authenticated subscriber to a resumable voice session.
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/VoiceSessionRequest"
+      responses:
+        '201':
+          description: A short-lived single-use WebSocket ticket.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/VoiceSessionTicket"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/sessions/{sessionID}/stream":
+    get:
+      operationId: streamJournalVoiceSession
+      tags: [Journal]
+      summary: Upgrade to the voice protocol with a single-use bearer ticket.
+      description: Audio and revision frames are described in docs/journal-voice.md. The ticket is never accepted in a URL.
+      security:
+      - VoiceSessionTicket: []
+      parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '101':
+          description: WebSocket upgrade accepted.
+        default:
+          "$ref": "#/components/responses/Error"
   "/v1/ai/operations/journal.organize/responses":
     post:
       operationId: organizeJournal
@@ -60,6 +108,10 @@ paths:
         default:
           "$ref": "#/components/responses/Error"
 components:
+  securitySchemes:
+    VoiceSessionTicket:
+      type: http
+      scheme: bearer
   responses:
     TooManyRequests:
       description: Quota or concurrency limit reached.
@@ -74,6 +126,33 @@ components:
           schema:
             "$ref": "#/components/schemas/ErrorResponse"
   schemas:
+    VoiceSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionID, consentVersion]
+      properties:
+        sessionID:
+          type: string
+          format: uuid
+        consentVersion:
+          type: string
+    VoiceSessionTicket:
+      type: object
+      additionalProperties: false
+      required: [sessionID, token, remainingMilliseconds, maximumMilliseconds, resetsAt]
+      properties:
+        sessionID:
+          type: string
+          format: uuid
+        token:
+          type: string
+        remainingMilliseconds:
+          type: integer
+        maximumMilliseconds:
+          type: integer
+        resetsAt:
+          type: string
+          format: date-time
     OrganizeRequest:
       type: object
       additionalProperties: false

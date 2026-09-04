@@ -7,6 +7,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"golang.org/x/net/websocket"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,5 +43,39 @@ func TestVoiceAdmissionRequiresOwnSubscriptionAndExplicitConsent(t *testing.T) {
 				t.Fatalf("%d %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestGeneratedVoiceStreamUpgradesAndRejectsTicketReplay(t *testing.T) {
+	service := &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}
+	sessionID := uuid.NewString()
+	ticket, err := service.Issue(context.Background(), voice.Identity{Owner: "subscriber", KeyID: "key", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Voice: service}).Router())
+	defer server.Close()
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/journal/voice/sessions/" + sessionID + "/stream"
+	config, err := websocket.NewConfig(endpoint, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	connection, err := config.DialContext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	connection.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var event voice.Event
+	if err := websocket.JSON.Receive(connection, &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "ready" {
+		t.Fatalf("unexpected initial event: %s", event.Type)
+	}
+	if replay, err := config.DialContext(context.Background()); err == nil {
+		replay.Close()
+		t.Fatal("a consumed ticket must not upgrade another connection")
 	}
 }
