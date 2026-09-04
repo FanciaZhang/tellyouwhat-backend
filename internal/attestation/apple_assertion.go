@@ -54,7 +54,11 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 	nonceInput := make([]byte, 0, len(authenticatorData)+len(clientDataHash))
 	nonceInput = append(nonceInput, authenticatorData...)
 	nonceInput = append(nonceInput, clientDataHash...)
-	digest := sha256.Sum256(nonceInput)
+	nonce := sha256.Sum256(nonceInput)
+	// Apple signs nonce as an ECDSA-SHA256 message. VerifyASN1 expects the
+	// message's digest, not the message itself.
+	// https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server
+	digest := sha256.Sum256(nonce[:])
 	if !ecdsa.VerifyASN1(publicKey, digest[:], signature) {
 		return 0, ErrAuthentication
 	}
