@@ -69,6 +69,28 @@ func TestFailedSegmentDoesNotChargeAndQuotaResetsByPeriod(t *testing.T) {
 		t.Fatal(n)
 	}
 }
+func TestExpiredTranscriptDoesNotRechargeInNextMonth(t *testing.T) {
+	s := NewMemoryStore()
+	ctx := context.Background()
+	s.Lock(ctx, "owner", "lease")
+	r := Receipt{"segment", "audio-hash", "原始转写", 1000}
+	if _, err := s.Commit(ctx, "owner", "session", "old", "lease", r, 1200); err != nil {
+		t.Fatal(err)
+	}
+	key := "owner" + "session" + "segment"
+	s.receipts[key] = memoryReceipt{r, time.Now().Add(-time.Hour)}
+	if cached, _ := s.Receipt(ctx, "owner", "session", "segment"); cached != nil {
+		t.Fatal("expired content retained")
+	}
+	remaining, err := s.Commit(ctx, "owner", "session", "new", "lease", r, 1200)
+	if err != nil || remaining != 1200 || s.sessionUsed["ownersession"] != 1000 {
+		t.Fatalf("recharged retry: %d %v", remaining, err)
+	}
+	r.SHA256 = "different-audio"
+	if _, err = s.Commit(ctx, "owner", "session", "new", "lease", r, 1200); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+}
 func TestASRPacketFinalFlagAndMalformedPackets(t *testing.T) {
 	p := asrPacket(2, true, []byte{1, 2})
 	if p[1] != 0x22 || binary.BigEndian.Uint32(p[4:8]) != 2 {

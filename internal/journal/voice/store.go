@@ -41,13 +41,14 @@ type memoryLease struct {
 type MemoryStore struct {
 	mu          sync.Mutex
 	receipts    map[string]memoryReceipt
+	billed      map[string]string
 	leases      map[string]memoryLease
 	used        map[string]int
 	sessionUsed map[string]int
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{receipts: map[string]memoryReceipt{}, leases: map[string]memoryLease{}, used: map[string]int{}, sessionUsed: map[string]int{}}
+	return &MemoryStore{receipts: map[string]memoryReceipt{}, billed: map[string]string{}, leases: map[string]memoryLease{}, used: map[string]int{}, sessionUsed: map[string]int{}}
 }
 func (s *MemoryStore) Lock(_ context.Context, owner, token string) error {
 	s.mu.Lock()
@@ -99,10 +100,11 @@ func (s *MemoryStore) Commit(_ context.Context, owner, session, period, token st
 	if lease := s.leases[owner]; lease.Token != token || !lease.Until.After(time.Now()) {
 		return 0, ErrBusy
 	}
-	if old, ok := s.receipts[key]; ok && old.Until.After(time.Now()) {
-		if old.Receipt.SHA256 != r.SHA256 {
+	if old, ok := s.billed[key]; ok {
+		if old != r.SHA256 {
 			return 0, ErrConflict
 		}
+		s.receipts[key] = memoryReceipt{r, time.Now().Add(24 * time.Hour)}
 		return max(0, limit-s.used[owner+period]), nil
 	}
 	if s.used[owner+period]+r.Milliseconds > limit || s.sessionUsed[owner+session]+r.Milliseconds > SessionMilliseconds {
@@ -110,6 +112,7 @@ func (s *MemoryStore) Commit(_ context.Context, owner, session, period, token st
 	}
 	s.used[owner+period] += r.Milliseconds
 	s.sessionUsed[owner+session] += r.Milliseconds
+	s.billed[key] = r.SHA256
 	s.receipts[key] = memoryReceipt{r, time.Now().Add(24 * time.Hour)}
 	return max(0, limit-s.used[owner+period]), nil
 }
@@ -205,13 +208,19 @@ func (s RedisStore) Commit(ctx context.Context, owner, session, period, token st
 	value, err := s.Client.Eval(ctx, `
  if redis.call('GET',KEYS[1])~=ARGV[1] then return -2 end
  local used=tonumber(redis.call('GET',KEYS[2]) or '0')
- if redis.call('EXISTS',KEYS[4])==1 then return tonumber(ARGV[3])-used end
+ local billed=redis.call('GET',KEYS[5])
+ if billed then
+   if billed~=ARGV[5] then return -3 end
+   redis.call('SET',KEYS[4],ARGV[4],'EX',86400)
+   return tonumber(ARGV[3])-used
+ end
  local duration=tonumber(redis.call('GET',KEYS[3]) or '0')
  if used+tonumber(ARGV[2])>tonumber(ARGV[3]) or duration+tonumber(ARGV[2])>1800000 then return -1 end
  redis.call('INCRBY',KEYS[2],ARGV[2]); redis.call('EXPIRE',KEYS[2],8035200)
- redis.call('INCRBY',KEYS[3],ARGV[2]); redis.call('EXPIRE',KEYS[3],86400)
+ redis.call('INCRBY',KEYS[3],ARGV[2])
+ redis.call('SET',KEYS[5],ARGV[5])
  redis.call('SET',KEYS[4],ARGV[4],'EX',86400)
- return tonumber(ARGV[3])-used-tonumber(ARGV[2])`, []string{s.key(owner, "lease"), s.key(owner, "quota:"+period), s.key(owner, "duration:"+session), receiptKey}, token, r.Milliseconds, limit, string(raw)).Int()
+ return tonumber(ARGV[3])-used-tonumber(ARGV[2])`, []string{s.key(owner, "lease"), s.key(owner, "quota:"+period), s.key(owner, "duration:"+session), receiptKey, s.key(owner, "billed:"+session+":"+r.SegmentID)}, token, r.Milliseconds, limit, string(raw), r.SHA256).Int()
 	if err != nil {
 		return 0, err
 	}
@@ -220,6 +229,9 @@ func (s RedisStore) Commit(ctx context.Context, owner, session, period, token st
 	}
 	if value == -2 {
 		return 0, ErrBusy
+	}
+	if value == -3 {
+		return 0, ErrConflict
 	}
 	return value, nil
 }

@@ -46,8 +46,10 @@ production must enable AOF, backups, and a no-eviction policy for these keys. Mi
 storage fails closed. Never use the development memory store in production.
 Receipts are AES-GCM encrypted with application/owner/session/segment-bound AAD,
 expire in 24 hours, and lose their text on final client acknowledgement. Monthly
-counters contain no journal text. Account deletion clears the Journal owner's
-voice keys. The existing payload encryption key and capability secret are used.
+counters contain no journal text. Non-content billed segment hashes and session
+durations survive transcript expiry so a retry in a later month cannot charge
+again. Account deletion clears these and all other Journal owner voice keys.
+The existing payload encryption key and capability secret are used.
 
 Only successful, unique segments consume minutes, including their natural pauses.
 User-paused intervals and provider failures do not. The 120-minute allowance is
