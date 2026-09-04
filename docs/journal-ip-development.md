@@ -82,10 +82,11 @@ launch uses the bundled URL without needing Xcode environment variables.
 
 The full backend now runs `85dd734` (`voice-85dd734`), including the voice feature,
 App Attest fix and generated voice API routes. Migration 0002 has been applied.
-The existing Journal Pro endpoint supplies the rewrite model. Speech credentials
-are still absent, so `JOURNAL_VOICE_ENABLED` remains false until ASR credentials
-and its live provider check are available. The route is deployed and returns
-`voice_not_enabled` rather than 404; this is not a successful ASR session. Do not bypass
+The existing Journal Pro endpoint supplies the rewrite model. The existing Journal
+speech API key has been configured, the synthetic live ASR and rewriting check
+passed, and `JOURNAL_VOICE_ENABLED=true` is active on the gateway. Unsigned admission
+requests correctly return 401. Paid on-device recording and recovery still need
+an active synchronized subscription; provider acceptance does not replace that. Do not bypass
 App Attest or create fictitious paid entitlements to make the test pass.
 
 ## App Attest assertion hotfix (superseded by the full voice deployment)

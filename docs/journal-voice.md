@@ -108,10 +108,19 @@ only after physical-device background/offline acceptance and the cost gate.
   preserves that previous assertion fix. From `/opt/tellyouwhat/backend`, use
   `python3 deploy/tencent/release.py rollback` to restore it. This restores the
   pre-voice code; the additive database column is retained.
-- The public IP HTTPS readiness check passes. The deployed voice admission route
-  currently reports `voice_not_enabled` because the server has neither the new
-  speech API Key nor the legacy speech App ID/Access Token. The existing Ark
-  key and Pro model are configured; they are used for diary rewriting. Configure
-  `JOURNAL_SPEECH_API_KEY` (or both legacy speech credential fields), verify the
-  provider and then set `JOURNAL_VOICE_ENABLED=true` and recreate the gateway.
-  Do not report a live ASR/manuscript session until that acceptance succeeds.
+- The public IP HTTPS readiness check passes. The existing `api-key-journalpp`
+  speech credential is now configured as `JOURNAL_SPEECH_API_KEY` on the server,
+  and the existing Ark key and Pro model supply diary rewriting. No new key or
+  entitlement was created. The key was transferred over SSH without putting its
+  value in source, logs, command arguments, or a local file.
+- `TestLiveSpeechAndDiaryRewrite` passed on the server with synthetic PCM speech:
+  21 provider frames, 36 transcription characters, one valid diary patch, and
+  663 input / 79 output model tokens. The check retained the park and tea details
+  and the corrected name 小林. It requires `JOURNAL_VOICE_LIVE_CHECK=1` and the
+  documented synthetic PCM fixture; ordinary tests skip it.
+- After the provider check, `JOURNAL_VOICE_ENABLED=true` was activated and the
+  gateway was recreated. All service readiness checks still pass. The deployment
+  snapshot and `.operations/voice-enable.json` record the configured state;
+  unsigned voice admission requests return 401. Real paid-device recording,
+  background behavior and recovery remain a separate acceptance requiring an
+  active synchronized subscription. No user audio or diary was used in this check.
