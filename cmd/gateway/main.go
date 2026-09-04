@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 
 	"github.com/tellyouwhat/backend/internal/appstore"
@@ -28,6 +29,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -59,6 +61,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
 	entitlements               entitlementRepository
@@ -242,7 +245,7 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 			entitlements: entitlement.NewMemoryStore(), jobs: jobs.NewMemoryStore(),
 			limiter: limiter, quotaReader: limiter, reconciler: limiter,
 			capabilityUses: capability.NewMemoryUseStore(), media: media.NewMemoryRegistry(),
-			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(),
+			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(), voiceStore: voice.NewMemoryStore(),
 		}
 		if appConfig.Registry.ID == appregistry.Health {
 			freeLimiter := quota.NewMemoryLimiter(appConfig.FreeRecognitionQuota)
@@ -269,6 +272,11 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 		storage.freeRecognitionQuotaReader = freeLimiter
 		storage.recognitionSessions = redisstore.NewRecognitionQuotaStore(shared.redis, appID)
 		storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
+	}
+	if shared.redis != nil {
+		storage.voiceStore = voice.RedisStore{Client: shared.redis, Cipher: shared.cipher}
+	} else {
+		storage.voiceStore = voice.NewMemoryStore()
 	}
 	return storage
 }
@@ -369,6 +377,17 @@ func buildAppHandler(
 		organizer := &journalservice.Organizer{
 			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
 			AnalysisVersion: "journal-organize-2026-08-31",
+		}
+		if appConfig.VoiceEnabled {
+			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {
+				return nil, errors.New("voice requires speech credentials, model, and a 32-byte capability secret")
+			}
+			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: voice.ASR{Config: appConfig.VoiceASR}, Model: voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel}, Secret: []byte(platform.JobCapabilitySecret), Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
+					logger.Error("voice usage record failed")
+				}
+			}}
+			dependencies.VoiceEntitlements = storage.entitlements
 		}
 		dependencies.JournalOrganizer = organizer
 		dependencies.JournalAnalysisVersion = organizer.AnalysisVersion

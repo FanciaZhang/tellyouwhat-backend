@@ -2,6 +2,8 @@ package redisstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
@@ -30,6 +32,16 @@ func (cleaner *PrivacyCleaner) DeletePrincipal(ctx context.Context, principal at
 			cleaner.prefix+"quota:*:"+principal.TransactionID,
 			cleaner.prefix+"quota:*:"+principal.TransactionID+":*",
 		)
+	}
+	if cleaner.prefix == "platform:journal:" {
+		for _, environment := range []string{"production", "sandbox", "development"} {
+			owner := principal.TransactionID
+			if owner == "" {
+				owner = principal.KeyID
+			}
+			sum := sha256.Sum256([]byte(environment + ":" + owner))
+			patterns = append(patterns, cleaner.prefix+"voice:{"+hex.EncodeToString(sum[:])+"}:*")
+		}
 	}
 	for _, pattern := range patterns {
 		if err := cleaner.deleteMatching(ctx, pattern, nil); err != nil {

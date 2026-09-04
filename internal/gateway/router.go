@@ -49,6 +49,7 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 		server.registerHealthRoutes(router)
 	case appregistry.Journal:
 		server.registerJournalRoutes(router)
+		server.registerVoiceRoutes(router)
 	default:
 		panic("unsupported App router")
 	}
@@ -138,6 +139,8 @@ func captureRawRequestBody() gin.HandlerFunc {
 
 func requestBodyLimit(method, path string) int64 {
 	switch method + " " + path {
+	case "POST /v1/journal/voice/sessions":
+		return 8 << 10
 	case "POST /v1/attest/challenges":
 		return 8 << 10
 	case "POST /v1/attest/keys":
@@ -197,6 +200,10 @@ func (server *Server) operationIDs() map[string]string {
 		documents = append(documents, mustOpenAPI(journalhttpapi.GetSwagger()))
 	}
 	result := make(map[string]string)
+	if server.app.ID == appregistry.Journal {
+		result["POST /v1/journal/voice/sessions"] = "createJournalVoiceSession"
+		result["GET /v1/journal/voice/sessions/:sessionID/stream"] = "streamJournalVoiceSession"
+	}
 	for _, document := range documents {
 		for path, item := range document.Paths.Map() {
 			ginPath := openAPIPathParameter.ReplaceAllString(path, `:$1`)
