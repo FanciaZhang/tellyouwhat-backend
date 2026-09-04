@@ -80,12 +80,47 @@ HTTPS, forward secrecy and normal system certificate validation. The environment
 override remains available for explicitly launched debug sessions; a desktop-icon
 launch uses the bundled URL without needing Xcode environment variables.
 
-The deployed gateway image is `caf942fe5aee2ec83050fea7d603c0d3428e8627` at the time
-this IP route was added. It predates the local voice feature commits. Speech
+The deployed gateway is based on `caf942fe5aee2ec83050fea7d603c0d3428e8627`, with
+the App Attest assertion fix `88cb4e7` applied as described below. It predates the local voice feature commits. Speech
 credentials and a voice model are not configured. Therefore the successful IP
 route does **not** demonstrate a live ASR/manuscript session. Deploy the voice
 milestone and configure its dependencies before that acceptance. Do not bypass
 App Attest or create fictitious paid entitlements to make the test pass.
+
+## App Attest assertion hotfix
+
+Real iPhone registration succeeded, but authenticated requests returned 401. The
+verifier passed Apple's nonce directly to Go's `ecdsa.VerifyASN1`, which expects
+the SHA-256 digest of the signed message. Apple signs the nonce using ECDSA-SHA256;
+the fix computes `SHA256(SHA256(authenticatorData || clientDataHash))` before
+verification. It does not accept the previous digest as a fallback. Request
+binding, nonce consumption, RP ID checks and monotonic counters remain enforced.
+See [Apple's assertion validation procedure](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server).
+
+Focused race-enabled tests passed for attestation, contracts and gateway on both
+the working branch and the exact deployed base plus this patch. The gateway was
+cross-compiled for Linux amd64 from the deployed base plus only this verifier fix,
+and copied into the existing gateway image. No other service or schema changed.
+The running image is `tellyouwhat-journal-gateway-hotfix:caf942f-88cb4e7`.
+
+`/opt/tellyouwhat/backend/compose.journal-app-attest-hotfix.yaml` overrides only the
+gateway image. Binary and source checksums, base/fix commit IDs and the Dockerfile
+are recorded at `/var/backups/tellyouwhat-app-attest/20260904-caf942f-88cb4e7/`.
+The original gateway image remains available. From `/opt/tellyouwhat/backend`,
+reapply the hotfix using:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml \
+  -f compose.journal-app-attest-hotfix.yaml \
+  up -d --no-deps --no-build --pull never gateway
+```
+
+For emergency rollback, omit the hotfix `-f` argument and run the same command.
+This restores the original image, including its known assertion bug. Verify
+`/readyz` after either operation. Before the next standard CI deployment, include
+commit `88cb4e7` in its source; otherwise that deployment will restore the bug.
+Retire the override after the standard image includes the fix. This direct,
+gateway-only deployment did not push Git commits or publish registry images.
 
 ## Removal after filing
 
@@ -112,7 +147,16 @@ imports. Certificate files may be removed separately after the endpoint is retir
 - WSS through the same proxy passed a synthetic echo check: trusted TLS 1.3,
   HTTP 101 and matching data in both directions. The temporary route/process were
   removed immediately afterward; its URL now returns 404.
-- The iPhone reached `/readyz` over trusted HTTPS. Its first authentication attempt
-  exposed client decoding of Go's fractional-second challenge expiry; the client
-  fix is being verified. Full App Attest reacceptance is waiting for an unlocked
-  device, so authentication is not yet reported as passed.
+- The iPhone reached `/readyz` over trusted HTTPS. The client fix for Go's
+  fractional-second challenge expiry passed regression tests and enabled real
+  production App Attest registration (201).
+- Subsequent signed quota reads exposed the assertion nonce hashing bug (401).
+  The gateway hotfix is deployed and internal/public readiness checks pass.
+- Physical-device integration passed: one test, zero failures. Two consecutive
+  signed requests passed authentication and returned the exact
+  `managed_subscription_required` code (403); this device has no synchronized
+  active entitlement. The same unsigned endpoint returned 401. This validates
+  authentication and the subscription boundary, not a paid quota response.
+- The App's normal synchronization of its existing consent also returned 200
+  after the verifier fix. The integration test itself only performs reads and
+  App Attest operations; it does not grant consent or alter purchases.
