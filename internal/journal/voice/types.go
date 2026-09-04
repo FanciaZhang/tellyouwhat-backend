@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 const Version = "journal-voice-v1"
@@ -73,7 +75,7 @@ func (s Snapshot) Validate() error {
 	count := utf8.RuneCountInString(s.Transcript)
 	seen := map[string]bool{}
 	for _, b := range s.Blocks {
-		if b.ID == "" || seen[b.ID] || len(b.ID) > 64 {
+		if _, err := uuid.Parse(b.ID); err != nil || len(b.ID) != 36 || seen[b.ID] {
 			return ErrInvalid
 		}
 		seen[b.ID] = true
@@ -106,17 +108,19 @@ func (r Revision) Validate(s Snapshot) error {
 		return ErrConflict
 	}
 	known := map[string]bool{}
+	lengths := map[string]int{}
 	locked := map[string]bool{}
 	touched := map[string]bool{}
 	for _, b := range s.Blocks {
 		known[b.ID] = true
+		lengths[b.ID] = utf8.RuneCountInString(b.Text)
 	}
 	for _, id := range s.EditedBlockIDs {
 		locked[id] = true
 	}
 	count := 0
 	for _, p := range r.Patches {
-		if p.ID == "" || len(p.ID) > 64 || touched[p.ID] || locked[p.ID] {
+		if _, err := uuid.Parse(p.ID); err != nil || len(p.ID) != 36 || touched[p.ID] || locked[p.ID] {
 			return ErrInvalid
 		}
 		touched[p.ID] = true
@@ -131,11 +135,19 @@ func (r Revision) Validate(s Snapshot) error {
 			known[p.ID] = true
 		}
 		count += utf8.RuneCountInString(p.Text)
+		lengths[p.ID] = utf8.RuneCountInString(p.Text)
 	}
 	for _, q := range r.Questions {
 		if utf8.RuneCountInString(q) > 300 {
 			return ErrInvalid
 		}
+	}
+	if count > MaxContextCharacters {
+		return ErrInvalid
+	}
+	count = utf8.RuneCountInString(s.Transcript)
+	for _, length := range lengths {
+		count += length
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid

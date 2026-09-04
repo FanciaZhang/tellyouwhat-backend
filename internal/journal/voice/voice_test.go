@@ -110,21 +110,26 @@ func TestASRPacketFinalFlagAndMalformedPackets(t *testing.T) {
 	}
 }
 func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
-	s := Snapshot{Revision: 4, Blocks: []Block{{"block", "原文"}}, EditedBlockIDs: []string{"block"}}
+	block, inserted := uuid.NewString(), uuid.NewString()
+	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文"}}, EditedBlockIDs: []string{block}}
 	r := Revision{BaseRevision: 3}
 	if !errors.Is(r.Validate(s), ErrConflict) {
 		t.Fatal("accepted stale revision")
 	}
 	r.BaseRevision = 4
-	r.Patches = []Patch{{ID: "block", Text: "错误覆盖"}}
+	r.Patches = []Patch{{ID: block, Text: "错误覆盖"}}
 	if r.Validate(s) == nil {
 		t.Fatal("overwrote manual edit")
 	}
-	r.Patches = []Patch{{ID: "new", Text: "新增", AfterID: "unknown"}}
+	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: uuid.NewString()}}
 	if r.Validate(s) == nil {
 		t.Fatal("unknown anchor")
 	}
-	r.Patches = []Patch{{ID: "new", Text: "新增", AfterID: "block"}}
+	r.Patches = []Patch{{ID: "not-a-uuid", Text: "新增", AfterID: block}}
+	if r.Validate(s) == nil {
+		t.Fatal("accepted an ID the iOS client cannot apply")
+	}
+	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: block}}
 	if err := r.Validate(s); err != nil {
 		t.Fatal(err)
 	}

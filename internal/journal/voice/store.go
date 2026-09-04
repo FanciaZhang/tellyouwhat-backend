@@ -20,6 +20,7 @@ type Store interface {
 	Renew(context.Context, string, string) error
 	Unlock(context.Context, string, string)
 	Receipt(context.Context, string, string, string) (*Receipt, error)
+	BilledHash(context.Context, string, string, string) (string, error)
 	Commit(context.Context, string, string, string, string, Receipt, int) (int, error)
 	Remaining(context.Context, string, string, int) (int, error)
 	Forget(context.Context, string, string) error
@@ -92,6 +93,11 @@ func (s *MemoryStore) Remaining(_ context.Context, owner, period string, limit i
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return max(0, limit-s.used[owner+period]), nil
+}
+func (s *MemoryStore) BilledHash(_ context.Context, owner, session, segment string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.billed[owner+session+segment], nil
 }
 func (s *MemoryStore) Commit(_ context.Context, owner, session, period, token string, r Receipt, limit int) (int, error) {
 	s.mu.Lock()
@@ -183,6 +189,13 @@ func (s RedisStore) Remaining(ctx context.Context, owner, period string, limit i
 	}
 	return max(0, limit-used), err
 }
+func (s RedisStore) BilledHash(ctx context.Context, owner, session, segment string) (string, error) {
+	value, err := s.Client.Get(ctx, s.key(owner, "billed:"+session+":"+segment)).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	return value, err
+}
 func (s RedisStore) Commit(ctx context.Context, owner, session, period, token string, r Receipt, limit int) (int, error) {
 	receiptKey := s.key(owner, "receipt:"+session+":"+r.SegmentID)
 	if old, err := s.Receipt(ctx, owner, session, r.SegmentID); err != nil {
@@ -241,10 +254,9 @@ func (s RedisStore) Commit(ctx context.Context, owner, session, period, token st
 func (s *MemoryStore) Forget(_ context.Context, owner, session string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for key, value := range s.receipts {
+	for key := range s.receipts {
 		if strings.HasPrefix(key, owner+session) {
-			value.Receipt.Text = ""
-			s.receipts[key] = value
+			delete(s.receipts, key)
 		}
 	}
 	return nil
@@ -256,23 +268,8 @@ func (s RedisStore) Forget(ctx context.Context, owner, session string) error {
 		if err != nil {
 			return err
 		}
-		for _, key := range keys {
-			segment := strings.TrimPrefix(key, s.key(owner, "receipt:"+session+":"))
-			receipt, err := s.Receipt(ctx, owner, session, segment)
-			if err != nil {
-				return err
-			}
-			if receipt == nil {
-				continue
-			}
-			receipt.Text = ""
-			plain, _ := json.Marshal(receipt)
-			data, nonce, err := s.Cipher.Encrypt(plain, []byte(key))
-			if err != nil {
-				return err
-			}
-			raw, _ := json.Marshal(sealedReceipt{data, nonce})
-			if err = s.Client.SetArgs(ctx, key, string(raw), redis.SetArgs{Mode: "XX", KeepTTL: true}).Err(); err != nil && !errors.Is(err, redis.Nil) {
+		if len(keys) > 0 {
+			if err := s.Client.Del(ctx, keys...).Err(); err != nil {
 				return err
 			}
 		}

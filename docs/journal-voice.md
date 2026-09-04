@@ -49,6 +49,18 @@ expire in 24 hours, and lose their text on final client acknowledgement. Monthly
 counters contain no journal text. Non-content billed segment hashes and session
 durations survive transcript expiry so a retry in a later month cannot charge
 again. Account deletion clears these and all other Journal owner voice keys.
+Clearing a receipt removes its cached text record rather than replacing its
+transcript with an empty string. Replaying already billed audio regenerates the
+transcript when needed, even at zero remaining allowance, and verifies the
+original audio hash before accepting it. A retained receipt avoids that provider
+call. Neither recovery path charges the subscriber again.
+
+iOS persists `submittedAt` before sending the first audio frame. It never splits
+an uncertain upload merely because the next ticket reports less allowance.
+A quota rejection identifies the unbilled segment and current allowance, allowing
+that segment to be safely split while retaining its unprocessed tail locally.
+Subscription contention is returned as a structured WebSocket error so the app
+can explain that another device is recording instead of endlessly reconnecting.
 The existing payload encryption key and capability secret are used.
 
 Only successful, unique segments consume minutes, including their natural pauses.

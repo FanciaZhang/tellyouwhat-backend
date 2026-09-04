@@ -103,7 +103,17 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, session string) 
 	}
 	fence := uuid.NewString()
 	if err = s.Store.Lock(r.Context(), c.Identity.Owner, fence); err != nil {
-		http.Error(w, "voice session busy", 409)
+		code := "voice_storage_unavailable"
+		if errors.Is(err, ErrBusy) {
+			code = "voice_session_busy"
+		}
+		// URLSessionWebSocketTask cannot decode a failed upgrade body. Deliver
+		// an authenticated, structured refusal without starting any provider work.
+		websocket.Server{Handshake: func(*websocket.Config, *http.Request) error { return nil }, Handler: func(ws *websocket.Conn) {
+			defer ws.Close()
+			ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = websocket.JSON.Send(ws, Event{Type: "error", Code: code})
+		}}.ServeHTTP(w, r)
 		return
 	}
 	defer s.Store.Unlock(context.WithoutCancel(r.Context()), c.Identity.Owner, fence)
@@ -165,6 +175,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var segment string
 	var pcm []byte
 	var duplicate *Receipt
+	var billedHash string
 	var inputFinal bool
 	var transcriptBase, segmentStable string
 	var generation, tr, lastSubmitted int
@@ -172,6 +183,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	awaitingRevision := -1
 	var segmentPeriod string
 	var remaining int
+	quotaFailure := func() {
+		emit(Event{Type: "error", Code: "voice_quota_exhausted", SegmentID: segment, RemainingMilliseconds: remaining})
+	}
 	maxEnd := minTime(time.Now().Add(31*time.Minute), claim.Identity.ExpiresAt)
 	launch := func() {
 		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 {
@@ -267,6 +281,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						fail("voice_storage_unavailable")
 						return
 					}
+					billedHash, err = s.Store.BilledHash(ctx, claim.Identity.Owner, claim.SessionID, segment)
+					if err != nil {
+						fail("voice_storage_unavailable")
+						return
+					}
 					start, _ := Period(claim.Identity.Anchor, time.Now())
 					segmentPeriod = start.Format(time.RFC3339)
 					remaining, err = s.Store.Remaining(ctx, claim.Identity.Owner, segmentPeriod, s.limit())
@@ -275,8 +294,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						return
 					}
 					if duplicate == nil {
-						if remaining <= 0 {
-							fail("voice_quota_exhausted")
+						if remaining <= 0 && billedHash == "" {
+							quotaFailure()
 							return
 						}
 						asr, err = s.Speech.Open(ctx, snapshot.Words)
@@ -305,11 +324,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					return
 				}
 				pcm = append(pcm, f.PCM...)
-				if duplicate == nil && (len(pcm)+31)/32 > remaining {
-					fail("voice_quota_exhausted")
+				if duplicate == nil && billedHash == "" && (len(pcm)+31)/32 > remaining {
+					quotaFailure()
 					return
 				}
 				inputFinal = f.Final
+				if f.Final && billedHash != "" && billedHash != hash(string(pcm)) {
+					fail("voice_revision_conflict")
+					return
+				}
 				if duplicate != nil {
 					if f.Final {
 						if duplicate.SHA256 != hash(string(pcm)) {

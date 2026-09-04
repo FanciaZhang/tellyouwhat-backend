@@ -15,6 +15,42 @@ import (
 )
 
 type scriptedSpeech struct{ opens atomic.Int32 }
+
+func TestBusySubscriptionDeliversAnActionableSocketError(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	identity := Identity{Owner: "other-device", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}
+	if err := store.Lock(ctx, identity.Owner, "existing-connection"); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{Store: store, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(ctx, identity, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(3 * time.Second))
+	var event Event
+	if err := websocket.JSON.Receive(ws, &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "error" || event.Code != "voice_session_busy" {
+		t.Fatalf("%+v", event)
+	}
+	if err := store.Renew(ctx, identity.Owner, "existing-connection"); err != nil {
+		t.Fatal("refusal removed another device's lease", err)
+	}
+}
+
 type scriptedConnection struct {
 	result chan Transcript
 	closed chan struct{}
@@ -125,7 +161,7 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	speech := &scriptedSpeech{}
 	model := &scriptedRewriter{}
-	s := &Service{Store: NewMemoryStore(), Speech: speech, Model: model, Secret: make([]byte, 32)}
+	s := &Service{Store: NewMemoryStore(), Speech: speech, Model: model, Secret: make([]byte, 32), Limit: 200}
 	session := uuid.NewString()
 	segment := uuid.NewString()
 	block := uuid.NewString()
@@ -201,21 +237,29 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	}
 	ws = dial()
 	defer ws.Close()
+	// A second device can have the audio but not yet the final transcript.
+	// Cleared receipts must regenerate real text even with no allowance left.
+	snapshot.Transcript = ""
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400), Final: true})
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil {
-		t.Fatal(err)
+	for event.Type != "receipt" {
+		if err := websocket.JSON.Receive(ws, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Type == "error" {
+			t.Fatalf("retry failed: %+v", event)
+		}
 	}
-	if event.Type != "receipt" || event.Receipt.SHA256 != receipt.SHA256 {
+	if event.Receipt.SHA256 != receipt.SHA256 || event.Receipt.Text != receipt.Text {
 		t.Fatalf("%+v", event)
 	}
-	if speech.opens.Load() != 1 {
-		t.Fatal("duplicate segment reached paid provider")
+	if speech.opens.Load() != 2 {
+		t.Fatal("forgotten transcript must be recognized again")
 	}
 	start, _ := Period(identity.Anchor, time.Now())
-	remaining, _ := s.Store.Remaining(context.Background(), identity.Owner, start.Format(time.RFC3339), MonthlyMilliseconds)
-	if remaining != MonthlyMilliseconds-200 {
+	remaining, _ := s.Store.Remaining(context.Background(), identity.Owner, start.Format(time.RFC3339), s.limit())
+	if remaining != 0 {
 		t.Fatal(remaining)
 	}
 	if model.calls.Load() != 1 {
