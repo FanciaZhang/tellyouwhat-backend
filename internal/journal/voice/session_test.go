@@ -53,6 +53,75 @@ func (r *scriptedRewriter) Rewrite(_ context.Context, s Snapshot, tr int) (Rewri
 	r.calls.Add(1)
 	return RewriteResult{Revision: Revision{BaseRevision: s.Revision, TranscriptRevision: tr, Patches: []Patch{{ID: s.Blocks[0].ID, Text: s.Transcript}}, Questions: []string{}}}, nil
 }
+
+type delayedRewriter struct {
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *delayedRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteResult, error) {
+	if r.calls.Add(1) == 1 {
+		close(r.started)
+		select {
+		case <-r.release:
+		case <-ctx.Done():
+			return RewriteResult{}, ctx.Err()
+		}
+	}
+	return RewriteResult{Revision: Revision{BaseRevision: s.Revision, TranscriptRevision: tr, Patches: []Patch{{ID: s.Blocks[0].ID, Text: s.Transcript}}}}, nil
+}
+func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
+	model := &delayedRewriter{started: make(chan struct{}), release: make(chan struct{})}
+	s := &Service{Store: NewMemoryStore(), Speech: &scriptedSpeech{}, Model: model, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ctx := context.Background()
+	ticket, err := s.Issue(ctx, Identity{Owner: "paid", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(10 * time.Second))
+	var event Event
+	if err = websocket.JSON.Receive(ws, &event); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}, Transcript: "完整口述"}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	select {
+	case <-model.started:
+	case <-time.After(time.Second):
+		t.Fatal("model did not start")
+	}
+	// A receipt acknowledgement can resend the same source while rewriting.
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "ping"})
+	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
+		t.Fatalf("%+v %v", event, err)
+	}
+	close(model.release)
+	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
+		t.Fatalf("finished before applying: %+v %v", event, err)
+	}
+	snapshot.Revision++
+	snapshot.Blocks[0].Text = event.Revision.Patches[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "finished" {
+		t.Fatalf("%+v %v", event, err)
+	}
+	if model.calls.Load() != 2 {
+		t.Fatal(model.calls.Load())
+	}
+}
 func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	speech := &scriptedSpeech{}
 	model := &scriptedRewriter{}

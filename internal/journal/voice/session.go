@@ -168,7 +168,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var inputFinal bool
 	var transcriptBase, segmentStable string
 	var generation, tr, lastSubmitted int
-	var dirty, running, finishing bool
+	var dirty, running, finishing, failed bool
 	awaitingRevision := -1
 	var segmentPeriod string
 	var remaining int
@@ -181,7 +181,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		current.Transcript = transcriptBase + segmentStable
 		if current.Validate() != nil {
 			fail("voice_context_too_large")
-			dirty = false
+			failed = true
+			cancel()
 			return
 		}
 		dirty = false
@@ -240,7 +241,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				generation++
 				if finishing && segment == "" && !running {
 					launch()
-					if !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -328,7 +329,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				finishing = true
 				if segment == "" {
 					launch()
-					if !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -382,7 +383,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if finishing {
 					dirty = dirty || lastSubmitted != tr
 					launch()
-					if !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -393,6 +394,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			running = false
 			if result.err != nil {
 				fail("voice_rewrite_unavailable")
+				dirty = true
 				if finishing {
 					return
 				}
@@ -405,6 +407,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					emit(Event{Type: "revision", Revision: &result.value.Revision})
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.
+				} else {
+					// An intervening receipt/snapshot can invalidate an in-flight
+					// result without changing the text. Finalization still needs
+					// a revision that the client has actually applied.
+					dirty = true
 				}
 			}
 			if finishing && segment == "" && awaitingRevision < 0 {
