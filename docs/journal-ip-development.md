@@ -80,14 +80,19 @@ HTTPS, forward secrecy and normal system certificate validation. The environment
 override remains available for explicitly launched debug sessions; a desktop-icon
 launch uses the bundled URL without needing Xcode environment variables.
 
-The deployed gateway is based on `caf942fe5aee2ec83050fea7d603c0d3428e8627`, with
-the App Attest assertion fix `88cb4e7` applied as described below. It predates the local voice feature commits. Speech
-credentials and a voice model are not configured. Therefore the successful IP
-route does **not** demonstrate a live ASR/manuscript session. Deploy the voice
-milestone and configure its dependencies before that acceptance. Do not bypass
+The full backend now runs `85dd734` (`voice-85dd734`), including the voice feature,
+App Attest fix and generated voice API routes. Migration 0002 has been applied.
+The existing Journal Pro endpoint supplies the rewrite model. Speech credentials
+are still absent, so `JOURNAL_VOICE_ENABLED` remains false until ASR credentials
+and its live provider check are available. The route is deployed and returns
+`voice_not_enabled` rather than 404; this is not a successful ASR session. Do not bypass
 App Attest or create fictitious paid entitlements to make the test pass.
 
-## App Attest assertion hotfix
+## App Attest assertion hotfix (superseded by the full voice deployment)
+
+The gateway-only override below was retired when `voice-85dd734` was deployed.
+Use the standard release rollback described in `journal-voice.md` for the current deployment.
+
 
 Real iPhone registration succeeded, but authenticated requests returned 401. The
 verifier passed Apple's nonce directly to Go's `ecdsa.VerifyASN1`, which expects

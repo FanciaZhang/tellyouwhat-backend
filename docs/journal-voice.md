@@ -85,3 +85,33 @@ provider retention and actual billing in the speech console. Evaluate Chinese
 corrections, detail retention and total 30-minute token cost with consented test
 recordings. Do not log audio, body, vocabulary, tokens, or ticket headers. Enable
 only after physical-device background/offline acceptance and the cost gate.
+
+
+## Deployment on 2026-09-04
+
+- Running source: `85dd734d5e9335337111d6db59cb8787be1415dc`. All six service images
+  are installed as `tellyouwhat-ai-release-<service>:voice-85dd734`; gateway,
+  worker and admin were recreated and passed their individual readiness checks.
+- Images were built from the committed source, transferred over SSH with SHA-256
+  verification and loaded into Docker on the server. Git and registry images
+  were not pushed. The deployment used the existing release lock, validation,
+  migration, runtime snapshot, activation and rollback helpers.
+- Migration 0002 added the nullable original-subscription-start column. An encrypted
+  pre-deployment database backup is retained on the server in
+  `/var/backups/tellyouwhat-voice-20260904/mysql-20260904T144644Z-96d878.sql.gz.enc`.
+- `go test -race ./...` passed. The routes now come from the canonical OpenAPI
+  contract, including the WebSocket upgrade; a real loopback WebSocket test
+  checks the ready frame and rejection of a reused ticket. iOS carries the same
+  generated public contract.
+- The gateway-only App Attest hotfix override was retired. The deployment record
+  in `.operations/release.json` points to a complete rollback image set that
+  preserves that previous assertion fix. From `/opt/tellyouwhat/backend`, use
+  `python3 deploy/tencent/release.py rollback` to restore it. This restores the
+  pre-voice code; the additive database column is retained.
+- The public IP HTTPS readiness check passes. The deployed voice admission route
+  currently reports `voice_not_enabled` because the server has neither the new
+  speech API Key nor the legacy speech App ID/Access Token. The existing Ark
+  key and Pro model are configured; they are used for diary rewriting. Configure
+  `JOURNAL_SPEECH_API_KEY` (or both legacy speech credential fields), verify the
+  provider and then set `JOURNAL_VOICE_ENABLED=true` and recreate the gateway.
+  Do not report a live ASR/manuscript session until that acceptance succeeds.
