@@ -72,7 +72,7 @@ type appStorage struct {
 	freeRecognitionLimiter     gateway.Quota
 	freeRecognitionQuotaReader quota.Reader
 	recognitionSessions        recognitionquota.Store
-	reconciler                 quota.TokenReconciler
+	reconciler                 quota.JobAttemptBudget
 	capabilityUses             capability.UseStore
 	media                      media.Registry
 	usage                      usage.Recorder

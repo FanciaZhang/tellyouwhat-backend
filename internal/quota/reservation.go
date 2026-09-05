@@ -12,13 +12,15 @@ var ErrInvalidReservation = errors.New("quota reservation is unavailable or does
 // TokenReservation binds a later adjustment to the counters that admitted it.
 // It contains accounting metadata only, without prompts or response content.
 type TokenReservation struct {
-	Version        int    `json:"version"`
-	TransactionID  string `json:"transactionID"`
-	DeviceID       string `json:"deviceID"`
-	DailyWindow    string `json:"dailyWindow"`
-	MonthlyWindow  string `json:"monthlyWindow"`
-	ReservedTokens int    `json:"reservedTokens"`
-	Reconciled     bool   `json:"reconciled"`
+	Version           int    `json:"version"`
+	TransactionID     string `json:"transactionID"`
+	DeviceID          string `json:"deviceID"`
+	DailyWindow       string `json:"dailyWindow"`
+	MonthlyWindow     string `json:"monthlyWindow"`
+	ReservedTokens    int    `json:"reservedTokens"`
+	Reconciled        bool   `json:"reconciled"`
+	RootReservationID string `json:"rootReservationID,omitempty"`
+	Attempt           int    `json:"attempt,omitempty"`
 }
 
 func (value TokenReservation) Matches(transactionID string, reserved int) bool {

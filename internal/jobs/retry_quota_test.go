@@ -65,7 +65,7 @@ func TestWorkerAccountsForEveryProviderAttempt(t *testing.T) {
 				t.Fatalf("incorrect terminal state or number of calls: result=%+v calls=%d err=%v", result, model.calls, err)
 			}
 			want := reserved * attempts
-			if test.wantStatus == StatusSucceeded && test.usage > 0 {
+			if test.usage > 0 {
 				want = reserved*(attempts-1) + test.usage
 			}
 			snapshot, err := limiter.Snapshot(ctx, principal.TransactionID, now)
