@@ -44,6 +44,8 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 生产交易通过 App Attest 保护的 `POST /v1/entitlements/transactions` 同步。后端独立验证 Apple JWS、Bundle ID、环境和当前 App 的产品白名单，并把 original transaction 绑定到已认证设备。Health 支持月订阅和年订阅；免费拍照、文字或语音记餐使用独立的每日三次 recognition session 与安全 token 上限。
 
+后台任务的 token 预留记录绑定原始交易、预留数量、UTC 日期和月份，完成后仅对原始计数器调整一次，不扣减其他日期的用量。计数器过期后不会被迟到响应重新创建。旧版本未记录窗口的预留保持保守扣量直至自然到期；不得按完成日期猜测其归属。
+
 敏感 Prompt 和结果在写入 MySQL 前使用 AES-256-GCM 加密。Redis 保存防重放、分布式限流和配额状态。TOS 仅保存 `ai-temp/` 临时媒体，上传授权绑定 MIME、大小和 SHA-256，bucket 必须私有并设置最长 24 小时生命周期。客户端的 BYOK 模式不经过本后端。
 
 ## 本地运行

@@ -19,7 +19,7 @@ func NewRoutedTokenReconciler(managed, freeRecognition TokenReconciler) *RoutedT
 
 func (reconciler *RoutedTokenReconciler) Reconcile(
 	ctx context.Context,
-	transactionID string,
+	transactionID, reservationID string,
 	reserved,
 	actual int,
 	now time.Time,
@@ -31,7 +31,7 @@ func (reconciler *RoutedTokenReconciler) Reconcile(
 	if target == nil {
 		return ErrInvalidIdentity
 	}
-	return target.Reconcile(ctx, transactionID, reserved, actual, now)
+	return target.Reconcile(ctx, transactionID, reservationID, reserved, actual, now)
 }
 
 var _ TokenReconciler = (*RoutedTokenReconciler)(nil)

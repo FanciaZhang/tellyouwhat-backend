@@ -217,6 +217,7 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		_ = worker.reconciler.Reconcile(
 			ctx,
 			transactionID,
+			quota.JobReservationID(job.OwnerKeyID, job.RequestID, job.BodyDigest),
 			contracts.ReservationTokens(job.Request),
 			response.InputTokens+response.OutputTokens,
 			time.Now(),

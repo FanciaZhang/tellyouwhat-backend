@@ -235,11 +235,15 @@ func (store *RecognitionQuotaStore) Snapshot(
 }
 
 func recognitionWindowKey(deviceID string) string {
-	return "health:recognition:window:" + deviceID
+	return appRecognitionWindowKey("health", deviceID)
 }
 
 func (store *RecognitionQuotaStore) recognitionWindowKey(deviceID string) string {
-	return store.appID + ":recognition:window:" + deviceID
+	return appRecognitionWindowKey(store.appID, deviceID)
+}
+
+func appRecognitionWindowKey(appID, deviceID string) string {
+	return appID + ":recognition:window:" + deviceID
 }
 
 func recognitionScriptResult(values []any) (int, recognitionquota.Snapshot, error) {

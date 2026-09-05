@@ -26,6 +26,7 @@
 | 定时任务凭据交付、配置路径规范化和部署文件所有者约定 | `ecec6d1`、`f9b93bc`、`7afe328` | [PR #2](https://github.com/FanciaZhang/tellyouwhat-backend/pull/2) | 限定脚本及定时服务已应用，远程健康检查通过 |
 | 新数据库备份排除临时 AI 任务数据，保留表结构 | `b0c81a6` | [PR #3](https://github.com/FanciaZhang/tellyouwhat-backend/pull/3) | 限定备份脚本已应用，新备份及隔离恢复通过；历史快照未改写 |
 | AI 任务到期后禁止读取、取消及幂等重放旧结果 | `1cd9d3b` | [PR #4](https://github.com/FanciaZhang/tellyouwhat-backend/pull/4) | 已验证源码，尚未部署 |
+| 后台任务按原始 token 预留窗口幂等对账，保护新一天/月用量 | 本候选 | [PR #5](https://github.com/FanciaZhang/tellyouwhat-backend/pull/5) | 尚未部署；旧预留标记保持保守扣量直至到期 |
 
 候选不包含其他工作区尚未提交的临时 IP 工具移除和文档改动。仓库中存在历史 IP 工具不代表生产仍启用该入口。
 源码历史的有限凭据模式检查未发现私钥或常见访问令牌；该检查不构成完整安全审计或隐私保证。

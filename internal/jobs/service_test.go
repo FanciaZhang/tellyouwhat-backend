@@ -301,7 +301,7 @@ type failingJobProvider struct{}
 
 type failingTokenReconciler struct{ calls int }
 
-func (reconciler *failingTokenReconciler) Reconcile(context.Context, string, int, int, time.Time) error {
+func (reconciler *failingTokenReconciler) Reconcile(context.Context, string, string, int, int, time.Time) error {
 	reconciler.calls++
 	return errors.New("redis unavailable")
 }
