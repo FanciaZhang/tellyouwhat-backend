@@ -62,6 +62,8 @@ go run ./cmd/gateway
 
 首发使用一台腾讯云 CVM 或轻量服务器运行 Caddy、gateway、worker 和 admin，并连接同地域私网中的托管 MySQL 与 Redis。Caddy 仅开放 80/443；Health 与 Journal 使用显式、独立的站点块并复用公共安全配置，因此以后可以分别配置限流、超时和上传策略，而不需要增加服务器。完整配置、CI/CD、首次管理员和验收步骤见 [`deploy/tencent/README.md`](deploy/tencent/README.md)。
 
+线上版本、候选源码和部署前配置核对见[源码与生产部署对应关系](docs/source-deployment-traceability.md)。
+
 ## 验证
 
 ```sh
