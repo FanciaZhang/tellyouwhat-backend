@@ -145,6 +145,10 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 
 更新 `compose.production.yaml`、`ops_common.py` 与 `install-operations.sh` 后，重新执行 `deploy/tencent/install-operations.sh` 安装定时服务。保留服务器已有时区挂载和其他运行配置，按修复范围替换。核验应包含非 root 服务的配置读取、`docker compose config --quiet`、真实加密备份与隔离恢复演练；仅有 timer 列表不能证明任务执行成功。
 
+数据库备份排除 `ai_jobs` 与 `job_dispatch_outbox` 的所有数据，只保留这两张表的定义；短期 AI 请求、结果和执行队列不会进入新备份。其余业务数据仍以一致性快照导出，媒体对象元数据保留以便后续清理。备份清单的 `excluded_data_tables` 标明排除范围，两张表恢复后的行数为 0。导出任一步失败，或输出仍包含被排除表的数据，均不会发布备份。使用 MySQL 的 [`--ignore-table` 与 `--no-data`](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html) 分别导出业务数据和临时表结构。
+
+灾难恢复不恢复短期 AI 任务；客户端需要重新发起尚未完成的请求。旧备份不会被此规则改写，按原备份轮换保留。恢复到生产前，必须另行核对快照之后的删除和授权撤回；隔离恢复演练只验证可恢复性，不授权把已删除的身份、交易和同意记录重新投入使用。此排除规则不覆盖托管数据库服务商的物理备份，也不代替保存期限及删除流程的完整核验。
+
 清理任务先删除过期 TOS 对象，再删除数据库元数据；存储故障会保留记录以便重试。身份清理必须同时满足 30 天未活动、无有效权益、无待删除媒体，且仅操作所属 App 的身份。
 
 `Backend Operations` 每 15 分钟从 GitHub Runner 通过固定 SSH host key 检查服务及依赖、磁盘余量和备份/清理/恢复记录的新鲜度。失败产生失败的 Actions 运行和错误注释；收件人应在 GitHub 通知设置中启用 Actions 失败通知。公开仓库长时间无活动时 GitHub 可能暂停计划运行，服务器本地的三个 timer 不受影响。云平台主机告警可作为独立通道。
