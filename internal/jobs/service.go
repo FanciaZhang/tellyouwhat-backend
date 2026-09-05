@@ -121,7 +121,14 @@ func (service *Service) EnqueueWithID(
 		UpdatedAt:          now,
 		ExpiresAt:          now.Add(24 * time.Hour),
 	}
-	return service.store.CreateOrGet(ctx, job)
+	stored, err := service.store.CreateOrGet(ctx, job)
+	if err != nil {
+		return Job{}, err
+	}
+	if !service.now().Before(stored.ExpiresAt) {
+		return Job{}, ErrIdempotencyConflict
+	}
+	return stored, nil
 }
 
 func (service *Service) Get(ctx context.Context, principal attestation.Principal, jobID string) (Job, error) {
@@ -129,7 +136,7 @@ func (service *Service) Get(ctx context.Context, principal attestation.Principal
 	if err != nil {
 		return Job{}, err
 	}
-	if job.OwnerKeyID != principal.KeyID {
+	if job.OwnerKeyID != principal.KeyID || !service.now().Before(job.ExpiresAt) {
 		return Job{}, ErrNotFound
 	}
 	return job, nil

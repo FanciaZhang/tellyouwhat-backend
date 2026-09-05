@@ -196,7 +196,7 @@ func (server *Server) EnqueueAIJob(
 	job, err := server.jobs.EnqueueWithID(ctx, principalForQuota(principal, managed), binding.JobID, artifact, binding.BodyDigest)
 	if err != nil {
 		if errors.Is(err, jobs.ErrIdempotencyConflict) {
-			failure = newAPIFailure(http.StatusConflict, "idempotency_conflict", "requestID was already used with different content", artifact.RequestID)
+			failure = newAPIFailure(http.StatusConflict, "idempotency_conflict", "requestID cannot be reused; submit a new request", artifact.RequestID)
 			return healthhttpapi.EnqueueAIJob409JSONResponse{ConflictJSONResponse: healthhttpapi.ConflictJSONResponse(healthErrorResponse(failure))}, nil
 		}
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
