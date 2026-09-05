@@ -28,6 +28,7 @@
 | AI 任务到期后禁止读取、取消及幂等重放旧结果 | `1cd9d3b` | [PR #4](https://github.com/FanciaZhang/tellyouwhat-backend/pull/4) | 已验证源码，尚未部署 |
 | 后台任务按原始 token 预留窗口幂等对账，保护新一天/月用量 | 本候选 | [PR #5](https://github.com/FanciaZhang/tellyouwhat-backend/pull/5) | 尚未部署；旧预留标记保持保守扣量直至到期 |
 | Health 方舟普通及流式请求关闭响应保存与上下文缓存 | 本候选 | [PR #5](https://github.com/FanciaZhang/tellyouwhat-backend/pull/5) | 尚未部署；meal decision 接入点的独立合成请求已验证参数兼容 |
+| Health 响应必须成功完成，后台重试保留每次调用的未知用量额度 | 本候选 | [PR #5](https://github.com/FanciaZhang/tellyouwhat-backend/pull/5) | 尚未部署；保守预留不代表真实供应商账单或输出硬上限 |
 
 候选不包含其他工作区尚未提交的临时 IP 工具移除和文档改动。仓库中存在历史 IP 工具不代表生产仍启用该入口。
 源码历史的有限凭据模式检查未发现私钥或常见访问令牌；该检查不构成完整安全审计或隐私保证。

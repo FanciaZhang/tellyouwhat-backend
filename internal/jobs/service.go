@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
@@ -183,11 +184,16 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 	}()
 	response, err := worker.provider.Complete(workContext, job.Request)
 	if err != nil {
-		_, _ = worker.store.RetryOrFail(ctx, job.ID, job.AttemptCount, "upstream", time.Now())
+		retry, persistErr := worker.store.RetryOrFail(ctx, job.ID, job.AttemptCount, "upstream", time.Now())
+		if persistErr == nil && !retry {
+			worker.reconcileQuota(ctx, job, providerapi.Response{})
+		}
 		return err
 	}
 	if err := contracts.ValidateResponse(job.Request, response.Content); err != nil {
-		_ = worker.store.Fail(ctx, job.ID, job.AttemptCount, "contract", time.Now())
+		if err := worker.store.Fail(ctx, job.ID, job.AttemptCount, "contract", time.Now()); err == nil {
+			worker.reconcileQuota(ctx, job, providerapi.Response{})
+		}
 		return errors.New("job result violates JSON contract")
 	}
 	transactionID := job.OwnerTransactionID
@@ -208,22 +214,38 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		cleaner.CleanupManagedMedia(cleanupContext, job.Request.Media)
 		cancel()
 	}
-	if actualTokens, known := response.KnownTokenTotal(); worker.reconciler != nil && known {
-		// The result and usage ledger are already committed transactionally. A
-		// Redis reconciliation failure must not turn that terminal success back
-		// into a dispatch failure: redispatch sees a completed job and cannot
-		// replay this adjustment. Keeping the conservative reservation until its
-		// daily/monthly key expires is the safe fallback.
-		_ = worker.reconciler.Reconcile(
-			ctx,
-			transactionID,
-			quota.JobReservationID(job.OwnerKeyID, job.RequestID, job.BodyDigest),
-			contracts.ReservationTokens(job.Request),
-			actualTokens,
-			time.Now(),
-		)
-	}
+	worker.reconcileQuota(ctx, job, response)
 	return nil
+}
+
+func (worker *Worker) reconcileQuota(ctx context.Context, job Job, response providerapi.Response) {
+	if worker.reconciler == nil {
+		return
+	}
+	transactionID := job.OwnerTransactionID
+	if transactionID == "" {
+		transactionID = job.OwnerKeyID
+	}
+	reserved := contracts.ReservationTokens(job.Request)
+	priorAttempts := reserved * (job.AttemptCount - 1)
+	actualTokens := priorAttempts + reserved
+	if tokens, known := response.KnownTokenTotal(); known && tokens <= math.MaxInt-priorAttempts {
+		actualTokens = priorAttempts + tokens
+	}
+	// Prior attempts have unknown provider usage. Preserve a full reservation
+	// for each of them, then use measured usage for the terminal attempt when
+	// available. A durable terminal job must never be redispatched merely
+	// because quota reconciliation failed.
+	reconcileContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = worker.reconciler.Reconcile(
+		reconcileContext,
+		transactionID,
+		quota.JobReservationID(job.OwnerKeyID, job.RequestID, job.BodyDigest),
+		reserved,
+		actualTokens,
+		time.Now(),
+	)
 }
 
 func (worker *Worker) heartbeat(
