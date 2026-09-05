@@ -333,7 +333,7 @@ func quotaExceededResponse(err error) (string, string) {
 }
 
 func capabilityQuotaReservationID(principal Principal, requestID, bodyDigest string) string {
-	return contracts.BodySHA256([]byte("job-capability\n" + principal.KeyID + "\n" + requestID + "\n" + bodyDigest))
+	return quota.JobReservationID(principal.KeyID, requestID, bodyDigest)
 }
 
 func (server *Server) apiAdmissionFailure(err error, requestID string) *apiFailure {

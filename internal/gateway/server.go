@@ -10,9 +10,11 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -123,6 +125,8 @@ type ManagedProduct struct {
 }
 
 type Dependencies struct {
+	Voice                      *voice.Service
+	VoiceEntitlements          entitlement.Store
 	App                        appregistry.App
 	Authenticator              Authenticator
 	Entitlements               EntitlementChecker
@@ -156,6 +160,8 @@ type Dependencies struct {
 }
 
 type Server struct {
+	voice                      *voice.Service
+	voiceEntitlements          entitlement.Store
 	app                        appregistry.App
 	authenticator              Authenticator
 	entitlements               EntitlementChecker
@@ -216,6 +222,7 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		voice: dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,

@@ -82,13 +82,18 @@ type counter struct {
 	value  int
 }
 
+type memoryReservation struct {
+	TokenReservation
+	expiresAt time.Time
+}
+
 type MemoryLimiter struct {
 	mu           sync.Mutex
 	limits       Limits
 	requests     map[string]counter
 	tokens       map[string]counter
 	concurrency  map[string]int
-	reservations map[string]time.Time
+	reservations map[string]memoryReservation
 }
 
 func NewMemoryLimiter(limits Limits) *MemoryLimiter {
@@ -97,7 +102,7 @@ func NewMemoryLimiter(limits Limits) *MemoryLimiter {
 		requests:     make(map[string]counter),
 		tokens:       make(map[string]counter),
 		concurrency:  make(map[string]int),
-		reservations: make(map[string]time.Time),
+		reservations: make(map[string]memoryReservation),
 	}
 }
 
@@ -119,7 +124,7 @@ type Releaser interface {
 }
 
 type TokenReconciler interface {
-	Reconcile(context.Context, string, int, int, time.Time) error
+	Reconcile(context.Context, string, string, int, int, time.Time) error
 }
 
 func (limiter *MemoryLimiter) Acquire(
@@ -151,7 +156,10 @@ func (limiter *MemoryLimiter) Acquire(
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 	if reservationID != "" {
-		if expiresAt, exists := limiter.reservations[reservationID]; exists && now.Before(expiresAt) {
+		if reservation, exists := limiter.reservations[reservationID]; exists && now.Before(reservation.expiresAt) {
+			if !reservation.Matches(identity.TransactionID, estimatedTokens) || reservation.DeviceID != identity.DeviceID {
+				return nil, ErrInvalidReservation
+			}
 			return &Lease{}, nil
 		}
 		delete(limiter.reservations, reservationID)
@@ -177,7 +185,13 @@ func (limiter *MemoryLimiter) Acquire(
 	limiter.tokens[monthlyKey] = counter{window: monthlyWindow, value: counterValue(limiter.tokens[monthlyKey], monthlyWindow) + estimatedTokens}
 	limiter.concurrency[identity.DeviceID]++
 	if reservationID != "" {
-		limiter.reservations[reservationID] = now.Add(25 * time.Hour)
+		limiter.reservations[reservationID] = memoryReservation{
+			TokenReservation: TokenReservation{
+				Version: 1, TransactionID: identity.TransactionID, DeviceID: identity.DeviceID,
+				DailyWindow: dailyWindow, MonthlyWindow: monthlyWindow, ReservedTokens: estimatedTokens,
+			},
+			expiresAt: now.Add(25 * time.Hour),
+		}
 	}
 	return &Lease{
 		limiter:       limiter,
@@ -217,7 +231,7 @@ func (lease *Lease) Release(actualTokens int) {
 
 func (limiter *MemoryLimiter) Reconcile(
 	_ context.Context,
-	transactionID string,
+	transactionID, reservationID string,
 	reserved,
 	actual int,
 	now time.Time,
@@ -227,9 +241,18 @@ func (limiter *MemoryLimiter) Reconcile(
 	}
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
+	reservation, exists := limiter.reservations[reservationID]
+	if reservationID == "" || !exists || !now.Before(reservation.expiresAt) || !reservation.Matches(transactionID, reserved) {
+		return ErrInvalidReservation
+	}
+	if reservation.Reconciled {
+		return nil
+	}
 	delta := actual - reserved
-	adjustCounter(limiter.tokens, "day:"+transactionID, now.UTC().Format("20060102"), delta)
-	adjustCounter(limiter.tokens, "month:"+transactionID, now.UTC().Format("200601"), delta)
+	adjustCounter(limiter.tokens, "day:"+transactionID, reservation.DailyWindow, delta)
+	adjustCounter(limiter.tokens, "month:"+transactionID, reservation.MonthlyWindow, delta)
+	reservation.Reconciled = true
+	limiter.reservations[reservationID] = reservation
 	return nil
 }
 
@@ -266,7 +289,11 @@ func counterValue(value counter, window string) int {
 }
 
 func adjustCounter(values map[string]counter, key, window string, delta int) {
-	value := counterValue(values[key], window) + delta
+	existing, ok := values[key]
+	if !ok || existing.window != window {
+		return
+	}
+	value := existing.value + delta
 	if value < 0 {
 		value = 0
 	}

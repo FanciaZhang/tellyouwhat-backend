@@ -15,6 +15,7 @@ type Record struct {
 	KeyID              string
 	TransactionID      string
 	ExpiresAt          time.Time
+	StartedAt          time.Time
 	Environment        string
 	OfferTransactionID string
 	OfferIdentifier    string
@@ -93,6 +94,7 @@ func (service *DevelopmentService) Activate(
 		KeyID:         principal.KeyID,
 		TransactionID: principal.TransactionID,
 		ExpiresAt:     expiresAt,
+		StartedAt:     service.now(),
 		Environment:   service.environment,
 	}
 	if err := service.store.Upsert(ctx, record); err != nil {

@@ -138,6 +138,8 @@ func captureRawRequestBody() gin.HandlerFunc {
 
 func requestBodyLimit(method, path string) int64 {
 	switch method + " " + path {
+	case "POST /v1/journal/voice/sessions":
+		return 8 << 10
 	case "POST /v1/attest/challenges":
 		return 8 << 10
 	case "POST /v1/attest/keys":

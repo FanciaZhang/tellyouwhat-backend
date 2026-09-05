@@ -1,0 +1,4 @@
+# Import inside the existing Caddyfile's single, first global-options block.
+# IP clients normally omit TLS SNI. The server's private listen address differs
+# from the public address on the certificate, so certificate selection needs this.
+default_sni __JOURNAL_IP__

@@ -23,7 +23,7 @@ var (
 
 const (
 	claimLeaseDuration = 2 * time.Minute
-	maximumAttempts    = 3
+	maximumAttempts    = quota.MaximumJobAttempts
 )
 
 type Status string
@@ -121,7 +121,14 @@ func (service *Service) EnqueueWithID(
 		UpdatedAt:          now,
 		ExpiresAt:          now.Add(24 * time.Hour),
 	}
-	return service.store.CreateOrGet(ctx, job)
+	stored, err := service.store.CreateOrGet(ctx, job)
+	if err != nil {
+		return Job{}, err
+	}
+	if !service.now().Before(stored.ExpiresAt) {
+		return Job{}, ErrIdempotencyConflict
+	}
+	return stored, nil
 }
 
 func (service *Service) Get(ctx context.Context, principal attestation.Principal, jobID string) (Job, error) {
@@ -129,7 +136,7 @@ func (service *Service) Get(ctx context.Context, principal attestation.Principal
 	if err != nil {
 		return Job{}, err
 	}
-	if job.OwnerKeyID != principal.KeyID {
+	if job.OwnerKeyID != principal.KeyID || !service.now().Before(job.ExpiresAt) {
 		return Job{}, ErrNotFound
 	}
 	return job, nil
@@ -146,14 +153,17 @@ func (service *Service) Cancel(ctx context.Context, principal attestation.Princi
 type Worker struct {
 	store      Store
 	provider   providerapi.Client
-	reconciler quota.TokenReconciler
+	reconciler quota.JobAttemptBudget
 }
 
-func NewWorker(store Store, provider providerapi.Client, reconciler quota.TokenReconciler) *Worker {
+func NewWorker(store Store, provider providerapi.Client, reconciler quota.JobAttemptBudget) *Worker {
 	return &Worker{store: store, provider: provider, reconciler: reconciler}
 }
 
 func (worker *Worker) Process(ctx context.Context, jobID string) error {
+	if worker.reconciler == nil {
+		return quota.ErrAttemptBudgetUnavailable
+	}
 	job, err := worker.store.Claim(ctx, jobID, time.Now())
 	if err != nil {
 		if errors.Is(err, ErrJobNotClaimable) {
@@ -165,8 +175,35 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		}
 		return err
 	}
-	workContext, cancelWork := context.WithCancel(ctx)
+	admissionContext, cancelAdmission := context.WithTimeout(ctx, 5*time.Second)
+	reservationID, err := worker.reconciler.ReserveJobAttempt(admissionContext, jobAttempt(job), time.Now())
+	cancelAdmission()
+	if err != nil {
+		persistContext, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancelPersist()
+		var persistErr error
+		if errors.Is(err, quota.ErrExceeded) || errors.Is(err, quota.ErrInvalidReservation) {
+			persistErr = worker.store.Fail(persistContext, job.ID, job.AttemptCount, "quota", time.Now())
+		} else {
+			_, persistErr = worker.store.RetryOrFail(persistContext, job.ID, job.AttemptCount, "quota_unavailable", time.Now())
+		}
+		return errors.Join(err, persistErr)
+	}
+	// Admission can race cancellation, expiry, deletion, or a reclaimed lease.
+	// An uncertain admission keeps its reservation but must not start new work.
+	current, err := worker.store.Get(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if current.Status != StatusRunning || current.AttemptCount != job.AttemptCount || !now.Before(current.ExpiresAt) || !now.Before(current.ClaimExpiresAt) {
+		return ErrJobNotClaimable
+	}
+	workContext, cancelWork := context.WithDeadline(ctx, current.ExpiresAt)
 	defer cancelWork()
+	if err := workContext.Err(); err != nil {
+		return err
+	}
 	stopHeartbeat := make(chan struct{})
 	heartbeatDone := make(chan struct{})
 	go worker.heartbeat(workContext, job.ID, job.AttemptCount, cancelWork, stopHeartbeat, heartbeatDone)
@@ -175,13 +212,14 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		<-heartbeatDone
 	}()
 	response, err := worker.provider.Complete(workContext, job.Request)
+	worker.reconcileQuota(ctx, job, reservationID, response)
 	if err != nil {
-		_, _ = worker.store.RetryOrFail(ctx, job.ID, job.AttemptCount, "upstream", time.Now())
-		return err
+		_, persistErr := worker.store.RetryOrFail(ctx, job.ID, job.AttemptCount, "upstream", time.Now())
+		return errors.Join(err, persistErr)
 	}
 	if err := contracts.ValidateResponse(job.Request, response.Content); err != nil {
-		_ = worker.store.Fail(ctx, job.ID, job.AttemptCount, "contract", time.Now())
-		return errors.New("job result violates JSON contract")
+		persistErr := worker.store.Fail(ctx, job.ID, job.AttemptCount, "contract", time.Now())
+		return errors.Join(errors.New("job result violates JSON contract"), persistErr)
 	}
 	transactionID := job.OwnerTransactionID
 	if transactionID == "" {
@@ -201,21 +239,40 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		cleaner.CleanupManagedMedia(cleanupContext, job.Request.Media)
 		cancel()
 	}
-	if worker.reconciler != nil {
-		// The result and usage ledger are already committed transactionally. A
-		// Redis reconciliation failure must not turn that terminal success back
-		// into a dispatch failure: redispatch sees a completed job and cannot
-		// replay this adjustment. Keeping the conservative reservation until its
-		// daily/monthly key expires is the safe fallback.
-		_ = worker.reconciler.Reconcile(
-			ctx,
-			transactionID,
-			contracts.ReservationTokens(job.Request),
-			response.InputTokens+response.OutputTokens,
-			time.Now(),
-		)
-	}
 	return nil
+}
+
+func jobAttempt(job Job) quota.JobAttempt {
+	transactionID := job.OwnerTransactionID
+	if transactionID == "" {
+		transactionID = job.OwnerKeyID
+	}
+	return quota.JobAttempt{
+		TransactionID: transactionID, DeviceID: job.OwnerDeviceID,
+		ReservationID:  quota.JobReservationID(job.OwnerKeyID, job.RequestID, job.BodyDigest),
+		ReservedTokens: contracts.ReservationTokens(job.Request), Number: job.AttemptCount,
+	}
+}
+
+func (worker *Worker) reconcileQuota(ctx context.Context, job Job, reservationID string, response providerapi.Response) {
+	attempt := jobAttempt(job)
+	actualTokens := attempt.ReservedTokens
+	if tokens, known := response.KnownTokenTotal(); known {
+		actualTokens = tokens
+	}
+	// Settle this provider call independently of result persistence or user
+	// cancellation. Missing usage or a failed adjustment retains its prepayment;
+	// neither condition authorizes another provider call without admission.
+	reconcileContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = worker.reconciler.Reconcile(
+		reconcileContext,
+		attempt.TransactionID,
+		reservationID,
+		attempt.ReservedTokens,
+		actualTokens,
+		time.Now(),
+	)
 }
 
 func (worker *Worker) heartbeat(

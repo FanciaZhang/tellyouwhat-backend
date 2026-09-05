@@ -15,6 +15,9 @@ import time
 from ops_common import OperationError, atomic_json
 
 
+TRANSIENT_DATA_TABLES = ("ai_jobs", "job_dispatch_outbox")
+
+
 def backup_secret(runtime):
     value = runtime.config.get("BACKUP_ENCRYPTION_KEY", "")
     if len(value) < 43:
@@ -60,7 +63,11 @@ def create_backup(runtime):
                "--host=" + runtime.config["MYSQL_HOST"], "--port=" + runtime.config.get("MYSQL_PORT", "3306"),
                "--user=" + runtime.config["MYSQL_USER"], "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
-               "--skip-comments", database]
+               "--skip-comments"]
+    commands = [
+        command + ["--ignore-table=" + database + "." + table for table in TRANSIENT_DATA_TABLES] + [database],
+        command + ["--no-data", database, *TRANSIENT_DATA_TABLES],
+    ]
     with tempfile.TemporaryDirectory(prefix=".backup-", dir=runtime.backups) as directory:
         temporary = Path(directory)
         compressed = temporary / "snapshot.sql.gz"
@@ -70,32 +77,38 @@ def create_backup(runtime):
         with errors.open("wb") as diagnostic, compressed.open("wb") as output:
             os.chmod(errors, 0o600)
             os.chmod(compressed, 0o600)
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=diagnostic, env=child_env)
-            try:
-                with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as archive:
-                    for line in process.stdout:
-                        archive.write(line)
-                        create = re.match(rb"CREATE TABLE `([A-Za-z0-9_]+)`", line)
-                        insert = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
-                        if create:
-                            counts[create[1].decode()] = 0
-                        if insert:
-                            table = insert[1].decode()
-                            counts[table] = counts.get(table, 0) + 1
-                returncode = process.wait(timeout=900)
-            finally:
-                process.stdout.close()
-                if process.poll() is None:
-                    process.kill()
-                    process.wait()
-        if returncode != 0:
-            raise OperationError(f"database export failed (exit {returncode}); no backup published")
+            with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as archive:
+                for dump_command in commands:
+                    process = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=diagnostic, env=child_env)
+                    try:
+                        for line in process.stdout:
+                            create = re.match(rb"CREATE TABLE `([A-Za-z0-9_]+)`", line)
+                            insert = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
+                            if create:
+                                counts[create[1].decode()] = 0
+                            if insert:
+                                table = insert[1].decode()
+                                if table in TRANSIENT_DATA_TABLES:
+                                    raise OperationError("database export included excluded transient data; no backup published")
+                                counts[table] = counts.get(table, 0) + 1
+                            archive.write(line)
+                        returncode = process.wait(timeout=900)
+                    finally:
+                        process.stdout.close()
+                        if process.poll() is None:
+                            process.kill()
+                            process.wait()
+                    if returncode != 0:
+                        raise OperationError(f"database export failed (exit {returncode}); no backup published")
         if not counts or "schema_migrations" not in counts:
             raise OperationError("database export contains no valid application schema")
+        if any(counts.get(table) != 0 for table in TRANSIENT_DATA_TABLES):
+            raise OperationError("database export is missing transient table definitions")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
         manifest = {"version": 1, "created_at": int(time.time()), "database": database,
                     "filename": destination.name, "image": image, "table_rows": counts,
+                    "excluded_data_tables": list(TRANSIENT_DATA_TABLES),
                     "sha256": file_digest(encrypted)}
         signature = manifest_signature(backup_secret(runtime), manifest)
         os.replace(encrypted, destination)
