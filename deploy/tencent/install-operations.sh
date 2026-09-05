@@ -2,8 +2,10 @@
 set -euo pipefail
 
 backend_dir=/opt/tellyouwhat/backend
-deploy_user=$(stat -c '%U' "$backend_dir/.env.production")
+deploy_user=$(stat -c '%U' "$backend_dir")
 test "$deploy_user" != root
+id "$deploy_user" >/dev/null
+test -f "$backend_dir/.env.production"
 test -f "$backend_dir/deploy/tencent/operations.py"
 unit_dir=$(mktemp -d)
 trap 'rm -rf "$unit_dir"' EXIT
@@ -19,6 +21,9 @@ Wants=network-online.target
 Type=oneshot
 User=$deploy_user
 WorkingDirectory=$backend_dir
+LoadCredential=production-env:$backend_dir/.env.production
+Environment=TELLYOUWHAT_ENV_FILE=%d/production-env
+PrivateMounts=true
 ExecStart=/usr/bin/python3 $backend_dir/deploy/tencent/operations.py %i
 TimeoutStartSec=20min
 UMask=0077

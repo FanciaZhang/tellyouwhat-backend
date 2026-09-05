@@ -139,6 +139,16 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 
 发布成功后安装三个 systemd timer，均使用北京时间：每日 03:05 加密备份、每日 03:25 保留期清理、周日 04:05 隔离恢复演练，允许两分钟随机延迟。补跑由 `Persistent=true` 管理。运行记录保存在权限受限的 `.operations`；备份位于 `/var/backups/tellyouwhat`，保留 14 天。
 
+定时任务以后端部署目录的非 root 所有者运行。systemd 在任务启动时通过 `LoadCredential` 提供只读配置副本，并将 `TELLYOUWHAT_ENV_FILE` 指向该副本；Python 运行参数和 Compose 的容器 `env_file` 使用同一份配置。仅运行此定时服务时，原 `.env.production` 可为 `root:root 0600`。需要支持服务凭据的 systemd；当前服务器为版本 255。机制见 [systemd 服务凭据](https://systemd.io/CREDENTIALS/)。
+
+直接 SSH 运维和发布由 `PRODUCTION_USER` 执行，需要该用户读取生产配置，并能够写入镜像版本、运行文件及 `.operations`。此模式下 `.env.production` 应归部署用户所有，保持 `0600`；部署记录、`.releases` 及当前和上一个回滚快照也须由同一用户访问。环境文件和密钥不应放宽为其他用户可读。修复历史 root 部署的归属偏差时，仅调整已核实的运行配置、记录和对应快照，保留内容、现有文件权限及容器密钥组，不对整个部署目录递归修改。
+
+更新 `compose.production.yaml`、`ops_common.py` 与 `install-operations.sh` 后，重新执行 `deploy/tencent/install-operations.sh` 安装定时服务。保留服务器已有时区挂载和其他运行配置，按修复范围替换。核验应包含非 root 服务的配置读取、`docker compose config --quiet`、真实加密备份与隔离恢复演练；仅有 timer 列表不能证明任务执行成功。
+
+数据库备份排除 `ai_jobs` 与 `job_dispatch_outbox` 的所有数据，只保留这两张表的定义；短期 AI 请求、结果和执行队列不会进入新备份。其余业务数据仍以一致性快照导出，媒体对象元数据保留以便后续清理。备份清单的 `excluded_data_tables` 标明排除范围，两张表恢复后的行数为 0。导出任一步失败，或输出仍包含被排除表的数据，均不会发布备份。使用 MySQL 的 [`--ignore-table` 与 `--no-data`](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html) 分别导出业务数据和临时表结构。
+
+灾难恢复不恢复短期 AI 任务；客户端需要重新发起尚未完成的请求。旧备份不会被此规则改写，按原备份轮换保留。恢复到生产前，必须另行核对快照之后的删除和授权撤回；隔离恢复演练只验证可恢复性，不授权把已删除的身份、交易和同意记录重新投入使用。此排除规则不覆盖托管数据库服务商的物理备份，也不代替保存期限及删除流程的完整核验。
+
 清理任务先删除过期 TOS 对象，再删除数据库元数据；存储故障会保留记录以便重试。身份清理必须同时满足 30 天未活动、无有效权益、无待删除媒体，且仅操作所属 App 的身份。
 
 `Backend Operations` 每 15 分钟从 GitHub Runner 通过固定 SSH host key 检查服务及依赖、磁盘余量和备份/清理/恢复记录的新鲜度。失败产生失败的 Actions 运行和错误注释；收件人应在 GitHub 通知设置中启用 Actions 失败通知。公开仓库长时间无活动时 GitHub 可能暂停计划运行，服务器本地的三个 timer 不受影响。云平台主机告警可作为独立通道。
