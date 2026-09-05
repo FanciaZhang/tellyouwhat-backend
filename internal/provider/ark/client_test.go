@@ -3,12 +3,68 @@ package ark
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/tellyouwhat/backend/internal/contracts"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 )
+
+func TestClientDisablesUpstreamResponseStorageAndCaching(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			bodies := make(chan map[string]any, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+					t.Error(err)
+					writer.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				bodies <- body
+				if stream {
+					writer.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprint(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"choice\\\":\\\"soup\\\"}\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":5}}}\n\n")
+					return
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(writer, `{"output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`)
+			}))
+			defer upstream.Close()
+			client := New(Config{
+				BaseURL: upstream.URL, APIKey: "fixture-key",
+				Routes: map[contracts.Operation]Route{contracts.OperationMealDecision: {Model: "fixture-model", TimeoutSeconds: 5}},
+			}, upstream.Client(), fixedMediaResolver{})
+			request := validArkRequest()
+			request.Media = []contracts.Media{{ID: "photo", Kind: "image", MIMEType: "image/jpeg", ObjectID: "fixture-photo"}}
+			var response providerapi.Response
+			var err error
+			if stream {
+				err = client.Stream(context.Background(), request, func(event providerapi.StreamEvent) error {
+					if event.Completed != nil {
+						response = *event.Completed
+					}
+					return nil
+				})
+			} else {
+				response, err = client.Complete(context.Background(), request)
+			}
+			if err != nil || response.Content != `{"choice":"soup"}` || response.OutputTokens != 5 {
+				t.Fatalf("structured response did not complete: %+v err=%v", response, err)
+			}
+			body := <-bodies
+			if body["store"] != false {
+				t.Errorf("upstream request did not explicitly disable response storage")
+			}
+			caching, _ := body["caching"].(map[string]any)
+			if caching["type"] != "disabled" {
+				t.Errorf("upstream request did not explicitly disable response caching")
+			}
+		})
+	}
+}
 
 type fixedMediaResolver struct{}
 

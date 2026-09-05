@@ -207,7 +207,9 @@ func (client *Client) makeRequest(
 		return nil, nil, err
 	}
 	body := map[string]any{
-		"model": route.Model,
+		"model":   route.Model,
+		"store":   false,
+		"caching": map[string]string{"type": "disabled"},
 		"input": []map[string]any{{
 			"role":    "user",
 			"content": content,

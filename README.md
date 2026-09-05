@@ -48,6 +48,8 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 敏感 Prompt 和结果在写入 MySQL 前使用 AES-256-GCM 加密。Redis 保存防重放、分布式限流和配额状态。TOS 仅保存 `ai-temp/` 临时媒体，上传授权绑定 MIME、大小和 SHA-256，bucket 必须私有并设置最长 24 小时生命周期。客户端的 BYOK 模式不经过本后端。
 
+Health 方舟推理请求在普通与流式路径均显式发送 `store: false` 和 `caching.type: disabled`，关闭可供后续请求使用的响应保存和上下文缓存。这些请求参数不证明供应商整体零留存，也不代替其服务政策或本后端数据库、媒体及备份的保留期核验。
+
 ## 本地运行
 
 ```sh
