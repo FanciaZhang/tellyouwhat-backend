@@ -139,7 +139,9 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 
 发布成功后安装三个 systemd timer，均使用北京时间：每日 03:05 加密备份、每日 03:25 保留期清理、周日 04:05 隔离恢复演练，允许两分钟随机延迟。补跑由 `Persistent=true` 管理。运行记录保存在权限受限的 `.operations`；备份位于 `/var/backups/tellyouwhat`，保留 14 天。
 
-定时任务以后端部署目录的非 root 所有者运行。systemd 在任务启动时通过 `LoadCredential` 提供只读配置副本，并将 `TELLYOUWHAT_ENV_FILE` 指向该副本；Python 运行参数和 Compose 的容器 `env_file` 使用同一份配置。原 `.env.production` 可以保持 `root:root 0600`，无需放宽权限。需要支持服务凭据的 systemd；当前服务器为版本 255。机制见 [systemd 服务凭据](https://systemd.io/CREDENTIALS/)。
+定时任务以后端部署目录的非 root 所有者运行。systemd 在任务启动时通过 `LoadCredential` 提供只读配置副本，并将 `TELLYOUWHAT_ENV_FILE` 指向该副本；Python 运行参数和 Compose 的容器 `env_file` 使用同一份配置。仅运行此定时服务时，原 `.env.production` 可为 `root:root 0600`。需要支持服务凭据的 systemd；当前服务器为版本 255。机制见 [systemd 服务凭据](https://systemd.io/CREDENTIALS/)。
+
+直接 SSH 运维和发布由 `PRODUCTION_USER` 执行，需要该用户读取生产配置，并能够写入镜像版本、运行文件及 `.operations`。此模式下 `.env.production` 应归部署用户所有，保持 `0600`；部署记录、`.releases` 及当前和上一个回滚快照也须由同一用户访问。环境文件和密钥不应放宽为其他用户可读。修复历史 root 部署的归属偏差时，仅调整已核实的运行配置、记录和对应快照，保留内容、现有文件权限及容器密钥组，不对整个部署目录递归修改。
 
 更新 `compose.production.yaml`、`ops_common.py` 与 `install-operations.sh` 后，重新执行 `deploy/tencent/install-operations.sh` 安装定时服务。保留服务器已有时区挂载和其他运行配置，按修复范围替换。核验应包含非 root 服务的配置读取、`docker compose config --quiet`、真实加密备份与隔离恢复演练；仅有 timer 列表不能证明任务执行成功。
 
