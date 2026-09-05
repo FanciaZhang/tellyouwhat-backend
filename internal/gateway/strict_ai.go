@@ -143,10 +143,10 @@ func (server *Server) IssueAIJobCapability(
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability422JSONResponse{UnprocessableEntityJSONResponse: healthhttpapi.UnprocessableEntityJSONResponse(healthErrorResponse(failure))}, nil
 	}
-	issued, err := server.capabilities.IssueAt(principal, capability.Binding{
+	issued, err := server.capabilities.IssueWithOutputBudgetAt(principal, capability.Binding{
 		RequestID: artifact.RequestID, Operation: artifact.Operation,
 		BodyDigest: bodyDigest, MediaDigest: mediaDigest,
-	}, attempt.CreatedAt)
+	}, attempt.CreatedAt, artifact.OutputBudget)
 	if err != nil {
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
@@ -188,11 +188,12 @@ func (server *Server) EnqueueAIJob(
 		JobID: request.Params.XHealthJobID.String(), RequestID: artifact.RequestID,
 		Operation: artifact.Operation, BodyDigest: contracts.BodySHA256(rawBody), MediaDigest: mediaDigest,
 	}
-	principal, err := server.capabilities.Validate(request.Params.XHealthJobCapability, binding)
+	principal, budget, err := server.capabilities.ValidateWithOutputBudget(request.Params.XHealthJobCapability, binding)
 	if err != nil {
 		failure = newAPIFailure(http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
 		return healthhttpapi.EnqueueAIJob401JSONResponse{UnauthorizedJSONResponse: healthhttpapi.UnauthorizedJSONResponse(healthErrorResponse(failure))}, nil
 	}
+	artifact.OutputBudget = budget
 	managed, failure := server.apiAuthorizeAIEntitlement(ctx, principal, artifact, artifact.RequestID)
 	if failure != nil {
 		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil

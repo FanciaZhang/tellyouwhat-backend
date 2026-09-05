@@ -106,6 +106,10 @@ func (service *Service) EnqueueWithID(
 	if !contracts.ValidRequestID(jobID) {
 		return Job{}, ErrIdempotencyConflict
 	}
+	request = request.FreezeOutputBudget()
+	if !request.OutputBudget.Valid() {
+		return Job{}, contracts.ErrContractViolation
+	}
 	now := service.now()
 	job := Job{
 		AppID:              principal.AppID,
@@ -174,6 +178,10 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 			return ErrJobLeaseBusy
 		}
 		return err
+	}
+	if !job.Request.OutputBudget.Valid() {
+		persistErr := worker.store.Fail(ctx, job.ID, job.AttemptCount, "execution_policy", time.Now())
+		return errors.Join(contracts.ErrContractViolation, persistErr)
 	}
 	admissionContext, cancelAdmission := context.WithTimeout(ctx, 5*time.Second)
 	reservationID, err := worker.reconciler.ReserveJobAttempt(admissionContext, jobAttempt(job), time.Now())

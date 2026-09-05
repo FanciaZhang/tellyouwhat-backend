@@ -87,8 +87,8 @@ type JobService interface {
 }
 
 type JobCapabilityService interface {
-	IssueAt(Principal, capability.Binding, time.Time) (capability.Issued, error)
-	Validate(string, capability.Binding) (Principal, error)
+	IssueWithOutputBudgetAt(Principal, capability.Binding, time.Time, contracts.OutputBudget) (capability.Issued, error)
+	ValidateWithOutputBudget(string, capability.Binding) (Principal, contracts.OutputBudget, error)
 	Consume(context.Context, string, capability.Binding) (Principal, error)
 }
 

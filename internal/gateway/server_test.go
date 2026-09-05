@@ -1292,12 +1292,14 @@ func (dispatcher *fakeDispatcher) Dispatch(_ context.Context, jobID string) erro
 
 type fakeCapabilities struct {
 	issuedBinding capability.Binding
+	outputBudget  contracts.OutputBudget
 	consumeCalls  int
 	consumed      bool
 }
 
-func (service *fakeCapabilities) IssueAt(_ Principal, binding capability.Binding, issuedAt time.Time) (capability.Issued, error) {
+func (service *fakeCapabilities) IssueWithOutputBudgetAt(_ Principal, binding capability.Binding, issuedAt time.Time, budget contracts.OutputBudget) (capability.Issued, error) {
 	service.issuedBinding = binding
+	service.outputBudget = budget
 	return capability.Issued{JobID: "19be2f9e-bd92-4699-b561-e3816092114c", Token: "valid-token", ExpiresAt: issuedAt.Add(time.Hour)}, nil
 }
 
@@ -1313,11 +1315,15 @@ func (service *fakeCapabilities) Consume(_ context.Context, token string, bindin
 	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
 }
 
-func (*fakeCapabilities) Validate(token string, binding capability.Binding) (Principal, error) {
+func (service *fakeCapabilities) ValidateWithOutputBudget(token string, binding capability.Binding) (Principal, contracts.OutputBudget, error) {
 	if token != "valid-token" || binding.JobID == "" {
-		return Principal{AppID: "health"}, capability.ErrInvalid
+		return Principal{AppID: "health"}, contracts.OutputBudget{}, capability.ErrInvalid
 	}
-	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
+	budget := service.outputBudget
+	if budget == (contracts.OutputBudget{}) {
+		budget = contracts.DefaultOutputBudget()
+	}
+	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, budget, nil
 }
 
 type fakeMediaAuthorizer struct {

@@ -144,7 +144,7 @@ func (server *Server) apiValidateAIRequest(
 	if failure != nil {
 		return contracts.Request{}, nil, Principal{}, false, failure
 	}
-	return artifact, rawRequestBody(strictGinContext(ctx)), principal, managed, nil
+	return artifact.FreezeOutputBudget(), rawRequestBody(strictGinContext(ctx)), principal, managed, nil
 }
 
 func apiRequest(body *healthhttpapi.AIRequest, requestID string) (contracts.Request, *apiFailure) {

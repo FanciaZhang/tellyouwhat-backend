@@ -157,6 +157,7 @@ func TestMySQLPersistencePaths(t *testing.T) {
 		ContractVersion: contracts.ContractVersionV1, PromptVersion: "meal-text-v4",
 		Prompt: "integration", ResponseSchema: json.RawMessage(`{"type":"object"}`),
 		SemanticSignature: "integration-v1",
+		OutputBudget:      contracts.OutputBudget{Version: "health-output-v1", MaxTokens: 16_384},
 	}
 	job := jobs.Job{
 		AppID: appID, ID: jobID, RequestID: requestID, BodyDigest: strings.Repeat("c", 64),
@@ -169,6 +170,15 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	if existing, err := jobRepository.CreateOrGet(ctx, job); err != nil || existing.ID != job.ID {
 		t.Fatalf("idempotent job creation: %#v err=%v", existing, err)
 	}
+	replayedJob := job
+	replayedJob.Request.OutputBudget = contracts.DefaultOutputBudget()
+	if existing, err := jobRepository.CreateOrGet(ctx, replayedJob); err != nil || existing.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("idempotent insert changed frozen output budget: budget=%+v err=%v", existing.Request.OutputBudget, err)
+	}
+	restartedRepository := mysqlstore.NewJobRepository(database, cipher, appID)
+	if restored, err := restartedRepository.Get(ctx, job.ID); err != nil || restored.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("output budget did not survive encrypted persistence: budget=%+v err=%v", restored.Request.OutputBudget, err)
+	}
 	dispatches, err := jobRepository.ClaimDispatches(ctx, now, 10)
 	if err != nil || len(dispatches) != 1 || dispatches[0].JobID != job.ID {
 		t.Fatalf("claim durable dispatch: %#v err=%v", dispatches, err)
@@ -179,6 +189,9 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	claimed, err := jobRepository.Claim(ctx, job.ID, now)
 	if err != nil || claimed.AttemptCount != 1 || claimed.Status != jobs.StatusRunning {
 		t.Fatalf("claim job: %#v err=%v", claimed, err)
+	}
+	if claimed.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("claim changed frozen output budget: %+v", claimed.Request.OutputBudget)
 	}
 	if err := jobRepository.Succeed(ctx, job.ID, claimed.AttemptCount, providerapi.Response{
 		Content: `{"ok":true}`, InputTokens: 12, OutputTokens: 8,

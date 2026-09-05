@@ -3,11 +3,11 @@ package mysqlstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/usage"
@@ -26,7 +26,8 @@ func NewJobRepository(database *sql.DB, cipher *PayloadCipher, appID string) *Jo
 }
 
 func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) (jobs.Job, error) {
-	encoded, err := json.Marshal(job.Request)
+	job.Request = job.Request.FreezeOutputBudget()
+	encoded, err := contracts.MarshalJobRequest(job.Request)
 	if err != nil {
 		return jobs.Job{}, err
 	}
@@ -324,7 +325,8 @@ func (repository *JobRepository) scanJob(row rowScanner) (jobs.Job, error) {
 	if err != nil {
 		return jobs.Job{}, fmt.Errorf("decrypt job request: %w", err)
 	}
-	if err := json.Unmarshal(requestJSON, &job.Request); err != nil {
+	job.Request, err = contracts.UnmarshalJobRequest(requestJSON)
+	if err != nil {
 		return jobs.Job{}, fmt.Errorf("decode job request: %w", err)
 	}
 	if len(resultCiphertext) > 0 {

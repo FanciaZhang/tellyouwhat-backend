@@ -197,6 +197,9 @@ func (client *Client) makeRequest(
 	request contracts.Request,
 	stream bool,
 ) (*http.Request, context.CancelFunc, error) {
+	if request.OutputBudget != (contracts.OutputBudget{}) && !request.OutputBudget.Valid() {
+		return nil, nil, ErrProviderConfiguration
+	}
 	route, ok := client.config.Routes[request.Operation]
 	if !ok || strings.TrimSpace(route.Model) == "" || strings.TrimSpace(client.config.BaseURL) == "" || client.config.APIKey == "" {
 		return nil, nil, ErrProviderConfiguration
@@ -227,9 +230,10 @@ func (client *Client) makeRequest(
 		return nil, nil, err
 	}
 	body := map[string]any{
-		"model":   route.Model,
-		"store":   false,
-		"caching": map[string]string{"type": "disabled"},
+		"max_output_tokens": request.OutputTokenLimit(),
+		"model":             route.Model,
+		"store":             false,
+		"caching":           map[string]string{"type": "disabled"},
 		"input": []map[string]any{{
 			"role":    "user",
 			"content": content,
