@@ -139,6 +139,10 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 
 发布成功后安装三个 systemd timer，均使用北京时间：每日 03:05 加密备份、每日 03:25 保留期清理、周日 04:05 隔离恢复演练，允许两分钟随机延迟。补跑由 `Persistent=true` 管理。运行记录保存在权限受限的 `.operations`；备份位于 `/var/backups/tellyouwhat`，保留 14 天。
 
+定时任务以后端部署目录的非 root 所有者运行。systemd 在任务启动时通过 `LoadCredential` 提供只读配置副本，并将 `TELLYOUWHAT_ENV_FILE` 指向该副本；Python 运行参数和 Compose 的容器 `env_file` 使用同一份配置。原 `.env.production` 可以保持 `root:root 0600`，无需放宽权限。需要支持服务凭据的 systemd；当前服务器为版本 255。机制见 [systemd 服务凭据](https://systemd.io/CREDENTIALS/)。
+
+更新 `compose.production.yaml`、`ops_common.py` 与 `install-operations.sh` 后，重新执行 `deploy/tencent/install-operations.sh` 安装定时服务。保留服务器已有时区挂载和其他运行配置，按修复范围替换。核验应包含非 root 服务的配置读取、`docker compose config --quiet`、真实加密备份与隔离恢复演练；仅有 timer 列表不能证明任务执行成功。
+
 清理任务先删除过期 TOS 对象，再删除数据库元数据；存储故障会保留记录以便重试。身份清理必须同时满足 30 天未活动、无有效权益、无待删除媒体，且仅操作所属 App 的身份。
 
 `Backend Operations` 每 15 分钟从 GitHub Runner 通过固定 SSH host key 检查服务及依赖、磁盘余量和备份/清理/恢复记录的新鲜度。失败产生失败的 Actions 运行和错误注释；收件人应在 GitHub 通知设置中启用 Actions 失败通知。公开仓库长时间无活动时 GitHub 可能暂停计划运行，服务器本地的三个 timer 不受影响。云平台主机告警可作为独立通道。
