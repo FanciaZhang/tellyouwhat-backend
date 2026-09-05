@@ -26,6 +26,9 @@ class BackupSafetyTests(unittest.TestCase):
         docker = self.bin / "docker"
         docker.write_text(
             "#!/bin/sh\n"
+            "case \" $* \" in *' --no-data '*)\n"
+            "printf '%s\\n' 'CREATE TABLE `ai_jobs` (`id` int);' 'CREATE TABLE `job_dispatch_outbox` (`id` int);'\n"
+            "exit \"${DUMP_SCHEMA_EXIT_CODE:-0}\" ;; esac\n"
             "printf '%s\\n' 'CREATE TABLE `schema_migrations` (' '  `version` int' ');' "
             "\"INSERT INTO \\`schema_migrations\\` VALUES (1);\" "
             "'CREATE TABLE `private_records` (' '  `payload` text' ');' "
@@ -45,16 +48,64 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / "backup.json").exists())
 
+    def test_failed_transient_schema_export_never_publishes_a_partial_backup(self):
+        with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):
+            with self.assertRaisesRegex(OperationError, "export failed"):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
     def test_encrypted_backup_round_trip_and_table_counts(self):
         result = create_backup(self.runtime)
         path = self.runtime.backups / result["filename"]
         self.assertNotIn(b"synthetic private payload", path.read_bytes())
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         manifest = verify_backup(self.runtime, path)
-        self.assertEqual(manifest["table_rows"], {"schema_migrations": 1, "private_records": 1})
+        self.assertEqual(manifest["table_rows"], {"schema_migrations": 1, "private_records": 1, "ai_jobs": 0, "job_dispatch_outbox": 0})
         decrypted = self.root / "decrypted.gz"
         crypt(self.runtime, path, decrypted, decrypt=True)
         self.assertIn(b"synthetic private payload", gzip.decompress(decrypted.read_bytes()))
+
+    def test_unexpected_transient_data_aborts_without_publishing(self):
+        (self.bin / "docker").write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'CREATE TABLE `schema_migrations` (`version` int);' "
+            "'INSERT INTO `ai_jobs` VALUES (0x73656e736974697665);'\n"
+        )
+        with self.assertRaisesRegex(OperationError, "excluded transient data"):
+            create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_transient_ai_payloads_are_not_in_encrypted_backup(self):
+        docker = self.bin / "docker"
+        docker.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "tables = ['schema_migrations', 'private_records', 'ai_jobs', 'job_dispatch_outbox']\n"
+            "if '--no-data' in sys.argv: tables = ['ai_jobs', 'job_dispatch_outbox']\n"
+            "for table in tables:\n"
+            "    if '--ignore-table=tellyouwhat_test.' + table in sys.argv: continue\n"
+            "    print('CREATE TABLE `' + table + '` (\\n  `payload` blob\\n);')\n"
+            "    if '--no-data' not in sys.argv:\n"
+            "        payload = 'temporary AI private payload' if table == 'ai_jobs' else 'durable metadata'\n"
+            "        print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
+        )
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        decrypted = self.root / "decrypted.gz"
+        crypt(self.runtime, path, decrypted, decrypt=True)
+        sql = gzip.decompress(decrypted.read_bytes())
+        self.assertNotIn(b"temporary AI private payload", sql)
+        self.assertNotIn(b"INSERT INTO `ai_jobs`", sql)
+        self.assertNotIn(b"INSERT INTO `job_dispatch_outbox`", sql)
+        self.assertIn(b"CREATE TABLE `ai_jobs`", sql)
+        self.assertIn(b"CREATE TABLE `job_dispatch_outbox`", sql)
+        self.assertIn(b"durable metadata", sql)
+        manifest = verify_backup(self.runtime, path)
+        self.assertEqual(manifest["table_rows"]["ai_jobs"], 0)
+        self.assertEqual(manifest["table_rows"]["job_dispatch_outbox"], 0)
+        self.assertEqual(manifest["excluded_data_tables"], ["ai_jobs", "job_dispatch_outbox"])
 
     def test_corrupt_archive_is_rejected_before_restore(self):
         result = create_backup(self.runtime)
