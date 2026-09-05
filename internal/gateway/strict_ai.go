@@ -28,9 +28,11 @@ func (server *Server) CompleteAIRequest(
 		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", artifact.RequestID)
 		return healthhttpapi.CompleteAIRequest502JSONResponse{BadGatewayJSONResponse: healthhttpapi.BadGatewayJSONResponse(healthErrorResponse(failure))}, nil
 	}
-	actualTokens := response.InputTokens + response.OutputTokens
-	if err := server.recordUsage(ctx, principal, artifact, managed, response.InputTokens, response.OutputTokens); err != nil {
-		actualTokens = contracts.ReservationTokens(artifact)
+	actualTokens := contracts.ReservationTokens(artifact)
+	if tokens, known := response.KnownTokenTotal(); known {
+		if err := server.recordUsage(ctx, principal, artifact, managed, response.InputTokens, response.OutputTokens); err == nil {
+			actualTokens = tokens
+		}
 	}
 	cleanupManagedMedia(ctx, server.provider, artifact.Media)
 	lease.Release(actualTokens)
@@ -81,8 +83,10 @@ func (server *Server) StreamAIRequest(
 		err := server.provider.Stream(ctx, artifact, func(event StreamEvent) error {
 			switch {
 			case event.Completed != nil:
-				if err := server.recordUsage(ctx, principal, artifact, managed, event.Completed.InputTokens, event.Completed.OutputTokens); err == nil {
-					actualTokens = event.Completed.InputTokens + event.Completed.OutputTokens
+				if tokens, known := event.Completed.KnownTokenTotal(); known {
+					if err := server.recordUsage(ctx, principal, artifact, managed, event.Completed.InputTokens, event.Completed.OutputTokens); err == nil {
+						actualTokens = tokens
+					}
 				}
 				return writeSSE(writer, "completed", map[string]any{
 					"requestID": artifact.RequestID,

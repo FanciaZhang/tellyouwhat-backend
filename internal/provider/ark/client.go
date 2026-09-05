@@ -102,62 +102,82 @@ func (client *Client) Stream(
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("ark stream status %d", response.StatusCode)
 	}
-	var content strings.Builder
-	var usage providerapi.Response
+	var dataLines []string
+	dataBytes := 0
+	consume := func() (*providerapi.Response, error) {
+		payload := strings.Join(dataLines, "\n")
+		dataLines, dataBytes = nil, 0
+		if payload == "" || payload == "[DONE]" {
+			return nil, nil
+		}
+		var event struct {
+			Type     string          `json:"type"`
+			Delta    string          `json:"delta"`
+			Response json.RawMessage `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			return nil, fmt.Errorf("decode ark SSE: %w", err)
+		}
+		switch event.Type {
+		case "error", "response.failed", "response.incomplete", "response.refusal.delta", "response.refusal.done":
+			return nil, errors.New("ark stream did not complete successfully")
+		case "response.output_text.delta":
+			if event.Delta != "" {
+				return nil, yield(providerapi.StreamEvent{Delta: event.Delta})
+			}
+		case "response.completed":
+			result, err := parseResponse(event.Response)
+			if err != nil {
+				return nil, err
+			}
+			return &result, nil
+		}
+		return nil, nil
+	}
+	complete := func(result *providerapi.Response) error {
+		if repaired, ok := contracts.RepairUnquotedStringValues(result.Content); ok {
+			result.Content = repaired
+		}
+		if canonicalized, ok := contracts.CanonicalizeFoodGroupSynonyms(result.Content); ok {
+			result.Content = canonicalized
+		}
+		if err := contracts.ValidateResponse(request, result.Content); err != nil {
+			return fmt.Errorf("ark streamed structured response: %w", err)
+		}
+		return yield(providerapi.StreamEvent{Completed: result})
+	}
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "" || payload == "[DONE]" {
-			continue
-		}
-		var event struct {
-			Type     string `json:"type"`
-			Delta    string `json:"delta"`
-			Text     string `json:"text"`
-			Response struct {
-				OutputText string `json:"output_text"`
-				Usage      struct {
-					InputTokens  int `json:"input_tokens"`
-					OutputTokens int `json:"output_tokens"`
-				} `json:"usage"`
-			} `json:"response"`
-		}
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
-			return fmt.Errorf("decode ark SSE: %w", err)
-		}
-		if event.Delta != "" && strings.Contains(event.Type, "output_text.delta") {
-			content.WriteString(event.Delta)
-			if err := yield(providerapi.StreamEvent{Delta: event.Delta}); err != nil {
+		if line == "" {
+			result, err := consume()
+			if err != nil {
 				return err
 			}
-		}
-		if event.Type == "response.completed" {
-			usage.InputTokens = event.Response.Usage.InputTokens
-			usage.OutputTokens = event.Response.Usage.OutputTokens
-			if content.Len() == 0 && event.Response.OutputText != "" {
-				content.WriteString(event.Response.OutputText)
+			if result != nil {
+				return complete(result)
 			}
+		} else if strings.HasPrefix(line, "data:") {
+			payload := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
+			dataBytes += len(payload) + 1
+			if dataBytes > 4<<20 {
+				return errors.New("ark stream event is too large")
+			}
+			dataLines = append(dataLines, payload)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read ark SSE: %w", err)
 	}
-	usage.Content = content.String()
-	if repaired, ok := contracts.RepairUnquotedStringValues(usage.Content); ok {
-		usage.Content = repaired
+	result, err := consume()
+	if err != nil {
+		return err
 	}
-	if canonicalized, ok := contracts.CanonicalizeFoodGroupSynonyms(usage.Content); ok {
-		usage.Content = canonicalized
+	if result != nil {
+		return complete(result)
 	}
-	if err := contracts.ValidateResponse(request, usage.Content); err != nil {
-		return fmt.Errorf("ark streamed structured response: %w", err)
-	}
-	return yield(providerapi.StreamEvent{Completed: &usage})
+	return errors.New("ark stream ended without completion")
 }
 
 func (client *Client) CleanupManagedMedia(ctx context.Context, values []contracts.Media) {
@@ -271,22 +291,35 @@ func schemaName(operation contracts.Operation) string {
 
 func parseResponse(body []byte) (providerapi.Response, error) {
 	var value struct {
-		OutputText string `json:"output_text"`
+		Status     string          `json:"status"`
+		Error      json.RawMessage `json:"error"`
+		OutputText string          `json:"output_text"`
 		Output     []struct {
 			Content []struct {
+				Type       string `json:"type"`
 				Text       string `json:"text"`
 				OutputText string `json:"output_text"`
 			} `json:"content"`
 		} `json:"output"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+		Usage *struct {
+			InputTokens  *int `json:"input_tokens"`
+			OutputTokens *int `json:"output_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &value); err != nil {
 		return providerapi.Response{}, fmt.Errorf("decode ark response: %w", err)
 	}
+	if value.Status != "completed" || (len(value.Error) != 0 && string(value.Error) != "null") {
+		return providerapi.Response{}, errors.New("ark response did not complete successfully")
+	}
 	content := value.OutputText
+	for _, output := range value.Output {
+		for _, part := range output.Content {
+			if part.Type == "refusal" {
+				return providerapi.Response{}, errors.New("ark response refused the request")
+			}
+		}
+	}
 	if content == "" {
 		for _, output := range value.Output {
 			for _, part := range output.Content {
@@ -301,11 +334,15 @@ func parseResponse(body []byte) (providerapi.Response, error) {
 	if content == "" {
 		return providerapi.Response{}, errors.New("ark response has no output text")
 	}
-	return providerapi.Response{
-		Content:      content,
-		InputTokens:  value.Usage.InputTokens,
-		OutputTokens: value.Usage.OutputTokens,
-	}, nil
+	response := providerapi.Response{Content: content}
+	if value.Usage != nil && value.Usage.InputTokens != nil && value.Usage.OutputTokens != nil {
+		response.InputTokens = *value.Usage.InputTokens
+		response.OutputTokens = *value.Usage.OutputTokens
+		if _, known := response.KnownTokenTotal(); !known {
+			response.InputTokens, response.OutputTokens = 0, 0
+		}
+	}
+	return response, nil
 }
 
 var _ providerapi.Client = (*Client)(nil)

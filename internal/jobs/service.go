@@ -208,7 +208,7 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		cleaner.CleanupManagedMedia(cleanupContext, job.Request.Media)
 		cancel()
 	}
-	if worker.reconciler != nil {
+	if actualTokens, known := response.KnownTokenTotal(); worker.reconciler != nil && known {
 		// The result and usage ledger are already committed transactionally. A
 		// Redis reconciliation failure must not turn that terminal success back
 		// into a dispatch failure: redispatch sees a completed job and cannot
@@ -219,7 +219,7 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 			transactionID,
 			quota.JobReservationID(job.OwnerKeyID, job.RequestID, job.BodyDigest),
 			contracts.ReservationTokens(job.Request),
-			response.InputTokens+response.OutputTokens,
+			actualTokens,
 			time.Now(),
 		)
 	}

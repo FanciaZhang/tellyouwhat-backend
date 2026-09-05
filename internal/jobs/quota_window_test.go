@@ -7,6 +7,7 @@ import (
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
 )
 
@@ -58,4 +59,45 @@ func TestWorkerReconcilesTheOriginalQuotaWindow(t *testing.T) {
 	if snapshot.MonthlyUsed != wantMonth {
 		t.Fatalf("monthly usage = %d, want %d", snapshot.MonthlyUsed, wantMonth)
 	}
+}
+
+func TestWorkerKeepsReservationWhenSuccessfulResponseHasNoUsage(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1", TransactionID: "transaction-1"}
+	request := jobRequest()
+	digest := "unmetered-job"
+	reserved := contracts.ReservationTokens(request)
+	limiter := quota.NewMemoryLimiter(quota.Limits{DailyTokensPerTransaction: 100_000, MonthlyTokensPerTransaction: 1_000_000})
+	lease, err := limiter.Acquire(ctx, quota.Identity{DeviceID: principal.DeviceID, TransactionID: principal.TransactionID, IP: "203.0.113.1"}, request.Operation, reserved, quota.JobReservationID(principal.KeyID, request.RequestID, digest), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.Release(reserved)
+	store := NewMemoryStore()
+	service := NewService(store, func() time.Time { return now })
+	job, err := service.Enqueue(ctx, principal, request, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewWorker(store, unmeteredJobProvider{}, limiter).Process(ctx, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Get(ctx, principal, job.ID)
+	if err != nil || result.Status != StatusSucceeded {
+		t.Fatalf("completed result was not delivered: %+v %v", result, err)
+	}
+	snapshot, err := limiter.Snapshot(ctx, principal.TransactionID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.DailyUsed != reserved || snapshot.MonthlyUsed != reserved {
+		t.Fatalf("unmetered job changed quota reservation: %+v, want %d", snapshot, reserved)
+	}
+}
+
+type unmeteredJobProvider struct{ fixedJobProvider }
+
+func (unmeteredJobProvider) Complete(context.Context, contracts.Request) (providerapi.Response, error) {
+	return providerapi.Response{Content: `{"choice":"soup"}`}, nil
 }

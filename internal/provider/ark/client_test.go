@@ -26,11 +26,11 @@ func TestClientDisablesUpstreamResponseStorageAndCaching(t *testing.T) {
 				bodies <- body
 				if stream {
 					writer.Header().Set("Content-Type", "text/event-stream")
-					_, _ = fmt.Fprint(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"choice\\\":\\\"soup\\\"}\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":5}}}\n\n")
+					_, _ = fmt.Fprint(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"choice\\\":\\\"soup\\\"}\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output_text\":\"{\\\"choice\\\":\\\"soup\\\"}\",\"usage\":{\"input_tokens\":12,\"output_tokens\":5}}}\n\n")
 					return
 				}
 				writer.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprint(writer, `{"output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`)
+				_, _ = fmt.Fprint(writer, `{"status":"completed","output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`)
 			}))
 			defer upstream.Close()
 			client := New(Config{
@@ -84,7 +84,7 @@ func TestClientUsesServerOwnedEndpointAndStrictSchema(t *testing.T) {
 			t.Fatal(err)
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`))
 	}))
 	defer upstream.Close()
 
@@ -120,7 +120,7 @@ func TestCompleteRepairsUnquotedStringValuesBeforeSchemaValidation(t *testing.T)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":soup\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":soup\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	defer upstream.Close()
 
@@ -145,7 +145,7 @@ func TestCompleteCanonicalizesFoodGroupSynonymsBeforeSchemaValidation(t *testing
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"group\":\"legumes\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"group\":\"legumes\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	defer upstream.Close()
 
@@ -186,7 +186,7 @@ func TestClientPreservesSwiftMediaBeforePromptOrdering(t *testing.T) {
 			t.Fatal(err)
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":\"soup\"}"}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":\"soup\"}"}`))
 	}))
 	defer upstream.Close()
 
@@ -231,5 +231,28 @@ func validArkRequest() contracts.Request {
 		Prompt:            "choose dinner",
 		ResponseSchema:    schema,
 		SemanticSignature: "sha256:abc",
+	}
+}
+
+func TestStreamCompletesWithoutWaitingForConnectionClosure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(writer, `data: {"type":"response.completed","response":{"status":"completed","output_text":"{\"choice\":\"soup\"}"}}`+"\n\n")
+		writer.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	defer upstream.Close()
+	client := New(Config{BaseURL: upstream.URL, APIKey: "fixture-key", Routes: map[contracts.Operation]Route{
+		contracts.OperationMealDecision: {Model: "fixture-model", TimeoutSeconds: 1},
+	}}, upstream.Client(), nil)
+	completed := 0
+	err := client.Stream(context.Background(), validArkRequest(), func(event providerapi.StreamEvent) error {
+		if event.Completed != nil {
+			completed++
+		}
+		return nil
+	})
+	if err != nil || completed != 1 {
+		t.Fatalf("terminal response waited for EOF: completed=%d err=%v", completed, err)
 	}
 }
