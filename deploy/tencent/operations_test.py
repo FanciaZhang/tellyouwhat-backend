@@ -82,6 +82,23 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertEqual(read_environment(source)["SECRET"], value)
         self.assertFalse(target.exists())
 
+    def test_explicit_environment_file_reaches_child_process_without_global_changes(self):
+        credential = self.root / "production-credential"
+        credential.write_text((self.backend / ".env.production").read_text())
+        runtime = Runtime(self.backend, self.root / "backups", credential)
+        probe = self.root / "probe.py"
+        probe.write_text(
+            "import os, pathlib, sys\n"
+            "path = pathlib.Path(os.environ['TELLYOUWHAT_ENV_FILE'])\n"
+            "assert path == pathlib.Path(sys.argv[1])\n"
+            "assert 'MYSQL_DATABASE=tellyouwhat_test' in path.read_text()\n"
+            "print('configuration available')\n"
+        )
+        with patch.dict(os.environ, {"TELLYOUWHAT_ENV_FILE": "/unrelated/environment"}):
+            output = runtime.execute("credential-probe", ["python3", str(probe), str(credential)])
+            self.assertEqual(os.environ["TELLYOUWHAT_ENV_FILE"], "/unrelated/environment")
+        self.assertEqual(output.strip(), b"configuration available")
+
     def test_restore_rejects_paths_outside_backup_directory(self):
         with self.assertRaisesRegex(OperationError, "only a backup filename"):
             restore_drill(self.runtime, "../unrelated.sql.gz.enc")

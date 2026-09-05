@@ -69,6 +69,7 @@ class Runtime:
     def execute(self, label, command, *, env=None, input=None, timeout=300):
         child_env = os.environ.copy()
         child_env.update(env or {})
+        child_env["TELLYOUWHAT_ENV_FILE"] = str(self.environment_file)
         result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout)
         if result.returncode:
             # Tool errors can include SQL or credentials. Diagnostics stay on the server.
