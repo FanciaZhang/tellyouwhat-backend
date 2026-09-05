@@ -85,12 +85,12 @@ class BackupSafetyTests(unittest.TestCase):
     def test_explicit_environment_file_reaches_child_process_without_global_changes(self):
         credential = self.root / "production-credential"
         credential.write_text((self.backend / ".env.production").read_text())
-        runtime = Runtime(self.backend, self.root / "backups", credential)
+        runtime = Runtime(self.backend, self.root / "backups", os.path.relpath(credential))
         probe = self.root / "probe.py"
         probe.write_text(
             "import os, pathlib, sys\n"
             "path = pathlib.Path(os.environ['TELLYOUWHAT_ENV_FILE'])\n"
-            "assert path == pathlib.Path(sys.argv[1])\n"
+            "assert path.is_absolute() and path.samefile(sys.argv[1])\n"
             "assert 'MYSQL_DATABASE=tellyouwhat_test' in path.read_text()\n"
             "print('configuration available')\n"
         )
