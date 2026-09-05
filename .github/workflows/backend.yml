@@ -76,6 +76,13 @@ jobs:
       - run: bash deploy/tencent/verify-public_test.sh
       - name: Test operations and rollback protections
         run: python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
+      - name: Verify encrypted backup restoration without transient AI data
+        run: python3 deploy/tencent/backup_mysql_integration.py
+        env:
+          BACKUP_TEST_MYSQL_HOST: 127.0.0.1
+          BACKUP_TEST_MYSQL_PORT: ${{ job.services.mysql.ports['3306'] }}
+          BACKUP_TEST_MYSQL_USER: root
+          BACKUP_TEST_MYSQL_PASSWORD: ci-test-root-password
       - name: Validate deployment files
         run: |
           touch .env.production

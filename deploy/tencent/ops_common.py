@@ -50,7 +50,7 @@ def atomic_json(path, value):
 class Runtime:
     def __init__(self, backend_dir, backup_dir=None, environment_file=None):
         self.root = Path(backend_dir).resolve()
-        self.environment_file = Path(environment_file or self.root / ".env.production")
+        self.environment_file = Path(environment_file or self.root / ".env.production").resolve()
         self.config = read_environment(self.environment_file)
         self.state = self.root / ".operations"
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -69,6 +69,7 @@ class Runtime:
     def execute(self, label, command, *, env=None, input=None, timeout=300):
         child_env = os.environ.copy()
         child_env.update(env or {})
+        child_env["TELLYOUWHAT_ENV_FILE"] = str(self.environment_file)
         result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout)
         if result.returncode:
             # Tool errors can include SQL or credentials. Diagnostics stay on the server.

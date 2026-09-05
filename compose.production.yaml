@@ -3,7 +3,7 @@ name: tellyouwhat-backend
 x-app: &app
   restart: unless-stopped
   env_file:
-    - .env.production
+    - ${TELLYOUWHAT_ENV_FILE:-.env.production}
   environment:
     DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
     REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
