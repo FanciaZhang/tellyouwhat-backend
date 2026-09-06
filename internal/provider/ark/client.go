@@ -230,10 +230,9 @@ func (client *Client) makeRequest(
 		return nil, nil, err
 	}
 	body := map[string]any{
-		"max_output_tokens": request.OutputTokenLimit(),
-		"model":             route.Model,
-		"store":             false,
-		"caching":           map[string]string{"type": "disabled"},
+		"model":   route.Model,
+		"store":   false,
+		"caching": map[string]string{"type": "disabled"},
 		"input": []map[string]any{{
 			"role":    "user",
 			"content": content,

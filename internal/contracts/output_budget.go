@@ -5,9 +5,10 @@ import (
 	"fmt"
 )
 
-// OutputBudgetV1Maximum includes visible output and provider reasoning tokens.
-// The initial ceiling preserves room for nested structured results. Lower
-// operation-specific ceilings require business-result evaluation.
+// OutputBudgetV1Maximum is the server-owned quota reservation for possible
+// provider output. It is deliberately an accounting estimate rather than a
+// provider generation limit because Responses counts reasoning and visible
+// output together, and truncation makes an otherwise valid result unusable.
 const OutputBudgetV1Maximum = 65_536
 
 type OutputBudget struct {
@@ -30,7 +31,7 @@ func (request Request) FreezeOutputBudget() Request {
 	return request
 }
 
-func (request Request) OutputTokenLimit() int {
+func (request Request) OutputTokenReservation() int {
 	if request.OutputBudget.Valid() {
 		return request.OutputBudget.MaxTokens
 	}

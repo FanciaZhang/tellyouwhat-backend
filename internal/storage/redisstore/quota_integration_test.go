@@ -108,6 +108,41 @@ func TestQuotaReservationRedisReconcilesOriginalWindowsOnce(t *testing.T) {
 	}
 }
 
+func TestQuotaRedisRecordsActualUsageAboveReservation(t *testing.T) {
+	_, limiter := newQuotaIntegrationLimiter(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	identity := quota.Identity{DeviceID: "device", TransactionID: "transaction", IP: "203.0.113.1"}
+	lease, err := limiter.Acquire(
+		ctx,
+		identity,
+		contracts.OperationMealDecision,
+		600,
+		"reservation",
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lease.Release(1_200)
+
+	snapshot, err := limiter.Snapshot(ctx, identity.TransactionID, now)
+	if err != nil || snapshot.DailyUsed != 1_200 || snapshot.MonthlyUsed != 1_200 {
+		t.Fatalf("usage above reservation was not recorded: %+v err=%v", snapshot, err)
+	}
+	if _, err := limiter.Acquire(
+		ctx,
+		identity,
+		contracts.OperationMealDecision,
+		1,
+		"next-reservation",
+		now.Add(time.Minute),
+	); !errors.Is(err, quota.ErrExceeded) {
+		t.Fatalf("request after quota overage was accepted: %v", err)
+	}
+}
+
 func TestQuotaRedisRejectsUnboundAdjustments(t *testing.T) {
 	for _, scenario := range []string{"legacy", "expired", "owner", "amount"} {
 		t.Run(scenario, func(t *testing.T) {

@@ -260,11 +260,10 @@ func IsMealRecognitionOperation(operation Operation) bool {
 }
 
 // ReservationTokens deliberately overestimates text and schema tokens by
-// counting UTF-8 bytes one-for-one, then adds the bounded output and modality
-// budget. This prevents the post-response reconciliation from being the first
-// cost guard.
+// counting UTF-8 bytes one-for-one, then adds a conservative output reservation
+// and modality budget. Actual provider usage is reconciled after completion.
 func ReservationTokens(request Request) int {
-	reserved := len(request.Prompt) + len(request.ResponseSchema) + request.OutputTokenLimit() + 1024
+	reserved := len(request.Prompt) + len(request.ResponseSchema) + request.OutputTokenReservation() + 1024
 	for _, item := range request.Media {
 		switch item.Kind {
 		case "audio":

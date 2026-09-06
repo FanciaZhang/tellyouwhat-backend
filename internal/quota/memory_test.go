@@ -96,6 +96,45 @@ func TestSnapshotReportsReconciledDailyAndMonthlyUsage(t *testing.T) {
 	}
 }
 
+func TestActualUsageAboveReservationIsRecordedAndBlocksNextRequest(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
+	limiter := NewMemoryLimiter(Limits{
+		DailyTokensPerTransaction:   100,
+		MonthlyTokensPerTransaction: 1_000,
+	})
+	identity := Identity{DeviceID: "device-1", TransactionID: "transaction-1", IP: "203.0.113.1"}
+	lease, err := limiter.Acquire(
+		context.Background(),
+		identity,
+		contracts.OperationMealDecision,
+		60,
+		"request-1",
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lease.Release(120)
+
+	snapshot, err := limiter.Snapshot(context.Background(), identity.TransactionID, now)
+	if err != nil || snapshot.DailyUsed != 120 || snapshot.MonthlyUsed != 120 {
+		t.Fatalf("usage above reservation was not recorded: %+v err=%v", snapshot, err)
+	}
+	if _, err := limiter.Acquire(
+		context.Background(),
+		identity,
+		contracts.OperationMealDecision,
+		1,
+		"request-2",
+		now.Add(time.Minute),
+	); !errors.Is(err, ErrExceeded) {
+		t.Fatalf("request after quota overage was accepted: %v", err)
+	}
+}
+
 func TestLimiterReportsTheExceededSafetyWindow(t *testing.T) {
 	t.Parallel()
 

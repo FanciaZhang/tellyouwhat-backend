@@ -12,7 +12,7 @@ import (
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 )
 
-func TestEveryHealthRouteSendsOutputLimitCoveredByReservation(t *testing.T) {
+func TestEveryHealthRouteOmitsProviderOutputLimitAndKeepsQuotaReservation(t *testing.T) {
 	for _, operation := range contracts.OperationValues() {
 		for _, stream := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/stream=%t", operation, stream), func(t *testing.T) {
@@ -49,20 +49,19 @@ func TestEveryHealthRouteSendsOutputLimitCoveredByReservation(t *testing.T) {
 					t.Fatal(err)
 				}
 				body := <-bodies
-				limit, ok := body["max_output_tokens"].(float64)
-				if !ok || limit != 65_536 {
-					t.Fatalf("provider output is not bounded: %v", body["max_output_tokens"])
+				if _, exists := body["max_output_tokens"]; exists {
+					t.Fatalf("provider output limit can truncate complex results: %v", body["max_output_tokens"])
 				}
-				minimum := len(request.Prompt) + len(request.ResponseSchema) + int(limit) + 1024
+				minimum := len(request.Prompt) + len(request.ResponseSchema) + contracts.OutputBudgetV1Maximum + 1024
 				if reserved := contracts.ReservationTokens(request); reserved < minimum {
-					t.Fatalf("reservation %d does not cover provider output limit %d", reserved, int(limit))
+					t.Fatalf("reservation %d does not include output accounting budget %d", reserved, contracts.OutputBudgetV1Maximum)
 				}
 			})
 		}
 	}
 }
 
-func TestProviderUsesPersistedOutputBudgetInsteadOfCurrentDefault(t *testing.T) {
+func TestPersistedOutputReservationNeverBecomesProviderGenerationLimit(t *testing.T) {
 	request := validArkRequest()
 	request.OutputBudget = contracts.OutputBudget{Version: "health-output-v1", MaxTokens: 16_384}
 	raw, err := contracts.MarshalJobRequest(request)
@@ -86,7 +85,11 @@ func TestProviderUsesPersistedOutputBudgetInsteadOfCurrentDefault(t *testing.T) 
 	if err := json.NewDecoder(httpRequest.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body["max_output_tokens"] != float64(16_384) {
-		t.Fatalf("provider replaced persisted budget: %v", body["max_output_tokens"])
+	if _, exists := body["max_output_tokens"]; exists {
+		t.Fatalf("provider received accounting reservation as generation limit: %v", body["max_output_tokens"])
+	}
+	minimum := len(restored.Prompt) + len(restored.ResponseSchema) + 16_384 + 1024
+	if reserved := contracts.ReservationTokens(restored); reserved < minimum {
+		t.Fatalf("persisted output reservation was not used for quota: got=%d want-at-least=%d", reserved, minimum)
 	}
 }

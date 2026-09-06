@@ -46,7 +46,7 @@ func TestEncryptedJobPayloadRoundTripPreservesAdmittedOutputBudget(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.OutputBudget != request.OutputBudget || restored.OutputTokenLimit() != 16_384 || restored.FreezeOutputBudget().OutputBudget != request.OutputBudget || ReservationTokens(restored) != ReservationTokens(request) {
+	if restored.OutputBudget != request.OutputBudget || restored.OutputTokenReservation() != 16_384 || restored.FreezeOutputBudget().OutputBudget != request.OutputBudget || ReservationTokens(restored) != ReservationTokens(request) {
 		t.Fatal("stored budget was replaced by current defaults")
 	}
 	legacy, err := json.Marshal(request)
