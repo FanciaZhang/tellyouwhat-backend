@@ -61,18 +61,7 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 	if server.authenticator == nil {
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	ginContext := strictGinContext(ctx)
-	body := rawRequestBody(ginContext)
-	proof := RequestProof{
-		Method:     ginContext.Request.Method,
-		Path:       ginContext.Request.URL.EscapedPath(),
-		RequestID:  requestIDString,
-		KeyID:      ginContext.GetHeader("X-Tellyouwhat-Key-ID"),
-		Assertion:  ginContext.GetHeader("X-Tellyouwhat-Assertion"),
-		Nonce:      ginContext.GetHeader("X-Tellyouwhat-Nonce"),
-		Timestamp:  ginContext.GetHeader("X-Tellyouwhat-Timestamp"),
-		BodySHA256: contracts.BodySHA256(body),
-	}
+	proof := apiRequestProof(ctx, requestID)
 	principal, err := server.authenticator.Authenticate(ctx, proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {
@@ -87,6 +76,16 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", requestIDString)
 	default:
 		return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+	}
+}
+
+func apiRequestProof(ctx context.Context, requestID uuid.UUID) RequestProof {
+	ginContext := strictGinContext(ctx)
+	return RequestProof{
+		Method: ginContext.Request.Method, Path: ginContext.Request.URL.EscapedPath(), RequestID: requestID.String(),
+		KeyID: ginContext.GetHeader("X-Tellyouwhat-Key-ID"), Assertion: ginContext.GetHeader("X-Tellyouwhat-Assertion"),
+		Nonce: ginContext.GetHeader("X-Tellyouwhat-Nonce"), Timestamp: ginContext.GetHeader("X-Tellyouwhat-Timestamp"),
+		BodySHA256: contracts.BodySHA256(rawRequestBody(ginContext)),
 	}
 }
 

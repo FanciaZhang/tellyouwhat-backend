@@ -98,7 +98,8 @@ type JobDispatcher interface {
 
 type PrivacyManager interface {
 	RecordConsents(context.Context, Principal, []privacy.Consent) (time.Time, error)
-	DeletePrincipal(context.Context, Principal) error
+	DeletionCompleted(context.Context, privacy.DeletionReceipt) (bool, error)
+	DeletePrincipalWithReceipt(context.Context, Principal, privacy.DeletionReceipt) error
 }
 
 type ConsentGate interface {

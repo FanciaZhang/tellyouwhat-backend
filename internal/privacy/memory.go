@@ -8,12 +8,13 @@ import (
 )
 
 type MemoryRepository struct {
-	mu      sync.Mutex
-	records map[string]Record
+	mu       sync.Mutex
+	records  map[string]Record
+	receipts map[DeletionReceipt]bool
 }
 
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{records: make(map[string]Record)}
+	return &MemoryRepository{records: make(map[string]Record), receipts: make(map[DeletionReceipt]bool)}
 }
 
 func (repository *MemoryRepository) RecordConsents(_ context.Context, records []Record) error {
@@ -44,10 +45,28 @@ func (*MemoryRepository) PlanDeletion(_ context.Context, principal attestation.P
 func (repository *MemoryRepository) DeletePrincipal(_ context.Context, principal attestation.Principal) error {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
+	repository.deletePrincipal(principal)
+	return nil
+}
+
+func (repository *MemoryRepository) deletePrincipal(principal attestation.Principal) {
 	for key, record := range repository.records {
 		if record.KeyID == principal.KeyID {
 			delete(repository.records, key)
 		}
 	}
+}
+
+func (repository *MemoryRepository) DeletionCompleted(_ context.Context, receipt DeletionReceipt) (bool, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return repository.receipts[receipt], nil
+}
+
+func (repository *MemoryRepository) DeletePrincipalWithReceipt(_ context.Context, principal attestation.Principal, receipt DeletionReceipt) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	repository.deletePrincipal(principal)
+	repository.receipts[receipt] = true
 	return nil
 }

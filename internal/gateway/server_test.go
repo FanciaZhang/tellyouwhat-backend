@@ -1151,7 +1151,11 @@ func (manager *fakePrivacyManager) RecordConsents(_ context.Context, principal P
 	return time.Date(2026, 8, 24, 8, 0, 0, 0, time.UTC), nil
 }
 
-func (manager *fakePrivacyManager) DeletePrincipal(_ context.Context, principal Principal) error {
+func (manager *fakePrivacyManager) DeletionCompleted(context.Context, privacy.DeletionReceipt) (bool, error) {
+	return false, nil
+}
+
+func (manager *fakePrivacyManager) DeletePrincipalWithReceipt(_ context.Context, principal Principal, _ privacy.DeletionReceipt) error {
 	manager.principal = principal
 	manager.deleted = true
 	return nil

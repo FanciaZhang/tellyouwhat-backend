@@ -222,6 +222,9 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	t.Run("reject_legacy_migration_collision", func(t *testing.T) {
 		testLegacyMigrationCollision(t, ctx, database)
 	})
+	t.Run("privacy_deletion_receipt_atomicity_and_restart", func(t *testing.T) {
+		testPrivacyDeletionReceipts(t, ctx, database, now)
+	})
 }
 
 func testLegacyMigrationCollision(t *testing.T, ctx context.Context, database *sql.DB) {
@@ -409,6 +412,7 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
         TRUNCATE TABLE admin_users;
 		UPDATE admin_control_state SET initialized_at = NULL WHERE singleton_id = 1;
         TRUNCATE TABLE app_store_notifications;
+		TRUNCATE TABLE privacy_deletion_receipts;
         TRUNCATE TABLE job_dispatch_outbox;
         TRUNCATE TABLE usage_ledger;
         TRUNCATE TABLE media_objects;

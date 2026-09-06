@@ -118,6 +118,25 @@ func (repository *PrivacyRepository) PlanDeletion(ctx context.Context, principal
 }
 
 func (repository *PrivacyRepository) DeletePrincipal(ctx context.Context, principal attestation.Principal) error {
+	return repository.deletePrincipal(ctx, principal, nil)
+}
+
+func (repository *PrivacyRepository) DeletionCompleted(ctx context.Context, receipt privacy.DeletionReceipt) (bool, error) {
+	var completed bool
+	err := repository.database.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM privacy_deletion_receipts WHERE app_id = ? AND request_digest = ?)`,
+		repository.appID, receipt[:]).Scan(&completed)
+	return completed, err
+}
+
+func (repository *PrivacyRepository) DeletePrincipalWithReceipt(ctx context.Context, principal attestation.Principal, receipt privacy.DeletionReceipt) error {
+	if receipt == (privacy.DeletionReceipt{}) {
+		return privacy.ErrInvalidDeletionReceipt
+	}
+	return repository.deletePrincipal(ctx, principal, &receipt)
+}
+
+func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, principal attestation.Principal, receipt *privacy.DeletionReceipt) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -142,6 +161,13 @@ func (repository *PrivacyRepository) DeletePrincipal(ctx context.Context, princi
 		WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?))`,
 		repository.appID, principal.KeyID, transactionID, transactionID); err != nil {
 		return err
+	}
+	if receipt != nil {
+		if _, err := transaction.ExecContext(ctx, `
+			INSERT INTO privacy_deletion_receipts (app_id, request_digest) VALUES (?, ?)
+			ON DUPLICATE KEY UPDATE request_digest = VALUES(request_digest)`, repository.appID, receipt[:]); err != nil {
+			return err
+		}
 	}
 	return transaction.Commit()
 }
