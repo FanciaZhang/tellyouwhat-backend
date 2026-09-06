@@ -28,15 +28,18 @@ class BackupSafetyTests(unittest.TestCase):
         self.bin.mkdir()
         docker = self.bin / "docker"
         docker.write_text(
-            "#!/bin/sh\n"
-            "case \" $* \" in *' --no-data '*)\n"
-            "printf '%s\\n' 'CREATE TABLE `ai_jobs` (`id` int);' 'CREATE TABLE `job_dispatch_outbox` (`id` int);'\n"
-            "exit \"${DUMP_SCHEMA_EXIT_CODE:-0}\" ;; esac\n"
-            "printf '%s\\n' 'CREATE TABLE `schema_migrations` (' '  `version` int' ');' "
-            "\"INSERT INTO \\`schema_migrations\\` VALUES (1);\" "
-            "'CREATE TABLE `private_records` (' '  `payload` text' ');' "
-            "\"INSERT INTO \\`private_records\\` VALUES ('synthetic private payload');\"\n"
-            "exit \"${DUMP_EXIT_CODE:-0}\"\n"
+            "#!/usr/bin/env python3\n"
+            "import os, sys\n"
+            "tables = ['schema_migrations', 'apps', 'privacy_deletion_receipts', 'private_records', 'ai_jobs', 'job_dispatch_outbox']\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('\\n'.join(tables)); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    for table in tables: print('CREATE TABLE `' + table + '` (`payload` text);')\n"
+            "    raise SystemExit(int(os.getenv('DUMP_SCHEMA_EXIT_CODE', '0')))\n"
+            "for table, payload in [('schema_migrations', '1'), ('apps', 'health'), "
+            "('privacy_deletion_receipts', 'opaque deletion digest')]:\n"
+            "    if table in sys.argv: print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
+            "raise SystemExit(int(os.getenv('DUMP_EXIT_CODE', '0')))\n"
         )
         docker.chmod(0o755)
         environment = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"]})
@@ -118,7 +121,7 @@ class BackupSafetyTests(unittest.TestCase):
             self.assertEqual(prune_backups(self.runtime), 1)
         self.assertFalse(path.exists())
 
-    def test_failed_transient_schema_export_never_publishes_a_partial_backup(self):
+    def test_failed_schema_export_never_publishes_a_partial_backup(self):
         with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):
             with self.assertRaisesRegex(OperationError, "export failed"):
                 create_backup(self.runtime)
@@ -131,35 +134,48 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertNotIn(b"synthetic private payload", path.read_bytes())
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         manifest = verify_backup(self.runtime, path)
-        self.assertEqual(manifest["table_rows"], {"schema_migrations": 1, "private_records": 1, "ai_jobs": 0, "job_dispatch_outbox": 0})
+        self.assertEqual(manifest["table_rows"], {
+            "schema_migrations": 1, "apps": 1, "privacy_deletion_receipts": 1,
+            "private_records": 0, "ai_jobs": 0, "job_dispatch_outbox": 0,
+        })
         decrypted = self.root / "decrypted.gz"
         crypt(self.runtime, path, decrypted, decrypt=True)
-        self.assertIn(b"synthetic private payload", gzip.decompress(decrypted.read_bytes()))
+        sql = gzip.decompress(decrypted.read_bytes())
+        self.assertIn(b"opaque deletion digest", sql)
+        self.assertNotIn(b"synthetic private payload", sql)
 
-    def test_unexpected_transient_data_aborts_without_publishing(self):
+    def test_unexpected_application_data_aborts_without_publishing(self):
         (self.bin / "docker").write_text(
-            "#!/bin/sh\n"
-            "printf '%s\\n' 'CREATE TABLE `schema_migrations` (`version` int);' "
-            "'INSERT INTO `ai_jobs` VALUES (0x73656e736974697665);'\n"
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('schema_migrations\\napps\\nai_jobs'); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    print('CREATE TABLE `schema_migrations` (`version` int);')\n"
+            "    print('CREATE TABLE `apps` (`id` int);')\n"
+            "    print('CREATE TABLE `ai_jobs` (`payload` blob);'); raise SystemExit(0)\n"
+            "print('INSERT INTO `schema_migrations` VALUES (1);')\n"
+            "print('INSERT INTO `ai_jobs` VALUES (0x73656e736974697665);')\n"
         )
-        with self.assertRaisesRegex(OperationError, "excluded transient data"):
+        with self.assertRaisesRegex(OperationError, "excluded application data"):
             create_backup(self.runtime)
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / "backup.json").exists())
 
-    def test_transient_ai_payloads_are_not_in_encrypted_backup(self):
+    def test_current_and_future_application_rows_are_not_in_encrypted_backup(self):
         docker = self.bin / "docker"
         docker.write_text(
             "#!/usr/bin/env python3\n"
             "import sys\n"
-            "tables = ['schema_migrations', 'private_records', 'ai_jobs', 'job_dispatch_outbox']\n"
-            "if '--no-data' in sys.argv: tables = ['ai_jobs', 'job_dispatch_outbox']\n"
-            "for table in tables:\n"
-            "    if '--ignore-table=tellyouwhat_test.' + table in sys.argv: continue\n"
-            "    print('CREATE TABLE `' + table + '` (\\n  `payload` blob\\n);')\n"
-            "    if '--no-data' not in sys.argv:\n"
-            "        payload = 'temporary AI private payload' if table == 'ai_jobs' else 'durable metadata'\n"
-            "        print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
+            "tables = ['schema_migrations', 'apps', 'privacy_deletion_receipts', 'private_records', 'ai_jobs', 'job_dispatch_outbox', 'future_user_data']\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('\\n'.join(tables)); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    for table in tables: print('CREATE TABLE `' + table + '` (`payload` blob);')\n"
+            "    raise SystemExit(0)\n"
+            "for table, payload in [('schema_migrations', 'migration'), ('apps', 'app registry'), "
+            "('privacy_deletion_receipts', 'opaque deletion digest')]:\n"
+            "    if table in sys.argv: print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
         )
         result = create_backup(self.runtime)
         path = self.runtime.backups / result["filename"]
@@ -169,13 +185,18 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertNotIn(b"temporary AI private payload", sql)
         self.assertNotIn(b"INSERT INTO `ai_jobs`", sql)
         self.assertNotIn(b"INSERT INTO `job_dispatch_outbox`", sql)
+        self.assertNotIn(b"INSERT INTO `private_records`", sql)
+        self.assertNotIn(b"INSERT INTO `future_user_data`", sql)
         self.assertIn(b"CREATE TABLE `ai_jobs`", sql)
         self.assertIn(b"CREATE TABLE `job_dispatch_outbox`", sql)
-        self.assertIn(b"durable metadata", sql)
+        self.assertIn(b"CREATE TABLE `future_user_data`", sql)
+        self.assertIn(b"opaque deletion digest", sql)
         manifest = verify_backup(self.runtime, path)
         self.assertEqual(manifest["table_rows"]["ai_jobs"], 0)
         self.assertEqual(manifest["table_rows"]["job_dispatch_outbox"], 0)
-        self.assertEqual(manifest["excluded_data_tables"], ["ai_jobs", "job_dispatch_outbox"])
+        self.assertEqual(manifest["table_rows"]["future_user_data"], 0)
+        self.assertEqual(manifest["included_data_tables"], ["schema_migrations", "apps", "privacy_deletion_receipts"])
+        self.assertEqual(manifest["excluded_data_tables"], ["ai_jobs", "future_user_data", "job_dispatch_outbox", "private_records"])
 
     def test_corrupt_archive_is_rejected_before_restore(self):
         result = create_backup(self.runtime)

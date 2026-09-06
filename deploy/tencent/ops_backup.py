@@ -15,7 +15,25 @@ import time
 from ops_common import OperationError, atomic_json
 
 
-TRANSIENT_DATA_TABLES = ("ai_jobs", "job_dispatch_outbox")
+# App data is local-first. Disaster recovery retains only the backend control
+# plane and opaque deletion-completion receipts. Every current or future table
+# outside this allowlist is restored with its schema and no rows, so an older
+# backup cannot recreate an App Attest identity, consent, entitlement, quota,
+# media record, AI request, or purchase-derived user state.
+RECOVERY_DATA_TABLES = (
+    "schema_migrations",
+    "apps",
+    "privacy_deletion_receipts",
+    "admin_control_state",
+    "admin_users",
+    "admin_user_apps",
+    "admin_webauthn_credentials",
+    "admin_bootstrap_tokens",
+    "admin_invitations",
+    "admin_invitation_apps",
+    "admin_audit_events",
+    "admin_operations",
+)
 BACKUP_RETENTION_SECONDS = 14 * 86400
 
 
@@ -61,27 +79,46 @@ def create_backup(runtime):
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
     counts = {}
+    connection = ["--host=" + runtime.config["MYSQL_HOST"], "--port=" + runtime.config.get("MYSQL_PORT", "3306"),
+                  "--user=" + runtime.config["MYSQL_USER"]]
+    child_env = {"MYSQL_PWD": runtime.config["MYSQL_PASSWORD"]}
+    table_output = runtime.execute("backup-table-inventory", [
+        "docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
+        "--database=" + database, "--batch", "--skip-column-names",
+        "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
+    ], env=child_env, timeout=300)
+    database_tables = []
+    for value in table_output.decode().splitlines():
+        table = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_]+", table):
+            raise OperationError("database returned an invalid table name; no backup published")
+        database_tables.append(table)
+    if len(database_tables) != len(set(database_tables)):
+        raise OperationError("database returned duplicate table names; no backup published")
+    if not database_tables or "schema_migrations" not in database_tables or "apps" not in database_tables:
+        raise OperationError("database does not contain the required application schema; no backup published")
+    included_data_tables = [table for table in RECOVERY_DATA_TABLES if table in database_tables]
+    excluded_data_tables = sorted(set(database_tables) - set(included_data_tables))
     command = ["docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
-               "--host=" + runtime.config["MYSQL_HOST"], "--port=" + runtime.config.get("MYSQL_PORT", "3306"),
-               "--user=" + runtime.config["MYSQL_USER"], "--single-transaction", "--quick", "--hex-blob",
+               *connection, "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
                "--skip-comments"]
     commands = [
-        command + ["--ignore-table=" + database + "." + table for table in TRANSIENT_DATA_TABLES] + [database],
-        command + ["--no-data", database, *TRANSIENT_DATA_TABLES],
+        command + ["--no-data", database],
+        command + ["--no-create-info", database, *included_data_tables],
     ]
     with tempfile.TemporaryDirectory(prefix=".backup-", dir=runtime.backups) as directory:
         temporary = Path(directory)
         compressed = temporary / "snapshot.sql.gz"
         errors = temporary / "dump.stderr"
-        child_env = os.environ.copy()
-        child_env["MYSQL_PWD"] = runtime.config["MYSQL_PASSWORD"]
+        process_env = os.environ.copy()
+        process_env.update(child_env)
         with errors.open("wb") as diagnostic, compressed.open("wb") as output:
             os.chmod(errors, 0o600)
             os.chmod(compressed, 0o600)
             with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as archive:
                 for dump_command in commands:
-                    process = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=diagnostic, env=child_env)
+                    process = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=diagnostic, env=process_env)
                     try:
                         for line in process.stdout:
                             create = re.match(rb"CREATE TABLE `([A-Za-z0-9_]+)`", line)
@@ -90,8 +127,8 @@ def create_backup(runtime):
                                 counts[create[1].decode()] = 0
                             if insert:
                                 table = insert[1].decode()
-                                if table in TRANSIENT_DATA_TABLES:
-                                    raise OperationError("database export included excluded transient data; no backup published")
+                                if table not in included_data_tables:
+                                    raise OperationError("database export included excluded application data; no backup published")
                                 counts[table] = counts.get(table, 0) + 1
                             archive.write(line)
                         returncode = process.wait(timeout=900)
@@ -104,13 +141,16 @@ def create_backup(runtime):
                         raise OperationError(f"database export failed (exit {returncode}); no backup published")
         if not counts or "schema_migrations" not in counts:
             raise OperationError("database export contains no valid application schema")
-        if any(counts.get(table) != 0 for table in TRANSIENT_DATA_TABLES):
-            raise OperationError("database export is missing transient table definitions")
+        if set(counts) != set(database_tables):
+            raise OperationError("database export table inventory is incomplete; no backup published")
+        if any(counts.get(table) != 0 for table in excluded_data_tables):
+            raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
         manifest = {"version": 1, "created_at": int(time.time()), "database": database,
                     "filename": destination.name, "image": image, "table_rows": counts,
-                    "excluded_data_tables": list(TRANSIENT_DATA_TABLES),
+                    "included_data_tables": included_data_tables,
+                    "excluded_data_tables": excluded_data_tables,
                     "sha256": file_digest(encrypted)}
         signature = manifest_signature(backup_secret(runtime), manifest)
         os.replace(encrypted, destination)
@@ -154,6 +194,17 @@ def verify_backup(runtime, path):
             raise OperationError("invalid backup creation time")
         if not manifest["table_rows"] or not all(re.fullmatch(r"[A-Za-z0-9_]+", table) for table in manifest["table_rows"]):
             raise OperationError("invalid backup table manifest")
+        included = manifest.get("included_data_tables")
+        excluded = manifest.get("excluded_data_tables")
+        if included is not None:
+            if (not isinstance(included, list) or not isinstance(excluded, list)
+                    or any(not isinstance(table, str) or not re.fullmatch(r"[A-Za-z0-9_]+", table)
+                           for table in included + excluded)
+                    or len(included) != len(set(included)) or len(excluded) != len(set(excluded))
+                    or set(included) & set(excluded)
+                    or set(included) | set(excluded) != set(manifest["table_rows"])
+                    or any(manifest["table_rows"].get(table) != 0 for table in excluded)):
+                raise OperationError("invalid backup data retention manifest")
         return manifest
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("backup manifest is missing or invalid") from error
