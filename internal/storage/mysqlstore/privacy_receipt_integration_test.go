@@ -43,10 +43,10 @@ func testPrivacyDeletionReceipts(t *testing.T, ctx context.Context, database *sq
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.ExecContext(ctx, `CREATE TRIGGER fail_privacy_receipt BEFORE INSERT ON privacy_deletion_receipts FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic receipt write failure'`); err != nil {
+	if _, err := database.ExecContext(ctx, `ALTER TABLE privacy_deletion_receipts ADD CONSTRAINT fail_privacy_receipt CHECK (app_id <> 'privacy-receipt-test')`); err != nil {
 		t.Fatal(err)
 	}
-	defer database.ExecContext(context.Background(), `DROP TRIGGER IF EXISTS fail_privacy_receipt`)
+	defer database.ExecContext(context.Background(), `ALTER TABLE privacy_deletion_receipts DROP CHECK fail_privacy_receipt`)
 	if err := repository.DeletePrincipalWithReceipt(ctx, principal, receipt); err == nil {
 		t.Fatal("receipt write failure must fail deletion")
 	}
@@ -62,7 +62,7 @@ func testPrivacyDeletionReceipts(t *testing.T, ctx context.Context, database *sq
 	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents WHERE app_id = ?`, appID).Scan(&consentCount); err != nil || consentCount != 1 {
 		t.Fatalf("cascaded consent deletion did not roll back: count=%d err=%v", consentCount, err)
 	}
-	if _, err := database.ExecContext(ctx, `DROP TRIGGER fail_privacy_receipt`); err != nil {
+	if _, err := database.ExecContext(ctx, `ALTER TABLE privacy_deletion_receipts DROP CHECK fail_privacy_receipt`); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.DeletePrincipalWithReceipt(ctx, principal, receipt); err != nil {
