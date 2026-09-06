@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/config"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
@@ -40,6 +42,10 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	costController, err := costcontrol.New(mysqlstore.NewCostControlStore(database), platform.AICost.Limits, time.Now)
+	if err != nil {
+		return err
+	}
 	redisClient, err := redisstore.Open(ctx, platform.RedisURL)
 	if err != nil {
 		return err
@@ -60,11 +66,12 @@ func run(logger *slog.Logger) error {
 		}
 		appID := string(app.Registry.ID)
 		store := mysqlstore.NewJobRepository(database, cipher, appID)
-		provider := ark.New(app.Ark, http.DefaultClient, tosStore)
+		var modelProvider providerapi.Client = ark.New(app.Ark, http.DefaultClient, tosStore)
+		modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, appID, platform.AICost.HealthArk)
 		managedReconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
 		freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, app.FreeRecognitionQuota, appID)
 		reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)
-		workers[app.Registry.ID] = jobs.NewWorker(store, provider, reconciler)
+		workers[app.Registry.ID] = jobs.NewWorker(store, modelProvider, reconciler)
 	}
 	if len(workers) == 0 {
 		return errors.New("no asynchronous application workers are configured")

@@ -49,10 +49,11 @@ type Service struct {
 }
 
 type claims struct {
-	Principal attestation.Principal `json:"principal"`
-	Binding   Binding               `json:"binding"`
-	Nonce     string                `json:"nonce"`
-	ExpiresAt time.Time             `json:"expiresAt"`
+	Principal    attestation.Principal  `json:"principal"`
+	Binding      Binding                `json:"binding"`
+	Nonce        string                 `json:"nonce"`
+	ExpiresAt    time.Time              `json:"expiresAt"`
+	OutputBudget contracts.OutputBudget `json:"outputBudget,omitempty"`
 }
 
 func NewService(secret []byte, uses UseStore, now func() time.Time) *Service {
@@ -67,6 +68,13 @@ func (service *Service) Issue(principal attestation.Principal, binding Binding) 
 }
 
 func (service *Service) IssueAt(principal attestation.Principal, binding Binding, issuedAt time.Time) (Issued, error) {
+	return service.IssueWithOutputBudgetAt(principal, binding, issuedAt, contracts.DefaultOutputBudget())
+}
+
+func (service *Service) IssueWithOutputBudgetAt(principal attestation.Principal, binding Binding, issuedAt time.Time, budget contracts.OutputBudget) (Issued, error) {
+	if !budget.Valid() {
+		return Issued{}, ErrInvalid
+	}
 	if service == nil || len(service.secret) < 32 || service.uses == nil || principal.AppID == "" || principal.KeyID == "" || principal.DeviceID == "" {
 		return Issued{}, ErrInvalid
 	}
@@ -88,9 +96,10 @@ func (service *Service) IssueAt(principal attestation.Principal, binding Binding
 	}
 	binding.JobID = jobID
 	value := claims{
-		Principal: principal,
-		Binding:   binding,
-		ExpiresAt: expiresAt,
+		Principal:    principal,
+		Binding:      binding,
+		ExpiresAt:    expiresAt,
+		OutputBudget: budget,
 	}
 	value.Nonce, err = service.derivedIdentifier("nonce", principal, binding)
 	if err != nil {
@@ -134,6 +143,20 @@ func (service *Service) Validate(token string, expected Binding) (attestation.Pr
 	return value.Principal, nil
 }
 
+// ValidateWithOutputBudget returns only authenticated server-owned metadata.
+// Old capabilities without a budget remain readable by Validate, but cannot
+// authorize a new execution under an unrelated active budget.
+func (service *Service) ValidateWithOutputBudget(token string, expected Binding) (attestation.Principal, contracts.OutputBudget, error) {
+	value, _, err := service.validate(token, expected)
+	if err != nil {
+		return attestation.Principal{}, contracts.OutputBudget{}, err
+	}
+	if !value.OutputBudget.Valid() {
+		return attestation.Principal{}, contracts.OutputBudget{}, ErrInvalid
+	}
+	return value.Principal, value.OutputBudget, nil
+}
+
 func (service *Service) validate(token string, expected Binding) (claims, time.Time, error) {
 	if service == nil || len(service.secret) < 32 || service.uses == nil || !validBinding(expected, true) {
 		return claims{}, time.Time{}, ErrInvalid
@@ -156,6 +179,9 @@ func (service *Service) validate(token string, expected Binding) (claims, time.T
 }
 
 func validClaims(value claims) bool {
+	if value.OutputBudget != (contracts.OutputBudget{}) && !value.OutputBudget.Valid() {
+		return false
+	}
 	return value.Principal.AppID != "" && value.Principal.KeyID != "" && value.Principal.DeviceID != "" && value.Nonce != "" && validBinding(value.Binding, true)
 }
 

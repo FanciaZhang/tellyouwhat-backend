@@ -10,6 +10,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
+	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
@@ -44,7 +45,9 @@ func TestWorkerClaimsJobAndPersistsValidatedResult(t *testing.T) {
 	service := NewService(store, time.Now)
 	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}
 	job, _ := service.Enqueue(context.Background(), principal, jobRequest(), "digest-1")
-	worker := NewWorker(store, fixedJobProvider{}, nil)
+	budget := quota.NewMemoryLimiter(quota.Limits{})
+	prepayJob(t, budget, job)
+	worker := NewWorker(store, fixedJobProvider{}, budget)
 
 	if err := worker.Process(context.Background(), job.ID); err != nil {
 		t.Fatalf("process: %v", err)
@@ -65,7 +68,9 @@ func TestWorkerKeepsDurableSuccessWhenQuotaReconciliationFails(t *testing.T) {
 	service := NewService(store, time.Now)
 	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}
 	job, _ := service.Enqueue(context.Background(), principal, jobRequest(), "digest-1")
-	reconciler := &failingTokenReconciler{}
+	budget := quota.NewMemoryLimiter(quota.Limits{})
+	prepayJob(t, budget, job)
+	reconciler := &failingTokenReconciler{JobAttemptBudget: budget}
 	worker := NewWorker(store, fixedJobProvider{}, reconciler)
 
 	if err := worker.Process(context.Background(), job.ID); err != nil {
@@ -268,7 +273,9 @@ func TestWorkerRetriesUpstreamFailureWithBoundedAttempts(t *testing.T) {
 	service := NewService(store, time.Now)
 	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}
 	job, _ := service.Enqueue(context.Background(), principal, jobRequest(), "digest")
-	worker := NewWorker(store, failingJobProvider{}, nil)
+	budget := quota.NewMemoryLimiter(quota.Limits{})
+	prepayJob(t, budget, job)
+	worker := NewWorker(store, failingJobProvider{}, budget)
 	for attempt := 0; attempt < maximumAttempts; attempt++ {
 		if err := worker.Process(context.Background(), job.ID); err == nil {
 			t.Fatal("failing provider unexpectedly succeeded")
@@ -299,9 +306,12 @@ type fixedJobProvider struct{}
 
 type failingJobProvider struct{}
 
-type failingTokenReconciler struct{ calls int }
+type failingTokenReconciler struct {
+	quota.JobAttemptBudget
+	calls int
+}
 
-func (reconciler *failingTokenReconciler) Reconcile(context.Context, string, int, int, time.Time) error {
+func (reconciler *failingTokenReconciler) Reconcile(context.Context, string, string, int, int, time.Time) error {
 	reconciler.calls++
 	return errors.New("redis unavailable")
 }

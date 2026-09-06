@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 
-from ops_backup import create_backup, restore_drill
+from ops_backup import create_backup, prune_backups, restore_drill
 from ops_common import OperationError, Runtime
 from ops_health import health
 
@@ -48,8 +48,16 @@ def operate(runtime, args):
                                  "gateway", "--models"), timeout=600)
         checks = [json.loads(line) for line in output.splitlines() if line.strip()]
         return runtime.record("providers", checks=checks)
+    retention_error = None
+    removed = 0
+    try:
+        removed = prune_backups(runtime)
+    except (OperationError, OSError) as error:
+        retention_error = error
     runtime.execute("maintenance", runtime.compose("run", "--rm", "--no-deps", "maintenance"), timeout=900)
-    return runtime.record("maintenance")
+    if retention_error is not None:
+        raise retention_error
+    return runtime.record("maintenance", expired_backups_removed=removed)
 
 
 if __name__ == "__main__":

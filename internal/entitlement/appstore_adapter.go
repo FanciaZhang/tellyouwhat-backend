@@ -51,6 +51,7 @@ func (adapter *appStoreSubscriptionAdapter) Resolve(
 		OfferIdentifier:       state.OfferIdentifier,
 		OfferType:             state.OfferType,
 		ExpiresAt:             state.ExpiresAt,
+		StartedAt:             state.StartedAt,
 		SignedAt:              state.SignedAt,
 	}, nil
 }

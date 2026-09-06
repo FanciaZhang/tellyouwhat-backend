@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the short-lived Journal IP certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:15:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

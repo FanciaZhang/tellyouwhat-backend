@@ -15,6 +15,32 @@ import time
 from ops_common import OperationError, atomic_json
 
 
+# App data is local-first. Disaster recovery retains only the backend control
+# plane, opaque deletion-completion receipts, and the identity-free project
+# cost ledger. Every current or future table outside this allowlist is restored
+# with its schema and no rows, so an older backup cannot recreate an App Attest
+# identity, consent, entitlement, quota, media record, AI request, or
+# purchase-derived user state.
+RECOVERY_DATA_TABLES = (
+    "schema_migrations",
+    "apps",
+    "privacy_deletion_receipts",
+    "ai_cost_control_state",
+    "ai_cost_months",
+    "ai_cost_attempts",
+    "admin_control_state",
+    "admin_users",
+    "admin_user_apps",
+    "admin_webauthn_credentials",
+    "admin_bootstrap_tokens",
+    "admin_invitations",
+    "admin_invitation_apps",
+    "admin_audit_events",
+    "admin_operations",
+)
+BACKUP_RETENTION_SECONDS = 14 * 86400
+
+
 def backup_secret(runtime):
     value = runtime.config.get("BACKUP_ENCRYPTION_KEY", "")
     if len(value) < 43:
@@ -52,67 +78,113 @@ def create_backup(runtime):
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    prune_backups(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
     counts = {}
+    connection = ["--host=" + runtime.config["MYSQL_HOST"], "--port=" + runtime.config.get("MYSQL_PORT", "3306"),
+                  "--user=" + runtime.config["MYSQL_USER"]]
+    child_env = {"MYSQL_PWD": runtime.config["MYSQL_PASSWORD"]}
+    table_output = runtime.execute("backup-table-inventory", [
+        "docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
+        "--database=" + database, "--batch", "--skip-column-names",
+        "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
+    ], env=child_env, timeout=300)
+    database_tables = []
+    for value in table_output.decode().splitlines():
+        table = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_]+", table):
+            raise OperationError("database returned an invalid table name; no backup published")
+        database_tables.append(table)
+    if len(database_tables) != len(set(database_tables)):
+        raise OperationError("database returned duplicate table names; no backup published")
+    if not database_tables or "schema_migrations" not in database_tables or "apps" not in database_tables:
+        raise OperationError("database does not contain the required application schema; no backup published")
+    included_data_tables = [table for table in RECOVERY_DATA_TABLES if table in database_tables]
+    excluded_data_tables = sorted(set(database_tables) - set(included_data_tables))
     command = ["docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
-               "--host=" + runtime.config["MYSQL_HOST"], "--port=" + runtime.config.get("MYSQL_PORT", "3306"),
-               "--user=" + runtime.config["MYSQL_USER"], "--single-transaction", "--quick", "--hex-blob",
+               *connection, "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
-               "--skip-comments", database]
+               "--skip-comments"]
+    commands = [
+        command + ["--no-data", database],
+        command + ["--no-create-info", database, *included_data_tables],
+    ]
     with tempfile.TemporaryDirectory(prefix=".backup-", dir=runtime.backups) as directory:
         temporary = Path(directory)
         compressed = temporary / "snapshot.sql.gz"
         errors = temporary / "dump.stderr"
-        child_env = os.environ.copy()
-        child_env["MYSQL_PWD"] = runtime.config["MYSQL_PASSWORD"]
+        process_env = os.environ.copy()
+        process_env.update(child_env)
         with errors.open("wb") as diagnostic, compressed.open("wb") as output:
             os.chmod(errors, 0o600)
             os.chmod(compressed, 0o600)
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=diagnostic, env=child_env)
-            try:
-                with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as archive:
-                    for line in process.stdout:
-                        archive.write(line)
-                        create = re.match(rb"CREATE TABLE `([A-Za-z0-9_]+)`", line)
-                        insert = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
-                        if create:
-                            counts[create[1].decode()] = 0
-                        if insert:
-                            table = insert[1].decode()
-                            counts[table] = counts.get(table, 0) + 1
-                returncode = process.wait(timeout=900)
-            finally:
-                process.stdout.close()
-                if process.poll() is None:
-                    process.kill()
-                    process.wait()
-        if returncode != 0:
-            raise OperationError(f"database export failed (exit {returncode}); no backup published")
+            with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as archive:
+                for dump_command in commands:
+                    process = subprocess.Popen(dump_command, stdout=subprocess.PIPE, stderr=diagnostic, env=process_env)
+                    try:
+                        for line in process.stdout:
+                            create = re.match(rb"CREATE TABLE `([A-Za-z0-9_]+)`", line)
+                            insert = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
+                            if create:
+                                counts[create[1].decode()] = 0
+                            if insert:
+                                table = insert[1].decode()
+                                if table not in included_data_tables:
+                                    raise OperationError("database export included excluded application data; no backup published")
+                                counts[table] = counts.get(table, 0) + 1
+                            archive.write(line)
+                        returncode = process.wait(timeout=900)
+                    finally:
+                        process.stdout.close()
+                        if process.poll() is None:
+                            process.kill()
+                            process.wait()
+                    if returncode != 0:
+                        raise OperationError(f"database export failed (exit {returncode}); no backup published")
         if not counts or "schema_migrations" not in counts:
             raise OperationError("database export contains no valid application schema")
+        if set(counts) != set(database_tables):
+            raise OperationError("database export table inventory is incomplete; no backup published")
+        if any(counts.get(table) != 0 for table in excluded_data_tables):
+            raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
         manifest = {"version": 1, "created_at": int(time.time()), "database": database,
                     "filename": destination.name, "image": image, "table_rows": counts,
+                    "included_data_tables": included_data_tables,
+                    "excluded_data_tables": excluded_data_tables,
                     "sha256": file_digest(encrypted)}
         signature = manifest_signature(backup_secret(runtime), manifest)
         os.replace(encrypted, destination)
         atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
-    result = runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
-    cutoff = time.time() - 14 * 86400
+    return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
+
+
+def prune_backups(runtime):
+    cutoff = time.time() - BACKUP_RETENTION_SECONDS
+    removed = 0
+    failed = 0
     for path in runtime.backups.glob("mysql-*.sql.gz.enc"):
-        if path != destination and path.stat().st_mtime < cutoff:
-            verify_backup(runtime, path)
-            Path(str(path) + ".json").unlink()
-            path.unlink()
-    return result
+        try:
+            manifest = verify_backup(runtime, path)
+            if manifest["created_at"] <= cutoff:
+                path.unlink()
+                Path(str(path) + ".json").unlink()
+                removed += 1
+        except (OperationError, OSError):
+            failed += 1
+    if failed:
+        raise OperationError(f"backup retention verification failed for {failed} snapshots; operator review required")
+    return removed
 
 
 def verify_backup(runtime, path):
     path = Path(path)
     try:
+        if path.is_symlink() or Path(str(path) + ".json").is_symlink():
+            raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
         expected = manifest_signature(backup_secret(runtime), manifest)
@@ -122,8 +194,21 @@ def verify_backup(runtime, path):
             raise OperationError("backup content verification failed")
         if manifest["database"] != runtime.config["MYSQL_DATABASE"]:
             raise OperationError("backup belongs to another application database")
+        if type(manifest["created_at"]) is not int or manifest["created_at"] <= 0:
+            raise OperationError("invalid backup creation time")
         if not manifest["table_rows"] or not all(re.fullmatch(r"[A-Za-z0-9_]+", table) for table in manifest["table_rows"]):
             raise OperationError("invalid backup table manifest")
+        included = manifest.get("included_data_tables")
+        excluded = manifest.get("excluded_data_tables")
+        if included is not None:
+            if (not isinstance(included, list) or not isinstance(excluded, list)
+                    or any(not isinstance(table, str) or not re.fullmatch(r"[A-Za-z0-9_]+", table)
+                           for table in included + excluded)
+                    or len(included) != len(set(included)) or len(excluded) != len(set(excluded))
+                    or set(included) & set(excluded)
+                    or set(included) | set(excluded) != set(manifest["table_rows"])
+                    or any(manifest["table_rows"].get(table) != 0 for table in excluded)):
+                raise OperationError("invalid backup data retention manifest")
         return manifest
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("backup manifest is missing or invalid") from error
@@ -140,6 +225,8 @@ def restore_drill(runtime, filename=None):
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
+    if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
+        raise OperationError("backup is outside the retention period")
     container = "tellyouwhat-restore-" + secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     database = "tellyouwhat_restore_test"

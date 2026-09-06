@@ -199,6 +199,33 @@ func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T
 	}
 }
 
+func TestJournalOrganizeRetainsMeteredQuotaWhenProviderResultFails(t *testing.T) {
+	t.Parallel()
+	lease := &recordingQuotaLease{}
+	organizer := &fakeJournalOrganizer{
+		result: journalprovider.Result{InputTokens: 20, OutputTokens: 5},
+		err:    journalprovider.ErrInvalidResult,
+	}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: recordingQuota{lease: lease}, QuotaReader: failingQuotaReader{}, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
+		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusBadGateway || lease.actualTokens != 25 {
+		t.Fatalf("status=%d quota=%d body=%s", response.Code, lease.actualTokens, response.Body.String())
+	}
+}
+
 func TestJournalStrictRouterRejectsUnknownRequestFields(t *testing.T) {
 	t.Parallel()
 	organizer := &fakeJournalOrganizer{}
@@ -1151,7 +1178,11 @@ func (manager *fakePrivacyManager) RecordConsents(_ context.Context, principal P
 	return time.Date(2026, 8, 24, 8, 0, 0, 0, time.UTC), nil
 }
 
-func (manager *fakePrivacyManager) DeletePrincipal(_ context.Context, principal Principal) error {
+func (manager *fakePrivacyManager) DeletionCompleted(context.Context, privacy.DeletionReceipt) (bool, error) {
+	return false, nil
+}
+
+func (manager *fakePrivacyManager) DeletePrincipalWithReceipt(_ context.Context, principal Principal, _ privacy.DeletionReceipt) error {
 	manager.principal = principal
 	manager.deleted = true
 	return nil
@@ -1292,12 +1323,14 @@ func (dispatcher *fakeDispatcher) Dispatch(_ context.Context, jobID string) erro
 
 type fakeCapabilities struct {
 	issuedBinding capability.Binding
+	outputBudget  contracts.OutputBudget
 	consumeCalls  int
 	consumed      bool
 }
 
-func (service *fakeCapabilities) IssueAt(_ Principal, binding capability.Binding, issuedAt time.Time) (capability.Issued, error) {
+func (service *fakeCapabilities) IssueWithOutputBudgetAt(_ Principal, binding capability.Binding, issuedAt time.Time, budget contracts.OutputBudget) (capability.Issued, error) {
 	service.issuedBinding = binding
+	service.outputBudget = budget
 	return capability.Issued{JobID: "19be2f9e-bd92-4699-b561-e3816092114c", Token: "valid-token", ExpiresAt: issuedAt.Add(time.Hour)}, nil
 }
 
@@ -1313,11 +1346,15 @@ func (service *fakeCapabilities) Consume(_ context.Context, token string, bindin
 	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
 }
 
-func (*fakeCapabilities) Validate(token string, binding capability.Binding) (Principal, error) {
+func (service *fakeCapabilities) ValidateWithOutputBudget(token string, binding capability.Binding) (Principal, contracts.OutputBudget, error) {
 	if token != "valid-token" || binding.JobID == "" {
-		return Principal{AppID: "health"}, capability.ErrInvalid
+		return Principal{AppID: "health"}, contracts.OutputBudget{}, capability.ErrInvalid
 	}
-	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, nil
+	budget := service.outputBudget
+	if budget == (contracts.OutputBudget{}) {
+		budget = contracts.DefaultOutputBudget()
+	}
+	return Principal{AppID: "health", KeyID: "valid-key", DeviceID: "device-1", TransactionID: "transaction-1"}, budget, nil
 }
 
 type fakeMediaAuthorizer struct {

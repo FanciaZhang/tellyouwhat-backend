@@ -28,9 +28,11 @@ func (server *Server) CompleteAIRequest(
 		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", artifact.RequestID)
 		return healthhttpapi.CompleteAIRequest502JSONResponse{BadGatewayJSONResponse: healthhttpapi.BadGatewayJSONResponse(healthErrorResponse(failure))}, nil
 	}
-	actualTokens := response.InputTokens + response.OutputTokens
-	if err := server.recordUsage(ctx, principal, artifact, managed, response.InputTokens, response.OutputTokens); err != nil {
-		actualTokens = contracts.ReservationTokens(artifact)
+	actualTokens := contracts.ReservationTokens(artifact)
+	if tokens, known := response.KnownTokenTotal(); known {
+		if err := server.recordUsage(ctx, principal, artifact, managed, response.InputTokens, response.OutputTokens); err == nil {
+			actualTokens = tokens
+		}
 	}
 	cleanupManagedMedia(ctx, server.provider, artifact.Media)
 	lease.Release(actualTokens)
@@ -81,8 +83,10 @@ func (server *Server) StreamAIRequest(
 		err := server.provider.Stream(ctx, artifact, func(event StreamEvent) error {
 			switch {
 			case event.Completed != nil:
-				if err := server.recordUsage(ctx, principal, artifact, managed, event.Completed.InputTokens, event.Completed.OutputTokens); err == nil {
-					actualTokens = event.Completed.InputTokens + event.Completed.OutputTokens
+				if tokens, known := event.Completed.KnownTokenTotal(); known {
+					if err := server.recordUsage(ctx, principal, artifact, managed, event.Completed.InputTokens, event.Completed.OutputTokens); err == nil {
+						actualTokens = tokens
+					}
 				}
 				return writeSSE(writer, "completed", map[string]any{
 					"requestID": artifact.RequestID,
@@ -139,10 +143,10 @@ func (server *Server) IssueAIJobCapability(
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability422JSONResponse{UnprocessableEntityJSONResponse: healthhttpapi.UnprocessableEntityJSONResponse(healthErrorResponse(failure))}, nil
 	}
-	issued, err := server.capabilities.IssueAt(principal, capability.Binding{
+	issued, err := server.capabilities.IssueWithOutputBudgetAt(principal, capability.Binding{
 		RequestID: artifact.RequestID, Operation: artifact.Operation,
 		BodyDigest: bodyDigest, MediaDigest: mediaDigest,
-	}, attempt.CreatedAt)
+	}, attempt.CreatedAt, artifact.OutputBudget)
 	if err != nil {
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
@@ -184,11 +188,12 @@ func (server *Server) EnqueueAIJob(
 		JobID: request.Params.XHealthJobID.String(), RequestID: artifact.RequestID,
 		Operation: artifact.Operation, BodyDigest: contracts.BodySHA256(rawBody), MediaDigest: mediaDigest,
 	}
-	principal, err := server.capabilities.Validate(request.Params.XHealthJobCapability, binding)
+	principal, budget, err := server.capabilities.ValidateWithOutputBudget(request.Params.XHealthJobCapability, binding)
 	if err != nil {
 		failure = newAPIFailure(http.StatusUnauthorized, "job_capability_invalid", "job capability is invalid or expired", artifact.RequestID)
 		return healthhttpapi.EnqueueAIJob401JSONResponse{UnauthorizedJSONResponse: healthhttpapi.UnauthorizedJSONResponse(healthErrorResponse(failure))}, nil
 	}
+	artifact.OutputBudget = budget
 	managed, failure := server.apiAuthorizeAIEntitlement(ctx, principal, artifact, artifact.RequestID)
 	if failure != nil {
 		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
@@ -196,7 +201,7 @@ func (server *Server) EnqueueAIJob(
 	job, err := server.jobs.EnqueueWithID(ctx, principalForQuota(principal, managed), binding.JobID, artifact, binding.BodyDigest)
 	if err != nil {
 		if errors.Is(err, jobs.ErrIdempotencyConflict) {
-			failure = newAPIFailure(http.StatusConflict, "idempotency_conflict", "requestID was already used with different content", artifact.RequestID)
+			failure = newAPIFailure(http.StatusConflict, "idempotency_conflict", "requestID cannot be reused; submit a new request", artifact.RequestID)
 			return healthhttpapi.EnqueueAIJob409JSONResponse{ConflictJSONResponse: healthhttpapi.ConflictJSONResponse(healthErrorResponse(failure))}, nil
 		}
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)

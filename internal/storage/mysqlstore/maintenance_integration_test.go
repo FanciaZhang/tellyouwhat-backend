@@ -29,6 +29,60 @@ func (deleter *maintenanceMediaDeleter) DeleteObject(_ context.Context, key stri
 	return nil
 }
 
+func testExpiredJobRetention(t *testing.T, ctx context.Context, database *sql.DB, now time.Time, owner attestation.RegisteredKey) {
+	t.Helper()
+	states := []string{"queued", "running", "succeeded", "failed", "cancelled"}
+	for index, state := range states {
+		for boundary, expiry := range []time.Time{now.Add(-time.Microsecond), now, now.Add(time.Microsecond)} {
+			id := fmt.Sprintf("00000000-0000-4000-9000-%012d", index*3+boundary)
+			if _, err := database.ExecContext(ctx, `INSERT INTO ai_jobs
+				(app_id, id, request_id, body_digest, owner_key_id, owner_device_id,
+				request_ciphertext, request_nonce, result_ciphertext, result_nonce, status,
+				created_at, updated_at, expires_at, claim_expires_at)
+				VALUES ('health', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, id, strings.Repeat("a", 64), owner.KeyID, owner.DeviceID,
+				[]byte("synthetic encrypted request"), []byte("synthetic nonce"),
+				[]byte("synthetic encrypted result"), []byte("synthetic nonce"), state,
+				now.Add(-24*time.Hour), now, expiry, now.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.ExecContext(ctx, `INSERT INTO job_dispatch_outbox
+				(app_id, job_id, available_at) VALUES ('health', ?, ?)`, id, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	repository := mysqlstore.NewMaintenanceRepository(database)
+	result, err := repository.Cleanup(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Jobs != 10 {
+		t.Errorf("all expired states must be removed: deleted=%d want=10", result.Jobs)
+	}
+	for index, state := range states {
+		for boundary := range 3 {
+			id := fmt.Sprintf("00000000-0000-4000-9000-%012d", index*3+boundary)
+			want := 0
+			if boundary == 2 {
+				want = 1
+			}
+			for _, table := range []struct{ name, key string }{{"ai_jobs", "id"}, {"job_dispatch_outbox", "job_id"}} {
+				var count int
+				if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table.name+" WHERE app_id = 'health' AND "+table.key+" = ?", id).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != want {
+					t.Errorf("%s state=%s boundary=%d: count=%d want=%d", table.name, state, boundary, count, want)
+				}
+			}
+		}
+	}
+	if repeated, err := repository.Cleanup(ctx, now); err != nil || repeated.Jobs != 0 {
+		t.Fatalf("repeated cleanup: result=%+v err=%v", repeated, err)
+	}
+}
+
 func testMaintenance(t *testing.T, ctx context.Context, database *sql.DB, now time.Time, owner attestation.RegisteredKey) {
 	t.Helper()
 	repository := mysqlstore.NewMaintenanceRepository(database)

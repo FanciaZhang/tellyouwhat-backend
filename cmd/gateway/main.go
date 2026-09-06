@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 
 	"github.com/tellyouwhat/backend/internal/appstore"
@@ -23,15 +24,18 @@ import (
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/recognitionquota"
@@ -59,6 +63,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
 	entitlements               entitlementRepository
@@ -69,7 +74,7 @@ type appStorage struct {
 	freeRecognitionLimiter     gateway.Quota
 	freeRecognitionQuotaReader quota.Reader
 	recognitionSessions        recognitionquota.Store
-	reconciler                 quota.TokenReconciler
+	reconciler                 quota.JobAttemptBudget
 	capabilityUses             capability.UseStore
 	media                      media.Registry
 	usage                      usage.Recorder
@@ -110,6 +115,10 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeStorage()
+	costController, err := newAICostController(platform, shared)
+	if err != nil {
+		return err
+	}
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
 	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))
@@ -123,7 +132,7 @@ func run(logger *slog.Logger) error {
 				return err
 			}
 		}
-		router, buildErr := buildAppHandler(ctx, platform, appConfig, storage, appReadiness, attestationRoots, tosStore, logger)
+		router, buildErr := buildAppHandler(ctx, platform, appConfig, storage, costController, appReadiness, attestationRoots, tosStore, logger)
 		if buildErr != nil {
 			return fmt.Errorf("build app %s: %w", appConfig.Registry.ID, buildErr)
 		}
@@ -163,6 +172,17 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+func newAICostController(platform config.PlatformConfig, shared sharedStorage) (*costcontrol.Controller, error) {
+	if !platform.AICost.Valid() {
+		return nil, nil
+	}
+	var store costcontrol.Store = costcontrol.NewMemoryStore()
+	if platform.StorageMode == "mysql" {
+		store = mysqlstore.NewCostControlStore(shared.database)
+	}
+	return costcontrol.New(store, platform.AICost.Limits, time.Now)
 }
 
 func readinessWithWorker(base gateway.Readiness, asyncURL string, client *http.Client) (gateway.Readiness, error) {
@@ -242,7 +262,7 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 			entitlements: entitlement.NewMemoryStore(), jobs: jobs.NewMemoryStore(),
 			limiter: limiter, quotaReader: limiter, reconciler: limiter,
 			capabilityUses: capability.NewMemoryUseStore(), media: media.NewMemoryRegistry(),
-			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(),
+			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(), voiceStore: voice.NewMemoryStore(),
 		}
 		if appConfig.Registry.ID == appregistry.Health {
 			freeLimiter := quota.NewMemoryLimiter(appConfig.FreeRecognitionQuota)
@@ -270,6 +290,11 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 		storage.recognitionSessions = redisstore.NewRecognitionQuotaStore(shared.redis, appID)
 		storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
 	}
+	if shared.redis != nil {
+		storage.voiceStore = voice.RedisStore{Client: shared.redis, Cipher: shared.cipher}
+	} else {
+		storage.voiceStore = voice.NewMemoryStore()
+	}
 	return storage
 }
 
@@ -278,6 +303,7 @@ func buildAppHandler(
 	platform config.PlatformConfig,
 	appConfig config.AppConfig,
 	storage appStorage,
+	costController *costcontrol.Controller,
 	readiness gateway.Readiness,
 	attestationRoots *x509.CertPool,
 	tosStore *media.TOSStore,
@@ -335,12 +361,15 @@ func buildAppHandler(
 		if err != nil {
 			return nil, err
 		}
-		provider := ark.New(appConfig.Ark, http.DefaultClient, tosStore)
+		var modelProvider providerapi.Client = ark.New(appConfig.Ark, http.DefaultClient, tosStore)
+		if costController != nil {
+			modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, string(app.ID), platform.AICost.HealthArk)
+		}
 		jobService := jobs.NewService(storage.jobs, time.Now)
 		capabilities := capability.NewService([]byte(platform.JobCapabilitySecret), storage.capabilityUses, time.Now)
 		var dispatcher jobs.Dispatcher
 		if platform.StorageMode == "memory" {
-			dispatcher = jobs.NewLocalDispatcher(jobs.NewWorker(storage.jobs, provider, storage.reconciler))
+			dispatcher = jobs.NewLocalDispatcher(jobs.NewWorker(storage.jobs, modelProvider, storage.reconciler))
 		} else {
 			workerInvoker := jobs.NewHTTPDispatcher(platform.WorkerAsyncURL, platform.WorkerSecret, string(app.ID), nil)
 			pump := jobs.NewOutboxPump(storage.outbox, workerInvoker, time.Now)
@@ -351,7 +380,7 @@ func buildAppHandler(
 			}()
 			dispatcher = jobs.DurableQueueDispatcher{}
 		}
-		dependencies.Provider = provider
+		dependencies.Provider = modelProvider
 		dependencies.FreeRecognitionQuota = storage.freeRecognitionLimiter
 		dependencies.FreeRecognitionQuotaReader = storage.freeRecognitionQuotaReader
 		dependencies.RecognitionSessions = storage.recognitionSessions
@@ -362,13 +391,33 @@ func buildAppHandler(
 		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
-		model := journalprovider.New(journalprovider.Config{
+		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
 		}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second})
+		if costController != nil {
+			model = journalprovider.NewBudgetedClient(model, costController, string(app.ID), platform.AICost.JournalArk)
+		}
 		organizer := &journalservice.Organizer{
 			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
 			AnalysisVersion: "journal-organize-2026-08-31",
+		}
+		if appConfig.VoiceEnabled {
+			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {
+				return nil, errors.New("voice requires speech credentials, model, and a 32-byte capability secret")
+			}
+			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR}
+			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel}
+			if costController != nil {
+				speech = voice.NewBudgetedSpeech(speech, costController, string(app.ID), platform.AICost.JournalSpeech)
+				rewriter = voice.NewBudgetedRewriter(rewriter, costController, string(app.ID), platform.AICost.JournalArk)
+			}
+			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
+					logger.Error("voice usage record failed")
+				}
+			}}
+			dependencies.VoiceEntitlements = storage.entitlements
 		}
 		dependencies.JournalOrganizer = organizer
 		dependencies.JournalAnalysisVersion = organizer.AnalysisVersion

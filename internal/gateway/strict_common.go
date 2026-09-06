@@ -61,18 +61,7 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 	if server.authenticator == nil {
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	ginContext := strictGinContext(ctx)
-	body := rawRequestBody(ginContext)
-	proof := RequestProof{
-		Method:     ginContext.Request.Method,
-		Path:       ginContext.Request.URL.EscapedPath(),
-		RequestID:  requestIDString,
-		KeyID:      ginContext.GetHeader("X-Tellyouwhat-Key-ID"),
-		Assertion:  ginContext.GetHeader("X-Tellyouwhat-Assertion"),
-		Nonce:      ginContext.GetHeader("X-Tellyouwhat-Nonce"),
-		Timestamp:  ginContext.GetHeader("X-Tellyouwhat-Timestamp"),
-		BodySHA256: contracts.BodySHA256(body),
-	}
+	proof := apiRequestProof(ctx, requestID)
 	principal, err := server.authenticator.Authenticate(ctx, proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {
@@ -87,6 +76,16 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", requestIDString)
 	default:
 		return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+	}
+}
+
+func apiRequestProof(ctx context.Context, requestID uuid.UUID) RequestProof {
+	ginContext := strictGinContext(ctx)
+	return RequestProof{
+		Method: ginContext.Request.Method, Path: ginContext.Request.URL.EscapedPath(), RequestID: requestID.String(),
+		KeyID: ginContext.GetHeader("X-Tellyouwhat-Key-ID"), Assertion: ginContext.GetHeader("X-Tellyouwhat-Assertion"),
+		Nonce: ginContext.GetHeader("X-Tellyouwhat-Nonce"), Timestamp: ginContext.GetHeader("X-Tellyouwhat-Timestamp"),
+		BodySHA256: contracts.BodySHA256(rawRequestBody(ginContext)),
 	}
 }
 
@@ -144,7 +143,7 @@ func (server *Server) apiValidateAIRequest(
 	if failure != nil {
 		return contracts.Request{}, nil, Principal{}, false, failure
 	}
-	return artifact, rawRequestBody(strictGinContext(ctx)), principal, managed, nil
+	return artifact.FreezeOutputBudget(), rawRequestBody(strictGinContext(ctx)), principal, managed, nil
 }
 
 func apiRequest(body *healthhttpapi.AIRequest, requestID string) (contracts.Request, *apiFailure) {
@@ -333,7 +332,7 @@ func quotaExceededResponse(err error) (string, string) {
 }
 
 func capabilityQuotaReservationID(principal Principal, requestID, bodyDigest string) string {
-	return contracts.BodySHA256([]byte("job-capability\n" + principal.KeyID + "\n" + requestID + "\n" + bodyDigest))
+	return quota.JobReservationID(principal.KeyID, requestID, bodyDigest)
 }
 
 func (server *Server) apiAdmissionFailure(err error, requestID string) *apiFailure {

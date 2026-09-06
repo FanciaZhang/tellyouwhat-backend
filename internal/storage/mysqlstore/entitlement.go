@@ -77,18 +77,20 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 	defer func() { _ = transaction.Rollback() }()
 	if _, err = transaction.ExecContext(ctx, `
         INSERT INTO managed_entitlements
-			(app_id, key_id, original_transaction_id, environment, expires_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
+			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
         ON DUPLICATE KEY UPDATE
             original_transaction_id = VALUES(original_transaction_id),
             environment = VALUES(environment),
             expires_at = VALUES(expires_at),
+            started_at = COALESCE(VALUES(started_at), started_at),
             updated_at = UTC_TIMESTAMP(6)`,
 		repository.appID,
 		record.KeyID,
 		record.TransactionID,
 		record.Environment,
 		record.ExpiresAt,
+		nullableVoiceDate(record.StartedAt),
 	); err != nil {
 		return err
 	}
@@ -120,14 +122,16 @@ func (repository *EntitlementRepository) Get(
 	keyID string,
 ) (entitlement.Record, bool, error) {
 	var record entitlement.Record
+	var started sql.NullTime
 	record.KeyID = keyID
 	err := repository.database.QueryRowContext(ctx, `
-        SELECT original_transaction_id, environment, expires_at
+        SELECT original_transaction_id, environment, expires_at, started_at
         FROM managed_entitlements
 		WHERE app_id = ? AND key_id = ?`, repository.appID, keyID).Scan(
 		&record.TransactionID,
 		&record.Environment,
 		&record.ExpiresAt,
+		&started,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return entitlement.Record{}, false, nil
@@ -135,8 +139,18 @@ func (repository *EntitlementRepository) Get(
 	if err != nil {
 		return entitlement.Record{}, false, err
 	}
+	if started.Valid {
+		record.StartedAt = started.Time
+	}
 	return record, true, nil
 }
 
 var _ entitlement.Store = (*EntitlementRepository)(nil)
 var _ entitlement.NotificationStore = (*EntitlementRepository)(nil)
+
+func nullableVoiceDate(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value.UTC()
+}

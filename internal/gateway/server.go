@@ -10,9 +10,11 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -85,8 +87,8 @@ type JobService interface {
 }
 
 type JobCapabilityService interface {
-	IssueAt(Principal, capability.Binding, time.Time) (capability.Issued, error)
-	Validate(string, capability.Binding) (Principal, error)
+	IssueWithOutputBudgetAt(Principal, capability.Binding, time.Time, contracts.OutputBudget) (capability.Issued, error)
+	ValidateWithOutputBudget(string, capability.Binding) (Principal, contracts.OutputBudget, error)
 	Consume(context.Context, string, capability.Binding) (Principal, error)
 }
 
@@ -96,7 +98,8 @@ type JobDispatcher interface {
 
 type PrivacyManager interface {
 	RecordConsents(context.Context, Principal, []privacy.Consent) (time.Time, error)
-	DeletePrincipal(context.Context, Principal) error
+	DeletionCompleted(context.Context, privacy.DeletionReceipt) (bool, error)
+	DeletePrincipalWithReceipt(context.Context, Principal, privacy.DeletionReceipt) error
 }
 
 type ConsentGate interface {
@@ -123,6 +126,8 @@ type ManagedProduct struct {
 }
 
 type Dependencies struct {
+	Voice                      *voice.Service
+	VoiceEntitlements          entitlement.Store
 	App                        appregistry.App
 	Authenticator              Authenticator
 	Entitlements               EntitlementChecker
@@ -156,6 +161,8 @@ type Dependencies struct {
 }
 
 type Server struct {
+	voice                      *voice.Service
+	voiceEntitlements          entitlement.Store
 	app                        appregistry.App
 	authenticator              Authenticator
 	entitlements               EntitlementChecker
@@ -216,6 +223,7 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		voice: dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,
@@ -263,17 +271,7 @@ func (server *Server) Router() *gin.Engine {
 }
 
 func journalReservationTokens(input journalcontracts.OrganizeRequest) int {
-	value := len(input.Title) + len(input.Body) + 8_192
-	for _, tag := range input.ExistingTags {
-		value += len(tag)
-	}
-	for _, tag := range input.RejectedTagNames {
-		value += len(tag)
-	}
-	for _, book := range input.Books {
-		value += len(book.Name) + len(book.Description) + 64
-	}
-	return value
+	return journalcontracts.ReservationTokens(input)
 }
 
 func journalQuotaExceededResponse(err error) (string, string) {

@@ -36,6 +36,7 @@ type SubscriptionState struct {
 	OfferIdentifier       string
 	OfferType             int32
 	ExpiresAt             time.Time
+	StartedAt             time.Time
 	SignedAt              time.Time
 }
 
@@ -115,6 +116,7 @@ func (resolver *SubscriptionResolver) Resolve(
 		OfferIdentifier:       active.OfferIdentifier,
 		OfferType:             active.OfferType,
 		ExpiresAt:             active.ExpiresAt,
+		StartedAt:             active.StartedAt,
 		SignedAt:              active.SignedAt,
 	}, nil
 }

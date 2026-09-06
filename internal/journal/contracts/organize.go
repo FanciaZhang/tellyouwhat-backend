@@ -12,6 +12,7 @@ import (
 
 const (
 	ContractVersion         = "journal-organize-v1"
+	OutputReservationTokens = 8_192
 	MaxBodyBytes            = 1 << 20
 	MaxTitleRunes           = 120
 	MaxBodyRunes            = 60_000
@@ -24,6 +25,22 @@ const (
 	MaxRelatedTags          = 8
 	MaxAnalysisVersionRunes = 128
 )
+
+// ReservationTokens deliberately counts UTF-8 bytes one-for-one and includes
+// the fixed structured-output allowance used by both quota and cash controls.
+func ReservationTokens(input OrganizeRequest) int {
+	value := len(input.Title) + len(input.Body) + OutputReservationTokens
+	for _, tag := range input.ExistingTags {
+		value += len(tag)
+	}
+	for _, tag := range input.RejectedTagNames {
+		value += len(tag)
+	}
+	for _, book := range input.Books {
+		value += len(book.Name) + len(book.Description) + 64
+	}
+	return value
+}
 
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 

@@ -269,11 +269,31 @@ func (server *Server) DeletePrivacyData(
 		failure := newAPIFailure(http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", requestID.String())
 		return platformhttpapi.DeletePrivacyData503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
-	principal, failure := server.apiAuthenticate(ctx, requestID)
-	if failure != nil {
+	receipt, err := privacy.NewDeletionReceipt(string(server.app.ID), apiRequestProof(ctx, requestID))
+	if err != nil {
+		failure := newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestID.String())
 		return platformhttpapi.DeletePrivacyDatadefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
 	}
-	if err := server.privacy.DeletePrincipal(ctx, principal); err != nil {
+	completed, err := server.privacy.DeletionCompleted(ctx, receipt)
+	if err != nil {
+		failure := newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be confirmed", requestID.String())
+		return platformhttpapi.DeletePrivacyData503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
+	}
+	if completed {
+		return platformhttpapi.DeletePrivacyData204Response{}, nil
+	}
+	principal, failure := server.apiAuthenticate(ctx, requestID)
+	if failure != nil {
+		// A concurrent copy may commit deletion after the first receipt lookup.
+		completed, err := server.privacy.DeletionCompleted(ctx, receipt)
+		if err != nil {
+			failure = newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be confirmed", requestID.String())
+		} else if completed {
+			return platformhttpapi.DeletePrivacyData204Response{}, nil
+		}
+		return platformhttpapi.DeletePrivacyDatadefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
+	}
+	if err := server.privacy.DeletePrincipalWithReceipt(ctx, principal, receipt); err != nil {
 		failure = newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be completed", requestID.String())
 		return platformhttpapi.DeletePrivacyData503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}

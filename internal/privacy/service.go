@@ -42,6 +42,8 @@ type Repository interface {
 	RecordConsents(context.Context, []Record) error
 	PlanDeletion(context.Context, attestation.Principal) (DeletionPlan, error)
 	DeletePrincipal(context.Context, attestation.Principal) error
+	DeletionCompleted(context.Context, DeletionReceipt) (bool, error)
+	DeletePrincipalWithReceipt(context.Context, attestation.Principal, DeletionReceipt) error
 }
 
 type ConsentReader interface {
@@ -136,6 +138,10 @@ func (service *Service) HasRequiredConsents(
 }
 
 func (service *Service) DeletePrincipal(ctx context.Context, principal attestation.Principal) error {
+	return service.deletePrincipal(ctx, principal, nil)
+}
+
+func (service *Service) deletePrincipal(ctx context.Context, principal attestation.Principal, receipt *DeletionReceipt) error {
 	if service == nil || service.repository == nil || service.objects == nil || principal.KeyID == "" || principal.DeviceID == "" {
 		return errors.New("privacy deletion service unavailable")
 	}
@@ -154,6 +160,9 @@ func (service *Service) DeletePrincipal(ctx context.Context, principal attestati
 				return err
 			}
 		}
+	}
+	if receipt != nil {
+		return service.repository.DeletePrincipalWithReceipt(ctx, principal, *receipt)
 	}
 	return service.repository.DeletePrincipal(ctx, principal)
 }

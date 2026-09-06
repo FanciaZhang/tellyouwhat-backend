@@ -1,0 +1,52 @@
+{
+  "baseCommit": "9653f143b9a0a1092e7a9689e0acb7e71c14a6ed",
+  "scope": "expired AI tasks and application-level backup retention",
+  "baseline": {
+    "mysql": "failed: queued/running expired tasks and dispatch rows remained; 6 deleted instead of 10",
+    "backup": "failed: copied snapshot survived beyond 14 days"
+  },
+  "validation": {
+    "mysql": "real MySQL 8.4 in isolated disposable tmpfs container, synthetic database only",
+    "goRacePackages": [
+      "internal/storage/mysqlstore",
+      "internal/jobs",
+      "internal/privacy"
+    ],
+    "goRaceResult": "PASS",
+    "pythonTests": 24,
+    "pythonFailures": 0,
+    "goVet": "PASS",
+    "expiredJobStates": [
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled"
+    ],
+    "boundaries": "one microsecond before expiry, exact expiry, one microsecond after cutoff, repeated cleanup",
+    "backupChecks": [
+      "authenticated creation time",
+      "failed new export",
+      "independent maintenance",
+      "invalid snapshot isolation",
+      "exact 14-day boundary",
+      "expired restore rejected before decryption"
+    ]
+  },
+  "sourceSHA256": {
+    "cmd/maintenance/main.go": "a7d2e8238a45e8ccc8c2b32fb4bde56fe9a2b92a94b54e2fea24a2030d2e7bd5",
+    "internal/storage/mysqlstore/maintenance.go": "43e358a580d937b445424ba7edc6d19076b3986fac945e4ee74f2504cba20b18",
+    "internal/storage/mysqlstore/maintenance_integration_test.go": "0e3f030b0ed84143070502c7a7311be415d622ddf0e6fccd54034593fc257a04",
+    "deploy/tencent/ops_backup.py": "a33fb8be7dce346a6b54c7127d41af87915f554ba1e11b600bb832675eecafbf",
+    "deploy/tencent/operations.py": "a443f1d80fec5a9862edacfbebf91cec3f3041509890fd8022b51e41bba5c28f",
+    "deploy/tencent/operations_test.py": "aad473b4f296ac3a4b54ef6f2b4324e45e5cdf2e0e3f100764e739436262b2aa",
+    "deploy/tencent/health_test.py": "4dc2e8cef5cf1cfa2fd5e22ffb0fe93148c2dba96d611c73c448c210c9291469"
+  },
+  "productionDeployed": false,
+  "outstanding": [
+    "cloud snapshot retention",
+    "production recovery deletion and consent replay",
+    "project AI budget",
+    "candidate deployment and end-to-end acceptance"
+  ]
+}

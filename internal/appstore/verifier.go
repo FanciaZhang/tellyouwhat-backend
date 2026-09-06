@@ -58,6 +58,7 @@ type Transaction struct {
 	OfferIdentifier       string
 	OfferType             int32
 	ExpiresAt             time.Time
+	StartedAt             time.Time
 	SignedAt              time.Time
 	RevokedAt             *time.Time
 	IsUpgraded            bool
@@ -85,6 +86,7 @@ type transactionPayload struct {
 	OfferIdentifier       string `json:"offerIdentifier"`
 	OfferType             int32  `json:"offerType"`
 	ExpiresDate           int64  `json:"expiresDate"`
+	OriginalPurchaseDate  int64  `json:"originalPurchaseDate"`
 	SignedDate            int64  `json:"signedDate"`
 	RevocationDate        *int64 `json:"revocationDate"`
 	IsUpgraded            bool   `json:"isUpgraded"`
@@ -299,6 +301,7 @@ func normalizedTransaction(payload transactionPayload) Transaction {
 		OfferIdentifier:       payload.OfferIdentifier,
 		OfferType:             payload.OfferType,
 		ExpiresAt:             time.UnixMilli(payload.ExpiresDate),
+		StartedAt:             verifiedPurchaseStart(payload.OriginalPurchaseDate),
 		SignedAt:              time.UnixMilli(payload.SignedDate),
 		RevokedAt:             revokedAt,
 		IsUpgraded:            payload.IsUpgraded,
@@ -330,4 +333,11 @@ func hasExtension(certificate *x509.Certificate, oid []int) bool {
 		}
 	}
 	return false
+}
+
+func verifiedPurchaseStart(milliseconds int64) time.Time {
+	if milliseconds <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(milliseconds)
 }

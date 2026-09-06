@@ -36,6 +36,8 @@ https://api.journal.tellyouwhat.cn/v1/app-store/notifications
 
 `.github/workflows/backend.yml` 是唯一生产发布入口。GitHub `production` Environment 需要：
 
+生产环境文件还必须明确设置跨 Health 与 Journal 的 `AI_PROJECT_MONTHLY_BUDGET_CNY`。缺少预算、价格参数无效，或同一 UTC 月存在不同副本预算时，服务会拒绝启动或拒绝新的供应商调用。预算到达上限只暂停新的云端 AI 调用；本地数据和非 AI 功能继续可用。
+
 Repository variable:
 
 - `PRODUCTION_DEPLOY_ENABLED`：设为 `true` 后，`main` push 自动发布，定时运维检查同时启用。
@@ -138,6 +140,18 @@ docker compose --env-file /opt/tellyouwhat/backend/.env.production \
 ## 6. Operations
 
 发布成功后安装三个 systemd timer，均使用北京时间：每日 03:05 加密备份、每日 03:25 保留期清理、周日 04:05 隔离恢复演练，允许两分钟随机延迟。补跑由 `Persistent=true` 管理。运行记录保存在权限受限的 `.operations`；备份位于 `/var/backups/tellyouwhat`，保留 14 天。
+
+定时任务以后端部署目录的非 root 所有者运行。systemd 在任务启动时通过 `LoadCredential` 提供只读配置副本，并将 `TELLYOUWHAT_ENV_FILE` 指向该副本；Python 运行参数和 Compose 的容器 `env_file` 使用同一份配置。仅运行此定时服务时，原 `.env.production` 可为 `root:root 0600`。需要支持服务凭据的 systemd；当前服务器为版本 255。机制见 [systemd 服务凭据](https://systemd.io/CREDENTIALS/)。
+
+直接 SSH 运维和发布由 `PRODUCTION_USER` 执行，需要该用户读取生产配置，并能够写入镜像版本、运行文件及 `.operations`。此模式下 `.env.production` 应归部署用户所有，保持 `0600`；部署记录、`.releases` 及当前和上一个回滚快照也须由同一用户访问。环境文件和密钥不应放宽为其他用户可读。修复历史 root 部署的归属偏差时，仅调整已核实的运行配置、记录和对应快照，保留内容、现有文件权限及容器密钥组，不对整个部署目录递归修改。
+
+更新 `compose.production.yaml`、`ops_common.py` 与 `install-operations.sh` 后，重新执行 `deploy/tencent/install-operations.sh` 安装定时服务。保留服务器已有时区挂载和其他运行配置，按修复范围替换。核验应包含非 root 服务的配置读取、`docker compose config --quiet`、真实加密备份与隔离恢复演练；仅有 timer 列表不能证明任务执行成功。
+
+数据库备份先导出全部表结构，再只导出 `RECOVERY_DATA_TABLES` 白名单中的控制面数据。白名单包含迁移记录、App 注册表、管理后台账号与审计数据，以及不含设备身份的删除完成摘要；App Attest 身份、同意、权益、交易通知、优惠核销、额度、幂等记录、媒体元数据和 AI 任务等 App 用户数据均恢复为空表。新表默认只有结构，不会因遗漏排除项而自动进入备份。备份清单用 `included_data_tables` 和 `excluded_data_tables` 记录准确范围；表清单不完整、非白名单表出现数据或任一步导出失败时均不发布备份。
+
+灾难恢复不恢复 App 用户身份、同意、权益或 AI 任务；客户端需重新注册，StoreKit 权益由 Apple 交易重新同步，尚未完成的 AI 请求需重新发起。旧备份不会被此规则改写，按原备份轮换保留，且不得用于生产恢复。隔离恢复演练除表集合和行数外，还应确认全部非白名单表为 0 行；只有带白名单清单并通过核验的新备份可进入生产恢复审批。此规则不覆盖托管数据库服务商的物理备份，也不代替保存期限及删除流程的完整核验。
+
+后台 AI 任务在创建后 24 小时到期。读取和取消接口在到期时返回 `job_not_found`，不等待定期物理清理；到期任务的同一请求编号不能通过重复提交重新取得结果，客户端须使用新的请求编号重新发起任务。到期前的重复提交仍返回原任务，避免重复处理。此访问期限不代表备份及底层存储已经同时完成物理删除。
 
 清理任务先删除过期 TOS 对象，再删除数据库元数据；存储故障会保留记录以便重试。身份清理必须同时满足 30 天未活动、无有效权益、无待删除媒体，且仅操作所属 App 的身份。
 

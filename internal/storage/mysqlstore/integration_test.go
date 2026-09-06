@@ -15,6 +15,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -157,6 +158,7 @@ func TestMySQLPersistencePaths(t *testing.T) {
 		ContractVersion: contracts.ContractVersionV1, PromptVersion: "meal-text-v4",
 		Prompt: "integration", ResponseSchema: json.RawMessage(`{"type":"object"}`),
 		SemanticSignature: "integration-v1",
+		OutputBudget:      contracts.OutputBudget{Version: "health-output-v1", MaxTokens: 16_384},
 	}
 	job := jobs.Job{
 		AppID: appID, ID: jobID, RequestID: requestID, BodyDigest: strings.Repeat("c", 64),
@@ -169,6 +171,15 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	if existing, err := jobRepository.CreateOrGet(ctx, job); err != nil || existing.ID != job.ID {
 		t.Fatalf("idempotent job creation: %#v err=%v", existing, err)
 	}
+	replayedJob := job
+	replayedJob.Request.OutputBudget = contracts.DefaultOutputBudget()
+	if existing, err := jobRepository.CreateOrGet(ctx, replayedJob); err != nil || existing.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("idempotent insert changed frozen output budget: budget=%+v err=%v", existing.Request.OutputBudget, err)
+	}
+	restartedRepository := mysqlstore.NewJobRepository(database, cipher, appID)
+	if restored, err := restartedRepository.Get(ctx, job.ID); err != nil || restored.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("output budget did not survive encrypted persistence: budget=%+v err=%v", restored.Request.OutputBudget, err)
+	}
 	dispatches, err := jobRepository.ClaimDispatches(ctx, now, 10)
 	if err != nil || len(dispatches) != 1 || dispatches[0].JobID != job.ID {
 		t.Fatalf("claim durable dispatch: %#v err=%v", dispatches, err)
@@ -179,6 +190,9 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	claimed, err := jobRepository.Claim(ctx, job.ID, now)
 	if err != nil || claimed.AttemptCount != 1 || claimed.Status != jobs.StatusRunning {
 		t.Fatalf("claim job: %#v err=%v", claimed, err)
+	}
+	if claimed.Request.OutputBudget != request.OutputBudget {
+		t.Fatalf("claim changed frozen output budget: %+v", claimed.Request.OutputBudget)
 	}
 	if err := jobRepository.Succeed(ctx, job.ID, claimed.AttemptCount, providerapi.Response{
 		Content: `{"ok":true}`, InputTokens: 12, OutputTokens: 8,
@@ -206,9 +220,76 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	t.Run("maintenance_media_retry_and_app_isolation", func(t *testing.T) {
 		testMaintenance(t, ctx, database, now, key)
 	})
+	t.Run("maintenance_expired_jobs_all_states", func(t *testing.T) {
+		testExpiredJobRetention(t, ctx, database, now, key)
+	})
 	t.Run("reject_legacy_migration_collision", func(t *testing.T) {
 		testLegacyMigrationCollision(t, ctx, database)
 	})
+	t.Run("privacy_deletion_receipt_atomicity_and_restart", func(t *testing.T) {
+		testPrivacyDeletionReceipts(t, ctx, database, now)
+	})
+	t.Run("project_ai_cost_budget_and_concurrency", func(t *testing.T) {
+		testProjectAICostControl(t, ctx, database, now)
+	})
+}
+
+func testProjectAICostControl(t *testing.T, ctx context.Context, database *sql.DB, now time.Time) {
+	t.Helper()
+	store := mysqlstore.NewCostControlStore(database)
+	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 1, LeaseDuration: time.Minute}
+	first := costcontrol.Attempt{
+		ID: "20000000-0000-4000-8000-000000000001", AppID: "health", Operation: "meal_photo_capture", Meter: "ark",
+		MonthStart:    time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC),
+		ReservedNanos: 70, CreatedAt: now, LeaseExpiresAt: now.Add(time.Minute),
+	}
+	if err := store.Reserve(ctx, first, limits); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.ID = "20000000-0000-4000-8000-000000000002"
+	second.AppID = "journal"
+	second.Operation = "journal.organize"
+	second.ReservedNanos = 20
+	if err := store.Reserve(ctx, second, limits); !errors.Is(err, costcontrol.ErrConcurrencyExceeded) {
+		t.Fatalf("cross-App concurrency was not enforced: %v", err)
+	}
+	if err := store.Settle(ctx, first.ID, 30, true, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	second.ReservedNanos = 71
+	if err := store.Reserve(ctx, second, limits); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatalf("cross-App monthly budget was not enforced: %v", err)
+	}
+	second.ReservedNanos = 70
+	if err := store.Reserve(ctx, second, limits); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Settle(ctx, second.ID, 0, false, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	third := second
+	third.ID = "20000000-0000-4000-8000-000000000003"
+	third.ReservedNanos = 1
+	if err := store.Reserve(ctx, third, limits); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatalf("unknown cost reservation was refunded: %v", err)
+	}
+	var attempts, charged int
+	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM ai_cost_attempts`).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRowContext(ctx, `SELECT charged_nanos FROM ai_cost_months WHERE month_start = ?`, first.MonthStart.Format("2006-01-02")).Scan(&charged); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || charged != 100 {
+		t.Fatalf("attempts=%d charged=%d", attempts, charged)
+	}
+	conflicting := limits
+	conflicting.MonthlyBudgetNanos = 101
+	third.ReservedNanos = 1
+	if err := store.Reserve(ctx, third, conflicting); !errors.Is(err, costcontrol.ErrConfigurationConflict) {
+		t.Fatalf("conflicting replica budget was accepted: %v", err)
+	}
 }
 
 func testLegacyMigrationCollision(t *testing.T, ctx context.Context, database *sql.DB) {
@@ -385,6 +466,8 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
 	t.Helper()
 	_, err := database.ExecContext(ctx, `
         SET FOREIGN_KEY_CHECKS = 0;
+        TRUNCATE TABLE ai_cost_attempts;
+        TRUNCATE TABLE ai_cost_months;
         TRUNCATE TABLE app_store_offer_redemptions;
         TRUNCATE TABLE admin_operations;
         TRUNCATE TABLE admin_audit_events;
@@ -396,6 +479,7 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
         TRUNCATE TABLE admin_users;
 		UPDATE admin_control_state SET initialized_at = NULL WHERE singleton_id = 1;
         TRUNCATE TABLE app_store_notifications;
+		TRUNCATE TABLE privacy_deletion_receipts;
         TRUNCATE TABLE job_dispatch_outbox;
         TRUNCATE TABLE usage_ledger;
         TRUNCATE TABLE media_objects;

@@ -3,12 +3,68 @@ package ark
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/tellyouwhat/backend/internal/contracts"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 )
+
+func TestClientDisablesUpstreamResponseStorageAndCaching(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			bodies := make(chan map[string]any, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+					t.Error(err)
+					writer.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				bodies <- body
+				if stream {
+					writer.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprint(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"choice\\\":\\\"soup\\\"}\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output_text\":\"{\\\"choice\\\":\\\"soup\\\"}\",\"usage\":{\"input_tokens\":12,\"output_tokens\":5}}}\n\n")
+					return
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(writer, `{"status":"completed","output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`)
+			}))
+			defer upstream.Close()
+			client := New(Config{
+				BaseURL: upstream.URL, APIKey: "fixture-key",
+				Routes: map[contracts.Operation]Route{contracts.OperationMealDecision: {Model: "fixture-model", TimeoutSeconds: 5}},
+			}, upstream.Client(), fixedMediaResolver{})
+			request := validArkRequest()
+			request.Media = []contracts.Media{{ID: "photo", Kind: "image", MIMEType: "image/jpeg", ObjectID: "fixture-photo"}}
+			var response providerapi.Response
+			var err error
+			if stream {
+				err = client.Stream(context.Background(), request, func(event providerapi.StreamEvent) error {
+					if event.Completed != nil {
+						response = *event.Completed
+					}
+					return nil
+				})
+			} else {
+				response, err = client.Complete(context.Background(), request)
+			}
+			if err != nil || response.Content != `{"choice":"soup"}` || response.OutputTokens != 5 {
+				t.Fatalf("structured response did not complete: %+v err=%v", response, err)
+			}
+			body := <-bodies
+			if body["store"] != false {
+				t.Errorf("upstream request did not explicitly disable response storage")
+			}
+			caching, _ := body["caching"].(map[string]any)
+			if caching["type"] != "disabled" {
+				t.Errorf("upstream request did not explicitly disable response caching")
+			}
+		})
+	}
+}
 
 type fixedMediaResolver struct{}
 
@@ -28,7 +84,7 @@ func TestClientUsesServerOwnedEndpointAndStrictSchema(t *testing.T) {
 			t.Fatal(err)
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":\"soup\"}","usage":{"input_tokens":12,"output_tokens":5}}`))
 	}))
 	defer upstream.Close()
 
@@ -64,7 +120,7 @@ func TestCompleteRepairsUnquotedStringValuesBeforeSchemaValidation(t *testing.T)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":soup\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":soup\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	defer upstream.Close()
 
@@ -89,7 +145,7 @@ func TestCompleteCanonicalizesFoodGroupSynonymsBeforeSchemaValidation(t *testing
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"group\":\"legumes\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"group\":\"legumes\"}","usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	defer upstream.Close()
 
@@ -130,7 +186,7 @@ func TestClientPreservesSwiftMediaBeforePromptOrdering(t *testing.T) {
 			t.Fatal(err)
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"output_text":"{\"choice\":\"soup\"}"}`))
+		_, _ = writer.Write([]byte(`{"status":"completed","output_text":"{\"choice\":\"soup\"}"}`))
 	}))
 	defer upstream.Close()
 
@@ -175,5 +231,28 @@ func validArkRequest() contracts.Request {
 		Prompt:            "choose dinner",
 		ResponseSchema:    schema,
 		SemanticSignature: "sha256:abc",
+	}
+}
+
+func TestStreamCompletesWithoutWaitingForConnectionClosure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(writer, `data: {"type":"response.completed","response":{"status":"completed","output_text":"{\"choice\":\"soup\"}"}}`+"\n\n")
+		writer.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	defer upstream.Close()
+	client := New(Config{BaseURL: upstream.URL, APIKey: "fixture-key", Routes: map[contracts.Operation]Route{
+		contracts.OperationMealDecision: {Model: "fixture-model", TimeoutSeconds: 1},
+	}}, upstream.Client(), nil)
+	completed := 0
+	err := client.Stream(context.Background(), validArkRequest(), func(event providerapi.StreamEvent) error {
+		if event.Completed != nil {
+			completed++
+		}
+		return nil
+	})
+	if err != nil || completed != 1 {
+		t.Fatalf("terminal response waited for EOF: completed=%d err=%v", completed, err)
 	}
 }

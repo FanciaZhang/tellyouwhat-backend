@@ -24,6 +24,7 @@ type SubscriptionState struct {
 	OfferIdentifier       string
 	OfferType             int32
 	ExpiresAt             time.Time
+	StartedAt             time.Time
 	SignedAt              time.Time
 }
 
@@ -87,6 +88,7 @@ func (service *ProductionService) Sync(
 		KeyID:              principal.KeyID,
 		TransactionID:      state.OriginalTransactionID,
 		ExpiresAt:          state.ExpiresAt,
+		StartedAt:          state.StartedAt,
 		Environment:        environment,
 		OfferTransactionID: state.TransactionID,
 		OfferIdentifier:    state.OfferIdentifier,

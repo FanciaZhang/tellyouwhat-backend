@@ -45,6 +45,7 @@ type Request struct {
 	Media              []Media                    `json:"media"`
 	SemanticSignature  string                     `json:"semanticSignature"`
 	RecognitionSession *RecognitionSessionContext `json:"recognitionSession,omitempty"`
+	OutputBudget       OutputBudget               `json:"-"`
 }
 
 type RecognitionSessionContext struct {
@@ -122,6 +123,9 @@ func DecodeAndValidate(reader io.Reader, maxBodyBytes int64) (Request, error) {
 }
 
 func (request Request) Validate() error {
+	if request.OutputBudget != (OutputBudget{}) && !request.OutputBudget.Valid() {
+		return fmt.Errorf("%w: invalid output budget", ErrContractViolation)
+	}
 	policy, ok := PolicyFor(request.Operation)
 	if !ok {
 		return fmt.Errorf("%w: unsupported operation", ErrContractViolation)
@@ -256,11 +260,10 @@ func IsMealRecognitionOperation(operation Operation) bool {
 }
 
 // ReservationTokens deliberately overestimates text and schema tokens by
-// counting UTF-8 bytes one-for-one, then adds a fixed output and modality
-// budget. This prevents the post-response reconciliation from being the first
-// cost guard.
+// counting UTF-8 bytes one-for-one, then adds a conservative output reservation
+// and modality budget. Actual provider usage is reconciled after completion.
 func ReservationTokens(request Request) int {
-	reserved := len(request.Prompt) + len(request.ResponseSchema) + 4_096 + 1024
+	reserved := len(request.Prompt) + len(request.ResponseSchema) + request.OutputTokenReservation() + 1024
 	for _, item := range request.Media {
 		switch item.Kind {
 		case "audio":
@@ -272,7 +275,7 @@ func ReservationTokens(request Request) int {
 	return reserved
 }
 
-const MaxFreeRecognitionSessionReservationTokens = (512 << 10) + (128 << 10) + 4_096 + 1_024 + (4 * 32_768)
+const MaxFreeRecognitionSessionReservationTokens = (512 << 10) + (128 << 10) + OutputBudgetV1Maximum + 1_024 + (4 * 32_768)
 
 var promptContracts = map[Operation]PromptContract{
 	OperationVoiceTranscription:      {Current: "voice-transcription-v1", Previous: "voice-transcription-v0"},

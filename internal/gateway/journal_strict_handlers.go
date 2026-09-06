@@ -74,7 +74,11 @@ func (server *Server) OrganizeJournal(
 	}
 	result, err := server.journalOrganizer.Organize(ctx, input)
 	if err != nil {
-		lease.Release(0)
+		actualTokens := estimatedTokens
+		if tokens, known := result.KnownTokenTotal(); known {
+			actualTokens = tokens
+		}
+		lease.Release(actualTokens)
 		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", input.RequestID)
 		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
 	}
