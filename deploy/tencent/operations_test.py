@@ -3,11 +3,14 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from ops_backup import create_backup, crypt, restore_drill, verify_backup
+from ops_backup import create_backup, crypt, prune_backups, restore_drill, verify_backup
 from ops_common import OperationError, Runtime, read_environment
+from operations import operate
 
 
 class BackupSafetyTests(unittest.TestCase):
@@ -47,6 +50,73 @@ class BackupSafetyTests(unittest.TestCase):
                 create_backup(self.runtime)
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_backup_age_uses_authenticated_creation_time_after_file_copy(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        os.utime(path, (now, now))
+        create_backup(self.runtime)
+        self.assertFalse(path.exists())
+        self.assertFalse(Path(str(path) + ".json").exists())
+
+    def test_expired_backup_is_pruned_even_when_new_database_export_fails(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaisesRegex(OperationError, "export failed"):
+                create_backup(self.runtime)
+        self.assertFalse(path.exists())
+
+    def test_expired_snapshot_is_rejected_before_decryption_or_restore(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 14 * 86400):
+            result = create_backup(self.runtime)
+        with patch("ops_backup.time.time", return_value=now), patch("ops_backup.crypt") as decrypt:
+            with self.assertRaisesRegex(OperationError, "retention"):
+                restore_drill(self.runtime, result["filename"])
+        decrypt.assert_not_called()
+
+    def test_maintenance_prunes_backups_without_successful_new_export(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        with patch.object(self.runtime, "execute") as execute:
+            operate(self.runtime, SimpleNamespace(operation="maintenance"))
+        self.assertFalse((self.runtime.backups / result["filename"]).exists())
+        execute.assert_called_once()
+        record = json.loads((self.runtime.state / "maintenance.json").read_text())
+        self.assertEqual(record["expired_backups_removed"], 1)
+
+    def test_invalid_snapshot_does_not_skip_other_expired_snapshots_or_database_cleanup(self):
+        corrupt = create_backup(self.runtime)
+        corrupt_path = self.runtime.backups / corrupt["filename"]
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            expired = create_backup(self.runtime)
+        corrupt_path.write_bytes(corrupt_path.read_bytes() + b"invalid")
+        with patch.object(self.runtime, "execute") as execute:
+            with self.assertRaisesRegex(OperationError, "retention verification failed"):
+                operate(self.runtime, SimpleNamespace(operation="maintenance"))
+        execute.assert_called_once()
+        self.assertTrue(corrupt_path.exists())
+        self.assertFalse((self.runtime.backups / expired["filename"]).exists())
+        self.assertFalse((self.runtime.state / "maintenance.json").exists())
+
+    def test_recent_backup_is_preserved_at_retention_boundary(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 14 * 86400 + 1):
+            result = create_backup(self.runtime)
+        with patch("ops_backup.time.time", return_value=now):
+            self.assertEqual(prune_backups(self.runtime), 0)
+        path = self.runtime.backups / result["filename"]
+        self.assertTrue(path.exists())
+        with patch("ops_backup.time.time", return_value=now + 1):
+            self.assertEqual(prune_backups(self.runtime), 1)
+        self.assertFalse(path.exists())
 
     def test_failed_transient_schema_export_never_publishes_a_partial_backup(self):
         with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):

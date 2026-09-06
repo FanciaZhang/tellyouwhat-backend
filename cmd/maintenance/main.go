@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"time"
@@ -31,12 +32,9 @@ func main() {
 	}
 	repository := mysqlstore.NewMaintenanceRepository(database)
 	now := time.Now().UTC()
-	purgedMedia, err := repository.PurgeExpiredMedia(ctx, now, store)
-	if err != nil {
-		log.Fatal(err)
-	}
-	result, err := repository.Cleanup(ctx, now)
-	if err != nil {
+	result, databaseError := repository.Cleanup(ctx, now)
+	purgedMedia, mediaError := repository.PurgeExpiredMedia(ctx, now, store)
+	if err := errors.Join(databaseError, mediaError); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf(

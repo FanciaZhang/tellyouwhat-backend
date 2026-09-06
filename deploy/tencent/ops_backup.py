@@ -16,6 +16,7 @@ from ops_common import OperationError, atomic_json
 
 
 TRANSIENT_DATA_TABLES = ("ai_jobs", "job_dispatch_outbox")
+BACKUP_RETENTION_SECONDS = 14 * 86400
 
 
 def backup_secret(runtime):
@@ -55,6 +56,7 @@ def create_backup(runtime):
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    prune_backups(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
@@ -113,19 +115,32 @@ def create_backup(runtime):
         signature = manifest_signature(backup_secret(runtime), manifest)
         os.replace(encrypted, destination)
         atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
-    result = runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
-    cutoff = time.time() - 14 * 86400
+    return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
+
+
+def prune_backups(runtime):
+    cutoff = time.time() - BACKUP_RETENTION_SECONDS
+    removed = 0
+    failed = 0
     for path in runtime.backups.glob("mysql-*.sql.gz.enc"):
-        if path != destination and path.stat().st_mtime < cutoff:
-            verify_backup(runtime, path)
-            Path(str(path) + ".json").unlink()
-            path.unlink()
-    return result
+        try:
+            manifest = verify_backup(runtime, path)
+            if manifest["created_at"] <= cutoff:
+                path.unlink()
+                Path(str(path) + ".json").unlink()
+                removed += 1
+        except (OperationError, OSError):
+            failed += 1
+    if failed:
+        raise OperationError(f"backup retention verification failed for {failed} snapshots; operator review required")
+    return removed
 
 
 def verify_backup(runtime, path):
     path = Path(path)
     try:
+        if path.is_symlink() or Path(str(path) + ".json").is_symlink():
+            raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
         expected = manifest_signature(backup_secret(runtime), manifest)
@@ -135,6 +150,8 @@ def verify_backup(runtime, path):
             raise OperationError("backup content verification failed")
         if manifest["database"] != runtime.config["MYSQL_DATABASE"]:
             raise OperationError("backup belongs to another application database")
+        if type(manifest["created_at"]) is not int or manifest["created_at"] <= 0:
+            raise OperationError("invalid backup creation time")
         if not manifest["table_rows"] or not all(re.fullmatch(r"[A-Za-z0-9_]+", table) for table in manifest["table_rows"]):
             raise OperationError("invalid backup table manifest")
         return manifest
@@ -153,6 +170,8 @@ def restore_drill(runtime, filename=None):
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
+    if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
+        raise OperationError("backup is outside the retention period")
     container = "tellyouwhat-restore-" + secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     database = "tellyouwhat_restore_test"

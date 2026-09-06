@@ -219,6 +219,9 @@ func TestMySQLPersistencePaths(t *testing.T) {
 	t.Run("maintenance_media_retry_and_app_isolation", func(t *testing.T) {
 		testMaintenance(t, ctx, database, now, key)
 	})
+	t.Run("maintenance_expired_jobs_all_states", func(t *testing.T) {
+		testExpiredJobRetention(t, ctx, database, now, key)
+	})
 	t.Run("reject_legacy_migration_collision", func(t *testing.T) {
 		testLegacyMigrationCollision(t, ctx, database)
 	})

@@ -96,7 +96,7 @@ func (repository *MaintenanceRepository) Cleanup(ctx context.Context, now time.T
 	}{
 		{`DELETE FROM idempotency_records WHERE expires_at <= ?`, []any{now}},
 		{`DELETE FROM media_objects WHERE expires_at <= ? AND deleted_at IS NOT NULL`, []any{now}},
-		{`DELETE FROM ai_jobs WHERE status IN ('succeeded', 'failed', 'cancelled') AND expires_at <= ?`, []any{now}},
+		{`DELETE FROM ai_jobs WHERE expires_at <= ?`, []any{now}},
 		{`DELETE FROM app_store_notifications WHERE processed_at <= ?`, []any{auditCutoff}},
 		{`DELETE FROM app_store_offer_redemptions WHERE redeemed_at <= ?`, []any{auditCutoff}},
 		{`DELETE FROM admin_operations WHERE created_at <= ?`, []any{auditCutoff}},
