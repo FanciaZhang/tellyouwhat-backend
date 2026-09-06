@@ -75,13 +75,16 @@ func TestProviderUsesAliasesAndDisablesStorage(t *testing.T) {
 func TestProviderRejectsTrailingStructuredOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"tags\":[],\"existingBookRecommendations\":[],\"newBookSuggestions\":[]} {}"}]}]}`))
+		_, _ = w.Write([]byte(`{"usage":{"input_tokens":11,"output_tokens":22},"output":[{"type":"message","content":[{"type":"output_text","text":"{\"tags\":[],\"existingBookRecommendations\":[],\"newBookSuggestions\":[]} {}"}]}]}`))
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL, APIKey: "secret", LiteModel: "lite", ProModel: "pro"}, server.Client())
-	_, err := client.Organize(context.Background(), contracts.OrganizeRequest{Title: "一天"}, false)
+	result, err := client.Organize(context.Background(), contracts.OrganizeRequest{Title: "一天"}, false)
 	if !errors.Is(err, ErrInvalidResult) {
 		t.Fatalf("expected invalid structured result, got %v", err)
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 22 {
+		t.Fatalf("metering was discarded with invalid output: %+v", result)
 	}
 }
 

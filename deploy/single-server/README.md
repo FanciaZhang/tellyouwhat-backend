@@ -76,3 +76,18 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm ma
 运行 `python3 deploy/tencent/operations.py restore --backend-dir "$PWD"`，可把最近一次备份恢复到无网络、无宿主机数据库卷的临时 MySQL 容器，逐表核对记录数，随后删除测试容器。该命令不会恢复到生产数据库。备份和恢复结果保存在 `.operations/`，数据库内容和密钥不会进入日志。
 
 `.env.production`、`.p8`、备份文件和 registry credential 均不得进入源码仓库。
+
+`AI_PROJECT_MONTHLY_BUDGET_CNY` 是 Health 与 Journal 共用的 UTC 自然月供应商现金上限。每次 Ark、手记整理、语音整理和语音识别都会先按保守价格预留，再按供应商返回的已知用量结算；未知结果保留预留金额。`AI_PROJECT_MAX_CONCURRENT` 同样跨 App、gateway、worker 和服务验收进程生效。成本账本只保存 App、操作、计量类型、金额和时间，不保存用户标识、提示词、回复或媒体。生产配置缺少预算会阻止服务启动。
+
+同一个 UTC 月内更改预算时，先在停机维护窗口更新 `ai_cost_months.budget_nanos`，再用完全相同的新值部署所有进程。运行中的不同预算会被拒绝，避免旧副本重新放大上限。新月份会自动使用当前生产配置。
+
+只读查看本月额度、已计费预留和不确定调用：
+
+```sql
+SELECT month_start, budget_nanos / 1000000000 AS budget_cny,
+       charged_nanos / 1000000000 AS charged_cny
+FROM ai_cost_months ORDER BY month_start DESC LIMIT 1;
+SELECT status, COUNT(*) FROM ai_cost_attempts
+WHERE month_start = DATE_FORMAT(UTC_DATE(), '%Y-%m-01')
+GROUP BY status;
+```

@@ -6,9 +6,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -32,7 +34,20 @@ type PlatformConfig struct {
 	JobCapabilitySecret  string
 	TrustedIPHeader      string
 	TOS                  media.TOSConfig
+	AICost               AICostConfig
 	Apps                 []AppConfig
+}
+
+type AICostConfig struct {
+	Limits        costcontrol.Limits
+	HealthArk     costcontrol.TokenPrice
+	JournalArk    costcontrol.TokenPrice
+	JournalSpeech costcontrol.DurationPrice
+}
+
+func (config AICostConfig) Valid() bool {
+	return config.Limits.Valid() && config.HealthArk.Valid() && config.JournalArk.Valid() &&
+		config.JournalSpeech.NanosPerHour > 0
 }
 
 type AppConfig struct {
@@ -94,6 +109,10 @@ func LoadWorkerPlatform() (PlatformConfig, error) {
 func loadPlatformUnchecked() (PlatformConfig, error) {
 	environment := value("APP_ENV", "development")
 	commonTeamID := strings.TrimSpace(os.Getenv("APPLE_TEAM_ID"))
+	aiCost, err := loadAICostConfig()
+	if err != nil {
+		return PlatformConfig{}, err
+	}
 	result := PlatformConfig{
 		Environment:          environment,
 		Port:                 value("PORT", "8080"),
@@ -106,6 +125,7 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 		WorkerAsyncURL:       os.Getenv("WORKER_ASYNC_URL"),
 		JobCapabilitySecret:  os.Getenv("JOB_CAPABILITY_SECRET"),
 		TrustedIPHeader:      os.Getenv("TRUSTED_CLIENT_IP_HEADER"),
+		AICost:               aiCost,
 		TOS: media.TOSConfig{
 			Endpoint:  value("TOS_ENDPOINT", "https://tos-cn-beijing.volces.com"),
 			Region:    value("TOS_REGION", "cn-beijing"),
@@ -233,6 +253,9 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 func (config PlatformConfig) Validate() error {
 	if config.Environment != "development" && config.Environment != "production" {
 		return errors.New("APP_ENV must be development or production")
+	}
+	if config.Environment == "production" && !config.AICost.Valid() {
+		return errors.New("AI_PROJECT_MONTHLY_BUDGET_CNY and valid provider cost settings are required in production")
 	}
 	if config.StorageMode != "memory" && config.StorageMode != "mysql" {
 		return errors.New("STORAGE_MODE must be memory or mysql")
@@ -430,6 +453,92 @@ func prefixedInt64Optional(prefix, key string) (int64, error) {
 		return 0, nil
 	}
 	return parsePositiveInt64(prefix+"_"+key, raw)
+}
+
+func loadAICostConfig() (AICostConfig, error) {
+	budget, err := parseOptionalCNYNanos("AI_PROJECT_MONTHLY_BUDGET_CNY", strings.TrimSpace(os.Getenv("AI_PROJECT_MONTHLY_BUDGET_CNY")))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	concurrent, err := positiveInt("AI_PROJECT_MAX_CONCURRENT", value("AI_PROJECT_MAX_CONCURRENT", "4"))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	leaseSeconds, err := positiveInt("AI_PROJECT_LEASE_SECONDS", value("AI_PROJECT_LEASE_SECONDS", "900"))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	prices := make([]int64, 0, 5)
+	for _, item := range []struct{ key, fallback string }{
+		{"HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION", "0.8"},
+		{"HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION", "8"},
+		{"JOURNAL_ARK_MAX_INPUT_CNY_PER_MILLION", "9.6"},
+		{"JOURNAL_ARK_MAX_OUTPUT_CNY_PER_MILLION", "48"},
+		{"JOURNAL_ASR_CNY_PER_HOUR", "4.5"},
+	} {
+		price, parseErr := parseOptionalCNYNanos(item.key, value(item.key, item.fallback))
+		if parseErr != nil || price <= 0 {
+			if parseErr != nil {
+				return AICostConfig{}, parseErr
+			}
+			return AICostConfig{}, fmt.Errorf("%s must be greater than zero", item.key)
+		}
+		prices = append(prices, price)
+	}
+	return AICostConfig{
+		Limits: costcontrol.Limits{
+			MonthlyBudgetNanos: budget, MaxConcurrent: concurrent,
+			LeaseDuration: time.Duration(leaseSeconds) * time.Second,
+		},
+		HealthArk: costcontrol.TokenPrice{
+			InputNanosPerMillionTokens: prices[0], OutputNanosPerMillionTokens: prices[1],
+		},
+		JournalArk: costcontrol.TokenPrice{
+			InputNanosPerMillionTokens: prices[2], OutputNanosPerMillionTokens: prices[3],
+		},
+		JournalSpeech: costcontrol.DurationPrice{NanosPerHour: prices[4]},
+	}, nil
+}
+
+func parseOptionalCNYNanos(key, raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	if strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-") || strings.Count(raw, ".") > 1 {
+		return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+	}
+	parts := strings.SplitN(raw, ".", 2)
+	if parts[0] == "" {
+		parts[0] = "0"
+	}
+	if len(parts) == 2 && (parts[1] == "" || len(parts[1]) > 9) {
+		return 0, fmt.Errorf("%s supports at most 9 decimal places", key)
+	}
+	whole, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || whole < 0 || whole > (int64(^uint64(0)>>1))/costcontrol.NanosPerCNY {
+		return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+	}
+	fraction := int64(0)
+	if len(parts) == 2 {
+		padded := parts[1] + strings.Repeat("0", 9-len(parts[1]))
+		fraction, err = strconv.ParseInt(padded, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+		}
+	}
+	result := whole*costcontrol.NanosPerCNY + fraction
+	if result <= 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
+	return result, nil
+}
+
+func positiveInt(key, raw string) (int, error) {
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return parsed, nil
 }
 
 func parsePositiveInt(key, raw string) (int, error) {

@@ -199,6 +199,33 @@ func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T
 	}
 }
 
+func TestJournalOrganizeRetainsMeteredQuotaWhenProviderResultFails(t *testing.T) {
+	t.Parallel()
+	lease := &recordingQuotaLease{}
+	organizer := &fakeJournalOrganizer{
+		result: journalprovider.Result{InputTokens: 20, OutputTokens: 5},
+		err:    journalprovider.ErrInvalidResult,
+	}
+	server := New(Dependencies{
+		App: appregistry.App{
+			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
+			TeamID: "TEAM", BundleID: "cn.tellyouwhat.journalapp",
+			ManagedAIProductID: "journal.ai.subscription.monthly", AllowedOperationPrefix: "journal.",
+		},
+		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
+		Quota: recordingQuota{lease: lease}, QuotaReader: failingQuotaReader{}, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(),
+		JournalOrganizer: organizer, JournalAnalysisVersion: "journal-organize-test",
+		Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{privacy.ManagedAIScope},
+		Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+	})
+	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	if response.Code != http.StatusBadGateway || lease.actualTokens != 25 {
+		t.Fatalf("status=%d quota=%d body=%s", response.Code, lease.actualTokens, response.Body.String())
+	}
+}
+
 func TestJournalStrictRouterRejectsUnknownRequestFields(t *testing.T) {
 	t.Parallel()
 	organizer := &fakeJournalOrganizer{}

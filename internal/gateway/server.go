@@ -271,17 +271,7 @@ func (server *Server) Router() *gin.Engine {
 }
 
 func journalReservationTokens(input journalcontracts.OrganizeRequest) int {
-	value := len(input.Title) + len(input.Body) + 8_192
-	for _, tag := range input.ExistingTags {
-		value += len(tag)
-	}
-	for _, tag := range input.RejectedTagNames {
-		value += len(tag)
-	}
-	for _, book := range input.Books {
-		value += len(book.Name) + len(book.Description) + 64
-	}
-	return value
+	return journalcontracts.ReservationTokens(input)
 }
 
 func journalQuotaExceededResponse(err error) (string, string) {

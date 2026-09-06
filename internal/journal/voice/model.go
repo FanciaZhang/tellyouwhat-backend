@@ -68,14 +68,18 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	if err = json.Unmarshal(raw, &envelope); err != nil {
 		return RewriteResult{}, ErrInvalid
 	}
+	metered := RewriteResult{InputTokens: envelope.Usage.Input, OutputTokens: envelope.Usage.Output}
+	if envelope.Usage.Input < 0 || envelope.Usage.Output < 0 {
+		return metered, ErrInvalid
+	}
 	if envelope.Status != "completed" {
-		return RewriteResult{}, ErrInvalid
+		return metered, ErrInvalid
 	}
 	var text string
 	for _, o := range envelope.Output {
 		for _, c := range o.Content {
 			if c.Type == "refusal" {
-				return RewriteResult{}, errors.New("voice_rewrite_refused")
+				return metered, errors.New("voice_rewrite_refused")
 			}
 			if c.Type == "output_text" {
 				text += c.Text
@@ -86,16 +90,17 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&revision); err != nil {
-		return RewriteResult{}, ErrInvalid
+		return metered, ErrInvalid
 	}
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return RewriteResult{}, ErrInvalid
+		return metered, ErrInvalid
 	}
 	if err = revision.Validate(s); err != nil {
-		return RewriteResult{}, err
+		return metered, err
 	}
 	if revision.TranscriptRevision != tr {
-		return RewriteResult{}, ErrConflict
+		return metered, ErrConflict
 	}
-	return RewriteResult{revision, envelope.Usage.Input, envelope.Usage.Output}, nil
+	metered.Revision = revision
+	return metered, nil
 }

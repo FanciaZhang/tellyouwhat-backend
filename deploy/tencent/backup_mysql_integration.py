@@ -50,6 +50,23 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                         PRIMARY KEY (app_id, request_digest),
                         FOREIGN KEY (app_id) REFERENCES apps(app_id));
                     INSERT INTO privacy_deletion_receipts VALUES ('health', UNHEX(REPEAT('ab', 32)));
+                    CREATE TABLE ai_cost_control_state (singleton_id TINYINT PRIMARY KEY);
+                    INSERT INTO ai_cost_control_state VALUES (1);
+                    CREATE TABLE ai_cost_months (
+                        month_start DATE PRIMARY KEY, budget_nanos BIGINT NOT NULL,
+                        charged_nanos BIGINT NOT NULL, updated_at DATETIME(6) NOT NULL);
+                    INSERT INTO ai_cost_months VALUES ('2026-09-01', 100000000000, 25000000, NOW(6));
+                    CREATE TABLE ai_cost_attempts (
+                        id CHAR(36) PRIMARY KEY, month_start DATE NOT NULL, app_id VARCHAR(64) NOT NULL,
+                        operation VARCHAR(128) NOT NULL, meter VARCHAR(32) NOT NULL,
+                        reserved_nanos BIGINT NOT NULL, actual_nanos BIGINT,
+                        status VARCHAR(16) NOT NULL, created_at DATETIME(6) NOT NULL,
+                        lease_expires_at DATETIME(6) NOT NULL, completed_at DATETIME(6),
+                        FOREIGN KEY (month_start) REFERENCES ai_cost_months(month_start));
+                    INSERT INTO ai_cost_attempts VALUES (
+                        '20000000-0000-4000-8000-000000000001', '2026-09-01', 'health',
+                        'meal_text_capture', 'ark', 30000000, 25000000, 'settled',
+                        NOW(6), NOW(6), NOW(6));
                     CREATE TABLE app_attest_keys (
                         app_id VARCHAR(64) NOT NULL, key_id VARCHAR(64) NOT NULL,
                         receipt LONGBLOB NOT NULL, PRIMARY KEY (app_id, key_id),
@@ -76,11 +93,13 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                 manifest = verify_backup(runtime, path)
                 self.assertEqual(manifest["table_rows"], {
                     "schema_migrations": 1, "apps": 1, "privacy_deletion_receipts": 1,
+                    "ai_cost_control_state": 1, "ai_cost_months": 1, "ai_cost_attempts": 1,
                     "app_attest_keys": 0, "privacy_consents": 0, "future_user_data": 0,
                     "ai_jobs": 0, "job_dispatch_outbox": 0,
                 })
                 self.assertEqual(manifest["included_data_tables"], [
                     "schema_migrations", "apps", "privacy_deletion_receipts",
+                    "ai_cost_control_state", "ai_cost_months", "ai_cost_attempts",
                 ])
                 self.assertEqual(manifest["excluded_data_tables"], [
                     "ai_jobs", "app_attest_keys", "future_user_data", "job_dispatch_outbox", "privacy_consents",
@@ -98,7 +117,7 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                 self.assertIn(b"ABABABAB", dump.upper())
                 restore = restore_drill(runtime)
                 self.assertEqual(restore["sha256"], backup["sha256"])
-                self.assertEqual(restore["tables"], 8)
+                self.assertEqual(restore["tables"], 11)
                 remaining = runtime.execute("fixture-source-count", sql + ["--database=" + database],
                                             env=credentials, input=b"SELECT COUNT(*) FROM ai_jobs;")
                 self.assertEqual(remaining.strip(), b"1")

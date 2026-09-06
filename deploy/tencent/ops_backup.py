@@ -16,14 +16,18 @@ from ops_common import OperationError, atomic_json
 
 
 # App data is local-first. Disaster recovery retains only the backend control
-# plane and opaque deletion-completion receipts. Every current or future table
-# outside this allowlist is restored with its schema and no rows, so an older
-# backup cannot recreate an App Attest identity, consent, entitlement, quota,
-# media record, AI request, or purchase-derived user state.
+# plane, opaque deletion-completion receipts, and the identity-free project
+# cost ledger. Every current or future table outside this allowlist is restored
+# with its schema and no rows, so an older backup cannot recreate an App Attest
+# identity, consent, entitlement, quota, media record, AI request, or
+# purchase-derived user state.
 RECOVERY_DATA_TABLES = (
     "schema_migrations",
     "apps",
     "privacy_deletion_receipts",
+    "ai_cost_control_state",
+    "ai_cost_months",
+    "ai_cost_attempts",
     "admin_control_state",
     "admin_users",
     "admin_user_apps",

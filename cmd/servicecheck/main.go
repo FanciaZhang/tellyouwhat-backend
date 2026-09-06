@@ -22,11 +22,14 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
+	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
 type checkResult struct {
@@ -51,6 +54,16 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(checkResult{Check: "media", Detail: "cannot initialize object storage"})
 		os.Exit(1)
 	}
+	var costController *costcontrol.Controller
+	closeCostStore := func() {}
+	if *models {
+		costController, closeCostStore, err = openAICostController(ctx, cfg)
+		if err != nil {
+			_ = json.NewEncoder(os.Stdout).Encode(checkResult{Check: "ai_cost_control", Detail: "cannot initialize project AI cost control"})
+			os.Exit(1)
+		}
+	}
+	defer closeCostStore()
 	failed := false
 	report := func(name string, err error) {
 		result := checkResult{Check: name, Passed: err == nil}
@@ -67,22 +80,24 @@ func main() {
 			for _, app := range cfg.Apps {
 				switch app.Registry.ID {
 				case appregistry.Health:
-					provider := ark.New(app.Ark, client, store)
+					var modelProvider providerapi.Client = ark.New(app.Ark, client, store)
+					modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, string(app.Registry.ID), cfg.AICost.HealthArk)
 					for _, operation := range []contracts.Operation{contracts.OperationMealTextCapture, contracts.OperationMealPhotoCapture, contracts.OperationHydrationCupEstimate} {
 						request := syntheticHealthRequest(operation, asset)
-						_, err := provider.Complete(ctx, request)
+						_, err := modelProvider.Complete(ctx, request)
 						if err != nil {
 							err = safeProviderError(err)
 						}
 						report("health_"+string(operation), err)
 					}
 				case appregistry.Journal:
-					provider := journalprovider.New(journalprovider.Config{
+					var modelProvider journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 						BaseURL: app.JournalAI.BaseURL, APIKey: app.JournalAI.APIKey,
 						LiteModel: app.JournalAI.LiteModel, ProModel: app.JournalAI.ProModel,
 					}, client)
+					modelProvider = journalprovider.NewBudgetedClient(modelProvider, costController, string(app.Registry.ID), cfg.AICost.JournalArk)
 					for _, pro := range []bool{false, true} {
-						_, err := provider.Organize(ctx, journalcontracts.OrganizeRequest{
+						_, err := modelProvider.Organize(ctx, journalcontracts.OrganizeRequest{
 							RequestID: randomUUID(), ContractVersion: journalcontracts.ContractVersion,
 							ContentHash: hex.EncodeToString(make([]byte, 32)),
 							Title:       "服务验证", Body: "这是一条合成测试手记：今天在公园散步。",
@@ -111,6 +126,26 @@ func main() {
 	if failed {
 		os.Exit(1)
 	}
+}
+
+func openAICostController(ctx context.Context, cfg config.PlatformConfig) (*costcontrol.Controller, func(), error) {
+	if !cfg.AICost.Valid() {
+		return nil, nil, costcontrol.ErrInvalidAttempt
+	}
+	if cfg.StorageMode == "memory" {
+		controller, err := costcontrol.New(costcontrol.NewMemoryStore(), cfg.AICost.Limits, time.Now)
+		return controller, func() {}, err
+	}
+	database, err := mysqlstore.Open(ctx, cfg.DatabaseDSN)
+	if err != nil {
+		return nil, nil, err
+	}
+	controller, err := costcontrol.New(mysqlstore.NewCostControlStore(database), cfg.AICost.Limits, time.Now)
+	if err != nil {
+		_ = database.Close()
+		return nil, nil, err
+	}
+	return controller, func() { _ = database.Close() }, nil
 }
 
 func checkMedia(ctx context.Context, client *http.Client, store *media.TOSStore) (asset contracts.Media, resultErr error) {
@@ -217,6 +252,9 @@ func safeProviderError(err error) error {
 	}
 	if _, scanErr := fmt.Sscanf(err.Error(), "provider status %d", &status); scanErr == nil {
 		return fmt.Errorf("provider returned HTTP %d", status)
+	}
+	if errors.Is(err, costcontrol.ErrBudgetExceeded) || errors.Is(err, costcontrol.ErrConcurrencyExceeded) || errors.Is(err, costcontrol.ErrConfigurationConflict) {
+		return errors.New("project AI cost control rejected the provider call")
 	}
 	return errors.New("provider transport or structured response validation failed")
 }

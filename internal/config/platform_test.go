@@ -7,10 +7,42 @@ import (
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
 )
+
+func TestAICostConfigurationUsesExactCurrencyAndRequiresProductionBudget(t *testing.T) {
+	t.Setenv("AI_PROJECT_MONTHLY_BUDGET_CNY", "100")
+	t.Setenv("HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION", "0.8")
+	t.Setenv("HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION", "8")
+	config, err := loadAICostConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Limits.MonthlyBudgetNanos != 100*costcontrol.NanosPerCNY ||
+		config.HealthArk.InputNanosPerMillionTokens != 800_000_000 ||
+		config.HealthArk.OutputNanosPerMillionTokens != 8_000_000_000 {
+		t.Fatalf("unexpected exact cost configuration: %+v", config)
+	}
+
+	t.Setenv("AI_PROJECT_MONTHLY_BUDGET_CNY", "")
+	platform, err := loadPlatformUnchecked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform.Environment = "production"
+	if err := platform.Validate(); err == nil || !strings.Contains(err.Error(), "AI_PROJECT_MONTHLY_BUDGET_CNY") {
+		t.Fatalf("production accepted missing project budget: %v", err)
+	}
+	if _, err := parseOptionalCNYNanos("PRICE", "0.0000000001"); err == nil {
+		t.Fatal("sub-nano currency amount was accepted")
+	}
+	if _, err := parseOptionalCNYNanos("PRICE", "NaN"); err == nil {
+		t.Fatalf("invalid decimal error = %v", err)
+	}
+}
 
 func TestFreeRecognitionConfigurationCoversBoundedOutputReservations(t *testing.T) {
 	t.Setenv("HEALTH_FREE_RECOGNITION_DAILY_TOKENS", "")

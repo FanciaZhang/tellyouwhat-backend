@@ -116,17 +116,18 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return Result{}, err
 	}
+	metered := Result{InputTokens: envelope.Usage.InputTokens, OutputTokens: envelope.Usage.OutputTokens}
 	if envelope.Status != "" && envelope.Status != "completed" {
-		return Result{}, fmt.Errorf("%w: provider response status %q", ErrInvalidResult, envelope.Status)
+		return metered, fmt.Errorf("%w: provider response status %q", ErrInvalidResult, envelope.Status)
 	}
 	if envelope.Usage.InputTokens < 0 || envelope.Usage.OutputTokens < 0 {
-		return Result{}, fmt.Errorf("%w: provider returned negative token usage", ErrInvalidResult)
+		return metered, fmt.Errorf("%w: provider returned negative token usage", ErrInvalidResult)
 	}
 	var text string
 	for _, output := range envelope.Output {
 		for _, content := range output.Content {
 			if content.Type == "refusal" {
-				return Result{}, ErrRefusal
+				return metered, ErrRefusal
 			}
 			if content.Type == "output_text" {
 				text += content.Text
@@ -134,21 +135,21 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 		}
 	}
 	if text == "" {
-		return Result{}, errors.New("provider returned no output_text")
+		return metered, errors.New("provider returned no output_text")
 	}
 	var result contracts.ModelResult
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil {
-		return Result{}, fmt.Errorf("%w: %v", ErrInvalidResult, err)
+		return metered, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return Result{}, fmt.Errorf("%w: trailing structured output", ErrInvalidResult)
+		return metered, fmt.Errorf("%w: trailing structured output", ErrInvalidResult)
 	}
 	for i := range result.ExistingBookRecommendations {
 		id, ok := aliases[result.ExistingBookRecommendations[i].BookID]
 		if !ok {
-			return Result{}, fmt.Errorf("%w: unknown book alias", ErrInvalidResult)
+			return metered, fmt.Errorf("%w: unknown book alias", ErrInvalidResult)
 		}
 		result.ExistingBookRecommendations[i].BookID = id
 	}
@@ -157,7 +158,8 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 		bookIDs[book.ID] = true
 	}
 	if err := result.Validate(bookIDs); err != nil {
-		return Result{}, fmt.Errorf("%w: %v", ErrInvalidResult, err)
+		return metered, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}
-	return Result{Value: result, InputTokens: envelope.Usage.InputTokens, OutputTokens: envelope.Usage.OutputTokens}, nil
+	metered.Value = result
+	return metered, nil
 }

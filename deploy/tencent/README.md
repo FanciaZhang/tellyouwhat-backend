@@ -36,6 +36,8 @@ https://api.journal.tellyouwhat.cn/v1/app-store/notifications
 
 `.github/workflows/backend.yml` 是唯一生产发布入口。GitHub `production` Environment 需要：
 
+生产环境文件还必须明确设置跨 Health 与 Journal 的 `AI_PROJECT_MONTHLY_BUDGET_CNY`。缺少预算、价格参数无效，或同一 UTC 月存在不同副本预算时，服务会拒绝启动或拒绝新的供应商调用。预算到达上限只暂停新的云端 AI 调用；本地数据和非 AI 功能继续可用。
+
 Repository variable:
 
 - `PRODUCTION_DEPLOY_ENABLED`：设为 `true` 后，`main` push 自动发布，定时运维检查同时启用。
