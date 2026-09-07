@@ -79,3 +79,31 @@ func TestGeneratedVoiceStreamUpgradesAndRejectsTicketReplay(t *testing.T) {
 		t.Fatal("a consumed ticket must not upgrade another connection")
 	}
 }
+
+func TestDevelopmentVoiceGrantUsesDeviceOwnerAndExpires(t *testing.T) {
+	now := time.Now()
+	for _, expired := range []bool{false, true} {
+		store := entitlement.NewMemoryStore()
+		expires := now.Add(time.Hour)
+		want := 201
+		if expired {
+			expires = now.Add(-time.Second)
+			want = 403
+		}
+		if err := store.Upsert(context.Background(), entitlement.Record{KeyID: "key", Environment: "development", StartedAt: now.Add(-time.Hour), ExpiresAt: expires}); err != nil {
+			t.Fatal(err)
+		}
+		s := New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: entitlement.NewChecker(store, func() time.Time { return now }), Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{"managed_subscription"}, Voice: &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}, VoiceEntitlements: store})
+		body, _ := json.Marshal(map[string]string{"sessionID": uuid.NewString(), "consentVersion": voice.Version})
+		request := httptest.NewRequest(http.MethodPost, "/v1/journal/voice/sessions", strings.NewReader(string(body)))
+		request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+		request.Header.Set("X-Tellyouwhat-Key-ID", "key")
+		request.Header.Set("X-Tellyouwhat-Assertion", "assertion")
+		request.Header.Set("X-Tellyouwhat-Nonce", "nonce")
+		response := httptest.NewRecorder()
+		s.Router().ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatalf("expired=%v: %d %s", expired, response.Code, response.Body.String())
+		}
+	}
+}
