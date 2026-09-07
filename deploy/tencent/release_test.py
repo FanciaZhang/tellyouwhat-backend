@@ -84,10 +84,11 @@ class ReleaseRecoveryTests(unittest.TestCase):
                          'AI_ENDPOINT_WRITES_ENABLED=true\n')
         (self.bundle / 'compose.ark-management.yaml').write_text('credential overlay')
         original_stat = Path.stat
+        credential_path = str(credential.resolve())
 
         def stat(path, *args, **kwargs):
             info = original_stat(path, *args, **kwargs)
-            if str(path) == str(credential.resolve()):
+            if str(path) == credential_path:
                 fields = list(info)
                 fields[4] = 65532
                 return os.stat_result(fields)
