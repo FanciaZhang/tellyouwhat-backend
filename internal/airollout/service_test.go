@@ -416,3 +416,31 @@ func TestMySQLExplicitCurrentModelAcceptance(t *testing.T) {
 		t.Fatal("explicit acceptance did not unblock")
 	}
 }
+
+func TestMySQLExternalCancellationRecognizesBothNativeModels(t *testing.T) {
+	s, actor := fixture(t)
+	ctx := context.Background()
+	cloud := s.Cloud.(*cloudFixture)
+	id := cloud.ep.ID
+	cloud.ep.RollingID = "eprol-external"
+	cloud.rolling = arkcontrol.Rolling{ID: cloud.ep.RollingID, EndpointID: id, In: target, Out: source, Status: "Running", Gray: 20}
+	in := Input{Endpoint: id, Action: "cancel"}
+	snap, err := s.Preview(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Submit(ctx, mutation(actor), in, snap); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Store.PriceState(ctx, id)
+	if err != nil || p == nil {
+		t.Fatal(err)
+	}
+	found := map[arkcontrol.FoundationModel]bool{}
+	for _, m := range p.Models {
+		found[m] = true
+	}
+	if !found[source] || !found[target] {
+		t.Fatal("in-flight native models lost during cancellation")
+	}
+}

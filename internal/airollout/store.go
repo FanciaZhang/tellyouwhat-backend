@@ -218,7 +218,11 @@ func (s Store) Enqueue(ctx context.Context, m aiconfig.Mutation, in Input, befor
 	p.Blocked = false
 	p.Drift = false
 	p.SyncedAt = now
-	for _, model := range []arkcontrol.FoundationModel{endpointModel(before.Endpoint), in.Target} {
+	models := []arkcontrol.FoundationModel{endpointModel(before.Endpoint), in.Target}
+	if before.Rolling != nil {
+		models = append(models, before.Rolling.In, before.Rolling.Out)
+	}
+	for _, model := range models {
 		if Known(model) {
 			p.Models = addModel(p.Models, model)
 		}
