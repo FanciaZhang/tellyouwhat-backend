@@ -110,7 +110,7 @@ func run(logger *slog.Logger) error {
 				shared[id] = true
 			}
 		}
-		ai = &adminportal.AIConfig{SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
+		ai = &adminportal.AIConfig{WritesEnabled: strings.EqualFold(os.Getenv("AI_CONFIG_WRITES_ENABLED"), "true"), EndpointWritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true"), SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		AI:                ai,

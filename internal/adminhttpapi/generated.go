@@ -303,9 +303,10 @@ type HealthAIDraftRequestPolicyReasoningEffort string
 
 // HealthAIPublishRequest defines model for HealthAIPublishRequest.
 type HealthAIPublishRequest struct {
-	BaseVersion string                          `json:"baseVersion"`
-	Operation   HealthAIPublishRequestOperation `json:"operation"`
-	Revision    openapi_types.UUID              `json:"revision"`
+	BaseVersion  string                          `json:"baseVersion"`
+	Operation    HealthAIPublishRequestOperation `json:"operation"`
+	PreviewToken string                          `json:"previewToken"`
+	Revision     openapi_types.UUID              `json:"revision"`
 }
 
 // HealthAIPublishRequestOperation defines model for HealthAIPublishRequest.Operation.
@@ -441,12 +442,19 @@ type CreateRecoveryInvitationParams struct {
 
 // CreateHealthAIDraftParams defines parameters for CreateHealthAIDraft.
 type CreateHealthAIDraftParams struct {
-	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // PublishHealthAIConfigParams defines parameters for PublishHealthAIConfig.
 type PublishHealthAIConfigParams struct {
-	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetHealthAIHistoryParams defines parameters for GetHealthAIHistory.
+type GetHealthAIHistoryParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // CreateOfferParams defines parameters for CreateOffer.
@@ -622,6 +630,12 @@ type ServerInterface interface {
 
 	// (POST /api/v1/ai/health/publish)
 	PublishHealthAIConfig(c *gin.Context, params PublishHealthAIConfigParams)
+
+	// (GET /api/v1/ai/health/{operation}/history)
+	GetHealthAIHistory(c *gin.Context, operation string, params GetHealthAIHistoryParams)
+
+	// (GET /api/v1/ai/health/{operation}/revisions/{revision})
+	GetHealthAIRevision(c *gin.Context, operation string, revision string)
 
 	// (GET /api/v1/ai/models)
 	ListAIModels(c *gin.Context)
@@ -1046,6 +1060,25 @@ func (siw *ServerInterfaceWrapper) CreateHealthAIDraft(c *gin.Context) {
 
 	}
 
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -1086,6 +1119,25 @@ func (siw *ServerInterfaceWrapper) PublishHealthAIConfig(c *gin.Context) {
 
 	}
 
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -1094,6 +1146,76 @@ func (siw *ServerInterfaceWrapper) PublishHealthAIConfig(c *gin.Context) {
 	}
 
 	siw.Handler.PublishHealthAIConfig(c, params)
+}
+
+// GetHealthAIHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAIHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation" -------------
+	var operation string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation", c.Param("operation"), &operation, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetHealthAIHistoryParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHealthAIHistory(c, operation, params)
+}
+
+// GetHealthAIRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAIRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation" -------------
+	var operation string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation", c.Param("operation"), &operation, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "revision" -------------
+	var revision string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHealthAIRevision(c, operation, revision)
 }
 
 // ListAIModels operation middleware
@@ -2369,6 +2491,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/ai/models", wrapper.ListAIModels)
 	router.POST(options.BaseURL+"/api/v1/ai/health/drafts", wrapper.CreateHealthAIDraft)
 	router.POST(options.BaseURL+"/api/v1/ai/health/publish", wrapper.PublishHealthAIConfig)
+	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/history", wrapper.GetHealthAIHistory)
+	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/revisions/:revision", wrapper.GetHealthAIRevision)
 	router.GET(options.BaseURL+"/healthz", wrapper.GetAdminHealth)
 	router.GET(options.BaseURL+"/readyz", wrapper.GetAdminReadiness)
 	router.POST(options.BaseURL+"/api/v1/auth/setup/options", wrapper.BeginSetup)
@@ -2749,6 +2873,86 @@ type PublishHealthAIConfigdefaultJSONResponse struct {
 }
 
 func (response PublishHealthAIConfigdefaultJSONResponse) VisitPublishHealthAIConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIHistoryRequestObject struct {
+	Operation string `json:"operation"`
+	Params    GetHealthAIHistoryParams
+}
+
+type GetHealthAIHistoryResponseObject interface {
+	VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error
+}
+
+type GetHealthAIHistory200JSONResponse struct{ OKJSONResponse }
+
+func (response GetHealthAIHistory200JSONResponse) VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIHistorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetHealthAIHistorydefaultJSONResponse) VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIRevisionRequestObject struct {
+	Operation string `json:"operation"`
+	Revision  string `json:"revision"`
+}
+
+type GetHealthAIRevisionResponseObject interface {
+	VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error
+}
+
+type GetHealthAIRevision200JSONResponse struct{ OKJSONResponse }
+
+func (response GetHealthAIRevision200JSONResponse) VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIRevisiondefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetHealthAIRevisiondefaultJSONResponse) VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3865,6 +4069,12 @@ type StrictServerInterface interface {
 	// (POST /api/v1/ai/health/publish)
 	PublishHealthAIConfig(ctx context.Context, request PublishHealthAIConfigRequestObject) (PublishHealthAIConfigResponseObject, error)
 
+	// (GET /api/v1/ai/health/{operation}/history)
+	GetHealthAIHistory(ctx context.Context, request GetHealthAIHistoryRequestObject) (GetHealthAIHistoryResponseObject, error)
+
+	// (GET /api/v1/ai/health/{operation}/revisions/{revision})
+	GetHealthAIRevision(ctx context.Context, request GetHealthAIRevisionRequestObject) (GetHealthAIRevisionResponseObject, error)
+
 	// (GET /api/v1/ai/models)
 	ListAIModels(ctx context.Context, request ListAIModelsRequestObject) (ListAIModelsResponseObject, error)
 
@@ -4256,6 +4466,60 @@ func (sh *strictHandler) PublishHealthAIConfig(ctx *gin.Context, params PublishH
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(PublishHealthAIConfigResponseObject); ok {
 		if err := validResponse.VisitPublishHealthAIConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetHealthAIHistory operation middleware
+func (sh *strictHandler) GetHealthAIHistory(ctx *gin.Context, operation string, params GetHealthAIHistoryParams) {
+	var request GetHealthAIHistoryRequestObject
+
+	request.Operation = operation
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealthAIHistory(ctx, request.(GetHealthAIHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealthAIHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetHealthAIHistoryResponseObject); ok {
+		if err := validResponse.VisitGetHealthAIHistoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetHealthAIRevision operation middleware
+func (sh *strictHandler) GetHealthAIRevision(ctx *gin.Context, operation string, revision string) {
+	var request GetHealthAIRevisionRequestObject
+
+	request.Operation = operation
+	request.Revision = revision
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealthAIRevision(ctx, request.(GetHealthAIRevisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealthAIRevision")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetHealthAIRevisionResponseObject); ok {
+		if err := validResponse.VisitGetHealthAIRevisionResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -5058,48 +5322,50 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"y8ZN0tTZwq9US5QTXt+u/x8AAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

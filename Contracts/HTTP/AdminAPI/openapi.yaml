@@ -35,6 +35,7 @@ paths:
       tags: [Administration]
       parameters:
         - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
@@ -49,11 +50,32 @@ paths:
       tags: [Administration]
       parameters:
         - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/HealthAIPublishRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/history:
+    get:
+      operationId: getHealthAIHistory
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/revisions/{revision}:
+    get:
+      operationId: getHealthAIRevision
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: revision, in: path, required: true, schema: { type: string, maxLength: 36 } }
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
@@ -542,10 +564,11 @@ components:
     HealthAIPublishRequest:
       type: object
       additionalProperties: false
-      required: [operation, revision, baseVersion]
+      required: [operation, revision, baseVersion, previewToken]
       properties:
         operation: { type: string, enum: [voice_transcription, meal_photo_capture, hydration_cup_estimate, meal_text_capture, meal_decision, diet_analysis, health_nutrition_analysis, health_behavior_analysis] }
         revision: { type: string, format: uuid }
+        previewToken: { type: string, minLength: 1, maxLength: 2048 }
         baseVersion: { type: string, maxLength: 36 }
     JSONDocument:
       type: object

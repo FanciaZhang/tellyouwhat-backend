@@ -9,6 +9,22 @@ import (
 
 var ErrConflict = errors.New("AI configuration version conflict")
 var ErrInvalid = errors.New("invalid AI configuration")
+var ErrNotFound = errors.New("AI configuration not found")
+
+type Mutation struct {
+	Actor     string
+	Key       string
+	RequestID string
+}
+type Publication struct {
+	Operation   contracts.Operation `json:"operation"`
+	Revision    string              `json:"revision"`
+	BaseVersion string              `json:"baseVersion"`
+}
+type HistoryPage struct {
+	Revisions  []Revision `json:"revisions"`
+	NextCursor string     `json:"nextCursor,omitempty"`
+}
 
 type Revision struct {
 	ID          string                    `json:"id"`
@@ -19,16 +35,22 @@ type Revision struct {
 	CreatedAt   time.Time                 `json:"createdAt"`
 	PublishedAt *time.Time                `json:"publishedAt,omitempty"`
 }
-type Store interface {
+type CurrentReader interface {
 	Current(context.Context, contracts.Operation) (*Revision, error)
+}
+type Store interface {
+	CurrentReader
 	History(context.Context, contracts.Operation) ([]Revision, error)
-	Draft(context.Context, Revision) error
-	Publish(context.Context, string, contracts.Operation, string, time.Time) error
+	HistoryPage(context.Context, contracts.Operation, string) (HistoryPage, error)
+	Get(context.Context, contracts.Operation, string) (*Revision, error)
+	Replay(context.Context, Mutation, string, any) (*Revision, error)
+	Draft(context.Context, Revision, Mutation) (Revision, error)
+	Publish(context.Context, Publication, Mutation, time.Time) (Revision, error)
 }
 
 // Resolver applies only explicitly published revisions. Legacy defaults remain
 // client-owned until the first publication for an operation.
-type Resolver struct{ Store Store }
+type Resolver struct{ Store CurrentReader }
 
 func (r Resolver) Resolve(ctx context.Context, request contracts.Request) (contracts.Request, error) {
 	if request.ExecutionPolicy != nil {

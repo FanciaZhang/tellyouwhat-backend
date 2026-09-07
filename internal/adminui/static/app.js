@@ -40,11 +40,11 @@ function escapeHTML(value) {
 }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
-async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false } = {}) {
+async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false, idempotencyKey } = {}) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (csrfRequired) headers["X-Admin-CSRF"] = state.csrf;
-  if (idempotent) headers["Idempotency-Key"] = uuid();
+  if (idempotencyKey || idempotent) headers["Idempotency-Key"] = idempotencyKey || uuid();
   const response = await fetch(path, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin"
   });
@@ -571,27 +571,40 @@ $("#codes-form").onsubmit = event => {
 })();
 
 const aiLabels = { voice_transcription:"语音转写", meal_photo_capture:"拍照记饮食", hydration_cup_estimate:"水杯估算", meal_text_capture:"文字记饮食", meal_decision:"饮食决策", diet_analysis:"饮食分析", health_nutrition_analysis:"健康营养分析", health_behavior_analysis:"健康行为分析" };
-let aiRows=[];
+let aiRows=[], aiData={};
+async function aiCommand(action, body) {
+  const slot=`ai-command:${state.user.id}:${action}:${body.operation}`;
+  const identity=JSON.stringify({...body,previewToken:undefined});
+  let previous; try {previous=JSON.parse(sessionStorage.getItem(slot));} catch {}
+  const command=previous?.identity===identity ? previous : {identity,key:uuid()};
+  sessionStorage.setItem(slot,JSON.stringify(command));
+  const result=await api(`/api/v1/ai/health/${action}`,{method:"POST",csrfRequired:true,idempotencyKey:command.key,body});
+  sessionStorage.removeItem(slot);return result;
+}
+function aiPolicyLabel(p) { return p ? `${p.endpoint} / ${p.reasoningEffort} / 联网${p.webSearchEnabled?"开":"关"}` : "沿用 App 参数"; }
 async function loadAI() {
-  const data=await api("/api/v1/ai/health"); aiRows=data.operations;
-  $("#ai-status").textContent=`同步时间：${formatTime(data.syncedAt)}。模型升级与原生灰度尚未完成云端验证，暂不开放。`;
-  const endpoints=[...new Set(aiRows.map(row=>row.endpoint.Id).filter(Boolean))];
+  aiData=await api("/api/v1/ai/health"); aiRows=aiData.operations;
+  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。模型升级与原生灰度尚未完成云端验证，暂不开放。`;
+  renderAI();
+}
+function renderAI() {
+  const endpoints=[...new Map(aiRows.filter(r=>r.endpoint?.Id).map(r=>[r.endpoint.Id,r.endpoint])).values()];
   $("#ai-operations").innerHTML=aiRows.map((row,index)=>{
-    const p=row.current?.policy || {endpoint:row.endpoint.Id,reasoningEffort:"minimal",webSearchEnabled:false,timeoutSeconds:90};
+    const p=row.current?.policy || {endpoint:row.endpoint.Id,reasoningEffort:"minimal",webSearchEnabled:false};
     const model=row.endpoint.ModelReference?.FoundationModel;
     return `<article class="card"><h3>${escapeHTML(aiLabels[row.operation]||row.operation)}</h3>
-      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : row.syncError)}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
-      <form data-ai-index="${index}"><label>接入点<select name="endpoint">${endpoints.map(id=>`<option ${id===p.endpoint?"selected":""}>${escapeHTML(id)}</option>`).join("")}</select></label>
+      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>${escapeHTML(row.syncError||"")}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
+      <form data-ai-index="${index}"><label>接入点<select name="endpoint">${endpoints.map(ep=>`<option value="${escapeHTML(ep.Id)}" ${ep.Id===p.endpoint?"selected":""}>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.ModelReference?.FoundationModel?.Name)} (${escapeHTML(ep.Id)})</option>`).join("")}</select></label>
       <label>思考深度<select name="reasoningEffort">${[["minimal","关闭思考"],["low","轻度"],["medium","中度"],["high","深度"]].map(([value,label])=>`<option value="${value}" ${value===p.reasoningEffort?"selected":""}>${label}</option>`).join("")}</select></label>
       <label><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
       ${row.operation!=="meal_decision"?'<p class="muted">此功能的数据边界不允许联网。</p>':""}
-      <button class="primary" ${!data.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
-      <details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(r.policy.endpoint)} · ${escapeHTML(r.policy.reasoningEffort)} · 联网${r.policy.webSearchEnabled?"开":"关"} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&data.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}</details></article>`;
+      <button class="primary" ${!aiData.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
+      <details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
   }).join("");
   $$('[data-ai-index]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(async()=>{
     const row=aiRows[Number(form.dataset.aiIndex)];const values=new FormData(form);
-    await reauthenticate();
-    await api("/api/v1/ai/health/drafts",{method:"POST",csrfRequired:true,body:{operation:row.operation,baseVersion:row.current?.id||"",policy:{version:"",endpoint:values.get("endpoint"),reasoningEffort:values.get("reasoningEffort"),webSearchEnabled:values.has("webSearchEnabled"),timeoutSeconds:data.timeoutSeconds||90}}});
+    const body={operation:row.operation,baseVersion:row.current?.id||"",policy:{version:"",endpoint:values.get("endpoint"),reasoningEffort:values.get("reasoningEffort"),webSearchEnabled:values.has("webSearchEnabled"),timeoutSeconds:aiData.timeoutSeconds||90}};
+    await reauthenticate();await aiCommand("drafts",body);
     await loadAI();notice("草稿已保存，线上配置尚未改变");
   });});
   $$('[data-ai-restore]').forEach(button=>button.onclick=()=>{
@@ -599,13 +612,20 @@ async function loadAI() {
     form.elements.endpoint.value=revision.policy.endpoint;form.elements.reasoningEffort.value=revision.policy.reasoningEffort;form.elements.webSearchEnabled.checked=revision.policy.webSearchEnabled;
     notice("已载入历史配置，请保存为新草稿后发布");
   });
+  $$('[data-ai-more]').forEach(button=>button.onclick=()=>run(async()=>{
+    const index=Number(button.dataset.aiMore),row=aiRows[index];
+    const page=await api(`/api/v1/ai/health/${row.operation}/history?cursor=${encodeURIComponent(row.nextCursor)}`);
+    row.history.push(...page.revisions);row.nextCursor=page.nextCursor;renderAI();
+    $(`[data-ai-index="${index}"]`).closest("article").querySelector("details").open=true;
+  }));
   $$('[data-ai-publish]').forEach(button=>button.onclick=()=>run(async()=>{
-    const row=aiRows[Number(button.dataset.aiPublish)];const r=row.history.find(r=>r.id===button.dataset.revision);
-    const before=row.current?.policy;
-    if(!confirm(`${aiLabels[row.operation]}\n当前：${before?`${before.endpoint} / ${before.reasoningEffort} / 联网${before.webSearchEnabled?"开":"关"}`:"App 参数"}\n发布：${r.policy.endpoint} / ${r.policy.reasoningEffort} / 联网${r.policy.webSearchEnabled?"开":"关"}\n仅影响此功能的新请求。`))return;
-    await reauthenticate();await api("/api/v1/ai/health/publish",{method:"POST",csrfRequired:true,body:{operation:row.operation,revision:r.id,baseVersion:r.baseVersion}});
+    const row=aiRows[Number(button.dataset.aiPublish)];
+    const preview=await api(`/api/v1/ai/health/${row.operation}/revisions/${encodeURIComponent(button.dataset.revision)}`);
+    if(!preview.canPublish) throw new Error("此草稿已经发布或基线已变化，请载入配置并保存新草稿");
+    if(!confirm(`${aiLabels[row.operation]}\n当前：${aiPolicyLabel(preview.before)}\n发布：${aiPolicyLabel(preview.after)}\n仅影响此功能的新请求。`))return;
+    await reauthenticate();await aiCommand("publish",{operation:row.operation,revision:preview.revision.id,baseVersion:preview.revision.baseVersion,previewToken:preview.previewToken});
     await loadAI();notice("配置已发布");
   }));
 }
 $("#refresh-ai").onclick=()=>run(loadAI);
-$("#load-ai-models").onclick=()=>run(async()=>{const data=await api("/api/v1/ai/models");$("#ai-models").textContent=data.models.map(m=>`${m.DisplayName} (${m.Name})`).join("\n");});
+$("#load-ai-models").onclick=()=>run(async()=>{const data=await api("/api/v1/ai/models");$("#ai-models").textContent=`目录同步时间：${formatTime(data.syncedAt)}\n`+data.models.map(m=>`${m.DisplayName} (${m.Name})`).join("\n");});
