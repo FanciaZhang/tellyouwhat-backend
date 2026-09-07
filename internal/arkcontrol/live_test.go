@@ -57,3 +57,22 @@ func TestLiveRollingDryRun(t *testing.T) {
 	}
 	t.Log("service identity passed native rolling dry run; no cloud mutation")
 }
+
+func TestLiveSelectedModelPrice(t *testing.T) {
+	path := os.Getenv("ARK_MANAGEMENT_TEST_CREDENTIAL_FILE")
+	if path == "" {
+		t.Skip("explicit service credential required")
+	}
+	c, err := NewFromFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	model := "doubao-seed-2-0-mini"
+	activations, err := c.ModelActivations(ctx, []string{model})
+	if err != nil || len(activations) != 1 || activations[0].Name != model || activations[0].State != "Available" || len(activations[0].Charges) == 0 {
+		t.Fatal("selected model price unavailable", err)
+	}
+	t.Log("service identity verified: selected model activation and pricing available")
+}
