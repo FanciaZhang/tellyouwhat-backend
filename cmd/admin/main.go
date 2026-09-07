@@ -6,10 +6,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/aiconfig"
+	"github.com/tellyouwhat/backend/internal/arkcontrol"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -83,7 +87,33 @@ func run(logger *slog.Logger) error {
 		offerClients[app.id] = client
 		adminApps = append(adminApps, adminportal.AdminApp{ID: app.id, DisplayName: app.displayName})
 	}
+	var ai *adminportal.AIConfig
+	if path := os.Getenv("ARK_MANAGEMENT_CREDENTIAL_FILE"); path != "" {
+		client, err := arkcontrol.NewFromFile(path)
+		if err != nil {
+			return err
+		}
+		endpoints := make(map[contracts.Operation]string)
+		for _, op := range contracts.OperationValues() {
+			endpoints[op] = os.Getenv("HEALTH_ARK_ENDPOINT_" + strings.ToUpper(string(op)))
+		}
+		timeout := 90
+		if raw := os.Getenv("HEALTH_ARK_TIMEOUT_SECONDS"); raw != "" {
+			timeout, err = strconv.Atoi(raw)
+			if err != nil || timeout < 1 || timeout > 840 {
+				return errors.New("invalid health AI timeout")
+			}
+		}
+		shared := make(map[string]bool)
+		for _, key := range []string{"JOURNAL_ARK_LITE_MODEL_ID", "JOURNAL_ARK_PRO_MODEL_ID", "JOURNAL_VOICE_MODEL_ID"} {
+			if id := os.Getenv(key); id != "" {
+				shared[id] = true
+			}
+		}
+		ai = &adminportal.AIConfig{SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
+	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
+		AI:                ai,
 		PreviewSigningKey: configuration.previewSigningKey,
 		WritesEnabled:     configuration.writesEnabled,
 		Apps:              adminApps,

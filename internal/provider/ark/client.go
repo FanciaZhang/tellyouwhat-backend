@@ -201,6 +201,15 @@ func (client *Client) makeRequest(
 		return nil, nil, ErrProviderConfiguration
 	}
 	route, ok := client.config.Routes[request.Operation]
+	if request.ExecutionPolicy != nil {
+		var err error
+		request, err = request.WithExecutionPolicy(*request.ExecutionPolicy)
+		if err != nil {
+			return nil, nil, ErrProviderConfiguration
+		}
+		route = Route{Model: request.ExecutionPolicy.Endpoint, TimeoutSeconds: request.ExecutionPolicy.TimeoutSeconds}
+		ok = true
+	}
 	if !ok || strings.TrimSpace(route.Model) == "" || strings.TrimSpace(client.config.BaseURL) == "" || client.config.APIKey == "" {
 		return nil, nil, ErrProviderConfiguration
 	}

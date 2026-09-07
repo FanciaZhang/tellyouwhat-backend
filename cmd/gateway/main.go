@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"io"
 	"log/slog"
 	"net/http"
@@ -63,6 +64,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	executionPolicies          gateway.PolicyResolver
 	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
@@ -276,7 +278,8 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
-		nonces: redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
+		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
+		nonces:            redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
 		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
 		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
 		capabilityUses: redisstore.NewCapabilityUseStore(shared.redis, appID),
@@ -353,6 +356,7 @@ func buildAppHandler(
 
 	switch app.ID {
 	case appregistry.Health:
+		dependencies.ExecutionPolicies = storage.executionPolicies
 		dependencies.AllowedConsentScopes = []string{
 			privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
 			privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,

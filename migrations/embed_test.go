@@ -13,7 +13,7 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []string{"0001_initial.sql", "0002_voice_subscription_anchor.sql", "0003_privacy_deletion_receipts.sql", "0004_ai_cost_control.sql"}
+	expected := []string{"0001_initial.sql", "0002_voice_subscription_anchor.sql", "0003_privacy_deletion_receipts.sql", "0004_ai_cost_control.sql", "0005_health_ai_config.sql"}
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}

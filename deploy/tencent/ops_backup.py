@@ -37,6 +37,8 @@ RECOVERY_DATA_TABLES = (
     "admin_invitation_apps",
     "admin_audit_events",
     "admin_operations",
+    "health_ai_config_revisions",
+    "health_ai_config_current",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
 

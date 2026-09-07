@@ -41,19 +41,26 @@ func (request Request) OutputTokenReservation() int {
 // MarshalJobRequest persists server-owned budget metadata only inside the
 // encrypted job payload. Request's public JSON decoder cannot set this field.
 func MarshalJobRequest(request Request) ([]byte, error) {
+	if request.ExecutionPolicy != nil {
+		if err := request.ExecutionPolicy.Validate(request.Operation); err != nil {
+			return nil, err
+		}
+	}
 	if !request.OutputBudget.Valid() {
 		return nil, fmt.Errorf("%w: missing output budget", ErrContractViolation)
 	}
 	return json.Marshal(struct {
 		Request
-		Budget OutputBudget `json:"_serverOutputBudget"`
-	}{Request: request, Budget: request.OutputBudget})
+		Budget OutputBudget     `json:"_serverOutputBudget"`
+		Policy *ExecutionPolicy `json:"_serverExecutionPolicy,omitempty"`
+	}{Request: request, Budget: request.OutputBudget, Policy: request.ExecutionPolicy})
 }
 
 func UnmarshalJobRequest(raw []byte) (Request, error) {
 	var stored struct {
 		Request
-		Budget OutputBudget `json:"_serverOutputBudget"`
+		Budget OutputBudget     `json:"_serverOutputBudget"`
+		Policy *ExecutionPolicy `json:"_serverExecutionPolicy,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Request{}, err
@@ -64,5 +71,8 @@ func UnmarshalJobRequest(raw []byte) (Request, error) {
 	// A legacy job stays readable. A worker must reject new execution without
 	// its original budget instead of silently choosing the active default.
 	stored.Request.OutputBudget = stored.Budget
+	if stored.Policy != nil {
+		return stored.Request.WithExecutionPolicy(*stored.Policy)
+	}
 	return stored.Request, nil
 }

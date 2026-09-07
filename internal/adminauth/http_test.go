@@ -24,7 +24,7 @@ func TestRolePolicySeparatesGlobalAdministrationFromAssignedApps(t *testing.T) {
 	}
 	operator := User{Role: RoleOperator, Status: UserStatusActive, AppIDs: []string{"health"}}
 	if !operator.Allows(PermissionOfferManage, "health") || operator.Allows(PermissionOfferRead, "journal") ||
-		operator.Allows(PermissionUsersManage, "") || operator.Allows(PermissionAuditReadAll, "") {
+		operator.Allows(PermissionAIConfigManage, "health") || operator.Allows(PermissionUsersManage, "") || operator.Allows(PermissionAuditReadAll, "") {
 		t.Fatal("operator permission escaped its assigned app or role")
 	}
 	operator.Status = UserStatusDisabled
