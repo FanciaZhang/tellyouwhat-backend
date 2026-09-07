@@ -26,7 +26,11 @@ var (
 	resourceName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
-type Client struct{ sdk *ark.ARK }
+type Client struct {
+	sdk  *ark.ARK
+	gate chan struct{}
+	next time.Time
+}
 
 // NewFromFile never falls back to a developer profile or environment credentials.
 func NewFromFile(path string) (*Client, error) {
@@ -61,7 +65,7 @@ func newClient(ak, sk, endpoint string, transport *http.Client) (*Client, error)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
-	return &Client{sdk: ark.New(s)}, nil
+	return &Client{sdk: ark.New(s), gate: make(chan struct{}, 1)}, nil
 }
 
 type ModelReference struct {
@@ -98,6 +102,38 @@ func (c *Client) read(ctx context.Context, action string, input map[string]inter
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	for attempt := 0; ; attempt++ {
+		err := c.call(ctx, action, input, target)
+		var failure *APIError
+		readOnly := action == "GetEndpoint" || action == "GetEndpointRolling" || action == "ListFoundationModels" || action == "ListFoundationModelVersions" || action == "ListModelActivations"
+		if !readOnly || attempt >= 2 || !errors.As(err, &failure) || (failure.Status != 429 && failure.Code != "FlowLimitExceeded") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ErrUnavailable
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		}
+	}
+}
+
+func (c *Client) call(ctx context.Context, action string, input map[string]interface{}, target any) error {
+	// Share request pacing across inventory, previews, and the background runner.
+	select {
+	case c.gate <- struct{}{}:
+	case <-ctx.Done():
+		return ErrUnavailable
+	}
+	if wait := time.Until(c.next); wait > 0 {
+		select {
+		case <-ctx.Done():
+			<-c.gate
+			return ErrUnavailable
+		case <-time.After(wait):
+		}
+	}
+	c.next = time.Now().Add(500 * time.Millisecond)
+	<-c.gate
 	output := map[string]interface{}{}
 	r := c.sdk.NewRequest(&request.Operation{Name: action, HTTPMethod: "POST", HTTPPath: "/"}, &input, &output)
 	r.HTTPRequest.Header.Set("Content-Type", "application/json; charset=utf-8")

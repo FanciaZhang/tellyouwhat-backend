@@ -306,7 +306,13 @@ func (s *Server) ListAIModelVersions(c *gin.Context, model string) {
 		aiFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "syncedAt": s.now(), "compatibilityCatalog": airollout.Catalog(), "catalogVersion": airollout.CatalogVersion})
+	activation := inventorySnapshot[[]arkcontrol.Activation]{Stale: true}
+	if prices, ok := s.config.AI.Inventory.(interface {
+		ModelActivations(context.Context, []string) ([]arkcontrol.Activation, error)
+	}); ok {
+		activation = s.config.AI.modelPriceSnapshot(c, model, prices.ModelActivations)
+	}
+	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "activation": activation, "syncedAt": s.now(), "compatibilityCatalog": airollout.Catalog(), "catalogVersion": airollout.CatalogVersion})
 }
 func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 	if _, ok := s.aiAccess(c, false); !ok {

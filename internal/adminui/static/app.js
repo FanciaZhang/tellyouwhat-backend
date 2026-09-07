@@ -664,8 +664,8 @@ $("#load-ai-models").onclick=()=>run(async()=>{
   $("#ai-model-versions").onclick=()=>run(async()=>{
     const name=$("#ai-model-picker").value;
     const versions=await api(`/api/v1/ai/models/${encodeURIComponent(name)}/versions`);
-    const activation=data.activations?.value?.find(a=>a.FoundationModelName===name);
+    const activation=versions.activation?.value?.find(a=>a.FoundationModelName===name)||data.activations?.value?.find(a=>a.FoundationModelName===name);
     const groups=activation?.MultiChargeItems?.length?activation.MultiChargeItems:[{Name:"基础价格",ChargeItems:activation?.ChargeItems||[]}];
-    $("#ai-model-detail").innerHTML=`<p>版本：${versions.versions.map(v=>`${escapeHTML(v.ModelVersion)} (${escapeHTML(v.Status||"状态未知")})`).join("、")}</p><p class="muted">以下为火山返回的账号价格；版本存在、账号已开通、可升级至该版本需要分别验证。</p>${groups.map(g=>`<p>${escapeHTML(g.Description||g.Name||"价格分档")}<br>${(g.ChargeItems||[]).filter(c=>["InferencePrompt","InferenceCompletion","AudioPrompt"].includes(c.Type)).map(c=>`${escapeHTML(({InferencePrompt:"文本/图片输入",InferenceCompletion:"输出",AudioPrompt:"音频输入"})[c.Type])}：${escapeHTML(c.Price)} 元 / ${escapeHTML(c.UnitCode)}`).join("<br>")}</p>`).join("")}`;
+    $("#ai-model-detail").innerHTML=`<p>版本：${versions.versions.map(v=>`${escapeHTML(v.ModelVersion)} (${escapeHTML(v.Status||"状态未知")})`).join("、")}</p><p class="muted">${activation?.State==="Available"?"账号已开通":escapeHTML(activation?.State||"开通状态尚未同步")} · 价格同步：${formatTime(versions.activation?.syncedAt||data.activations?.syncedAt)}${versions.activation?.stale?" · 本次同步失败，请重新读取":""}。版本存在、账号已开通、可升级至该版本需要分别验证。</p>${!activation?"<p>价格暂时不可用，请重新读取版本与价格。</p>":""}${groups.map(g=>`<p>${escapeHTML(g.Description||g.Name||"价格分档")}<br>${(g.ChargeItems||[]).filter(c=>["InferencePrompt","InferenceCompletion","AudioPrompt"].includes(c.Type)).map(c=>`${escapeHTML(({InferencePrompt:"文本/图片输入",InferenceCompletion:"输出",AudioPrompt:"音频输入"})[c.Type])}：${escapeHTML(c.Price)} 元 / ${escapeHTML(c.UnitCode)}`).join("<br>")}</p>`).join("")}`;
   });
 });

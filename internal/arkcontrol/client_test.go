@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSignedReadAndResponseBoundary(t *testing.T) {
@@ -81,5 +82,42 @@ func TestCredentialFileDoesNotFallBack(t *testing.T) {
 	os.Chmod(p, 0644)
 	if _, err := NewFromFile(p); err != ErrCredentials {
 		t.Fatal("accepted world-readable credentials")
+	}
+}
+
+func TestRateLimitedReadsRetryButNativeWritesDoNot(t *testing.T) {
+	calls := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("Action")
+		calls[action]++
+		if action == "GetEndpoint" && calls[action] == 2 {
+			fmt.Fprint(w, `{"Result":{"Id":"ep-test"}}`)
+			return
+		}
+		w.WriteHeader(429)
+		fmt.Fprint(w, `{"ResponseMetadata":{"Error":{"Code":"FlowLimitExceeded","Message":"private quota detail"}}}`)
+	}))
+	defer server.Close()
+	c, _ := newClient("test-ak", "test-secret", server.URL, server.Client())
+	if _, err := c.Endpoint(context.Background(), "ep-test"); err != nil {
+		t.Fatal("read did not recover", err)
+	}
+	if _, err := c.CreateRolling(context.Background(), "ep-test", FoundationModel{Name: "mini", Version: "260428"}, "command-test"); err == nil {
+		t.Fatal("write unexpectedly succeeded")
+	}
+	if calls["GetEndpoint"] != 2 || calls["CreateEndpointRolling"] != 1 {
+		t.Fatal("incorrect replay policy", calls)
+	}
+}
+
+func TestRequestPacingHonorsCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"Result":{"Id":"ep-test"}}`) }))
+	defer server.Close()
+	c, _ := newClient("test-ak", "test-secret", server.URL, server.Client())
+	c.next = time.Now().Add(time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Endpoint(ctx, "ep-test"); err == nil {
+		t.Fatal("cancelled request passed pacing gate")
 	}
 }

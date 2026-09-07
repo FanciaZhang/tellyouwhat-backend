@@ -22,7 +22,12 @@ func TestLiveNativeCommandLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	duration := 4 * time.Minute
+	full := os.Getenv("ARK_NATIVE_LIFECYCLE_TEST_ACTION") == "complete"
+	if full {
+		duration = 65 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
 	ep, err := cloud.Endpoint(ctx, endpoint)
 	if err != nil || !strings.HasPrefix(ep.Name, "health-ai-admin-validation-") {
@@ -59,6 +64,44 @@ func TestLiveNativeCommandLifecycle(t *testing.T) {
 		_ = cloud.CancelRolling(cleanup, rollingID)
 	})
 	t.Log("native rolling created by service", rollingID)
+	if full {
+		lastGray := -1
+		for {
+			if err := s.Tick(ctx, endpoint); err != nil {
+				t.Log("background read deferred", err)
+			}
+			r, err := cloud.Rolling(ctx, rollingID)
+			if err != nil {
+				select {
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				case <-time.After(time.Minute):
+					continue
+				}
+			}
+			if r.Gray != lastGray {
+				t.Logf("native progress %s/%d%%", r.Status, r.Gray)
+				lastGray = r.Gray
+			}
+			commands, err := s.Store.List(ctx, endpoint)
+			if err != nil || len(commands) == 0 {
+				t.Fatal("missing durable command", err)
+			}
+			if commands[0].State == "succeeded" {
+				ep, err := cloud.Endpoint(ctx, endpoint)
+				if err != nil || r.Gray != 100 || ep.Model.FoundationModel.Name != in.Target.Name || ep.Model.FoundationModel.Version != in.Target.Version {
+					t.Fatal("completed command does not match live model", err)
+				}
+				t.Log("native 100% and live endpoint model confirmed", r.Status)
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(time.Minute):
+			}
+		}
+	}
 	for {
 		r, err := cloud.Rolling(ctx, rollingID)
 		if err != nil {

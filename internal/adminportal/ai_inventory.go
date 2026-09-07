@@ -44,11 +44,26 @@ type aiInventoryCache struct {
 	endpoints   map[string]*inventoryEntry[arkcontrol.Endpoint]
 	models      inventoryEntry[[]arkcontrol.Model]
 	activations inventoryEntry[[]arkcontrol.Activation]
+	modelPrices map[string]*inventoryEntry[[]arkcontrol.Activation]
 }
 
 func (a *AIConfig) inventoryCache() *aiInventoryCache {
-	a.cacheOnce.Do(func() { a.cache = &aiInventoryCache{endpoints: make(map[string]*inventoryEntry[arkcontrol.Endpoint])} })
+	a.cacheOnce.Do(func() {
+		a.cache = &aiInventoryCache{endpoints: make(map[string]*inventoryEntry[arkcontrol.Endpoint]), modelPrices: make(map[string]*inventoryEntry[[]arkcontrol.Activation])}
+	})
 	return a.cache
+}
+
+func (a *AIConfig) modelPriceSnapshot(ctx context.Context, model string, read func(context.Context, []string) ([]arkcontrol.Activation, error)) inventorySnapshot[[]arkcontrol.Activation] {
+	cache := a.inventoryCache()
+	cache.mu.Lock()
+	entry := cache.modelPrices[model]
+	if entry == nil {
+		entry = &inventoryEntry[[]arkcontrol.Activation]{}
+		cache.modelPrices[model] = entry
+	}
+	cache.mu.Unlock()
+	return entry.get(ctx, func(ctx context.Context) ([]arkcontrol.Activation, error) { return read(ctx, []string{model}) })
 }
 func (a *AIConfig) endpointSnapshot(ctx context.Context, id string) inventorySnapshot[arkcontrol.Endpoint] {
 	cache := a.inventoryCache()
