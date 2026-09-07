@@ -122,6 +122,9 @@ func (s *Service) Preview(ctx context.Context, in Input) (Snapshot, error) {
 	if !s.WritesEnabled || !s.Allowed(in.Endpoint) {
 		return Snapshot{}, ErrUnsupported
 	}
+	s.priceMu.Lock()
+	s.priceCache = nil
+	s.priceMu.Unlock()
 	snap, err := s.Read(ctx, in.Endpoint)
 	if err != nil {
 		return snap, err
@@ -171,6 +174,16 @@ func (s *Service) Preview(ctx context.Context, in Input) (Snapshot, error) {
 		if err = s.Cloud.PreviewRolling(ctx, in.Endpoint, in.Target); err != nil {
 			return snap, err
 		}
+	case "accept_current":
+		if in.Target != (arkcontrol.FoundationModel{}) || active(snap.Rolling) || len(pending) > 0 {
+			return snap, ErrConflict
+		}
+		for _, op := range contracts.OperationValues() {
+			p := contracts.ExecutionPolicy{Version: "compatibility", Endpoint: in.Endpoint, ReasoningEffort: "high", TimeoutSeconds: 90, WebSearchEnabled: op == contracts.OperationMealDecision}
+			if !Supports(endpointModel(snap.Endpoint), op, p) {
+				return snap, ErrUnsupported
+			}
+		}
 	case "reconcile":
 		if in.Target != (arkcontrol.FoundationModel{}) || snap.Rolling == nil {
 			return snap, ErrUnsupported
@@ -210,15 +223,16 @@ func (s *Service) Submit(ctx context.Context, m aiconfig.Mutation, in Input, exp
 	} else if c != nil {
 		return *c, nil
 	}
+	snap, err := s.Preview(ctx, in)
+	if err != nil {
+		return Command{}, err
+	}
+	if !Same(expected, snap) {
+		return Command{}, ErrConflict
+	}
 	var result Command
-	err := s.Store.WithLock(ctx, in.Endpoint, func() error {
-		snap, err := s.Preview(ctx, in)
-		if err != nil {
-			return err
-		}
-		if !Same(expected, snap) {
-			return ErrConflict
-		}
+	err = s.Store.WithLock(ctx, in.Endpoint, func() error {
+		var err error
 		result, err = s.Store.Enqueue(ctx, m, in, snap)
 		return err
 	})
@@ -308,6 +322,14 @@ func (s *Service) Tick(ctx context.Context, id string) error {
 					continue
 				}
 				_ = snap
+				if c.Input.Action == "accept_current" {
+					c.State = "succeeded"
+					c.Detail = "已确认当前模型与费用配置"
+					if err = s.Store.Save(ctx, c); err != nil {
+						return err
+					}
+					continue
+				}
 				if c.Input.Action == "reconcile" {
 					if err = s.adopt(ctx, c); err != nil {
 						return err

@@ -347,11 +347,17 @@ func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 		}
 		rolling = &value
 	}
+	var priceState *airollout.PriceState
 	attempts := []airollout.ModelAttempt{}
 	commands := []airollout.Command{}
 	enabled := false
 	if r := s.config.AI.Rollouts; r != nil {
 		commands, err = r.Store.List(c, endpoint)
+		if err != nil {
+			aiFailure(c, err)
+			return
+		}
+		priceState, err = r.Store.PriceState(c, endpoint)
 		if err != nil {
 			aiFailure(c, err)
 			return
@@ -363,5 +369,5 @@ func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 		}
 		enabled = r.WritesEnabled
 	}
-	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": enabled, "commands": commands, "attempts": attempts, "targets": airollout.Catalog()})
+	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": enabled, "commands": commands, "attempts": attempts, "priceState": priceState, "targets": airollout.Catalog()})
 }

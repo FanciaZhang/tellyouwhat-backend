@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -73,7 +74,9 @@ func (s Store) WithLock(ctx context.Context, endpoint string, fn func() error) e
 	defer func() {
 		c, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		conn.ExecContext(c, "SELECT RELEASE_LOCK(?)", name)
+		if _, err := conn.ExecContext(c, "SELECT RELEASE_LOCK(?)", name); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 	}()
 	return fn()
 }

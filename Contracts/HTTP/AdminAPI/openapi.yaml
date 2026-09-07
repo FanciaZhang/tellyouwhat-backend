@@ -25,7 +25,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: true }
+            schema: { $ref: "#/components/schemas/AIRollingInput" }
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
@@ -40,7 +40,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: true }
+            schema: { $ref: "#/components/schemas/AIRollingSubmission" }
       responses:
         "202": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
@@ -591,6 +591,30 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
   schemas:
+    AIRollingModel:
+      type: object
+      additionalProperties: false
+      required: [Name, ModelVersion]
+      properties:
+        Name: { type: string, maxLength: 128 }
+        ModelVersion: { type: string, maxLength: 128 }
+    AIRollingInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint, action, target]
+      properties:
+        endpoint: { type: string, minLength: 1, maxLength: 128 }
+        action:
+          type: string
+          enum: [start, cancel, step_back, reconcile, accept_current]
+        target: { $ref: "#/components/schemas/AIRollingModel" }
+    AIRollingSubmission:
+      type: object
+      additionalProperties: false
+      required: [input, previewToken]
+      properties:
+        input: { $ref: "#/components/schemas/AIRollingInput" }
+        previewToken: { type: string, minLength: 1, maxLength: 8192 }
     HealthAIDraftRequest:
       type: object
       additionalProperties: false

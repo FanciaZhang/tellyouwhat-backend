@@ -380,3 +380,39 @@ func TestMySQLRollingWaitsForEarlierCostReservations(t *testing.T) {
 		t.Fatal("did not dispatch after drain")
 	}
 }
+
+func TestMySQLExplicitCurrentModelAcceptance(t *testing.T) {
+	s, actor := fixture(t)
+	ctx := context.Background()
+	id := s.Endpoints[contracts.OperationMealTextCapture]
+	cloud := s.Cloud.(*cloudFixture)
+	cloud.ep.Model.FoundationModel.Name = target.Name
+	cloud.ep.Model.FoundationModel.Version = target.Version
+	if err := s.Tick(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.Store.PriceState(ctx, id)
+	p.Blocked = true
+	p.Drift = true
+	if err := s.Store.SavePrice(ctx, id, *p); err != nil {
+		t.Fatal(err)
+	}
+	in := Input{Endpoint: id, Action: "accept_current"}
+	snap, err := s.Preview(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Submit(ctx, mutation(actor), in, snap); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Tick(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if cloud.creates != 0 {
+		t.Fatal("acceptance mutated cloud")
+	}
+	p, _ = s.Store.PriceState(ctx, id)
+	if p.Blocked || p.Drift {
+		t.Fatal("explicit acceptance did not unblock")
+	}
+}
