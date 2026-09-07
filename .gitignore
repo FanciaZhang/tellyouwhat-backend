@@ -11,3 +11,6 @@ secrets/
 *.p8
 __pycache__/
 *.pyc
+
+.ark-management/
+ark-management.json

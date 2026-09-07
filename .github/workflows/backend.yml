@@ -87,6 +87,7 @@ jobs:
         run: |
           touch .env.production
           docker compose -f compose.production.yaml config --quiet
+          ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=/tmp/ark-test-credentials.json docker compose -f compose.production.yaml -f compose.ark-management.yaml config --quiet
         env:
           HEALTH_API_DOMAIN: api.health.example
           JOURNAL_API_DOMAIN: api.journal.example
@@ -165,6 +166,7 @@ jobs:
           JOURNAL_SUBSCRIPTION_KEY: ${{ secrets.JOURNAL_APP_STORE_PRIVATE_KEY }}
           HEALTH_MARKETING_KEY: ${{ secrets.HEALTH_APP_STORE_CONNECT_PRIVATE_KEY }}
           JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
+          ARK_SERVICE_CREDENTIALS: ${{ secrets.ARK_MANAGEMENT_CREDENTIALS_JSON }}
         run: |
           install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
           printf '%s\n' "$PRODUCTION_ENV_FILE" > "$RUNNER_TEMP/.env.production"
@@ -177,6 +179,7 @@ jobs:
           grep -q '^JOURNAL_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
           grep -q '^ADMIN_DOMAIN=' "$RUNNER_TEMP/.env.production"
           for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
+          python3 deploy/tencent/ark_credentials.py materialize --output "$RUNNER_TEMP/ark-management.json"
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
@@ -195,11 +198,14 @@ jobs:
           test -n "$DEPLOY_USER"
           remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/compose.production.yaml"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml compose.ark-management.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/operations.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/operations.py deploy/tencent/ark_credentials.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/secrets/"
+          if test -f "$RUNNER_TEMP/ark-management.json"; then
+            scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/ark-management.json" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/ark-management.json"
+          fi
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$remote_stage" <<'REMOTE'
           set -euo pipefail
           stage="$1"
@@ -211,6 +217,7 @@ jobs:
           chmod 755 "$stage/deploy/tencent/"*.sh
           sudo -n chgrp 65532 "$backend_dir/secrets" "$stage/secrets" "$stage/secrets/"*.p8
           sudo -n chmod 2750 "$backend_dir/secrets"
+          python3 "$stage/deploy/tencent/ark_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
           REMOTE
       - name: Back up database before migration
         env:
