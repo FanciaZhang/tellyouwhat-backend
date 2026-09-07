@@ -73,6 +73,25 @@ func TestLiveNativeCommandLifecycle(t *testing.T) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+	if os.Getenv("ARK_NATIVE_LIFECYCLE_TEST_ACTION") == "cancel" {
+		stop := Input{Endpoint: endpoint, Action: "cancel"}
+		snap, err := s.Preview(ctx, stop)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.Submit(ctx, mutation(actor), stop, snap); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Tick(ctx, endpoint); err != nil {
+			t.Fatal(err)
+		}
+		r, err := cloud.Rolling(ctx, rollingID)
+		if err != nil || r.Gray != 0 || r.Status != "Reverted" {
+			t.Fatal("cancel did not converge", r.Status, r.Gray, err)
+		}
+		t.Log("durable cancellation confirmed Reverted/0%")
+		return
+	}
 	back := Input{Endpoint: endpoint, Action: "step_back"}
 	snap, err := s.Preview(ctx, back)
 	if err != nil {

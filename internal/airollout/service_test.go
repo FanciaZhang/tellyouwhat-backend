@@ -345,3 +345,38 @@ func TestMySQLActualModelMetadataAndUnknownResponse(t *testing.T) {
 		t.Fatal("metadata missing", err)
 	}
 }
+
+func TestMySQLRollingWaitsForEarlierCostReservations(t *testing.T) {
+	s, actor := fixture(t)
+	ctx := context.Background()
+	id := uuid.NewString()
+	month := "2089-06-01"
+	if _, err := s.Store.DB.Exec("INSERT INTO ai_cost_months(month_start,budget_nanos) VALUES(?,1000000000000)", month); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		s.Store.DB.Exec("DELETE FROM ai_cost_attempts WHERE id=?", id)
+		s.Store.DB.Exec("DELETE FROM ai_cost_months WHERE month_start=?", month)
+	})
+	now := time.Now().UTC()
+	if _, err := s.Store.DB.Exec(`INSERT INTO ai_cost_attempts(id,month_start,app_id,operation,meter,reserved_nanos,status,created_at,lease_expires_at) VALUES(?,?,'health','meal_text_capture','ark',100000,'pending',?,?)`, id, month, now.Add(-time.Minute), now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	in, _, _ := start(t, s, actor)
+	cloud := s.Cloud.(*cloudFixture)
+	if err := s.Tick(ctx, in.Endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if cloud.creates != 0 {
+		t.Fatal("did not drain old reservation")
+	}
+	if _, err := s.Store.DB.Exec("UPDATE ai_cost_attempts SET status='settled' WHERE id=?", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Tick(ctx, in.Endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if cloud.creates != 1 {
+		t.Fatal("did not dispatch after drain")
+	}
+}
