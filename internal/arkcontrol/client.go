@@ -16,6 +16,7 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/volcengine/credentials"
 	"github.com/volcengine/volcengine-go-sdk/volcengine/request"
 	"github.com/volcengine/volcengine-go-sdk/volcengine/session"
+	"github.com/volcengine/volcengine-go-sdk/volcengine/volcengineerr"
 )
 
 var (
@@ -90,7 +91,7 @@ type Version struct {
 	Capabilities map[string]bool `json:"CapabilityLabels"`
 }
 
-// Only fixed read actions are exposed. Raw upstream payloads and errors are not returned.
+// Only fixed actions are exposed. Raw upstream payloads and errors are not returned.
 func (c *Client) read(ctx context.Context, action string, input map[string]interface{}, target any) error {
 	if c == nil || c.sdk == nil {
 		return ErrUnavailable
@@ -101,7 +102,11 @@ func (c *Client) read(ctx context.Context, action string, input map[string]inter
 	r := c.sdk.NewRequest(&request.Operation{Name: action, HTTPMethod: "POST", HTTPPath: "/"}, &input, &output)
 	r.HTTPRequest.Header.Set("Content-Type", "application/json; charset=utf-8")
 	r.SetContext(ctx)
-	if r.Send() != nil {
+	if err := r.Send(); err != nil {
+		var failure volcengineerr.RequestFailure
+		if errors.As(err, &failure) && resourceName.MatchString(failure.Code()) {
+			return &APIError{Code: failure.Code(), Status: failure.StatusCode()}
+		}
 		return ErrUnavailable
 	}
 	result, ok := output["Result"]
@@ -140,9 +145,13 @@ func pages[T any](ctx context.Context, c *Client, action string, input map[strin
 	if input == nil {
 		input = map[string]interface{}{}
 	}
+	size := 100
+	if n, ok := input["PageSize"].(int); ok && n > 0 && n <= 100 {
+		size = n
+	}
 	items := make([]T, 0)
 	for page := 1; page <= 100; page++ {
-		input["PageNumber"], input["PageSize"] = page, 100
+		input["PageNumber"], input["PageSize"] = page, size
 		var out struct {
 			Total int `json:"TotalCount"`
 			Items []T `json:"Items"`

@@ -79,6 +79,24 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/models/{model}/versions:
+    get:
+      operationId: listAIModelVersions
+      tags: [Administration]
+      parameters:
+        - { name: model, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/endpoints/{endpoint}:
+    get:
+      operationId: getAIEndpoint
+      tags: [Administration]
+      parameters:
+        - { name: endpoint, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /healthz:
     get:
       operationId: getAdminHealth

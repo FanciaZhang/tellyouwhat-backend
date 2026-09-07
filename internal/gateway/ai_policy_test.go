@@ -3,10 +3,11 @@ package gateway
 import (
 	"context"
 	"errors"
-	"github.com/tellyouwhat/backend/internal/contracts"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/tellyouwhat/backend/internal/contracts"
 )
 
 type fixedPolicyResolver struct{ err error }
@@ -44,5 +45,28 @@ func TestAIRequestDoesNotCallProviderWhenPolicyReadFails(t *testing.T) {
 	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/requests", validBody()))
 	if response.Code != 503 || provider.completeCalls != 0 {
 		t.Fatal("bypassed unavailable published policy")
+	}
+}
+
+type limitedEffortManifest struct{}
+
+func (limitedEffortManifest) Validate(r contracts.Request) error {
+	if r.Options.ReasoningEffort == "low" {
+		return contracts.ErrContractViolation
+	}
+	return nil
+}
+func TestPublishedPolicyCannotBypassPromptManifest(t *testing.T) {
+	for _, path := range []string{"/v1/ai/requests", "/v1/ai/streams"} {
+		server := newTestServer()
+		model := &fakeProvider{}
+		server.provider = model
+		server.executionPolicies = fixedPolicyResolver{}
+		server.contracts = limitedEffortManifest{}
+		response := httptest.NewRecorder()
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, path, validBody()))
+		if response.Code != 422 || model.completeCalls != 0 {
+			t.Fatalf("incompatible effective policy reached provider: %d", response.Code)
+		}
 	}
 }

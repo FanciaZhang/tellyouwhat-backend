@@ -2,6 +2,7 @@ package arkcontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +54,7 @@ func TestPaginationAndRedactedFailure(t *testing.T) {
 		t.Fatalf("pagination: %v %v", models, err)
 	}
 	_, err = c.Models(context.Background())
-	if err != ErrUnavailable {
+	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("upstream error leaked: %v", err)
 	}
 }

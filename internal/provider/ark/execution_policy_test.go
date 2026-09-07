@@ -30,3 +30,14 @@ func TestFrozenPolicyOverridesChangedProviderRoute(t *testing.T) {
 		}
 	}
 }
+
+func TestResponseModelIsReportedByProviderOnly(t *testing.T) {
+	r, err := parseResponse([]byte(`{"status":"completed","model":"doubao-actual-version","output_text":"{}"}`))
+	if err != nil || r.ActualModel != "doubao-actual-version" {
+		t.Fatalf("provider model was lost: %v", err)
+	}
+	r, err = parseResponse([]byte(`{"status":"completed","output_text":"{}"}`))
+	if err != nil || r.ActualModel != "" {
+		t.Fatal("inferred an actual model without response evidence")
+	}
+}

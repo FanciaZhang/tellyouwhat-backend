@@ -8,15 +8,27 @@
 过宽或格式错误时拒绝启动该客户端，不读取环境变量或个人 CLI 登录配置。
 凭证文件仅挂载给管理服务，不放入所有容器共享的环境文件或 secrets 目录。
 
-已实现的管控操作为 `GetEndpoint`、`ListFoundationModels` 和
-`ListFoundationModelVersions`。分页读取不返回不完整目录；上游错误和未声明
-字段不会直接暴露给调用方。管理调用固定超时，不自动重试。
+只读管控包括 `GetEndpoint`、`ListFoundationModels`、`ListFoundationModelVersions`、
+`ListModelActivations` 和 `GetEndpointRolling`。目录、开通状态和分档价格分别
+显示；已开通不代表某个 Endpoint 可以升级到该版本。目录分页不返回不完整
+结果，价格按云端单位显示。大批量价格查询采用每页 20 项以降低上游超时。
+
+接入点及目录页面缓存 30 秒，失败时保留最近成功数据及原同步时间，明确标记
+过期；首次失败不生成成功时间。接入点列表最多同时同步 4 项。发布验证使用
+实时查询，不接受缓存作为确认依据。管理调用使用固定超时，不自动重试。
+上游只保留错误码及 HTTP 状态，不暴露错误消息或任意响应字段。
 
 `SupportRolling` 未返回时表示未知，不能视为不支持。模型目录中的已发布状态
 不证明账号可调用，也不证明某接入点可以升级到该模型。
 
-灰度写操作需要验证国内方舟 API 的参数及状态转换后才能开放。不能使用模拟
-响应代替云端验证，也不能使用生产接入点进行接口探测性写操作。
+SDK 适配层提供原生灰度预检、创建、回退一步及取消方法，HTTP 管理路由尚未
+开放这些写操作。`CreateEndpointRolling` 的 DryRun 用 `DryRunOperation` 表示
+预检通过，该结果不能证明 IAM 资源隔离生效。查询任务必须使用创建返回的 ID，
+不能假定存在 `ListEndpointRollings`。回退一步使用 `RollbackEndpointRolling`；
+归零并终止使用 `CancelEndpointRolling`。
+
+原生操作依据国内 [API Explorer](https://api.volcengine.com/api-explorer/?action=CreateEndpointRolling&serviceCode=ark&version=2024-01-01)
+实现。真实测试记录及权限阻断见 [验收记录](ark-management-validation.md)。
 
 ## 健康功能配置
 
@@ -33,7 +45,9 @@
 `0005_health_ai_config.sql` 必须先于新网关部署执行。配置及版本历史纳入现有
 加密控制面备份。没有发布记录的功能维持原参数；已发布功能在同步、流式及
 入队时读取配置。后台任务将快照写入现有加密载荷，Worker 不读取当前配置。
-数据库配置读取失败时返回服务不可用，不静默退回客户端参数。
+数据库配置读取失败时返回服务不可用，不静默退回客户端参数。应用策略后再次
+校验请求对应的 Prompt Manifest，避免覆盖到该版本不支持的选项。实际响应
+模型名只读取推理服务返回的 `model`，缺失时保持未知，不从 Endpoint 推断。
 
 管理服务只允许配置已有健康绑定且仍运行已核验基线模型的 Endpoint；与手记
 环境配置共享的 Endpoint 被排除。当前基线为 `doubao-seed-2-0-mini-260428`，
@@ -44,9 +58,10 @@
 `ARK_MANAGEMENT_CREDENTIAL_HOST_FILE` 的绝对路径。凭证文件不存在时 Compose
 拒绝自动创建目录。默认部署不挂载管理凭证，AI 页面提示服务身份未配置。
 `AI_CONFIG_WRITES_ENABLED` 独立控制配置发布，`AI_ENDPOINT_WRITES_ENABLED`
-预留给原生接入点操作，均默认关闭，与 Offer 写入开关互不影响。写入需通行
-密钥再次验证及 CSRF 校验。不要在部署配置或文档中写入
-真实 AK/SK。
+预留给原生接入点操作，均默认关闭，与 Offer 写入开关互不影响。当前将原生
+开关置为 true 会拒绝启动，避免误认为云端写入已经可用。配置写入需再次验证
+通行密钥及 CSRF 校验。不要在部署配置或文档中写入真实 AK/SK。
+容器凭证文件所有者需与管理进程 UID（65532）一致，并保持 0400 或 0600。
 
 ## 验收状态
 
@@ -57,5 +72,6 @@
 `internal/aiconfig` 的 MySQL 测试需要 `MYSQL_TEST_DSN` 指向以 `_test` 结尾的
 独立数据库，覆盖并发发布、幂等重试、审计失败回滚及超过 100 个版本的分页。
 缺少该配置时测试跳过，不能作为数据库验收成功证据。HTTP 测试覆盖角色、
-CSRF、再次验证、独立写入开关和确认凭据失效。完整浏览器操作、生产服务身份和测试 Endpoint 灰度
-生命周期仍需独立验收。
+CSRF、再次验证、独立写入开关和确认凭据失效。浏览器合成数据验收与云端
+服务身份测试分别记录，不能代替生产通行密钥端到端验收。完整模型切换、持久
+命令恢复、按每次调用选择费用上界及发布部署仍属未完成范围。

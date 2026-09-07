@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/adminauth"
@@ -11,8 +16,6 @@ import (
 	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/contracts"
-	"io"
-	"net/http"
 )
 
 type AIInventory interface {
@@ -20,13 +23,14 @@ type AIInventory interface {
 	Models(context.Context) ([]arkcontrol.Model, error)
 }
 type AIConfig struct {
-	WritesEnabled         bool
-	EndpointWritesEnabled bool
-	SharedEndpoints       map[string]bool
-	TimeoutSeconds        int
-	Store                 aiconfig.Store
-	Inventory             AIInventory
-	Endpoints             map[contracts.Operation]string
+	cacheOnce       sync.Once
+	cache           *aiInventoryCache
+	WritesEnabled   bool
+	SharedEndpoints map[string]bool
+	TimeoutSeconds  int
+	Store           aiconfig.Store
+	Inventory       AIInventory
+	Endpoints       map[contracts.Operation]string
 }
 
 func (s *Server) aiAccess(c *gin.Context, write bool) (adminauth.Authenticated, bool) {
@@ -48,7 +52,7 @@ func (s *Server) GetHealthAIConfig(c *gin.Context) {
 	if _, ok := s.aiAccess(c, false); !ok {
 		return
 	}
-	rows := make([]any, 0)
+	rows := make([]map[string]any, 0)
 	for _, op := range contracts.OperationValues() {
 		current, err := s.config.AI.Store.Current(c, op)
 		if err != nil {
@@ -64,25 +68,53 @@ func (s *Server) GetHealthAIConfig(c *gin.Context) {
 		if current != nil {
 			id = current.Policy.Endpoint
 		}
-		endpoint, err := s.config.AI.Inventory.Endpoint(c, id)
-		status := ""
-		if err != nil {
-			status = "接入点同步失败"
-		}
-		rows = append(rows, map[string]any{"operation": op, "current": current, "history": history.Revisions, "nextCursor": history.NextCursor, "endpoint": endpoint, "syncError": status})
+		rows = append(rows, map[string]any{"operation": op, "current": current, "history": history.Revisions, "nextCursor": history.NextCursor, "endpointID": id})
 	}
-	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "syncedAt": s.now(), "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": false})
+	ctx, cancel := context.WithTimeout(c, 20*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 4)
+	for _, row := range rows {
+		wg.Add(1)
+		go func(row map[string]any) {
+			defer wg.Done()
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+				row["syncError"] = "同步超时"
+				row["endpoint"] = arkcontrol.Endpoint{}
+				return
+			}
+			snapshot := s.config.AI.endpointSnapshot(ctx, row["endpointID"].(string))
+			row["endpoint"] = snapshot.Value
+			row["syncedAt"] = snapshot.SyncedAt
+			row["syncError"] = snapshot.SyncError
+			row["stale"] = snapshot.Stale
+		}(row)
+	}
+	wg.Wait()
+	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": false})
 }
 func (s *Server) ListAIModels(c *gin.Context) {
 	if _, ok := s.aiAccess(c, false); !ok {
 		return
 	}
-	models, err := s.config.AI.Inventory.Models(c)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(c, 25*time.Second)
+	defer cancel()
+	cache := s.config.AI.inventoryCache()
+	models := cache.models.get(ctx, s.config.AI.Inventory.Models)
+	var activations inventorySnapshot[[]arkcontrol.Activation]
+	if inventory, ok := s.config.AI.Inventory.(interface {
+		Activations(context.Context) ([]arkcontrol.Activation, error)
+	}); ok {
+		activations = cache.activations.get(ctx, inventory.Activations)
+	}
+	if models.SyncedAt == nil {
 		writeFailure(c.Writer, 503, "ark_unavailable", "模型目录同步失败")
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"models": models, "syncedAt": s.now()})
+	writeJSON(c.Writer, 200, map[string]any{"models": models.Value, "syncedAt": models.SyncedAt, "stale": models.Stale, "syncError": models.SyncError, "activations": activations})
 }
 func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p contracts.ExecutionPolicy) error {
 	if p.Validate(op) != nil {
@@ -238,4 +270,64 @@ func aiFailure(c *gin.Context, err error) {
 	default:
 		writeFailure(c.Writer, http.StatusServiceUnavailable, "ai_service_unavailable", "配置或火山服务暂时不可用，请稍后重试")
 	}
+}
+
+func (s *Server) ListAIModelVersions(c *gin.Context, model string) {
+	if _, ok := s.aiAccess(c, false); !ok {
+		return
+	}
+	inventory, ok := s.config.AI.Inventory.(interface {
+		Versions(context.Context, string) ([]arkcontrol.Version, error)
+	})
+	if !ok {
+		aiFailure(c, arkcontrol.ErrUnavailable)
+		return
+	}
+	versions, err := inventory.Versions(c, model)
+	if err != nil {
+		aiFailure(c, err)
+		return
+	}
+	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "syncedAt": s.now()})
+}
+func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
+	if _, ok := s.aiAccess(c, false); !ok {
+		return
+	}
+	allowed := false
+	for _, id := range s.config.AI.Endpoints {
+		if id != "" && id == endpoint {
+			allowed = true
+		}
+	}
+	if !allowed || s.config.AI.SharedEndpoints[endpoint] {
+		aiFailure(c, aiconfig.ErrNotFound)
+		return
+	}
+	ep, err := s.config.AI.Inventory.Endpoint(c, endpoint)
+	if err != nil {
+		aiFailure(c, err)
+		return
+	}
+	var rolling *arkcontrol.Rolling
+	if ep.RollingID != "" {
+		inventory, ok := s.config.AI.Inventory.(interface {
+			Rolling(context.Context, string) (arkcontrol.Rolling, error)
+		})
+		if !ok {
+			aiFailure(c, arkcontrol.ErrUnavailable)
+			return
+		}
+		value, err := inventory.Rolling(c, ep.RollingID)
+		if err != nil {
+			aiFailure(c, err)
+			return
+		}
+		if value.EndpointID != endpoint {
+			aiFailure(c, arkcontrol.ErrResponse)
+			return
+		}
+		rolling = &value
+	}
+	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": false})
 }

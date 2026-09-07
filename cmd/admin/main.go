@@ -6,9 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/tellyouwhat/backend/internal/aiconfig"
-	"github.com/tellyouwhat/backend/internal/arkcontrol"
-	"github.com/tellyouwhat/backend/internal/contracts"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,8 +19,11 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/adminportal"
+	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/arkcontrol"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
@@ -37,6 +37,9 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	if strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true") {
+		return errors.New("Ark native writes require verified resource authorization and durable command recovery; leave AI_ENDPOINT_WRITES_ENABLED=false")
+	}
 	configuration, err := loadConfig()
 	if err != nil {
 		return err
@@ -110,7 +113,7 @@ func run(logger *slog.Logger) error {
 				shared[id] = true
 			}
 		}
-		ai = &adminportal.AIConfig{WritesEnabled: strings.EqualFold(os.Getenv("AI_CONFIG_WRITES_ENABLED"), "true"), EndpointWritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true"), SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
+		ai = &adminportal.AIConfig{WritesEnabled: strings.EqualFold(os.Getenv("AI_CONFIG_WRITES_ENABLED"), "true"), SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		AI:                ai,

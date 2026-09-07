@@ -303,10 +303,11 @@ func schemaName(operation contracts.Operation) string {
 
 func parseResponse(body []byte) (providerapi.Response, error) {
 	var value struct {
-		Status     string          `json:"status"`
-		Error      json.RawMessage `json:"error"`
-		OutputText string          `json:"output_text"`
-		Output     []struct {
+		Status      string          `json:"status"`
+		ActualModel string          `json:"model"`
+		Error       json.RawMessage `json:"error"`
+		OutputText  string          `json:"output_text"`
+		Output      []struct {
 			Content []struct {
 				Type       string `json:"type"`
 				Text       string `json:"text"`
@@ -346,7 +347,7 @@ func parseResponse(body []byte) (providerapi.Response, error) {
 	if content == "" {
 		return providerapi.Response{}, errors.New("ark response has no output text")
 	}
-	response := providerapi.Response{Content: content}
+	response := providerapi.Response{Content: content, ActualModel: value.ActualModel}
 	if value.Usage != nil && value.Usage.InputTokens != nil && value.Usage.OutputTokens != nil {
 		response.InputTokens = *value.Usage.InputTokens
 		response.OutputTokens = *value.Usage.OutputTokens

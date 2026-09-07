@@ -2,9 +2,10 @@ package adminportal
 
 import (
 	"context"
+	"testing"
+
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/contracts"
-	"testing"
 )
 
 type inventoryFixture struct{ ep arkcontrol.Endpoint }

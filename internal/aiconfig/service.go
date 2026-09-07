@@ -3,8 +3,9 @@ package aiconfig
 import (
 	"context"
 	"errors"
-	"github.com/tellyouwhat/backend/internal/contracts"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/contracts"
 )
 
 var ErrConflict = errors.New("AI configuration version conflict")

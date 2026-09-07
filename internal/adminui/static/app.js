@@ -20,6 +20,7 @@ const actionLabels = {
   "admin.passkey.recover": "完成通行密钥恢复", "admin.passkey.recovery_invite": "签发恢复邀请",
   "admin.invitation.create": "创建人员邀请", "admin.invitation.revoke": "撤销邀请",
   "admin.user.update": "更新后台人员", "offer.create": "创建 Offer",
+  "ai.draft.create": "保存 AI 配置草稿", "ai.config.publish": "发布 AI 配置",
   "offer.deactivate": "停用 Offer", "offer_codes.custom_create": "创建自定义码池",
   "offer_codes.batch_create": "创建一次性码池", "offer_codes.download": "下载一次性码"
 };
@@ -584,7 +585,7 @@ async function aiCommand(action, body) {
 function aiPolicyLabel(p) { return p ? `${p.endpoint} / ${p.reasoningEffort} / 联网${p.webSearchEnabled?"开":"关"}` : "沿用 App 参数"; }
 async function loadAI() {
   aiData=await api("/api/v1/ai/health"); aiRows=aiData.operations;
-  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。模型升级与原生灰度尚未完成云端验证，暂不开放。`;
+  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。原生灰度的权限边界尚未验证通过，写入保持关闭。`;
   renderAI();
 }
 function renderAI() {
@@ -593,25 +594,31 @@ function renderAI() {
     const p=row.current?.policy || {endpoint:row.endpoint.Id,reasoningEffort:"minimal",webSearchEnabled:false};
     const model=row.endpoint.ModelReference?.FoundationModel;
     return `<article class="card"><h3>${escapeHTML(aiLabels[row.operation]||row.operation)}</h3>
-      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>${escapeHTML(row.syncError||"")}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
+      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>${escapeHTML(row.syncError||"")} · 最近成功同步：${formatTime(row.syncedAt)}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
       <form data-ai-index="${index}"><label>接入点<select name="endpoint">${endpoints.map(ep=>`<option value="${escapeHTML(ep.Id)}" ${ep.Id===p.endpoint?"selected":""}>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.ModelReference?.FoundationModel?.Name)} (${escapeHTML(ep.Id)})</option>`).join("")}</select></label>
       <label>思考深度<select name="reasoningEffort">${[["minimal","关闭思考"],["low","轻度"],["medium","中度"],["high","深度"]].map(([value,label])=>`<option value="${value}" ${value===p.reasoningEffort?"selected":""}>${label}</option>`).join("")}</select></label>
-      <label><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
+      <label class="check"><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
       ${row.operation!=="meal_decision"?'<p class="muted">此功能的数据边界不允许联网。</p>':""}
       <button class="primary" ${!aiData.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
-      <details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
+      <button class="quiet" data-ai-endpoint="${index}">查看接入点与灰度详情</button><p class="muted" data-ai-endpoint-result="${index}"></p><details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
   }).join("");
   $$('[data-ai-index]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(async()=>{
     const row=aiRows[Number(form.dataset.aiIndex)];const values=new FormData(form);
     const body={operation:row.operation,baseVersion:row.current?.id||"",policy:{version:"",endpoint:values.get("endpoint"),reasoningEffort:values.get("reasoningEffort"),webSearchEnabled:values.has("webSearchEnabled"),timeoutSeconds:aiData.timeoutSeconds||90}};
     await reauthenticate();await aiCommand("drafts",body);
-    await loadAI();notice("草稿已保存，线上配置尚未改变");
+    await loadAI();$(`[data-ai-index="${form.dataset.aiIndex}"]`).closest("article").querySelector("details").open=true;notice("草稿已保存，线上配置尚未改变");
   });});
   $$('[data-ai-restore]').forEach(button=>button.onclick=()=>{
     const index=Number(button.dataset.aiRestore);const revision=aiRows[index].history.find(r=>r.id===button.dataset.revision);const form=$(`[data-ai-index="${index}"]`);
     form.elements.endpoint.value=revision.policy.endpoint;form.elements.reasoningEffort.value=revision.policy.reasoningEffort;form.elements.webSearchEnabled.checked=revision.policy.webSearchEnabled;
     notice("已载入历史配置，请保存为新草稿后发布");
   });
+  $$('[data-ai-endpoint]').forEach(button=>button.onclick=()=>run(async()=>{
+    const index=Number(button.dataset.aiEndpoint),row=aiRows[index];
+    const data=await api(`/api/v1/ai/endpoints/${encodeURIComponent(row.endpointID||row.endpoint.Id)}`);
+    const ep=data.endpoint,r=data.rolling,model=ep.ModelReference?.FoundationModel;
+    $(`[data-ai-endpoint-result="${index}"]`).textContent=`${ep.Name||ep.Id} · ${ep.Status} · ${model?.Name} / ${model?.ModelVersion}。${r?`原生灰度：${r.Status}，新模型 ${r.RollingIn?.Name} ${r.RollingIn?.ModelVersion} 占比 ${r.RollingGray}%；旧模型 ${r.RollingOut?.Name} ${r.RollingOut?.ModelVersion}。`:"没有关联的原生灰度任务。"}同步时间：${formatTime(data.syncedAt)}`;
+  }));
   $$('[data-ai-more]').forEach(button=>button.onclick=()=>run(async()=>{
     const index=Number(button.dataset.aiMore),row=aiRows[index];
     const page=await api(`/api/v1/ai/health/${row.operation}/history?cursor=${encodeURIComponent(row.nextCursor)}`);
@@ -628,4 +635,14 @@ function renderAI() {
   }));
 }
 $("#refresh-ai").onclick=()=>run(loadAI);
-$("#load-ai-models").onclick=()=>run(async()=>{const data=await api("/api/v1/ai/models");$("#ai-models").textContent=`目录同步时间：${formatTime(data.syncedAt)}\n`+data.models.map(m=>`${m.DisplayName} (${m.Name})`).join("\n");});
+$("#load-ai-models").onclick=()=>run(async()=>{
+  const data=await api("/api/v1/ai/models");
+  $("#ai-models").innerHTML=`<p class="muted">目录同步：${formatTime(data.syncedAt)} · 开通状态同步：${formatTime(data.activations?.syncedAt)}${data.stale||data.activations?.stale?" · 同步失败，当前显示缓存数据":""}</p><label>模型<select id="ai-model-picker">${data.models.map(m=>{const a=data.activations?.value?.find(a=>a.FoundationModelName===m.Name);return `<option value="${escapeHTML(m.Name)}">${escapeHTML(m.DisplayName||m.Name)} · ${a?.State==="Available"?"账号已开通":escapeHTML(a?.State||"开通状态未知")}</option>`;}).join("")}</select></label><button class="quiet" id="ai-model-versions">读取版本与价格</button><div id="ai-model-detail"></div>`;
+  $("#ai-model-versions").onclick=()=>run(async()=>{
+    const name=$("#ai-model-picker").value;
+    const versions=await api(`/api/v1/ai/models/${encodeURIComponent(name)}/versions`);
+    const activation=data.activations?.value?.find(a=>a.FoundationModelName===name);
+    const groups=activation?.MultiChargeItems?.length?activation.MultiChargeItems:[{Name:"基础价格",ChargeItems:activation?.ChargeItems||[]}];
+    $("#ai-model-detail").innerHTML=`<p>版本：${versions.versions.map(v=>`${escapeHTML(v.ModelVersion)} (${escapeHTML(v.Status||"状态未知")})`).join("、")}</p><p class="muted">以下为火山返回的账号价格；版本存在、账号已开通、可升级至该版本需要分别验证。</p>${groups.map(g=>`<p>${escapeHTML(g.Description||g.Name||"价格分档")}<br>${(g.ChargeItems||[]).filter(c=>["InferencePrompt","InferenceCompletion","AudioPrompt"].includes(c.Type)).map(c=>`${escapeHTML(({InferencePrompt:"文本/图片输入",InferenceCompletion:"输出",AudioPrompt:"音频输入"})[c.Type])}：${escapeHTML(c.Price)} 元 / ${escapeHTML(c.UnitCode)}`).join("<br>")}</p>`).join("")}`;
+  });
+});

@@ -622,6 +622,9 @@ type ServerInterface interface {
 	// (POST /api/v1/admin/users/{userID}/recovery-invitations)
 	CreateRecoveryInvitation(c *gin.Context, userID UserID, params CreateRecoveryInvitationParams)
 
+	// (GET /api/v1/ai/endpoints/{endpoint})
+	GetAIEndpoint(c *gin.Context, endpoint string)
+
 	// (GET /api/v1/ai/health)
 	GetHealthAIConfig(c *gin.Context)
 
@@ -639,6 +642,9 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ai/models)
 	ListAIModels(c *gin.Context)
+
+	// (GET /api/v1/ai/models/{model}/versions)
+	ListAIModelVersions(c *gin.Context, model string)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(c *gin.Context)
@@ -1017,6 +1023,31 @@ func (siw *ServerInterfaceWrapper) CreateRecoveryInvitation(c *gin.Context) {
 	siw.Handler.CreateRecoveryInvitation(c, userID, params)
 }
 
+// GetAIEndpoint operation middleware
+func (siw *ServerInterfaceWrapper) GetAIEndpoint(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", c.Param("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter endpoint: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAIEndpoint(c, endpoint)
+}
+
 // GetHealthAIConfig operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthAIConfig(c *gin.Context) {
 
@@ -1229,6 +1260,31 @@ func (siw *ServerInterfaceWrapper) ListAIModels(c *gin.Context) {
 	}
 
 	siw.Handler.ListAIModels(c)
+}
+
+// ListAIModelVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListAIModelVersions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", c.Param("model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter model: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAIModelVersions(c, model)
 }
 
 // ListAdminApps operation middleware
@@ -2493,6 +2549,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/ai/health/publish", wrapper.PublishHealthAIConfig)
 	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/history", wrapper.GetHealthAIHistory)
 	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/revisions/:revision", wrapper.GetHealthAIRevision)
+	router.GET(options.BaseURL+"/api/v1/ai/models/:model/versions", wrapper.ListAIModelVersions)
+	router.GET(options.BaseURL+"/api/v1/ai/endpoints/:endpoint", wrapper.GetAIEndpoint)
 	router.GET(options.BaseURL+"/healthz", wrapper.GetAdminHealth)
 	router.GET(options.BaseURL+"/readyz", wrapper.GetAdminReadiness)
 	router.POST(options.BaseURL+"/api/v1/auth/setup/options", wrapper.BeginSetup)
@@ -2766,6 +2824,45 @@ func (response CreateRecoveryInvitationdefaultJSONResponse) VisitCreateRecoveryI
 	return err
 }
 
+type GetAIEndpointRequestObject struct {
+	Endpoint string `json:"endpoint"`
+}
+
+type GetAIEndpointResponseObject interface {
+	VisitGetAIEndpointResponse(w http.ResponseWriter) error
+}
+
+type GetAIEndpoint200JSONResponse struct{ OKJSONResponse }
+
+func (response GetAIEndpoint200JSONResponse) VisitGetAIEndpointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAIEndpointdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetAIEndpointdefaultJSONResponse) VisitGetAIEndpointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthAIConfigRequestObject struct {
 }
 
@@ -2991,6 +3088,45 @@ type ListAIModelsdefaultJSONResponse struct {
 }
 
 func (response ListAIModelsdefaultJSONResponse) VisitListAIModelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelVersionsRequestObject struct {
+	Model string `json:"model"`
+}
+
+type ListAIModelVersionsResponseObject interface {
+	VisitListAIModelVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListAIModelVersions200JSONResponse struct{ OKJSONResponse }
+
+func (response ListAIModelVersions200JSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelVersionsdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListAIModelVersionsdefaultJSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4060,6 +4196,9 @@ type StrictServerInterface interface {
 	// (POST /api/v1/admin/users/{userID}/recovery-invitations)
 	CreateRecoveryInvitation(ctx context.Context, request CreateRecoveryInvitationRequestObject) (CreateRecoveryInvitationResponseObject, error)
 
+	// (GET /api/v1/ai/endpoints/{endpoint})
+	GetAIEndpoint(ctx context.Context, request GetAIEndpointRequestObject) (GetAIEndpointResponseObject, error)
+
 	// (GET /api/v1/ai/health)
 	GetHealthAIConfig(ctx context.Context, request GetHealthAIConfigRequestObject) (GetHealthAIConfigResponseObject, error)
 
@@ -4077,6 +4216,9 @@ type StrictServerInterface interface {
 
 	// (GET /api/v1/ai/models)
 	ListAIModels(ctx context.Context, request ListAIModelsRequestObject) (ListAIModelsResponseObject, error)
+
+	// (GET /api/v1/ai/models/{model}/versions)
+	ListAIModelVersions(ctx context.Context, request ListAIModelVersionsRequestObject) (ListAIModelVersionsResponseObject, error)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(ctx context.Context, request ListAdminAppsRequestObject) (ListAdminAppsResponseObject, error)
@@ -4383,6 +4525,32 @@ func (sh *strictHandler) CreateRecoveryInvitation(ctx *gin.Context, userID UserI
 	}
 }
 
+// GetAIEndpoint operation middleware
+func (sh *strictHandler) GetAIEndpoint(ctx *gin.Context, endpoint string) {
+	var request GetAIEndpointRequestObject
+
+	request.Endpoint = endpoint
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAIEndpoint(ctx, request.(GetAIEndpointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAIEndpoint")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetAIEndpointResponseObject); ok {
+		if err := validResponse.VisitGetAIEndpointResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealthAIConfig operation middleware
 func (sh *strictHandler) GetHealthAIConfig(ctx *gin.Context) {
 	var request GetHealthAIConfigRequestObject
@@ -4544,6 +4712,32 @@ func (sh *strictHandler) ListAIModels(ctx *gin.Context) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(ListAIModelsResponseObject); ok {
 		if err := validResponse.VisitListAIModelsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAIModelVersions operation middleware
+func (sh *strictHandler) ListAIModelVersions(ctx *gin.Context, model string) {
+	var request ListAIModelVersionsRequestObject
+
+	request.Model = model
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAIModelVersions(ctx, request.(ListAIModelVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAIModelVersions")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListAIModelVersionsResponseObject); ok {
+		if err := validResponse.VisitListAIModelVersionsResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -5322,50 +5516,51 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"y8ZN0tTZwq9US5QTXt+u/x8AAP//",
+	"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",
+	"0tTZi1+pFlMTXo/W/w0AAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
