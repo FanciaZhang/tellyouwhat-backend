@@ -1,0 +1,9 @@
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ark:CreateEndpointRolling", "ark:CancelEndpointRolling", "ark:RollbackEndpointRolling"],
+      "Resource": ["*"]
+    }
+  ]
+}

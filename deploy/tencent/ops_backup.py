@@ -39,6 +39,9 @@ RECOVERY_DATA_TABLES = (
     "admin_operations",
     "health_ai_config_revisions",
     "health_ai_config_current",
+    "health_ai_rollout_commands",
+    "health_ai_endpoint_prices",
+    "health_ai_model_attempts",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
 

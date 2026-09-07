@@ -14,6 +14,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
+	"github.com/tellyouwhat/backend/internal/airollout"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/contracts"
 )
@@ -23,6 +24,7 @@ type AIInventory interface {
 	Models(context.Context) ([]arkcontrol.Model, error)
 }
 type AIConfig struct {
+	Rollouts        *airollout.Service
 	cacheOnce       sync.Once
 	cache           *aiInventoryCache
 	WritesEnabled   bool
@@ -94,7 +96,7 @@ func (s *Server) GetHealthAIConfig(c *gin.Context) {
 		}(row)
 	}
 	wg.Wait()
-	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": false})
+	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": s.config.AI.Rollouts != nil && s.config.AI.Rollouts.WritesEnabled})
 }
 func (s *Server) ListAIModels(c *gin.Context) {
 	if _, ok := s.aiAccess(c, false); !ok {
@@ -120,8 +122,7 @@ func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p
 	if p.Validate(op) != nil {
 		return aiconfig.ErrInvalid
 	}
-	// Only existing health bindings with the verified baseline model are accepted.
-	// Native model changes remain unavailable until capability/cost certification.
+	// Only exclusively owned Health bindings with a compatible model are accepted.
 	allowed := false
 	for _, id := range s.config.AI.Endpoints {
 		if id != "" && p.Endpoint == id {
@@ -135,12 +136,29 @@ func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p
 	if err != nil {
 		return err
 	}
-	if ep.Status != "Running" || ep.RollingID != "" || ep.Model.FoundationModel.Name != "doubao-seed-2-0-mini" || ep.Model.FoundationModel.Version != "260428" {
+	if ep.Status != "Running" {
 		return aiconfig.ErrInvalid
 	}
-	if p.ReasoningEffort == "max" || p.ReasoningEffort == "" {
+	model := arkcontrol.FoundationModel{Name: ep.Model.FoundationModel.Name, Version: ep.Model.FoundationModel.Version}
+	if !airollout.Supports(model, op, p) {
 		return aiconfig.ErrInvalid
 	}
+	if ep.RollingID != "" {
+		inventory, ok := s.config.AI.Inventory.(interface {
+			Rolling(context.Context, string) (arkcontrol.Rolling, error)
+		})
+		if !ok {
+			return aiconfig.ErrInvalid
+		}
+		rolling, err := inventory.Rolling(ctx, ep.RollingID)
+		if err != nil {
+			return err
+		}
+		if rolling.EndpointID != p.Endpoint || !airollout.Supports(rolling.In, op, p) || !airollout.Supports(rolling.Out, op, p) {
+			return aiconfig.ErrInvalid
+		}
+	}
+
 	return nil
 }
 func (s *Server) CreateHealthAIDraft(c *gin.Context, _ adminhttpapi.CreateHealthAIDraftParams) {
@@ -288,7 +306,7 @@ func (s *Server) ListAIModelVersions(c *gin.Context, model string) {
 		aiFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "syncedAt": s.now()})
+	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "syncedAt": s.now(), "compatibilityCatalog": airollout.Catalog(), "catalogVersion": airollout.CatalogVersion})
 }
 func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 	if _, ok := s.aiAccess(c, false); !ok {
@@ -329,5 +347,21 @@ func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 		}
 		rolling = &value
 	}
-	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": false})
+	attempts := []airollout.ModelAttempt{}
+	commands := []airollout.Command{}
+	enabled := false
+	if r := s.config.AI.Rollouts; r != nil {
+		commands, err = r.Store.List(c, endpoint)
+		if err != nil {
+			aiFailure(c, err)
+			return
+		}
+		attempts, err = r.Store.Attempts(c, endpoint)
+		if err != nil {
+			aiFailure(c, err)
+			return
+		}
+		enabled = r.WritesEnabled
+	}
+	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": enabled, "commands": commands, "attempts": attempts, "targets": airollout.Catalog()})
 }

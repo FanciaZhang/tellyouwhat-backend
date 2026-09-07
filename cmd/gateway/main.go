@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
+	"github.com/tellyouwhat/backend/internal/airollout"
 	"io"
 	"log/slog"
 	"net/http"
@@ -65,6 +66,8 @@ type sharedStorage struct {
 
 type appStorage struct {
 	executionPolicies          gateway.PolicyResolver
+	attemptPrices              providerapi.AtomicReservation
+	attemptModels              providerapi.ModelRecorder
 	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
@@ -279,6 +282,8 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
 		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
+		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
+		attemptModels:     (airollout.Store{DB: shared.database}).RecordModel(arkEndpoints(appConfig.Ark)),
 		nonces:            redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
 		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
 		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
@@ -367,7 +372,10 @@ func buildAppHandler(
 		}
 		var modelProvider providerapi.Client = ark.New(appConfig.Ark, http.DefaultClient, tosStore)
 		if costController != nil {
-			modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, string(app.ID), platform.AICost.HealthArk)
+			budgeted := providerapi.NewBudgetedClient(modelProvider, costController, string(app.ID), platform.AICost.HealthArk)
+			budgeted.ReserveAttempt = storage.attemptPrices
+			budgeted.RecordModel = storage.attemptModels
+			modelProvider = budgeted
 		}
 		jobService := jobs.NewService(storage.jobs, time.Now)
 		capabilities := capability.NewService([]byte(platform.JobCapabilitySecret), storage.capabilityUses, time.Now)
@@ -488,4 +496,12 @@ func commerceServices(
 		store, entitlement.NewAppStoreNotificationResolver(appstore.NewMultiEnvironmentNotificationProcessor(processors...)),
 	)
 	return nil, production, notifications, nil
+}
+
+func arkEndpoints(c ark.Config) map[contracts.Operation]string {
+	out := map[contracts.Operation]string{}
+	for op, route := range c.Routes {
+		out[op] = route.Model
+	}
+	return out
 }

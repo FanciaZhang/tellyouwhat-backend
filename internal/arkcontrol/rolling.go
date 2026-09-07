@@ -134,3 +134,16 @@ type Activation struct {
 func (c *Client) Activations(ctx context.Context) ([]Activation, error) {
 	return pages[Activation](ctx, c, "ListModelActivations", map[string]interface{}{"WithPrice": true, "WithFreeUsage": false, "PageSize": 20})
 }
+
+// ModelActivations narrows billing reads to the models used by one endpoint.
+func (c *Client) ModelActivations(ctx context.Context, names []string) ([]Activation, error) {
+	if len(names) == 0 || len(names) > 4 {
+		return nil, ErrResponse
+	}
+	for _, name := range names {
+		if !resourceName.MatchString(name) {
+			return nil, ErrResponse
+		}
+	}
+	return pages[Activation](ctx, c, "ListModelActivations", map[string]interface{}{"WithPrice": true, "WithFreeUsage": false, "PageSize": 20, "Filter": map[string]interface{}{"FoundationModelNames": names}})
+}

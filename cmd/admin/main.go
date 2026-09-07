@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/adminportal"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
+	"github.com/tellyouwhat/backend/internal/airollout"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
@@ -37,9 +38,6 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	if strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true") {
-		return errors.New("Ark native writes require verified resource authorization and durable command recovery; leave AI_ENDPOINT_WRITES_ENABLED=false")
-	}
 	configuration, err := loadConfig()
 	if err != nil {
 		return err
@@ -114,6 +112,8 @@ func run(logger *slog.Logger) error {
 			}
 		}
 		ai = &adminportal.AIConfig{WritesEnabled: strings.EqualFold(os.Getenv("AI_CONFIG_WRITES_ENABLED"), "true"), SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
+		ai.Rollouts = &airollout.Service{Store: airollout.Store{DB: database}, Cloud: client, Endpoints: endpoints, Shared: shared, WritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true")}
+
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		AI:                ai,
@@ -131,6 +131,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	background, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	if ai != nil {
+		go ai.Rollouts.Run(background)
+	}
 	server := &http.Server{
 		Addr: ":" + configuration.port, Handler: portal.Router(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
@@ -140,6 +145,7 @@ func run(logger *slog.Logger) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-shutdown
+		stopBackground()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = server.Shutdown(ctx)

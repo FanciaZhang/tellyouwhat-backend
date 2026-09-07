@@ -457,6 +457,23 @@ type GetHealthAIHistoryParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// SubmitAIRollingCommandJSONBody defines parameters for SubmitAIRollingCommand.
+type SubmitAIRollingCommandJSONBody map[string]interface{}
+
+// SubmitAIRollingCommandParams defines parameters for SubmitAIRollingCommand.
+type SubmitAIRollingCommandParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// CreateAIRollingPreviewJSONBody defines parameters for CreateAIRollingPreview.
+type CreateAIRollingPreviewJSONBody map[string]interface{}
+
+// CreateAIRollingPreviewParams defines parameters for CreateAIRollingPreview.
+type CreateAIRollingPreviewParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // CreateOfferParams defines parameters for CreateOffer.
 type CreateOfferParams struct {
 	Origin         *Origin         `json:"Origin,omitempty"`
@@ -562,6 +579,12 @@ type CreateHealthAIDraftJSONRequestBody = HealthAIDraftRequest
 // PublishHealthAIConfigJSONRequestBody defines body for PublishHealthAIConfig for application/json ContentType.
 type PublishHealthAIConfigJSONRequestBody = HealthAIPublishRequest
 
+// SubmitAIRollingCommandJSONRequestBody defines body for SubmitAIRollingCommand for application/json ContentType.
+type SubmitAIRollingCommandJSONRequestBody SubmitAIRollingCommandJSONBody
+
+// CreateAIRollingPreviewJSONRequestBody defines body for CreateAIRollingPreview for application/json ContentType.
+type CreateAIRollingPreviewJSONRequestBody CreateAIRollingPreviewJSONBody
+
 // CreateOfferJSONRequestBody defines body for CreateOffer for application/json ContentType.
 type CreateOfferJSONRequestBody = CreateOfferRequest
 
@@ -645,6 +668,12 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ai/models/{model}/versions)
 	ListAIModelVersions(c *gin.Context, model string)
+
+	// (POST /api/v1/ai/rolling/commands)
+	SubmitAIRollingCommand(c *gin.Context, params SubmitAIRollingCommandParams)
+
+	// (POST /api/v1/ai/rolling/preview)
+	CreateAIRollingPreview(c *gin.Context, params CreateAIRollingPreviewParams)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(c *gin.Context)
@@ -1285,6 +1314,105 @@ func (siw *ServerInterfaceWrapper) ListAIModelVersions(c *gin.Context) {
 	}
 
 	siw.Handler.ListAIModelVersions(c, model)
+}
+
+// SubmitAIRollingCommand operation middleware
+func (siw *ServerInterfaceWrapper) SubmitAIRollingCommand(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitAIRollingCommandParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SubmitAIRollingCommand(c, params)
+}
+
+// CreateAIRollingPreview operation middleware
+func (siw *ServerInterfaceWrapper) CreateAIRollingPreview(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAIRollingPreviewParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAIRollingPreview(c, params)
 }
 
 // ListAdminApps operation middleware
@@ -2543,6 +2671,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/api/v1/ai/rolling/preview", wrapper.CreateAIRollingPreview)
+	router.POST(options.BaseURL+"/api/v1/ai/rolling/commands", wrapper.SubmitAIRollingCommand)
 	router.GET(options.BaseURL+"/api/v1/ai/health", wrapper.GetHealthAIConfig)
 	router.GET(options.BaseURL+"/api/v1/ai/models", wrapper.ListAIModels)
 	router.POST(options.BaseURL+"/api/v1/ai/health/drafts", wrapper.CreateHealthAIDraft)
@@ -3127,6 +3257,86 @@ type ListAIModelVersionsdefaultJSONResponse struct {
 }
 
 func (response ListAIModelVersionsdefaultJSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAIRollingCommandRequestObject struct {
+	Params SubmitAIRollingCommandParams
+	Body   *SubmitAIRollingCommandJSONRequestBody
+}
+
+type SubmitAIRollingCommandResponseObject interface {
+	VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error
+}
+
+type SubmitAIRollingCommand202JSONResponse struct{ OKJSONResponse }
+
+func (response SubmitAIRollingCommand202JSONResponse) VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAIRollingCommanddefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response SubmitAIRollingCommanddefaultJSONResponse) VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAIRollingPreviewRequestObject struct {
+	Params CreateAIRollingPreviewParams
+	Body   *CreateAIRollingPreviewJSONRequestBody
+}
+
+type CreateAIRollingPreviewResponseObject interface {
+	VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error
+}
+
+type CreateAIRollingPreview200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateAIRollingPreview200JSONResponse) VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAIRollingPreviewdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateAIRollingPreviewdefaultJSONResponse) VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4220,6 +4430,12 @@ type StrictServerInterface interface {
 	// (GET /api/v1/ai/models/{model}/versions)
 	ListAIModelVersions(ctx context.Context, request ListAIModelVersionsRequestObject) (ListAIModelVersionsResponseObject, error)
 
+	// (POST /api/v1/ai/rolling/commands)
+	SubmitAIRollingCommand(ctx context.Context, request SubmitAIRollingCommandRequestObject) (SubmitAIRollingCommandResponseObject, error)
+
+	// (POST /api/v1/ai/rolling/preview)
+	CreateAIRollingPreview(ctx context.Context, request CreateAIRollingPreviewRequestObject) (CreateAIRollingPreviewResponseObject, error)
+
 	// (GET /api/v1/apps)
 	ListAdminApps(ctx context.Context, request ListAdminAppsRequestObject) (ListAdminAppsResponseObject, error)
 
@@ -4738,6 +4954,72 @@ func (sh *strictHandler) ListAIModelVersions(ctx *gin.Context, model string) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(ListAIModelVersionsResponseObject); ok {
 		if err := validResponse.VisitListAIModelVersionsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitAIRollingCommand operation middleware
+func (sh *strictHandler) SubmitAIRollingCommand(ctx *gin.Context, params SubmitAIRollingCommandParams) {
+	var request SubmitAIRollingCommandRequestObject
+
+	request.Params = params
+
+	var body SubmitAIRollingCommandJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitAIRollingCommand(ctx, request.(SubmitAIRollingCommandRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitAIRollingCommand")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(SubmitAIRollingCommandResponseObject); ok {
+		if err := validResponse.VisitSubmitAIRollingCommandResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAIRollingPreview operation middleware
+func (sh *strictHandler) CreateAIRollingPreview(ctx *gin.Context, params CreateAIRollingPreviewParams) {
+	var request CreateAIRollingPreviewRequestObject
+
+	request.Params = params
+
+	var body CreateAIRollingPreviewJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAIRollingPreview(ctx, request.(CreateAIRollingPreviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAIRollingPreview")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateAIRollingPreviewResponseObject); ok {
+		if err := validResponse.VisitCreateAIRollingPreviewResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -5516,51 +5798,52 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"0tTZi1+pFlMTXo/W/w0AAP//",
+	"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",
+	"i6kJr+5W/w0AAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

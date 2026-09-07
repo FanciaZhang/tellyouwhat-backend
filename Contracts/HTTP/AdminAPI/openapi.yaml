@@ -15,6 +15,35 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/ai/rolling/preview:
+    post:
+      operationId: createAIRollingPreview
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/rolling/commands:
+    post:
+      operationId: submitAIRollingCommand
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/health:
     get:
       operationId: getHealthAIConfig

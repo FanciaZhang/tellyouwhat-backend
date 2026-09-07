@@ -585,7 +585,7 @@ async function aiCommand(action, body) {
 function aiPolicyLabel(p) { return p ? `${p.endpoint} / ${p.reasoningEffort} / 联网${p.webSearchEnabled?"开":"关"}` : "沿用 App 参数"; }
 async function loadAI() {
   aiData=await api("/api/v1/ai/health"); aiRows=aiData.operations;
-  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。原生灰度的权限边界尚未验证通过，写入保持关闭。`;
+  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。${aiData.rollingWritesEnabled?"原生灰度操作已启用":"原生灰度操作未启用"}。`;
   renderAI();
 }
 function renderAI() {
@@ -600,7 +600,7 @@ function renderAI() {
       <label class="check"><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
       ${row.operation!=="meal_decision"?'<p class="muted">此功能的数据边界不允许联网。</p>':""}
       <button class="primary" ${!aiData.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
-      <button class="quiet" data-ai-endpoint="${index}">查看接入点与灰度详情</button><p class="muted" data-ai-endpoint-result="${index}"></p><details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
+      <button class="quiet" data-ai-endpoint="${index}">查看接入点与灰度详情</button><div data-ai-endpoint-result="${index}"></div><details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
   }).join("");
   $$('[data-ai-index]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(async()=>{
     const row=aiRows[Number(form.dataset.aiIndex)];const values=new FormData(form);
@@ -617,7 +617,30 @@ function renderAI() {
     const index=Number(button.dataset.aiEndpoint),row=aiRows[index];
     const data=await api(`/api/v1/ai/endpoints/${encodeURIComponent(row.endpointID||row.endpoint.Id)}`);
     const ep=data.endpoint,r=data.rolling,model=ep.ModelReference?.FoundationModel;
-    $(`[data-ai-endpoint-result="${index}"]`).textContent=`${ep.Name||ep.Id} · ${ep.Status} · ${model?.Name} / ${model?.ModelVersion}。${r?`原生灰度：${r.Status}，新模型 ${r.RollingIn?.Name} ${r.RollingIn?.ModelVersion} 占比 ${r.RollingGray}%；旧模型 ${r.RollingOut?.Name} ${r.RollingOut?.ModelVersion}。`:"没有关联的原生灰度任务。"}同步时间：${formatTime(data.syncedAt)}`;
+    const panel=$(`[data-ai-endpoint-result="${index}"]`);
+    const states={queued:"等待执行",dispatching:"正在提交",watching:"等待云端完成",uncertain:"结果待核对",succeeded:"已完成",cancelled:"已撤销",failed:"失败",conflict:"状态已变化"};
+    const pending=(data.commands||[]).some(c=>["queued","dispatching","uncertain"].includes(c.state));
+    const isActive=r && !(r.Status==="Reverted"&&r.RollingGray===0) && r.RollingGray<100;
+    panel.innerHTML=`<p>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.Status)} · ${escapeHTML(model?.Name)} / ${escapeHTML(model?.ModelVersion)}<br>${r?`新模型：${escapeHTML(r.RollingIn?.Name)} / ${escapeHTML(r.RollingIn?.ModelVersion)}，流量 ${Number(r.RollingGray)}%；状态：${escapeHTML(r.Status)}`:"没有关联的原生灰度任务"}<br>同步时间：${formatTime(data.syncedAt)}</p>
+      ${data.writesEnabled?`<label>目标模型与版本<select data-rolling-target>${data.targets.filter(t=>t.audio&&(t.model.Name!==model?.Name||t.model.ModelVersion!==model?.ModelVersion)).map(t=>`<option value="${escapeHTML(JSON.stringify(t.model))}">${escapeHTML(t.model.Name)} / ${escapeHTML(t.model.ModelVersion)}</option>`).join("")}</select></label>
+      ${pending&&r&&(data.commands||[]).some(c=>c.state==="uncertain"&&c.input.action==="start"&&!c.rollingID)?'<button data-rolling-action="reconcile">核对并关联云端任务</button>':""}<div class="actions"><button data-rolling-action="start" ${pending||isActive?"disabled":""}>预览模型切换</button><button data-rolling-action="step_back" ${pending||r?.Status!=="Running"||!r?.RollingGray||r?.RollingGray>=100?"disabled":""}>回退一个阶段</button><button data-rolling-action="cancel" ${pending||!["Running","Reverting"].includes(r?.Status)||r?.RollingGray>=100?"disabled":""}>撤销灰度</button></div><p class="muted">火山自动推进灰度。回退一个阶段与撤销整个灰度的作用不同。目录中的其他模型需完成兼容性验证后才能使用。</p>`:""}
+      ${(data.commands||[]).length?`<details open><summary>最近的操作记录</summary>${data.commands.map(c=>`<p>${escapeHTML(states[c.state]||c.state)} · ${formatTime(c.createdAt)}<br>${escapeHTML(c.detail||c.input.action)}<br><small>${escapeHTML(c.id)}${c.rollingID?` / ${escapeHTML(c.rollingID)}`:""}</small></p>`).join("")}</details>`:""}
+      ${data.attempts?.length?`<details><summary>最近请求实际使用的模型</summary>${data.attempts.map(a=>`<p>${escapeHTML(a.actualModel||"火山未返回模型名")} · ${formatTime(a.createdAt)} · ${escapeHTML(aiLabels[a.operation]||a.operation)}</p>`).join("")}</details>`:""}
+      ${pending?'<p class="muted">已有操作等待执行或核对，暂不能再次提交。可刷新详情查看进展。</p>':""}`;
+    panel.querySelectorAll('[data-rolling-action]').forEach(action=>action.onclick=()=>run(async()=>{
+      const input={endpoint:ep.Id,action:action.dataset.rollingAction,target:action.dataset.rollingAction==="start"?JSON.parse(panel.querySelector('[data-rolling-target]').value):{Name:"",ModelVersion:""}};
+      await reauthenticate();
+      const preview=await api("/api/v1/ai/rolling/preview",{method:"POST",csrfRequired:true,body:input});
+      const price=preview.snapshot.price;
+      const label={start:"开始原生灰度",step_back:"回退一个阶段",cancel:"撤销灰度",reconcile:"核对并关联云端任务"}[input.action];
+      if(!confirm(`${label}\n接入点：${ep.Name||ep.Id}\n旧模型：${model.Name} / ${model.ModelVersion}${input.action==="start"?`\n新模型：${input.target.Name} / ${input.target.ModelVersion}`:""}\n受影响功能：${preview.affectedOperations.map(op=>aiLabels[op]||op).join("、")||"暂无当前绑定"}\n费用预留：输入 ${price.InputNanosPerMillionTokens/1e9} 元 / 百万 tokens（含音频最高档），输出 ${price.OutputNanosPerMillionTokens/1e9} 元 / 百万 tokens。\n${preview.notice}`))return;
+      const slot=`ai-rolling:${state.user.id}:${ep.Id}`;const identity=JSON.stringify(input);
+      let previous;try{previous=JSON.parse(sessionStorage.getItem(slot));}catch{}
+      const command=previous?.identity===identity?previous:{identity,key:uuid()};sessionStorage.setItem(slot,JSON.stringify(command));
+      await api("/api/v1/ai/rolling/commands",{method:"POST",csrfRequired:true,idempotencyKey:command.key,body:{input,previewToken:preview.previewToken}});
+      sessionStorage.removeItem(slot);notice("操作已保存，后台将提交至火山；可刷新详情查看进展");setTimeout(()=>button.click(),0);
+    }));
+
   }));
   $$('[data-ai-more]').forEach(button=>button.onclick=()=>run(async()=>{
     const index=Number(button.dataset.aiMore),row=aiRows[index];

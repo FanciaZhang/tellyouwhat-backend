@@ -117,6 +117,23 @@ func TestAIHTTPAuthorizationAndPublicationPreview(t *testing.T) {
 			t.Fatalf("status=%d want=%d body=%s", res.Code, status, res.Body.String())
 		}
 	}
+
+	for _, path := range []string{"/api/v1/ai/rolling/preview", "/api/v1/ai/rolling/commands"} {
+		assert(call("POST", path, map[string]any{}, false, true, uuid.NewString()), 401)
+		repo.user.Role = adminauth.RoleOperator
+		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), 403)
+		repo.user.Role = adminauth.RoleAdmin
+		assert(call("POST", path, map[string]any{}, true, false, uuid.NewString()), 403)
+		session.ReauthenticatedAt = time.Time{}
+		putSession()
+		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), 401)
+		session.ReauthenticatedAt = now
+		putSession()
+		s.config.AI.WritesEnabled = false
+		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), 503)
+		s.config.AI.WritesEnabled = true
+		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), 422)
+	}
 	assert(call("POST", "/api/v1/ai/health/drafts", draft, false, true, uuid.NewString()), 401)
 	repo.user.Role = adminauth.RoleOperator
 	assert(call("GET", "/api/v1/ai/health", nil, true, false, ""), 403)

@@ -152,12 +152,14 @@ func TestMySQLDraftIdempotencyAndAuditRollback(t *testing.T) {
 	if _, err = s.Draft(ctx, changed, m); !errors.Is(err, aiconfig.ErrConflict) {
 		t.Fatal("key accepted changed content", err)
 	}
-	_, err = s.DB.Exec(`CREATE TRIGGER ai_fixture_audit_failure BEFORE INSERT ON admin_audit_events FOR EACH ROW BEGIN IF NEW.action='ai.config.publish' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture audit failure'; END IF; END`)
+	pm := mutation(actor)
+	// A scoped CHECK exercises a real audit failure without SUPER/binlog privileges.
+	constraint := "ai_audit_" + strings.ReplaceAll(pm.RequestID, "-", "")
+	_, err = s.DB.Exec("ALTER TABLE admin_audit_events ADD CONSTRAINT " + constraint + " CHECK (request_id <> '" + pm.RequestID + "')")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.DB.Exec(`DROP TRIGGER ai_fixture_audit_failure`)
-	pm := mutation(actor)
+	defer s.DB.Exec("ALTER TABLE admin_audit_events DROP CHECK " + constraint)
 	if _, err = s.Publish(ctx, aiconfig.Publication{Operation: op, Revision: r.ID}, pm, time.Now()); err == nil {
 		t.Fatal("accepted failed audit")
 	}
