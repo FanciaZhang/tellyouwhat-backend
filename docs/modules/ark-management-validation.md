@@ -147,3 +147,16 @@ Reverted/0%，没有把已完成切换的 Endpoint 改回 mini。此状态不能
 08:43 已停止并删除完整灰度测试接入点。ListEndpoints 核对仅剩原有 10 个
 正式接入点，八个 Health 仍绑定 mini/260428，两个手记接入点绑定保持不变。
 修订后的 airollout 测试在隔离 MySQL 下通过 race 检查。
+
+## AI 管理交互与动态目录验收（2026-09-08）
+
+- 独立工作树完成三页签概览、参数差异确认、完整目录搜索、版本与价格检查、原生灰度进度和完成后重新切回。
+- 浏览器交互测试覆盖 360、390、736、1280 像素，浅色及深色，无横向溢出和脚本错误；覆盖 95 项目录、失败原因、一次 Passkey、重复提交保护、90% 回退及完成后新建反向切换。
+- 隔离 MySQL 的竞态测试覆盖动态协议证据复用、仅检查接入点相关功能、文字价格不依赖音频价格、配置变化阻止旧指令、排队任务保留历史能力要求。
+- 独立 HTTPS 管理服务使用真实 WebAuthn 和 MySQL 验证参数草稿、服务端预览、再次验证、发布、重载持久化，并读取真实火山完整目录、账号价格、动态兼容检查与 Pro 2.1 原生 DryRun。该验收模式明确拒绝云端写入，不执行线上接入点切换。
+- Pro 2.1 `260628`：文字关闭思考、图片深度思考的普通及流式 Responses 与结构化结果通过合成请求实测。DeepSeek V4 Pro GA `260813`：文字深度思考同路径通过。Pro 2.1、mini 260428、lite 260428 的最高思考文字请求亦通过；后两者最高思考的图片加搜索及音频输入也已实测。其他版本在选中时按功能检查，不能用这些结果替代所有模型、参数或业务质量验收。
+- 新页面的发布状态独立于以上本地与云端只读验收；原生完整生命周期证据沿用前文专用资源验收。
+
+可重复命令：`go test -race ./internal/airollout ./internal/aiconfig ./internal/adminportal ./internal/provider/ark ./internal/arkcontrol ./internal/adminui`，必须设置隔离的 `MYSQL_TEST_DSN`。
+浏览器界面测试：`node scripts/ai-admin-ui-test.mjs`，设置 `PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE`，可选 `AI_UI_SCREENSHOT_DIR`。
+真实后台验收沿用 `TestLiveAIBrowserServer` 与 `scripts/ai-admin-browser.mjs`；`ARK_BROWSER_TEST_READ_ONLY=1` 允许读取现有接入点，强制拒绝云端写入，数据库仍必须为隔离的 `_test` 数据库。

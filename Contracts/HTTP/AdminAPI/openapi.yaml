@@ -28,6 +28,7 @@ paths:
             schema: { $ref: "#/components/schemas/AIRollingInput" }
       responses:
         "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/rolling/commands:
     post:
@@ -72,6 +73,7 @@ paths:
             schema: { $ref: "#/components/schemas/HealthAIDraftRequest" }
       responses:
         "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/health/publish:
     post:
@@ -87,6 +89,7 @@ paths:
             schema: { $ref: "#/components/schemas/HealthAIPublishRequest" }
       responses:
         "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/health/{operation}/history:
     get:

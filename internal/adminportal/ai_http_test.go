@@ -126,7 +126,11 @@ func TestAIHTTPAuthorizationAndPublicationPreview(t *testing.T) {
 		assert(call("POST", path, map[string]any{}, true, false, uuid.NewString()), 403)
 		session.ReauthenticatedAt = time.Time{}
 		putSession()
-		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), 401)
+		expected := 401
+		if path == "/api/v1/ai/rolling/preview" {
+			expected = 422
+		}
+		assert(call("POST", path, map[string]any{}, true, true, uuid.NewString()), expected)
 		session.ReauthenticatedAt = now
 		putSession()
 		s.config.AI.WritesEnabled = false
@@ -142,7 +146,7 @@ func TestAIHTTPAuthorizationAndPublicationPreview(t *testing.T) {
 	assert(call("POST", "/api/v1/ai/health/drafts", draft, true, false, uuid.NewString()), 403)
 	session.ReauthenticatedAt = time.Time{}
 	putSession()
-	assert(call("POST", "/api/v1/ai/health/drafts", draft, true, true, uuid.NewString()), 401)
+	assert(call("POST", "/api/v1/ai/health/publish", map[string]any{}, true, true, uuid.NewString()), 401)
 	session.ReauthenticatedAt = now
 	putSession()
 	s.config.AI.WritesEnabled = false
@@ -152,7 +156,11 @@ func TestAIHTTPAuthorizationAndPublicationPreview(t *testing.T) {
 	if store.writes != 0 {
 		t.Fatal("unauthorized write reached store")
 	}
+	session.ReauthenticatedAt = time.Time{}
+	putSession()
 	assert(call("POST", "/api/v1/ai/health/drafts", draft, true, true, uuid.NewString()), 200)
+	session.ReauthenticatedAt = now
+	putSession()
 	previewPath := "/api/v1/ai/health/meal_decision/revisions/" + store.draft.ID
 	response := call("GET", previewPath, nil, true, false, "")
 	assert(response, 200)

@@ -29,10 +29,13 @@ type Input struct {
 	Target   arkcontrol.FoundationModel `json:"target"`
 }
 type Snapshot struct {
-	Endpoint arkcontrol.Endpoint    `json:"endpoint"`
-	Rolling  *arkcontrol.Rolling    `json:"rolling,omitempty"`
-	Price    costcontrol.TokenPrice `json:"price"`
-	Catalog  string                 `json:"catalog"`
+	Endpoint     arkcontrol.Endpoint     `json:"endpoint"`
+	Rolling      *arkcontrol.Rolling     `json:"rolling,omitempty"`
+	Price        costcontrol.TokenPrice  `json:"price"`
+	CurrentPrice costcontrol.TokenPrice  `json:"currentPrice"`
+	TargetPrice  *costcontrol.TokenPrice `json:"targetPrice,omitempty"`
+	Requirements []Requirement           `json:"requirements,omitempty"`
+	Catalog      string                  `json:"catalog"`
 }
 type Command struct {
 	ID        string    `json:"id"`
@@ -223,7 +226,7 @@ func (s Store) Enqueue(ctx context.Context, m aiconfig.Mutation, in Input, befor
 		models = append(models, before.Rolling.In, before.Rolling.Out)
 	}
 	for _, model := range models {
-		if Known(model) {
+		if modelName.MatchString(model.Name) && modelName.MatchString(model.Version) {
 			p.Models = addModel(p.Models, model)
 		}
 	}

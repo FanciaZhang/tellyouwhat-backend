@@ -24,13 +24,15 @@ type Cloud interface {
 	RollbackRolling(context.Context, string) error
 }
 type Service struct {
-	Store         Store
-	Cloud         Cloud
-	Endpoints     map[contracts.Operation]string
-	Shared        map[string]bool
-	WritesEnabled bool
-	priceMu       sync.Mutex
-	priceCache    map[string]cachedPrice
+	Configurations aiconfig.CurrentReader
+	Compatibility  *Compatibility
+	Store          Store
+	Cloud          Cloud
+	Endpoints      map[contracts.Operation]string
+	Shared         map[string]bool
+	WritesEnabled  bool
+	priceMu        sync.Mutex
+	priceCache     map[string]cachedPrice
 }
 type cachedPrice struct {
 	price costcontrol.TokenPrice
@@ -52,7 +54,7 @@ func endpointModel(ep arkcontrol.Endpoint) arkcontrol.FoundationModel {
 	return arkcontrol.FoundationModel{Name: ep.Model.FoundationModel.Name, Version: ep.Model.FoundationModel.Version}
 }
 func (s *Service) modelPrice(ctx context.Context, m arkcontrol.FoundationModel) (costcontrol.TokenPrice, error) {
-	if !Known(m) {
+	if m.Name == "" || m.Version == "" {
 		return costcontrol.TokenPrice{}, ErrUnsupported
 	}
 	s.priceMu.Lock()
@@ -68,7 +70,7 @@ func (s *Service) modelPrice(ctx context.Context, m arkcontrol.FoundationModel) 
 		if a.Name == m.Name {
 			p, err := Price(a)
 			if err != nil {
-				return p, err
+				return p, blocked("price", "此模型未开通、已停用或缺少可用的 token 单价，请在火山确认开通及计费状态后重试")
 			}
 			if s.priceCache == nil {
 				s.priceCache = map[string]cachedPrice{}
@@ -77,7 +79,7 @@ func (s *Service) modelPrice(ctx context.Context, m arkcontrol.FoundationModel) 
 			return p, nil
 		}
 	}
-	return costcontrol.TokenPrice{}, ErrUnsupported
+	return costcontrol.TokenPrice{}, blocked("activation", "账号尚未开通此模型，请在火山方舟开通后重试")
 }
 func (s *Service) Read(ctx context.Context, id string) (Snapshot, error) {
 	out := Snapshot{Catalog: CatalogVersion}
@@ -96,6 +98,7 @@ func (s *Service) Read(ctx context.Context, id string) (Snapshot, error) {
 	if err != nil {
 		return out, err
 	}
+	out.CurrentPrice = out.Price
 	if ep.RollingID != "" {
 		r, err := s.Cloud.Rolling(ctx, ep.RollingID)
 		if err != nil {
@@ -140,50 +143,47 @@ func (s *Service) Preview(ctx context.Context, in Input) (Snapshot, error) {
 	}
 	switch in.Action {
 	case "start":
-		if !Known(in.Target) || in.Target == endpointModel(snap.Endpoint) || active(snap.Rolling) || (snap.Endpoint.SupportRolling != nil && !*snap.Endpoint.SupportRolling) {
+		if in.Target.Name == "" || in.Target.Version == "" || in.Target == endpointModel(snap.Endpoint) || active(snap.Rolling) || (snap.Endpoint.SupportRolling != nil && !*snap.Endpoint.SupportRolling) {
 			return snap, ErrUnsupported
 		}
-		versions, err := s.Cloud.Versions(ctx, in.Target.Name)
+		requirements, err := s.Requirements(ctx, in.Endpoint)
 		if err != nil {
 			return snap, err
 		}
-		found := false
-		for _, v := range versions {
-			if v.Version == in.Target.Version && v.Name == in.Target.Name {
-				found = true
-			}
+		// Validate account pricing before dispatching any synthetic inference probe.
+		if _, err = s.modelPrice(ctx, in.Target); err != nil {
+			return snap, err
 		}
-		if !found {
-			return snap, ErrUnsupported
+		if err = s.CheckModel(ctx, in.Target, requirements); err != nil {
+			return snap, err
 		}
-		// Require every accepted Health option and modality, including queued legacy
-		// requests whose options can predate the current published configuration.
-		for _, op := range contracts.OperationValues() {
-			for _, effort := range []string{"minimal", "low", "medium", "high"} {
-				p := contracts.ExecutionPolicy{Version: "compatibility", Endpoint: in.Endpoint, ReasoningEffort: effort, TimeoutSeconds: 90, WebSearchEnabled: op == contracts.OperationMealDecision}
-				if !Supports(in.Target, op, p) {
-					return snap, ErrUnsupported
-				}
-			}
-		}
+		snap.Requirements = requirements
 		p, err := s.modelPrice(ctx, in.Target)
 		if err != nil {
 			return snap, err
 		}
+		snap.TargetPrice = &p
 		snap.Price = ceiling(snap.Price, p)
 		if err = s.Cloud.PreviewRolling(ctx, in.Endpoint, in.Target); err != nil {
+			var apiErr *arkcontrol.APIError
+			if errors.As(err, &apiErr) && apiErr.Status == 400 {
+				return snap, blocked("native", "火山不支持此接入点升级到所选版本，请选择其他版本或在火山核对原生升级条件")
+			}
 			return snap, err
 		}
 	case "accept_current":
 		if in.Target != (arkcontrol.FoundationModel{}) || active(snap.Rolling) || len(pending) > 0 {
 			return snap, ErrConflict
 		}
-		for _, op := range contracts.OperationValues() {
-			p := contracts.ExecutionPolicy{Version: "compatibility", Endpoint: in.Endpoint, ReasoningEffort: "high", TimeoutSeconds: 90, WebSearchEnabled: op == contracts.OperationMealDecision}
-			if !Supports(endpointModel(snap.Endpoint), op, p) {
-				return snap, ErrUnsupported
-			}
+		requirements, err := s.Requirements(ctx, in.Endpoint)
+		if err != nil {
+			return snap, err
 		}
+		if err = s.CheckModel(ctx, endpointModel(snap.Endpoint), requirements); err != nil {
+			return snap, err
+		}
+		snap.Requirements = requirements
+
 	case "reconcile":
 		if in.Target != (arkcontrol.FoundationModel{}) || snap.Rolling == nil {
 			return snap, ErrUnsupported
@@ -232,7 +232,13 @@ func (s *Service) Submit(ctx context.Context, m aiconfig.Mutation, in Input, exp
 	}
 	var result Command
 	err = s.Store.WithLock(ctx, in.Endpoint, func() error {
-		var err error
+		fresh, err := s.Preview(ctx, in)
+		if err != nil {
+			return err
+		}
+		if !Same(expected, fresh) {
+			return ErrConflict
+		}
 		result, err = s.Store.Enqueue(ctx, m, in, snap)
 		return err
 	})
@@ -389,7 +395,24 @@ func (s *Service) readDispatch(ctx context.Context, c Command) (Snapshot, error)
 		if err != nil {
 			return snap, err
 		}
+		snap.TargetPrice = &p
 		snap.Price = ceiling(snap.Price, p)
+	}
+	if c.Input.Action == "start" || c.Input.Action == "accept_current" {
+		requirements, err := s.Requirements(ctx, c.Input.Endpoint)
+		if err != nil {
+			return snap, err
+		}
+		known := map[Requirement]bool{}
+		for _, r := range c.Before.Requirements {
+			known[r] = true
+		}
+		for _, r := range requirements {
+			if !known[r] {
+				return snap, ErrConflict
+			}
+		}
+		snap.Requirements = c.Before.Requirements
 	}
 	if !Same(snap, c.Before) {
 		return snap, ErrConflict

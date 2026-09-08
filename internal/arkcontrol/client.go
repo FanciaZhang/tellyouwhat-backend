@@ -83,8 +83,11 @@ type Endpoint struct {
 	RollingID      string         `json:"RollingId,omitempty"`
 }
 type Model struct {
-	Name        string `json:"Name"`
-	DisplayName string `json:"DisplayName"`
+	Name           string `json:"Name"`
+	DisplayName    string `json:"DisplayName"`
+	Vendor         string `json:"VendorName"`
+	Description    string `json:"DisplayDescription"`
+	PrimaryVersion string `json:"PrimaryVersion"`
 }
 type Version struct {
 	Name         string          `json:"FoundationModelName"`
@@ -93,6 +96,7 @@ type Version struct {
 	Status       string          `json:"Status"`
 	AccessType   string          `json:"AccessType"`
 	Capabilities map[string]bool `json:"CapabilityLabels"`
+	Domains      []string        `json:"Domains"`
 }
 
 // Only fixed actions are exposed. Raw upstream payloads and errors are not returned.
