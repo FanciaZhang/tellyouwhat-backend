@@ -18,7 +18,7 @@ import (
 func TestMySQLPausedDeliveryPreservesQueueAndOriginalExpiry(t *testing.T) {
 	db := testutil.MySQL(t)
 	ctx := context.Background()
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 8, 12, 0, 0, 123456789, time.UTC)
 	start := now
 	key := attestation.RegisteredKey{AppID: "health", KeyID: "fixture", DeviceID: uuid.NewString(), PublicKey: []byte("fixture"), Environment: "production", Receipt: []byte("fixture")}
 	if err := mysqlstore.NewKeyRepository(db, "health").Register(ctx, key); err != nil {
@@ -49,6 +49,7 @@ func TestMySQLPausedDeliveryPreservesQueueAndOriginalExpiry(t *testing.T) {
 	if err != nil || got.Status != jobs.StatusQueued || got.AttemptCount != 0 {
 		t.Fatalf("paused: %+v %v", got, err)
 	}
+	originalExpiry := got.ExpiresAt
 	var attempts int
 	if err = db.QueryRow(`SELECT attempts FROM job_dispatch_outbox WHERE app_id='health' AND job_id=?`, job.ID).Scan(&attempts); err != nil || attempts != 0 {
 		t.Fatalf("delivery attempts=%d %v", attempts, err)
@@ -62,7 +63,7 @@ func TestMySQLPausedDeliveryPreservesQueueAndOriginalExpiry(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err = store.Get(ctx, job.ID)
-		if err != nil || got.Status != jobs.StatusQueued || got.AttemptCount != 0 || !got.ExpiresAt.Equal(job.ExpiresAt) {
+		if err != nil || got.Status != jobs.StatusQueued || got.AttemptCount != 0 || !got.ExpiresAt.Equal(originalExpiry) {
 			t.Fatalf("automatic deferral lost job: %+v %v", got, err)
 		}
 		got, err = store.Claim(ctx, job.ID, now)
