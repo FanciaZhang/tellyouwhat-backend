@@ -26,11 +26,12 @@ type Block struct {
 	Text string `json:"text"`
 }
 type Snapshot struct {
-	Revision       int      `json:"revision"`
-	Blocks         []Block  `json:"blocks"`
-	Transcript     string   `json:"transcript"`
-	EditedBlockIDs []string `json:"editedBlockIDs"`
-	Words          []string `json:"words"`
+	WritingStyle   WritingStyle `json:"writingStyle"`
+	Revision       int          `json:"revision"`
+	Blocks         []Block      `json:"blocks"`
+	Transcript     string       `json:"transcript"`
+	EditedBlockIDs []string     `json:"editedBlockIDs"`
+	Words          []string     `json:"words"`
 }
 type Patch struct {
 	ID   string `json:"id"`
@@ -69,6 +70,9 @@ type Frame struct {
 }
 
 func (s Snapshot) Validate() error {
+	if _, err := s.WritingStyle.instructions(); err != nil {
+		return err
+	}
 	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 {
 		return ErrInvalid
 	}

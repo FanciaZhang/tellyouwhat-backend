@@ -124,3 +124,25 @@ only after physical-device background/offline acceptance and the cost gate.
   unsigned voice admission requests return 401. Real paid-device recording,
   background behavior and recovery remain a separate acceptance requiring an
   active synchronized subscription. No user audio or diary was used in this check.
+
+## Preset writing styles
+
+A snapshot accepts `writingStyle`: `natural` (the default), `lively`,
+`documentary`, `daybook`, or `essay`. Unknown identifiers are rejected before
+calling a provider. An omitted preference uses the product default. ASR and
+personal vocabulary are unchanged: the style applies only to body rewriting.
+
+The app resolves the per-entry override before its synced Settings default and
+sends only the resolved identifier. Each preset is mapped to trusted instructions
+on the server, underneath common fidelity, chronology, manual-edit protection,
+and strict patch validation rules. Freeform instructions are not accepted.
+Source text remains untrusted even when it contains commands. This reduces the
+instruction surface; it does not guarantee that generated prose is factually
+correct. The model has no tools and cannot access other journals or credentials.
+
+Changing a preference does not start processing a saved entry. While capture or
+rewriting is active, the next snapshot carries the new style and document
+revision. A style change invalidates prior in-flight results, and a newer client
+revision supersedes an older outstanding acknowledgement. Audio capture and
+receipts continue on the same connection. Body recovery retains the current
+style preference, original transcript, and recording resources.

@@ -299,6 +299,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					return
 				}
 				next := *f.Snapshot
+				styleChanged := hasSnapshot && next.WritingStyle != snapshot.WritingStyle
 				// A document ACK may have been sent before the latest receipt
 				// reached the client. It cannot roll back server-confirmed speech.
 				// Only the initial snapshot seeds prior-session transcript text.
@@ -307,10 +308,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				hasSnapshot = true
 				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
-				if wasAcknowledgement {
+				if awaitingRevision >= 0 && next.Revision >= awaitingRevision {
 					awaitingRevision = -1
 				}
-				if next.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
+				if (styleChanged && transcriptBase+segmentText != "") || next.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
 					dirty = true
 				}
 				if len(snapshot.Blocks) == 0 && next.Transcript != "" {
@@ -318,7 +319,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				// Repeated receipt acknowledgements do not invalidate a model
 				// call that already uses the same base. Real edits still do.
-				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
+				if snapshot.WritingStyle != next.WritingStyle || snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
 					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.Words, next.Words) {
 					generation++
 				}
