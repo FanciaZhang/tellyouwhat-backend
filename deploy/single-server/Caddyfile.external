@@ -22,7 +22,16 @@
 
 {$JOURNAL_API_DOMAIN} {
 	tls {$ACME_EMAIL}
-	import tellyouwhat_public_api
+	# Temporary authenticated Journal sessions; the production gateway is unchanged.
+	handle_path /_development/journal/* {
+		header Cache-Control no-store
+		reverse_proxy 127.0.0.1:18787 {
+			flush_interval -1
+		}
+	}
+	handle {
+		import tellyouwhat_public_api
+	}
 }
 
 {$ADMIN_DOMAIN} {
