@@ -393,3 +393,31 @@ func TestAutomationMySQLRetentionKeepsUnresolvedIncidents(t *testing.T) {
 		t.Fatal("removed unresolved incident", err)
 	}
 }
+
+func TestAutomationMySQLWarningSampleFloorIsIndependentOfProtection(t *testing.T) {
+	s, actor, _ := fixture(t)
+	publish(t, s, actor, func(p *platformops.Policy) {
+		rules := p.AutomationRules()
+		rules.MinimumSamples = 40
+		p.Automation = &rules
+	})
+	end := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	automationWindow(t, s, end.Add(-5*time.Minute), 20, false)
+	if err := s.Patrol(context.Background(), end); err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Metrics(context.Background(), end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, i := range m.Automation.Incidents {
+		found = found || i.Rule == "error_rate"
+	}
+	if !found {
+		t.Fatal("warning suppressed by protection sample floor")
+	}
+	if c := automationCircuit(t, s, end); c.Phase != "closed" || c.BadWindows != 0 {
+		t.Fatal("warning samples triggered protection", c)
+	}
+}

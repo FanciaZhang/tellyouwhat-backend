@@ -158,7 +158,7 @@ func (s Store) Patrol(ctx context.Context, now time.Time) error {
 				}
 			}
 			a := activity[app+":"+op]
-			known := !start.Before(c.Baseline) && a.completed >= int64(p.MinimumSamples)
+			known := !start.Before(c.Baseline) && a.completed >= int64(r.Policy.MinimumSamples)
 			// Speech duration and connection closure are not a model error signal.
 			if op != "journal.voice.speech" {
 				action = c.Observe(p, AutomationSample{Start: start, End: end, Completed: a.completed, Failed: a.failed}, now)
