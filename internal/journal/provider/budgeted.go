@@ -29,6 +29,7 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 	if client == nil || client.next == nil || client.controller == nil || !client.price.Valid() {
 		return Result{}, costcontrol.ErrInvalidAttempt
 	}
+	price := client.price
 	input := contracts.ReservationTokens(request) - contracts.OutputReservationTokens
 	output := contracts.OutputReservationTokens
 	if _, ok := promptconfig.FromContext(ctx); ok {
@@ -36,10 +37,13 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 		if err != nil {
 			return Result{}, err
 		}
+		if prepared.Parameters.Price != nil {
+			price = *prepared.Parameters.Price
+		}
 		input = len(prepared.Body) + 1024
 		output = prepared.Parameters.MaxOutputTokens
 	}
-	reserved, err := client.price.Cost(input, output)
+	reserved, err := price.Cost(input, output)
 	if err != nil {
 		return Result{}, err
 	}
@@ -52,7 +56,7 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 		return Result{}, err
 	}
 	result, providerErr := client.next.Organize(ctx, request, pro)
-	actual, costErr := client.price.Cost(result.InputTokens, result.OutputTokens)
+	actual, costErr := price.Cost(result.InputTokens, result.OutputTokens)
 	_, known := result.KnownTokenTotal()
 	if costErr != nil {
 		actual = 0

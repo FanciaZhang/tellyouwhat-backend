@@ -34,8 +34,12 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if err != nil {
 		return RewriteResult{}, err
 	}
+	price := rewriter.price
+	if prepared.Parameters.Price != nil {
+		price = *prepared.Parameters.Price
+	}
 	inputReservation := len(prepared.Body) + 1024
-	reserved, err := rewriter.price.Cost(inputReservation, prepared.Parameters.MaxOutputTokens)
+	reserved, err := price.Cost(inputReservation, prepared.Parameters.MaxOutputTokens)
 	if err != nil {
 		return RewriteResult{}, err
 	}
@@ -44,7 +48,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 		return RewriteResult{}, err
 	}
 	result, providerErr := rewriter.next.Rewrite(ctx, snapshot, transcriptRevision)
-	actual, costErr := rewriter.price.Cost(result.InputTokens, result.OutputTokens)
+	actual, costErr := price.Cost(result.InputTokens, result.OutputTokens)
 	_, known := knownRewriteTokenTotal(result)
 	if costErr != nil {
 		actual = 0

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"regexp"
 	"strings"
 	"time"
@@ -19,14 +20,20 @@ var (
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 
 type Parameters struct {
-	Model           string   `json:"model"`
-	ReasoningEffort string   `json:"reasoningEffort"`
-	Temperature     *float64 `json:"temperature"`
-	MaxOutputTokens int      `json:"maxOutputTokens"`
-	TimeoutSeconds  int      `json:"timeoutSeconds"`
+	FoundationModel string                  `json:"foundationModel,omitempty"`
+	ModelVersion    string                  `json:"modelVersion,omitempty"`
+	Price           *costcontrol.TokenPrice `json:"price,omitempty"`
+	Model           string                  `json:"model"`
+	ReasoningEffort string                  `json:"reasoningEffort"`
+	Temperature     *float64                `json:"temperature"`
+	MaxOutputTokens int                     `json:"maxOutputTokens"`
+	TimeoutSeconds  int                     `json:"timeoutSeconds"`
 }
 
 func (p Parameters) Validate() error {
+	if p.Price != nil && !p.Price.Valid() {
+		return ErrInvalid
+	}
 	if !identifier.MatchString(p.Model) || p.MaxOutputTokens < 256 || p.MaxOutputTokens > 65536 || p.TimeoutSeconds < 5 || p.TimeoutSeconds > 840 {
 		return ErrInvalid
 	}

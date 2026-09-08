@@ -172,7 +172,12 @@ func (s Store) mutate(ctx context.Context, m Mutation, action string, input any,
 	return r, tx.Commit()
 }
 func (s Store) Draft(ctx context.Context, input DraftInput, m Mutation, now time.Time) (Revision, error) {
-	if input.Policy.Validate(input.Scope) != nil || uuid.Validate(input.BaseVersion) != nil {
+	return s.DraftResolved(ctx, input, input.Policy, m, now)
+}
+
+// DraftResolved records idempotency against the submitted input, while storing verified server metadata.
+func (s Store) DraftResolved(ctx context.Context, input DraftInput, resolved Policy, m Mutation, now time.Time) (Revision, error) {
+	if resolved.Validate(input.Scope) != nil || uuid.Validate(input.BaseVersion) != nil {
 		return Revision{}, ErrInvalid
 	}
 	return s.mutate(ctx, m, "prompts.draft", input, now, func(tx *sql.Tx) (Revision, error) {
@@ -183,7 +188,14 @@ func (s Store) Draft(ctx context.Context, input DraftInput, m Mutation, now time
 		if current.ID != input.BaseVersion {
 			return Revision{}, ErrConflict
 		}
-		r := Revision{ID: uuid.NewString(), Scope: input.Scope, BaseVersion: input.BaseVersion, Policy: input.Policy, CreatedBy: m.Actor, CreatedAt: now.UTC().Truncate(time.Microsecond)}
+		if current.Policy.Journal != nil {
+			for _, style := range current.Policy.Journal.Styles {
+				if _, err := resolved.Journal.Style(style.ID); err != nil {
+					return Revision{}, ErrInvalid
+				}
+			}
+		}
+		r := Revision{ID: uuid.NewString(), Scope: input.Scope, BaseVersion: input.BaseVersion, Policy: resolved, CreatedBy: m.Actor, CreatedAt: now.UTC().Truncate(time.Microsecond)}
 		raw, _ := json.Marshal(r)
 		_, err = tx.ExecContext(ctx, `INSERT INTO prompt_config_revisions(id,document,created_at) VALUES(?,?,?)`, r.ID, raw, r.CreatedAt)
 		return r, err

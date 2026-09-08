@@ -163,6 +163,23 @@ type VoiceSessionTicket struct {
 	Token                 string             `json:"token"`
 }
 
+// WritingStyleCatalog defines model for WritingStyleCatalog.
+type WritingStyleCatalog struct {
+	DefaultStyle string                 `json:"defaultStyle"`
+	Styles       []WritingStyleMetadata `json:"styles"`
+	Version      string                 `json:"version"`
+}
+
+// WritingStyleMetadata defines model for WritingStyleMetadata.
+type WritingStyleMetadata struct {
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Example     string `json:"example"`
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Order       int    `json:"order"`
+}
+
 // RequestIDHeader defines model for RequestIDHeader.
 type RequestIDHeader = openapi_types.UUID
 
@@ -203,6 +220,11 @@ type CreateJournalVoiceSessionParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// GetJournalWritingStylesParams defines parameters for GetJournalWritingStyles.
+type GetJournalWritingStylesParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
 type OrganizeJournalJSONRequestBody = OrganizeRequest
 
@@ -220,6 +242,9 @@ type ServerInterface interface {
 	// StreamJournalVoiceSession Upgrade to the voice protocol with a single-use bearer ticket.
 	// (GET /v1/journal/voice/sessions/{sessionID}/stream)
 	StreamJournalVoiceSession(c *gin.Context, sessionID openapi_types.UUID)
+	// GetJournalWritingStyles Public writing style metadata. No prompts or provider settings.
+	// (GET /v1/journal/writing-styles)
+	GetJournalWritingStyles(c *gin.Context, params GetJournalWritingStylesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -342,6 +367,46 @@ func (siw *ServerInterfaceWrapper) StreamJournalVoiceSession(c *gin.Context) {
 	siw.Handler.StreamJournalVoiceSession(c, sessionID)
 }
 
+// GetJournalWritingStyles operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalWritingStyles(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalWritingStylesParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalWritingStyles(c, params)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -369,6 +434,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/v1/journal/writing-styles", wrapper.GetJournalWritingStyles)
 	router.POST(options.BaseURL+"/v1/journal/voice/sessions", wrapper.CreateJournalVoiceSession)
 	router.GET(options.BaseURL+"/v1/journal/voice/sessions/:sessionID/stream", wrapper.StreamJournalVoiceSession)
 	router.POST(options.BaseURL+"/v1/ai/operations/journal.organize/responses", wrapper.OrganizeJournal)
@@ -619,6 +685,71 @@ func (response StreamJournalVoiceSessiondefaultJSONResponse) VisitStreamJournalV
 	return err
 }
 
+type GetJournalWritingStylesRequestObject struct {
+	Params GetJournalWritingStylesParams
+}
+
+type GetJournalWritingStylesResponseObject interface {
+	VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error
+}
+
+type GetJournalWritingStyles200ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalWritingStyles200JSONResponse struct {
+	Body    WritingStyleCatalog
+	Headers GetJournalWritingStyles200ResponseHeaders
+}
+
+func (response GetJournalWritingStyles200JSONResponse) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalWritingStyles304ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalWritingStyles304Response struct {
+	Headers GetJournalWritingStyles304ResponseHeaders
+}
+
+func (response GetJournalWritingStyles304Response) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetJournalWritingStylesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalWritingStylesdefaultJSONResponse) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
@@ -630,6 +761,9 @@ type StrictServerInterface interface {
 	// StreamJournalVoiceSession Upgrade to the voice protocol with a single-use bearer ticket.
 	// (GET /v1/journal/voice/sessions/{sessionID}/stream)
 	StreamJournalVoiceSession(ctx context.Context, request StreamJournalVoiceSessionRequestObject) (StreamJournalVoiceSessionResponseObject, error)
+	// GetJournalWritingStyles Public writing style metadata. No prompts or provider settings.
+	// (GET /v1/journal/writing-styles)
+	GetJournalWritingStyles(ctx context.Context, request GetJournalWritingStylesRequestObject) (GetJournalWritingStylesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -781,50 +915,81 @@ func (sh *strictHandler) StreamJournalVoiceSession(ctx *gin.Context, sessionID o
 	}
 }
 
+// GetJournalWritingStyles operation middleware
+func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJournalWritingStylesParams) {
+	var request GetJournalWritingStylesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalWritingStyles(ctx, request.(GetJournalWritingStylesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalWritingStyles")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalWritingStylesResponseObject); ok {
+		if err := validResponse.VisitGetJournalWritingStylesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

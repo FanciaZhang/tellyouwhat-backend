@@ -90,28 +90,28 @@ func (e HealthAIDraftRequestOperation) Valid() bool {
 
 // Defines values for HealthAIDraftRequestPolicyReasoningEffort.
 const (
-	Empty   HealthAIDraftRequestPolicyReasoningEffort = ""
-	High    HealthAIDraftRequestPolicyReasoningEffort = "high"
-	Low     HealthAIDraftRequestPolicyReasoningEffort = "low"
-	Max     HealthAIDraftRequestPolicyReasoningEffort = "max"
-	Medium  HealthAIDraftRequestPolicyReasoningEffort = "medium"
-	Minimal HealthAIDraftRequestPolicyReasoningEffort = "minimal"
+	HealthAIDraftRequestPolicyReasoningEffortEmpty   HealthAIDraftRequestPolicyReasoningEffort = ""
+	HealthAIDraftRequestPolicyReasoningEffortHigh    HealthAIDraftRequestPolicyReasoningEffort = "high"
+	HealthAIDraftRequestPolicyReasoningEffortLow     HealthAIDraftRequestPolicyReasoningEffort = "low"
+	HealthAIDraftRequestPolicyReasoningEffortMax     HealthAIDraftRequestPolicyReasoningEffort = "max"
+	HealthAIDraftRequestPolicyReasoningEffortMedium  HealthAIDraftRequestPolicyReasoningEffort = "medium"
+	HealthAIDraftRequestPolicyReasoningEffortMinimal HealthAIDraftRequestPolicyReasoningEffort = "minimal"
 )
 
 // Valid indicates whether the value is a known member of the HealthAIDraftRequestPolicyReasoningEffort enum.
 func (e HealthAIDraftRequestPolicyReasoningEffort) Valid() bool {
 	switch e {
-	case Empty:
+	case HealthAIDraftRequestPolicyReasoningEffortEmpty:
 		return true
-	case High:
+	case HealthAIDraftRequestPolicyReasoningEffortHigh:
 		return true
-	case Low:
+	case HealthAIDraftRequestPolicyReasoningEffortLow:
 		return true
-	case Max:
+	case HealthAIDraftRequestPolicyReasoningEffortMax:
 		return true
-	case Medium:
+	case HealthAIDraftRequestPolicyReasoningEffortMedium:
 		return true
-	case Minimal:
+	case HealthAIDraftRequestPolicyReasoningEffortMinimal:
 		return true
 	default:
 		return false
@@ -247,6 +247,33 @@ func (e OneTimeCodeBatchRequestEnvironment) Valid() bool {
 	}
 }
 
+// Defines values for PromptParametersReasoningEffort.
+const (
+	PromptParametersReasoningEffortDisabled PromptParametersReasoningEffort = "disabled"
+	PromptParametersReasoningEffortHigh     PromptParametersReasoningEffort = "high"
+	PromptParametersReasoningEffortLow      PromptParametersReasoningEffort = "low"
+	PromptParametersReasoningEffortMedium   PromptParametersReasoningEffort = "medium"
+	PromptParametersReasoningEffortMinimal  PromptParametersReasoningEffort = "minimal"
+)
+
+// Valid indicates whether the value is a known member of the PromptParametersReasoningEffort enum.
+func (e PromptParametersReasoningEffort) Valid() bool {
+	switch e {
+	case PromptParametersReasoningEffortDisabled:
+		return true
+	case PromptParametersReasoningEffortHigh:
+		return true
+	case PromptParametersReasoningEffortLow:
+		return true
+	case PromptParametersReasoningEffortMedium:
+		return true
+	case PromptParametersReasoningEffortMinimal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserUpdateRequestRole.
 const (
 	UserUpdateRequestRoleAdmin    UserUpdateRequestRole = "admin"
@@ -267,16 +294,16 @@ func (e UserUpdateRequestRole) Valid() bool {
 
 // Defines values for UserUpdateRequestStatus.
 const (
-	Active   UserUpdateRequestStatus = "active"
-	Disabled UserUpdateRequestStatus = "disabled"
+	UserUpdateRequestStatusActive   UserUpdateRequestStatus = "active"
+	UserUpdateRequestStatusDisabled UserUpdateRequestStatus = "disabled"
 )
 
 // Valid indicates whether the value is a known member of the UserUpdateRequestStatus enum.
 func (e UserUpdateRequestStatus) Valid() bool {
 	switch e {
-	case Active:
+	case UserUpdateRequestStatusActive:
 		return true
-	case Disabled:
+	case UserUpdateRequestStatusDisabled:
 		return true
 	default:
 		return false
@@ -449,6 +476,83 @@ type PasskeyNameRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+// PromptDraft defines model for PromptDraft.
+type PromptDraft struct {
+	BaseVersion string       `json:"baseVersion"`
+	Policy      PromptPolicy `json:"policy"`
+	Scope       string       `json:"scope"`
+}
+
+// PromptJournal defines model for PromptJournal.
+type PromptJournal struct {
+	DefaultStyle string         `json:"defaultStyle"`
+	Organize     PromptOrganize `json:"organize"`
+	Styles       []PromptStyle  `json:"styles"`
+	Voice        PromptVoice    `json:"voice"`
+}
+
+// PromptOrganize defines model for PromptOrganize.
+type PromptOrganize struct {
+	Lite              PromptParameters `json:"lite"`
+	LiteMaxBooks      int              `json:"liteMaxBooks"`
+	LiteMaxCharacters int              `json:"liteMaxCharacters"`
+	LiteMaxTags       int              `json:"liteMaxTags"`
+	Pro               PromptParameters `json:"pro"`
+	Prompt            string           `json:"prompt"`
+}
+
+// PromptParameters defines model for PromptParameters.
+type PromptParameters struct {
+	FoundationModel *string `json:"foundationModel,omitempty"`
+	MaxOutputTokens int     `json:"maxOutputTokens"`
+	Model           string  `json:"model"`
+	ModelVersion    *string `json:"modelVersion,omitempty"`
+	Price           *struct {
+		InputNanosPerMillionTokens  int64 `json:"InputNanosPerMillionTokens"`
+		OutputNanosPerMillionTokens int64 `json:"OutputNanosPerMillionTokens"`
+	} `json:"price,omitempty"`
+	ReasoningEffort PromptParametersReasoningEffort `json:"reasoningEffort"`
+	Temperature     *float32                        `json:"temperature"`
+	TimeoutSeconds  int                             `json:"timeoutSeconds"`
+}
+
+// PromptParametersReasoningEffort defines model for PromptParameters.ReasoningEffort.
+type PromptParametersReasoningEffort string
+
+// PromptPolicy defines model for PromptPolicy.
+type PromptPolicy struct {
+	Journal      *PromptJournal `json:"journal,omitempty"`
+	SystemPrompt string         `json:"systemPrompt"`
+}
+
+// PromptPublication defines model for PromptPublication.
+type PromptPublication struct {
+	BaseVersion  string `json:"baseVersion"`
+	PreviewToken string `json:"previewToken"`
+	Revision     string `json:"revision"`
+	Scope        string `json:"scope"`
+}
+
+// PromptStyle defines model for PromptStyle.
+type PromptStyle struct {
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Example     string `json:"example"`
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Order       int    `json:"order"`
+	Prompt      string `json:"prompt"`
+}
+
+// PromptVoice defines model for PromptVoice.
+type PromptVoice struct {
+	AutomaticPunctuation bool             `json:"automaticPunctuation"`
+	NormalizeNumbers     bool             `json:"normalizeNumbers"`
+	Parameters           PromptParameters `json:"parameters"`
+	Prompt               string           `json:"prompt"`
+	RemoveRepetition     bool             `json:"removeRepetition"`
+}
+
 // SetupRequest defines model for SetupRequest.
 type SetupRequest struct {
 	BootstrapToken string `json:"bootstrapToken"`
@@ -550,6 +654,29 @@ type PublishHealthAIConfigParams struct {
 // GetHealthAIHistoryParams defines parameters for GetHealthAIHistory.
 type GetHealthAIHistoryParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetPromptConfigParams defines parameters for GetPromptConfig.
+type GetPromptConfigParams struct {
+	Scope string `form:"scope" json:"scope"`
+}
+
+// CreatePromptDraftParams defines parameters for CreatePromptDraft.
+type CreatePromptDraftParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListPromptHistoryParams defines parameters for ListPromptHistory.
+type ListPromptHistoryParams struct {
+	Scope  string  `form:"scope" json:"scope"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PublishPromptConfigParams defines parameters for PublishPromptConfig.
+type PublishPromptConfigParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // SubmitAIRollingCommandParams defines parameters for SubmitAIRollingCommand.
@@ -685,6 +812,12 @@ type CreateHealthAIDraftJSONRequestBody = HealthAIDraftRequest
 // PublishHealthAIConfigJSONRequestBody defines body for PublishHealthAIConfig for application/json ContentType.
 type PublishHealthAIConfigJSONRequestBody = HealthAIPublishRequest
 
+// CreatePromptDraftJSONRequestBody defines body for CreatePromptDraft for application/json ContentType.
+type CreatePromptDraftJSONRequestBody = PromptDraft
+
+// PublishPromptConfigJSONRequestBody defines body for PublishPromptConfig for application/json ContentType.
+type PublishPromptConfigJSONRequestBody = PromptPublication
+
 // SubmitAIRollingCommandJSONRequestBody defines body for SubmitAIRollingCommand for application/json ContentType.
 type SubmitAIRollingCommandJSONRequestBody = AIRollingSubmission
 
@@ -780,6 +913,21 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ai/models/{model}/versions)
 	ListAIModelVersions(c *gin.Context, model string)
+
+	// (GET /api/v1/ai/prompts)
+	GetPromptConfig(c *gin.Context, params GetPromptConfigParams)
+
+	// (POST /api/v1/ai/prompts/drafts)
+	CreatePromptDraft(c *gin.Context, params CreatePromptDraftParams)
+
+	// (GET /api/v1/ai/prompts/history)
+	ListPromptHistory(c *gin.Context, params ListPromptHistoryParams)
+
+	// (POST /api/v1/ai/prompts/publish)
+	PublishPromptConfig(c *gin.Context, params PublishPromptConfigParams)
+
+	// (GET /api/v1/ai/prompts/revisions/{revision})
+	GetPromptRevision(c *gin.Context, revision string)
 
 	// (POST /api/v1/ai/rolling/commands)
 	SubmitAIRollingCommand(c *gin.Context, params SubmitAIRollingCommandParams)
@@ -1444,6 +1592,211 @@ func (siw *ServerInterfaceWrapper) ListAIModelVersions(c *gin.Context) {
 	}
 
 	siw.Handler.ListAIModelVersions(c, model)
+}
+
+// GetPromptConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetPromptConfig(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPromptConfigParams
+
+	// ------------- Required query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPromptConfig(c, params)
+}
+
+// CreatePromptDraft operation middleware
+func (siw *ServerInterfaceWrapper) CreatePromptDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePromptDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePromptDraft(c, params)
+}
+
+// ListPromptHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListPromptHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPromptHistoryParams
+
+	// ------------- Required query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope", c.Request.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter scope: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPromptHistory(c, params)
+}
+
+// PublishPromptConfig operation middleware
+func (siw *ServerInterfaceWrapper) PublishPromptConfig(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PublishPromptConfigParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PublishPromptConfig(c, params)
+}
+
+// GetPromptRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetPromptRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "revision" -------------
+	var revision string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPromptRevision(c, revision)
 }
 
 // SubmitAIRollingCommand operation middleware
@@ -2997,6 +3350,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/v1/ai/prompts", wrapper.GetPromptConfig)
+	router.GET(options.BaseURL+"/api/v1/ai/prompts/history", wrapper.ListPromptHistory)
+	router.GET(options.BaseURL+"/api/v1/ai/prompts/revisions/:revision", wrapper.GetPromptRevision)
+	router.POST(options.BaseURL+"/api/v1/ai/prompts/drafts", wrapper.CreatePromptDraft)
+	router.POST(options.BaseURL+"/api/v1/ai/prompts/publish", wrapper.PublishPromptConfig)
 	router.GET(options.BaseURL+"/api/v1/platform/config", wrapper.GetOperationsConfig)
 	router.GET(options.BaseURL+"/api/v1/platform/metrics", wrapper.GetOperationsMetrics)
 	router.GET(options.BaseURL+"/api/v1/platform/config/history", wrapper.ListOperationsHistory)
@@ -3617,6 +3975,203 @@ type ListAIModelVersionsdefaultJSONResponse struct {
 }
 
 func (response ListAIModelVersionsdefaultJSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPromptConfigRequestObject struct {
+	Params GetPromptConfigParams
+}
+
+type GetPromptConfigResponseObject interface {
+	VisitGetPromptConfigResponse(w http.ResponseWriter) error
+}
+
+type GetPromptConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response GetPromptConfig200JSONResponse) VisitGetPromptConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPromptConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetPromptConfigdefaultJSONResponse) VisitGetPromptConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePromptDraftRequestObject struct {
+	Params CreatePromptDraftParams
+	Body   *CreatePromptDraftJSONRequestBody
+}
+
+type CreatePromptDraftResponseObject interface {
+	VisitCreatePromptDraftResponse(w http.ResponseWriter) error
+}
+
+type CreatePromptDraft200JSONResponse struct{ OKJSONResponse }
+
+func (response CreatePromptDraft200JSONResponse) VisitCreatePromptDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePromptDraftdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreatePromptDraftdefaultJSONResponse) VisitCreatePromptDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPromptHistoryRequestObject struct {
+	Params ListPromptHistoryParams
+}
+
+type ListPromptHistoryResponseObject interface {
+	VisitListPromptHistoryResponse(w http.ResponseWriter) error
+}
+
+type ListPromptHistory200JSONResponse struct{ OKJSONResponse }
+
+func (response ListPromptHistory200JSONResponse) VisitListPromptHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPromptHistorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListPromptHistorydefaultJSONResponse) VisitListPromptHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishPromptConfigRequestObject struct {
+	Params PublishPromptConfigParams
+	Body   *PublishPromptConfigJSONRequestBody
+}
+
+type PublishPromptConfigResponseObject interface {
+	VisitPublishPromptConfigResponse(w http.ResponseWriter) error
+}
+
+type PublishPromptConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response PublishPromptConfig200JSONResponse) VisitPublishPromptConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishPromptConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PublishPromptConfigdefaultJSONResponse) VisitPublishPromptConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPromptRevisionRequestObject struct {
+	Revision string `json:"revision"`
+}
+
+type GetPromptRevisionResponseObject interface {
+	VisitGetPromptRevisionResponse(w http.ResponseWriter) error
+}
+
+type GetPromptRevision200JSONResponse struct{ OKJSONResponse }
+
+func (response GetPromptRevision200JSONResponse) VisitGetPromptRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPromptRevisiondefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetPromptRevisiondefaultJSONResponse) VisitGetPromptRevisionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5038,6 +5593,21 @@ type StrictServerInterface interface {
 	// (GET /api/v1/ai/models/{model}/versions)
 	ListAIModelVersions(ctx context.Context, request ListAIModelVersionsRequestObject) (ListAIModelVersionsResponseObject, error)
 
+	// (GET /api/v1/ai/prompts)
+	GetPromptConfig(ctx context.Context, request GetPromptConfigRequestObject) (GetPromptConfigResponseObject, error)
+
+	// (POST /api/v1/ai/prompts/drafts)
+	CreatePromptDraft(ctx context.Context, request CreatePromptDraftRequestObject) (CreatePromptDraftResponseObject, error)
+
+	// (GET /api/v1/ai/prompts/history)
+	ListPromptHistory(ctx context.Context, request ListPromptHistoryRequestObject) (ListPromptHistoryResponseObject, error)
+
+	// (POST /api/v1/ai/prompts/publish)
+	PublishPromptConfig(ctx context.Context, request PublishPromptConfigRequestObject) (PublishPromptConfigResponseObject, error)
+
+	// (GET /api/v1/ai/prompts/revisions/{revision})
+	GetPromptRevision(ctx context.Context, request GetPromptRevisionRequestObject) (GetPromptRevisionResponseObject, error)
+
 	// (POST /api/v1/ai/rolling/commands)
 	SubmitAIRollingCommand(ctx context.Context, request SubmitAIRollingCommandRequestObject) (SubmitAIRollingCommandResponseObject, error)
 
@@ -5580,6 +6150,150 @@ func (sh *strictHandler) ListAIModelVersions(ctx *gin.Context, model string) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(ListAIModelVersionsResponseObject); ok {
 		if err := validResponse.VisitListAIModelVersionsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPromptConfig operation middleware
+func (sh *strictHandler) GetPromptConfig(ctx *gin.Context, params GetPromptConfigParams) {
+	var request GetPromptConfigRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPromptConfig(ctx, request.(GetPromptConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPromptConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetPromptConfigResponseObject); ok {
+		if err := validResponse.VisitGetPromptConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePromptDraft operation middleware
+func (sh *strictHandler) CreatePromptDraft(ctx *gin.Context, params CreatePromptDraftParams) {
+	var request CreatePromptDraftRequestObject
+
+	request.Params = params
+
+	var body CreatePromptDraftJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePromptDraft(ctx, request.(CreatePromptDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePromptDraft")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreatePromptDraftResponseObject); ok {
+		if err := validResponse.VisitCreatePromptDraftResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPromptHistory operation middleware
+func (sh *strictHandler) ListPromptHistory(ctx *gin.Context, params ListPromptHistoryParams) {
+	var request ListPromptHistoryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPromptHistory(ctx, request.(ListPromptHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPromptHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListPromptHistoryResponseObject); ok {
+		if err := validResponse.VisitListPromptHistoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishPromptConfig operation middleware
+func (sh *strictHandler) PublishPromptConfig(ctx *gin.Context, params PublishPromptConfigParams) {
+	var request PublishPromptConfigRequestObject
+
+	request.Params = params
+
+	var body PublishPromptConfigJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishPromptConfig(ctx, request.(PublishPromptConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishPromptConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PublishPromptConfigResponseObject); ok {
+		if err := validResponse.VisitPublishPromptConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPromptRevision operation middleware
+func (sh *strictHandler) GetPromptRevision(ctx *gin.Context, revision string) {
+	var request GetPromptRevisionRequestObject
+
+	request.Revision = revision
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPromptRevision(ctx, request.(GetPromptRevisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPromptRevision")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetPromptRevisionResponseObject); ok {
+		if err := validResponse.VisitGetPromptRevisionResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -6590,61 +7304,71 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"T+IN3c3N5v8CAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -15,6 +15,64 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/ai/prompts:
+    get:
+      operationId: getPromptConfig
+      tags: [Administration]
+      parameters:
+        - { name: scope, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/history:
+    get:
+      operationId: listPromptHistory
+      tags: [Administration]
+      parameters:
+        - { name: scope, in: query, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/revisions/{revision}:
+    get:
+      operationId: getPromptRevision
+      tags: [Administration]
+      parameters:
+        - { name: revision, in: path, required: true, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/drafts:
+    post:
+      operationId: createPromptDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromptDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/publish:
+    post:
+      operationId: publishPromptConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromptPublication" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/platform/config:
     get:
       operationId: getOperationsConfig
@@ -656,6 +714,14 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
   schemas:
+    PromptParameters: {"type": "object", "additionalProperties": false, "required": ["model", "reasoningEffort", "temperature", "maxOutputTokens", "timeoutSeconds"], "properties": {"model": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"}, "reasoningEffort": {"type": "string", "enum": ["disabled", "minimal", "low", "medium", "high"]}, "temperature": {"type": ["number", "null"], "minimum": 0, "maximum": 2}, "maxOutputTokens": {"type": "integer", "minimum": 256, "maximum": 65536}, "timeoutSeconds": {"type": "integer", "minimum": 5, "maximum": 840}, "foundationModel": {"type": "string"}, "modelVersion": {"type": "string"}, "price": {"type": "object", "additionalProperties": false, "required": ["InputNanosPerMillionTokens", "OutputNanosPerMillionTokens"], "properties": {"InputNanosPerMillionTokens": {"type": "integer", "format": "int64", "minimum": 1}, "OutputNanosPerMillionTokens": {"type": "integer", "format": "int64", "minimum": 1}}}}}
+    PromptStyle: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "example", "order", "enabled", "prompt"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "example": {"type": "string"}, "order": {"type": "integer"}, "enabled": {"type": "boolean"}, "prompt": {"type": "string"}}}
+    PromptOrganize: {"type": "object", "additionalProperties": false, "required": ["prompt", "lite", "pro", "liteMaxCharacters", "liteMaxBooks", "liteMaxTags"], "properties": {"prompt": {"type": "string"}, "lite": {"$ref": "#/components/schemas/PromptParameters"}, "pro": {"$ref": "#/components/schemas/PromptParameters"}, "liteMaxCharacters": {"type": "integer"}, "liteMaxBooks": {"type": "integer"}, "liteMaxTags": {"type": "integer"}}}
+    PromptVoice: {"type": "object", "additionalProperties": false, "required": ["prompt", "removeRepetition", "parameters", "automaticPunctuation", "normalizeNumbers"], "properties": {"prompt": {"type": "string"}, "removeRepetition": {"type": "boolean"}, "parameters": {"$ref": "#/components/schemas/PromptParameters"}, "automaticPunctuation": {"type": "boolean"}, "normalizeNumbers": {"type": "boolean"}}}
+    PromptJournal: {"type": "object", "additionalProperties": false, "required": ["organize", "voice", "styles", "defaultStyle"], "properties": {"organize": {"$ref": "#/components/schemas/PromptOrganize"}, "voice": {"$ref": "#/components/schemas/PromptVoice"}, "styles": {"type": "array", "items": {"$ref": "#/components/schemas/PromptStyle"}}, "defaultStyle": {"type": "string"}}}
+    PromptPolicy: {"type": "object", "additionalProperties": false, "required": ["systemPrompt"], "properties": {"systemPrompt": {"type": "string"}, "journal": {"$ref": "#/components/schemas/PromptJournal"}}}
+    PromptDraft: {"type": "object", "additionalProperties": false, "required": ["scope", "baseVersion", "policy"], "properties": {"scope": {"type": "string"}, "baseVersion": {"type": "string"}, "policy": {"$ref": "#/components/schemas/PromptPolicy"}}}
+    PromptPublication: {"type": "object", "additionalProperties": false, "required": ["scope", "revision", "baseVersion", "previewToken"], "properties": {"scope": {"type": "string"}, "revision": {"type": "string"}, "baseVersion": {"type": "string"}, "previewToken": {"type": "string"}}}
     OperationsAppPolicy:
       type: object
       additionalProperties: false
