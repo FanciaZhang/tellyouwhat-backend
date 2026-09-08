@@ -29,14 +29,14 @@ func ApplyRevision(s Snapshot, r Revision) ([]Block, error) {
 			blocks = slices.Insert(blocks, index+1, Block{ID: p.ID, Text: p.Text})
 		}
 	}
-	// Earlier transcription cannot discard a still-present manual replacement.
+	// Earlier transcription cannot restore text explicitly replaced or deleted by a manual edit.
 	for _, edit := range s.ManualEdits {
-		if edit.After == "" || (!edit.PendingEarlierSpeech && edit.TranscriptOffset < utf8.RuneCountInString(s.Transcript)) {
+		if edit.Before == "" || (!edit.PendingEarlierSpeech && edit.TranscriptOffset < utf8.RuneCountInString(s.Transcript)) {
 			continue
 		}
 		old := slices.IndexFunc(s.Blocks, func(b Block) bool { return b.ID == edit.BlockID })
 		next := slices.IndexFunc(blocks, func(b Block) bool { return b.ID == edit.BlockID })
-		if old >= 0 && next >= 0 && strings.Contains(s.Blocks[old].Text, edit.After) && !strings.Contains(blocks[next].Text, edit.After) {
+		if old >= 0 && next >= 0 && !strings.Contains(s.Blocks[old].Text, edit.Before) && strings.Contains(blocks[next].Text, edit.Before) && (edit.After == "" || !strings.Contains(blocks[next].Text, edit.After)) {
 			return nil, ErrConflict
 		}
 	}

@@ -169,6 +169,7 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			return p, ErrInvalid
 		}
 		seen[s.ID] = true
+		judgeInputBytes := 16000
 		for _, candidate := range candidates {
 			r := candidate.Revision
 			if r.Scope != "journal" || r.Policy.Validate("journal") != nil {
@@ -195,7 +196,7 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			}
 			extra := 0
 			if len(s.Audio) > 0 {
-				extra = 4 * voice.MaxContextCharacters
+				extra = 8 * voice.MaxContextCharacters
 			}
 			cost, err := parameters.Price.Cost(len(raw)+1024+extra, parameters.MaxOutputTokens)
 			if err != nil {
@@ -206,6 +207,17 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			}
 			p.ReservedNanos += cost
 			p.MaximumCalls++
+
+			// The judge receives the source nested inside its own JSON input. Validated
+			// output sizes use the production document limits, including JSON escaping.
+			outputCharacters := 10000
+			styleBytes := 0
+			if s.Kind == "voice" {
+				outputCharacters = voice.MaxContextCharacters + 4096
+				style, _ := r.Policy.Journal.Style(string(s.Voice.WritingStyle))
+				styleBytes = len(style.Prompt)
+			}
+			judgeInputBytes += 2*len(raw) + 8*outputCharacters + 8*styleBytes + 2*extra
 			p.Requests = append(p.Requests, raw)
 		}
 		if len(s.Audio) > 0 {
@@ -219,9 +231,8 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			p.ReservedNanos += cost * int64(len(candidates))
 			p.MaximumCalls += len(candidates)
 		}
-		// Provider responses are capped at one MiB each; the judge can receive both outputs plus the source.
-		encoded, _ := json.Marshal(s)
-		cost, err := judge.Price.Cost(len(encoded)+(1<<20)*len(candidates)+16000, judge.MaxOutputTokens)
+		// Only production-validated outputs reach the judge.
+		cost, err := judge.Price.Cost(judgeInputBytes, judge.MaxOutputTokens)
 		if err != nil {
 			return p, err
 		}
