@@ -4,6 +4,7 @@ package voice
 
 import (
 	"errors"
+	"regexp"
 	"time"
 	"unicode/utf8"
 
@@ -88,8 +89,8 @@ type Frame struct {
 }
 
 func (s Snapshot) Validate() error {
-	if _, err := s.WritingStyle.instructions(); err != nil {
-		return err
+	if s.WritingStyle != "" && !styleID.MatchString(string(s.WritingStyle)) {
+		return ErrInvalid
 	}
 	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 || len(s.MediaOnlyBlockIDs) > 1024 || len(s.ManualEdits) > 24 {
 		return ErrInvalid
@@ -213,3 +214,5 @@ func Period(anchor, now time.Time) (time.Time, time.Time) {
 	}
 	return start, at(n + 1)
 }
+
+var styleID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)

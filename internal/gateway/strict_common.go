@@ -143,6 +143,9 @@ func (server *Server) apiValidateAIRequest(
 	if failure != nil {
 		return contracts.Request{}, nil, Principal{}, false, failure
 	}
+	if failure := server.freezeHealthPrompt(&artifact); failure != nil {
+		return contracts.Request{}, nil, Principal{}, false, failure
+	}
 	return artifact.FreezeOutputBudget(), rawRequestBody(strictGinContext(ctx)), principal, managed, nil
 }
 

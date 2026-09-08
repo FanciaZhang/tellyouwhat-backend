@@ -34,7 +34,13 @@ const (
 	OperationHealthBehaviorAnalysis  Operation = "health_behavior_analysis"
 )
 
+type SystemPrompt struct {
+	Version string `json:"version"`
+	Text    string `json:"text"`
+}
+
 type Request struct {
+	SystemPrompt       *SystemPrompt              `json:"-"`
 	RequestID          string                     `json:"requestID"`
 	Operation          Operation                  `json:"operation"`
 	ContractVersion    string                     `json:"contractVersion"`
@@ -264,7 +270,11 @@ func IsMealRecognitionOperation(operation Operation) bool {
 // counting UTF-8 bytes one-for-one, then adds a conservative output reservation
 // and modality budget. Actual provider usage is reconciled after completion.
 func ReservationTokens(request Request) int {
-	reserved := len(request.Prompt) + len(request.ResponseSchema) + request.OutputTokenReservation() + 1024
+	systemBytes := 0
+	if request.SystemPrompt != nil {
+		systemBytes = len(request.SystemPrompt.Text)
+	}
+	reserved := systemBytes + len(request.Prompt) + len(request.ResponseSchema) + request.OutputTokenReservation() + 1024
 	for _, item := range request.Media {
 		switch item.Kind {
 		case "audio":

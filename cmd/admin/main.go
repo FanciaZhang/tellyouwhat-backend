@@ -29,6 +29,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	arkprovider "github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
@@ -135,8 +136,20 @@ func run(logger *slog.Logger) error {
 		ai.Rollouts = &airollout.Service{Configurations: ai.Store, Compatibility: &airollout.Compatibility{Probe: probe}, Store: airollout.Store{DB: database}, Cloud: client, Endpoints: endpoints, Shared: shared, WritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true")}
 
 	}
+	background, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	promptDefaults, err := platformconfig.LoadPromptDefaults()
+	if err != nil {
+		return err
+	}
+	prompts := promptconfig.Store{DB: database}
+	promptCache, err := promptconfig.Start(background, prompts, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") })
+	if err != nil {
+		return err
+	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		AI:                      ai,
+		AI:      ai,
+		Prompts: &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,
 		OperationsWritesEnabled: strings.EqualFold(os.Getenv("PLATFORM_OPERATIONS_WRITES_ENABLED"), "true"),
@@ -154,8 +167,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	background, stopBackground := context.WithCancel(context.Background())
-	defer stopBackground()
 	if ai != nil {
 		go ai.Rollouts.Run(background)
 	}

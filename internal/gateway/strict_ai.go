@@ -223,6 +223,9 @@ func (server *Server) EnqueueAIJob(
 		}
 		artifact = resolved
 	}
+	if failure := server.freezeHealthPrompt(&artifact); failure != nil {
+		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+	}
 	job, err := server.jobs.EnqueueWithID(ctx, principalForQuota(principal, managed), binding.JobID, artifact, binding.BodyDigest)
 	if err != nil {
 		if errors.Is(err, jobs.ErrIdempotencyConflict) {

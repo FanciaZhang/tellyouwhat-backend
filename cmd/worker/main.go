@@ -18,6 +18,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -51,6 +52,13 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
+		return err
+	}
+	promptDefaults, err := config.LoadPromptDefaults()
+	if err != nil {
+		return err
+	}
+	if _, err = promptconfig.Start(ctx, promptconfig.Store{DB: database}, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") }); err != nil {
 		return err
 	}
 	costController, err := costcontrol.New(mysqlstore.NewCostControlStore(database), platform.AICost.Limits, time.Now)

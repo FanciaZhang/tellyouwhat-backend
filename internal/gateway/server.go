@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"net"
 	"net/http"
 	"time"
@@ -133,6 +134,7 @@ type PolicyResolver interface {
 type Dependencies struct {
 	Operations                 platformops.Reader
 	ExecutionPolicies          PolicyResolver
+	PromptConfig               *promptconfig.Cache
 	Voice                      *voice.Service
 	VoiceEntitlements          entitlement.Store
 	App                        appregistry.App
@@ -170,6 +172,7 @@ type Dependencies struct {
 type Server struct {
 	operations                 platformops.Reader
 	executionPolicies          PolicyResolver
+	promptConfig               *promptconfig.Cache
 	voice                      *voice.Service
 	voiceEntitlements          entitlement.Store
 	app                        appregistry.App
@@ -234,6 +237,7 @@ func New(dependencies Dependencies) *Server {
 	server := &Server{
 		operations:        dependencies.Operations,
 		executionPolicies: dependencies.ExecutionPolicies,
+		promptConfig:      dependencies.PromptConfig,
 		voice:             dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,

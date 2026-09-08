@@ -9,6 +9,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/airollout"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"log/slog"
 	"net/http"
@@ -59,6 +60,7 @@ type entitlementRepository interface {
 }
 
 type sharedStorage struct {
+	prompts   *promptconfig.Cache
 	database  *sql.DB
 	redis     *redis.Client
 	cipher    *mysqlstore.PayloadCipher
@@ -66,6 +68,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	prompts                    *promptconfig.Cache
 	operations                 platformops.Reader
 	executionPolicies          gateway.PolicyResolver
 	attemptPrices              providerapi.AtomicReservation
@@ -130,6 +133,14 @@ func run(logger *slog.Logger) error {
 		if err = (platformops.Store{DB: shared.database}).Initialize(ctx, defaults, time.Now()); err != nil {
 			return err
 		}
+		promptDefaults, err := config.LoadPromptDefaults()
+		if err != nil {
+			return err
+		}
+		shared.prompts, err = promptconfig.Start(ctx, promptconfig.Store{DB: shared.database}, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") })
+		if err != nil {
+			return err
+		}
 	}
 	costController, err := newAICostController(platform, shared)
 	if err != nil {
@@ -141,6 +152,7 @@ func run(logger *slog.Logger) error {
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
 		storage := storageForApp(platform, shared, appConfig)
+		storage.prompts = shared.prompts
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -363,7 +375,8 @@ func buildAppHandler(
 		Quota: storage.limiter, QuotaReader: storage.quotaReader,
 		Enrollment: enrollment, Activator: activator, ProductionEntitlement: productionSync,
 		AppStoreNotifications: notifications, Usage: storage.usage, Readiness: readiness,
-		Privacy: privacyService, Consent: privacyService, Media: mediaService,
+		PromptConfig: storage.prompts,
+		Privacy:      privacyService, Consent: privacyService, Media: mediaService,
 		ManagedProduct: gateway.ManagedProduct{
 			ProductID: app.ManagedAIProductID, BillingPeriod: appConfig.Product.BillingPeriod,
 			DailyTokenLimit: appConfig.Quota.DailyTokensPerTransaction, MonthlyTokenLimit: appConfig.Quota.MonthlyTokensPerTransaction,
@@ -430,23 +443,26 @@ func buildAppHandler(
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
-		}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second})
+		}, &http.Client{})
 		if costController != nil {
 			model = journalprovider.NewBudgetedClient(model, costController, string(app.ID), platform.AICost.JournalArk)
 		}
 		organizer := &journalservice.Organizer{
-			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
+			Model: model, Config: storage.prompts, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
 			AnalysisVersion: "journal-organize-2026-08-31",
 		}
 		if appConfig.VoiceEnabled {
 			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {
 				return nil, errors.New("voice requires speech credentials, model, and a 32-byte capability secret")
 			}
-			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR}
+			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR, Prompts: storage.prompts}
 			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel}
 			if costController != nil {
 				speech = voice.NewBudgetedSpeech(speech, costController, string(app.ID), platform.AICost.JournalSpeech)
 				rewriter = voice.NewBudgetedRewriter(rewriter, costController, string(app.ID), platform.AICost.JournalArk)
+			}
+			if storage.prompts != nil {
+				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
 			}
 			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {

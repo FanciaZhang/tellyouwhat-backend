@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
@@ -17,9 +19,11 @@ var ErrRefusal = errors.New("model refused the request")
 var ErrInvalidResult = errors.New("model returned an invalid structured result")
 
 type Result struct {
-	Value        contracts.ModelResult
-	InputTokens  int
-	OutputTokens int
+	Value         contracts.ModelResult
+	InputTokens   int
+	OutputTokens  int
+	Model         string `json:"model"`
+	ConfigVersion string `json:"configVersion"`
 }
 
 type Config struct{ BaseURL, APIKey, LiteModel, ProModel string }
@@ -50,36 +54,13 @@ type modelInput struct {
 }
 
 func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest, pro bool) (Result, error) {
-	model := c.config.LiteModel
-	if pro {
-		model = c.config.ProModel
-	}
-	aliases := map[string]string{}
-	books := make([]aliasedBook, 0, len(request.Books))
-	for i, b := range request.Books {
-		alias := fmt.Sprintf("b%d", i+1)
-		aliases[alias] = b.ID
-		books = append(books, aliasedBook{alias, b.Name, b.Description, b.ContainsEntry})
-	}
-	input, err := json.Marshal(modelInput{
-		Title: request.Title, Body: request.Body,
-		ExistingTags: request.ExistingTags, RejectedTagNames: request.RejectedTagNames,
-		Books: books,
-	})
+	prepared, aliases, err := PrepareOrganize(ctx, request, pro, c.config)
 	if err != nil {
-		return Result{}, fmt.Errorf("encode model input: %w", err)
+		return Result{}, err
 	}
-	payload := map[string]any{
-		"model": model, "store": false,
-		"thinking":     map[string]any{"type": "disabled"},
-		"instructions": "你为私人手记生成简洁、原文明示的标签，并推荐已有手记册或建议新手记册。不得推断疾病、诊断、政治立场或其他未明示敏感属性。不得返回 rejectedTagNames 中的标签。已有手记册只能返回输入中的别名。只输出符合 schema 的 JSON。",
-		"input":        string(input),
-		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return Result{}, fmt.Errorf("encode Responses API request: %w", err)
-	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(prepared.Parameters.TimeoutSeconds)*time.Second)
+	defer cancel()
+	encoded := prepared.Body
 	url := strings.TrimRight(c.config.BaseURL, "/") + "/responses"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(encoded))
 	if err != nil {
@@ -104,6 +85,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	}
 	var envelope struct {
 		Status string `json:"status"`
+		Model  string `json:"model"`
 		Output []struct {
 			Type    string                        `json:"type"`
 			Content []struct{ Type, Text string } `json:"content"`
@@ -116,7 +98,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return Result{}, err
 	}
-	metered := Result{InputTokens: envelope.Usage.InputTokens, OutputTokens: envelope.Usage.OutputTokens}
+	metered := Result{Model: envelope.Model, ConfigVersion: prepared.Version, InputTokens: envelope.Usage.InputTokens, OutputTokens: envelope.Usage.OutputTokens}
 	if envelope.Status != "" && envelope.Status != "completed" {
 		return metered, fmt.Errorf("%w: provider response status %q", ErrInvalidResult, envelope.Status)
 	}
@@ -162,4 +144,52 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	}
 	metered.Value = result
 	return metered, nil
+}
+
+type PreparedOrganize struct {
+	Body       json.RawMessage         `json:"body"`
+	Parameters promptconfig.Parameters `json:"parameters"`
+	Version    string                  `json:"version"`
+}
+
+func PrepareOrganize(ctx context.Context, request contracts.OrganizeRequest, pro bool, defaults Config) (PreparedOrganize, map[string]string, error) {
+	settings := promptconfig.Defaults(defaults.LiteModel, defaults.ProModel, defaults.ProModel, 60)["journal"].Journal.Organize
+	version := "seed"
+	if r, ok := promptconfig.FromContext(ctx); ok {
+		settings = r.Policy.Journal.Organize
+		version = r.ID
+	}
+	parameters := settings.Lite
+	if pro {
+		parameters = settings.Pro
+	}
+	aliases := map[string]string{}
+	books := make([]aliasedBook, 0, len(request.Books))
+	for i, b := range request.Books {
+		alias := fmt.Sprintf("b%d", i+1)
+		aliases[alias] = b.ID
+		books = append(books, aliasedBook{alias, b.Name, b.Description, b.ContainsEntry})
+	}
+	input, err := json.Marshal(modelInput{
+		Title: request.Title, Body: request.Body,
+		ExistingTags: request.ExistingTags, RejectedTagNames: request.RejectedTagNames,
+		Books: books,
+	})
+	if err != nil {
+		return PreparedOrganize{}, nil, fmt.Errorf("encode model input: %w", err)
+	}
+	payload := map[string]any{
+		"store":        false,
+		"thinking":     map[string]any{"type": "disabled"},
+		"instructions": settings.Prompt,
+		"input":        string(input),
+		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},
+	}
+	parameters.Apply(payload)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return PreparedOrganize{}, nil, fmt.Errorf("encode Responses API request: %w", err)
+	}
+
+	return PreparedOrganize{Body: encoded, Parameters: parameters, Version: version}, aliases, nil
 }

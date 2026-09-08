@@ -23,6 +23,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
 const (
@@ -51,6 +52,8 @@ type OfferManager interface {
 type Config struct {
 	Billing                 *cloudbilling.Cache
 	Operations              *platformops.Store
+	Prompts                 *promptconfig.Store
+	PromptCache             *promptconfig.Cache
 	OperationsWritesEnabled bool
 	AI                      *AIConfig
 	PreviewSigningKey       []byte

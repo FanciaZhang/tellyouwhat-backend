@@ -2,7 +2,7 @@ package voice
 
 import (
 	"context"
-	"encoding/json"
+
 	"math"
 	"sync"
 	"time"
@@ -30,12 +30,12 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if err := snapshot.Validate(); err != nil {
 		return RewriteResult{}, err
 	}
-	encoded, err := json.Marshal(map[string]any{"document": snapshot, "transcriptRevision": transcriptRevision})
+	prepared, err := PrepareRewrite(ctx, snapshot, transcriptRevision, "")
 	if err != nil {
 		return RewriteResult{}, err
 	}
-	inputReservation := len(encoded) + len(rewriteInstructions) + 4_096
-	reserved, err := rewriter.price.Cost(inputReservation, voiceRewriteOutputReservationTokens)
+	inputReservation := len(prepared.Body) + 1024
+	reserved, err := rewriter.price.Cost(inputReservation, prepared.Parameters.MaxOutputTokens)
 	if err != nil {
 		return RewriteResult{}, err
 	}
@@ -50,7 +50,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 		actual = 0
 		known = false
 	}
-	settleCost(ctx, lease, actual, known, costcontrol.Outcome{Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
+	settleCost(ctx, lease, actual, known, costcontrol.Outcome{Model: result.Model, Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
 	return result, providerErr
 }
 
