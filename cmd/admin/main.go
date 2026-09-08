@@ -128,11 +128,12 @@ func run(logger *slog.Logger) error {
 
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		AI:                ai,
-		Operations:        &ops,
-		PreviewSigningKey: configuration.previewSigningKey,
-		WritesEnabled:     configuration.writesEnabled,
-		Apps:              adminApps,
+		AI:                      ai,
+		Operations:              &ops,
+		OperationsWritesEnabled: strings.EqualFold(os.Getenv("PLATFORM_OPERATIONS_WRITES_ENABLED"), "true"),
+		PreviewSigningKey:       configuration.previewSigningKey,
+		WritesEnabled:           configuration.writesEnabled,
+		Apps:                    adminApps,
 		Readiness: func(ctx context.Context) error {
 			if err := database.PingContext(ctx); err != nil {
 				return err

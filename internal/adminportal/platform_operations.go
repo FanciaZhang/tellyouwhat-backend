@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
@@ -26,7 +27,7 @@ func (s *Server) operationsAccess(c *gin.Context, write, reauth bool) (adminauth
 		writeFailure(c.Writer, 503, "operations_unavailable", "服务管理尚未配置")
 		return auth, false
 	}
-	if write && !s.config.WritesEnabled {
+	if write && !s.config.OperationsWritesEnabled {
 		writeFailure(c.Writer, 503, "writes_disabled", "管理写操作尚未启用")
 		return auth, false
 	}
@@ -62,7 +63,7 @@ func (s *Server) GetOperationsConfig(c *gin.Context) {
 		operationsFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"current": r, "writesEnabled": s.config.WritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
+	writeJSON(c.Writer, 200, map[string]any{"current": r, "freeSessionReservationTokens": contracts.MaxFreeRecognitionSessionReservationTokens, "writesEnabled": s.config.OperationsWritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
 }
 func (s *Server) GetOperationsMetrics(c *gin.Context) {
 	if _, ok := s.operationsAccess(c, false, false); !ok {
@@ -168,7 +169,7 @@ func (s *Server) GetOperationsRevision(c *gin.Context, revision string) {
 		operationsFailure(c, err)
 		return
 	}
-	canPublish := r.PublishedAt == nil && r.BaseVersion == current.ID && s.config.WritesEnabled
+	canPublish := r.PublishedAt == nil && r.BaseVersion == current.ID && s.config.OperationsWritesEnabled
 	expires := s.now().Add(5 * time.Minute)
 	token := ""
 	if canPublish {

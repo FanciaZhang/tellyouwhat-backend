@@ -33,7 +33,7 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 - `cmd/gateway`：公开 API；先按 Host 选 App，再组合 Platform 与对应 App 的生成路由。
 - `cmd/worker`：Health 加密异步 AI 任务；内部请求绑定 App ID 与 Job ID，并由 Worker OpenAPI IDL 生成 strict Gin 路由。
-- `cmd/admin`：Passkey 登录、管理员/运营角色、人员与 App Store Connect Offer 管理；全部 API 路由由 Admin OpenAPI IDL 生成。
+- `cmd/admin`：Passkey 登录、管理员/运营角色、人员、App Store Connect Offer、AI 配置及[费用与运行管理](docs/modules/platform-operations.md)；全部 API 路由由 Admin OpenAPI IDL 生成。
 - `cmd/adminctl`：创建首位管理员和服务器侧应急恢复链接。
 - `cmd/migrate`：MySQL 8.4 基线 schema，包含 Health 与 Journal 注册项。
 - `cmd/maintenance`：按保留期清理临时媒体、任务、幂等和用量数据。

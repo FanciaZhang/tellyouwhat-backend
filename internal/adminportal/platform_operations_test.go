@@ -53,7 +53,7 @@ func TestOperationsHTTPPublicationLifecycle(t *testing.T) {
 		}
 	}
 	put()
-	s := &Server{auth: auth, now: func() time.Time { return now }, config: Config{Operations: store, WritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
+	s := &Server{auth: auth, now: func() time.Time { return now }, config: Config{Operations: store, OperationsWritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
 	router := gin.New()
 	router.Use(limitAdminRequestBody())
 	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: s, Service: auth})
@@ -93,9 +93,9 @@ func TestOperationsHTTPPublicationLifecycle(t *testing.T) {
 	policy.MonthlyBudgetNanos *= 2
 	input := platformops.DraftInput{BaseVersion: current.ID, Policy: policy}
 	check(call("POST", root+"/config/drafts", input, true, false, uuid.NewString()), 403)
-	s.config.WritesEnabled = false
+	s.config.OperationsWritesEnabled = false
 	check(call("POST", root+"/config/drafts", input, true, true, uuid.NewString()), 503)
-	s.config.WritesEnabled = true
+	s.config.OperationsWritesEnabled = true
 	check(call("POST", root+"/config/drafts", input, true, true, ""), 400)
 	session.ReauthenticatedAt = time.Time{}
 	put()

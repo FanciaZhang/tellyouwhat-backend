@@ -48,13 +48,14 @@ type OfferManager interface {
 }
 
 type Config struct {
-	Operations        *platformops.Store
-	AI                *AIConfig
-	PreviewSigningKey []byte
-	WritesEnabled     bool
-	Apps              []AdminApp
-	Readiness         func(context.Context) error
-	HTTPMiddleware    []gin.HandlerFunc
+	Operations              *platformops.Store
+	OperationsWritesEnabled bool
+	AI                      *AIConfig
+	PreviewSigningKey       []byte
+	WritesEnabled           bool
+	Apps                    []AdminApp
+	Readiness               func(context.Context) error
+	HTTPMiddleware          []gin.HandlerFunc
 }
 
 type AdminApp struct {

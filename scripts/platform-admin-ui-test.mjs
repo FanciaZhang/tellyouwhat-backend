@@ -1,0 +1,53 @@
+// Browser acceptance of service configuration under the production CSP.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import http from 'node:http';
+import path from 'node:path';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve('internal/adminui/static');
+const server=http.createServer(async(req,res)=>{res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");try{const name=req.url==='/'?'index.html':req.url;const content=await fs.readFile(path.join(root,name));res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');res.end(content);}catch{res.writeHead(404);res.end();}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
+const context=await browser.newContext({viewport:{width:1280,height:1000}}),page=await context.newPage(),errors=[];
+const operations={health:['voice_transcription','meal_photo_capture','hydration_cup_estimate','meal_text_capture','meal_decision','diet_analysis','health_nutrition_analysis','health_behavior_analysis'],journal:['journal.organize','journal.voice']};
+const policy={monthlyBudgetNanos:100e9,maxConcurrent:4,budgetWarningPercent:80,errorWarningPercent:20,slowWarningMilliseconds:60000,minimumSamples:20,apps:{health:{monthlyBudgetNanos:0,dailyTokens:300000,monthlyTokens:5000000,freeDailyTokens:6000000,freeMonthlyTokens:180000000,freeDailySessions:3,voicePeriodMinutes:0,paused:false,pausedOperations:[]},journal:{monthlyBudgetNanos:0,dailyTokens:300000,monthlyTokens:5000000,freeDailyTokens:0,freeMonthlyTokens:0,freeDailySessions:0,voicePeriodMinutes:120,paused:false,pausedOperations:[]}}};
+let current={id:'initial',baseVersion:'',policy:structuredClone(policy),createdAt:new Date().toISOString(),publishedAt:new Date().toISOString()},revisions=[current],writes=0,conflict=false,metricsFail=false;
+const metrics={asOf:new Date().toISOString(),monthStart:'2026-09-01T00:00:00Z',windowStart:new Date(Date.now()-864e5).toISOString(),costs:[{appID:'health',settledNanos:58e9,reservedNanos:10e9,unknownNanos:13e9},{appID:'journal',settledNanos:8e9,reservedNanos:1e9,unknownNanos:0}],activity:[{appID:'health',operation:'meal_photo_capture',model:'doubao-seed-2-0-mini · 260428',calls:102,succeeded:99,failed:1,unobserved:2,averageMilliseconds:5300,inputTokens:260000,outputTokens:35000},{appID:'journal',operation:'journal.organize.pro',model:'',calls:20,succeeded:14,failed:6,unobserved:0,averageMilliseconds:61000,inputTokens:5800,outputTokens:900}],queues:[{appID:'health',operation:'meal_photo_capture',status:'queued',count:2,oldestSeconds:190}],rejections:[{appID:'health',operation:'meal_photo_capture',reason:'quota',count:3}]};
+await page.addInitScript(()=>{window.cspFailures=[];document.addEventListener('securitypolicyviolation',e=>window.cspFailures.push(e.violatedDirective));});
+page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+await page.route('**/api/**',async route=>{const req=route.request(),p=new URL(req.url()).pathname;let data={},status=200;
+ if(p==='/api/v1/session'){status=401;data={error:{message:'login'}};}
+ else if(p==='/api/v1/platform/config')data={current,operations,writesEnabled:true,freeSessionReservationTokens:1000000};
+ else if(p==='/api/v1/platform/metrics'){if(metricsFail){status=503;data={error:{message:'暂时无法读取统计'}};}else data=metrics;}
+ else if(p.endsWith('/history'))data={revisions:[...revisions].reverse()};
+ else if(p.endsWith('/drafts')){const body=req.postDataJSON();if(body.baseVersion!==current.id){status=409;data={error:{code:'operations_conflict',message:'配置已变化'}};}else{data={...body,id:`draft-${revisions.length}`,createdAt:new Date().toISOString()};revisions.push(data);}}
+ else if(p.includes('/revisions/')){const r=revisions.find(r=>r.id===p.split('/').at(-1));data={revision:r,before:current.policy,after:r.policy,canPublish:r.baseVersion===current.id&&!r.publishedAt,previewToken:'signed-preview',expiresAt:new Date(Date.now()+300000).toISOString()};}
+ else if(p.endsWith('/publish')){const body=req.postDataJSON();if(conflict){status=409;data={error:{message:'预览已过期，请重新查看后再发布'}};conflict=false;}else{writes++;await new Promise(r=>setTimeout(r,100));current=revisions.find(r=>r.id===body.revision);current.publishedAt=new Date().toISOString();data=current;}}
+ else {status=404;data={error:{message:'unhandled fixture '+p}};}
+ await route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
+});
+async function heading(name){await page.getByRole('heading',{name,exact:true}).waitFor();await page.waitForFunction(()=>!platform.busy);}
+async function tab(name){await page.getByRole('tab',{name,exact:true}).click();}
+async function overflow(){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal page overflow');}
+async function screenshot(name){if(process.env.PLATFORM_UI_SCREENSHOT_DIR){await fs.mkdir(process.env.PLATFORM_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLATFORM_UI_SCREENSHOT_DIR,name+'.png'),fullPage:true});}}
+try {
+ await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'networkidle'});
+ await page.evaluate(async()=>{state.user={id:'fixture',role:'admin'};state.csrf='fixture';window.passkeyChecks=0;reauthenticate=async()=>{window.passkeyChecks++;};$('#auth').classList.add('hidden');$('#workspace').classList.remove('hidden');for(const id of ['platform','ai','people'])$('#'+id+'-tab').classList.remove('hidden');await showSection('platform');});
+ await heading('服务管理');assert.equal(await page.locator('.ops-costs .metric').count(),3);assert.ok(await page.locator('#ops-content').innerText().then(t=>t.includes('需要留意')));await screenshot('overview-desktop');
+ await tab('额度设置');await page.getByRole('button',{name:'调整项目设置',exact:true}).click();
+ current={...current,id:'concurrent-version',policy:{...current.policy,maxConcurrent:7}};revisions.push(current);
+ const input=page.locator('[name="monthlyBudgetNanos"]');await input.fill('');await input.evaluate(el=>window.editInput=el);await input.pressSequentially('250');assert.equal(await input.inputValue(),'250');assert.equal(await input.evaluate(el=>el===window.editInput&&el===document.activeElement),true);
+ await page.getByRole('button',{name:'预览变更',exact:true}).click();await heading('确认服务配置变更');assert.equal(await page.evaluate(()=>window.passkeyChecks),0);await screenshot('preview-desktop');
+ await page.getByRole('button',{name:'通行密钥确认并发布',exact:true}).dblclick();await heading('服务管理');assert.equal(writes,1);assert.equal(current.policy.monthlyBudgetNanos,250e9);assert.equal(current.policy.maxConcurrent,7);assert.equal(await page.evaluate(()=>window.passkeyChecks),1);
+ await page.getByRole('button',{name:'调整告你健康额度'}).click();await page.locator('[name="apps.health.freeDailySessions"]').fill('5');await page.getByRole('button',{name:'预览变更',exact:true}).click();await heading('确认服务配置变更');assert.ok(await page.locator('.ops-differences').innerText().then(t=>t.includes('每日安全 token 上限')));
+ conflict=true;await page.getByRole('button',{name:'通行密钥确认并发布',exact:true}).click();await page.locator('#ops-error').waitFor();assert.equal(writes,1);await page.getByRole('button',{name:'刷新配置并重新预览'}).click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布',exact:true}).click();await heading('服务管理');assert.equal(current.policy.apps.health.freeDailySessions,5);assert.equal(current.policy.apps.health.freeDailyTokens,10e6);
+ await tab('运行状态');await page.locator('[data-ops-pause="health"][data-operation="meal_photo_capture"]').click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.deepEqual(current.policy.apps.health.pausedOperations,['meal_photo_capture']);assert.equal(current.policy.apps.journal.paused,false);
+ await page.locator('[data-ops-pause="journal"]:not([data-operation])').click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.equal(current.policy.apps.journal.paused,true);assert.equal(await page.locator('[data-ops-pause="journal"][data-operation="journal.voice"]').isDisabled(),true);
+ await page.locator('[data-ops-pause="health"][data-operation="meal_photo_capture"]').click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.deepEqual(current.policy.apps.health.pausedOperations,[]);assert.equal(current.policy.apps.journal.paused,true);
+ await screenshot('runtime-desktop');
+ for(const width of [360,390,736,1280])for(const colorScheme of ['light','dark']){await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme});for(const name of ['费用总览','额度设置','运行状态']){await tab(name);await overflow();}if(width===390)await screenshot(`runtime-mobile-${colorScheme}`);}
+ await page.getByRole('button',{name:'配置记录',exact:true}).click();await heading('配置记录');await page.locator('[data-ops-restore="initial"]').click();await heading('恢复历史配置');await page.getByRole('button',{name:'预览变更',exact:true}).click();await heading('确认服务配置变更');assert.ok(await page.locator('.ops-differences').innerText().then(t=>t.includes('全部云端功能')));await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.deepEqual(current.policy,policy);
+ metricsFail=true;await page.getByRole('button',{name:'刷新',exact:true}).click();await page.locator('#ops-error').waitFor();assert.equal(await page.locator('[data-ops-pause="health"]').count(),9);metricsFail=false;await page.evaluate(()=>loadPlatform());await heading('服务管理');
+ metrics.activity=[];metrics.queues=[];metrics.rejections=[];metrics.costs=[];await page.evaluate(()=>loadPlatform());await heading('服务管理');await tab('运行状态');assert.ok(await page.locator('#ops-content').innerText().then(t=>t.includes('暂无调用记录')));await overflow();
+ assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.cspFailures),[]);console.log('PASS budgets, stable typing, quota dependencies, Passkey publish, duplicate guard, stale preview retry, App/function pause and recovery, history restoration, loading failure, empty states, responsive light/dark and CSP');
+}finally{await browser.close();server.close();}

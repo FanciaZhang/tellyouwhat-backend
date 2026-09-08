@@ -167,6 +167,7 @@ jobs:
           JOURNAL_SUBSCRIPTION_KEY: ${{ secrets.JOURNAL_APP_STORE_PRIVATE_KEY }}
           HEALTH_MARKETING_KEY: ${{ secrets.HEALTH_APP_STORE_CONNECT_PRIVATE_KEY }}
           JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
+          PLATFORM_OPERATIONS_WRITES_ENABLED: ${{ vars.PLATFORM_OPERATIONS_WRITES_ENABLED }}
           ARK_SERVICE_CREDENTIALS: ${{ secrets.ARK_MANAGEMENT_CREDENTIALS_JSON }}
         run: |
           install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
@@ -180,6 +181,7 @@ jobs:
           grep -q '^JOURNAL_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
           grep -q '^ADMIN_DOMAIN=' "$RUNNER_TEMP/.env.production"
           for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
+          python3 deploy/tencent/platform_configuration.py "$RUNNER_TEMP/.env.production"
           python3 deploy/tencent/ark_credentials.py materialize --output "$RUNNER_TEMP/ark-management.json"
       - name: Configure SSH
         env:
