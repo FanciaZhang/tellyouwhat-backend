@@ -138,7 +138,9 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("model did not start")
 	}
-	// A receipt acknowledgement can resend the same source while rewriting.
+	// An actual document edit invalidates the old model result.
+	snapshot.Revision++
+	snapshot.Blocks[0].Text = "用户刚刚修改了正文"
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "ping"})
 	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
@@ -221,6 +223,9 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 			break
 		}
 	}
+	if model.calls.Load() != 1 {
+		t.Fatal("unchanged acknowledgement restarted rewriting", model.calls.Load())
+	}
 	ws.Close()
 	// The preceding handler has released its fenced lease when it closes.
 	deadline := time.Now().Add(time.Second)
@@ -262,7 +267,77 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	if remaining != 0 {
 		t.Fatal(remaining)
 	}
-	if model.calls.Load() != 1 {
-		t.Fatal("unchanged snapshot triggered repeated rewrite", model.calls.Load())
+	// The new recognition may already start its immediate rewrite. It must
+	// not create more than one call for that newly recognized source.
+	if model.calls.Load() > 2 {
+		t.Fatal("duplicate rewrite", model.calls.Load())
+	}
+}
+
+// Streaming results must schedule work without waiting for the lease heartbeat.
+// New speech received during a slow model call is coalesced until the client ACK.
+type streamingSpeech struct{ connection *scriptedConnection }
+
+func (s streamingSpeech) Open(context.Context, []string) (SpeechConnection, error) {
+	return s.connection, nil
+}
+func TestStableSpeechRewritesImmediatelyAndCatchesUpAfterAcknowledgement(t *testing.T) {
+	conn := &scriptedConnection{make(chan Transcript, 4), make(chan struct{})}
+	model := &delayedRewriter{started: make(chan struct{}), release: make(chan struct{})}
+	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: model, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(context.Background(), Identity{Owner: "streaming", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(4 * time.Second))
+	var event Event
+	if err := websocket.JSON.Receive(ws, &event); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400)})
+	conn.result <- Transcript{Text: "今天去了公园。", Stable: "今天去了公园。"}
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
+		t.Fatalf("%+v %v", event, err)
+	}
+	select {
+	case <-model.started:
+	case <-time.After(time.Second):
+		t.Fatal("stable speech waited for five-second heartbeat")
+	}
+	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。"}
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
+		t.Fatalf("slow rewrite blocked ASR: %+v %v", event, err)
+	}
+	websocket.JSON.Send(ws, Frame{Type: "ping"})
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
+		t.Fatalf("slow rewrite blocked transport: %+v %v", event, err)
+	}
+	close(model.release)
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
+		t.Fatalf("%+v %v", event, err)
+	}
+	snapshot.Revision++
+	snapshot.Blocks[0].Text = event.Revision.Patches[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
+		t.Fatalf("latest speech waited for heartbeat: %+v %v", event, err)
+	}
+	if got := event.Revision.Patches[0].Text; got != "今天去了公园。后来去了湖边。" {
+		t.Fatal("interim words must reach the rewrite before final ASR confirmation", got)
+	}
+	if model.calls.Load() != 2 {
+		t.Fatal(model.calls.Load())
 	}
 }
