@@ -86,12 +86,16 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 	if concurrent >= limits.MaxConcurrent {
 		return costcontrol.ErrConcurrencyExceeded
 	}
+	audience, environment, err := costAudience(ctx, tx, attempt.AppID, attempt.CreatedAt)
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO ai_cost_attempts
-			(id, month_start, app_id, operation, meter, reserved_nanos, status, created_at, lease_expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+			(id, month_start, app_id, operation, meter, reserved_nanos, status, created_at, lease_expires_at, audience, environment)
+		VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
 		attempt.ID, month, attempt.AppID, attempt.Operation, attempt.Meter,
-		attempt.ReservedNanos, attempt.CreatedAt, attempt.LeaseExpiresAt); err != nil {
+		attempt.ReservedNanos, attempt.CreatedAt, attempt.LeaseExpiresAt, audience, environment); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE ai_cost_months SET charged_nanos = ?, updated_at = ? WHERE month_start = ?`,

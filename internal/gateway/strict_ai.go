@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -22,6 +23,7 @@ func (server *Server) CompleteAIRequest(
 	if failure != nil {
 		return healthhttpapi.CompleteAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, managed)
 	response, err := server.provider.Complete(ctx, artifact)
 	if err != nil {
 		lease.Release(contracts.ReservationTokens(artifact))
@@ -84,6 +86,7 @@ func (server *Server) StreamAIRequest(
 		return healthhttpapi.StreamAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	ginContext := strictGinContext(ctx)
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, managed)
 	ginContext.Header("Cache-Control", "no-cache, no-transform")
 	ginContext.Header("X-Accel-Buffering", "no")
 	reader, writer := io.Pipe()

@@ -176,6 +176,10 @@ func (repository *JobRepository) Succeed(
 	); err != nil {
 		return err
 	}
+	if err := observeFree(ctx, transaction, repository.appID, usageRecord); err != nil {
+		return err
+	}
+
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID); err != nil {
 		return err
 	}

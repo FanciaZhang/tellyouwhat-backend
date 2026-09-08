@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 var ErrActivationDenied = errors.New("development entitlement activation denied")
 
 type Record struct {
+	Payment            purchase.Evidence
 	KeyID              string
 	TransactionID      string
 	ExpiresAt          time.Time

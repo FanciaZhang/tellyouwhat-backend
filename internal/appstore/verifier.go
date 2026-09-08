@@ -14,6 +14,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 const (
@@ -50,6 +52,7 @@ type VerifierConfig struct {
 }
 
 type Transaction struct {
+	Payment               purchase.Evidence
 	OriginalTransactionID string
 	TransactionID         string
 	BundleID              string
@@ -78,6 +81,10 @@ type TransactionVerifier struct {
 }
 
 type transactionPayload struct {
+	OwnershipType         string `json:"inAppOwnershipType"`
+	Price                 *int64 `json:"price"`
+	Currency              string `json:"currency"`
+	PurchaseDate          int64  `json:"purchaseDate"`
 	OriginalTransactionID string `json:"originalTransactionId"`
 	TransactionID         string `json:"transactionId"`
 	BundleID              string `json:"bundleId"`
@@ -293,6 +300,7 @@ func normalizedTransaction(payload transactionPayload) Transaction {
 		revokedAt = &value
 	}
 	return Transaction{
+		Payment:               purchase.Evidence{OwnershipType: payload.OwnershipType, TransactionID: payload.TransactionID, OriginalID: payload.OriginalTransactionID, PriceMilli: payload.Price, Currency: payload.Currency, PurchasedAt: verifiedPurchaseStart(payload.PurchaseDate), StartedAt: verifiedPurchaseStart(payload.OriginalPurchaseDate), SignedAt: time.UnixMilli(payload.SignedDate), RevokedAt: revokedAt},
 		OriginalTransactionID: payload.OriginalTransactionID,
 		TransactionID:         payload.TransactionID,
 		BundleID:              payload.BundleID,

@@ -16,7 +16,7 @@ func (s *CostControlStore) RecordOutcome(ctx context.Context, id string, o costc
 	if o.Success {
 		state = "success"
 	}
-	_, err := s.database.ExecContext(ctx, `UPDATE ai_cost_attempts SET outcome=?,latency_ms=GREATEST(0,TIMESTAMPDIFF(MICROSECOND,created_at,?)) DIV 1000,input_tokens=?,output_tokens=?,model_name=? WHERE id=? AND outcome IS NULL`, state, now.UTC(), o.InputTokens, o.OutputTokens, o.Model, id)
+	_, err := s.database.ExecContext(ctx, `UPDATE ai_cost_attempts SET outcome=?,latency_ms=GREATEST(0,TIMESTAMPDIFF(MICROSECOND,created_at,?)) DIV 1000,input_tokens=?,output_tokens=?,model_name=?,usage_known=? WHERE id=? AND outcome IS NULL`, state, now.UTC(), o.InputTokens, o.OutputTokens, o.Model, o.UsageKnown, id)
 	return err
 }
 func (s *CostControlStore) RecordRejection(ctx context.Context, app, operation, reason string, now time.Time) error {

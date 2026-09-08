@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 const (
@@ -30,6 +32,7 @@ type StatusClient interface {
 }
 
 type SubscriptionState struct {
+	Payment               purchase.Evidence
 	OriginalTransactionID string
 	TransactionID         string
 	Environment           string
@@ -110,6 +113,7 @@ func (resolver *SubscriptionResolver) Resolve(
 		return SubscriptionState{}, ErrSubscriptionInactive
 	}
 	return SubscriptionState{
+		Payment:               active.Payment,
 		OriginalTransactionID: active.OriginalTransactionID,
 		TransactionID:         active.TransactionID,
 		Environment:           active.Environment,

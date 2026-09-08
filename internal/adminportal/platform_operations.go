@@ -74,7 +74,10 @@ func (s *Server) GetOperationsMetrics(c *gin.Context) {
 		operationsFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, m)
+	writeJSON(c.Writer, 200, struct {
+		platformops.Metrics
+		Billing any `json:"billing"`
+	}{m, s.config.Billing.Snapshot(s.now())})
 }
 func (s *Server) ListOperationsHistory(c *gin.Context, params adminhttpapi.ListOperationsHistoryParams) {
 	if _, ok := s.operationsAccess(c, false, false); !ok {

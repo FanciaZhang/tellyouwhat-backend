@@ -102,6 +102,8 @@ func (repository *MaintenanceRepository) Cleanup(ctx context.Context, now time.T
 		{`DELETE FROM admin_operations WHERE created_at <= ?`, []any{auditCutoff}},
 		{`DELETE FROM admin_audit_events WHERE created_at <= ?`, []any{auditCutoff}},
 		{`DELETE FROM usage_ledger WHERE occurred_at <= ?`, []any{auditCutoff}},
+		{`DELETE FROM operations_free_cohorts WHERE first_free_at <= ?`, []any{auditCutoff}},
+		{`DELETE FROM operations_purchase_observations WHERE observed_at <= ?`, []any{auditCutoff}},
 		{`DELETE app_attest_keys FROM app_attest_keys
            LEFT JOIN managed_entitlements ON managed_entitlements.app_id = app_attest_keys.app_id
                                          AND managed_entitlements.key_id = app_attest_keys.key_id

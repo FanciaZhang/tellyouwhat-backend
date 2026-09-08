@@ -9,6 +9,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 const notificationVersionV2 = "2.0"
@@ -39,6 +41,8 @@ type Notification struct {
 }
 
 type NotificationResult struct {
+	Payment               purchase.Evidence
+	CurrentPayment        purchase.Evidence
 	NotificationUUID      string
 	OriginalTransactionID string
 	Environment           string
@@ -132,6 +136,7 @@ func (processor *NotificationProcessor) Process(
 			}
 			return NotificationResult{
 				NotificationUUID:      notification.NotificationUUID,
+				Payment:               transaction.Payment,
 				OriginalTransactionID: transaction.OriginalTransactionID,
 				Environment:           transaction.Environment,
 				TransactionID:         transaction.TransactionID,
@@ -146,6 +151,8 @@ func (processor *NotificationProcessor) Process(
 	}
 	return NotificationResult{
 		NotificationUUID:      notification.NotificationUUID,
+		Payment:               transaction.Payment,
+		CurrentPayment:        state.Payment,
 		OriginalTransactionID: state.OriginalTransactionID,
 		Environment:           state.Environment,
 		TransactionID:         state.TransactionID,

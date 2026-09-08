@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	"github.com/tellyouwhat/backend/internal/journalhttpapi"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -76,6 +77,7 @@ func (server *Server) OrganizeJournal(
 		failure = server.apiAdmissionFailure(err, input.RequestID)
 		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
 	}
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, true)
 	result, err := server.journalOrganizer.Organize(ctx, input)
 	if err != nil {
 		actualTokens := estimatedTokens

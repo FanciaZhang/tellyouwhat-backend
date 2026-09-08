@@ -482,6 +482,8 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
 		TRUNCATE TABLE privacy_deletion_receipts;
         TRUNCATE TABLE job_dispatch_outbox;
         TRUNCATE TABLE usage_ledger;
+ TRUNCATE TABLE operations_free_cohorts;
+ TRUNCATE TABLE operations_purchase_observations;
         TRUNCATE TABLE media_objects;
         TRUNCATE TABLE idempotency_records;
         TRUNCATE TABLE ai_jobs;

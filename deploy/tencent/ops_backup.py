@@ -37,6 +37,7 @@ RECOVERY_DATA_TABLES = (
     "admin_invitation_apps",
     "admin_audit_events",
     "admin_operations",
+    "operations_collection",
     "platform_ops_revisions",
     "platform_ops_current",
     "platform_ops_mutations",

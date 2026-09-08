@@ -641,3 +641,21 @@ func parseTestCertificate(t *testing.T, der []byte) *x509.Certificate {
 	}
 	return certificate
 }
+
+func TestVerifiedTransactionPreservesOptionalPaymentEvidence(t *testing.T) {
+	price := int64(6000)
+	payload := transactionPayload{TransactionID: "payment", OriginalTransactionID: "subscription", Price: &price, Currency: "CNY", PurchaseDate: 1700000000000, OriginalPurchaseDate: 1690000000000, SignedDate: 1700000001000}
+	value := normalizedTransaction(payload)
+	if !value.Payment.HasPrice() || *value.Payment.PriceMilli != 6000 || value.Payment.OriginalID != "subscription" || value.Payment.PurchasedAt.UnixMilli() != payload.PurchaseDate {
+		t.Fatal("signed payment metadata lost")
+	}
+	payload.Price = nil
+	if normalizedTransaction(payload).Payment.HasPrice() {
+		t.Fatal("missing price converted to zero")
+	}
+	payload.Price = &price
+	payload.OwnershipType = "FAMILY_SHARED"
+	if normalizedTransaction(payload).Payment.HasPrice() {
+		t.Fatal("family shared subscription counted as device purchase")
+	}
+}

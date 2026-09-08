@@ -17,7 +17,12 @@ func NewUsageRepository(database *sql.DB, appID string) *UsageRepository {
 }
 
 func (repository *UsageRepository) Record(ctx context.Context, record usage.Record) error {
-	_, err := repository.database.ExecContext(ctx, `
+	tx, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `
         INSERT INTO usage_ledger
 			(app_id, request_id, key_id, device_id, original_transaction_id, operation,
              input_tokens, output_tokens, occurred_at)
@@ -26,7 +31,13 @@ func (repository *UsageRepository) Record(ctx context.Context, record usage.Reco
 		repository.appID, record.RequestID, record.KeyID, record.DeviceID, record.TransactionID,
 		record.Operation, record.InputTokens, record.OutputTokens, record.OccurredAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if err = observeFree(ctx, tx, repository.appID, record); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 var _ usage.Recorder = (*UsageRepository)(nil)

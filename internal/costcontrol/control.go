@@ -51,6 +51,7 @@ type Store interface {
 }
 
 type Outcome struct {
+	UsageKnown                bool
 	Success                   bool
 	InputTokens, OutputTokens int
 	Model                     string
