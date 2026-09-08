@@ -46,6 +46,31 @@ type Config struct {
 
 type Client struct{ config Config }
 
+// RequestRejection exposes only a recognized field, never Apple's raw error body.
+type RequestRejection struct{ Field string }
+
+func (rejection *RequestRejection) Error() string { return ErrRejected.Error() }
+func (rejection *RequestRejection) Unwrap() error { return ErrRejected }
+
+func requestRejection(reader io.Reader) error {
+	var response struct {
+		Errors []struct {
+			Source struct {
+				Pointer string `json:"pointer"`
+			} `json:"source"`
+		} `json:"errors"`
+	}
+	if err := json.NewDecoder(io.LimitReader(reader, maximumResponseBytes)).Decode(&response); err == nil {
+		for _, failure := range response.Errors {
+			switch failure.Source.Pointer {
+			case "/data/attributes/numberOfCodes", "/data/attributes/expirationDate", "/data/attributes/customCode":
+				return &RequestRejection{Field: strings.TrimPrefix(failure.Source.Pointer, "/data/attributes/")}
+			}
+		}
+	}
+	return ErrRejected
+}
+
 type Offer struct {
 	ID                     string   `json:"id"`
 	Name                   string   `json:"name"`
@@ -480,7 +505,7 @@ func (client *Client) send(ctx context.Context, method, path string, body any, e
 	if response.StatusCode != expectedStatus {
 		switch response.StatusCode {
 		case http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity:
-			return ErrRejected
+			return requestRejection(response.Body)
 		case http.StatusMethodNotAllowed:
 			return ErrMethodNotAllowed
 		}
