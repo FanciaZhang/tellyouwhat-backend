@@ -10,16 +10,32 @@ import (
 )
 
 // resolvePromptModels verifies IDs against Ark and replaces all client price metadata.
+type PromptModelInventory interface {
+	Endpoint(context.Context, string) (arkcontrol.Endpoint, error)
+	Versions(context.Context, string) ([]arkcontrol.Version, error)
+	ModelActivations(context.Context, []string) ([]arkcontrol.Activation, error)
+}
+
 func (s *Server) resolvePromptModels(ctx context.Context, p *promptconfig.Policy) error {
 	if p.Journal == nil {
 		return nil
 	}
-	inventory, ok := s.config.AI.Inventory.(interface {
-		Endpoint(context.Context, string) (arkcontrol.Endpoint, error)
-		Versions(context.Context, string) ([]arkcontrol.Version, error)
-		ModelActivations(context.Context, []string) ([]arkcontrol.Activation, error)
-	})
+	if s.config.AI == nil {
+		return arkcontrol.ErrUnavailable
+	}
+	inventory, ok := s.config.AI.Inventory.(PromptModelInventory)
 	if !ok {
+		return arkcontrol.ErrUnavailable
+	}
+	return ResolvePromptModels(ctx, p, inventory)
+}
+
+// ResolvePromptModels verifies the service account catalog and replaces submitted price metadata.
+func ResolvePromptModels(ctx context.Context, p *promptconfig.Policy, inventory PromptModelInventory) error {
+	if p.Journal == nil {
+		return nil
+	}
+	if inventory == nil {
 		return arkcontrol.ErrUnavailable
 	}
 	for _, params := range []*promptconfig.Parameters{&p.Journal.Organize.Lite, &p.Journal.Organize.Pro, &p.Journal.Voice.Parameters} {

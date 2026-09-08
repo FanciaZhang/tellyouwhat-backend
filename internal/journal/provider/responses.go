@@ -142,6 +142,13 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	if err := result.Validate(bookIDs); err != nil {
 		return metered, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}
+	for _, tag := range result.Tags {
+		for _, rejected := range request.RejectedTagNames {
+			if strings.EqualFold(strings.TrimSpace(tag.Name), strings.TrimSpace(rejected)) {
+				return metered, fmt.Errorf("%w: rejected tag", ErrInvalidResult)
+			}
+		}
+	}
 	metered.Value = result
 	return metered, nil
 }

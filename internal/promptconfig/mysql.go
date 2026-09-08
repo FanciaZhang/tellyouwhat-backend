@@ -202,6 +202,10 @@ func (s Store) DraftResolved(ctx context.Context, input DraftInput, resolved Pol
 	})
 }
 func (s Store) Publish(ctx context.Context, input Publication, m Mutation, now time.Time) (Revision, error) {
+	return s.PublishChecked(ctx, input, m, now, nil)
+}
+
+func (s Store) PublishChecked(ctx context.Context, input Publication, m Mutation, now time.Time, check func(Revision) error) (Revision, error) {
 	return s.mutate(ctx, m, "prompts.publish", input, now, func(tx *sql.Tx) (Revision, error) {
 		current, err := CurrentFrom(ctx, tx, input.Scope)
 		if err != nil {
@@ -216,6 +220,11 @@ func (s Store) Publish(ctx context.Context, input Publication, m Mutation, now t
 		}
 		if r.Scope != input.Scope || r.PublishedAt != nil || r.BaseVersion != input.BaseVersion {
 			return Revision{}, ErrConflict
+		}
+		if check != nil {
+			if err = check(r); err != nil {
+				return Revision{}, err
+			}
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE prompt_config_revisions SET published_at=? WHERE id=?`, now.UTC(), r.ID)
 		if err != nil {

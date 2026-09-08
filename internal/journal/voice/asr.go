@@ -39,7 +39,9 @@ type asrConnection struct{ ws *websocket.Conn }
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
 func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error) {
 	punctuation, normalize := true, true
-	if a.Prompts != nil {
+	if r, ok := promptconfig.FromContext(ctx); ok {
+		punctuation, normalize = r.Policy.Journal.Voice.AutomaticPunctuation, r.Policy.Journal.Voice.NormalizeNumbers
+	} else if a.Prompts != nil {
 		r, err := a.Prompts.Current("journal")
 		if err != nil {
 			return nil, err

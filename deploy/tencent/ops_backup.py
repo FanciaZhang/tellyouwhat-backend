@@ -38,6 +38,7 @@ RECOVERY_DATA_TABLES = (
     "admin_audit_events",
     "admin_operations",
     "operations_collection",
+    "prompt_eval_budget_holds",
     "prompt_config_revisions",
     "prompt_config_current",
     "prompt_config_mutations",

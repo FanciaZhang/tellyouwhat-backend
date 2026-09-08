@@ -30,6 +30,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/prompteval"
 	arkprovider "github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
@@ -147,8 +148,17 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	evaluationCipher, err := mysqlstore.NewPayloadCipher(os.Getenv("PAYLOAD_ENCRYPTION_KEY"))
+	if err != nil {
+		return err
+	}
+	evaluationCost, err := platformconfig.LoadCostDefaults()
+	if err != nil {
+		return err
+	}
+	evaluations := prompteval.Store{DB: database, Cipher: evaluationCipher, Limits: evaluationCost.Limits}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		AI:      ai,
+		AI: ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
 		Prompts: &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,

@@ -37,6 +37,8 @@ func run() error {
 	defer database.Close()
 	repository := adminauth.NewMySQLRepository(database)
 	switch os.Args[1] {
+	case "synthetic-evaluation":
+		return syntheticEvaluation(ctx, database, os.Args[2:])
 	case "bootstrap":
 		if len(os.Args) != 2 {
 			return usageError()

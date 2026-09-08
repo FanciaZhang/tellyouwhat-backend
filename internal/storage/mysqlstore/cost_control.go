@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
@@ -26,6 +27,18 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		return err
 	}
 	defer tx.Rollback()
+	if err = ReserveCostAttempt(ctx, tx, attempt, limits); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReserveCostAttempt shares the project budget lock with durable administrative job admission.
+func ReserveCostAttempt(ctx context.Context, tx *sql.Tx, attempt costcontrol.Attempt, limits costcontrol.Limits) error {
+	if !attempt.Valid() || !limits.Valid() {
+		return costcontrol.ErrInvalidAttempt
+	}
+	var err error
 	if err = lockCostControl(ctx, tx); err != nil {
 		return err
 	}
@@ -45,6 +58,14 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN actual_nanos ELSE reserved_nanos END),0) FROM ai_cost_attempts WHERE app_id=? AND month_start=?`, attempt.AppID, attempt.MonthStart.UTC().Format("2006-01-02")).Scan(&used); err != nil {
 				return err
 			}
+			var held int64
+			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(remaining_nanos),0) FROM prompt_eval_budget_holds WHERE app_id=? AND month_start=?`, attempt.AppID, attempt.MonthStart.UTC().Format("2006-01-02")).Scan(&held); err != nil {
+				return err
+			}
+			if held > math.MaxInt64-used {
+				return costcontrol.ErrInvalidAttempt
+			}
+			used += held
 			if used > app.MonthlyBudgetNanos || attempt.ReservedNanos > app.MonthlyBudgetNanos-used {
 				return costcontrol.ErrBudgetExceeded
 			}
@@ -83,12 +104,15 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM ai_cost_attempts WHERE status = 'pending'`).Scan(&concurrent); err != nil {
 		return err
 	}
-	if concurrent >= limits.MaxConcurrent {
+	if concurrent >= limits.MaxConcurrent && attempt.Operation != "journal.evaluation.reserve" {
 		return costcontrol.ErrConcurrencyExceeded
 	}
 	audience, environment, err := costAudience(ctx, tx, attempt.AppID, attempt.CreatedAt)
 	if err != nil {
 		return err
+	}
+	if strings.HasPrefix(attempt.Operation, "journal.evaluation.") {
+		audience, environment = "admin_evaluation", "management"
 	}
 	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO ai_cost_attempts
@@ -102,7 +126,7 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		charged+attempt.ReservedNanos, attempt.CreatedAt, month); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (store *CostControlStore) Settle(ctx context.Context, attemptID string, actualNanos int64, known bool, now time.Time) error {

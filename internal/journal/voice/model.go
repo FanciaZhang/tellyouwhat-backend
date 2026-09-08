@@ -142,7 +142,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return metered, ErrInvalid
 	}
-	if err = revision.Validate(s); err != nil {
+	if _, err = ApplyRevision(s, revision); err != nil {
 		return metered, err
 	}
 	if revision.TranscriptRevision != tr {

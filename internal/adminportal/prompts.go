@@ -170,13 +170,25 @@ func (s *Server) GetPromptRevision(c *gin.Context, revision string) {
 		promptsFailure(c, err)
 		return
 	}
-	canPublish := r.PublishedAt == nil && r.BaseVersion == current.ID && s.promptWritesEnabled()
+	blockers := []string{}
+	if r.Scope == "journal" && r.PublishedAt == nil {
+		if s.config.Evaluations == nil {
+			blockers = append(blockers, "效果评测尚未配置")
+		} else {
+			blockers, err = s.config.Evaluations.PublicationBlockers(c, r, s.now())
+			if err != nil {
+				promptsFailure(c, err)
+				return
+			}
+		}
+	}
+	canPublish := len(blockers) == 0 && r.PublishedAt == nil && r.BaseVersion == current.ID && s.promptWritesEnabled()
 	expires := s.now().Add(5 * time.Minute)
 	token := ""
 	if canPublish {
 		token = s.signPromptClaim(promptsClaim{Actor: auth.User.ID, Publication: promptconfig.Publication{Scope: r.Scope, Revision: r.ID, BaseVersion: r.BaseVersion}, PolicyDigest: promptsDigest(r.Policy), ExpiresAt: expires.Unix()})
 	}
-	writeJSON(c.Writer, 200, map[string]any{"revision": r, "before": current.Policy, "after": r.Policy, "canPublish": canPublish, "previewToken": token, "expiresAt": expires})
+	writeJSON(c.Writer, 200, map[string]any{"revision": r, "before": current.Policy, "after": r.Policy, "canPublish": canPublish, "blockers": blockers, "previewToken": token, "expiresAt": expires})
 }
 func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromptConfigParams) {
 	auth, ok := s.promptsAccess(c, true, true)
@@ -210,7 +222,35 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 		writeFailure(c.Writer, 409, "prompts_preview_changed", "预览已过期或不匹配，请重新查看后再发布")
 		return
 	}
-	r, err = s.config.Prompts.Publish(c, input.Publication, m, s.now())
+	if r.Scope == "journal" {
+		raw, _ := json.Marshal(r.Policy)
+		var resolved promptconfig.Policy
+		_ = json.Unmarshal(raw, &resolved)
+		if err = s.resolvePromptModels(c, &resolved); err != nil {
+			promptsFailure(c, err)
+			return
+		}
+		if promptsDigest(resolved) != promptsDigest(r.Policy) {
+			writeFailure(c.Writer, 409, "prompts_models_changed", "模型或价格已变化，请生成新草稿后评测")
+			return
+		}
+	}
+	r, err = s.config.Prompts.PublishChecked(c, input.Publication, m, s.now(), func(r promptconfig.Revision) error {
+		if r.Scope != "journal" {
+			return nil
+		}
+		if s.config.Evaluations == nil {
+			return promptconfig.ErrConflict
+		}
+		blockers, err := s.config.Evaluations.PublicationBlockers(c, r, s.now())
+		if err != nil {
+			return err
+		}
+		if len(blockers) > 0 {
+			return promptconfig.ErrConflict
+		}
+		return nil
+	})
 	if err != nil {
 		promptsFailure(c, err)
 		return

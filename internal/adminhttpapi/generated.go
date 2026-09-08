@@ -52,6 +52,63 @@ func (e AIRollingInputAction) Valid() bool {
 	}
 }
 
+// Defines values for EvaluationSampleExpectedKind.
+const (
+	Contains  EvaluationSampleExpectedKind = "contains"
+	Excludes  EvaluationSampleExpectedKind = "excludes"
+	Unchanged EvaluationSampleExpectedKind = "unchanged"
+)
+
+// Valid indicates whether the value is a known member of the EvaluationSampleExpectedKind enum.
+func (e EvaluationSampleExpectedKind) Valid() bool {
+	switch e {
+	case Contains:
+		return true
+	case Excludes:
+		return true
+	case Unchanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EvaluationSampleKind.
+const (
+	OrganizeLite EvaluationSampleKind = "organize_lite"
+	OrganizePro  EvaluationSampleKind = "organize_pro"
+	Voice        EvaluationSampleKind = "voice"
+)
+
+// Valid indicates whether the value is a known member of the EvaluationSampleKind enum.
+func (e EvaluationSampleKind) Valid() bool {
+	switch e {
+	case OrganizeLite:
+		return true
+	case OrganizePro:
+		return true
+	case Voice:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EvaluationSampleOrganizeContractVersion.
+const (
+	JournalOrganizeV1 EvaluationSampleOrganizeContractVersion = "journal-organize-v1"
+)
+
+// Valid indicates whether the value is a known member of the EvaluationSampleOrganizeContractVersion enum.
+func (e EvaluationSampleOrganizeContractVersion) Valid() bool {
+	switch e {
+	case JournalOrganizeV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthAIDraftRequestOperation.
 const (
 	HealthAIDraftRequestOperationDietAnalysis            HealthAIDraftRequestOperation = "diet_analysis"
@@ -364,6 +421,85 @@ type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
 }
 
+// EvaluationInput defines model for EvaluationInput.
+type EvaluationInput struct {
+	Candidates []struct {
+		Label         string            `json:"label"`
+		ModelOverride *PromptParameters `json:"modelOverride,omitempty"`
+		Revision      string            `json:"revision"`
+	} `json:"candidates"`
+	SampleIDs []string `json:"sampleIDs"`
+}
+
+// EvaluationSample defines model for EvaluationSample.
+type EvaluationSample struct {
+	Audio    *[]byte `json:"audio,omitempty"`
+	Expected []struct {
+		BlockID string                       `json:"blockID"`
+		Kind    EvaluationSampleExpectedKind `json:"kind"`
+		Text    string                       `json:"text"`
+	} `json:"expected"`
+	Id       openapi_types.UUID   `json:"id"`
+	Kind     EvaluationSampleKind `json:"kind"`
+	Name     string               `json:"name"`
+	Organize *struct {
+		Body  string `json:"body"`
+		Books []struct {
+			ContainsEntry bool               `json:"containsEntry"`
+			Description   string             `json:"description"`
+			Id            openapi_types.UUID `json:"id"`
+			Name          string             `json:"name"`
+		} `json:"books"`
+		ContentHash      string                                  `json:"contentHash"`
+		ContractVersion  EvaluationSampleOrganizeContractVersion `json:"contractVersion"`
+		ExistingTags     []string                                `json:"existingTags"`
+		RejectedTagNames []string                                `json:"rejectedTagNames"`
+		RequestID        openapi_types.UUID                      `json:"requestID"`
+		Title            string                                  `json:"title"`
+	} `json:"organize,omitempty"`
+	Voice *struct {
+		Blocks []struct {
+			Id   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"blocks"`
+		EditedBlockIDs []string `json:"editedBlockIDs"`
+		ManualEdits    []struct {
+			After                string `json:"after"`
+			Before               string `json:"before"`
+			BlockID              string `json:"blockID"`
+			ContextAfter         string `json:"contextAfter"`
+			ContextBefore        string `json:"contextBefore"`
+			PendingEarlierSpeech bool   `json:"pendingEarlierSpeech"`
+			TranscriptOffset     int    `json:"transcriptOffset"`
+		} `json:"manualEdits"`
+		MediaOnlyBlockIDs []string `json:"mediaOnlyBlockIDs"`
+		Revision          int      `json:"revision"`
+		Transcript        string   `json:"transcript"`
+		Words             []string `json:"words"`
+		WritingStyle      string   `json:"writingStyle"`
+	} `json:"voice,omitempty"`
+}
+
+// EvaluationSampleExpectedKind defines model for EvaluationSample.Expected.Kind.
+type EvaluationSampleExpectedKind string
+
+// EvaluationSampleKind defines model for EvaluationSample.Kind.
+type EvaluationSampleKind string
+
+// EvaluationSampleOrganizeContractVersion defines model for EvaluationSample.Organize.ContractVersion.
+type EvaluationSampleOrganizeContractVersion string
+
+// EvaluationStart defines model for EvaluationStart.
+type EvaluationStart struct {
+	Candidates []struct {
+		Label         string            `json:"label"`
+		ModelOverride *PromptParameters `json:"modelOverride,omitempty"`
+		Revision      string            `json:"revision"`
+	} `json:"candidates"`
+	PreviewToken string   `json:"previewToken"`
+	SampleIDs    []string `json:"sampleIDs"`
+}
+
 // HealthAIDraftRequest defines model for HealthAIDraftRequest.
 type HealthAIDraftRequest struct {
 	BaseVersion string                        `json:"baseVersion"`
@@ -639,6 +775,32 @@ type CreateRecoveryInvitationParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
 }
 
+// PreviewEvaluationParams defines parameters for PreviewEvaluation.
+type PreviewEvaluationParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// StartEvaluationParams defines parameters for StartEvaluation.
+type StartEvaluationParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// CancelEvaluationParams defines parameters for CancelEvaluation.
+type CancelEvaluationParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// SaveEvaluationSampleParams defines parameters for SaveEvaluationSample.
+type SaveEvaluationSampleParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// DeleteEvaluationSampleParams defines parameters for DeleteEvaluationSample.
+type DeleteEvaluationSampleParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // CreateHealthAIDraftParams defines parameters for CreateHealthAIDraft.
 type CreateHealthAIDraftParams struct {
 	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
@@ -806,6 +968,15 @@ type CreateUserInvitationJSONRequestBody = InvitationRequest
 // UpdateAdminUserJSONRequestBody defines body for UpdateAdminUser for application/json ContentType.
 type UpdateAdminUserJSONRequestBody = UserUpdateRequest
 
+// PreviewEvaluationJSONRequestBody defines body for PreviewEvaluation for application/json ContentType.
+type PreviewEvaluationJSONRequestBody = EvaluationInput
+
+// StartEvaluationJSONRequestBody defines body for StartEvaluation for application/json ContentType.
+type StartEvaluationJSONRequestBody = EvaluationStart
+
+// SaveEvaluationSampleJSONRequestBody defines body for SaveEvaluationSample for application/json ContentType.
+type SaveEvaluationSampleJSONRequestBody = EvaluationSample
+
 // CreateHealthAIDraftJSONRequestBody defines body for CreateHealthAIDraft for application/json ContentType.
 type CreateHealthAIDraftJSONRequestBody = HealthAIDraftRequest
 
@@ -892,6 +1063,36 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ai/endpoints/{endpoint})
 	GetAIEndpoint(c *gin.Context, endpoint string)
+
+	// (POST /api/v1/ai/evaluations/preview)
+	PreviewEvaluation(c *gin.Context, params PreviewEvaluationParams)
+
+	// (GET /api/v1/ai/evaluations/runs)
+	ListEvaluationRuns(c *gin.Context)
+
+	// (POST /api/v1/ai/evaluations/runs)
+	StartEvaluation(c *gin.Context, params StartEvaluationParams)
+
+	// (GET /api/v1/ai/evaluations/runs/{run})
+	GetEvaluationRun(c *gin.Context, run openapi_types.UUID)
+
+	// (POST /api/v1/ai/evaluations/runs/{run}/cancel)
+	CancelEvaluation(c *gin.Context, run openapi_types.UUID, params CancelEvaluationParams)
+
+	// (GET /api/v1/ai/evaluations/runs/{run}/items/{item})
+	GetEvaluationItem(c *gin.Context, run openapi_types.UUID, item int)
+
+	// (GET /api/v1/ai/evaluations/samples)
+	ListEvaluationSamples(c *gin.Context)
+
+	// (POST /api/v1/ai/evaluations/samples)
+	SaveEvaluationSample(c *gin.Context, params SaveEvaluationSampleParams)
+
+	// (DELETE /api/v1/ai/evaluations/samples/{sample})
+	DeleteEvaluationSample(c *gin.Context, sample openapi_types.UUID, params DeleteEvaluationSampleParams)
+
+	// (GET /api/v1/ai/evaluations/samples/{sample})
+	GetEvaluationSample(c *gin.Context, sample openapi_types.UUID)
 
 	// (GET /api/v1/ai/health)
 	GetHealthAIConfig(c *gin.Context)
@@ -1353,6 +1554,353 @@ func (siw *ServerInterfaceWrapper) GetAIEndpoint(c *gin.Context) {
 	}
 
 	siw.Handler.GetAIEndpoint(c, endpoint)
+}
+
+// PreviewEvaluation operation middleware
+func (siw *ServerInterfaceWrapper) PreviewEvaluation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewEvaluationParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PreviewEvaluation(c, params)
+}
+
+// ListEvaluationRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListEvaluationRuns(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListEvaluationRuns(c)
+}
+
+// StartEvaluation operation middleware
+func (siw *ServerInterfaceWrapper) StartEvaluation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartEvaluationParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StartEvaluation(c, params)
+}
+
+// GetEvaluationRun operation middleware
+func (siw *ServerInterfaceWrapper) GetEvaluationRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "run" -------------
+	var run openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run", c.Param("run"), &run, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetEvaluationRun(c, run)
+}
+
+// CancelEvaluation operation middleware
+func (siw *ServerInterfaceWrapper) CancelEvaluation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "run" -------------
+	var run openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run", c.Param("run"), &run, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelEvaluationParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelEvaluation(c, run, params)
+}
+
+// GetEvaluationItem operation middleware
+func (siw *ServerInterfaceWrapper) GetEvaluationItem(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "run" -------------
+	var run openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run", c.Param("run"), &run, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "item" -------------
+	var item int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item", c.Param("item"), &item, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter item: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetEvaluationItem(c, run, item)
+}
+
+// ListEvaluationSamples operation middleware
+func (siw *ServerInterfaceWrapper) ListEvaluationSamples(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListEvaluationSamples(c)
+}
+
+// SaveEvaluationSample operation middleware
+func (siw *ServerInterfaceWrapper) SaveEvaluationSample(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SaveEvaluationSampleParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SaveEvaluationSample(c, params)
+}
+
+// DeleteEvaluationSample operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEvaluationSample(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sample" -------------
+	var sample openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sample", c.Param("sample"), &sample, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sample: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteEvaluationSampleParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteEvaluationSample(c, sample, params)
+}
+
+// GetEvaluationSample operation middleware
+func (siw *ServerInterfaceWrapper) GetEvaluationSample(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sample" -------------
+	var sample openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sample", c.Param("sample"), &sample, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sample: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetEvaluationSample(c, sample)
 }
 
 // GetHealthAIConfig operation middleware
@@ -3350,6 +3898,16 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.ListEvaluationSamples)
+	router.POST(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.SaveEvaluationSample)
+	router.DELETE(options.BaseURL+"/api/v1/ai/evaluations/samples/:sample", wrapper.DeleteEvaluationSample)
+	router.GET(options.BaseURL+"/api/v1/ai/evaluations/samples/:sample", wrapper.GetEvaluationSample)
+	router.POST(options.BaseURL+"/api/v1/ai/evaluations/preview", wrapper.PreviewEvaluation)
+	router.GET(options.BaseURL+"/api/v1/ai/evaluations/runs", wrapper.ListEvaluationRuns)
+	router.POST(options.BaseURL+"/api/v1/ai/evaluations/runs", wrapper.StartEvaluation)
+	router.GET(options.BaseURL+"/api/v1/ai/evaluations/runs/:run", wrapper.GetEvaluationRun)
+	router.GET(options.BaseURL+"/api/v1/ai/evaluations/runs/:run/items/:item", wrapper.GetEvaluationItem)
+	router.POST(options.BaseURL+"/api/v1/ai/evaluations/runs/:run/cancel", wrapper.CancelEvaluation)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts", wrapper.GetPromptConfig)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts/history", wrapper.ListPromptHistory)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts/revisions/:revision", wrapper.GetPromptRevision)
@@ -3672,6 +4230,400 @@ type GetAIEndpointdefaultJSONResponse struct {
 }
 
 func (response GetAIEndpointdefaultJSONResponse) VisitGetAIEndpointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewEvaluationRequestObject struct {
+	Params PreviewEvaluationParams
+	Body   *PreviewEvaluationJSONRequestBody
+}
+
+type PreviewEvaluationResponseObject interface {
+	VisitPreviewEvaluationResponse(w http.ResponseWriter) error
+}
+
+type PreviewEvaluation200JSONResponse struct{ OKJSONResponse }
+
+func (response PreviewEvaluation200JSONResponse) VisitPreviewEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewEvaluationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PreviewEvaluationdefaultJSONResponse) VisitPreviewEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEvaluationRunsRequestObject struct {
+}
+
+type ListEvaluationRunsResponseObject interface {
+	VisitListEvaluationRunsResponse(w http.ResponseWriter) error
+}
+
+type ListEvaluationRuns200JSONResponse struct{ OKJSONResponse }
+
+func (response ListEvaluationRuns200JSONResponse) VisitListEvaluationRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEvaluationRunsdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListEvaluationRunsdefaultJSONResponse) VisitListEvaluationRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartEvaluationRequestObject struct {
+	Params StartEvaluationParams
+	Body   *StartEvaluationJSONRequestBody
+}
+
+type StartEvaluationResponseObject interface {
+	VisitStartEvaluationResponse(w http.ResponseWriter) error
+}
+
+type StartEvaluation200JSONResponse struct{ OKJSONResponse }
+
+func (response StartEvaluation200JSONResponse) VisitStartEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartEvaluationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response StartEvaluationdefaultJSONResponse) VisitStartEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationRunRequestObject struct {
+	Run openapi_types.UUID `json:"run"`
+}
+
+type GetEvaluationRunResponseObject interface {
+	VisitGetEvaluationRunResponse(w http.ResponseWriter) error
+}
+
+type GetEvaluationRun200JSONResponse struct{ OKJSONResponse }
+
+func (response GetEvaluationRun200JSONResponse) VisitGetEvaluationRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationRundefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetEvaluationRundefaultJSONResponse) VisitGetEvaluationRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelEvaluationRequestObject struct {
+	Run    openapi_types.UUID `json:"run"`
+	Params CancelEvaluationParams
+}
+
+type CancelEvaluationResponseObject interface {
+	VisitCancelEvaluationResponse(w http.ResponseWriter) error
+}
+
+type CancelEvaluation200JSONResponse struct{ OKJSONResponse }
+
+func (response CancelEvaluation200JSONResponse) VisitCancelEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelEvaluationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CancelEvaluationdefaultJSONResponse) VisitCancelEvaluationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationItemRequestObject struct {
+	Run  openapi_types.UUID `json:"run"`
+	Item int                `json:"item"`
+}
+
+type GetEvaluationItemResponseObject interface {
+	VisitGetEvaluationItemResponse(w http.ResponseWriter) error
+}
+
+type GetEvaluationItem200JSONResponse struct{ OKJSONResponse }
+
+func (response GetEvaluationItem200JSONResponse) VisitGetEvaluationItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationItemdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetEvaluationItemdefaultJSONResponse) VisitGetEvaluationItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEvaluationSamplesRequestObject struct {
+}
+
+type ListEvaluationSamplesResponseObject interface {
+	VisitListEvaluationSamplesResponse(w http.ResponseWriter) error
+}
+
+type ListEvaluationSamples200JSONResponse struct{ OKJSONResponse }
+
+func (response ListEvaluationSamples200JSONResponse) VisitListEvaluationSamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEvaluationSamplesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListEvaluationSamplesdefaultJSONResponse) VisitListEvaluationSamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveEvaluationSampleRequestObject struct {
+	Params SaveEvaluationSampleParams
+	Body   *SaveEvaluationSampleJSONRequestBody
+}
+
+type SaveEvaluationSampleResponseObject interface {
+	VisitSaveEvaluationSampleResponse(w http.ResponseWriter) error
+}
+
+type SaveEvaluationSample200JSONResponse struct{ OKJSONResponse }
+
+func (response SaveEvaluationSample200JSONResponse) VisitSaveEvaluationSampleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveEvaluationSampledefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response SaveEvaluationSampledefaultJSONResponse) VisitSaveEvaluationSampleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteEvaluationSampleRequestObject struct {
+	Sample openapi_types.UUID `json:"sample"`
+	Params DeleteEvaluationSampleParams
+}
+
+type DeleteEvaluationSampleResponseObject interface {
+	VisitDeleteEvaluationSampleResponse(w http.ResponseWriter) error
+}
+
+type DeleteEvaluationSample200JSONResponse struct{ OKJSONResponse }
+
+func (response DeleteEvaluationSample200JSONResponse) VisitDeleteEvaluationSampleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteEvaluationSampledefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response DeleteEvaluationSampledefaultJSONResponse) VisitDeleteEvaluationSampleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationSampleRequestObject struct {
+	Sample openapi_types.UUID `json:"sample"`
+}
+
+type GetEvaluationSampleResponseObject interface {
+	VisitGetEvaluationSampleResponse(w http.ResponseWriter) error
+}
+
+type GetEvaluationSample200JSONResponse struct{ OKJSONResponse }
+
+func (response GetEvaluationSample200JSONResponse) VisitGetEvaluationSampleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvaluationSampledefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetEvaluationSampledefaultJSONResponse) VisitGetEvaluationSampleResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5572,6 +6524,36 @@ type StrictServerInterface interface {
 	// (GET /api/v1/ai/endpoints/{endpoint})
 	GetAIEndpoint(ctx context.Context, request GetAIEndpointRequestObject) (GetAIEndpointResponseObject, error)
 
+	// (POST /api/v1/ai/evaluations/preview)
+	PreviewEvaluation(ctx context.Context, request PreviewEvaluationRequestObject) (PreviewEvaluationResponseObject, error)
+
+	// (GET /api/v1/ai/evaluations/runs)
+	ListEvaluationRuns(ctx context.Context, request ListEvaluationRunsRequestObject) (ListEvaluationRunsResponseObject, error)
+
+	// (POST /api/v1/ai/evaluations/runs)
+	StartEvaluation(ctx context.Context, request StartEvaluationRequestObject) (StartEvaluationResponseObject, error)
+
+	// (GET /api/v1/ai/evaluations/runs/{run})
+	GetEvaluationRun(ctx context.Context, request GetEvaluationRunRequestObject) (GetEvaluationRunResponseObject, error)
+
+	// (POST /api/v1/ai/evaluations/runs/{run}/cancel)
+	CancelEvaluation(ctx context.Context, request CancelEvaluationRequestObject) (CancelEvaluationResponseObject, error)
+
+	// (GET /api/v1/ai/evaluations/runs/{run}/items/{item})
+	GetEvaluationItem(ctx context.Context, request GetEvaluationItemRequestObject) (GetEvaluationItemResponseObject, error)
+
+	// (GET /api/v1/ai/evaluations/samples)
+	ListEvaluationSamples(ctx context.Context, request ListEvaluationSamplesRequestObject) (ListEvaluationSamplesResponseObject, error)
+
+	// (POST /api/v1/ai/evaluations/samples)
+	SaveEvaluationSample(ctx context.Context, request SaveEvaluationSampleRequestObject) (SaveEvaluationSampleResponseObject, error)
+
+	// (DELETE /api/v1/ai/evaluations/samples/{sample})
+	DeleteEvaluationSample(ctx context.Context, request DeleteEvaluationSampleRequestObject) (DeleteEvaluationSampleResponseObject, error)
+
+	// (GET /api/v1/ai/evaluations/samples/{sample})
+	GetEvaluationSample(ctx context.Context, request GetEvaluationSampleRequestObject) (GetEvaluationSampleResponseObject, error)
+
 	// (GET /api/v1/ai/health)
 	GetHealthAIConfig(ctx context.Context, request GetHealthAIConfigRequestObject) (GetHealthAIConfigResponseObject, error)
 
@@ -5956,6 +6938,286 @@ func (sh *strictHandler) GetAIEndpoint(ctx *gin.Context, endpoint string) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(GetAIEndpointResponseObject); ok {
 		if err := validResponse.VisitGetAIEndpointResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewEvaluation operation middleware
+func (sh *strictHandler) PreviewEvaluation(ctx *gin.Context, params PreviewEvaluationParams) {
+	var request PreviewEvaluationRequestObject
+
+	request.Params = params
+
+	var body PreviewEvaluationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewEvaluation(ctx, request.(PreviewEvaluationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewEvaluation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PreviewEvaluationResponseObject); ok {
+		if err := validResponse.VisitPreviewEvaluationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListEvaluationRuns operation middleware
+func (sh *strictHandler) ListEvaluationRuns(ctx *gin.Context) {
+	var request ListEvaluationRunsRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListEvaluationRuns(ctx, request.(ListEvaluationRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListEvaluationRuns")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListEvaluationRunsResponseObject); ok {
+		if err := validResponse.VisitListEvaluationRunsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartEvaluation operation middleware
+func (sh *strictHandler) StartEvaluation(ctx *gin.Context, params StartEvaluationParams) {
+	var request StartEvaluationRequestObject
+
+	request.Params = params
+
+	var body StartEvaluationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.StartEvaluation(ctx, request.(StartEvaluationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartEvaluation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(StartEvaluationResponseObject); ok {
+		if err := validResponse.VisitStartEvaluationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetEvaluationRun operation middleware
+func (sh *strictHandler) GetEvaluationRun(ctx *gin.Context, run openapi_types.UUID) {
+	var request GetEvaluationRunRequestObject
+
+	request.Run = run
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetEvaluationRun(ctx, request.(GetEvaluationRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetEvaluationRun")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetEvaluationRunResponseObject); ok {
+		if err := validResponse.VisitGetEvaluationRunResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelEvaluation operation middleware
+func (sh *strictHandler) CancelEvaluation(ctx *gin.Context, run openapi_types.UUID, params CancelEvaluationParams) {
+	var request CancelEvaluationRequestObject
+
+	request.Run = run
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelEvaluation(ctx, request.(CancelEvaluationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelEvaluation")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelEvaluationResponseObject); ok {
+		if err := validResponse.VisitCancelEvaluationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetEvaluationItem operation middleware
+func (sh *strictHandler) GetEvaluationItem(ctx *gin.Context, run openapi_types.UUID, item int) {
+	var request GetEvaluationItemRequestObject
+
+	request.Run = run
+	request.Item = item
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetEvaluationItem(ctx, request.(GetEvaluationItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetEvaluationItem")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetEvaluationItemResponseObject); ok {
+		if err := validResponse.VisitGetEvaluationItemResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListEvaluationSamples operation middleware
+func (sh *strictHandler) ListEvaluationSamples(ctx *gin.Context) {
+	var request ListEvaluationSamplesRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListEvaluationSamples(ctx, request.(ListEvaluationSamplesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListEvaluationSamples")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListEvaluationSamplesResponseObject); ok {
+		if err := validResponse.VisitListEvaluationSamplesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveEvaluationSample operation middleware
+func (sh *strictHandler) SaveEvaluationSample(ctx *gin.Context, params SaveEvaluationSampleParams) {
+	var request SaveEvaluationSampleRequestObject
+
+	request.Params = params
+
+	var body SaveEvaluationSampleJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveEvaluationSample(ctx, request.(SaveEvaluationSampleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveEvaluationSample")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(SaveEvaluationSampleResponseObject); ok {
+		if err := validResponse.VisitSaveEvaluationSampleResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteEvaluationSample operation middleware
+func (sh *strictHandler) DeleteEvaluationSample(ctx *gin.Context, sample openapi_types.UUID, params DeleteEvaluationSampleParams) {
+	var request DeleteEvaluationSampleRequestObject
+
+	request.Sample = sample
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteEvaluationSample(ctx, request.(DeleteEvaluationSampleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteEvaluationSample")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DeleteEvaluationSampleResponseObject); ok {
+		if err := validResponse.VisitDeleteEvaluationSampleResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetEvaluationSample operation middleware
+func (sh *strictHandler) GetEvaluationSample(ctx *gin.Context, sample openapi_types.UUID) {
+	var request GetEvaluationSampleRequestObject
+
+	request.Sample = sample
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetEvaluationSample(ctx, request.(GetEvaluationSampleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetEvaluationSample")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetEvaluationSampleResponseObject); ok {
+		if err := validResponse.VisitGetEvaluationSampleResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -7304,71 +8566,82 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"T+IN3c3N5v8CAAD//w==",
+	"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",
+	"osmqfiqoVeZJMk2yrfNxUeaJ2tDd3m7/EwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

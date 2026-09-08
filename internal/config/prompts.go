@@ -16,3 +16,5 @@ func LoadPromptDefaults() (map[string]promptconfig.Policy, error) {
 	}
 	return defaults, nil
 }
+
+func LoadCostDefaults() (AICostConfig, error) { return loadAICostConfig() }
