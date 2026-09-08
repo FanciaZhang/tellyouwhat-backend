@@ -14,6 +14,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
@@ -1189,6 +1190,7 @@ func (manager *fakePrivacyManager) DeletePrincipalWithReceipt(_ context.Context,
 }
 
 type fakeProductionEntitlementSync struct {
+	err               error
 	principal         Principal
 	signedTransaction string
 }
@@ -1212,7 +1214,7 @@ func (syncer *fakeProductionEntitlementSync) Sync(
 ) (time.Time, error) {
 	syncer.principal = principal
 	syncer.signedTransaction = signedTransaction
-	return time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC), nil
+	return time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC), syncer.err
 }
 
 func (entitlement fakeEntitlements) HasManagedSubscription(context.Context, Principal) (bool, error) {
@@ -1444,4 +1446,14 @@ func (provider *fakeProvider) Stream(_ context.Context, request contracts.Reques
 		return err
 	}
 	return yield(StreamEvent{Completed: &ProviderResponse{Content: "fixed result", InputTokens: 10, OutputTokens: 4}})
+}
+
+func TestProductionBindingConflictHasActionableErrorCode(t *testing.T) {
+	server := newTestServer()
+	server.productionEntitlement = &fakeProductionEntitlementSync{err: entitlement.ErrSubscriptionBindingConflict}
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/entitlements/transactions", `{"signedTransaction":"signed-transaction"}`))
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "subscription_binding_conflict") {
+		t.Fatalf("binding response: %d %s", response.Code, response.Body.String())
+	}
 }

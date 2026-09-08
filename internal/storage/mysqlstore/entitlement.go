@@ -51,12 +51,13 @@ func (repository *EntitlementRepository) ApplyNotification(
 	if _, err := transaction.ExecContext(ctx, `
         UPDATE managed_entitlements
         SET environment = ?, expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
-		WHERE app_id = ? AND original_transaction_id = ?`,
+		WHERE app_id = ? AND original_transaction_id = ? AND environment = ?`,
 		state.Environment,
 		state.ExpiresAt,
 		purchasePrice(state.CurrentPayment),
 		repository.appID,
 		state.OriginalTransactionID,
+		state.Environment,
 	); err != nil {
 		return false, err
 	}
@@ -79,7 +80,47 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		return err
 	}
 	defer func() { _ = transaction.Rollback() }()
-	if _, err = transaction.ExecContext(ctx, `
+	if err := repository.upsert(ctx, transaction, record); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
+func (repository *EntitlementRepository) UpsertVerified(ctx context.Context, record entitlement.Record) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+	var boundID string
+	if err := transaction.QueryRowContext(ctx, `SELECT transaction_id FROM app_attest_keys
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return entitlement.ErrSubscriptionBindingConflict
+		}
+		return err
+	}
+	var existing entitlement.Record
+	err = transaction.QueryRowContext(ctx, `SELECT original_transaction_id, environment FROM managed_entitlements
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&existing.TransactionID, &existing.Environment)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if !entitlement.CanBindVerifiedTransaction(boundID, existing, record) {
+		return entitlement.ErrSubscriptionBindingConflict
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE app_attest_keys SET transaction_id = ?, updated_at = UTC_TIMESTAMP(6)
+		WHERE app_id = ? AND key_id = ?`, record.TransactionID, repository.appID, record.KeyID); err != nil {
+		return err
+	}
+	if err := repository.upsert(ctx, transaction, record); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
+func (repository *EntitlementRepository) upsert(ctx context.Context, transaction *sql.Tx, record entitlement.Record) error {
+	if _, err := transaction.ExecContext(ctx, `
         INSERT INTO managed_entitlements
 			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, price_milli, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
@@ -107,7 +148,7 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		record.TransactionID, record.OfferIdentifier, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
 		return err
 	}
-	return transaction.Commit()
+	return nil
 }
 
 func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, environment, transactionID,

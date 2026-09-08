@@ -2,6 +2,7 @@ package entitlement
 
 import (
 	"context"
+	"strings"
 	"sync"
 )
 
@@ -46,7 +47,7 @@ func (store *MemoryStore) ApplyNotification(
 	}
 	store.notifications[state.NotificationUUID] = struct{}{}
 	for keyID, record := range store.records {
-		if record.TransactionID != state.OriginalTransactionID {
+		if record.TransactionID != state.OriginalTransactionID || !strings.EqualFold(record.Environment, state.Environment) {
 			continue
 		}
 		record.Environment = state.Environment

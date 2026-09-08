@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrProductionSyncDenied    = errors.New("production entitlement sync denied")
-	ErrSubscriptionInactive    = errors.New("managed subscription is inactive")
-	ErrSubscriptionUnavailable = errors.New("managed subscription verification unavailable")
+	ErrProductionSyncDenied        = errors.New("production entitlement sync denied")
+	ErrSubscriptionInactive        = errors.New("managed subscription is inactive")
+	ErrSubscriptionUnavailable     = errors.New("managed subscription verification unavailable")
+	ErrSubscriptionBindingConflict = errors.New("managed subscription binding conflict")
 )
 
 type SubscriptionState struct {
@@ -54,6 +55,28 @@ type TransactionBinder interface {
 	BindTransaction(context.Context, string, string) error
 }
 
+// VerifiedTransactionStore commits the verified entitlement and device binding
+// together, including the one-way transition from sandbox to production.
+type VerifiedTransactionStore interface {
+	UpsertVerified(context.Context, Record) error
+}
+
+func CanBindVerifiedTransaction(boundID string, existing Record, incoming Record) bool {
+	if incoming.TransactionID == "" || (incoming.Environment != "sandbox" && incoming.Environment != "production") {
+		return false
+	}
+	if boundID == "" {
+		return existing.TransactionID == ""
+	}
+	if existing.TransactionID != boundID {
+		return false
+	}
+	if boundID == incoming.TransactionID && existing.Environment == incoming.Environment {
+		return true
+	}
+	return existing.Environment == "sandbox" && incoming.Environment == "production"
+}
+
 func NewProductionService(store Store, resolver SubscriptionResolver, now func() time.Time) *ProductionService {
 	if now == nil {
 		now = time.Now
@@ -71,8 +94,12 @@ func (service *ProductionService) Sync(
 	principal attestation.Principal,
 	signedTransaction string,
 ) (time.Time, error) {
-	if service == nil || service.store == nil || service.resolver == nil || service.binder == nil || principal.KeyID == "" ||
+	if service == nil || service.store == nil || service.resolver == nil || principal.KeyID == "" ||
 		strings.TrimSpace(signedTransaction) == "" {
+		return time.Time{}, ErrProductionSyncDenied
+	}
+	verifiedStore, atomicBinding := service.store.(VerifiedTransactionStore)
+	if !atomicBinding && service.binder == nil {
 		return time.Time{}, ErrProductionSyncDenied
 	}
 	state, err := service.resolver.Resolve(ctx, signedTransaction)
@@ -97,6 +124,12 @@ func (service *ProductionService) Sync(
 		OfferIdentifier:    state.OfferIdentifier,
 		OfferType:          state.OfferType,
 		OfferSignedAt:      state.SignedAt,
+	}
+	if atomicBinding {
+		if err := verifiedStore.UpsertVerified(ctx, record); err != nil {
+			return time.Time{}, err
+		}
+		return state.ExpiresAt, nil
 	}
 	if err := service.binder.BindTransaction(ctx, principal.KeyID, state.OriginalTransactionID); err != nil {
 		if errors.Is(err, attestation.ErrTransactionBindingConflict) {
