@@ -13,8 +13,23 @@ import (
 )
 
 type RecognitionQuotaStore struct {
-	client *redis.Client
-	appID  string
+	ResolveDailyLimit func(context.Context) (int, error)
+	client            *redis.Client
+	appID             string
+}
+
+func (store *RecognitionQuotaStore) dailyLimit(ctx context.Context) (int, error) {
+	if store.ResolveDailyLimit == nil {
+		return recognitionquota.DailySessionLimit, nil
+	}
+	limit, err := store.ResolveDailyLimit(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if limit < 0 || limit > 100 {
+		return 0, recognitionquota.ErrInvalid
+	}
+	return limit, nil
 }
 
 func NewRecognitionQuotaStore(client *redis.Client, appIDs ...string) *RecognitionQuotaStore {
@@ -88,8 +103,12 @@ func (store *RecognitionQuotaStore) Reserve(
 	if err != nil {
 		return recognitionquota.Snapshot{}, err
 	}
+	limit, err := store.dailyLimit(ctx)
+	if err != nil {
+		return recognitionquota.Snapshot{}, err
+	}
 	values, err := reserveRecognitionSessionScript.Run(ctx, store.client, []string{store.recognitionWindowKey(request.DeviceID)},
-		now.UTC().Unix(), start.Unix(), end.Unix(), recognitionquota.DailySessionLimit,
+		now.UTC().Unix(), start.Unix(), end.Unix(), limit,
 		int64(recognitionquota.MaximumSessionAge/time.Second), request.Context.SessionID,
 	).Slice()
 	if err != nil {
@@ -152,8 +171,12 @@ func (store *RecognitionQuotaStore) Complete(
 	if store == nil || store.client == nil || deviceID == "" || uuid.Validate(sessionID) != nil {
 		return recognitionquota.Snapshot{}, recognitionquota.ErrInvalid
 	}
+	limit, err := store.dailyLimit(ctx)
+	if err != nil {
+		return recognitionquota.Snapshot{}, err
+	}
 	values, err := completeRecognitionSessionScript.Run(ctx, store.client, []string{store.recognitionWindowKey(deviceID)},
-		now.UTC().Unix(), recognitionquota.DailySessionLimit, sessionID,
+		now.UTC().Unix(), limit, sessionID,
 	).Slice()
 	if err != nil {
 		return recognitionquota.Snapshot{}, err
@@ -224,8 +247,12 @@ func (store *RecognitionQuotaStore) Snapshot(
 	if err != nil {
 		return recognitionquota.Snapshot{}, err
 	}
+	limit, err := store.dailyLimit(ctx)
+	if err != nil {
+		return recognitionquota.Snapshot{}, err
+	}
 	values, err := snapshotRecognitionSessionsScript.Run(ctx, store.client, []string{store.recognitionWindowKey(deviceID)},
-		now.UTC().Unix(), end.Unix(), recognitionquota.DailySessionLimit,
+		now.UTC().Unix(), end.Unix(), limit,
 	).Slice()
 	if err != nil {
 		return recognitionquota.Snapshot{}, err

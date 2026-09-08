@@ -15,6 +15,68 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/platform/config:
+    get:
+      operationId: getOperationsConfig
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/metrics:
+    get:
+      operationId: getOperationsMetrics
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/history:
+    get:
+      operationId: listOperationsHistory
+      tags: [Administration]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/revisions/{revision}:
+    get:
+      operationId: getOperationsRevision
+      tags: [Administration]
+      parameters:
+        - { name: revision, in: path, required: true, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/drafts:
+    post:
+      operationId: createOperationsDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/publish:
+    post:
+      operationId: publishOperationsConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsPublication" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/rolling/preview:
     post:
       operationId: createAIRollingPreview
@@ -594,6 +656,53 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
   schemas:
+    OperationsAppPolicy:
+      type: object
+      additionalProperties: false
+      required: [monthlyBudgetNanos, dailyTokens, monthlyTokens, freeDailyTokens, freeMonthlyTokens, freeDailySessions, voicePeriodMinutes, paused, pausedOperations]
+      properties:
+        monthlyBudgetNanos: { type: integer, format: int64, minimum: 0, maximum: 1000000000000000 }
+        dailyTokens: { type: integer, minimum: 1, maximum: 1000000000000 }
+        monthlyTokens: { type: integer, minimum: 1, maximum: 1000000000000 }
+        freeDailyTokens: { type: integer, minimum: 0, maximum: 1000000000000 }
+        freeMonthlyTokens: { type: integer, minimum: 0, maximum: 1000000000000 }
+        freeDailySessions: { type: integer, minimum: 0, maximum: 100 }
+        voicePeriodMinutes: { type: integer, minimum: 0, maximum: 10000 }
+        paused: { type: boolean }
+        pausedOperations: { type: array, maxItems: 8, uniqueItems: true, items: { type: string, maxLength: 128 } }
+    OperationsPolicy:
+      type: object
+      additionalProperties: false
+      required: [monthlyBudgetNanos, maxConcurrent, budgetWarningPercent, errorWarningPercent, slowWarningMilliseconds, minimumSamples, apps]
+      properties:
+        monthlyBudgetNanos: { type: integer, format: int64, minimum: 1, maximum: 1000000000000000 }
+        maxConcurrent: { type: integer, minimum: 1, maximum: 100 }
+        budgetWarningPercent: { type: integer, minimum: 1, maximum: 100 }
+        errorWarningPercent: { type: integer, minimum: 1, maximum: 100 }
+        slowWarningMilliseconds: { type: integer, minimum: 100, maximum: 840000 }
+        minimumSamples: { type: integer, minimum: 10, maximum: 10000 }
+        apps:
+          type: object
+          additionalProperties: false
+          required: [health, journal]
+          properties:
+            health: { $ref: "#/components/schemas/OperationsAppPolicy" }
+            journal: { $ref: "#/components/schemas/OperationsAppPolicy" }
+    OperationsDraft:
+      type: object
+      additionalProperties: false
+      required: [baseVersion, policy]
+      properties:
+        baseVersion: { type: string, minLength: 36, maxLength: 36 }
+        policy: { $ref: "#/components/schemas/OperationsPolicy" }
+    OperationsPublication:
+      type: object
+      additionalProperties: false
+      required: [revision, baseVersion, previewToken]
+      properties:
+        revision: { type: string, minLength: 36, maxLength: 36 }
+        baseVersion: { type: string, minLength: 36, maxLength: 36 }
+        previewToken: { type: string, minLength: 1, maxLength: 2048 }
     AIRollingModel:
       type: object
       additionalProperties: false

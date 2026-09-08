@@ -46,6 +46,9 @@ func (s *Server) CreateJournalVoiceSession(ctx context.Context, request journalh
 	if owner == "" {
 		return fail(403, "managed_subscription_required", "subscription required")
 	}
+	if failure = s.operationsFailure(ctx, "journal.voice", requestID.String()); failure != nil {
+		return deny(failure)
+	}
 	ticket, err := s.voice.Issue(ctx, voice.Identity{Owner: record.Environment + ":" + owner, KeyID: principal.KeyID, Anchor: record.StartedAt, ExpiresAt: record.ExpiresAt}, request.Body.SessionID.String())
 	if err != nil {
 		return fail(503, "voice_unavailable", "voice session could not be created")

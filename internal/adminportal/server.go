@@ -21,6 +21,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/adminui"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
 const (
@@ -47,6 +48,7 @@ type OfferManager interface {
 }
 
 type Config struct {
+	Operations        *platformops.Store
 	AI                *AIConfig
 	PreviewSigningKey []byte
 	WritesEnabled     bool

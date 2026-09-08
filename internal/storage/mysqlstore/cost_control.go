@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
 type CostControlStore struct{ database *sql.DB }
@@ -28,6 +29,27 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 	if err = lockCostControl(ctx, tx); err != nil {
 		return err
 	}
+	current, policyErr := platformops.CurrentFrom(ctx, tx)
+	if policyErr != nil && !errors.Is(policyErr, platformops.ErrNotFound) {
+		return policyErr
+	}
+	if policyErr == nil {
+		limits.MonthlyBudgetNanos = current.Policy.MonthlyBudgetNanos
+		limits.MaxConcurrent = current.Policy.MaxConcurrent
+		app, ok := current.Policy.Apps[attempt.AppID]
+		if !ok {
+			return costcontrol.ErrInvalidAttempt
+		}
+		if app.MonthlyBudgetNanos > 0 {
+			var used int64
+			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN actual_nanos ELSE reserved_nanos END),0) FROM ai_cost_attempts WHERE app_id=? AND month_start=?`, attempt.AppID, attempt.MonthStart.UTC().Format("2006-01-02")).Scan(&used); err != nil {
+				return err
+			}
+			if used > app.MonthlyBudgetNanos || attempt.ReservedNanos > app.MonthlyBudgetNanos-used {
+				return costcontrol.ErrBudgetExceeded
+			}
+		}
+	}
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE ai_cost_attempts
 		SET status = 'unknown', completed_at = ?
@@ -47,7 +69,12 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		return err
 	}
 	if budget != limits.MonthlyBudgetNanos {
-		return costcontrol.ErrConfigurationConflict
+		if policyErr != nil {
+			return costcontrol.ErrConfigurationConflict
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE ai_cost_months SET budget_nanos=? WHERE month_start=?`, limits.MonthlyBudgetNanos, month); err != nil {
+			return err
+		}
 	}
 	if charged < 0 || charged > limits.MonthlyBudgetNanos || attempt.ReservedNanos > limits.MonthlyBudgetNanos-charged {
 		return costcontrol.ErrBudgetExceeded

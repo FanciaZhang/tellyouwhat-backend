@@ -15,9 +15,10 @@ import (
 )
 
 type QuotaLimiter struct {
-	client *redis.Client
-	limits quota.Limits
-	prefix string
+	ResolveLimits func(context.Context) (quota.Limits, error)
+	client        *redis.Client
+	limits        quota.Limits
+	prefix        string
 }
 
 const concurrencyLeaseTTL = 16 * time.Minute
@@ -80,6 +81,16 @@ func (limiter *QuotaLimiter) Acquire(
 	reservationID string,
 	now time.Time,
 ) (quota.Releaser, error) {
+	if limiter != nil && limiter.ResolveLimits != nil {
+		limits, err := limiter.ResolveLimits(ctx)
+		if err != nil {
+			return nil, err
+		}
+		copy := *limiter
+		copy.limits = limits
+		copy.ResolveLimits = nil
+		return copy.Acquire(ctx, identity, operation, estimatedTokens, reservationID, now)
+	}
 	if limiter == nil || limiter.client == nil || identity.DeviceID == "" || identity.TransactionID == "" || identity.IP == "" || estimatedTokens < 0 {
 		return nil, quota.ErrInvalidIdentity
 	}
@@ -270,6 +281,16 @@ func (limiter *QuotaLimiter) Snapshot(
 	transactionID string,
 	now time.Time,
 ) (quota.Snapshot, error) {
+	if limiter != nil && limiter.ResolveLimits != nil {
+		limits, err := limiter.ResolveLimits(ctx)
+		if err != nil {
+			return quota.Snapshot{}, err
+		}
+		copy := *limiter
+		copy.limits = limits
+		copy.ResolveLimits = nil
+		return copy.Snapshot(ctx, transactionID, now)
+	}
 	if limiter == nil || limiter.client == nil || transactionID == "" {
 		return quota.Snapshot{}, quota.ErrInvalidIdentity
 	}

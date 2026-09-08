@@ -60,10 +60,20 @@ func (server *Server) dependenciesAvailable() bool {
 }
 
 func (server *Server) GetManagedAIProduct(
-	context.Context,
-	platformhttpapi.GetManagedAIProductRequestObject,
+	ctx context.Context,
+	_ platformhttpapi.GetManagedAIProductRequestObject,
 ) (platformhttpapi.GetManagedAIProductResponseObject, error) {
 	product := server.managedProduct
+	if server.operations != nil {
+		r, err := server.operations.Current(ctx)
+		if err != nil {
+			failure := newAPIFailure(503, "operations_unavailable", "cloud configuration is unavailable", "")
+			return platformhttpapi.GetManagedAIProductdefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
+		}
+		a := r.Policy.Apps[string(server.app.ID)]
+		product.DailyTokenLimit = a.DailyTokens
+		product.MonthlyTokenLimit = a.MonthlyTokens
+	}
 	return platformhttpapi.GetManagedAIProduct200JSONResponse{
 		ProductID: product.ProductID, BillingPeriod: product.BillingPeriod,
 		DailyTokenLimit: product.DailyTokenLimit, MonthlyTokenLimit: product.MonthlyTokenLimit,

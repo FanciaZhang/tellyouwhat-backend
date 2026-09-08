@@ -204,6 +204,9 @@ func (server *Server) apiAuthorizeAIEntitlement(
 	artifact contracts.Request,
 	requestID string,
 ) (bool, *apiFailure) {
+	if failure := server.operationsFailure(ctx, string(artifact.Operation), requestID); failure != nil {
+		return false, failure
+	}
 	managed, failure := server.apiManagedEntitlement(ctx, principal, requestID)
 	if failure != nil {
 		return false, failure
@@ -235,7 +238,7 @@ func (server *Server) apiAuthorizeAIEntitlement(
 	case err == nil:
 		return false, nil
 	case errors.Is(err, recognitionquota.ErrExceeded):
-		return false, newAPIFailure(http.StatusTooManyRequests, "free_recognition_quota_exceeded", "three free meal recognitions have already been used or reserved for this business day", requestID)
+		return false, newAPIFailure(http.StatusTooManyRequests, "free_recognition_quota_exceeded", "the free meal recognition limit has been reached for this business day", requestID)
 	case errors.Is(err, recognitionquota.ErrInvalid):
 		return false, newAPIFailure(http.StatusUnprocessableEntity, "invalid_recognition_session", "recognition session is invalid", requestID)
 	default:
@@ -310,6 +313,7 @@ func (server *Server) apiAcquireQuota(
 		return nil, newAPIFailure(http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", artifact.RequestID)
 	}
 	code, message := quotaExceededResponse(err)
+	server.recordOperationRejection(ctx, string(artifact.Operation), "quota")
 	return nil, newAPIFailure(http.StatusTooManyRequests, code, message, artifact.RequestID)
 }
 

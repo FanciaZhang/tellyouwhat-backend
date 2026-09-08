@@ -24,8 +24,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
+	platformconfig "github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	arkprovider "github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
@@ -50,6 +52,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("connect admin database: %w", err)
 	}
 	defer database.Close()
+	ops := platformops.Store{DB: database}
+	defaults, err := platformconfig.LoadOperationsDefaults()
+	if err != nil {
+		return err
+	}
+	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
+		return err
+	}
 	redisOptions, err := redis.ParseURL(configuration.redisURL)
 	if err != nil {
 		return fmt.Errorf("parse admin Redis URL: %w", err)
@@ -119,6 +129,7 @@ func run(logger *slog.Logger) error {
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		AI:                ai,
+		Operations:        &ops,
 		PreviewSigningKey: configuration.previewSigningKey,
 		WritesEnabled:     configuration.writesEnabled,
 		Apps:              adminApps,

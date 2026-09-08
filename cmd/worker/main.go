@@ -17,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -44,6 +45,14 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	ops := platformops.Store{DB: database}
+	defaults, err := config.LoadOperationsDefaults()
+	if err != nil {
+		return err
+	}
+	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
+		return err
+	}
 	costController, err := costcontrol.New(mysqlstore.NewCostControlStore(database), platform.AICost.Limits, time.Now)
 	if err != nil {
 		return err
@@ -79,8 +88,11 @@ func run(logger *slog.Logger) error {
 		modelProvider = budgeted
 		managedReconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
 		freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, app.FreeRecognitionQuota, appID)
+		managedReconciler.ResolveLimits = platformops.QuotaResolver(ops, appID, app.Quota, false)
+		freeRecognitionReconciler.ResolveLimits = platformops.QuotaResolver(ops, appID, app.FreeRecognitionQuota, true)
 		reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)
 		workers[app.Registry.ID] = jobs.NewWorker(store, modelProvider, reconciler)
+		workers[app.Registry.ID].Admit = func(ctx context.Context, op string) error { return platformops.Check(ctx, ops, appID, op) }
 	}
 	if len(workers) == 0 {
 		return errors.New("no asynchronous application workers are configured")

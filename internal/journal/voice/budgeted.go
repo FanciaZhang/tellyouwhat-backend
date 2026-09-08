@@ -50,7 +50,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 		actual = 0
 		known = false
 	}
-	settleCost(ctx, lease, actual, known)
+	settleCost(ctx, lease, actual, known, costcontrol.Outcome{Success: providerErr == nil, InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
 	return result, providerErr
 }
 
@@ -87,7 +87,7 @@ func (speech *BudgetedSpeech) Open(ctx context.Context, words []string) (SpeechC
 	}
 	connection, providerErr := speech.next.Open(ctx, words)
 	if providerErr != nil {
-		settleCost(ctx, lease, 0, false)
+		settleCost(ctx, lease, 0, false, costcontrol.Outcome{})
 		return nil, providerErr
 	}
 	return &budgetedSpeechConnection{next: connection, lease: lease, price: speech.price, parentContext: ctx}, nil
@@ -119,7 +119,13 @@ func (connection *budgetedSpeechConnection) Send(pcm []byte, final bool) error {
 }
 
 func (connection *budgetedSpeechConnection) Receive() (Transcript, error) {
-	return connection.next.Receive()
+	value, err := connection.next.Receive()
+	if err != nil {
+		connection.mu.Lock()
+		connection.uncertain = true
+		connection.mu.Unlock()
+	}
+	return value, err
 }
 
 func (connection *budgetedSpeechConnection) Close() error {
@@ -137,14 +143,14 @@ func (connection *budgetedSpeechConnection) Close() error {
 	if costErr != nil {
 		actual = 0
 	}
-	settleCost(connection.parentContext, connection.lease, actual, known)
+	settleCost(connection.parentContext, connection.lease, actual, known, costcontrol.Outcome{Success: !uncertain && providerErr == nil})
 	return providerErr
 }
 
-func settleCost(parent context.Context, lease *costcontrol.Lease, actual int64, known bool) {
+func settleCost(parent context.Context, lease *costcontrol.Lease, actual int64, known bool, outcome costcontrol.Outcome) {
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer cancel()
-	_ = lease.Settle(settlement, actual, known)
+	_ = lease.Finish(settlement, actual, known, outcome)
 }
 
 var _ Rewriter = (*BudgetedRewriter)(nil)
