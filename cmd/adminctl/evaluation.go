@@ -17,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/prompteval"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -50,10 +51,11 @@ func syntheticEvaluation(ctx context.Context, db *sql.DB, args []string) error {
 				row["judgeStatus"] = item.Result.Judgment.Status
 				row["judgeModel"] = item.Result.Judgment.Model
 				row["judgeError"] = item.Result.Judgment.Error
+				row["judgeDiagnostic"] = item.Result.Judgment.DiagnosticOutput
 				row["scores"] = item.Result.Judgment.Scores
 				out := []map[string]any{}
 				for _, o := range item.Result.Outputs {
-					out = append(out, map[string]any{"model": o.Model, "error": o.Error, "tokens": []int{o.InputTokens, o.OutputTokens}, "checks": o.Checks})
+					out = append(out, map[string]any{"model": o.Model, "error": o.Error, "tokens": []int{o.InputTokens, o.OutputTokens}, "checks": o.Checks, "diagnostic": o.DiagnosticOutput})
 				}
 				row["outputs"] = out
 			}
@@ -64,14 +66,43 @@ func syntheticEvaluation(ctx context.Context, db *sql.DB, args []string) error {
 	if args[0] != "preview" && args[0] != "start" {
 		return errors.New("unknown synthetic evaluation operation")
 	}
-	if args[0] == "start" && (len(args) != 3 || uuid.Validate(args[2]) != nil) {
+	if args[0] == "start" && ((len(args) != 3 && len(args) != 4) || uuid.Validate(args[2]) != nil) {
 		return errors.New("start requires preview digest and idempotency UUID")
+	}
+
+	sampleSelection := ""
+	if args[0] == "preview" && len(args) == 2 {
+		sampleSelection = args[1]
+	}
+	if args[0] == "start" && len(args) == 4 {
+		sampleSelection = args[3]
+	}
+	samples := prompteval.Builtins()
+	if sampleSelection != "" {
+		selected := []prompteval.Sample{}
+		for _, id := range strings.Split(sampleSelection, ",") {
+			found := false
+			for _, sample := range samples {
+				if sample.ID == id {
+					selected = append(selected, sample)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return errors.New("unknown synthetic sample ID")
+			}
+		}
+		samples = selected
 	}
 	var actor string
 	if err = db.QueryRowContext(ctx, `SELECT id FROM admin_users WHERE role='admin' AND status='active' ORDER BY created_at LIMIT 1`).Scan(&actor); err != nil {
 		return err
 	}
 	input := map[string]string{"source": "operator_synthetic_acceptance", "preview": ""}
+	if sampleSelection != "" {
+		input["sampleSelection"] = sampleSelection
+	}
 	m := aiconfig.Mutation{Actor: actor, RequestID: uuid.NewString()}
 	if args[0] == "start" {
 		m.Key = args[2]
@@ -95,7 +126,7 @@ func syntheticEvaluation(ctx context.Context, db *sql.DB, args []string) error {
 	}
 	judge := revision.Policy.Journal.Organize.Pro
 	judge.MaxOutputTokens = min(judge.MaxOutputTokens, 4096)
-	plan, err := prompteval.Prepare(prompteval.Builtins(), []prompteval.Candidate{{Revision: revision, Label: "当前发布版"}}, judge, cost.JournalSpeech)
+	plan, err := prompteval.Prepare(samples, []prompteval.Candidate{{Revision: revision, Label: "当前发布版"}}, judge, cost.JournalSpeech)
 	if err != nil {
 		return err
 	}
