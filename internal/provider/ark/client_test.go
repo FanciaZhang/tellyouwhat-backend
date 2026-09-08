@@ -256,3 +256,38 @@ func TestStreamCompletesWithoutWaitingForConnectionClosure(t *testing.T) {
 		t.Fatalf("terminal response waited for EOF: completed=%d err=%v", completed, err)
 	}
 }
+
+func TestSystemInstructionsPreservePromptMediaAndStreamAssembly(t *testing.T) {
+	client := New(Config{BaseURL: "https://example.invalid", APIKey: "fixture", Routes: map[contracts.Operation]Route{contracts.OperationMealDecision: {Model: "fixture-model", TimeoutSeconds: 5}}}, nil, fixedMediaResolver{})
+	for _, stream := range []bool{false, true} {
+		request := validArkRequest()
+		request.Media = []contracts.Media{{ID: "photo", Kind: "image", MIMEType: "image/jpeg", ObjectID: "fixture-photo"}}
+		// Compare the entire assembled body after removing only the added instructions.
+		baseline, _, err := client.makeRequest(context.Background(), request, stream)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var original map[string]any
+		if err = json.NewDecoder(baseline.Body).Decode(&original); err != nil {
+			t.Fatal(err)
+		}
+		request.SystemPrompt = &contracts.SystemPrompt{Version: "v1", Text: "附加指令"}
+		enriched, _, err := client.makeRequest(context.Background(), request, stream)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]any
+		if err = json.NewDecoder(enriched.Body).Decode(&actual); err != nil {
+			t.Fatal(err)
+		}
+		if actual["instructions"] != "附加指令" {
+			t.Fatal("missing instruction channel")
+		}
+		delete(actual, "instructions")
+		a, _ := json.Marshal(original)
+		b, _ := json.Marshal(actual)
+		if string(a) != string(b) {
+			t.Fatal("original prompt, media or response contract changed")
+		}
+	}
+}

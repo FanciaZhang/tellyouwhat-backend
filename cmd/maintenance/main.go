@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/prompteval"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
@@ -32,9 +33,10 @@ func main() {
 	}
 	repository := mysqlstore.NewMaintenanceRepository(database)
 	now := time.Now().UTC()
+	evaluationError := (prompteval.Store{DB: database}).Recover(ctx, now)
 	result, databaseError := repository.Cleanup(ctx, now)
 	purgedMedia, mediaError := repository.PurgeExpiredMedia(ctx, now, store)
-	if err := errors.Join(databaseError, mediaError); err != nil {
+	if err := errors.Join(databaseError, mediaError, evaluationError); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf(

@@ -46,14 +46,15 @@ async function aiLoadEndpoints(generation){
 function renderAI(){
   if(ai.screen!=="home")return;
   const tabs=[['functions','功能配置'],['endpoints','模型与接入点'],['history','变更记录']];
-  let body=`<div class="ai-tabs" role="tablist" aria-label="AI 管理区域">${tabs.map(([id,label])=>`<button role="tab" id="ai-${id}-tab" aria-controls="ai-content" aria-selected="${ai.tab===id}" tabindex="${ai.tab===id?0:-1}" data-ai-tab="${id}">${label}</button>`).join("")}</div><div id="ai-content" role="tabpanel" aria-labelledby="ai-${ai.tab}-tab">`;
+  let body=promptEntryCards()+`<div class="ai-tabs" role="tablist" aria-label="AI 管理区域">${tabs.map(([id,label])=>`<button role="tab" id="ai-${id}-tab" aria-controls="ai-content" aria-selected="${ai.tab===id}" tabindex="${ai.tab===id?0:-1}" data-ai-tab="${id}">${label}</button>`).join("")}</div><div id="ai-content" role="tabpanel" aria-labelledby="ai-${ai.tab}-tab">`;
   if(ai.tab==='functions'){
     body+=`<div class="ai-list">${ai.rows.map((row,index)=>`<article class="ai-row" data-ai-row="${index}"><strong>${aiEscape(aiLabels[row.operation]||row.operation)}</strong><div class="ai-modelcell"><span>${aiEscape(aiModelText(aiModel(row.endpoint)))}</span><small>${row.current?`思考：${aiEscape(aiEfforts[row.current.policy.reasoningEffort])} · 联网：${row.current.policy.webSearchEnabled?'开启':'关闭'}`:'参数跟随 App 请求'}${row.syncError?` · ${aiEscape(row.syncError)}`:''}</small></div><div class="ai-actions"><button class="quiet" data-ai-params="${index}">参数</button><button class="secondary" data-ai-switch="${aiEscape(aiEndpointID(row))}">切换模型</button>${row.endpoint?.RollingId?`<button class="quiet" data-ai-progress="${aiEscape(aiEndpointID(row))}">灰度进度</button>`:''}</div></article>`).join("")}</div>`;
   }else if(ai.tab==='endpoints'){
     body+=`<div class="ai-list">${aiOwned().map(id=>{const data=ai.endpoints.get(id),ep=data?.endpoint;return `<article class="ai-row"><div><strong>${aiEscape(ep?.Name||'健康接入点')}</strong><small class="ai-id">${aiEscape(id)}</small></div><div class="ai-modelcell"><span>${aiEscape(aiModelText(aiModel(ep)))}</span><small>使用功能：${aiEscape(aiAffected(id))}</small></div><div class="ai-actions"><button class="secondary" data-ai-switch="${aiEscape(id)}">切换模型</button><button class="quiet" data-ai-progress="${aiEscape(id)}">${ep?.RollingId?'灰度进度':'详情'}</button></div></article>`;}).join("")}</div>`;
   }else{body+=aiHistory();}
   body+='</div><div class="ai-foot"><span class="muted">'+(!ai.data.writesEnabled?'配置发布未启用':'')+(!ai.data.rollingWritesEnabled?' · 模型切换未启用':'')+'</span><button class="quiet" id="ai-refresh">刷新</button></div>';
-  aiFrame("AI 管理","查看正在使用的模型，调整参数和切换模型。",body);
+  aiFrame("AI 管理","管理健康与手记的模型、提示词和写作风格。",body);
+ promptBindEntries();
   aiClick('[data-ai-tab]',b=>{aiNavigate('home');ai.tab=b.dataset.aiTab;renderAI();if(ai.tab!=='functions')aiWork(async g=>{await aiLoadEndpoints(g);if(g===ai.generation)renderAI();});});
   const tabsDOM=[...aiView().querySelectorAll('[data-ai-tab]')];tabsDOM.forEach((el,i)=>el.onkeydown=e=>{let n;if(e.key==='ArrowRight')n=(i+1)%3;else if(e.key==='ArrowLeft')n=(i+2)%3;else if(e.key==='Home')n=0;else if(e.key==='End')n=2;else return;e.preventDefault();tabsDOM[n].click();aiView().querySelectorAll('[data-ai-tab]')[n].focus();});
   aiClick('[data-ai-params]',b=>openAIParams(Number(b.dataset.aiParams)));

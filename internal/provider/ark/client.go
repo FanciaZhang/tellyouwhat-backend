@@ -259,6 +259,10 @@ func (client *Client) makeRequest(
 	if stream {
 		body["stream"] = true
 	}
+	if request.SystemPrompt != nil && request.SystemPrompt.Text != "" {
+		body["instructions"] = request.SystemPrompt.Text
+	}
+
 	if request.Options.ReasoningEffort != "" {
 		if request.Options.ReasoningEffort == "minimal" {
 			body["thinking"] = map[string]string{"type": "disabled"}

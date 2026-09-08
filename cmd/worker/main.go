@@ -15,9 +15,12 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/prompteval"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -53,6 +56,13 @@ func run(logger *slog.Logger) error {
 	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
 		return err
 	}
+	promptDefaults, err := config.LoadPromptDefaults()
+	if err != nil {
+		return err
+	}
+	if _, err = promptconfig.Start(ctx, promptconfig.Store{DB: database}, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") }); err != nil {
+		return err
+	}
 	costController, err := costcontrol.New(mysqlstore.NewCostControlStore(database), platform.AICost.Limits, time.Now)
 	if err != nil {
 		return err
@@ -72,6 +82,10 @@ func run(logger *slog.Logger) error {
 	}
 	workers := make(map[appregistry.AppID]*jobs.Worker)
 	for _, app := range platform.Apps {
+		if app.Registry.ID == appregistry.Journal {
+			engine := &prompteval.Engine{Store: prompteval.Store{DB: database, Cipher: cipher, Limits: platform.AICost.Limits}, Provider: journalprovider.Config{BaseURL: app.JournalAI.BaseURL, APIKey: app.JournalAI.APIKey, LiteModel: app.JournalAI.LiteModel, ProModel: app.JournalAI.ProModel}, ASR: app.VoiceASR, Price: platform.AICost.JournalArk, SpeechPrice: platform.AICost.JournalSpeech}
+			go engine.Run(ctx)
+		}
 		if app.Registry.ID != appregistry.Health {
 			continue
 		}

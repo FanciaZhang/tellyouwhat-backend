@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"math"
 	"time"
 
@@ -28,8 +29,21 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 	if client == nil || client.next == nil || client.controller == nil || !client.price.Valid() {
 		return Result{}, costcontrol.ErrInvalidAttempt
 	}
+	price := client.price
 	input := contracts.ReservationTokens(request) - contracts.OutputReservationTokens
-	reserved, err := client.price.Cost(input, contracts.OutputReservationTokens)
+	output := contracts.OutputReservationTokens
+	if _, ok := promptconfig.FromContext(ctx); ok {
+		prepared, _, err := PrepareOrganize(ctx, request, pro, Config{})
+		if err != nil {
+			return Result{}, err
+		}
+		if prepared.Parameters.Price != nil {
+			price = *prepared.Parameters.Price
+		}
+		input = len(prepared.Body) + 1024
+		output = prepared.Parameters.MaxOutputTokens
+	}
+	reserved, err := price.Cost(input, output)
 	if err != nil {
 		return Result{}, err
 	}
@@ -42,7 +56,7 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 		return Result{}, err
 	}
 	result, providerErr := client.next.Organize(ctx, request, pro)
-	actual, costErr := client.price.Cost(result.InputTokens, result.OutputTokens)
+	actual, costErr := price.Cost(result.InputTokens, result.OutputTokens)
 	_, known := result.KnownTokenTotal()
 	if costErr != nil {
 		actual = 0
@@ -50,7 +64,7 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 	}
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(ctx, providerErr), Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
+	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Model: result.Model, Cancelled: costcontrol.IsCancellation(ctx, providerErr), Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
 	return result, providerErr
 }
 

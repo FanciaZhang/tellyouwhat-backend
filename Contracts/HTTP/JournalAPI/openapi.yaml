@@ -363,6 +363,32 @@ paths:
                 "$ref": "#/components/schemas/ManagedAIProduct"
         default:
           "$ref": "#/components/responses/Error"
+  /v1/journal/writing-styles:
+    get:
+      operationId: getJournalWritingStyles
+      tags: [Journal]
+      summary: Public writing style metadata. No prompts or provider settings.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: {type: string}
+      responses:
+        '200':
+          description: The current writing style catalog.
+          headers:
+            ETag: {schema: {type: string}, required: true}
+            Cache-Control: {schema: {type: string}, required: true}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WritingStyleCatalog'}
+        '304':
+          description: The cached catalog is current.
+          headers:
+            ETag: {schema: {type: string}, required: true}
+            Cache-Control: {schema: {type: string}, required: true}
+        default:
+          "$ref": "#/components/responses/Error"
   "/v1/journal/voice/sessions":
     post:
       operationId: createJournalVoiceSession
@@ -847,6 +873,8 @@ components:
         signedTransaction:
           type: string
           minLength: 1
+    WritingStyleMetadata: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "example", "order", "enabled"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "example": {"type": "string"}, "order": {"type": "integer"}, "enabled": {"type": "boolean"}}}
+    WritingStyleCatalog: {"type": "object", "additionalProperties": false, "required": ["version", "defaultStyle", "styles"], "properties": {"version": {"type": "string"}, "defaultStyle": {"type": "string"}, "styles": {"type": "array", "items": {"$ref": "#/components/schemas/WritingStyleMetadata"}}}}
     VoiceSessionRequest:
       type: object
       additionalProperties: false

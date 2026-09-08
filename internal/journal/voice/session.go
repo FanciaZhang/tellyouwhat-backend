@@ -241,7 +241,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		g := generation
 		targetTR := tr
 		go func() {
-			work, stop := context.WithTimeout(ctx, 60*time.Second)
+			work, stop := context.WithTimeout(ctx, 840*time.Second)
 			defer stop()
 			result, err := s.Model.Rewrite(work, current, targetTR)
 			select {

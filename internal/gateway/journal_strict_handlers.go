@@ -9,7 +9,9 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journalhttpapi"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
 )
@@ -54,6 +56,19 @@ func (server *Server) OrganizeJournal(
 		transactionID = principal.KeyID
 	}
 	estimatedTokens := journalReservationTokens(input)
+	analysisVersion := server.journalAnalysisVersion
+	if server.promptConfig != nil {
+		var configErr error
+		ctx, configErr = promptconfig.Freeze(ctx, server.promptConfig)
+		if configErr != nil {
+			failure = newAPIFailure(503, "prompt_config_unavailable", "AI configuration unavailable", requestID.String())
+			return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+		}
+		lite, _, _ := journalprovider.PrepareOrganize(ctx, input, false, journalprovider.Config{})
+		pro, _, _ := journalprovider.PrepareOrganize(ctx, input, true, journalprovider.Config{})
+		estimatedTokens = len(lite.Body) + len(pro.Body) + lite.Parameters.MaxOutputTokens + pro.Parameters.MaxOutputTokens + 2048
+		analysisVersion = lite.Version
+	}
 	if failure = server.operationsFailure(ctx, "journal.organize", requestID.String()); failure != nil {
 		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
 	}
@@ -105,7 +120,7 @@ func (server *Server) OrganizeJournal(
 	snapshot, snapshotErr := server.quotaReader.Snapshot(ctx, transactionID, server.now())
 	response := journalcontracts.OrganizeResponse{
 		RequestID: input.RequestID, ContentHash: input.ContentHash,
-		AnalysisVersion:             server.journalAnalysisVersion,
+		AnalysisVersion:             analysisVersion,
 		Tags:                        result.Value.Tags,
 		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
 		NewBookSuggestions:          result.Value.NewBookSuggestions,

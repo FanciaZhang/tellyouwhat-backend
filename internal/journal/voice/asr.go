@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"net"
 	"time"
@@ -29,11 +30,24 @@ type SpeechConnection interface {
 type Speech interface {
 	Open(context.Context, []string) (SpeechConnection, error)
 }
-type ASR struct{ Config ASRConfig }
+type ASR struct {
+	Config  ASRConfig
+	Prompts *promptconfig.Cache
+}
 type asrConnection struct{ ws *websocket.Conn }
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
 func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error) {
+	punctuation, normalize := true, true
+	if r, ok := promptconfig.FromContext(ctx); ok {
+		punctuation, normalize = r.Policy.Journal.Voice.AutomaticPunctuation, r.Policy.Journal.Voice.NormalizeNumbers
+	} else if a.Prompts != nil {
+		r, err := a.Prompts.Current("journal")
+		if err != nil {
+			return nil, err
+		}
+		punctuation, normalize = r.Policy.Journal.Voice.AutomaticPunctuation, r.Policy.Journal.Voice.NormalizeNumbers
+	}
 	config, err := websocket.NewConfig(a.Config.URL, "https://api.journal.tellyouwhat.cn")
 	if err != nil {
 		return nil, err
@@ -60,7 +74,7 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 	payload, _ := json.Marshal(map[string]any{
 		"user":    map[string]string{"uid": uuid.NewString()},
 		"audio":   map[string]any{"format": "pcm", "codec": "raw", "rate": 16000, "bits": 16, "channel": 1},
-		"request": map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": true, "enable_punc": true, "corpus": map[string]string{"context": string(corpus)}},
+		"request": map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "corpus": map[string]string{"context": string(corpus)}},
 	})
 	if err = websocket.Message.Send(ws, asrPacket(1, false, payload)); err != nil {
 		ws.Close()

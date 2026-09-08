@@ -126,7 +126,7 @@ func (s Store) Patrol(ctx context.Context, now time.Time) error {
 	end := now.Truncate(p.Window())
 	start := end.Add(-p.Window())
 	activity := map[string]patrolActivity{}
-	rows, err := tx.QueryContext(ctx, `SELECT app_id,operation,COUNT(*),SUM(outcome='error'),COALESCE(AVG(latency_ms),0) FROM ai_cost_attempts WHERE outcome_recorded_at>=? AND outcome_recorded_at<? AND cancelled=FALSE AND outcome IN ('success','error') GROUP BY app_id,operation`, start, end)
+	rows, err := tx.QueryContext(ctx, `SELECT app_id,operation,COUNT(*),SUM(outcome='error'),COALESCE(AVG(latency_ms),0) FROM ai_cost_attempts WHERE outcome_recorded_at>=? AND outcome_recorded_at<? AND cancelled=FALSE AND audience<>'admin_evaluation' AND outcome IN ('success','error') GROUP BY app_id,operation`, start, end)
 	if err != nil {
 		return err
 	}

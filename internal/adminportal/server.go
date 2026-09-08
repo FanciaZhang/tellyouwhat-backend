@@ -22,7 +22,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminui"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/prompteval"
 )
 
 const (
@@ -49,8 +52,12 @@ type OfferManager interface {
 }
 
 type Config struct {
+	Evaluations             *prompteval.Store
+	EvaluationSpeechPrice   costcontrol.DurationPrice
 	Billing                 *cloudbilling.Cache
 	Operations              *platformops.Store
+	Prompts                 *promptconfig.Store
+	PromptCache             *promptconfig.Cache
 	OperationsWritesEnabled bool
 	AI                      *AIConfig
 	PreviewSigningKey       []byte
