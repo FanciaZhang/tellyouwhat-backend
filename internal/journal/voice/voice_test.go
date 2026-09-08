@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,7 +110,7 @@ func TestASRPacketFinalFlagAndMalformedPackets(t *testing.T) {
 		}
 	}
 }
-func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
+func TestRevisionAllowsManualParagraphCorrectionButRejectsStaleAndMediaChanges(t *testing.T) {
 	block, inserted := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文"}}, EditedBlockIDs: []string{block}}
 	r := Revision{BaseRevision: 3}
@@ -117,10 +118,15 @@ func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
 		t.Fatal("accepted stale revision")
 	}
 	r.BaseRevision = 4
-	r.Patches = []Patch{{ID: block, Text: "错误覆盖"}}
-	if r.Validate(s) == nil {
-		t.Fatal("overwrote manual edit")
+	r.Patches = []Patch{{ID: block, Text: "依据后续口述局部纠正"}}
+	if err := r.Validate(s); err != nil {
+		t.Fatal("manual editing must not permanently lock a paragraph", err)
 	}
+	s.MediaOnlyBlockIDs = []string{block}
+	if r.Validate(s) == nil {
+		t.Fatal("overwrote media-only composition")
+	}
+	s.MediaOnlyBlockIDs = nil
 	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: uuid.NewString()}}
 	if r.Validate(s) == nil {
 		t.Fatal("unknown anchor")
@@ -134,6 +140,58 @@ func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSnapshotRejectsUnknownMediaAndManualReferences(t *testing.T) {
+	for _, media := range []bool{false, true} {
+		s := Snapshot{Blocks: []Block{{uuid.NewString(), "正文"}}}
+		if media {
+			s.MediaOnlyBlockIDs = []string{uuid.NewString()}
+		} else {
+			s.EditedBlockIDs = []string{uuid.NewString()}
+		}
+		if s.Validate() == nil {
+			t.Fatal("accepted metadata referring to an absent block")
+		}
+	}
+}
+
+func TestSnapshotRejectsInvalidManualEditHints(t *testing.T) {
+	id := uuid.NewString()
+	for _, edits := range [][]ManualEdit{
+		{{BlockID: uuid.NewString(), Before: "甲", After: "乙"}},
+		{{BlockID: id, Before: "甲", After: "甲"}},
+		{{BlockID: id, Before: strings.Repeat("字", 4097), After: "乙"}},
+		{{BlockID: id, Before: "甲", After: "乙", TranscriptOffset: -1}},
+		{{BlockID: id, Before: "甲", After: "乙", TranscriptOffset: 1}},
+	} {
+		if (Snapshot{Blocks: []Block{{id, "当前正文"}}, ManualEdits: edits}).Validate() == nil {
+			t.Fatal("accepted invalid or unbounded manual-edit context")
+		}
+	}
+}
+func TestEditorialTranscriptPreservesUnicodeAndManualEditOrder(t *testing.T) {
+	old, later := "旧纠正👩🏽‍🦱。", "后来再次纠正。"
+	boundary := len([]rune(old))
+	snapshot := Snapshot{Transcript: old + later, ManualEdits: []ManualEdit{{TranscriptOffset: boundary}, {TranscriptOffset: 0}, {TranscriptOffset: boundary}, {TranscriptOffset: len([]rune(old + later))}}}
+	raw, err := json.Marshal(editorialDocument(snapshot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document rewriteDocument
+	if err = json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Transcript) != 2 || document.Transcript[0].Text != old || document.Transcript[1].Text != later || document.Transcript[1].Start != boundary {
+		t.Fatalf("lost speech order: %s", raw)
+	}
+	if len(document.ManualEdits) != 4 || !document.ManualEdits[0].HasLaterSpeech || document.ManualEdits[3].HasLaterSpeech {
+		t.Fatal("lost explicit before/after edit relationship")
+	}
+	if strings.Count(string(raw), old) != 1 || strings.Count(string(raw), later) != 1 {
+		t.Fatal("transcript was duplicated for each manual edit")
+	}
+}
+
 func TestTicketsCannotChangeSessionOrOwner(t *testing.T) {
 	s := Service{Store: NewMemoryStore(), Secret: make([]byte, 32)}
 	id := uuid.NewString()

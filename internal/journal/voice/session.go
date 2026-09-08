@@ -321,7 +321,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				// Repeated receipt acknowledgements do not invalidate a model
 				// call that already uses the same base. Real edits still do.
 				if snapshot.WritingStyle != next.WritingStyle || snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
-					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.Words, next.Words) {
+					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !slices.Equal(snapshot.ManualEdits, next.ManualEdits) || !slices.Equal(snapshot.Words, next.Words) {
 					generation++
 				}
 				snapshot = next

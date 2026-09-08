@@ -34,18 +34,18 @@ func TestWritingStylesKeepUntrustedTextOutOfInstructionsAndValidateOutput(t *tes
 					t.Error("rewrite must not gain tools or storage")
 				}
 				var input struct {
-					Document           Snapshot
+					Document           rewriteDocument
 					TranscriptRevision int
 				}
 				if err := json.Unmarshal([]byte(payload["input"].(string)), &input); err != nil {
 					t.Error(err)
 				}
-				if input.Document.WritingStyle != style || input.Document.Transcript != attack || input.TranscriptRevision != 7 {
+				if input.Document.WritingStyle != style || len(input.Document.Transcript) != 1 || input.Document.Transcript[0].Text != attack || input.TranscriptRevision != 7 {
 					t.Error("source text or selected style was lost")
 				}
 				revision := Revision{BaseRevision: 3, TranscriptRevision: 7, Patches: []Patch{}, Questions: []string{}}
 				if unsafeOutput {
-					revision.Patches = []Patch{{ID: snapshot.Blocks[0].ID, Text: "越权修改"}}
+					revision.Patches = []Patch{{ID: uuid.NewString(), Text: "不存在的段落"}}
 				}
 				text, _ := json.Marshal(revision)
 				_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(text)}}}}})
@@ -57,7 +57,7 @@ func TestWritingStylesKeepUntrustedTextOutOfInstructionsAndValidateOutput(t *tes
 			}
 			unsafeOutput = true
 			if _, err := model.Rewrite(context.Background(), snapshot, 7); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("locked output accepted: %v", err)
+				t.Fatalf("unknown output block accepted: %v", err)
 			}
 		})
 	}

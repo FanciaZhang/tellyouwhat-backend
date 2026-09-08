@@ -18,7 +18,7 @@ reconnect, retaining the same session and segment UUIDs. Tokens are never in URL
 
 WebSocket messages are JSON. Client messages:
 
-- `snapshot`: `{snapshot:{revision,blocks:[{id,text}],transcript,editedBlockIDs,words}}`.
+- `snapshot`: `{snapshot:{revision,blocks:[{id,text}],transcript,editedBlockIDs,mediaOnlyBlockIDs,manualEdits,words,writingStyle}}`.
   Blocks are stable UUIDs. Client archives and recovery text are not model inputs.
 - `audio`: `{segmentID,pcm:base64 PCM16 little-endian mono 16000Hz,final:bool}`.
   Frames are at most 6400 bytes (200ms); segments at most 480000 bytes (15s).
@@ -30,7 +30,27 @@ Server messages: `ready`, `transcript` (segmentID/text/stable), `receipt`
 (baseRevision/transcriptRevision/patches/questions), `finished`, and `error`.
 Patches contain id/text/afterID. Empty afterID replaces an existing text block;
 otherwise insert a new UUID immediately after an existing block. Blocks and media
-are not deleted or reordered. User-edited blocks cannot be replaced.
+are not deleted or reordered. Only `mediaOnlyBlockIDs` are excluded from text
+replacement. `editedBlockIDs` is advisory history, not an immutable paragraph lock.
+
+`manualEdits` contains at most 24 recent local changes, capped at 4096 Unicode
+scalars across their before/after/context fields. Each entry carries `blockID`,
+`before`, `after`, `contextBefore`, `contextAfter`, and `transcriptOffset` (a Unicode
+scalar offset in this recording's cumulative transcript when the edit occurred).
+The client resets inherited offsets to zero for a new recording. Before calling
+the model, the backend splits the transcript at those boundaries, preserving each
+character once; the model does not have to count offsets itself. Earlier speech,
+including an earlier explicit correction, should not undo a later manual edit.
+New explicit corrections may revise the same words in place. User-expressed
+uncertainty may remain uncertainty in the body; it must not become invented
+certainty. These are editorial instructions, not a deterministic semantic guarantee.
+
+The current body remains authoritative context when no exact hint is available.
+Formatting-only changes do not generate text hints. Large replacements are not
+truncated into misleading exact edits. Hints no longer matching the current body
+are omitted. Raw audio and transcript archives remain local and recoverable; only
+the bounded hints join the already consented rewriting request. No content is
+added to service logs or usage metrics.
 
 Persist an entire validated revision atomically, then acknowledge with a snapshot
 at baseRevision+1, including when patches is empty. No-op acknowledgements do not

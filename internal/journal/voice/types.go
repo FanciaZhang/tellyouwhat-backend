@@ -25,13 +25,30 @@ type Block struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
 }
+
+// ManualEdit describes the actual user change; it never grants a permanent lock.
+type ManualEdit struct {
+	BlockID          string `json:"blockID"`
+	Before           string `json:"before"`
+	After            string `json:"after"`
+	ContextBefore    string `json:"contextBefore"`
+	ContextAfter     string `json:"contextAfter"`
+	TranscriptOffset int    `json:"transcriptOffset"`
+}
+
+func (e ManualEdit) characters() int {
+	return utf8.RuneCountInString(e.Before) + utf8.RuneCountInString(e.After) + utf8.RuneCountInString(e.ContextBefore) + utf8.RuneCountInString(e.ContextAfter)
+}
+
 type Snapshot struct {
-	WritingStyle   WritingStyle `json:"writingStyle"`
-	Revision       int          `json:"revision"`
-	Blocks         []Block      `json:"blocks"`
-	Transcript     string       `json:"transcript"`
-	EditedBlockIDs []string     `json:"editedBlockIDs"`
-	Words          []string     `json:"words"`
+	WritingStyle      WritingStyle `json:"writingStyle"`
+	Revision          int          `json:"revision"`
+	Blocks            []Block      `json:"blocks"`
+	Transcript        string       `json:"transcript"`
+	EditedBlockIDs    []string     `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs []string     `json:"mediaOnlyBlockIDs"`
+	ManualEdits       []ManualEdit `json:"manualEdits"`
+	Words             []string     `json:"words"`
 }
 type Patch struct {
 	ID   string `json:"id"`
@@ -73,7 +90,7 @@ func (s Snapshot) Validate() error {
 	if _, err := s.WritingStyle.instructions(); err != nil {
 		return err
 	}
-	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 {
+	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 || len(s.MediaOnlyBlockIDs) > 1024 || len(s.ManualEdits) > 24 {
 		return ErrInvalid
 	}
 	count := utf8.RuneCountInString(s.Transcript)
@@ -89,6 +106,21 @@ func (s Snapshot) Validate() error {
 		if !seen[id] {
 			return ErrInvalid
 		}
+	}
+	for _, id := range s.MediaOnlyBlockIDs {
+		if !seen[id] {
+			return ErrInvalid
+		}
+	}
+	editCharacters := 0
+	for _, edit := range s.ManualEdits {
+		if !seen[edit.BlockID] || edit.Before == edit.After || edit.TranscriptOffset < 0 || edit.TranscriptOffset > utf8.RuneCountInString(s.Transcript) {
+			return ErrInvalid
+		}
+		editCharacters += edit.characters()
+	}
+	if editCharacters > 4096 {
+		return ErrInvalid
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
@@ -119,7 +151,9 @@ func (r Revision) Validate(s Snapshot) error {
 		known[b.ID] = true
 		lengths[b.ID] = utf8.RuneCountInString(b.Text)
 	}
-	for _, id := range s.EditedBlockIDs {
+	// Manual edits are editorial context, not immutable paragraphs. Only
+	// media-only compositions are excluded from text replacement.
+	for _, id := range s.MediaOnlyBlockIDs {
 		locked[id] = true
 	}
 	count := 0
