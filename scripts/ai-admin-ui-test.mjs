@@ -14,15 +14,18 @@ const source={Name:'doubao-seed-2-0-mini',ModelVersion:'260428'},target={Name:'d
 const price={InputNanosPerMillionTokens:800000000,OutputNanosPerMillionTokens:8000000000};
 const models=[{Name:target.Name,DisplayName:'Doubao Seed 2.1 Pro'},{Name:'deepseek-v4-pro-ga',DisplayName:'DeepSeek V4 Pro'},{Name:'doubao-seedream-5-0-pro',DisplayName:'Seedream 5 Pro'},...Array.from({length:92},(_,i)=>({Name:`model-${i}`,DisplayName:`Directory model ${i}`}))];
 const rows=operations.map((operation,i)=>({operation,endpointID:`ep-${i}`,endpoint:{Id:`ep-${i}`,Name:`接入点 ${i}`,Status:'Running',ModelReference:{FoundationModel:source}},history:[],syncedAt:new Date().toISOString()}));
+models[0].VendorName='豆包';
 let rolling=null,commands=[],lastInput=null,checks=0,posts=0,draft;
+let releaseCatalog;
+let catalogReady=new Promise(resolve=>{releaseCatalog=resolve;});
 const context=await browser.newContext({viewport:{width:1280,height:1000}}),page=await context.newPage(),errors=[];
 await page.addInitScript(()=>{window.cspFailures=[];document.addEventListener('securitypolicyviolation',e=>window.cspFailures.push(e.violatedDirective));});
 page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
 await page.route('**/api/**',async route=>{
  const request=route.request(),url=new URL(request.url()),pathname=url.pathname;let data={},status=200;
- if(pathname==='/api/v1/auth/session'){status=401;data={error:{message:'login'}};}
+ if(pathname==='/api/v1/session'){status=401;data={error:{message:'login'}};}
  else if(pathname==='/api/v1/ai/health')data={operations:rows,ownedEndpoints:rows.map(r=>r.endpointID),writesEnabled:true,rollingWritesEnabled:true,timeoutSeconds:90};
- else if(pathname==='/api/v1/ai/models')data={models,syncedAt:new Date().toISOString()};
+ else if(pathname==='/api/v1/ai/models'){await catalogReady;data={models,syncedAt:new Date().toISOString()};}
  else if(pathname.endsWith('/versions')){const name=decodeURIComponent(pathname.split('/')[5]);data={versions:[{FoundationModelName:name,ModelVersion:'260628',Status:'Published'}],activation:{value:[{FoundationModelName:name,State:'Available',ChargeItems:[{Type:'InferencePrompt',Price:'0.001',UnitCode:'千tokens'},{Type:'InferenceCompletion',Price:'0.01',UnitCode:'千tokens'}]}],syncedAt:new Date().toISOString()}};}
  else if(pathname.startsWith('/api/v1/ai/endpoints/'))data={endpoint:rows.find(r=>r.endpointID===pathname.split('/').at(-1)).endpoint,rolling,commands,writesEnabled:true,syncedAt:new Date().toISOString(),attempts:[]};
  else if(pathname.endsWith('/drafts')){const body=request.postDataJSON();draft={id:'draft-1',baseVersion:body.baseVersion,operation:body.operation,policy:body.policy,createdAt:new Date().toISOString()};data=draft;}
@@ -47,14 +50,53 @@ await page.route('**/api/**',async route=>{
 async function waitHeading(text){await page.getByRole('heading',{name:text,exact:true}).waitFor();}
 async function settle(){await page.waitForFunction(()=>document.querySelector('#ai-view').getAttribute('aria-busy')!=='true');}
 async function overflow(){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');}
+async function assertSearch(value,start,end=start){
+ const input=page.getByRole('searchbox');
+ assert.equal(await input.inputValue(),value);
+ assert.deepEqual(await input.evaluate(el=>({same:el===window.searchInput,focused:el===document.activeElement,start:el.selectionStart,end:el.selectionEnd})),{same:true,focused:true,start,end});
+}
+async function testModelSearch(){
+ await page.setViewportSize({width:390,height:1000});
+ await page.locator('[data-ai-switch="ep-3"]').click();await waitHeading('选择模型');
+ const input=page.getByRole('searchbox');
+ await input.evaluate(el=>{window.searchInput=el;window.compositionEvents=[];for(const event of ['compositionstart','compositionend'])el.addEventListener(event,e=>window.compositionEvents.push(e.type));});
+ await input.pressSequentially('pro');await assertSearch('pro',3);
+ // The directory may finish loading while the user is editing the query.
+ await input.press('ArrowLeft');await assertSearch('pro',2);
+ releaseCatalog();await page.locator('[data-ai-model]').first().waitFor();await settle();
+ await assertSearch('pro',2);assert.equal(await page.locator('[data-ai-model]').count(),3);
+ await input.pressSequentially('x');await assertSearch('prxo',3);
+ assert.equal(await page.locator('[data-ai-model]').count(),0);
+ await input.press('Backspace');await assertSearch('pro',2);
+ assert.equal(await page.locator('[data-ai-model]').count(),3);
+ await input.evaluate(el=>el.setSelectionRange(0,2));await input.pressSequentially('PR');await assertSearch('PRo',2);
+ // Use the browser's IME path so composition events and text insertion are real.
+ await input.fill('');
+ catalogReady=new Promise(resolve=>{releaseCatalog=resolve;});
+ await page.getByRole('button',{name:'刷新目录',exact:true}).click();await input.focus();
+ const cdp=await context.newCDPSession(page);
+ await cdp.send('Input.imeSetComposition',{text:'豆',selectionStart:1,selectionEnd:1});await assertSearch('豆',1);
+ releaseCatalog();await settle();await assertSearch('豆',1);
+ await cdp.send('Input.imeSetComposition',{text:'豆包',selectionStart:2,selectionEnd:2});await assertSearch('豆包',2);
+ await cdp.send('Input.insertText',{text:'豆包'});await assertSearch('豆包',2);
+ assert.deepEqual(await page.evaluate(()=>window.compositionEvents),['compositionstart','compositionend']);
+ assert.equal(await page.locator('[data-ai-model]').count(),1);await cdp.detach();
+ await input.fill('');await page.locator('#ai-next').click();
+ await input.pressSequentially('pro');await assertSearch('pro',3);
+ assert.ok(await page.locator('#ai-prev').isDisabled());assert.ok(await page.locator('#ai-next').isDisabled());
+ await overflow();
+ if(process.env.AI_UI_SCREENSHOT_DIR){await fs.mkdir(process.env.AI_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.AI_UI_SCREENSHOT_DIR,'model-search-mobile.png'),fullPage:true});}
+ await page.setViewportSize({width:1280,height:1000});
+}
 try{
- await page.goto(`http://127.0.0.1:${server.address().port}`);
+ await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'networkidle'});
  await page.evaluate(async()=>{state.user={id:'fixture'};state.csrf='fixture';window.passkeyChecks=0;reauthenticate=async()=>{window.passkeyChecks++;};$('#auth').classList.add('hidden');$('#workspace').classList.remove('hidden');$('#ai-section').classList.remove('hidden');$('#operations-section').classList.add('hidden');await loadAI();});
  assert.equal(await page.locator('[data-ai-row]').count(),8);
  await page.locator('[data-ai-params="4"]').click();await page.locator('[name=reasoningEffort]').selectOption('high');await page.locator('[name=webSearchEnabled]').check();await page.getByRole('button',{name:'预览变更',exact:true}).click();await waitHeading('确认参数变更');
  assert.equal(await page.evaluate(()=>window.passkeyChecks),0);
  await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await waitHeading('AI 管理');assert.equal(rows[4].current.policy.reasoningEffort,'high');assert.equal(await page.evaluate(()=>window.passkeyChecks),1);
- await page.locator('[data-ai-switch="ep-3"]').click();await page.locator('[data-ai-model]').first().waitFor();await page.getByRole('searchbox').fill('DeepSeek');assert.equal(await page.locator('[data-ai-model]').count(),1);await page.getByRole('searchbox').fill('Seedream');await page.locator('[data-ai-model]').click();await settle();await page.getByRole('button',{name:'检查并预览'}).click();await page.locator('#ai-error').waitFor();assert.equal(posts,0);
+ await testModelSearch();
+ await page.getByRole('searchbox').fill('DeepSeek');assert.equal(await page.locator('[data-ai-model]').count(),1);await page.getByRole('searchbox').fill('Seedream');await page.locator('[data-ai-model]').click();await settle();await page.getByRole('button',{name:'检查并预览'}).click();await page.locator('#ai-error').waitFor();assert.equal(posts,0);
  await page.getByRole('button',{name:'← 返回',exact:true}).click();await page.getByRole('searchbox').fill('2.1');await page.locator('[data-ai-model]').click();await settle();await page.getByRole('button',{name:'检查并预览'}).click();await waitHeading('确认模型切换');assert.equal(await page.evaluate(()=>window.passkeyChecks),1);
  await page.getByRole('button',{name:'通行密钥确认并开始'}).dblclick();await waitHeading('正在切换模型');assert.equal(posts,1);assert.equal(await page.evaluate(()=>window.passkeyChecks),2);
  assert.equal(await page.getByRole('progressbar').getAttribute('aria-valuenow'),'90');await page.getByRole('button',{name:'回退一个阶段',exact:true}).click();await waitHeading('回退一个阶段');await page.getByRole('button',{name:'通行密钥确认并提交'}).click();await waitHeading('正在切换模型');assert.equal(await page.getByRole('progressbar').getAttribute('aria-valuenow'),'88');
@@ -63,5 +105,5 @@ try{
  await page.getByRole('button',{name:'← 返回',exact:true}).click();await page.getByRole('button',{name:'← 返回',exact:true}).click();await waitHeading('AI 管理');
  for(const width of [360,390,736,1280]){for(const colorScheme of ['light','dark']){await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme});await overflow();if(process.env.AI_UI_SCREENSHOT_DIR){await fs.mkdir(process.env.AI_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.AI_UI_SCREENSHOT_DIR,`overview-${width}-${colorScheme}.png`),fullPage:true});}}}
  await page.getByRole('tab',{name:'模型与接入点',exact:true}).click();await settle();assert.equal(await page.locator('.ai-row').count(),8);await page.getByRole('tab',{name:'变更记录',exact:true}).click();await settle();assert.ok(await page.locator('.ai-history-row').count()>=2);
- assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.cspFailures),[]);console.log('PASS overview, full catalog, incompatibility, one Passkey, publish, duplicate guard, 90% rollback, completion/reverse, history and responsive light/dark layouts');
-}finally{await browser.close();server.close();}
+ assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.cspFailures),[]);console.log('PASS sequential typing, caret/selection editing, IME composition, delayed catalog, pagination, overview, incompatibility, one Passkey, publish, duplicate guard, 90% rollback, completion/reverse, history and responsive light/dark layouts');
+}finally{releaseCatalog();await browser.close();server.close();}
