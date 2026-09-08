@@ -177,6 +177,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	go ops.RunPatrol(background, logger)
 	if ai != nil {
 		go ai.Rollouts.Run(background)
 	}

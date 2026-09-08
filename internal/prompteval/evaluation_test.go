@@ -28,7 +28,7 @@ func testPlan(t *testing.T) Plan {
 	p.Journal.Organize.Lite.Price = &price
 	p.Journal.Organize.Pro.Price = &price
 	p.Journal.Voice.Parameters.Price = &price
-	plan, err := Prepare(Builtins(), []Candidate{{Revision: promptconfig.Revision{ID: uuid.NewString(), Scope: "journal", Policy: p}, Label: "草稿"}}, p.Journal.Organize.Pro, costcontrol.DurationPrice{NanosPerHour: 4500000000})
+	plan, err := Prepare(Builtins()[:7], []Candidate{{Revision: promptconfig.Revision{ID: uuid.NewString(), Scope: "journal", Policy: p}, Label: "草稿"}}, p.Journal.Organize.Pro, costcontrol.DurationPrice{NanosPerHour: 4500000000})
 	if err != nil {
 		t.Fatal(err)
 	}

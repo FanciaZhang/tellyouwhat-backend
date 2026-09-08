@@ -107,7 +107,7 @@ func (e *Engine) judge(ctx context.Context, budget *costcontrol.Controller, plan
 	}
 	result.Model, result.InputTokens, result.OutputTokens = envelope.Model, envelope.Usage.Input, envelope.Usage.Output
 	result.CostNanos, _ = plan.Judge.Price.Cost(result.InputTokens, result.OutputTokens)
-	if envelope.Status != "completed" || envelope.Model == "" {
+	if envelope.Status != "completed" || envelope.Model == "" || envelope.Usage.Input < 0 || envelope.Usage.Output < 0 {
 		result.Error = "judge_incomplete"
 		return result
 	}

@@ -58,18 +58,18 @@ func (s *Server) GetOperationsConfig(c *gin.Context) {
 	if _, ok := s.operationsAccess(c, false, false); !ok {
 		return
 	}
-	r, err := s.config.Operations.Current(c)
+	r, err := s.config.Operations.Current(c.Request.Context())
 	if err != nil {
 		operationsFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"current": r, "freeSessionReservationTokens": contracts.MaxFreeRecognitionSessionReservationTokens, "writesEnabled": s.config.OperationsWritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
+	writeJSON(c.Writer, 200, map[string]any{"current": r, "automationRules": r.Policy.AutomationRules(), "freeSessionReservationTokens": contracts.MaxFreeRecognitionSessionReservationTokens, "writesEnabled": s.config.OperationsWritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
 }
 func (s *Server) GetOperationsMetrics(c *gin.Context) {
 	if _, ok := s.operationsAccess(c, false, false); !ok {
 		return
 	}
-	m, err := s.config.Operations.Metrics(c, s.now())
+	m, err := s.config.Operations.Metrics(c.Request.Context(), s.now())
 	if err != nil {
 		operationsFailure(c, err)
 		return
@@ -87,7 +87,7 @@ func (s *Server) ListOperationsHistory(c *gin.Context, params adminhttpapi.ListO
 	if params.Cursor != nil {
 		cursor = *params.Cursor
 	}
-	h, err := s.config.Operations.History(c, cursor)
+	h, err := s.config.Operations.History(c.Request.Context(), cursor)
 	if err != nil {
 		operationsFailure(c, err)
 		return
@@ -107,7 +107,7 @@ func (s *Server) CreateOperationsDraft(c *gin.Context, _ adminhttpapi.CreateOper
 	if !ok {
 		return
 	}
-	r, err := s.config.Operations.Draft(c, input, m, s.now())
+	r, err := s.config.Operations.Draft(c.Request.Context(), input, m, s.now())
 	if err != nil {
 		operationsFailure(c, err)
 		return
@@ -162,12 +162,12 @@ func (s *Server) GetOperationsRevision(c *gin.Context, revision string) {
 	if !ok {
 		return
 	}
-	r, err := s.config.Operations.Get(c, revision)
+	r, err := s.config.Operations.Get(c.Request.Context(), revision)
 	if err != nil {
 		operationsFailure(c, err)
 		return
 	}
-	current, err := s.config.Operations.Current(c)
+	current, err := s.config.Operations.Current(c.Request.Context())
 	if err != nil {
 		operationsFailure(c, err)
 		return
@@ -196,14 +196,14 @@ func (s *Server) PublishOperationsConfig(c *gin.Context, _ adminhttpapi.PublishO
 	if !ok {
 		return
 	}
-	if replay, err := s.config.Operations.Replay(c, m, "operations.publish", input.Publication); err != nil {
+	if replay, err := s.config.Operations.Replay(c.Request.Context(), m, "operations.publish", input.Publication); err != nil {
 		operationsFailure(c, err)
 		return
 	} else if replay != nil {
 		writeJSON(c.Writer, 200, replay)
 		return
 	}
-	r, err := s.config.Operations.Get(c, input.Revision)
+	r, err := s.config.Operations.Get(c.Request.Context(), input.Revision)
 	if err != nil {
 		operationsFailure(c, err)
 		return
@@ -212,7 +212,7 @@ func (s *Server) PublishOperationsConfig(c *gin.Context, _ adminhttpapi.PublishO
 		writeFailure(c.Writer, 409, "operations_preview_changed", "预览已过期或不匹配，请重新查看后再发布")
 		return
 	}
-	r, err = s.config.Operations.Publish(c, input.Publication, m, s.now())
+	r, err = s.config.Operations.Publish(c.Request.Context(), input.Publication, m, s.now())
 	if err != nil {
 		operationsFailure(c, err)
 		return

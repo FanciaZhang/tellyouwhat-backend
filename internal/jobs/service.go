@@ -67,6 +67,7 @@ type Store interface {
 	Succeed(context.Context, string, int, providerapi.Response, usage.Record, time.Time) error
 	Fail(context.Context, string, int, string, time.Time) error
 	RetryOrFail(context.Context, string, int, string, time.Time) (bool, error)
+	DeferAdmission(context.Context, string, int, time.Time) error
 	Cancel(context.Context, string, time.Time) error
 }
 
@@ -230,11 +231,24 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 	heartbeatDone := make(chan struct{})
 	go worker.heartbeat(workContext, job.ID, job.AttemptCount, cancelWork, stopHeartbeat, heartbeatDone)
 	defer func() {
-		close(stopHeartbeat)
-		<-heartbeatDone
+		if stopHeartbeat != nil {
+			close(stopHeartbeat)
+			<-heartbeatDone
+		}
 	}()
 	workContext = costcontrol.WithAccess(workContext, job.OwnerKeyID, !strings.HasPrefix(job.OwnerTransactionID, quota.FreeRecognitionTransactionPrefix))
 	response, err := worker.provider.Complete(workContext, job.Request)
+	if errors.Is(err, costcontrol.ErrProtectionActive) {
+		// No provider call was made. Reuse this attempt's quota reservation
+		// instead of consuming a retry or charging unknown provider use.
+		close(stopHeartbeat)
+		<-heartbeatDone
+		stopHeartbeat = nil
+		persistContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		persistErr := worker.store.DeferAdmission(persistContext, job.ID, job.AttemptCount, time.Now())
+		return errors.Join(ErrAdmissionDeferred, err, persistErr)
+	}
 	worker.reconcileQuota(ctx, job, reservationID, response)
 	if err != nil {
 		_, persistErr := worker.store.RetryOrFail(ctx, job.ID, job.AttemptCount, "upstream", time.Now())

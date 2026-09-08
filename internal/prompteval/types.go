@@ -2,6 +2,7 @@
 package prompteval
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"io"
 	"math"
 	"strings"
 	"time"
@@ -230,4 +232,19 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 		p.MaximumCalls++
 	}
 	return p, nil
+}
+
+func (c *Criterion) UnmarshalJSON(raw []byte) error {
+	var v struct {
+		Score    *int    `json:"score"`
+		Evidence *string `json:"evidence"`
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if d.Decode(&v) != nil || d.Decode(new(any)) != io.EOF || v.Score == nil || v.Evidence == nil {
+		return ErrInvalid
+	}
+	c.Score = *v.Score
+	c.Evidence = *v.Evidence
+	return nil
 }

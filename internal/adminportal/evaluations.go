@@ -61,13 +61,13 @@ func (s *Server) evaluationSample(c *gin.Context, id string) (prompteval.Sample,
 	if v, ok := builtinSample(id); ok {
 		return v, nil
 	}
-	return s.config.Evaluations.Sample(c, id, s.now())
+	return s.config.Evaluations.Sample(c.Request.Context(), id, s.now())
 }
 func (s *Server) ListEvaluationSamples(c *gin.Context) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	items, err := s.config.Evaluations.Samples(c, s.now())
+	items, err := s.config.Evaluations.Samples(c.Request.Context(), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -102,7 +102,7 @@ func (s *Server) SaveEvaluationSample(c *gin.Context, _ adminhttpapi.SaveEvaluat
 		evaluationFailure(c, prompteval.ErrInvalid)
 		return
 	}
-	if err := s.config.Evaluations.SaveSample(c, v, a.User.ID, s.now()); err != nil {
+	if err := s.config.Evaluations.SaveSample(c.Request.Context(), v, a.User.ID, s.now()); err != nil {
 		evaluationFailure(c, err)
 		return
 	}
@@ -116,7 +116,7 @@ func (s *Server) DeleteEvaluationSample(c *gin.Context, id uuid.UUID, _ adminhtt
 		evaluationFailure(c, prompteval.ErrInvalid)
 		return
 	}
-	if err := s.config.Evaluations.DeleteSample(c, id.String()); err != nil {
+	if err := s.config.Evaluations.DeleteSample(c.Request.Context(), id.String()); err != nil {
 		evaluationFailure(c, err)
 		return
 	}
@@ -137,7 +137,7 @@ func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.
 	}
 	candidates := []prompteval.Candidate{}
 	for _, v := range in.Candidates {
-		r, err := s.config.Prompts.Get(c, v.Revision)
+		r, err := s.config.Prompts.Get(c.Request.Context(), v.Revision)
 		if err != nil {
 			return empty, err
 		}
@@ -154,7 +154,7 @@ func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.
 			r.Policy.Journal.Organize.Pro = *v.ModelOverride
 			r.Policy.Journal.Voice.Parameters = *v.ModelOverride
 		}
-		if err := s.resolvePromptModels(c, &r.Policy); err != nil {
+		if err := s.resolvePromptModels(c.Request.Context(), &r.Policy); err != nil {
 			return empty, err
 		}
 		if source != "" {
@@ -165,11 +165,11 @@ func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.
 		}
 		candidates = append(candidates, prompteval.Candidate{Revision: r, Label: v.Label, SourceRevision: source})
 	}
-	current, err := s.config.Prompts.Current(c, "journal")
+	current, err := s.config.Prompts.Current(c.Request.Context(), "journal")
 	if err != nil {
 		return empty, err
 	}
-	if err = s.resolvePromptModels(c, &current.Policy); err != nil {
+	if err = s.resolvePromptModels(c.Request.Context(), &current.Policy); err != nil {
 		return empty, err
 	}
 	judge := current.Policy.Journal.Organize.Pro
@@ -253,7 +253,7 @@ func (s *Server) StartEvaluation(c *gin.Context, _ adminhttpapi.StartEvaluationP
 	if !ok {
 		return
 	}
-	if replay, err := s.config.Evaluations.Replay(c, m, in.evaluationInput, s.now()); err != nil {
+	if replay, err := s.config.Evaluations.Replay(c.Request.Context(), m, in.evaluationInput, s.now()); err != nil {
 		evaluationFailure(c, err)
 		return
 	} else if replay != nil {
@@ -269,7 +269,7 @@ func (s *Server) StartEvaluation(c *gin.Context, _ adminhttpapi.StartEvaluationP
 		writeFailure(c.Writer, 409, "evaluation_preview_changed", "预览已过期、价格或样例已变化，请重新预览")
 		return
 	}
-	r, err := s.config.Evaluations.StartInput(c, p, m, in.evaluationInput, s.now())
+	r, err := s.config.Evaluations.StartInput(c.Request.Context(), p, m, in.evaluationInput, s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -288,7 +288,7 @@ func (s *Server) ListEvaluationRuns(c *gin.Context) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	v, err := s.config.Evaluations.List(c, s.now())
+	v, err := s.config.Evaluations.List(c.Request.Context(), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -299,7 +299,7 @@ func (s *Server) GetEvaluationRun(c *gin.Context, id uuid.UUID) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	v, err := s.config.Evaluations.Get(c, id.String(), s.now())
+	v, err := s.config.Evaluations.Get(c.Request.Context(), id.String(), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -310,7 +310,7 @@ func (s *Server) GetEvaluationItem(c *gin.Context, id uuid.UUID, item int) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	v, err := s.config.Evaluations.Result(c, id.String(), item, s.now())
+	v, err := s.config.Evaluations.Result(c.Request.Context(), id.String(), item, s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -321,7 +321,7 @@ func (s *Server) CancelEvaluation(c *gin.Context, id uuid.UUID, _ adminhttpapi.C
 	if _, ok := s.evaluationAccess(c, true); !ok {
 		return
 	}
-	err := s.config.Evaluations.Cancel(c, id.String(), s.now())
+	err := s.config.Evaluations.Cancel(c.Request.Context(), id.String(), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return

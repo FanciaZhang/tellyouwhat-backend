@@ -54,7 +54,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 		actual = 0
 		known = false
 	}
-	settleCost(ctx, lease, actual, known, costcontrol.Outcome{Model: result.Model, Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
+	settleCost(ctx, lease, actual, known, costcontrol.Outcome{Model: result.Model, Cancelled: costcontrol.IsCancellation(ctx, providerErr), Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
 	return result, providerErr
 }
 
@@ -91,7 +91,7 @@ func (speech *BudgetedSpeech) Open(ctx context.Context, words []string) (SpeechC
 	}
 	connection, providerErr := speech.next.Open(ctx, words)
 	if providerErr != nil {
-		settleCost(ctx, lease, 0, false, costcontrol.Outcome{})
+		settleCost(ctx, lease, 0, false, costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(ctx, providerErr)})
 		return nil, providerErr
 	}
 	return &budgetedSpeechConnection{next: connection, lease: lease, price: speech.price, parentContext: ctx}, nil
@@ -147,7 +147,7 @@ func (connection *budgetedSpeechConnection) Close() error {
 	if costErr != nil {
 		actual = 0
 	}
-	settleCost(connection.parentContext, connection.lease, actual, known, costcontrol.Outcome{Success: !uncertain && providerErr == nil})
+	settleCost(connection.parentContext, connection.lease, actual, known, costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(connection.parentContext, providerErr), Success: !uncertain && providerErr == nil})
 	return providerErr
 }
 

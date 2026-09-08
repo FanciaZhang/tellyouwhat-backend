@@ -47,7 +47,7 @@ func (s *Server) GetPromptConfig(c *gin.Context, params adminhttpapi.GetPromptCo
 	if _, ok := s.promptsAccess(c, false, false); !ok {
 		return
 	}
-	r, err := s.config.Prompts.Current(c, params.Scope)
+	r, err := s.config.Prompts.Current(c.Request.Context(), params.Scope)
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -67,7 +67,7 @@ func (s *Server) ListPromptHistory(c *gin.Context, params adminhttpapi.ListPromp
 	if params.Cursor != nil {
 		cursor = *params.Cursor
 	}
-	h, err := s.config.Prompts.History(c, params.Scope, cursor)
+	h, err := s.config.Prompts.History(c.Request.Context(), params.Scope, cursor)
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -87,7 +87,7 @@ func (s *Server) CreatePromptDraft(c *gin.Context, _ adminhttpapi.CreatePromptDr
 	if !ok {
 		return
 	}
-	if replay, err := s.config.Prompts.Replay(c, m, "prompts.draft", input); err != nil {
+	if replay, err := s.config.Prompts.Replay(c.Request.Context(), m, "prompts.draft", input); err != nil {
 		promptsFailure(c, err)
 		return
 	} else if replay != nil {
@@ -101,11 +101,11 @@ func (s *Server) CreatePromptDraft(c *gin.Context, _ adminhttpapi.CreatePromptDr
 	raw, _ := json.Marshal(input.Policy)
 	var resolved promptconfig.Policy
 	_ = json.Unmarshal(raw, &resolved)
-	if err := s.resolvePromptModels(c, &resolved); err != nil {
+	if err := s.resolvePromptModels(c.Request.Context(), &resolved); err != nil {
 		promptsFailure(c, err)
 		return
 	}
-	r, err := s.config.Prompts.DraftResolved(c, input, resolved, m, s.now())
+	r, err := s.config.Prompts.DraftResolved(c.Request.Context(), input, resolved, m, s.now())
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -160,12 +160,12 @@ func (s *Server) GetPromptRevision(c *gin.Context, revision string) {
 	if !ok {
 		return
 	}
-	r, err := s.config.Prompts.Get(c, revision)
+	r, err := s.config.Prompts.Get(c.Request.Context(), revision)
 	if err != nil {
 		promptsFailure(c, err)
 		return
 	}
-	current, err := s.config.Prompts.Current(c, r.Scope)
+	current, err := s.config.Prompts.Current(c.Request.Context(), r.Scope)
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -175,7 +175,7 @@ func (s *Server) GetPromptRevision(c *gin.Context, revision string) {
 		if s.config.Evaluations == nil {
 			blockers = append(blockers, "效果评测尚未配置")
 		} else {
-			blockers, err = s.config.Evaluations.PublicationBlockers(c, r, s.now())
+			blockers, err = s.config.Evaluations.PublicationBlockers(c.Request.Context(), r, s.now())
 			if err != nil {
 				promptsFailure(c, err)
 				return
@@ -206,14 +206,14 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 	if !ok {
 		return
 	}
-	if replay, err := s.config.Prompts.Replay(c, m, "prompts.publish", input.Publication); err != nil {
+	if replay, err := s.config.Prompts.Replay(c.Request.Context(), m, "prompts.publish", input.Publication); err != nil {
 		promptsFailure(c, err)
 		return
 	} else if replay != nil {
 		writeJSON(c.Writer, 200, replay)
 		return
 	}
-	r, err := s.config.Prompts.Get(c, input.Revision)
+	r, err := s.config.Prompts.Get(c.Request.Context(), input.Revision)
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -226,7 +226,7 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 		raw, _ := json.Marshal(r.Policy)
 		var resolved promptconfig.Policy
 		_ = json.Unmarshal(raw, &resolved)
-		if err = s.resolvePromptModels(c, &resolved); err != nil {
+		if err = s.resolvePromptModels(c.Request.Context(), &resolved); err != nil {
 			promptsFailure(c, err)
 			return
 		}
@@ -235,14 +235,14 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 			return
 		}
 	}
-	r, err = s.config.Prompts.PublishChecked(c, input.Publication, m, s.now(), func(r promptconfig.Revision) error {
+	r, err = s.config.Prompts.PublishChecked(c.Request.Context(), input.Publication, m, s.now(), func(r promptconfig.Revision) error {
 		if r.Scope != "journal" {
 			return nil
 		}
 		if s.config.Evaluations == nil {
 			return promptconfig.ErrConflict
 		}
-		blockers, err := s.config.Evaluations.PublicationBlockers(c, r, s.now())
+		blockers, err := s.config.Evaluations.PublicationBlockers(c.Request.Context(), r, s.now())
 		if err != nil {
 			return err
 		}

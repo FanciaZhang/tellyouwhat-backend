@@ -2,6 +2,7 @@ package adminportal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -109,6 +110,33 @@ func TestResourceIDRejectsHeaderAndPathCharacters(t *testing.T) {
 	for _, value := range []string{"../batch", "batch/1", "batch\nContent-Type:text/html", `batch".csv`} {
 		if cleanID(value) != "" {
 			t.Fatalf("unsafe resource ID accepted: %q", value)
+		}
+	}
+}
+
+func TestAppleFailureDistinguishesRejectedRequestsFromConnectionFailures(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{appstoreconnect.ErrRejected, 422, "apple_request_rejected"},
+		{appstoreconnect.ErrMethodNotAllowed, 502, "apple_method_not_allowed"},
+		{appstoreconnect.ErrForbidden, 424, "apple_credentials_forbidden"},
+		{appstoreconnect.ErrUnavailable, 502, "apple_unavailable"},
+	} {
+		w := httptest.NewRecorder()
+		writeAppleFailure(w, tc.err)
+		var body struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != tc.status || body.Error.Code != tc.code {
+			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 		}
 	}
 }

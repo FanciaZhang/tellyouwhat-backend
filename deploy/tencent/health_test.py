@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from ops_common import Runtime
-from ops_health import health
+from ops_health import health, report_health
 
 
 class OperationalHealthTests(unittest.TestCase):
@@ -57,6 +57,22 @@ class OperationalHealthTests(unittest.TestCase):
             result = health(self.runtime)
         self.assertTrue(result["passed"])
         self.assertTrue(json.loads((self.runtime.state / "health.json").read_text())["passed"])
+
+    def test_fresh_failure_is_not_success(self):
+        self.runtime.record("restore", passed=False)
+        with patch("ops_health.probe", return_value=True):
+            result = health(self.runtime)
+        self.assertFalse(next(c for c in result["checks"] if c["name"] == "restore_freshness")["passed"])
+
+    def test_reports_only_sanitized_health_evidence(self):
+        with patch("ops_health.probe", return_value=True):
+            result = health(self.runtime)
+        with patch.object(self.runtime, "execute") as execute:
+            report_health(self.runtime, result)
+        payload = json.loads(execute.call_args.kwargs["input"])
+        self.assertEqual(set(payload), {"checkedAt", "checks"})
+        self.assertNotIn(".env", json.dumps(payload))
+        self.assertEqual(execute.call_args.args[1][-2:], ["adminctl", "operations-health"])
 
 
 if __name__ == "__main__":

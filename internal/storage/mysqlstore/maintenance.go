@@ -122,6 +122,12 @@ func (repository *MaintenanceRepository) Cleanup(ctx context.Context, now time.T
 	if _, err = transaction.ExecContext(ctx, `DELETE FROM platform_ops_mutations WHERE created_at < ?`, auditCutoff); err != nil {
 		return CleanupResult{}, err
 	}
+	if _, err = transaction.ExecContext(ctx, `DELETE FROM platform_ops_events WHERE created_at < ?`, auditCutoff); err != nil {
+		return CleanupResult{}, err
+	}
+	if _, err = transaction.ExecContext(ctx, `DELETE FROM platform_ops_incidents WHERE resolved_at < ?`, auditCutoff); err != nil {
+		return CleanupResult{}, err
+	}
 	counts := make([]int, len(statements))
 	for index, statement := range statements {
 		count, executeErr := affectedRows(transaction.ExecContext(ctx, statement.query, statement.args...))

@@ -64,7 +64,7 @@ func (client *BudgetedClient) Organize(ctx context.Context, request contracts.Or
 	}
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Model: result.Model, Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
+	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Model: result.Model, Cancelled: costcontrol.IsCancellation(ctx, providerErr), Success: providerErr == nil, UsageKnown: result.InputTokens >= 0 && result.OutputTokens >= 0 && (result.InputTokens > 0 || result.OutputTokens > 0), InputTokens: max(0, result.InputTokens), OutputTokens: max(0, result.OutputTokens)})
 	return result, providerErr
 }
 
