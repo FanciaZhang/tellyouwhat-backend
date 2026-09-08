@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,16 @@ func TestAppleFailureDistinguishesRejectedRequestsFromConnectionFailures(t *test
 		}
 		if w.Code != tc.status || body.Error.Code != tc.code {
 			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestAppleCodePoolFailureNamesTheRejectedField(t *testing.T) {
+	for _, tc := range []struct{ field, text string }{{"numberOfCodes", "兑换数量"}, {"expirationDate", "到期日"}, {"customCode", "自定义码"}} {
+		response := httptest.NewRecorder()
+		writeAppleFailure(response, &appstoreconnect.RequestRejection{Field: tc.field})
+		if response.Code != 422 || !strings.Contains(response.Body.String(), tc.text) {
+			t.Fatalf("unexpected field error: %d %s", response.Code, response.Body.String())
 		}
 	}
 }
