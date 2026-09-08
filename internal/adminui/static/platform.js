@@ -48,7 +48,15 @@ function opsDiff(before,after){const out=[];for(const [path,label,scale] of opsF
 async function opsRebase(){
  const latest=await api('/api/v1/platform/config'),original=platform.data.current.policy,desired=platform.edit.policy,merged=structuredClone(latest.current.policy);
  for(const [path] of opsFields)if(opsValue(original,path)!==opsValue(desired,path))opsSet(merged,path,opsValue(desired,path));
- for(const app of Object.keys(opsApps))for(const key of ['paused','pausedOperations'])if(JSON.stringify(original.apps[app][key])!==JSON.stringify(desired.apps[app][key]))merged.apps[app][key]=desired.apps[app][key];
+ for(const app of Object.keys(opsApps)){
+  if(original.apps[app].paused!==desired.apps[app].paused)merged.apps[app].paused=desired.apps[app].paused;
+  const paused=new Set(merged.apps[app].pausedOperations||[]);
+  for(const op of platform.data.operations[app]){
+   const before=(original.apps[app].pausedOperations||[]).includes(op),after=(desired.apps[app].pausedOperations||[]).includes(op);
+   if(before!==after){if(after)paused.add(op);else paused.delete(op);}
+  }
+  merged.apps[app].pausedOperations=[...paused];
+ }
  platform.data=latest;platform.edit.base=latest.current.id;platform.edit.policy=merged;
 }
 function opsCreatePreview(){return opsWork(async g=>{
