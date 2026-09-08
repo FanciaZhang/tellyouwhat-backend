@@ -120,14 +120,27 @@ async function openAIModels(id){
   });
 }
 function renderAIModels(){
-  const data=ai.endpoints.get(ai.endpoint),models=ai.catalog?.models||[],filtered=models.filter(m=>`${m.Name} ${m.DisplayName} ${m.VendorName||''}`.toLowerCase().includes(ai.query.toLowerCase()));
-  const pages=Math.max(1,Math.ceil(filtered.length/8));ai.page=Math.min(ai.page,pages-1);
+  const data=ai.endpoints.get(ai.endpoint);
+  const subtitle=`当前：${aiModelText(aiModel(data?.endpoint))}`;
+  if(!$('#ai-model-search')){
+    aiFrame('选择模型',subtitle,`<p class="muted ai-small">使用功能：${aiEscape(aiAffected(ai.endpoint))}</p><div id="ai-model-warning"></div><input id="ai-model-search" type="search" aria-label="搜索全部火山模型" placeholder="搜索名称，例如 Pro、DeepSeek、GLM" value="${aiEscape(ai.query)}"><div id="ai-model-results"></div>`,aiHome);
+    const search=$('#ai-model-search');
+    const update=e=>{if(e.isComposing)return;ai.query=search.value;ai.page=0;renderAIModelResults();};
+    search.addEventListener('input',update);search.addEventListener('compositionend',update);
+  }
+  aiView().querySelector('.section-head .muted').textContent=subtitle;
   const ongoing=aiActive(data?.rolling)||(data?.commands||[]).some(c=>['queued','dispatching','watching','uncertain'].includes(c.state));
-  aiFrame('选择模型',`当前：${aiModelText(aiModel(data?.endpoint))}`,`<p class="muted ai-small">使用功能：${aiEscape(aiAffected(ai.endpoint))}</p>${ongoing?'<div class="warning">此接入点有尚未完成的操作。可浏览模型，完成后再开始新的切换。 <button class="quiet" id="ai-open-progress">查看进度</button></div>':''}<input id="ai-model-search" type="search" aria-label="搜索全部火山模型" placeholder="搜索名称，例如 Pro、DeepSeek、GLM" value="${aiEscape(ai.query)}"><div class="ai-foot ai-catalog-meta"><span class="muted ai-small">全部模型 · ${filtered.length} 个</span><span class="muted ai-small">选中后检查账号、版本与兼容性</span></div><div class="ai-model-grid">${filtered.slice(ai.page*8,ai.page*8+8).map(m=>`<button class="ai-model-option" data-ai-model="${aiEscape(m.Name)}"><strong>${aiEscape(m.DisplayName||m.Name)}</strong><small>${aiEscape(m.Name)}</small><span>选择版本与检查 →</span></button>`).join('')||`<p class="muted">${ai.catalog?'没有匹配的模型':'正在读取火山完整目录…'}</p>`}</div><div class="ai-foot"><button class="quiet" id="ai-prev" ${ai.page===0?'disabled':''}>上一页</button><span class="muted ai-small">${ai.page+1} / ${pages}</span><button class="quiet" id="ai-next" ${ai.page+1>=pages?'disabled':''}>下一页</button></div><p class="muted ai-small">目录同步：${formatTime(ai.catalog?.syncedAt)}${ai.catalog?.stale?' · 当前为缓存数据，请刷新':''} <button class="quiet" id="ai-catalog-refresh">刷新目录</button></p>`,aiHome);
-  $('#ai-model-search').oninput=e=>{ai.query=e.target.value;ai.page=0;renderAIModels();$('#ai-model-search').focus();};
-  $('#ai-prev').onclick=()=>{ai.page--;renderAIModels();};$('#ai-next').onclick=()=>{ai.page++;renderAIModels();};
-  $('#ai-catalog-refresh').onclick=()=>{ai.catalog=null;openAIModels(ai.endpoint);};
+  $('#ai-model-warning').innerHTML=ongoing?'<div class="warning">此接入点有尚未完成的操作。可浏览模型，完成后再开始新的切换。 <button class="quiet" id="ai-open-progress">查看进度</button></div>':'';
   if($('#ai-open-progress'))$('#ai-open-progress').onclick=()=>openAIProgress(ai.endpoint);
+  renderAIModelResults();
+}
+function renderAIModelResults(){
+  const models=ai.catalog?.models||[],filtered=models.filter(m=>`${m.Name} ${m.DisplayName} ${m.VendorName||''}`.toLowerCase().includes(ai.query.toLowerCase()));
+  const pages=Math.max(1,Math.ceil(filtered.length/8));ai.page=Math.min(ai.page,pages-1);
+  // Keep the search input mounted to preserve the caret, selection and IME session.
+  $('#ai-model-results').innerHTML=`<div class="ai-foot ai-catalog-meta"><span class="muted ai-small" role="status">全部模型 · ${filtered.length} 个</span><span class="muted ai-small">选中后检查账号、版本与兼容性</span></div><div class="ai-model-grid">${filtered.slice(ai.page*8,ai.page*8+8).map(m=>`<button class="ai-model-option" data-ai-model="${aiEscape(m.Name)}"><strong>${aiEscape(m.DisplayName||m.Name)}</strong><small>${aiEscape(m.Name)}</small><span>选择版本与检查 →</span></button>`).join('')||`<p class="muted">${ai.catalog?'没有匹配的模型':'正在读取火山完整目录…'}</p>`}</div><div class="ai-foot"><button class="quiet" id="ai-prev" ${ai.page===0?'disabled':''}>上一页</button><span class="muted ai-small">${ai.page+1} / ${pages}</span><button class="quiet" id="ai-next" ${ai.page+1>=pages?'disabled':''}>下一页</button></div><p class="muted ai-small">目录同步：${formatTime(ai.catalog?.syncedAt)}${ai.catalog?.stale?' · 当前为缓存数据，请刷新':''} <button class="quiet" id="ai-catalog-refresh" data-ai-work>刷新目录</button></p>`;
+  $('#ai-prev').onclick=()=>{ai.page--;renderAIModelResults();};$('#ai-next').onclick=()=>{ai.page++;renderAIModelResults();};
+  $('#ai-catalog-refresh').onclick=()=>aiWork(async g=>{const catalog=await api('/api/v1/ai/models');if(g!==ai.generation)return;ai.catalog=catalog;renderAIModels();});
   aiClick('[data-ai-model]',b=>openAIVersions(b.dataset.aiModel));
 }
 function openAIVersions(name,version){
