@@ -30,7 +30,7 @@ func observeFree(ctx context.Context, tx *sql.Tx, app string, r usage.Record) er
 // subscription acquisitions across those keys; deletion cascades with the keys.
 func observePurchase(ctx context.Context, tx *sql.Tx, app, key, environment string, e purchase.Evidence) error {
 	environment = strings.ToLower(environment)
-	if e.TransactionID == "" || e.OriginalID == "" || e.PurchasedAt.IsZero() || e.SignedAt.IsZero() || (environment != "production" && environment != "sandbox") {
+	if e.TransactionID == "" || e.OriginalID == "" || e.SignedAt.IsZero() || (environment != "production" && environment != "sandbox") {
 		return nil
 	}
 	var price any
@@ -47,9 +47,11 @@ func observePurchase(ctx context.Context, tx *sql.Tx, app, key, environment stri
  WHERE k.app_id=? AND ((?<>'' AND k.key_id=?) OR (?='' AND k.transaction_id=?))
  ON DUPLICATE KEY UPDATE
  price_milli=IF(VALUES(signed_at)>=signed_at,VALUES(price_milli),price_milli),
+ purchased_at=IF(VALUES(signed_at)>=signed_at,COALESCE(VALUES(purchased_at),purchased_at),purchased_at),
+ started_at=IF(VALUES(signed_at)>=signed_at,COALESCE(VALUES(started_at),started_at),started_at),
  currency=IF(VALUES(signed_at)>=signed_at,VALUES(currency),currency),
  revoked_at=IF(VALUES(signed_at)>=signed_at,VALUES(revoked_at),revoked_at),
- signed_at=GREATEST(signed_at,VALUES(signed_at))`, e.TransactionID, e.OriginalID, environment, price, currency, e.PurchasedAt.UTC(), nullableVoiceDate(e.StartedAt), e.SignedAt.UTC(), e.RevokedAt, app, key, key, key, e.OriginalID)
+ signed_at=GREATEST(signed_at,VALUES(signed_at))`, e.TransactionID, e.OriginalID, environment, price, currency, nullableVoiceDate(e.PurchasedAt), nullableVoiceDate(e.StartedAt), e.SignedAt.UTC(), e.RevokedAt, app, key, key, key, e.OriginalID)
 	return err
 }
 

@@ -30,7 +30,7 @@ CREATE TABLE operations_purchase_observations (
  environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  price_milli BIGINT,
  currency VARCHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- purchased_at DATETIME(6) NOT NULL,
+ purchased_at DATETIME(6),
  started_at DATETIME(6),
  signed_at DATETIME(6) NOT NULL,
  revoked_at DATETIME(6),

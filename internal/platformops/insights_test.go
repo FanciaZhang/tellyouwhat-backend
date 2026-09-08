@@ -116,6 +116,25 @@ func TestObservedCostAttributionConversionAndDeletion(t *testing.T) {
 	if err := db.QueryRow(`SELECT SUM(audience='free'),SUM(audience='paid' AND environment='production') FROM ai_cost_attempts`).Scan(&free, &paid); err != nil || free != 1 || paid != 1 {
 		t.Fatalf("frozen classification: %d %d %v", free, paid, err)
 	}
+	// A signed legacy payload lacking purchase time remains unknown instead of
+	// silently becoming a free transaction; a newer verified payload can fill it.
+	missingDate := purchase.Evidence{TransactionID: "legacy-date", OriginalID: "missing", PriceMilli: &paidPrice, Currency: "CNY", SignedAt: now, StartedAt: mature.Add(time.Hour)}
+	if err := ent.Upsert(ctx, entitlement.Record{KeyID: "missing", TransactionID: "missing", Environment: "production", ExpiresAt: now.Add(time.Hour), StartedAt: mature.Add(time.Hour), Payment: missingDate}); err != nil {
+		t.Fatal(err)
+	}
+	var missingTime bool
+	if err := db.QueryRow(`SELECT purchased_at IS NULL FROM operations_purchase_observations WHERE transaction_id='legacy-date'`).Scan(&missingTime); err != nil || !missingTime {
+		t.Fatalf("missing date lost: %v %v", missingTime, err)
+	}
+	missingDate.RevokedAt = &now
+	missingDate.PurchasedAt = mature.Add(2 * time.Hour)
+	missingDate.SignedAt = now.Add(time.Second)
+	if err := ent.Upsert(ctx, entitlement.Record{KeyID: "missing", TransactionID: "missing", Environment: "production", ExpiresAt: now.Add(time.Hour), StartedAt: mature.Add(time.Hour), Payment: missingDate}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT purchased_at IS NULL FROM operations_purchase_observations WHERE transaction_id='legacy-date'`).Scan(&missingTime); err != nil || missingTime {
+		t.Fatalf("new metadata did not fill date: %v %v", missingTime, err)
+	}
 	// A verified refund notification removes a conversion, even when restored keys exist.
 	revoked := now.Add(time.Second)
 	_, err = ent.ApplyNotification(ctx, entitlement.NotificationState{NotificationUUID: uuid.NewString(), OriginalTransactionID: "paid", Environment: "production", ExpiresAt: now, Payment: purchase.Evidence{TransactionID: "paid-payment", OriginalID: "paid", PriceMilli: &paidPrice, Currency: "CNY", PurchasedAt: mature.Add(2 * time.Hour), StartedAt: mature.Add(time.Hour), SignedAt: revoked, RevokedAt: &revoked}})
