@@ -5,12 +5,14 @@ package voice
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -51,7 +53,7 @@ var ErrRecordingPending = errors.New("recording_analysis_pending")
 // The request ID is generated and durably saved by the caller BEFORE submit.
 // After a lost response, query this ID instead of creating a second billed task.
 func (a RecordingASR) Submit(ctx context.Context, taskID string, wav []byte) error {
-	if _, err := uuid.Parse(taskID); err != nil || len(wav) < 44 || len(wav) > SessionMilliseconds*32+44 {
+	if _, err := uuid.Parse(taskID); err != nil || !validRecordingWAV(wav) {
 		return ErrInvalid
 	}
 	payload := struct {
@@ -101,7 +103,7 @@ func (a RecordingASR) call(ctx context.Context, action, taskID string, payload a
 	}
 	client := a.Client
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	// Redirects must never forward provider credentials, even with a custom client.
 	copyClient := *client
@@ -167,4 +169,15 @@ func parseRecordingAnalysis(data []byte, taskID string, milliseconds int) (Recor
 		return RecordingAnalysis{}, ErrInvalid
 	}
 	return result, nil
+}
+
+// Canonical WAV is created by the app from PCM chunks. Reject a mismatched
+// header before provider submission so declared duration cannot bypass limits.
+func validRecordingWAV(wav []byte) bool {
+	if len(wav) < 46 || len(wav) > SessionMilliseconds*32+44 || (len(wav)-44)%2 != 0 {
+		return false
+	}
+	u16 := binary.LittleEndian.Uint16
+	u32 := binary.LittleEndian.Uint32
+	return string(wav[:4]) == "RIFF" && u32(wav[4:8]) == uint32(len(wav)-8) && string(wav[8:16]) == "WAVEfmt " && u32(wav[16:20]) == 16 && u16(wav[20:22]) == 1 && u16(wav[22:24]) == 1 && u32(wav[24:28]) == 16000 && u32(wav[28:32]) == 32000 && u16(wav[32:34]) == 2 && u16(wav[34:36]) == 16 && string(wav[36:40]) == "data" && u32(wav[40:44]) == uint32(len(wav)-44)
 }

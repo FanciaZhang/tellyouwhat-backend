@@ -104,3 +104,36 @@ func TestRecordingProtocolUsesStandardAndDoesNotFollowRedirect(t *testing.T) {
 		t.Fatal("forwarded credentials")
 	}
 }
+
+// This fixture records a failed product-accuracy gate. Parsing success does not
+// mean correct diarization. Six input voices were collapsed into three clusters.
+func TestRecordingSixVoiceFailureRemainsObservable(t *testing.T) {
+	data, err := os.ReadFile("testdata/recording_six_synthetic_voices.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := parseRecordingAnalysis(data, recordingTask, 56392)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speakers := map[string]bool{}
+	for _, u := range r.Utterances {
+		speakers[u.Speaker] = true
+	}
+	if len(speakers) != 3 || len(r.Utterances) != 9 {
+		t.Fatal("fixture changed; reassess the documented failed acceptance gate")
+	}
+	// Do not silently create six synthetic identities from expectations.
+	if r.Utterances[3].Text != "我觉得坐火车更轻松开车可能会很累我想带上相机，给大家拍一张合影。" {
+		t.Fatal("merged source utterance must remain auditable")
+	}
+}
+
+func TestRecordingRejectsMalformedAudioBeforeBilling(t *testing.T) {
+	a := RecordingASR{Config: ASRConfig{ResourceID: "volc.seedasr.auc"}}
+	for _, audio := range [][]byte{nil, make([]byte, 44), make([]byte, 100)} {
+		if err := a.Submit(context.Background(), recordingTask, audio); !errors.Is(err, ErrInvalid) {
+			t.Fatal(err)
+		}
+	}
+}
