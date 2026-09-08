@@ -657,7 +657,7 @@ func equalDraft(left, right appstoreconnect.OfferDraft) bool {
 func previewSummary(draft appstoreconnect.OfferDraft) map[string]any {
 	return map[string]any{"price": "免费", "duration": draft.Duration, "periods": 1,
 		"autoRenewEnabled": draft.AutoRenewEnabled, "customerEligibilities": draft.CustomerEligibilities,
-		"offerEligibility": "REPLACE_INTRO_OFFERS", "targetSubscriptionPlanType": "MONTHLY"}
+		"offerEligibility": "REPLACE_INTRO_OFFERS", "targetSubscriptionPlanType": "UPFRONT"}
 }
 
 func validFutureDate(value string, optional bool, now time.Time) bool {
@@ -695,6 +695,10 @@ func writeAppleFailure(writer http.ResponseWriter, err error) {
 	status, code, message := http.StatusBadGateway, "apple_unavailable", "App Store Connect 暂时不可用，请稍后核对状态"
 	if errors.Is(err, appstoreconnect.ErrForbidden) {
 		status, code, message = http.StatusFailedDependency, "apple_credentials_forbidden", "App Store Connect 专用密钥没有所需权限"
+	} else if errors.Is(err, appstoreconnect.ErrRejected) {
+		status, code, message = http.StatusUnprocessableEntity, "apple_request_rejected", "Apple 未接受这些设置，请核对名称、优惠条件及订阅的销售地区和状态"
+	} else if errors.Is(err, appstoreconnect.ErrMethodNotAllowed) {
+		code, message = "apple_method_not_allowed", "App Store Connect 不支持此请求，请检查后台接口配置"
 	}
 	writeJSON(writer, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
