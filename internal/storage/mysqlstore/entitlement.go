@@ -51,12 +51,13 @@ func (repository *EntitlementRepository) ApplyNotification(
 	if _, err := transaction.ExecContext(ctx, `
         UPDATE managed_entitlements
         SET environment = ?, expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
-		WHERE app_id = ? AND original_transaction_id = ?`,
+		WHERE app_id = ? AND original_transaction_id = ? AND environment = ?`,
 		state.Environment,
 		state.ExpiresAt,
 		purchasePrice(state.CurrentPayment),
 		repository.appID,
 		state.OriginalTransactionID,
+		state.Environment,
 	); err != nil {
 		return false, err
 	}

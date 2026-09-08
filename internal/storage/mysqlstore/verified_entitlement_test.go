@@ -69,6 +69,11 @@ func TestMySQLVerifiedEntitlementPromotionIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRecord(production)
+	// Environment is part of purchase identity even when transaction IDs match.
+	if _, err := store.ApplyNotification(ctx, entitlement.NotificationState{NotificationUUID: uuid.NewString(), OriginalTransactionID: production.TransactionID, Environment: "sandbox", ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	assertRecord(production)
 }
 
 func TestMySQLConcurrentVerifiedPromotionsChooseOnePurchase(t *testing.T) {
