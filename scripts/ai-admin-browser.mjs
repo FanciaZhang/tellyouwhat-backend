@@ -57,7 +57,7 @@ try {
   assert.match(await page.locator('#ai-model-detail').innerText(),/账号已开通/);
   assert.match(await page.locator('#ai-model-detail').innerText(),/输出：[0-9.]+ 元/);
   console.log('PASS real model inventory, versions and account pricing');
-  await card.getByRole('button',{name:'查看接入点与灰度详情'}).click();await idle();
+  await card.getByRole('button',{name:'切换模型与管理灰度'}).click();await idle();
   await card.locator('[data-rolling-target]').selectOption(JSON.stringify({Name:'doubao-seed-2-0-lite',ModelVersion:'260428'}));
   await card.locator('[data-rolling-action=start]').click();await notice('操作已保存');
   const endpoint=row.endpointID||row.endpoint.Id;
@@ -69,7 +69,7 @@ try {
     await new Promise(resolve=>setTimeout(resolve,2000));
   }while(Date.now()<deadline);
   assert.ok(detail.rolling?.RollingGray>0,'durable native start did not reach cloud');
-  await card.getByRole('button',{name:'查看接入点与灰度详情'}).click();await idle();
+  await card.getByRole('button',{name:'切换模型与管理灰度'}).click();await idle();
   assert.match(await card.innerText(),/流量 [1-9][0-9]*%/);
   console.log('PASS UI preview, Passkey, SQL command and live native gray',detail.rolling.RollingGray);
   if(process.env.ARK_BROWSER_TEST_SCREENSHOT){await page.screenshot({path:process.env.ARK_BROWSER_TEST_SCREENSHOT,fullPage:true});await card.screenshot({path:process.env.ARK_BROWSER_TEST_SCREENSHOT+'.card.png'});}
@@ -82,7 +82,7 @@ try {
   }while(Date.now()<cancelDeadline);
   assert.ok(detail.commands.some(c=>c.input.action==='cancel'&&c.state==='succeeded'));
   if(detail.rolling){assert.equal(detail.rolling.Status,'Reverted');assert.equal(detail.rolling.RollingGray,0);}
-  await card.getByRole('button',{name:'查看接入点与灰度详情'}).click();await idle();
+  await card.getByRole('button',{name:'切换模型与管理灰度'}).click();await idle();
   assert.match(await card.innerText(),/新模型流量为 0%/);
   assert.deepEqual(errors,[]);
   console.log('PASS UI cancel, durable execution and cloud Reverted/0%');

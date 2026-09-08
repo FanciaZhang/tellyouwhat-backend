@@ -594,13 +594,15 @@ function renderAI() {
     const p=row.current?.policy || {endpoint:row.endpoint.Id,reasoningEffort:"minimal",webSearchEnabled:false};
     const model=row.endpoint.ModelReference?.FoundationModel;
     return `<article class="card"><h3>${escapeHTML(aiLabels[row.operation]||row.operation)}</h3>
-      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>${escapeHTML(row.syncError||"")} · 最近成功同步：${formatTime(row.syncedAt)}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
+      <p class="muted ai-model">当前实际模型：${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>接入点：${escapeHTML(row.endpointID||row.endpoint.Id)}<br>${escapeHTML(row.syncError||"")} · 最近成功同步：${formatTime(row.syncedAt)}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
+      <button class="secondary" data-ai-endpoint="${index}" aria-expanded="false" aria-controls="ai-endpoint-${index}">${aiData.rollingWritesEnabled?"切换模型与管理灰度":"查看模型与灰度"}</button>
+      <p class="muted">切换此接入点的实际模型，由火山自动推进灰度。</p><div id="ai-endpoint-${index}" data-ai-endpoint-result="${index}"></div>
       <form data-ai-index="${index}"><label>接入点<select name="endpoint">${endpoints.map(ep=>`<option value="${escapeHTML(ep.Id)}" ${ep.Id===p.endpoint?"selected":""}>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.ModelReference?.FoundationModel?.Name)} (${escapeHTML(ep.Id)})</option>`).join("")}</select></label>
       <label>思考深度<select name="reasoningEffort">${[["minimal","关闭思考"],["low","轻度"],["medium","中度"],["high","深度"]].map(([value,label])=>`<option value="${value}" ${value===p.reasoningEffort?"selected":""}>${label}</option>`).join("")}</select></label>
       <label class="check"><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
       ${row.operation!=="meal_decision"?'<p class="muted">此功能的数据边界不允许联网。</p>':""}
       <button class="primary" ${!aiData.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
-      <button class="quiet" data-ai-endpoint="${index}">查看接入点与灰度详情</button><div data-ai-endpoint-result="${index}"></div><details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
+      <details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
   }).join("");
   $$('[data-ai-index]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(async()=>{
     const row=aiRows[Number(form.dataset.aiIndex)];const values=new FormData(form);
@@ -618,6 +620,7 @@ function renderAI() {
     const data=await api(`/api/v1/ai/endpoints/${encodeURIComponent(row.endpointID||row.endpoint.Id)}`);
     const ep=data.endpoint,r=data.rolling,model=ep.ModelReference?.FoundationModel;
     const panel=$(`[data-ai-endpoint-result="${index}"]`);
+    button.setAttribute("aria-expanded","true");
     const states={queued:"等待执行",dispatching:"正在提交",watching:"等待云端完成",uncertain:"结果待核对",succeeded:"已完成",cancelled:"已撤销",failed:"失败",conflict:"状态已变化"};
     const pending=(data.commands||[]).some(c=>["queued","dispatching","uncertain"].includes(c.state));
     const isActive=r && !(r.Status==="Reverted"&&r.RollingGray===0) && r.RollingGray<100;
