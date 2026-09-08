@@ -67,3 +67,25 @@ func TestCacheFailureKeepsSourceTimeAndNewMonthDropsOldAmounts(t *testing.T) {
 		t.Fatalf("old bill leaked across month: %+v", value)
 	}
 }
+
+func TestMonthChangeWhileOldBillIsStillLoading(t *testing.T) {
+	started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	c := Cache{Reader: fakeReader(func(context.Context, string) ([]Product, error) {
+		close(started)
+		<-release
+		return []Product{{PayableNanos: 123}}, nil
+	}), loading: true, value: Snapshot{Status: "ready", Period: "2026-09", Products: []Product{{PayableNanos: 100}}}}
+	go func() { c.refresh("2026-09", time.Now()); close(done) }()
+	<-started
+	value := c.Snapshot(time.Date(2026, 9, 30, 17, 0, 0, 0, time.UTC))
+	if value.Period != "2026-10" || len(value.Products) != 0 {
+		t.Fatal("old month visible while loading")
+	}
+	close(release)
+	<-done
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.value.Period != "2026-10" || len(c.value.Products) != 0 || c.value.FetchedAt != nil {
+		t.Fatal("old request overwrote current month")
+	}
+}

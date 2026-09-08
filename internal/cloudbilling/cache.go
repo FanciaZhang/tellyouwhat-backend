@@ -36,7 +36,7 @@ func (c *Cache) Snapshot(now time.Time) Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	period := now.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01")
-	if c.value.Period != period && !c.loading {
+	if c.value.Period != period {
 		c.value = Snapshot{Status: "loading", Period: period, Products: []Product{}}
 		c.next = time.Time{}
 	}
@@ -55,6 +55,10 @@ func (c *Cache) refresh(period string, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.loading = false
+	if c.value.Period != period {
+		c.next = time.Time{}
+		return
+	}
 	c.value.AttemptedAt = &now
 	if err == nil {
 		fetched := time.Now().UTC()
