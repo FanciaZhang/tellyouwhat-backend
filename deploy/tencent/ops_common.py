@@ -47,6 +47,29 @@ def atomic_json(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
+def compose_command(root, environment_file):
+    root, environment_file = Path(root), Path(environment_file)
+    config = read_environment(environment_file)
+    command = ["docker", "compose", "--project-directory", str(root),
+               "--env-file", str(environment_file), "-f", str(root / "compose.production.yaml")]
+    credential = config.get("ARK_MANAGEMENT_CREDENTIAL_HOST_FILE", "")
+    container_path = config.get("ARK_MANAGEMENT_CREDENTIAL_FILE", "")
+    if credential:
+        path = Path(credential)
+        overlay = root / "compose.ark-management.yaml"
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise OperationError("Ark service credential must be an existing absolute regular file")
+        info = path.stat()
+        if info.st_uid != 65532 or info.st_mode & 0o077 or not 0 < info.st_size <= 8192:
+            raise OperationError("Ark service credential must belong to UID 65532 with private permissions")
+        if not overlay.is_file() or container_path != "/run/ark-management/credentials.json":
+            raise OperationError("Ark service credential mount configuration is incomplete")
+        command += ["-f", str(overlay)]
+    elif container_path or config.get("AI_ENDPOINT_WRITES_ENABLED", "false").lower() == "true":
+        raise OperationError("Ark endpoint writes require the isolated service credential mount")
+    return command
+
+
 class Runtime:
     def __init__(self, backend_dir, backup_dir=None, environment_file=None):
         self.root = Path(backend_dir).resolve()
@@ -81,9 +104,7 @@ class Runtime:
         return result.stdout
 
     def compose(self, *arguments):
-        return ["docker", "compose", "--project-directory", str(self.root),
-                "--env-file", str(self.environment_file), "-f", str(self.root / "compose.production.yaml"),
-                *arguments]
+        return [*compose_command(self.root, self.environment_file), *arguments]
 
     def record(self, name, **details):
         result = {"operation": name, "completed_at": int(time.time()), **details}

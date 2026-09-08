@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -72,6 +73,44 @@ class ReleaseRecoveryTests(unittest.TestCase):
             result = rollback(self.runtime, 1)
             self.assertEqual(result["current"]["tag"], "new")
             self.assertEqual(read_environment(self.root / ".env.production")["RELEASE_VALUE"], "new")
+
+    def test_ark_mount_is_used_by_candidate_activation_and_restored_on_rollback(self):
+        credential = self.root / 'isolated-credential.json'
+        credential.write_text('{"accessKey":"fixture","secretKey":"fixture"}')
+        credential.chmod(0o600)
+        with (self.bundle / '.env.production').open('a') as output:
+            output.write('ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=' + str(credential.resolve()) + '\n'
+                         'ARK_MANAGEMENT_CREDENTIAL_FILE=/run/ark-management/credentials.json\n'
+                         'AI_ENDPOINT_WRITES_ENABLED=true\n')
+        (self.bundle / 'compose.ark-management.yaml').write_text('credential overlay')
+        original_stat = Path.stat
+        credential_path = str(credential.resolve())
+
+        def stat(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if str(path) == credential_path:
+                fields = list(info)
+                fields[4] = 65532
+                return os.stat_result(fields)
+            return info
+
+        with patch.object(Path, 'stat', stat), patch.object(self.runtime, 'execute', return_value=b'') as execute, \
+                patch('release.internally_ready', return_value=True):
+            self.run_deploy()
+            calls = [(call.args[0], call.args[1]) for call in execute.call_args_list]
+            for label in ('release-config', 'release-migrate', 'release-activate'):
+                command = next(command for name, command in calls if name == label)
+                self.assertTrue(any(item.endswith('/compose.ark-management.yaml') for item in command))
+            execute.reset_mock()
+            rollback(self.runtime, 1)
+            command = next(call.args[1] for call in execute.call_args_list if call.args[0] == 'release-activate')
+            self.assertFalse(any(item.endswith('/compose.ark-management.yaml') for item in command))
+            self.assertNotIn('AI_ENDPOINT_WRITES_ENABLED', read_environment(self.root / '.env.production'))
+            execute.reset_mock()
+            rollback(self.runtime, 1)
+            command = next(call.args[1] for call in execute.call_args_list if call.args[0] == 'release-activate')
+            self.assertTrue(any(item.endswith('/compose.ark-management.yaml') for item in command))
+        self.assertTrue(credential.exists())
 
     def test_rollback_failure_restores_current_healthy_release(self):
         with patch.object(self.runtime, "execute", return_value=b""), patch("release.internally_ready", return_value=True):

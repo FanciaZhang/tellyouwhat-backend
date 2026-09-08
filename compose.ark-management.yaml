@@ -1,0 +1,11 @@
+services:
+  admin:
+    environment:
+      ARK_MANAGEMENT_CREDENTIAL_FILE: /run/ark-management/credentials.json
+    volumes:
+      - type: bind
+        source: ${ARK_MANAGEMENT_CREDENTIAL_HOST_FILE:?Set a private credential file path}
+        target: /run/ark-management/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false

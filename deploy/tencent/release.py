@@ -13,10 +13,10 @@ import sys
 import tempfile
 import time
 
-from ops_common import OperationError, Runtime, read_environment
+from ops_common import OperationError, Runtime, read_environment, compose_command
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
@@ -125,8 +125,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
         raise OperationError("release bundle must match the requested image tag")
     config = validate(source, tag, registry, acceptance)
     env = {"IMAGE_TAG": tag, "IMAGE_REGISTRY_PREFIX": registry}
-    candidate = ["docker", "compose", "--project-directory", str(source), "--env-file", str(source / ".env.production"),
-                 "-f", str(source / "compose.production.yaml")]
+    candidate = compose_command(source, source / ".env.production")
     runtime.execute("release-config", candidate + ["config", "--quiet"], env=env)
     runtime.execute("release-pull", candidate + ["pull", "gateway", "worker", "admin", "adminctl", "migrate", "maintenance"],
                     env=env, timeout=900)

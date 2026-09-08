@@ -1,0 +1,15 @@
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ark:GetEndpoint",
+        "ark:GetEndpointRolling",
+        "ark:ListFoundationModels",
+        "ark:ListFoundationModelVersions",
+        "ark:ListModelActivations"
+      ],
+      "Resource": ["*"]
+    }
+  ]
+}

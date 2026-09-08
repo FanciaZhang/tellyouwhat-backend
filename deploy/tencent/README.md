@@ -179,3 +179,13 @@ gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main
 托管 MySQL 与 Redis 不属于 Compose 项目，更新或清理应用容器不会删除数据库。服务器重启后 Docker 自动启动三个应用容器，systemd 恢复定时任务。依赖故障应由就绪检查报错并保留失败任务的重试状态；不要用删除数据库或清空队列处理依赖故障。
 
 首次管理员创建与应急恢复命令见 [`../single-server/README.md`](../single-server/README.md)。
+
+### 方舟 AI 管理服务凭证
+
+在 GitHub `production` 环境中配置 `ARK_MANAGEMENT_CREDENTIALS_JSON`，格式与
+[方舟管理服务](../../docs/modules/ark-management.md)一致。管理功能和模型灰度分别
+由 `PRODUCTION_ENV_FILE` 中的 `AI_CONFIG_WRITES_ENABLED`、
+`AI_ENDPOINT_WRITES_ENABLED` 控制，默认关闭。发布流水线自动安装 UID 65532、
+0600 的独立版本凭证并加载 admin 专属 Compose 挂载；共享 `.env.production`
+只记录路径。回滚恢复原挂载路径和写入开关。不要手工把 AK/SK 放进环境文件
+或现有的共享 `secrets/` 目录。

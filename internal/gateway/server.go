@@ -125,7 +125,12 @@ type ManagedProduct struct {
 	SupportURL        string `json:"supportURL"`
 }
 
+type PolicyResolver interface {
+	Resolve(context.Context, contracts.Request) (contracts.Request, error)
+}
+
 type Dependencies struct {
+	ExecutionPolicies          PolicyResolver
 	Voice                      *voice.Service
 	VoiceEntitlements          entitlement.Store
 	App                        appregistry.App
@@ -161,6 +166,7 @@ type Dependencies struct {
 }
 
 type Server struct {
+	executionPolicies          PolicyResolver
 	voice                      *voice.Service
 	voiceEntitlements          entitlement.Store
 	app                        appregistry.App
@@ -223,7 +229,8 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
-		voice: dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
+		executionPolicies: dependencies.ExecutionPolicies,
+		voice:             dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,

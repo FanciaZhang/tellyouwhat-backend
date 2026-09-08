@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
@@ -64,9 +66,58 @@ func New(c Config) (http.Handler, error) {
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err
 	}
+	guard := func(g *gin.Context) {
+		w, r := g.Writer, g.Request
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Journal-Environment", "development")
+		w.Header().Set("X-Journal-Development-Protocol", ProtocolVersion)
+		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
+			g.Abort()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ready","environment":"development"}`))
+			return
+		}
+		// The stream uses an expiring, single-use ticket issued by the authenticated
+		// session route. Never substitute the developer credential for that ticket.
+		stream := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/journal/voice/sessions/") && strings.HasSuffix(r.URL.Path, "/stream")
+		allowed := stream || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
+			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/ai/operations/journal.organize/responses"))
+		if !allowed {
+			g.Abort()
+			deny(w, 404, "not_found")
+			return
+		}
+		if !stream {
+			provided := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || subtle.ConstantTimeCompare(provided[:], digest[:]) != 1 {
+				g.Abort()
+				deny(w, 401, "development_access_denied")
+				return
+			}
+			record, err := simulatedRecord(r, c.Now())
+			if err != nil {
+				g.Abort()
+				deny(w, 400, "development_simulation_invalid")
+				return
+			}
+			identity := sha256.Sum256([]byte(c.Token + ":" + record.KeyID))
+			id := hex.EncodeToString(identity[:])
+			record.KeyID, record.TransactionID = id, "development:"+id
+			if err := store.Upsert(r.Context(), record); err != nil {
+				g.Abort()
+				deny(w, 503, "development_state_unavailable")
+				return
+			}
+			p := attestation.Principal{AppID: "journal", KeyID: id, DeviceID: id, TransactionID: record.TransactionID}
+			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, p))
+		}
+		g.Request = r
+		g.Next()
+	}
 	s := gateway.New(gateway.Dependencies{
-		App:           appregistry.App{ID: appregistry.Journal, AllowedOperationPrefix: "journal."},
-		Authenticator: authenticator{}, Entitlements: entitlement.NewChecker(store, c.Now),
+		HTTPMiddleware: []gin.HandlerFunc{guard},
+		App:            appregistry.App{ID: appregistry.Journal, AllowedOperationPrefix: "journal."},
+		Authenticator:  authenticator{}, Entitlements: entitlement.NewChecker(store, c.Now),
 		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
 		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
 		Privacy: consent, Consent: consent,
@@ -78,47 +129,7 @@ func New(c Config) (http.Handler, error) {
 	})
 	router := s.Router()
 	router.ContextWithFallback = true
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Journal-Environment", "development")
-		w.Header().Set("X-Journal-Development-Protocol", ProtocolVersion)
-		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"ready","environment":"development"}`))
-			return
-		}
-		// The stream uses an expiring, single-use ticket issued by the authenticated
-		// session route. Never substitute the developer credential for that ticket.
-		stream := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/journal/voice/sessions/") && strings.HasSuffix(r.URL.Path, "/stream")
-		allowed := stream || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
-			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/ai/operations/journal.organize/responses"))
-		if !allowed {
-			deny(w, 404, "not_found")
-			return
-		}
-		if !stream {
-			provided := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
-			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || subtle.ConstantTimeCompare(provided[:], digest[:]) != 1 {
-				deny(w, 401, "development_access_denied")
-				return
-			}
-			record, err := simulatedRecord(r, c.Now())
-			if err != nil {
-				deny(w, 400, "development_simulation_invalid")
-				return
-			}
-			identity := sha256.Sum256([]byte(c.Token + ":" + record.KeyID))
-			id := hex.EncodeToString(identity[:])
-			record.KeyID, record.TransactionID = id, "development:"+id
-			if err := store.Upsert(r.Context(), record); err != nil {
-				deny(w, 503, "development_state_unavailable")
-				return
-			}
-			p := attestation.Principal{AppID: "journal", KeyID: id, DeviceID: id, TransactionID: record.TransactionID}
-			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, p))
-		}
-		router.ServeHTTP(w, r)
-	}), nil
+	return router, nil
 }
 
 func deny(w http.ResponseWriter, status int, code string) {

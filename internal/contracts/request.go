@@ -46,6 +46,7 @@ type Request struct {
 	SemanticSignature  string                     `json:"semanticSignature"`
 	RecognitionSession *RecognitionSessionContext `json:"recognitionSession,omitempty"`
 	OutputBudget       OutputBudget               `json:"-"`
+	ExecutionPolicy    *ExecutionPolicy           `json:"-"`
 }
 
 type RecognitionSessionContext struct {

@@ -25,6 +25,129 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AIRollingInputAction.
+const (
+	AcceptCurrent AIRollingInputAction = "accept_current"
+	Cancel        AIRollingInputAction = "cancel"
+	Reconcile     AIRollingInputAction = "reconcile"
+	Start         AIRollingInputAction = "start"
+	StepBack      AIRollingInputAction = "step_back"
+)
+
+// Valid indicates whether the value is a known member of the AIRollingInputAction enum.
+func (e AIRollingInputAction) Valid() bool {
+	switch e {
+	case AcceptCurrent:
+		return true
+	case Cancel:
+		return true
+	case Reconcile:
+		return true
+	case Start:
+		return true
+	case StepBack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthAIDraftRequestOperation.
+const (
+	HealthAIDraftRequestOperationDietAnalysis            HealthAIDraftRequestOperation = "diet_analysis"
+	HealthAIDraftRequestOperationHealthBehaviorAnalysis  HealthAIDraftRequestOperation = "health_behavior_analysis"
+	HealthAIDraftRequestOperationHealthNutritionAnalysis HealthAIDraftRequestOperation = "health_nutrition_analysis"
+	HealthAIDraftRequestOperationHydrationCupEstimate    HealthAIDraftRequestOperation = "hydration_cup_estimate"
+	HealthAIDraftRequestOperationMealDecision            HealthAIDraftRequestOperation = "meal_decision"
+	HealthAIDraftRequestOperationMealPhotoCapture        HealthAIDraftRequestOperation = "meal_photo_capture"
+	HealthAIDraftRequestOperationMealTextCapture         HealthAIDraftRequestOperation = "meal_text_capture"
+	HealthAIDraftRequestOperationVoiceTranscription      HealthAIDraftRequestOperation = "voice_transcription"
+)
+
+// Valid indicates whether the value is a known member of the HealthAIDraftRequestOperation enum.
+func (e HealthAIDraftRequestOperation) Valid() bool {
+	switch e {
+	case HealthAIDraftRequestOperationDietAnalysis:
+		return true
+	case HealthAIDraftRequestOperationHealthBehaviorAnalysis:
+		return true
+	case HealthAIDraftRequestOperationHealthNutritionAnalysis:
+		return true
+	case HealthAIDraftRequestOperationHydrationCupEstimate:
+		return true
+	case HealthAIDraftRequestOperationMealDecision:
+		return true
+	case HealthAIDraftRequestOperationMealPhotoCapture:
+		return true
+	case HealthAIDraftRequestOperationMealTextCapture:
+		return true
+	case HealthAIDraftRequestOperationVoiceTranscription:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthAIDraftRequestPolicyReasoningEffort.
+const (
+	High    HealthAIDraftRequestPolicyReasoningEffort = "high"
+	Low     HealthAIDraftRequestPolicyReasoningEffort = "low"
+	Medium  HealthAIDraftRequestPolicyReasoningEffort = "medium"
+	Minimal HealthAIDraftRequestPolicyReasoningEffort = "minimal"
+)
+
+// Valid indicates whether the value is a known member of the HealthAIDraftRequestPolicyReasoningEffort enum.
+func (e HealthAIDraftRequestPolicyReasoningEffort) Valid() bool {
+	switch e {
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	case Minimal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthAIPublishRequestOperation.
+const (
+	HealthAIPublishRequestOperationDietAnalysis            HealthAIPublishRequestOperation = "diet_analysis"
+	HealthAIPublishRequestOperationHealthBehaviorAnalysis  HealthAIPublishRequestOperation = "health_behavior_analysis"
+	HealthAIPublishRequestOperationHealthNutritionAnalysis HealthAIPublishRequestOperation = "health_nutrition_analysis"
+	HealthAIPublishRequestOperationHydrationCupEstimate    HealthAIPublishRequestOperation = "hydration_cup_estimate"
+	HealthAIPublishRequestOperationMealDecision            HealthAIPublishRequestOperation = "meal_decision"
+	HealthAIPublishRequestOperationMealPhotoCapture        HealthAIPublishRequestOperation = "meal_photo_capture"
+	HealthAIPublishRequestOperationMealTextCapture         HealthAIPublishRequestOperation = "meal_text_capture"
+	HealthAIPublishRequestOperationVoiceTranscription      HealthAIPublishRequestOperation = "voice_transcription"
+)
+
+// Valid indicates whether the value is a known member of the HealthAIPublishRequestOperation enum.
+func (e HealthAIPublishRequestOperation) Valid() bool {
+	switch e {
+	case HealthAIPublishRequestOperationDietAnalysis:
+		return true
+	case HealthAIPublishRequestOperationHealthBehaviorAnalysis:
+		return true
+	case HealthAIPublishRequestOperationHealthNutritionAnalysis:
+		return true
+	case HealthAIPublishRequestOperationHydrationCupEstimate:
+		return true
+	case HealthAIPublishRequestOperationMealDecision:
+		return true
+	case HealthAIPublishRequestOperationMealPhotoCapture:
+		return true
+	case HealthAIPublishRequestOperationMealTextCapture:
+		return true
+	case HealthAIPublishRequestOperationVoiceTranscription:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvitationRequestRole.
 const (
 	InvitationRequestRoleAdmin    InvitationRequestRole = "admin"
@@ -154,6 +277,28 @@ func (e UserUpdateRequestStatus) Valid() bool {
 	}
 }
 
+// AIRollingInput defines model for AIRollingInput.
+type AIRollingInput struct {
+	Action   AIRollingInputAction `json:"action"`
+	Endpoint string               `json:"endpoint"`
+	Target   AIRollingModel       `json:"target"`
+}
+
+// AIRollingInputAction defines model for AIRollingInput.Action.
+type AIRollingInputAction string
+
+// AIRollingModel defines model for AIRollingModel.
+type AIRollingModel struct {
+	ModelVersion string `json:"ModelVersion"`
+	Name         string `json:"Name"`
+}
+
+// AIRollingSubmission defines model for AIRollingSubmission.
+type AIRollingSubmission struct {
+	Input        AIRollingInput `json:"input"`
+	PreviewToken string         `json:"previewToken"`
+}
+
 // CreateOfferRequest defines model for CreateOfferRequest.
 type CreateOfferRequest struct {
 	Draft        OfferDraft `json:"draft"`
@@ -185,6 +330,36 @@ type ErrorDetail struct {
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
 }
+
+// HealthAIDraftRequest defines model for HealthAIDraftRequest.
+type HealthAIDraftRequest struct {
+	BaseVersion string                        `json:"baseVersion"`
+	Operation   HealthAIDraftRequestOperation `json:"operation"`
+	Policy      struct {
+		Endpoint         string                                    `json:"endpoint"`
+		ReasoningEffort  HealthAIDraftRequestPolicyReasoningEffort `json:"reasoningEffort"`
+		TimeoutSeconds   int                                       `json:"timeoutSeconds"`
+		Version          *string                                   `json:"version,omitempty"`
+		WebSearchEnabled bool                                      `json:"webSearchEnabled"`
+	} `json:"policy"`
+}
+
+// HealthAIDraftRequestOperation defines model for HealthAIDraftRequest.Operation.
+type HealthAIDraftRequestOperation string
+
+// HealthAIDraftRequestPolicyReasoningEffort defines model for HealthAIDraftRequest.Policy.ReasoningEffort.
+type HealthAIDraftRequestPolicyReasoningEffort string
+
+// HealthAIPublishRequest defines model for HealthAIPublishRequest.
+type HealthAIPublishRequest struct {
+	BaseVersion  string                          `json:"baseVersion"`
+	Operation    HealthAIPublishRequestOperation `json:"operation"`
+	PreviewToken string                          `json:"previewToken"`
+	Revision     openapi_types.UUID              `json:"revision"`
+}
+
+// HealthAIPublishRequestOperation defines model for HealthAIPublishRequest.Operation.
+type HealthAIPublishRequestOperation string
 
 // InvitationRequest defines model for InvitationRequest.
 type InvitationRequest struct {
@@ -314,6 +489,34 @@ type CreateRecoveryInvitationParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
 }
 
+// CreateHealthAIDraftParams defines parameters for CreateHealthAIDraft.
+type CreateHealthAIDraftParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// PublishHealthAIConfigParams defines parameters for PublishHealthAIConfig.
+type PublishHealthAIConfigParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetHealthAIHistoryParams defines parameters for GetHealthAIHistory.
+type GetHealthAIHistoryParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SubmitAIRollingCommandParams defines parameters for SubmitAIRollingCommand.
+type SubmitAIRollingCommandParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// CreateAIRollingPreviewParams defines parameters for CreateAIRollingPreview.
+type CreateAIRollingPreviewParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // CreateOfferParams defines parameters for CreateOffer.
 type CreateOfferParams struct {
 	Origin         *Origin         `json:"Origin,omitempty"`
@@ -413,6 +616,18 @@ type CreateUserInvitationJSONRequestBody = InvitationRequest
 // UpdateAdminUserJSONRequestBody defines body for UpdateAdminUser for application/json ContentType.
 type UpdateAdminUserJSONRequestBody = UserUpdateRequest
 
+// CreateHealthAIDraftJSONRequestBody defines body for CreateHealthAIDraft for application/json ContentType.
+type CreateHealthAIDraftJSONRequestBody = HealthAIDraftRequest
+
+// PublishHealthAIConfigJSONRequestBody defines body for PublishHealthAIConfig for application/json ContentType.
+type PublishHealthAIConfigJSONRequestBody = HealthAIPublishRequest
+
+// SubmitAIRollingCommandJSONRequestBody defines body for SubmitAIRollingCommand for application/json ContentType.
+type SubmitAIRollingCommandJSONRequestBody = AIRollingSubmission
+
+// CreateAIRollingPreviewJSONRequestBody defines body for CreateAIRollingPreview for application/json ContentType.
+type CreateAIRollingPreviewJSONRequestBody = AIRollingInput
+
 // CreateOfferJSONRequestBody defines body for CreateOffer for application/json ContentType.
 type CreateOfferJSONRequestBody = CreateOfferRequest
 
@@ -472,6 +687,36 @@ type ServerInterface interface {
 
 	// (POST /api/v1/admin/users/{userID}/recovery-invitations)
 	CreateRecoveryInvitation(c *gin.Context, userID UserID, params CreateRecoveryInvitationParams)
+
+	// (GET /api/v1/ai/endpoints/{endpoint})
+	GetAIEndpoint(c *gin.Context, endpoint string)
+
+	// (GET /api/v1/ai/health)
+	GetHealthAIConfig(c *gin.Context)
+
+	// (POST /api/v1/ai/health/drafts)
+	CreateHealthAIDraft(c *gin.Context, params CreateHealthAIDraftParams)
+
+	// (POST /api/v1/ai/health/publish)
+	PublishHealthAIConfig(c *gin.Context, params PublishHealthAIConfigParams)
+
+	// (GET /api/v1/ai/health/{operation}/history)
+	GetHealthAIHistory(c *gin.Context, operation string, params GetHealthAIHistoryParams)
+
+	// (GET /api/v1/ai/health/{operation}/revisions/{revision})
+	GetHealthAIRevision(c *gin.Context, operation string, revision string)
+
+	// (GET /api/v1/ai/models)
+	ListAIModels(c *gin.Context)
+
+	// (GET /api/v1/ai/models/{model}/versions)
+	ListAIModelVersions(c *gin.Context, model string)
+
+	// (POST /api/v1/ai/rolling/commands)
+	SubmitAIRollingCommand(c *gin.Context, params SubmitAIRollingCommandParams)
+
+	// (POST /api/v1/ai/rolling/preview)
+	CreateAIRollingPreview(c *gin.Context, params CreateAIRollingPreviewParams)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(c *gin.Context)
@@ -848,6 +1093,369 @@ func (siw *ServerInterfaceWrapper) CreateRecoveryInvitation(c *gin.Context) {
 	}
 
 	siw.Handler.CreateRecoveryInvitation(c, userID, params)
+}
+
+// GetAIEndpoint operation middleware
+func (siw *ServerInterfaceWrapper) GetAIEndpoint(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", c.Param("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter endpoint: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAIEndpoint(c, endpoint)
+}
+
+// GetHealthAIConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAIConfig(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHealthAIConfig(c)
+}
+
+// CreateHealthAIDraft operation middleware
+func (siw *ServerInterfaceWrapper) CreateHealthAIDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateHealthAIDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateHealthAIDraft(c, params)
+}
+
+// PublishHealthAIConfig operation middleware
+func (siw *ServerInterfaceWrapper) PublishHealthAIConfig(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PublishHealthAIConfigParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PublishHealthAIConfig(c, params)
+}
+
+// GetHealthAIHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAIHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation" -------------
+	var operation string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation", c.Param("operation"), &operation, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetHealthAIHistoryParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHealthAIHistory(c, operation, params)
+}
+
+// GetHealthAIRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetHealthAIRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation" -------------
+	var operation string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation", c.Param("operation"), &operation, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "revision" -------------
+	var revision string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHealthAIRevision(c, operation, revision)
+}
+
+// ListAIModels operation middleware
+func (siw *ServerInterfaceWrapper) ListAIModels(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAIModels(c)
+}
+
+// ListAIModelVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListAIModelVersions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", c.Param("model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter model: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAIModelVersions(c, model)
+}
+
+// SubmitAIRollingCommand operation middleware
+func (siw *ServerInterfaceWrapper) SubmitAIRollingCommand(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitAIRollingCommandParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SubmitAIRollingCommand(c, params)
+}
+
+// CreateAIRollingPreview operation middleware
+func (siw *ServerInterfaceWrapper) CreateAIRollingPreview(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAIRollingPreviewParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAIRollingPreview(c, params)
 }
 
 // ListAdminApps operation middleware
@@ -2106,6 +2714,16 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/api/v1/ai/rolling/preview", wrapper.CreateAIRollingPreview)
+	router.POST(options.BaseURL+"/api/v1/ai/rolling/commands", wrapper.SubmitAIRollingCommand)
+	router.GET(options.BaseURL+"/api/v1/ai/health", wrapper.GetHealthAIConfig)
+	router.GET(options.BaseURL+"/api/v1/ai/models", wrapper.ListAIModels)
+	router.POST(options.BaseURL+"/api/v1/ai/health/drafts", wrapper.CreateHealthAIDraft)
+	router.POST(options.BaseURL+"/api/v1/ai/health/publish", wrapper.PublishHealthAIConfig)
+	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/history", wrapper.GetHealthAIHistory)
+	router.GET(options.BaseURL+"/api/v1/ai/health/:operation/revisions/:revision", wrapper.GetHealthAIRevision)
+	router.GET(options.BaseURL+"/api/v1/ai/models/:model/versions", wrapper.ListAIModelVersions)
+	router.GET(options.BaseURL+"/api/v1/ai/endpoints/:endpoint", wrapper.GetAIEndpoint)
 	router.GET(options.BaseURL+"/healthz", wrapper.GetAdminHealth)
 	router.GET(options.BaseURL+"/readyz", wrapper.GetAdminReadiness)
 	router.POST(options.BaseURL+"/api/v1/auth/setup/options", wrapper.BeginSetup)
@@ -2368,6 +2986,400 @@ type CreateRecoveryInvitationdefaultJSONResponse struct {
 }
 
 func (response CreateRecoveryInvitationdefaultJSONResponse) VisitCreateRecoveryInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAIEndpointRequestObject struct {
+	Endpoint string `json:"endpoint"`
+}
+
+type GetAIEndpointResponseObject interface {
+	VisitGetAIEndpointResponse(w http.ResponseWriter) error
+}
+
+type GetAIEndpoint200JSONResponse struct{ OKJSONResponse }
+
+func (response GetAIEndpoint200JSONResponse) VisitGetAIEndpointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAIEndpointdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetAIEndpointdefaultJSONResponse) VisitGetAIEndpointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIConfigRequestObject struct {
+}
+
+type GetHealthAIConfigResponseObject interface {
+	VisitGetHealthAIConfigResponse(w http.ResponseWriter) error
+}
+
+type GetHealthAIConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response GetHealthAIConfig200JSONResponse) VisitGetHealthAIConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetHealthAIConfigdefaultJSONResponse) VisitGetHealthAIConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHealthAIDraftRequestObject struct {
+	Params CreateHealthAIDraftParams
+	Body   *CreateHealthAIDraftJSONRequestBody
+}
+
+type CreateHealthAIDraftResponseObject interface {
+	VisitCreateHealthAIDraftResponse(w http.ResponseWriter) error
+}
+
+type CreateHealthAIDraft200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateHealthAIDraft200JSONResponse) VisitCreateHealthAIDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHealthAIDraftdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateHealthAIDraftdefaultJSONResponse) VisitCreateHealthAIDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishHealthAIConfigRequestObject struct {
+	Params PublishHealthAIConfigParams
+	Body   *PublishHealthAIConfigJSONRequestBody
+}
+
+type PublishHealthAIConfigResponseObject interface {
+	VisitPublishHealthAIConfigResponse(w http.ResponseWriter) error
+}
+
+type PublishHealthAIConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response PublishHealthAIConfig200JSONResponse) VisitPublishHealthAIConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishHealthAIConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PublishHealthAIConfigdefaultJSONResponse) VisitPublishHealthAIConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIHistoryRequestObject struct {
+	Operation string `json:"operation"`
+	Params    GetHealthAIHistoryParams
+}
+
+type GetHealthAIHistoryResponseObject interface {
+	VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error
+}
+
+type GetHealthAIHistory200JSONResponse struct{ OKJSONResponse }
+
+func (response GetHealthAIHistory200JSONResponse) VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIHistorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetHealthAIHistorydefaultJSONResponse) VisitGetHealthAIHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIRevisionRequestObject struct {
+	Operation string `json:"operation"`
+	Revision  string `json:"revision"`
+}
+
+type GetHealthAIRevisionResponseObject interface {
+	VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error
+}
+
+type GetHealthAIRevision200JSONResponse struct{ OKJSONResponse }
+
+func (response GetHealthAIRevision200JSONResponse) VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthAIRevisiondefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetHealthAIRevisiondefaultJSONResponse) VisitGetHealthAIRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelsRequestObject struct {
+}
+
+type ListAIModelsResponseObject interface {
+	VisitListAIModelsResponse(w http.ResponseWriter) error
+}
+
+type ListAIModels200JSONResponse struct{ OKJSONResponse }
+
+func (response ListAIModels200JSONResponse) VisitListAIModelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelsdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListAIModelsdefaultJSONResponse) VisitListAIModelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelVersionsRequestObject struct {
+	Model string `json:"model"`
+}
+
+type ListAIModelVersionsResponseObject interface {
+	VisitListAIModelVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListAIModelVersions200JSONResponse struct{ OKJSONResponse }
+
+func (response ListAIModelVersions200JSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAIModelVersionsdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListAIModelVersionsdefaultJSONResponse) VisitListAIModelVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAIRollingCommandRequestObject struct {
+	Params SubmitAIRollingCommandParams
+	Body   *SubmitAIRollingCommandJSONRequestBody
+}
+
+type SubmitAIRollingCommandResponseObject interface {
+	VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error
+}
+
+type SubmitAIRollingCommand202JSONResponse struct{ OKJSONResponse }
+
+func (response SubmitAIRollingCommand202JSONResponse) VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAIRollingCommanddefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response SubmitAIRollingCommanddefaultJSONResponse) VisitSubmitAIRollingCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAIRollingPreviewRequestObject struct {
+	Params CreateAIRollingPreviewParams
+	Body   *CreateAIRollingPreviewJSONRequestBody
+}
+
+type CreateAIRollingPreviewResponseObject interface {
+	VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error
+}
+
+type CreateAIRollingPreview200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateAIRollingPreview200JSONResponse) VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAIRollingPreviewdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateAIRollingPreviewdefaultJSONResponse) VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3437,6 +4449,36 @@ type StrictServerInterface interface {
 	// (POST /api/v1/admin/users/{userID}/recovery-invitations)
 	CreateRecoveryInvitation(ctx context.Context, request CreateRecoveryInvitationRequestObject) (CreateRecoveryInvitationResponseObject, error)
 
+	// (GET /api/v1/ai/endpoints/{endpoint})
+	GetAIEndpoint(ctx context.Context, request GetAIEndpointRequestObject) (GetAIEndpointResponseObject, error)
+
+	// (GET /api/v1/ai/health)
+	GetHealthAIConfig(ctx context.Context, request GetHealthAIConfigRequestObject) (GetHealthAIConfigResponseObject, error)
+
+	// (POST /api/v1/ai/health/drafts)
+	CreateHealthAIDraft(ctx context.Context, request CreateHealthAIDraftRequestObject) (CreateHealthAIDraftResponseObject, error)
+
+	// (POST /api/v1/ai/health/publish)
+	PublishHealthAIConfig(ctx context.Context, request PublishHealthAIConfigRequestObject) (PublishHealthAIConfigResponseObject, error)
+
+	// (GET /api/v1/ai/health/{operation}/history)
+	GetHealthAIHistory(ctx context.Context, request GetHealthAIHistoryRequestObject) (GetHealthAIHistoryResponseObject, error)
+
+	// (GET /api/v1/ai/health/{operation}/revisions/{revision})
+	GetHealthAIRevision(ctx context.Context, request GetHealthAIRevisionRequestObject) (GetHealthAIRevisionResponseObject, error)
+
+	// (GET /api/v1/ai/models)
+	ListAIModels(ctx context.Context, request ListAIModelsRequestObject) (ListAIModelsResponseObject, error)
+
+	// (GET /api/v1/ai/models/{model}/versions)
+	ListAIModelVersions(ctx context.Context, request ListAIModelVersionsRequestObject) (ListAIModelVersionsResponseObject, error)
+
+	// (POST /api/v1/ai/rolling/commands)
+	SubmitAIRollingCommand(ctx context.Context, request SubmitAIRollingCommandRequestObject) (SubmitAIRollingCommandResponseObject, error)
+
+	// (POST /api/v1/ai/rolling/preview)
+	CreateAIRollingPreview(ctx context.Context, request CreateAIRollingPreviewRequestObject) (CreateAIRollingPreviewResponseObject, error)
+
 	// (GET /api/v1/apps)
 	ListAdminApps(ctx context.Context, request ListAdminAppsRequestObject) (ListAdminAppsResponseObject, error)
 
@@ -3735,6 +4777,292 @@ func (sh *strictHandler) CreateRecoveryInvitation(ctx *gin.Context, userID UserI
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateRecoveryInvitationResponseObject); ok {
 		if err := validResponse.VisitCreateRecoveryInvitationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAIEndpoint operation middleware
+func (sh *strictHandler) GetAIEndpoint(ctx *gin.Context, endpoint string) {
+	var request GetAIEndpointRequestObject
+
+	request.Endpoint = endpoint
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAIEndpoint(ctx, request.(GetAIEndpointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAIEndpoint")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetAIEndpointResponseObject); ok {
+		if err := validResponse.VisitGetAIEndpointResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetHealthAIConfig operation middleware
+func (sh *strictHandler) GetHealthAIConfig(ctx *gin.Context) {
+	var request GetHealthAIConfigRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealthAIConfig(ctx, request.(GetHealthAIConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealthAIConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetHealthAIConfigResponseObject); ok {
+		if err := validResponse.VisitGetHealthAIConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateHealthAIDraft operation middleware
+func (sh *strictHandler) CreateHealthAIDraft(ctx *gin.Context, params CreateHealthAIDraftParams) {
+	var request CreateHealthAIDraftRequestObject
+
+	request.Params = params
+
+	var body CreateHealthAIDraftJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateHealthAIDraft(ctx, request.(CreateHealthAIDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateHealthAIDraft")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateHealthAIDraftResponseObject); ok {
+		if err := validResponse.VisitCreateHealthAIDraftResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishHealthAIConfig operation middleware
+func (sh *strictHandler) PublishHealthAIConfig(ctx *gin.Context, params PublishHealthAIConfigParams) {
+	var request PublishHealthAIConfigRequestObject
+
+	request.Params = params
+
+	var body PublishHealthAIConfigJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishHealthAIConfig(ctx, request.(PublishHealthAIConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishHealthAIConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PublishHealthAIConfigResponseObject); ok {
+		if err := validResponse.VisitPublishHealthAIConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetHealthAIHistory operation middleware
+func (sh *strictHandler) GetHealthAIHistory(ctx *gin.Context, operation string, params GetHealthAIHistoryParams) {
+	var request GetHealthAIHistoryRequestObject
+
+	request.Operation = operation
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealthAIHistory(ctx, request.(GetHealthAIHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealthAIHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetHealthAIHistoryResponseObject); ok {
+		if err := validResponse.VisitGetHealthAIHistoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetHealthAIRevision operation middleware
+func (sh *strictHandler) GetHealthAIRevision(ctx *gin.Context, operation string, revision string) {
+	var request GetHealthAIRevisionRequestObject
+
+	request.Operation = operation
+	request.Revision = revision
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealthAIRevision(ctx, request.(GetHealthAIRevisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealthAIRevision")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetHealthAIRevisionResponseObject); ok {
+		if err := validResponse.VisitGetHealthAIRevisionResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAIModels operation middleware
+func (sh *strictHandler) ListAIModels(ctx *gin.Context) {
+	var request ListAIModelsRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAIModels(ctx, request.(ListAIModelsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAIModels")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListAIModelsResponseObject); ok {
+		if err := validResponse.VisitListAIModelsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAIModelVersions operation middleware
+func (sh *strictHandler) ListAIModelVersions(ctx *gin.Context, model string) {
+	var request ListAIModelVersionsRequestObject
+
+	request.Model = model
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAIModelVersions(ctx, request.(ListAIModelVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAIModelVersions")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListAIModelVersionsResponseObject); ok {
+		if err := validResponse.VisitListAIModelVersionsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitAIRollingCommand operation middleware
+func (sh *strictHandler) SubmitAIRollingCommand(ctx *gin.Context, params SubmitAIRollingCommandParams) {
+	var request SubmitAIRollingCommandRequestObject
+
+	request.Params = params
+
+	var body SubmitAIRollingCommandJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitAIRollingCommand(ctx, request.(SubmitAIRollingCommandRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitAIRollingCommand")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(SubmitAIRollingCommandResponseObject); ok {
+		if err := validResponse.VisitSubmitAIRollingCommandResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAIRollingPreview operation middleware
+func (sh *strictHandler) CreateAIRollingPreview(ctx *gin.Context, params CreateAIRollingPreviewParams) {
+	var request CreateAIRollingPreviewRequestObject
+
+	request.Params = params
+
+	var body CreateAIRollingPreviewJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAIRollingPreview(ctx, request.(CreateAIRollingPreviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAIRollingPreview")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateAIRollingPreviewResponseObject); ok {
+		if err := validResponse.VisitCreateAIRollingPreviewResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -4513,43 +5841,54 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7Ftfd9q4Ev8qHN19NBjatKfLGw3slttuyIH0tntzcnMUewBtbcmVZFqWw3e/R3+MbbDBkJCQbp8CaKT5",
-	"85sZSaPJAnksjBgFKgVqL1CEOQ5BAtffOlHU76oPhKI2irCcIgdRHAJqI6zHHMTha0w4+KgteQwOEt4U",
-	"QmzWkhK4mvm/6079v7j+d7P+a+O2Xb9ZtJzWizfLX5CD5DxSqwnJCZ2g5dJBb7H0pqVs7+zoERifj4a/",
-	"XbEvQFesp4B94Cnzz/WOHxJaV5QoyzHE3z8Ancgpar949dpBIaHJ91YhK+AQMjrPqFnKy5LWtdKFLFsv",
-	"3lRgycEHKgkOSm3rZUm2GTirbvOsAvO+D2HEJFBv/h7mpTpnyOqKriKob7aA2qczIrEkjJaqTbIke/vV",
-	"7Q6vGozHwEt5Mzt6BHcecDIh5b5sh7OMxoyHWKI2ijkpXPKj2KJKLA7TZLsBl2o9ETEqQKekcw5YqrVV",
-	"5qISqFQfcRQFxNMYun8JprVO2f7CYYza6F9umutcMyrcf48GF13mxaFaSbPzQXicRGot1EZDECzmHtQ8",
-	"w7iBlg7qcc74g4mgVxtaJYtl+BqDkLUxJoGV4IKdp6yLqRWnACT4tW9ETlksa7iWmLJ2x/y5Xmjw/hFN",
-	"uSZYQzuVnZ6CqyPGEmuJfJ+oJXBwyVkEXBLlCmMcCHBQlPlpgXyOx3KXnHr9rqZcqgVgRuDbKvFncttZ",
-	"89cKuTx192vLf23Rm9UsdvcXeJrreSwkC8+ZD4cp6jEfSiPqZnHmvD4rCicHwfeIcI1uF0vIRb2vfiiY",
-	"QuPwDvhgrKQV1kQkjEO11zWbTW0h8z21D6ESJsA3DKTlXl+yyEC9MJLzgfm6yzSbkylnQaD88DDrygJn",
-	"eNV6sZ8vyFLwdcB3QWISHAj7VjkcFIIQeLKbshicZHap6KtctZ/wkGTNncnQ2mZdPrNAkVjpLn8Y4Pow",
-	"qz8RCaHxgQ2j4u99M/j6bCUC5hzP1ahPRBTg+YXeC/c8EDqIs0BPA6rC6BphdfRDDlIyYplTuizzZPjb",
-	"9ZxErSKL5ZJ1qbHMBr4xOZNB97RzLNkQKHzrUXwXmG3crn7HWACYquU9nRyB9wIyIXckIMn0FTiJnS56",
-	"n5CDep/7o6v+xe/642V/2OsW2CsL4EsNiP3SWgPTQTElX2Oww8oECt/YZM0s96t3w17vttv5c4QcNLjo",
-	"3X7q9d4jB119GuiPyc9/DC6u3tnf9Wc1YCavvo76n9MvatKfvc6wUA16iIuteQs1blJs6IyyziZiRc40",
-	"oHBFQlDZXN/eDgtCoDPCGU08MrHy5XDQ/Xh+1R9cKDN1LrpvB58LDfPEW1t+rQ1xnJx+RVa8xEJ8AR3C",
-	"B55+7pGDtqSTIllHIOPoMCnvGJNCchxdHbTLOg+p5poszk691Q3oY6Tc6R+z0ThISCzjXN7FniQzMPZa",
-	"Twv7bFB25a071Se468RyStMCxp77ldIAvJgTOR+pU4ZBQldXRiCETer6Rusx9oVAeqe9vX3HhKxLCII5",
-	"i79NsbzVFrsVdmKKT0Tew9xcewgds8172TmmjBIPBzV12+LYk7Ux4zU5hZqN/DqjwbymGRDllWpiTQCf",
-	"EQ8aihWRCj10lYpT6+SpO5d95KAZcKMWajWajaayIouA4oigNnrZaDWa6o6C5VRbwsURcWctVzN2cewT",
-	"7dUT0H+MZxBG+z5qow9EyI6mWLuXv2g2y452Kzp38F57MIxxHMjd5OaarSwq8UQoJ8pri27UWF78tJhj",
-	"6plMFGhh7pm6mrEi1xZJi5/XxcKlJK4toCydnZRpYXF5Y4IChHzL/PmDXb03z7/LfPzZU8waZK3dGCT1",
-	"lkfEzV1kK3JLE0kBmC09D+QQZuzLfYHMlQgrwHk48Dnjn+02ZFrlObb5Y2FL/uVRr+g+arITDX2tg7sw",
-	"dcilrY540011zAa+Umhvh7Fl0KO6ysPniM2jS6UccYrYuhw8NgM+r++R7od2zj0yxWMAf4IJOooqpIaO",
-	"onoS79HVCLEps7vQp8qlG4LkxBMuM4RlqvwOUi/1hyHf2zvMa2kBiidhhB3KKxztGs9Tb2dr8GuyQzU7",
-	"UrjvJl57Nj3WzlDw7HJax8eKzu3aZ5fyneDSEJyiNxwJ2+xj16ls91XhXNjX8aXrMR/qEWPB9gR2zny4",
-	"1FTHw9Y+2J92ms+aTtd4615S4dyWJdNXyUcw4A+fVTeeeJ9nUk1dyQdd97PF9WJH6q5ojp1kT9OPnkFG",
-	"YBTqkoSgc0JdN9TtTg3rTzw/E8T9t+aSV7PnliaK3Mld2EbNpeuzbzRg2N+SMyxFxiBH3MGT/tLHu8U3",
-	"11xGwnfpemKWd5WCzrf8A8LAGrqmI7mmd/QaFrXz0X8axwA5llMXdCeNOyaUiGk5gr/p8bTtZm/0Mg2x",
-	"xwq3gnek04i05HEKta9vMhWZWE6VmF5RRSYDDYt2VL/ewoTQHDTHsO5my9WTXzcOtGvAJoRW9PgPzPTQ",
-	"/jDOfrJ4VHPzBI+jeHimI3G52Zh8qrZjsSw32gcz/nhPn0/2ArbLUhz0n2phP9TEmfXukwGeVz3pFBPL",
-	"viBXyyX3BvkhT49PbTkBMo4qRofuDft5Ajx+djegVPPmBJRj2DXXDPgMjxnJDDcyfVjbi8yXCdGTROoo",
-	"0W67BhVDtZN20ZmJP3ey06m8VIW6WgK4P9SnBF5Br/TJHEOq4rbI/r/t1ja3rv794BDN/lvvD9nfVmbx",
-	"VXNvWb/HaNXGeyqHringQE7/3ia0brd5p+nQCeysI9OgbOXngP35bvGHgH1CQdxnF33VfFlZ+uPom6dZ",
-	"7ym/vlFRIYDPkkDN13MvOfNjz14tYh6gNppKGYm2a5reGpm284ZnYswKsUga1BNhVLDan9bcKjOyCpMs",
-	"db7xKzNia8LLm+X/AwAA//8=",
+	"7Dzrd9q48v8KR7/99jMxSdOeLt9owm65bUMOpI+9PbkcYQ+grS25kkzKcvjf79HD2AaDDSkJye0nHhqN",
+	"NO/xaOQ58lgYMQpUCtScowhzHIIErn+1oqhzqb4QipoownKCHERxCKiJsB5zEIfvMeHgo6bkMThIeBMI",
+	"scElJXA18z9fW/V/4/o/jfrvJ4Nm/XZ+6pyevV78hhwkZ5HCJiQndIwWCwe9wdKbbFx2aEcPsPBFv/fH",
+	"DfsGdLn0BLAPPF38S73lh4TWFSTKrhjiH++BjuUENc9evnJQSGjy+7RwKeAQMjrLkLlxLQta10QXLnl6",
+	"9rrCkhx8oJLgYCNvvSzINgZnyW2cV1i840MYMQnUm72D2UaaM2B1BVdRqK+3CLVDp0RiSRjdSDbJguys",
+	"V4MSreqORsA3rs3s6AHUucvJmGzWZTucXWjEeIglaqKYk0KUH8UWUmKxHyXbGbhQ+ETEqADtki44YKlw",
+	"K89FJVCpvuIoCoinZej+LZimOl32Nw4j1ET/56a+zjWjwv1Xv3t1ybw4VJj0cj4Ij5NI4UJN1APBYu5B",
+	"zTMLn6CFg9qcM/7TtqCx9SyRxXv4HoOQtREmgd3BFbtIly6GVisFIMGv3RE5YbGs4VrCytqQ+TONqPvu",
+	"AVm5srETrVR2uo43nR4LAkLHHRrFZje+T9R0HFxzFgGXRKnBCAcCHBRl/poj7Jl15ghoHKLmVyQk5hI5",
+	"yMPUg0CpuoRoMMTeN62lHqMeCQA5CHseRHLgxZyrvd+uqaGDgPoRI4ZFO7leB0nMxyDLuLek/QPzIUBG",
+	"8RND+pqu7ySELhGn22XDv8GTas0VbLtxUs/5BFxYfq7Su0bhlfYApYArJOlZTn61rbT042FIRLKrHQgi",
+	"iTpVEoBRvoVCAlMCd8ucIEPe69Pfz8rDXpZas4cVpEXkGg+nw4a1mB2p9TkelVKr8V9qyO2Unjd+f7Ub",
+	"pWb9KpTGQrLwgvmwH6Ee82FjWLmdnzuvzotiioPgR0S4dnGXWEIu9Pnqj4IpNA6HwLsjtVthWURC5WfO",
+	"XjYaDc0h8zvlD6ESxsDXGKT3vYqyiEHtMJKzrvlZxpr1yZSzIFDOeD/uygJleHm6o9bLjcLXUe8SJCbB",
+	"nmIvcbshCIHH5ZDFwklmb9z6MmDvtnlIUofSjMDyZi0QaARF23oLOJCTVkdb9X4yH2IBxY7/xasCFqup",
+	"eDXqThnxYCA5pmnwV/zEwSCaMMkGHo5kzBWTJzPfzB94cTQAIUlozE9DS/ghM8D6Px88IgxGn4AcYIqD",
+	"mSBCIdPkD2gsuSa3YGwIEzwljKdDRaE+YgHxZrvKdUt+kPFPENVTF1W//f9C98QBC0YJHbdHI8Zllrna",
+	"y2CVywTsTjPFJ3GoKCTjSSE1koTAYtlX6Y6f91yvz0v8loOm1ZXhDoZ9wNybtCkeBiZFt0BDxgLAdFtS",
+	"s0pzAb41WtaNYAV/qp9OTrWXMt5mRtfxMCBi8suQ9jekzVlFhbKBEuWUJBxMn01j4qMyJ54V/BLLmg6U",
+	"5Sdp7WA/JdAlMpOASghFxiAyUQr/6JjBV+fLLWDO8UyN+kREAZ4V5NflZSYHcRZAVqGwH+onfsOdXBTZ",
+	"lMpl1rf4nISsIo7lHgE3MsuUBdYmZ1LSHfkcS9YDCndbPI+DPJ1tAm8HZEyGJCDLp4NEOAmfrtqfkYPa",
+	"Xzr9m87Vn/rrdafXvixU8lSAL7RA7I/TFWE6KKbkewx2WLFAyTdeN/ubt712e3DZ+quPHNS9ag8+t9vv",
+	"kINuPnf11+TvD92rm7f2f/1dDZjJy5/9zpf0h5r0V7vVKySD7qNiK9pCjZoUMzpDrLMusSJl6lK4ISGo",
+	"9FjXhPczQqBTwhlNNDLh8nWve/nx4qbTvVJsal1dvul+KX7wf9xnhTyute04OfqKuHiNhfgG2oT3fJy8",
+	"hw/a4k6K9toHGUd7BlzGpJAcRzd7PbY4P5PMlb04pXR/FMA/Rkqd/mcCjYOExDLO+V3sSTIFw69Vt7BL",
+	"gLKYt0aqzzBsxXJC02ORHeOVogC8mBM566vHNiMJfWbTh2WRStfJPca+EUgr5YPBWyZkXUIQzFh8N8Fy",
+	"oDk2EHZiKp+IvIOZKaYSOmLr1d4LTBklHg5qHqOSY0/WRozX5ARq1vLrjAazml6AKK1UE2sC+JR4cKKT",
+	"aqmkh27S7dRaeejWdQdlngXQ6UnjpGHzVoojgproxcnpSQPpZ52J5oSLI+JOT129sItjn2ittpXQZYLW",
+	"8VETvSdCtjTESrX/rNHY9Ky8hHO777QGwwjHgSwHN8X7hS7MjoVSojy16FaN5befHhGZU1ImCqgwhTt9",
+	"RrIE1xxJj1S/Fm8uBXHtsczCKYVMjysXt8YoQMg3zJ/9tIL+ev67yNufzWJWRHZaLoPkFOcB5ebOs+d8",
+	"C2NJAZiQnhdkD6bs230FmTt4rCDO/QWfY/55OSPTs6NDsz8WtpFgs9UruI8a7EhNX9Pgzs3p5sKWm73J",
+	"OjkmgC8J2llh7OHqQVXl5/uI9dSlko84Rtm6HDw2BT6r7+Due3bOPTzFQwj+CB00cZPyn3DnydfFRm/x",
+	"J8hWp50WDFd4XNCQkKsuVmhlKTyyvD0+1SWuqcJtY1VSxLxgdETG6HiJcPVpYamZ5c42drawjDWUm85K",
+	"r9KhHGfhac3T8J1L2UWmRL5ZeLaGvqaNz0d8K6cET0yA86W4Fu6ECMn4rIpXeWtBq3jhfCl+kxtee8q3",
+	"uL7HoNdJOhRjLhjf1AdZcLRyzP47x/3klEK48+TrooooeunpxqFlkceVOVapFF2fjHBC5kNQ8tTS+WCA",
+	"jnf/7lx/LlxbtalE0KcEtooyafzPL7fipglMYQuxPTEvDm66HU0u28YuzIRnEd2KWu4qhbaz4xGgPd4t",
+	"yyyXpF5b+HvI79DSsJ2JTyLHiKIKlZ+WgnqUvevDZrG+Z3euDw0WbgiSE0+4zABuCcUa1QcDvrP2mCs2",
+	"j+QKS5lQQrySo8XxNOl2troGDbYvZQeq5hxNiChoUz6u04GKyl0eJ2xgOEZtOJBss83hxxJsqopzbq9U",
+	"LVyP+VCPGCtJ5i+YD9ca6nCytbe8jtvNZ1mnW3jqXtLAss1Lpl38D8DAZ+9V165EPE2nmqqSD7qtw/ZO",
+	"FSvS5RLm0E72OPXoCXgERqEuSQjaJ9T1Lexy17DawffLQdw/NG9oinxqbqJIndy5vd2/cH12RwOG/S0+",
+	"w0JkGHLACJ68lODhDmkbKyoj4Yd0PTHNq0rBdel8f1jXMrqmLbmmI3oNi9pF/9PJIYQcy4kL+uaZOyJ0",
+	"6+HQH3o8vaa2e+UlfYvCocytoE3wOCwt6T1Eza+3mYpMLCdqm15RRSYjGhaVNDe8gTGhOdEcgrvrVxQf",
+	"/XFjT74GbExoRY1/z8yLF56Nsh+tPKqpeSKPg2h45gbvYv1tFsfKO2auyxcz7b0Zf7jO1kdrcCzjFAf9",
+	"Uc3sexo4g+8+HuBp1ZOO0bHsKuRqvuTeQv6Z2eNjc06AjKOK1qGv/vzKAA/v3Y1QqmlzIpRD8DV31+sJ",
+	"phnJDDcy12y2F5mvE6BHsdR+Qt12Ciqaaiu9JGUm/opkx1N5qSrqag7g/qI+JuEVXIU9mjSkqtzm2Zc0",
+	"br3FdKn/39tEs++CfJbXlzZxfHl3c1O/R395S/NYki7TT/rP1rsTfkioaRpFRxBZ++b+qd0/B+zPyrff",
+	"A+wTCuI+UfRl40Xl3R+G3jzM6pXhr7fKKgTwaWKo+XruNWd+nLwAMOYBaqKJlJFouuZO00nmVvGJZ2zM",
+	"bmKedG4mm1HGav9aUavMyNJMstD5xq/MiK0JL24X/w0AAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

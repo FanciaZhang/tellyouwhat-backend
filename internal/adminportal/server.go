@@ -47,6 +47,7 @@ type OfferManager interface {
 }
 
 type Config struct {
+	AI                *AIConfig
 	PreviewSigningKey []byte
 	WritesEnabled     bool
 	Apps              []AdminApp

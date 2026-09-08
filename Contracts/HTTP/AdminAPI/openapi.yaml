@@ -15,6 +15,117 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/ai/rolling/preview:
+    post:
+      operationId: createAIRollingPreview
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIRollingInput" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/rolling/commands:
+    post:
+      operationId: submitAIRollingCommand
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIRollingSubmission" }
+      responses:
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health:
+    get:
+      operationId: getHealthAIConfig
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/models:
+    get:
+      operationId: listAIModels
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/drafts:
+    post:
+      operationId: createHealthAIDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthAIDraftRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/publish:
+    post:
+      operationId: publishHealthAIConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthAIPublishRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/history:
+    get:
+      operationId: getHealthAIHistory
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/revisions/{revision}:
+    get:
+      operationId: getHealthAIRevision
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: revision, in: path, required: true, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/models/{model}/versions:
+    get:
+      operationId: listAIModelVersions
+      tags: [Administration]
+      parameters:
+        - { name: model, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/endpoints/{endpoint}:
+    get:
+      operationId: getAIEndpoint
+      tags: [Administration]
+      parameters:
+        - { name: endpoint, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /healthz:
     get:
       operationId: getAdminHealth
@@ -480,6 +591,56 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
   schemas:
+    AIRollingModel:
+      type: object
+      additionalProperties: false
+      required: [Name, ModelVersion]
+      properties:
+        Name: { type: string, maxLength: 128 }
+        ModelVersion: { type: string, maxLength: 128 }
+    AIRollingInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint, action, target]
+      properties:
+        endpoint: { type: string, minLength: 1, maxLength: 128 }
+        action:
+          type: string
+          enum: [start, cancel, step_back, reconcile, accept_current]
+        target: { $ref: "#/components/schemas/AIRollingModel" }
+    AIRollingSubmission:
+      type: object
+      additionalProperties: false
+      required: [input, previewToken]
+      properties:
+        input: { $ref: "#/components/schemas/AIRollingInput" }
+        previewToken: { type: string, minLength: 1, maxLength: 8192 }
+    HealthAIDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, baseVersion, policy]
+      properties:
+        operation: { type: string, enum: [voice_transcription, meal_photo_capture, hydration_cup_estimate, meal_text_capture, meal_decision, diet_analysis, health_nutrition_analysis, health_behavior_analysis] }
+        baseVersion: { type: string, maxLength: 36 }
+        policy:
+          type: object
+          additionalProperties: false
+          required: [endpoint, reasoningEffort, webSearchEnabled, timeoutSeconds]
+          properties:
+            version: { type: string, maxLength: 36 }
+            endpoint: { type: string, pattern: '^ep-[A-Za-z0-9-]+$', maxLength: 128 }
+            reasoningEffort: { type: string, enum: [minimal, low, medium, high] }
+            webSearchEnabled: { type: boolean }
+            timeoutSeconds: { type: integer, minimum: 1, maximum: 840 }
+    HealthAIPublishRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, revision, baseVersion, previewToken]
+      properties:
+        operation: { type: string, enum: [voice_transcription, meal_photo_capture, hydration_cup_estimate, meal_text_capture, meal_decision, diet_analysis, health_nutrition_analysis, health_behavior_analysis] }
+        revision: { type: string, format: uuid }
+        previewToken: { type: string, minLength: 1, maxLength: 2048 }
+        baseVersion: { type: string, maxLength: 36 }
     JSONDocument:
       type: object
       additionalProperties: true

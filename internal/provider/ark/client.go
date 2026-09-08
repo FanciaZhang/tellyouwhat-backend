@@ -201,6 +201,15 @@ func (client *Client) makeRequest(
 		return nil, nil, ErrProviderConfiguration
 	}
 	route, ok := client.config.Routes[request.Operation]
+	if request.ExecutionPolicy != nil {
+		var err error
+		request, err = request.WithExecutionPolicy(*request.ExecutionPolicy)
+		if err != nil {
+			return nil, nil, ErrProviderConfiguration
+		}
+		route = Route{Model: request.ExecutionPolicy.Endpoint, TimeoutSeconds: request.ExecutionPolicy.TimeoutSeconds}
+		ok = true
+	}
 	if !ok || strings.TrimSpace(route.Model) == "" || strings.TrimSpace(client.config.BaseURL) == "" || client.config.APIKey == "" {
 		return nil, nil, ErrProviderConfiguration
 	}
@@ -294,10 +303,11 @@ func schemaName(operation contracts.Operation) string {
 
 func parseResponse(body []byte) (providerapi.Response, error) {
 	var value struct {
-		Status     string          `json:"status"`
-		Error      json.RawMessage `json:"error"`
-		OutputText string          `json:"output_text"`
-		Output     []struct {
+		Status      string          `json:"status"`
+		ActualModel string          `json:"model"`
+		Error       json.RawMessage `json:"error"`
+		OutputText  string          `json:"output_text"`
+		Output      []struct {
 			Content []struct {
 				Type       string `json:"type"`
 				Text       string `json:"text"`
@@ -337,7 +347,7 @@ func parseResponse(body []byte) (providerapi.Response, error) {
 	if content == "" {
 		return providerapi.Response{}, errors.New("ark response has no output text")
 	}
-	response := providerapi.Response{Content: content}
+	response := providerapi.Response{Content: content, ActualModel: value.ActualModel}
 	if value.Usage != nil && value.Usage.InputTokens != nil && value.Usage.OutputTokens != nil {
 		response.InputTokens = *value.Usage.InputTokens
 		response.OutputTokens = *value.Usage.OutputTokens

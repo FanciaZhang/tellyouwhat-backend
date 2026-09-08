@@ -20,6 +20,7 @@ const actionLabels = {
   "admin.passkey.recover": "完成通行密钥恢复", "admin.passkey.recovery_invite": "签发恢复邀请",
   "admin.invitation.create": "创建人员邀请", "admin.invitation.revoke": "撤销邀请",
   "admin.user.update": "更新后台人员", "offer.create": "创建 Offer",
+  "ai.draft.create": "保存 AI 配置草稿", "ai.config.publish": "发布 AI 配置",
   "offer.deactivate": "停用 Offer", "offer_codes.custom_create": "创建自定义码池",
   "offer_codes.batch_create": "创建一次性码池", "offer_codes.download": "下载一次性码"
 };
@@ -40,11 +41,11 @@ function escapeHTML(value) {
 }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
-async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false } = {}) {
+async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false, idempotencyKey } = {}) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (csrfRequired) headers["X-Admin-CSRF"] = state.csrf;
-  if (idempotent) headers["Idempotency-Key"] = uuid();
+  if (idempotencyKey || idempotent) headers["Idempotency-Key"] = idempotencyKey || uuid();
   const response = await fetch(path, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin"
   });
@@ -153,6 +154,7 @@ async function loadSession() {
     $("#account-name").textContent = state.user.displayName;
     $("#account-role").textContent = roleLabels[state.user.role] || state.user.role;
     $("#people-tab").classList.toggle("hidden", state.user.role !== "admin");
+    $("#ai-tab").classList.toggle("hidden", state.user.role !== "admin");
     await loadApps();
     await loadOffers();
     return true;
@@ -406,6 +408,7 @@ async function showSection(name) {
     tab.tabIndex = active ? 0 : -1;
   });
   $(`#${name}-section`).classList.remove("hidden");
+  if (name === "ai") await loadAI();
   if (name === "security") await loadPasskeys();
   if (name === "people") await loadPeople();
   if (name === "audit") await loadAudit();
@@ -567,3 +570,102 @@ $("#codes-form").onsubmit = event => {
   $("#login-panel").classList.toggle("hidden", setup || enroll);
   if (!setup && !enroll) await loadSession();
 })();
+
+const aiLabels = { voice_transcription:"语音转写", meal_photo_capture:"拍照记饮食", hydration_cup_estimate:"水杯估算", meal_text_capture:"文字记饮食", meal_decision:"饮食决策", diet_analysis:"饮食分析", health_nutrition_analysis:"健康营养分析", health_behavior_analysis:"健康行为分析" };
+let aiRows=[], aiData={};
+async function aiCommand(action, body) {
+  const slot=`ai-command:${state.user.id}:${action}:${body.operation}`;
+  const identity=JSON.stringify({...body,previewToken:undefined});
+  let previous; try {previous=JSON.parse(sessionStorage.getItem(slot));} catch {}
+  const command=previous?.identity===identity ? previous : {identity,key:uuid()};
+  sessionStorage.setItem(slot,JSON.stringify(command));
+  const result=await api(`/api/v1/ai/health/${action}`,{method:"POST",csrfRequired:true,idempotencyKey:command.key,body});
+  sessionStorage.removeItem(slot);return result;
+}
+function aiPolicyLabel(p) { return p ? `${p.endpoint} / ${p.reasoningEffort} / 联网${p.webSearchEnabled?"开":"关"}` : "沿用 App 参数"; }
+async function loadAI() {
+  aiData=await api("/api/v1/ai/health"); aiRows=aiData.operations;
+  $("#ai-status").textContent=`${aiData.writesEnabled?"配置发布已启用":"配置发布未启用"}。${aiData.rollingWritesEnabled?"原生灰度操作已启用":"原生灰度操作未启用"}。`;
+  renderAI();
+}
+function renderAI() {
+  const endpoints=[...new Map(aiRows.filter(r=>r.endpoint?.Id).map(r=>[r.endpoint.Id,r.endpoint])).values()];
+  $("#ai-operations").innerHTML=aiRows.map((row,index)=>{
+    const p=row.current?.policy || {endpoint:row.endpoint.Id,reasoningEffort:"minimal",webSearchEnabled:false};
+    const model=row.endpoint.ModelReference?.FoundationModel;
+    return `<article class="card"><h3>${escapeHTML(aiLabels[row.operation]||row.operation)}</h3>
+      <p class="muted">${escapeHTML(model ? `${model.Name} · ${model.ModelVersion}` : "尚未同步模型")}<br>${escapeHTML(row.syncError||"")} · 最近成功同步：${formatTime(row.syncedAt)}<br>${row.current?`当前版本：${escapeHTML(row.current.id)}`:"尚未接管：当前仍按 App 参数执行；下方是待保存的配置。"}</p>
+      <form data-ai-index="${index}"><label>接入点<select name="endpoint">${endpoints.map(ep=>`<option value="${escapeHTML(ep.Id)}" ${ep.Id===p.endpoint?"selected":""}>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.ModelReference?.FoundationModel?.Name)} (${escapeHTML(ep.Id)})</option>`).join("")}</select></label>
+      <label>思考深度<select name="reasoningEffort">${[["minimal","关闭思考"],["low","轻度"],["medium","中度"],["high","深度"]].map(([value,label])=>`<option value="${value}" ${value===p.reasoningEffort?"selected":""}>${label}</option>`).join("")}</select></label>
+      <label class="check"><input name="webSearchEnabled" type="checkbox" ${p.webSearchEnabled?"checked":""} ${row.operation!=="meal_decision"?"disabled":""}>允许联网搜索</label>
+      ${row.operation!=="meal_decision"?'<p class="muted">此功能的数据边界不允许联网。</p>':""}
+      <button class="primary" ${!aiData.writesEnabled||row.syncError?"disabled":""}>验证并保存草稿</button></form>
+      <button class="quiet" data-ai-endpoint="${index}">查看接入点与灰度详情</button><div data-ai-endpoint-result="${index}"></div><details><summary>草稿与历史版本</summary>${(row.history||[]).map(r=>`<p>${escapeHTML(r.id)} · ${formatTime(r.createdAt)} · ${r.publishedAt?"已发布":"草稿"}<br>${escapeHTML(aiPolicyLabel(r.policy))} <button class="quiet" data-ai-restore="${index}" data-revision="${escapeHTML(r.id)}">载入配置</button> ${!r.publishedAt&&aiData.writesEnabled?`<button class="primary" data-ai-publish="${index}" data-revision="${escapeHTML(r.id)}">验证并发布</button>`:""}</p>`).join("")}${row.nextCursor?`<button data-ai-more="${index}">更早的版本</button>`:""}</details></article>`;
+  }).join("");
+  $$('[data-ai-index]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(async()=>{
+    const row=aiRows[Number(form.dataset.aiIndex)];const values=new FormData(form);
+    const body={operation:row.operation,baseVersion:row.current?.id||"",policy:{version:"",endpoint:values.get("endpoint"),reasoningEffort:values.get("reasoningEffort"),webSearchEnabled:values.has("webSearchEnabled"),timeoutSeconds:aiData.timeoutSeconds||90}};
+    await reauthenticate();await aiCommand("drafts",body);
+    await loadAI();$(`[data-ai-index="${form.dataset.aiIndex}"]`).closest("article").querySelector("details").open=true;notice("草稿已保存，线上配置尚未改变");
+  });});
+  $$('[data-ai-restore]').forEach(button=>button.onclick=()=>{
+    const index=Number(button.dataset.aiRestore);const revision=aiRows[index].history.find(r=>r.id===button.dataset.revision);const form=$(`[data-ai-index="${index}"]`);
+    form.elements.endpoint.value=revision.policy.endpoint;form.elements.reasoningEffort.value=revision.policy.reasoningEffort;form.elements.webSearchEnabled.checked=revision.policy.webSearchEnabled;
+    notice("已载入历史配置，请保存为新草稿后发布");
+  });
+  $$('[data-ai-endpoint]').forEach(button=>button.onclick=()=>run(async()=>{
+    const index=Number(button.dataset.aiEndpoint),row=aiRows[index];
+    const data=await api(`/api/v1/ai/endpoints/${encodeURIComponent(row.endpointID||row.endpoint.Id)}`);
+    const ep=data.endpoint,r=data.rolling,model=ep.ModelReference?.FoundationModel;
+    const panel=$(`[data-ai-endpoint-result="${index}"]`);
+    const states={queued:"等待执行",dispatching:"正在提交",watching:"等待云端完成",uncertain:"结果待核对",succeeded:"已完成",cancelled:"已撤销",failed:"失败",conflict:"状态已变化"};
+    const pending=(data.commands||[]).some(c=>["queued","dispatching","uncertain"].includes(c.state));
+    const isActive=r && !(r.Status==="Reverted"&&r.RollingGray===0) && r.RollingGray<100;
+    panel.innerHTML=`<p>${escapeHTML(ep.Name||ep.Id)} · ${escapeHTML(ep.Status)} · ${escapeHTML(model?.Name)} / ${escapeHTML(model?.ModelVersion)}<br>${r?`新模型：${escapeHTML(r.RollingIn?.Name)} / ${escapeHTML(r.RollingIn?.ModelVersion)}，流量 ${Number(r.RollingGray)}%；状态：${escapeHTML(r.Status)}`:"没有关联的原生灰度任务"}<br>同步时间：${formatTime(data.syncedAt)}</p>
+      ${data.writesEnabled?`<label>目标模型与版本<select data-rolling-target>${data.targets.filter(t=>t.audio&&(t.model.Name!==model?.Name||t.model.ModelVersion!==model?.ModelVersion)).map(t=>`<option value="${escapeHTML(JSON.stringify(t.model))}">${escapeHTML(t.model.Name)} / ${escapeHTML(t.model.ModelVersion)}</option>`).join("")}</select></label>
+      ${data.priceState?.blocked?'<p class="muted">模型或费用信息需要核对，AI 请求已暂停。</p><button data-rolling-action="accept_current">确认当前模型与费用</button>':""}${pending&&r&&(data.commands||[]).some(c=>c.state==="uncertain"&&c.input.action==="start"&&!c.rollingID)?'<button data-rolling-action="reconcile">核对并关联云端任务</button>':""}<div class="actions"><button data-rolling-action="start" ${pending||isActive?"disabled":""}>预览模型切换</button><button data-rolling-action="step_back" ${pending||r?.Status!=="Running"||!r?.RollingGray||r?.RollingGray>=100?"disabled":""}>回退一个阶段</button><button data-rolling-action="cancel" ${pending||!["Running","Reverting"].includes(r?.Status)||r?.RollingGray>=100?"disabled":""}>撤销灰度</button></div><p class="muted">火山自动推进灰度。回退一个阶段与撤销整个灰度的作用不同。目录中的其他模型需完成兼容性验证后才能使用。</p>`:""}
+      ${(data.commands||[]).length?`<details open><summary>最近的操作记录</summary>${data.commands.map(c=>`<p>${escapeHTML(states[c.state]||c.state)} · ${formatTime(c.createdAt)}<br>${escapeHTML(c.detail||c.input.action)}<br><small>${escapeHTML(c.id)}${c.rollingID?` / ${escapeHTML(c.rollingID)}`:""}</small></p>`).join("")}</details>`:""}
+      ${data.attempts?.length?`<details><summary>最近请求实际使用的模型</summary>${data.attempts.map(a=>`<p>${escapeHTML(a.actualModel||"火山未返回模型名")} · ${formatTime(a.createdAt)} · ${escapeHTML(aiLabels[a.operation]||a.operation)}</p>`).join("")}</details>`:""}
+      ${pending?'<p class="muted">已有操作等待执行或核对，暂不能再次提交。可刷新详情查看进展。</p>':""}`;
+    panel.querySelectorAll('[data-rolling-action]').forEach(action=>action.onclick=()=>run(async()=>{
+      const input={endpoint:ep.Id,action:action.dataset.rollingAction,target:action.dataset.rollingAction==="start"?JSON.parse(panel.querySelector('[data-rolling-target]').value):{Name:"",ModelVersion:""}};
+      await reauthenticate();
+      const preview=await api("/api/v1/ai/rolling/preview",{method:"POST",csrfRequired:true,body:input});
+      const price=preview.snapshot.price;
+      const label={start:"开始原生灰度",step_back:"回退一个阶段",cancel:"撤销灰度",reconcile:"核对并关联云端任务",accept_current:"确认当前模型与费用"}[input.action];
+      if(!confirm(`${label}\n接入点：${ep.Name||ep.Id}\n旧模型：${model.Name} / ${model.ModelVersion}${input.action==="start"?`\n新模型：${input.target.Name} / ${input.target.ModelVersion}`:""}\n受影响功能：${preview.affectedOperations.map(op=>aiLabels[op]||op).join("、")||"暂无当前绑定"}\n费用预留：输入 ${price.InputNanosPerMillionTokens/1e9} 元 / 百万 tokens（含音频最高档），输出 ${price.OutputNanosPerMillionTokens/1e9} 元 / 百万 tokens。\n${preview.notice}`))return;
+      const slot=`ai-rolling:${state.user.id}:${ep.Id}`;const identity=JSON.stringify(input);
+      let previous;try{previous=JSON.parse(sessionStorage.getItem(slot));}catch{}
+      const command=previous?.identity===identity?previous:{identity,key:uuid()};sessionStorage.setItem(slot,JSON.stringify(command));
+      await api("/api/v1/ai/rolling/commands",{method:"POST",csrfRequired:true,idempotencyKey:command.key,body:{input,previewToken:preview.previewToken}});
+      sessionStorage.removeItem(slot);notice("操作已保存，后台将提交至火山；可刷新详情查看进展");setTimeout(()=>button.click(),0);
+    }));
+
+  }));
+  $$('[data-ai-more]').forEach(button=>button.onclick=()=>run(async()=>{
+    const index=Number(button.dataset.aiMore),row=aiRows[index];
+    const page=await api(`/api/v1/ai/health/${row.operation}/history?cursor=${encodeURIComponent(row.nextCursor)}`);
+    row.history.push(...page.revisions);row.nextCursor=page.nextCursor;renderAI();
+    $(`[data-ai-index="${index}"]`).closest("article").querySelector("details").open=true;
+  }));
+  $$('[data-ai-publish]').forEach(button=>button.onclick=()=>run(async()=>{
+    const row=aiRows[Number(button.dataset.aiPublish)];
+    const preview=await api(`/api/v1/ai/health/${row.operation}/revisions/${encodeURIComponent(button.dataset.revision)}`);
+    if(!preview.canPublish) throw new Error("此草稿已经发布或基线已变化，请载入配置并保存新草稿");
+    if(!confirm(`${aiLabels[row.operation]}\n当前：${aiPolicyLabel(preview.before)}\n发布：${aiPolicyLabel(preview.after)}\n仅影响此功能的新请求。`))return;
+    await reauthenticate();await aiCommand("publish",{operation:row.operation,revision:preview.revision.id,baseVersion:preview.revision.baseVersion,previewToken:preview.previewToken});
+    await loadAI();notice("配置已发布");
+  }));
+}
+$("#refresh-ai").onclick=()=>run(loadAI);
+$("#load-ai-models").onclick=()=>run(async()=>{
+  const data=await api("/api/v1/ai/models");
+  $("#ai-models").innerHTML=`<p class="muted">目录同步：${formatTime(data.syncedAt)} · 开通状态同步：${formatTime(data.activations?.syncedAt)}${data.stale||data.activations?.stale?" · 同步失败，当前显示缓存数据":""}</p><label>模型<select id="ai-model-picker">${data.models.map(m=>{const a=data.activations?.value?.find(a=>a.FoundationModelName===m.Name);return `<option value="${escapeHTML(m.Name)}">${escapeHTML(m.DisplayName||m.Name)} · ${a?.State==="Available"?"账号已开通":escapeHTML(a?.State||"开通状态未知")}</option>`;}).join("")}</select></label><button class="quiet" id="ai-model-versions">读取版本与价格</button><div id="ai-model-detail"></div>`;
+  $("#ai-model-versions").onclick=()=>run(async()=>{
+    const name=$("#ai-model-picker").value;
+    const versions=await api(`/api/v1/ai/models/${encodeURIComponent(name)}/versions`);
+    const activation=versions.activation?.value?.find(a=>a.FoundationModelName===name)||data.activations?.value?.find(a=>a.FoundationModelName===name);
+    const groups=activation?.MultiChargeItems?.length?activation.MultiChargeItems:[{Name:"基础价格",ChargeItems:activation?.ChargeItems||[]}];
+    $("#ai-model-detail").innerHTML=`<p>版本：${versions.versions.map(v=>`${escapeHTML(v.ModelVersion)} (${escapeHTML(v.Status||"状态未知")})`).join("、")}</p><p class="muted">${activation?.State==="Available"?"账号已开通":escapeHTML(activation?.State||"开通状态尚未同步")} · 价格同步：${formatTime(versions.activation?.syncedAt||data.activations?.syncedAt)}${versions.activation?.stale?" · 本次同步失败，请重新读取":""}。版本存在、账号已开通、可升级至该版本需要分别验证。</p>${!activation?"<p>价格暂时不可用，请重新读取版本与价格。</p>":""}${groups.map(g=>`<p>${escapeHTML(g.Description||g.Name||"价格分档")}<br>${(g.ChargeItems||[]).filter(c=>["InferencePrompt","InferenceCompletion","AudioPrompt"].includes(c.Type)).map(c=>`${escapeHTML(({InferencePrompt:"文本/图片输入",InferenceCompletion:"输出",AudioPrompt:"音频输入"})[c.Type])}：${escapeHTML(c.Price)} 元 / ${escapeHTML(c.UnitCode)}`).join("<br>")}</p>`).join("")}`;
+  });
+});

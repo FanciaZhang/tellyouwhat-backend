@@ -39,6 +39,7 @@
     <section id="workspace" class="hidden">
       <nav class="tabs" aria-label="后台区域" role="tablist">
         <button id="operations-tab" class="tab active" data-section="operations" role="tab" aria-controls="operations-section" aria-selected="true">运营</button>
+        <button id="ai-tab" class="tab hidden" data-section="ai" role="tab" aria-controls="ai-section" aria-selected="false" tabindex="-1">AI 配置</button>
         <button id="security-tab" class="tab" data-section="security" role="tab" aria-controls="security-section" aria-selected="false" tabindex="-1">通行密钥</button>
         <button id="people-tab" class="tab hidden" data-section="people" role="tab" aria-controls="people-section" aria-selected="false" tabindex="-1">人员</button>
         <button id="audit-tab" class="tab" data-section="audit" role="tab" aria-controls="audit-section" aria-selected="false" tabindex="-1">操作记录</button>
@@ -55,6 +56,11 @@
         <div id="offers" class="offer-list"></div>
       </section>
 
+      <section id="ai-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="ai-tab">
+        <div class="section-head"><div><h2>健康 AI 配置</h2><p class="muted">发布后对新请求生效，已入队任务保留原配置。</p></div><button id="refresh-ai" class="quiet">刷新</button></div>
+        <p id="ai-status" class="muted"></p><div id="ai-operations" class="stack"></div>
+        <details class="card"><summary>火山模型目录</summary><p class="muted">目录中的模型不代表账号已开通，或当前接入点可以升级到。</p><button id="load-ai-models" class="quiet">读取目录</button><div id="ai-models"></div></details>
+      </section>
       <section id="security-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="security-tab">
         <div class="section-head"><div><h2>我的通行密钥</h2><p class="muted">建议至少保留两枚，其中一枚最好是独立硬件安全密钥。</p></div><button id="add-passkey" class="primary">添加通行密钥</button></div>
         <div id="passkeys" class="stack"></div>

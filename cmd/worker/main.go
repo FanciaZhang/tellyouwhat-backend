@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tellyouwhat/backend/internal/airollout"
 	"github.com/tellyouwhat/backend/internal/config"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -67,7 +69,14 @@ func run(logger *slog.Logger) error {
 		appID := string(app.Registry.ID)
 		store := mysqlstore.NewJobRepository(database, cipher, appID)
 		var modelProvider providerapi.Client = ark.New(app.Ark, http.DefaultClient, tosStore)
-		modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, appID, platform.AICost.HealthArk)
+		endpoints := map[contracts.Operation]string{}
+		for op, route := range app.Ark.Routes {
+			endpoints[op] = route.Model
+		}
+		budgeted := providerapi.NewBudgetedClient(modelProvider, costController, appID, platform.AICost.HealthArk)
+		budgeted.ReserveAttempt = (airollout.Store{DB: database}).Reservation(endpoints)
+		budgeted.RecordModel = (airollout.Store{DB: database}).RecordModel(endpoints)
+		modelProvider = budgeted
 		managedReconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
 		freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, app.FreeRecognitionQuota, appID)
 		reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)

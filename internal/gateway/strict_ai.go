@@ -54,6 +54,16 @@ func (server *Server) apiAuthorizeAIRequest(
 	if failure != nil {
 		return contracts.Request{}, Principal{}, false, nil, failure
 	}
+	if server.executionPolicies != nil {
+		resolved, err := server.executionPolicies.Resolve(ctx, artifact)
+		if err != nil {
+			return contracts.Request{}, Principal{}, false, nil, newAPIFailure(503, "ai_config_unavailable", "AI configuration unavailable", artifact.RequestID)
+		}
+		if err := server.contracts.Validate(resolved); err != nil {
+			return contracts.Request{}, Principal{}, false, nil, newAPIFailure(422, "ai_policy_incompatible", "published AI policy is incompatible with this request contract", artifact.RequestID)
+		}
+		artifact = resolved
+	}
 	lease, failure := server.apiAcquireQuota(ctx, principal, artifact, "", managed)
 	if failure != nil {
 		return contracts.Request{}, Principal{}, false, nil, failure
@@ -197,6 +207,18 @@ func (server *Server) EnqueueAIJob(
 	managed, failure := server.apiAuthorizeAIEntitlement(ctx, principal, artifact, artifact.RequestID)
 	if failure != nil {
 		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	if server.executionPolicies != nil {
+		resolved, err := server.executionPolicies.Resolve(ctx, artifact)
+		if err != nil {
+			failure = newAPIFailure(503, "ai_config_unavailable", "AI configuration unavailable", artifact.RequestID)
+			return healthhttpapi.EnqueueAIJob503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
+		}
+		if err := server.contracts.Validate(resolved); err != nil {
+			failure = newAPIFailure(422, "ai_policy_incompatible", "published AI policy is incompatible with this request contract", artifact.RequestID)
+			return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+		}
+		artifact = resolved
 	}
 	job, err := server.jobs.EnqueueWithID(ctx, principalForQuota(principal, managed), binding.JobID, artifact, binding.BodyDigest)
 	if err != nil {
