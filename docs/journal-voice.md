@@ -166,3 +166,23 @@ revision. A style change invalidates prior in-flight results, and a newer client
 revision supersedes an older outstanding acknowledgement. Audio capture and
 receipts continue on the same connection. Body recovery retains the current
 style preference, original transcript, and recording resources.
+
+
+## 2026-09-08 manual-edit acceptance
+
+Source commit `09fdb0d` was built as `journaldevserver-e496dd00bf1e2a5f` and deployed
+only to `journal-private-development`. Five synthetic cases passed through the
+actual development HTTPS consent/ticket flow, WebSocket revision and client
+acknowledgement: long-paragraph punctuation plus name correction, a later explicit
+correction to hand-edited words, old recognition preserving a manual name edit,
+an old explicit correction preserving a later manual amount edit, and expressed
+uncertainty staying uncertain. Race tests and vet passed for `internal/journal/voice`
+and `cmd/journaldevserver`. These are concrete samples, not universal model guarantees.
+
+Production gateway, worker and admin container IDs/start times were unchanged.
+Because the repository's `PRODUCTION_DEPLOY_ENABLED` variable is currently true,
+this source push intentionally uses a `[skip ci]` documentation commit so it does
+not redeploy the shared production stack. This uses GitHub's documented
+[per-push workflow skip](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs);
+it does not change any workflow or deployment variable. A later ordinary
+production release can include this Journal-only source change.
