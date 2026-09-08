@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
@@ -172,17 +174,24 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		}
 	}()
 	var snapshot Snapshot
+	hasSnapshot := false
+	committedSegments := map[string]bool{}
 	var segment string
 	var pcm []byte
 	var duplicate *Receipt
 	var billedHash string
 	var inputFinal bool
-	var transcriptBase, segmentStable string
+	var transcriptBase, segmentText string
 	var generation, tr, lastSubmitted int
 	var dirty, running, finishing, failed bool
 	awaitingRevision := -1
 	var segmentPeriod string
 	var remaining int
+	rewriteTimer := time.NewTimer(time.Hour)
+	rewriteTimer.Stop()
+	defer rewriteTimer.Stop()
+	var rewriteC <-chan time.Time
+	var rewriteAt, nextRewrite time.Time
 	quotaFailure := func() {
 		emit(Event{Type: "error", Code: "voice_quota_exhausted", SegmentID: segment, RemainingMilliseconds: remaining})
 	}
@@ -192,13 +201,16 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			return
 		}
 		current := snapshot
-		current.Transcript = transcriptBase + segmentStable
+		current.Transcript = transcriptBase + segmentText
 		if current.Validate() != nil {
 			fail("voice_context_too_large")
 			failed = true
 			cancel()
 			return
 		}
+		rewriteTimer.Stop()
+		rewriteC = nil
+		nextRewrite = time.Now().Add(2 * time.Second)
 		dirty = false
 		running = true
 		lastSubmitted = tr
@@ -214,11 +226,34 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 		}()
 	}
+	// Interim ASR is revisable source text, not a committed receipt. Coalesce
+	// updates and keep one model call in flight; finalization bypasses pacing.
+	schedule := func(immediate bool) {
+		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 {
+			return
+		}
+		due := time.Now()
+		if !immediate {
+			due = due.Add(250 * time.Millisecond)
+		}
+		if nextRewrite.After(due) {
+			due = nextRewrite
+		}
+		if rewriteC != nil && !due.Before(rewriteAt) {
+			return
+		}
+		rewriteAt = due
+		rewriteTimer.Reset(max(time.Until(due), 0))
+		rewriteC = rewriteTimer.C
+	}
 	emit(Event{Type: "ready"})
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-rewriteC:
+			rewriteC = nil
+			launch()
 		case <-ticker.C:
 			if time.Now().After(maxEnd) {
 				fail("voice_session_expired")
@@ -228,7 +263,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				fail("voice_session_busy")
 				return
 			}
-			launch()
+			schedule(true)
 		case message := <-incoming:
 			if message.err != nil {
 				return
@@ -240,19 +275,32 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					fail("voice_invalid_request")
 					return
 				}
+				next := *f.Snapshot
+				// A document ACK may have been sent before the latest receipt
+				// reached the client. It cannot roll back server-confirmed speech.
+				// Only the initial snapshot seeds prior-session transcript text.
+				if hasSnapshot {
+					next.Transcript = transcriptBase
+				}
+				hasSnapshot = true
 				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
 				if wasAcknowledgement {
 					awaitingRevision = -1
 				}
-				if f.Snapshot.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
+				if next.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
 					dirty = true
 				}
-				if len(snapshot.Blocks) == 0 && f.Snapshot.Transcript != "" {
+				if len(snapshot.Blocks) == 0 && next.Transcript != "" {
 					dirty = true
 				}
-				snapshot = *f.Snapshot
+				// Repeated receipt acknowledgements do not invalidate a model
+				// call that already uses the same base. Real edits still do.
+				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
+					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.Words, next.Words) {
+					generation++
+				}
+				snapshot = next
 				transcriptBase = snapshot.Transcript
-				generation++
 				if finishing && segment == "" && !running {
 					launch()
 					if !failed && !running && awaitingRevision < 0 {
@@ -260,6 +308,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						emit(Event{Type: "finished"})
 						return
 					}
+				}
+				if !finishing {
+					schedule(true)
 				}
 			case "audio":
 				if finishing || f.SegmentID == "" || len(f.PCM) > 6400 || len(f.PCM)%2 != 0 {
@@ -274,7 +325,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					segment = f.SegmentID
 					inputFinal = false
 					pcm = nil
-					segmentStable = ""
+					segmentText = ""
 					var err error
 					duplicate, err = s.Store.Receipt(ctx, claim.Identity.Owner, claim.SessionID, segment)
 					if err != nil {
@@ -339,6 +390,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 							fail("voice_revision_conflict")
 							return
 						}
+						if !committedSegments[segment] {
+							committedSegments[segment] = true
+							transcriptBase += duplicate.Text
+							snapshot.Transcript = transcriptBase
+							tr++
+							dirty = true
+						}
 						emit(Event{Type: "receipt", Receipt: duplicate, RemainingMilliseconds: remaining})
 						segment = ""
 						pcm = nil
@@ -374,8 +432,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 			v := result.value
 			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable})
-			if v.Stable != segmentStable {
-				segmentStable = v.Stable
+			if v.Text != segmentText {
+				segmentText = v.Text
 				tr++
 				dirty = true
 			}
@@ -395,8 +453,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					}
 					return
 				}
+				committedSegments[segment] = true
 				transcriptBase += v.Text
-				segmentStable = ""
+				segmentText = ""
 				snapshot.Transcript = transcriptBase
 				emit(Event{Type: "receipt", Receipt: &receipt, RemainingMilliseconds: remaining})
 				asr.Close()
@@ -412,6 +471,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						return
 					}
 				}
+			}
+			if !finishing && (v.Stable != "" || utf8.RuneCountInString(transcriptBase+segmentText) >= 8) {
+				schedule(v.Final)
 			}
 		case result := <-rewrites:
 			running = false
@@ -436,6 +498,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					// a revision that the client has actually applied.
 					dirty = true
 				}
+			}
+			if !finishing {
+				schedule(true)
 			}
 			if finishing && segment == "" && awaitingRevision < 0 {
 				if dirty {
