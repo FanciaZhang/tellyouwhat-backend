@@ -35,11 +35,12 @@ type ticketClaim struct {
 	Nonce     string
 }
 type Service struct {
-	Store  Store
-	Speech Speech
-	Model  Rewriter
-	Secret []byte
-	Limit  int
+	ResolveLimit func(context.Context) (int, error)
+	Store        Store
+	Speech       Speech
+	Model        Rewriter
+	Secret       []byte
+	Limit        int
 	// Records metadata only; never transcript, body, or vocabulary.
 	Usage func(context.Context, Identity, int, int)
 }
@@ -51,6 +52,16 @@ func (s *Service) limit() int {
 	return MonthlyMilliseconds
 }
 func (s *Service) Issue(ctx context.Context, id Identity, session string) (Ticket, error) {
+	if s.ResolveLimit != nil {
+		limit, err := s.ResolveLimit(ctx)
+		if err != nil {
+			return Ticket{}, err
+		}
+		copy := *s
+		copy.ResolveLimit = nil
+		copy.Limit = limit
+		return copy.Issue(ctx, id, session)
+	}
 	if _, err := uuid.Parse(session); err != nil || id.Owner == "" || id.Anchor.IsZero() || !id.ExpiresAt.After(time.Now()) || len(s.Secret) < 32 {
 		return Ticket{}, ErrInvalid
 	}
@@ -95,6 +106,18 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, session string) 
 	c, err := s.claim(token, session)
 	if err != nil {
 		http.Error(w, "invalid voice ticket", 401)
+		return
+	}
+	if s.ResolveLimit != nil {
+		limit, err := s.ResolveLimit(r.Context())
+		if err != nil {
+			http.Error(w, "voice service temporarily unavailable", 503)
+			return
+		}
+		copy := *s
+		copy.ResolveLimit = nil
+		copy.Limit = limit
+		copy.Serve(w, r, session)
 		return
 	}
 	// The ticket is consumed even if upgrade fails. Request another authenticated

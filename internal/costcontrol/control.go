@@ -50,6 +50,18 @@ type Store interface {
 	Settle(context.Context, string, int64, bool, time.Time) error
 }
 
+type Outcome struct {
+	Success                   bool
+	InputTokens, OutputTokens int
+	Model                     string
+}
+type OutcomeRecorder interface {
+	RecordOutcome(context.Context, string, Outcome, time.Time) error
+}
+type RejectionRecorder interface {
+	RecordRejection(context.Context, string, string, string, time.Time) error
+}
+
 type Controller struct {
 	store  Store
 	limits Limits
@@ -80,9 +92,30 @@ func (controller *Controller) Reserve(ctx context.Context, appID, operation, met
 		return nil, ErrInvalidAttempt
 	}
 	if err := controller.store.Reserve(ctx, attempt, controller.limits); err != nil {
+		if recorder, ok := controller.store.(RejectionRecorder); ok {
+			reason := ""
+			if errors.Is(err, ErrBudgetExceeded) {
+				reason = "budget"
+			} else if errors.Is(err, ErrConcurrencyExceeded) {
+				reason = "concurrency"
+			}
+			if reason != "" {
+				_ = recorder.RecordRejection(ctx, appID, operation, reason, now)
+			}
+		}
 		return nil, err
 	}
 	return &Lease{store: controller.store, attemptID: attempt.ID, now: controller.now}, nil
+}
+
+func (lease *Lease) Finish(ctx context.Context, actual int64, known bool, outcome Outcome) error {
+	err := lease.Settle(ctx, actual, known)
+	if lease != nil {
+		if recorder, ok := lease.store.(OutcomeRecorder); ok {
+			err = errors.Join(err, recorder.RecordOutcome(ctx, lease.attemptID, outcome, lease.now().UTC()))
+		}
+	}
+	return err
 }
 
 type Lease struct {

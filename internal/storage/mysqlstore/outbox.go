@@ -32,8 +32,9 @@ func (repository *JobRepository) ClaimDispatches(
             job.updated_at = ?
 		WHERE job.app_id = ?
 		  AND (job.expires_at <= ? OR job.attempt_count >= 3 OR outbox.attempts >= 10)
+          AND (job.expires_at <= ? OR outbox.claimed_until IS NULL OR outbox.claimed_until <= ?)
           AND (job.expires_at <= ? OR job.status = 'queued' OR (job.status = 'running' AND job.claim_expires_at <= ?))`,
-		now, now, repository.appID, now, now, now,
+		now, now, repository.appID, now, now, now, now, now,
 	); err != nil {
 		return nil, err
 	}
@@ -115,6 +116,13 @@ func (repository *JobRepository) RetryDispatch(
 	}
 	if err != nil {
 		return err
+	}
+	if category == jobs.DispatchDeferred {
+		_, err = transaction.ExecContext(ctx, `UPDATE job_dispatch_outbox SET attempts=GREATEST(0,attempts-1),available_at=?,claimed_until=NULL WHERE app_id=? AND job_id=?`, now.Add(30*time.Second), repository.appID, jobID)
+		if err != nil {
+			return err
+		}
+		return transaction.Commit()
 	}
 	if attempts >= 10 {
 		count, err := affectedRows(transaction.ExecContext(ctx, `

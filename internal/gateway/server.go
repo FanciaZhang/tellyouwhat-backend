@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	"net"
 	"net/http"
 	"time"
@@ -130,6 +131,7 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	Operations                 platformops.Reader
 	ExecutionPolicies          PolicyResolver
 	Voice                      *voice.Service
 	VoiceEntitlements          entitlement.Store
@@ -166,6 +168,7 @@ type Dependencies struct {
 }
 
 type Server struct {
+	operations                 platformops.Reader
 	executionPolicies          PolicyResolver
 	voice                      *voice.Service
 	voiceEntitlements          entitlement.Store
@@ -229,6 +232,7 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		operations:        dependencies.Operations,
 		executionPolicies: dependencies.ExecutionPolicies,
 		voice:             dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,

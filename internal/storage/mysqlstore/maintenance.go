@@ -114,6 +114,12 @@ func (repository *MaintenanceRepository) Cleanup(ctx context.Context, now time.T
                    AND media_objects.owner_key_id = app_attest_keys.key_id
              )`, []any{identityCutoff, identityCutoff}},
 	}
+	if _, err = transaction.ExecContext(ctx, `DELETE FROM platform_ops_rejections WHERE hour_start < ?`, now.AddDate(0, 0, -31)); err != nil {
+		return CleanupResult{}, err
+	}
+	if _, err = transaction.ExecContext(ctx, `DELETE FROM platform_ops_mutations WHERE created_at < ?`, auditCutoff); err != nil {
+		return CleanupResult{}, err
+	}
 	counts := make([]int, len(statements))
 	for index, statement := range statements {
 		count, executeErr := affectedRows(transaction.ExecContext(ctx, statement.query, statement.args...))

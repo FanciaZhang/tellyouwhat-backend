@@ -193,7 +193,7 @@ func (store *MemoryStore) ClaimDispatches(_ context.Context, now time.Time, limi
 			continue
 		}
 		jobReady := job.Status == StatusQueued || (job.Status == StatusRunning && !now.Before(job.ClaimExpiresAt))
-		if jobReady && (job.AttemptCount >= maximumAttempts || item.Attempts >= 10) {
+		if jobReady && !now.Before(item.ClaimedUntil) && (job.AttemptCount >= maximumAttempts || item.Attempts >= 10) {
 			job.Status = StatusFailed
 			if job.AttemptCount >= maximumAttempts {
 				job.FailureCategory = "worker_attempts_exhausted"
@@ -235,6 +235,13 @@ func (store *MemoryStore) RetryDispatch(_ context.Context, jobID string, now tim
 	defer store.mu.Unlock()
 	item, exists := store.outbox[jobID]
 	if !exists {
+		return nil
+	}
+	if category == DispatchDeferred {
+		item.Attempts = max(0, item.Attempts-1)
+		item.AvailableAt = now.Add(30 * time.Second)
+		item.ClaimedUntil = time.Time{}
+		store.outbox[jobID] = item
 		return nil
 	}
 	if item.Attempts >= 10 {

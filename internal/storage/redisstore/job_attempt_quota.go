@@ -51,6 +51,16 @@ return 1
 `)
 
 func (limiter *QuotaLimiter) ReserveJobAttempt(ctx context.Context, attempt quota.JobAttempt, now time.Time) (string, error) {
+	if limiter != nil && limiter.ResolveLimits != nil {
+		limits, err := limiter.ResolveLimits(ctx)
+		if err != nil {
+			return "", err
+		}
+		copy := *limiter
+		copy.limits = limits
+		copy.ResolveLimits = nil
+		return copy.ReserveJobAttempt(ctx, attempt, now)
+	}
 	if limiter == nil || limiter.client == nil || !attempt.Valid() {
 		return "", quota.ErrInvalidReservation
 	}

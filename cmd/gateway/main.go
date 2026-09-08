@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/airollout"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	"io"
 	"log/slog"
 	"net/http"
@@ -65,6 +66,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	operations                 platformops.Reader
 	executionPolicies          gateway.PolicyResolver
 	attemptPrices              providerapi.AtomicReservation
 	attemptModels              providerapi.ModelRecorder
@@ -120,6 +122,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeStorage()
+	if platform.StorageMode == "mysql" {
+		defaults, err := config.LoadOperationsDefaults()
+		if err != nil {
+			return err
+		}
+		if err = (platformops.Store{DB: shared.database}).Initialize(ctx, defaults, time.Now()); err != nil {
+			return err
+		}
+	}
 	costController, err := newAICostController(platform, shared)
 	if err != nil {
 		return err
@@ -278,9 +289,12 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 		}
 		return storage
 	}
+	ops := platformops.Store{DB: shared.database}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
+	limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
+		operations:        ops,
 		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
 		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
 		attemptModels:     (airollout.Store{DB: shared.database}).RecordModel(arkEndpoints(appConfig.Ark)),
@@ -293,9 +307,18 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	if appConfig.Registry.ID == appregistry.Health {
 		freeLimiter := redisstore.NewQuotaLimiter(shared.redis, appConfig.FreeRecognitionQuota, appID)
+		freeLimiter.ResolveLimits = platformops.QuotaResolver(ops, appID, appConfig.FreeRecognitionQuota, true)
 		storage.freeRecognitionLimiter = freeLimiter
 		storage.freeRecognitionQuotaReader = freeLimiter
-		storage.recognitionSessions = redisstore.NewRecognitionQuotaStore(shared.redis, appID)
+		recognition := redisstore.NewRecognitionQuotaStore(shared.redis, appID)
+		recognition.ResolveDailyLimit = func(ctx context.Context) (int, error) {
+			r, err := ops.Current(ctx)
+			if err != nil {
+				return 0, err
+			}
+			return r.Policy.Apps[appID].FreeDailySessions, nil
+		}
+		storage.recognitionSessions = recognition
 		storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
 	}
 	if shared.redis != nil {
@@ -335,7 +358,8 @@ func buildAppHandler(
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
 	dependencies := gateway.Dependencies{
-		App: app, Authenticator: authenticator, Entitlements: entitlementChecker,
+		Operations: storage.operations,
+		App:        app, Authenticator: authenticator, Entitlements: entitlementChecker,
 		Quota: storage.limiter, QuotaReader: storage.quotaReader,
 		Enrollment: enrollment, Activator: activator, ProductionEntitlement: productionSync,
 		AppStoreNotifications: notifications, Usage: storage.usage, Readiness: readiness,
@@ -429,6 +453,18 @@ func buildAppHandler(
 					logger.Error("voice usage record failed")
 				}
 			}}
+			if storage.operations != nil {
+				dependencies.Voice.ResolveLimit = func(ctx context.Context) (int, error) {
+					r, err := storage.operations.Current(ctx)
+					if err != nil {
+						return 0, err
+					}
+					if err = r.Policy.Check("journal", "journal.voice"); err != nil {
+						return 0, err
+					}
+					return r.Policy.Apps["journal"].VoicePeriodMinutes * 60000, nil
+				}
+			}
 			dependencies.VoiceEntitlements = storage.entitlements
 		}
 		dependencies.JournalOrganizer = organizer

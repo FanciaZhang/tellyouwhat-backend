@@ -47,6 +47,8 @@ paths:
           $ref: "#/components/responses/PayloadTooLarge"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/Error"
         "502":
           $ref: "#/components/responses/BadGateway"
         default:

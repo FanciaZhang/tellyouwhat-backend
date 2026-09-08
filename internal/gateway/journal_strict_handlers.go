@@ -53,12 +53,16 @@ func (server *Server) OrganizeJournal(
 		transactionID = principal.KeyID
 	}
 	estimatedTokens := journalReservationTokens(input)
+	if failure = server.operationsFailure(ctx, "journal.organize", requestID.String()); failure != nil {
+		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
 	lease, err := server.quota.Acquire(ctx, quota.Identity{
 		DeviceID: principal.DeviceID, TransactionID: transactionID,
 		IP: server.ipResolver(strictGinContext(ctx).Request),
 	}, contracts.Operation("journal.organize"), estimatedTokens, "", server.now())
 	if err != nil {
 		if errors.Is(err, quota.ErrExceeded) {
+			server.recordOperationRejection(ctx, "journal.organize", "quota")
 			code, message := journalQuotaExceededResponse(err)
 			failure = newAPIFailure(http.StatusTooManyRequests, code, message, requestID.String())
 		} else {

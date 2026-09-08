@@ -404,6 +404,46 @@ type OneTimeCodeBatchRequest struct {
 // OneTimeCodeBatchRequestEnvironment defines model for OneTimeCodeBatchRequest.Environment.
 type OneTimeCodeBatchRequestEnvironment string
 
+// OperationsAppPolicy defines model for OperationsAppPolicy.
+type OperationsAppPolicy struct {
+	DailyTokens        int      `json:"dailyTokens"`
+	FreeDailySessions  int      `json:"freeDailySessions"`
+	FreeDailyTokens    int      `json:"freeDailyTokens"`
+	FreeMonthlyTokens  int      `json:"freeMonthlyTokens"`
+	MonthlyBudgetNanos int64    `json:"monthlyBudgetNanos"`
+	MonthlyTokens      int      `json:"monthlyTokens"`
+	Paused             bool     `json:"paused"`
+	PausedOperations   []string `json:"pausedOperations"`
+	VoicePeriodMinutes int      `json:"voicePeriodMinutes"`
+}
+
+// OperationsDraft defines model for OperationsDraft.
+type OperationsDraft struct {
+	BaseVersion string           `json:"baseVersion"`
+	Policy      OperationsPolicy `json:"policy"`
+}
+
+// OperationsPolicy defines model for OperationsPolicy.
+type OperationsPolicy struct {
+	Apps struct {
+		Health  OperationsAppPolicy `json:"health"`
+		Journal OperationsAppPolicy `json:"journal"`
+	} `json:"apps"`
+	BudgetWarningPercent    int   `json:"budgetWarningPercent"`
+	ErrorWarningPercent     int   `json:"errorWarningPercent"`
+	MaxConcurrent           int   `json:"maxConcurrent"`
+	MinimumSamples          int   `json:"minimumSamples"`
+	MonthlyBudgetNanos      int64 `json:"monthlyBudgetNanos"`
+	SlowWarningMilliseconds int   `json:"slowWarningMilliseconds"`
+}
+
+// OperationsPublication defines model for OperationsPublication.
+type OperationsPublication struct {
+	BaseVersion  string `json:"baseVersion"`
+	PreviewToken string `json:"previewToken"`
+	Revision     string `json:"revision"`
+}
+
 // PasskeyNameRequest defines model for PasskeyNameRequest.
 type PasskeyNameRequest struct {
 	DisplayName string `json:"displayName"`
@@ -597,6 +637,23 @@ type FinishSetupParams struct {
 	XAdminCeremonyID *CeremonyID `json:"X-Admin-Ceremony-ID,omitempty"`
 }
 
+// CreateOperationsDraftParams defines parameters for CreateOperationsDraft.
+type CreateOperationsDraftParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListOperationsHistoryParams defines parameters for ListOperationsHistory.
+type ListOperationsHistoryParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PublishOperationsConfigParams defines parameters for PublishOperationsConfig.
+type PublishOperationsConfigParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // FinishAdditionalPasskeyParams defines parameters for FinishAdditionalPasskey.
 type FinishAdditionalPasskeyParams struct {
 	XAdminCeremonyID *CeremonyID `json:"X-Admin-Ceremony-ID,omitempty"`
@@ -666,6 +723,12 @@ type FinishSetupJSONRequestBody = WebAuthnCredential
 
 // BeginSetupJSONRequestBody defines body for BeginSetup for application/json ContentType.
 type BeginSetupJSONRequestBody = SetupRequest
+
+// CreateOperationsDraftJSONRequestBody defines body for CreateOperationsDraft for application/json ContentType.
+type CreateOperationsDraftJSONRequestBody = OperationsDraft
+
+// PublishOperationsConfigJSONRequestBody defines body for PublishOperationsConfig for application/json ContentType.
+type PublishOperationsConfigJSONRequestBody = OperationsPublication
 
 // FinishAdditionalPasskeyJSONRequestBody defines body for FinishAdditionalPasskey for application/json ContentType.
 type FinishAdditionalPasskeyJSONRequestBody = WebAuthnCredential
@@ -780,6 +843,24 @@ type ServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(c *gin.Context)
+
+	// (GET /api/v1/platform/config)
+	GetOperationsConfig(c *gin.Context)
+
+	// (POST /api/v1/platform/config/drafts)
+	CreateOperationsDraft(c *gin.Context, params CreateOperationsDraftParams)
+
+	// (GET /api/v1/platform/config/history)
+	ListOperationsHistory(c *gin.Context, params ListOperationsHistoryParams)
+
+	// (POST /api/v1/platform/config/publish)
+	PublishOperationsConfig(c *gin.Context, params PublishOperationsConfigParams)
+
+	// (GET /api/v1/platform/config/revisions/{revision})
+	GetOperationsRevision(c *gin.Context, revision string)
+
+	// (GET /api/v1/platform/metrics)
+	GetOperationsMetrics(c *gin.Context)
 
 	// (GET /api/v1/security/passkeys)
 	ListPasskeys(c *gin.Context)
@@ -2436,6 +2517,202 @@ func (siw *ServerInterfaceWrapper) BeginSetup(c *gin.Context) {
 	siw.Handler.BeginSetup(c)
 }
 
+// GetOperationsConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetOperationsConfig(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOperationsConfig(c)
+}
+
+// CreateOperationsDraft operation middleware
+func (siw *ServerInterfaceWrapper) CreateOperationsDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateOperationsDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateOperationsDraft(c, params)
+}
+
+// ListOperationsHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListOperationsHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOperationsHistoryParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListOperationsHistory(c, params)
+}
+
+// PublishOperationsConfig operation middleware
+func (siw *ServerInterfaceWrapper) PublishOperationsConfig(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PublishOperationsConfigParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PublishOperationsConfig(c, params)
+}
+
+// GetOperationsRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetOperationsRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "revision" -------------
+	var revision string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOperationsRevision(c, revision)
+}
+
+// GetOperationsMetrics operation middleware
+func (siw *ServerInterfaceWrapper) GetOperationsMetrics(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOperationsMetrics(c)
+}
+
 // ListPasskeys operation middleware
 func (siw *ServerInterfaceWrapper) ListPasskeys(c *gin.Context) {
 
@@ -2720,6 +2997,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/v1/platform/config", wrapper.GetOperationsConfig)
+	router.GET(options.BaseURL+"/api/v1/platform/metrics", wrapper.GetOperationsMetrics)
+	router.GET(options.BaseURL+"/api/v1/platform/config/history", wrapper.ListOperationsHistory)
+	router.GET(options.BaseURL+"/api/v1/platform/config/revisions/:revision", wrapper.GetOperationsRevision)
+	router.POST(options.BaseURL+"/api/v1/platform/config/drafts", wrapper.CreateOperationsDraft)
+	router.POST(options.BaseURL+"/api/v1/platform/config/publish", wrapper.PublishOperationsConfig)
 	router.POST(options.BaseURL+"/api/v1/ai/rolling/preview", wrapper.CreateAIRollingPreview)
 	router.POST(options.BaseURL+"/api/v1/ai/rolling/commands", wrapper.SubmitAIRollingCommand)
 	router.GET(options.BaseURL+"/api/v1/ai/health", wrapper.GetHealthAIConfig)
@@ -4197,6 +4480,240 @@ func (response BeginSetupdefaultJSONResponse) VisitBeginSetupResponse(w http.Res
 	return err
 }
 
+type GetOperationsConfigRequestObject struct {
+}
+
+type GetOperationsConfigResponseObject interface {
+	VisitGetOperationsConfigResponse(w http.ResponseWriter) error
+}
+
+type GetOperationsConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response GetOperationsConfig200JSONResponse) VisitGetOperationsConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationsConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetOperationsConfigdefaultJSONResponse) VisitGetOperationsConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperationsDraftRequestObject struct {
+	Params CreateOperationsDraftParams
+	Body   *CreateOperationsDraftJSONRequestBody
+}
+
+type CreateOperationsDraftResponseObject interface {
+	VisitCreateOperationsDraftResponse(w http.ResponseWriter) error
+}
+
+type CreateOperationsDraft200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateOperationsDraft200JSONResponse) VisitCreateOperationsDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperationsDraftdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateOperationsDraftdefaultJSONResponse) VisitCreateOperationsDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperationsHistoryRequestObject struct {
+	Params ListOperationsHistoryParams
+}
+
+type ListOperationsHistoryResponseObject interface {
+	VisitListOperationsHistoryResponse(w http.ResponseWriter) error
+}
+
+type ListOperationsHistory200JSONResponse struct{ OKJSONResponse }
+
+func (response ListOperationsHistory200JSONResponse) VisitListOperationsHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperationsHistorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListOperationsHistorydefaultJSONResponse) VisitListOperationsHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishOperationsConfigRequestObject struct {
+	Params PublishOperationsConfigParams
+	Body   *PublishOperationsConfigJSONRequestBody
+}
+
+type PublishOperationsConfigResponseObject interface {
+	VisitPublishOperationsConfigResponse(w http.ResponseWriter) error
+}
+
+type PublishOperationsConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response PublishOperationsConfig200JSONResponse) VisitPublishOperationsConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishOperationsConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PublishOperationsConfigdefaultJSONResponse) VisitPublishOperationsConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationsRevisionRequestObject struct {
+	Revision string `json:"revision"`
+}
+
+type GetOperationsRevisionResponseObject interface {
+	VisitGetOperationsRevisionResponse(w http.ResponseWriter) error
+}
+
+type GetOperationsRevision200JSONResponse struct{ OKJSONResponse }
+
+func (response GetOperationsRevision200JSONResponse) VisitGetOperationsRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationsRevisiondefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetOperationsRevisiondefaultJSONResponse) VisitGetOperationsRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationsMetricsRequestObject struct {
+}
+
+type GetOperationsMetricsResponseObject interface {
+	VisitGetOperationsMetricsResponse(w http.ResponseWriter) error
+}
+
+type GetOperationsMetrics200JSONResponse struct{ OKJSONResponse }
+
+func (response GetOperationsMetrics200JSONResponse) VisitGetOperationsMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationsMetricsdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetOperationsMetricsdefaultJSONResponse) VisitGetOperationsMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPasskeysRequestObject struct {
 }
 
@@ -4583,6 +5100,24 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(ctx context.Context, request BeginSetupRequestObject) (BeginSetupResponseObject, error)
+
+	// (GET /api/v1/platform/config)
+	GetOperationsConfig(ctx context.Context, request GetOperationsConfigRequestObject) (GetOperationsConfigResponseObject, error)
+
+	// (POST /api/v1/platform/config/drafts)
+	CreateOperationsDraft(ctx context.Context, request CreateOperationsDraftRequestObject) (CreateOperationsDraftResponseObject, error)
+
+	// (GET /api/v1/platform/config/history)
+	ListOperationsHistory(ctx context.Context, request ListOperationsHistoryRequestObject) (ListOperationsHistoryResponseObject, error)
+
+	// (POST /api/v1/platform/config/publish)
+	PublishOperationsConfig(ctx context.Context, request PublishOperationsConfigRequestObject) (PublishOperationsConfigResponseObject, error)
+
+	// (GET /api/v1/platform/config/revisions/{revision})
+	GetOperationsRevision(ctx context.Context, request GetOperationsRevisionRequestObject) (GetOperationsRevisionResponseObject, error)
+
+	// (GET /api/v1/platform/metrics)
+	GetOperationsMetrics(ctx context.Context, request GetOperationsMetricsRequestObject) (GetOperationsMetricsResponseObject, error)
 
 	// (GET /api/v1/security/passkeys)
 	ListPasskeys(ctx context.Context, request ListPasskeysRequestObject) (ListPasskeysResponseObject, error)
@@ -5695,6 +6230,172 @@ func (sh *strictHandler) BeginSetup(ctx *gin.Context) {
 	}
 }
 
+// GetOperationsConfig operation middleware
+func (sh *strictHandler) GetOperationsConfig(ctx *gin.Context) {
+	var request GetOperationsConfigRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOperationsConfig(ctx, request.(GetOperationsConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOperationsConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOperationsConfigResponseObject); ok {
+		if err := validResponse.VisitGetOperationsConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOperationsDraft operation middleware
+func (sh *strictHandler) CreateOperationsDraft(ctx *gin.Context, params CreateOperationsDraftParams) {
+	var request CreateOperationsDraftRequestObject
+
+	request.Params = params
+
+	var body CreateOperationsDraftJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateOperationsDraft(ctx, request.(CreateOperationsDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOperationsDraft")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateOperationsDraftResponseObject); ok {
+		if err := validResponse.VisitCreateOperationsDraftResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOperationsHistory operation middleware
+func (sh *strictHandler) ListOperationsHistory(ctx *gin.Context, params ListOperationsHistoryParams) {
+	var request ListOperationsHistoryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOperationsHistory(ctx, request.(ListOperationsHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOperationsHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListOperationsHistoryResponseObject); ok {
+		if err := validResponse.VisitListOperationsHistoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishOperationsConfig operation middleware
+func (sh *strictHandler) PublishOperationsConfig(ctx *gin.Context, params PublishOperationsConfigParams) {
+	var request PublishOperationsConfigRequestObject
+
+	request.Params = params
+
+	var body PublishOperationsConfigJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishOperationsConfig(ctx, request.(PublishOperationsConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishOperationsConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PublishOperationsConfigResponseObject); ok {
+		if err := validResponse.VisitPublishOperationsConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOperationsRevision operation middleware
+func (sh *strictHandler) GetOperationsRevision(ctx *gin.Context, revision string) {
+	var request GetOperationsRevisionRequestObject
+
+	request.Revision = revision
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOperationsRevision(ctx, request.(GetOperationsRevisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOperationsRevision")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOperationsRevisionResponseObject); ok {
+		if err := validResponse.VisitGetOperationsRevisionResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOperationsMetrics operation middleware
+func (sh *strictHandler) GetOperationsMetrics(ctx *gin.Context) {
+	var request GetOperationsMetricsRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOperationsMetrics(ctx, request.(GetOperationsMetricsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOperationsMetrics")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOperationsMetricsResponseObject); ok {
+		if err := validResponse.VisitGetOperationsMetricsResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPasskeys operation middleware
 func (sh *strictHandler) ListPasskeys(ctx *gin.Context) {
 	var request ListPasskeysRequestObject
@@ -5889,54 +6590,61 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

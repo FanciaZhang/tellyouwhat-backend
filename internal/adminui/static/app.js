@@ -20,6 +20,7 @@ const actionLabels = {
   "admin.passkey.recover": "完成通行密钥恢复", "admin.passkey.recovery_invite": "签发恢复邀请",
   "admin.invitation.create": "创建人员邀请", "admin.invitation.revoke": "撤销邀请",
   "admin.user.update": "更新后台人员", "offer.create": "创建 Offer",
+  "operations.draft": "保存服务配置草稿", "operations.publish": "发布服务配置",
   "ai.draft.create": "保存 AI 配置草稿", "ai.config.publish": "发布 AI 配置",
   "offer.deactivate": "停用 Offer", "offer_codes.custom_create": "创建自定义码池",
   "offer_codes.batch_create": "创建一次性码池", "offer_codes.download": "下载一次性码"
@@ -155,6 +156,7 @@ async function loadSession() {
     $("#account-role").textContent = roleLabels[state.user.role] || state.user.role;
     $("#people-tab").classList.toggle("hidden", state.user.role !== "admin");
     $("#ai-tab").classList.toggle("hidden", state.user.role !== "admin");
+    $("#platform-tab").classList.toggle("hidden", state.user.role !== "admin");
     await loadApps();
     await loadOffers();
     return true;
@@ -404,6 +406,11 @@ async function showSection(name) {
     if(!confirm("放弃尚未发布的参数修改？"))return;
     ai.dirty=false;
   }
+  if (typeof platform !== "undefined" && platform.busy) return;
+  if (name !== "platform" && typeof platform !== "undefined" && platform.dirty) {
+    if (!confirm("放弃尚未发布的服务配置？")) return;
+    platform.dirty = false;
+  }
   $$('.workspace-section').forEach(section => section.classList.add("hidden"));
   $$('.tab').forEach(tab => {
     const active = tab.dataset.section === name;
@@ -414,6 +421,8 @@ async function showSection(name) {
   $(`#${name}-section`).classList.remove("hidden");
   if (name === "ai") await loadAI();
   else if (typeof stopAI === "function") stopAI();
+  if (name === "platform") await loadPlatform();
+  else if (typeof stopPlatform === "function") stopPlatform();
   if (name === "security") await loadPasskeys();
   if (name === "people") await loadPeople();
   if (name === "audit") await loadAudit();

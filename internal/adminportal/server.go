@@ -21,6 +21,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/adminui"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
 const (
@@ -47,12 +48,14 @@ type OfferManager interface {
 }
 
 type Config struct {
-	AI                *AIConfig
-	PreviewSigningKey []byte
-	WritesEnabled     bool
-	Apps              []AdminApp
-	Readiness         func(context.Context) error
-	HTTPMiddleware    []gin.HandlerFunc
+	Operations              *platformops.Store
+	OperationsWritesEnabled bool
+	AI                      *AIConfig
+	PreviewSigningKey       []byte
+	WritesEnabled           bool
+	Apps                    []AdminApp
+	Readiness               func(context.Context) error
+	HTTPMiddleware          []gin.HandlerFunc
 }
 
 type AdminApp struct {

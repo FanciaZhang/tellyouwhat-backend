@@ -155,6 +155,7 @@ func (service *Service) Cancel(ctx context.Context, principal attestation.Princi
 }
 
 type Worker struct {
+	Admit      func(context.Context, string) error
 	store      Store
 	provider   providerapi.Client
 	reconciler quota.JobAttemptBudget
@@ -165,6 +166,17 @@ func NewWorker(store Store, provider providerapi.Client, reconciler quota.JobAtt
 }
 
 func (worker *Worker) Process(ctx context.Context, jobID string) error {
+	if worker.Admit != nil {
+		existing, err := worker.store.Get(ctx, jobID)
+		if err != nil {
+			return err
+		}
+		if existing.Status == StatusQueued || existing.Status == StatusRunning {
+			if err = worker.Admit(ctx, string(existing.Request.Operation)); err != nil {
+				return errors.Join(ErrAdmissionDeferred, err)
+			}
+		}
+	}
 	if worker.reconciler == nil {
 		return quota.ErrAttemptBudgetUnavailable
 	}

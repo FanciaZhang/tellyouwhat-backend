@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
   <script src="/ai.js" defer></script>
+  <script src="/platform.js" defer></script>
 </head>
 <body>
   <main class="shell">
@@ -41,6 +42,7 @@
       <nav class="tabs" aria-label="后台区域" role="tablist">
         <button id="operations-tab" class="tab active" data-section="operations" role="tab" aria-controls="operations-section" aria-selected="true">运营</button>
         <button id="ai-tab" class="tab hidden" data-section="ai" role="tab" aria-controls="ai-section" aria-selected="false" tabindex="-1">AI 管理</button>
+        <button id="platform-tab" class="tab hidden" data-section="platform" role="tab" aria-controls="platform-section" aria-selected="false" tabindex="-1">服务管理</button>
         <button id="security-tab" class="tab" data-section="security" role="tab" aria-controls="security-section" aria-selected="false" tabindex="-1">通行密钥</button>
         <button id="people-tab" class="tab hidden" data-section="people" role="tab" aria-controls="people-section" aria-selected="false" tabindex="-1">人员</button>
         <button id="audit-tab" class="tab" data-section="audit" role="tab" aria-controls="audit-section" aria-selected="false" tabindex="-1">操作记录</button>
@@ -60,6 +62,7 @@
       <section id="ai-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="ai-tab">
         <div id="ai-view"></div>
       </section>
+      <section id="platform-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="platform-tab"><div id="platform-view"></div></section>
       <section id="security-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="security-tab">
         <div class="section-head"><div><h2>我的通行密钥</h2><p class="muted">建议至少保留两枚，其中一枚最好是独立硬件安全密钥。</p></div><button id="add-passkey" class="primary">添加通行密钥</button></div>
         <div id="passkeys" class="stack"></div>

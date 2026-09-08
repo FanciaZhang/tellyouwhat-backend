@@ -43,8 +43,8 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         INSERT INTO ai_jobs
 			(app_id, id, request_id, body_digest, owner_key_id, owner_device_id, owner_transaction_id,
-             request_ciphertext, request_nonce, status, created_at, updated_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             request_ciphertext, request_nonce, status, created_at, updated_at, expires_at, operation)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE request_id = VALUES(request_id)`,
 		repository.appID,
 		job.ID,
@@ -59,6 +59,7 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 		job.CreatedAt,
 		job.UpdatedAt,
 		job.ExpiresAt,
+		string(job.Request.Operation),
 	))
 	if err != nil {
 		return jobs.Job{}, err

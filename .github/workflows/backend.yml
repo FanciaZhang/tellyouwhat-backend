@@ -67,6 +67,7 @@ jobs:
           go test -count=1 -v ./...
         env:
           MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
       - run: go vet ./...
       - run: go build ./cmd/...
@@ -166,6 +167,7 @@ jobs:
           JOURNAL_SUBSCRIPTION_KEY: ${{ secrets.JOURNAL_APP_STORE_PRIVATE_KEY }}
           HEALTH_MARKETING_KEY: ${{ secrets.HEALTH_APP_STORE_CONNECT_PRIVATE_KEY }}
           JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
+          PLATFORM_OPERATIONS_WRITES_ENABLED: ${{ vars.PLATFORM_OPERATIONS_WRITES_ENABLED }}
           ARK_SERVICE_CREDENTIALS: ${{ secrets.ARK_MANAGEMENT_CREDENTIALS_JSON }}
         run: |
           install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
@@ -179,6 +181,7 @@ jobs:
           grep -q '^JOURNAL_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
           grep -q '^ADMIN_DOMAIN=' "$RUNNER_TEMP/.env.production"
           for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
+          python3 deploy/tencent/platform_configuration.py "$RUNNER_TEMP/.env.production"
           python3 deploy/tencent/ark_credentials.py materialize --output "$RUNNER_TEMP/ark-management.json"
       - name: Configure SSH
         env:
