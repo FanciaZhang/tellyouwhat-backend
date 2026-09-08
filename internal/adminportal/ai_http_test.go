@@ -186,6 +186,21 @@ func TestAIHTTPAuthorizationAndPublicationPreview(t *testing.T) {
 	pub["previewToken"] = preview.PreviewToken
 	assert(call("POST", "/api/v1/ai/health/publish", pub, true, true, uuid.NewString()), 200)
 	assert(call("GET", "/api/v1/ai/health/meal_text_capture/revisions/"+store.draft.ID, nil, true, false, ""), 404)
+	for _, effort := range []string{"", "minimal", "low", "medium", "high", "max"} {
+		t.Run("reasoning="+effort, func(t *testing.T) {
+			if !adminhttpapi.HealthAIDraftRequestPolicyReasoningEffort(effort).Valid() {
+				t.Fatal("UI reasoning value absent from generated contract")
+			}
+			body := map[string]any{"operation": "meal_decision", "baseVersion": store.current.ID, "policy": contracts.ExecutionPolicy{Endpoint: ep.ID, ReasoningEffort: effort, TimeoutSeconds: 90}}
+			result := call("POST", "/api/v1/ai/health/drafts", body, true, true, uuid.NewString())
+			if result.Code != 200 {
+				t.Fatalf("reasoning %q rejected: %d %s", effort, result.Code, result.Body.String())
+			}
+			if store.draft.Policy.ReasoningEffort != effort {
+				t.Fatal("reasoning value changed")
+			}
+		})
+	}
 	store.fail = errors.New("db private diagnostic")
 	response = call("POST", "/api/v1/ai/health/drafts", draft, true, true, uuid.NewString())
 	assert(response, 503)
