@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	arkprovider "github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/migrations"
 )
@@ -52,8 +54,9 @@ func TestLiveAIBrowserServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	readOnly := os.Getenv("ARK_BROWSER_TEST_READ_ONLY") == "1"
 	ep, err := cloud.Endpoint(ctx, endpoint)
-	if err != nil || !strings.HasPrefix(ep.Name, "health-ai-admin-validation-") {
+	if err != nil || (!readOnly && !strings.HasPrefix(ep.Name, "health-ai-admin-validation-")) {
 		t.Fatal("disposable endpoint required", err)
 	}
 	repo := adminauth.NewMySQLRepository(db)
@@ -71,8 +74,17 @@ func TestLiveAIBrowserServer(t *testing.T) {
 	endpoints := map[contracts.Operation]string{}
 	for _, op := range contracts.OperationValues() {
 		endpoints[op] = endpoint
+		if readOnly {
+			if id := os.Getenv("HEALTH_ARK_ENDPOINT_" + strings.ToUpper(string(op))); id != "" {
+				endpoints[op] = id
+			}
+		}
 	}
-	rollouts := &airollout.Service{Store: airollout.Store{DB: db}, Cloud: cloud, Endpoints: endpoints, Shared: map[string]bool{}, WritesEnabled: true}
+	var management airollout.Cloud = cloud
+	if readOnly {
+		management = browserReadOnlyCloud{cloud}
+	}
+	rollouts := &airollout.Service{Configurations: aiconfig.MySQLStore{DB: db}, Compatibility: &airollout.Compatibility{Probe: arkprovider.New(arkprovider.Config{BaseURL: "https://ark.cn-beijing.volces.com", APIKey: os.Getenv("HEALTH_ARK_API_KEY")}, nil, nil)}, Store: airollout.Store{DB: db}, Cloud: management, Endpoints: endpoints, Shared: map[string]bool{}, WritesEnabled: true}
 	key := make([]byte, 32)
 	if _, err = rand.Read(key); err != nil {
 		t.Fatal(err)
@@ -91,7 +103,9 @@ func TestLiveAIBrowserServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(ready)
-	go rollouts.Run(ctx)
+	if !readOnly {
+		go rollouts.Run(ctx)
+	}
 	t.Log("isolated browser server ready")
 	for {
 		if result, readErr := os.ReadFile(ready + ".done"); readErr == nil {
@@ -107,4 +121,18 @@ func TestLiveAIBrowserServer(t *testing.T) {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// The read-only acceptance mode rejects cloud mutations even if a browser test
+// accidentally submits a command. Its configuration store is an isolated DB.
+type browserReadOnlyCloud struct{ *arkcontrol.Client }
+
+func (browserReadOnlyCloud) CreateRolling(context.Context, string, arkcontrol.FoundationModel, string) (string, error) {
+	return "", errors.New("read-only acceptance")
+}
+func (browserReadOnlyCloud) CancelRolling(context.Context, string) error {
+	return errors.New("read-only acceptance")
+}
+func (browserReadOnlyCloud) RollbackRolling(context.Context, string) error {
+	return errors.New("read-only acceptance")
 }

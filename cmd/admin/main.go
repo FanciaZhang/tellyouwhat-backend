@@ -26,6 +26,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
+	arkprovider "github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
@@ -112,7 +113,8 @@ func run(logger *slog.Logger) error {
 			}
 		}
 		ai = &adminportal.AIConfig{WritesEnabled: strings.EqualFold(os.Getenv("AI_CONFIG_WRITES_ENABLED"), "true"), SharedEndpoints: shared, TimeoutSeconds: timeout, Store: aiconfig.MySQLStore{DB: database}, Inventory: client, Endpoints: endpoints}
-		ai.Rollouts = &airollout.Service{Store: airollout.Store{DB: database}, Cloud: client, Endpoints: endpoints, Shared: shared, WritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true")}
+		probe := arkprovider.New(arkprovider.Config{BaseURL: "https://ark.cn-beijing.volces.com", APIKey: os.Getenv("HEALTH_ARK_API_KEY")}, nil, nil)
+		ai.Rollouts = &airollout.Service{Configurations: ai.Store, Compatibility: &airollout.Compatibility{Probe: probe}, Store: airollout.Store{DB: database}, Cloud: client, Endpoints: endpoints, Shared: shared, WritesEnabled: strings.EqualFold(os.Getenv("AI_ENDPOINT_WRITES_ENABLED"), "true")}
 
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{

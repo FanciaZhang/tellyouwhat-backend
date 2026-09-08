@@ -10,7 +10,7 @@ import (
 
 // CatalogVersion identifies the application protocol compatibility profile.
 // Ark's capability flags alone do not certify reasoning levels or media payloads.
-const CatalogVersion = "health-responses-2026-09-07"
+const CatalogVersion = "health-responses-scoped-2026-09-08"
 
 type Capability struct {
 	Model   arkcontrol.FoundationModel `json:"model"`
@@ -38,24 +38,16 @@ func Supports(m arkcontrol.FoundationModel, op contracts.Operation, p contracts.
 		if op == contracts.OperationVoiceTranscription && !c.Audio {
 			return false
 		}
-		if (op == contracts.OperationMealPhotoCapture || op == contracts.OperationHydrationCupEstimate) && !c.Images {
+		if (op == contracts.OperationMealPhotoCapture || op == contracts.OperationHydrationCupEstimate || op == contracts.OperationMealDecision) && !c.Images {
 			return false
 		}
 		if p.WebSearchEnabled && !c.Search {
 			return false
 		}
 		for _, effort := range c.Efforts {
-			if effort == p.ReasoningEffort {
+			if effort == p.ReasoningEffort || p.ReasoningEffort == "" {
 				return true
 			}
-		}
-	}
-	return false
-}
-func Known(m arkcontrol.FoundationModel) bool {
-	for _, c := range Catalog() {
-		if c.Model == m {
-			return true
 		}
 	}
 	return false
@@ -72,12 +64,18 @@ func Price(a arkcontrol.Activation) (costcontrol.TokenPrice, error) {
 	for _, tier := range a.Tiers {
 		items = append(items, tier.Charges...)
 	}
-	audio := false
+
 	for _, item := range items {
 		if item.Type != "InferencePrompt" && item.Type != "InferenceCompletion" && item.Type != "AudioPrompt" {
 			continue
 		}
-		if item.Unit != "千tokens" {
+		var multiplier int64
+		switch item.Unit {
+		case "千tokens":
+			multiplier = 1_000_000_000_000
+		case "百万tokens":
+			multiplier = 1_000_000_000
+		default:
 			return p, ErrUnsupported
 		}
 		for _, raw := range []string{item.Price.String(), item.OriginalPrice.String()} {
@@ -88,7 +86,7 @@ func Price(a arkcontrol.Activation) (costcontrol.TokenPrice, error) {
 			if !ok || n.Sign() < 0 {
 				return p, ErrUnsupported
 			}
-			n.Mul(n, big.NewRat(1_000_000_000_000, 1)) // CNY / thousand -> nanos / million.
+			n.Mul(n, big.NewRat(multiplier, 1)) // CNY / thousand -> nanos / million.
 			rounded := new(big.Int).Quo(n.Num(), n.Denom())
 			if new(big.Int).Mod(n.Num(), n.Denom()).Sign() != 0 {
 				rounded.Add(rounded, big.NewInt(1))
@@ -102,12 +100,10 @@ func Price(a arkcontrol.Activation) (costcontrol.TokenPrice, error) {
 			} else {
 				p.InputNanosPerMillionTokens = max(p.InputNanosPerMillionTokens, v)
 			}
-			if item.Type == "AudioPrompt" && v > 0 {
-				audio = true
-			}
+
 		}
 	}
-	if !p.Valid() || !audio {
+	if !p.Valid() {
 		return p, ErrUnsupported
 	}
 	return p, nil

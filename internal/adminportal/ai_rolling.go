@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/airollout"
@@ -54,7 +55,7 @@ func (s *Server) readRollingToken(token string, actor string, in airollout.Input
 	return out, out.Actor == actor && out.Input == in && out.Expires > s.now().Unix()
 }
 func (s *Server) CreateAIRollingPreview(c *gin.Context, _ adminhttpapi.CreateAIRollingPreviewParams) {
-	auth, ok := s.aiAccess(c, true)
+	auth, ok := s.aiPreviewAccess(c)
 	if !ok {
 		return
 	}
@@ -90,7 +91,7 @@ func (s *Server) CreateAIRollingPreview(c *gin.Context, _ adminhttpapi.CreateAIR
 			affected = append(affected, string(op))
 		}
 	}
-	writeJSON(c.Writer, 200, map[string]any{"previewToken": s.signRolling(claim), "snapshot": snap, "input": in, "affectedOperations": affected, "expiresAt": claim.Expires, "notice": "灰度由火山自动推进；回退只退一个阶段，撤销将新模型流量归零。已排队请求的接入点不变，实际模型会随原生灰度变化。"})
+	writeJSON(c.Writer, 200, map[string]any{"previewToken": s.signRolling(claim), "snapshot": snap, "input": in, "affectedOperations": affected, "expiresAt": claim.Expires, "notice": "灰度由火山自动推进，无需手动推进阶段。灰度中可请求回退或撤销；完成后切回原模型需重新检查并开始新的灰度。已排队任务保留参数，实际模型随灰度变化。"})
 }
 func (s *Server) SubmitAIRollingCommand(c *gin.Context, _ adminhttpapi.SubmitAIRollingCommandParams) {
 	auth, ok := s.aiAccess(c, true)
@@ -137,4 +138,22 @@ func (s *Server) SubmitAIRollingCommand(c *gin.Context, _ adminhttpapi.SubmitAIR
 		return
 	}
 	writeJSON(c.Writer, 202, command)
+}
+
+// Preflight and unpublished drafts require the managing role and CSRF protection.
+// Fresh Passkey verification is reserved for the final online mutation.
+func (s *Server) aiPreviewAccess(c *gin.Context) (adminauth.Authenticated, bool) {
+	auth, ok := s.aiAccess(c, false)
+	if !ok {
+		return auth, false
+	}
+	auth, ok = s.auth.RequirePermission(c.Writer, c.Request, adminauth.PermissionAIConfigManage, "health", true, false)
+	if !ok {
+		return auth, false
+	}
+	if !s.config.AI.WritesEnabled {
+		writeFailure(c.Writer, 503, "writes_disabled", "管理写操作尚未启用")
+		return auth, false
+	}
+	return auth, true
 }

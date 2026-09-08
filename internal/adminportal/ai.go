@@ -96,7 +96,16 @@ func (s *Server) GetHealthAIConfig(c *gin.Context) {
 		}(row)
 	}
 	wg.Wait()
-	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": s.config.AI.Rollouts != nil && s.config.AI.Rollouts.WritesEnabled})
+	owned := []string{}
+	seen := map[string]bool{}
+	for _, op := range contracts.OperationValues() {
+		id := s.config.AI.Endpoints[op]
+		if id != "" && !seen[id] && !s.config.AI.SharedEndpoints[id] {
+			owned = append(owned, id)
+			seen[id] = true
+		}
+	}
+	writeJSON(c.Writer, 200, map[string]any{"operations": rows, "ownedEndpoints": owned, "timeoutSeconds": s.config.AI.TimeoutSeconds, "writesEnabled": s.config.AI.WritesEnabled, "rollingWritesEnabled": s.config.AI.Rollouts != nil && s.config.AI.Rollouts.WritesEnabled})
 }
 func (s *Server) ListAIModels(c *gin.Context) {
 	if _, ok := s.aiAccess(c, false); !ok {
@@ -106,20 +115,14 @@ func (s *Server) ListAIModels(c *gin.Context) {
 	defer cancel()
 	cache := s.config.AI.inventoryCache()
 	models := cache.models.get(ctx, s.config.AI.Inventory.Models)
-	var activations inventorySnapshot[[]arkcontrol.Activation]
-	if inventory, ok := s.config.AI.Inventory.(interface {
-		Activations(context.Context) ([]arkcontrol.Activation, error)
-	}); ok {
-		activations = cache.activations.get(ctx, inventory.Activations)
-	}
 	if models.SyncedAt == nil {
 		writeFailure(c.Writer, 503, "ark_unavailable", "模型目录同步失败")
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"models": models.Value, "syncedAt": models.SyncedAt, "stale": models.Stale, "syncError": models.SyncError, "activations": activations})
+	writeJSON(c.Writer, 200, map[string]any{"models": models.Value, "syncedAt": models.SyncedAt, "stale": models.Stale, "syncError": models.SyncError})
 }
 func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p contracts.ExecutionPolicy) error {
-	if p.Validate(op) != nil {
+	if p.Validate(op) != nil || p.ReasoningEffort == "max" {
 		return aiconfig.ErrInvalid
 	}
 	// Only exclusively owned Health bindings with a compatible model are accepted.
@@ -140,8 +143,30 @@ func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p
 		return aiconfig.ErrInvalid
 	}
 	model := arkcontrol.FoundationModel{Name: ep.Model.FoundationModel.Name, Version: ep.Model.FoundationModel.Version}
-	if !airollout.Supports(model, op, p) {
-		return aiconfig.ErrInvalid
+	check := func(model arkcontrol.FoundationModel) error {
+		if s.config.AI.Rollouts != nil {
+			return s.config.AI.Rollouts.CheckModel(ctx, model, []airollout.Requirement{{Operation: op, Effort: p.ReasoningEffort, Search: p.WebSearchEnabled}})
+		}
+		if !airollout.Supports(model, op, p) {
+			return aiconfig.ErrInvalid
+		}
+		return nil
+	}
+	if err := check(model); err != nil {
+		return err
+	}
+	if service := s.config.AI.Rollouts; service != nil {
+		pending, err := service.Store.Pending(ctx, p.Endpoint)
+		if err != nil {
+			return err
+		}
+		for _, command := range pending {
+			if command.Input.Action == "start" {
+				if err = check(command.Input.Target); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	if ep.RollingID != "" {
 		inventory, ok := s.config.AI.Inventory.(interface {
@@ -154,8 +179,16 @@ func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p
 		if err != nil {
 			return err
 		}
-		if rolling.EndpointID != p.Endpoint || !airollout.Supports(rolling.In, op, p) || !airollout.Supports(rolling.Out, op, p) {
+		if rolling.EndpointID != p.Endpoint {
 			return aiconfig.ErrInvalid
+		}
+		if rolling.Gray < 100 && !(rolling.Gray == 0 && rolling.Status == "Reverted") {
+			if err = check(rolling.In); err != nil {
+				return err
+			}
+			if err = check(rolling.Out); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -169,7 +202,7 @@ func (s *Server) PublishHealthAIConfig(c *gin.Context, _ adminhttpapi.PublishHea
 }
 
 func (s *Server) createAIDraft(c *gin.Context) {
-	auth, ok := s.aiAccess(c, true)
+	auth, ok := s.aiPreviewAccess(c)
 	if !ok {
 		return
 	}
@@ -249,7 +282,20 @@ func (s *Server) publishAIConfig(c *gin.Context) {
 		writeFailure(c.Writer, 409, "ai_preview_changed", "确认内容已变化或过期，请重新查看发布预览")
 		return
 	}
-	published, err := s.config.AI.Store.Publish(c, body.Publication, mutation, s.now())
+	var published aiconfig.Revision
+	publish := func() error {
+		if err := s.validateAIPolicy(c, body.Operation, target.Policy); err != nil {
+			return err
+		}
+		var err error
+		published, err = s.config.AI.Store.Publish(c, body.Publication, mutation, s.now())
+		return err
+	}
+	if service := s.config.AI.Rollouts; service != nil {
+		err = service.Store.WithLock(c, target.Policy.Endpoint, publish)
+	} else {
+		err = publish()
+	}
 	if err != nil {
 		aiFailure(c, err)
 		return
@@ -278,7 +324,12 @@ func (s *Server) replayAI(c *gin.Context, m aiconfig.Mutation, action string, bo
 	return false
 }
 func aiFailure(c *gin.Context, err error) {
+	var check *airollout.CheckError
 	switch {
+	case errors.Is(err, airollout.ErrChecking):
+		writeJSON(c.Writer, 202, map[string]any{"checking": true, "message": "正在检查模型协议与当前功能参数", "retryAfterSeconds": 3})
+	case errors.As(err, &check):
+		writeJSON(c.Writer, 422, map[string]any{"error": map[string]any{"code": "ai_check_failed", "message": check.Message, "stage": check.Stage}})
 	case errors.Is(err, aiconfig.ErrConflict):
 		writeFailure(c.Writer, 409, "ai_version_conflict", "配置已变化或提交标识被重复使用，请刷新后重试")
 	case errors.Is(err, aiconfig.ErrNotFound):
@@ -312,7 +363,7 @@ func (s *Server) ListAIModelVersions(c *gin.Context, model string) {
 	}); ok {
 		activation = s.config.AI.modelPriceSnapshot(c, model, prices.ModelActivations)
 	}
-	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "activation": activation, "syncedAt": s.now(), "compatibilityCatalog": airollout.Catalog(), "catalogVersion": airollout.CatalogVersion})
+	writeJSON(c.Writer, 200, map[string]any{"versions": versions, "activation": activation, "syncedAt": s.now(), "catalogVersion": airollout.CatalogVersion})
 }
 func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 	if _, ok := s.aiAccess(c, false); !ok {
@@ -375,5 +426,5 @@ func (s *Server) GetAIEndpoint(c *gin.Context, endpoint string) {
 		}
 		enabled = r.WritesEnabled
 	}
-	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": enabled, "commands": commands, "attempts": attempts, "priceState": priceState, "targets": airollout.Catalog()})
+	writeJSON(c.Writer, 200, map[string]any{"endpoint": ep, "rolling": rolling, "syncedAt": s.now(), "writesEnabled": enabled, "commands": commands, "attempts": attempts, "priceState": priceState})
 }
