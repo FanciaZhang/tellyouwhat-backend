@@ -40,6 +40,7 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 				req, _ := http.NewRequest("POST", base+path, bytes.NewReader(raw))
 				req.Header.Set("Authorization", "Bearer "+credential.Token)
 				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Tellyouwhat-Request-ID", uuid.NewString())
 				req.Header.Set("X-Journal-Development-Installation", installation)
 				req.Header.Set("X-Journal-Development-Mode", "monthly")
 				req.Header.Set("X-Journal-Development-Started-At", time.Now().UTC().Format(time.RFC3339))
