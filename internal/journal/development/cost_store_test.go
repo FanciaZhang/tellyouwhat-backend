@@ -71,3 +71,41 @@ func TestUnsettledCostRemainsChargedAfterRestart(t *testing.T) {
 		t.Fatal("corrupt state silently reset")
 	}
 }
+
+func TestRestartReleasesDeadConcurrencyWithoutRefundingUncertainCost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cost.json")
+	now := time.Now()
+	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}
+	store, err := NewFileCostStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ := costcontrol.New(store, limits, func() time.Time { return now })
+	for i := 0; i < 2; i++ {
+		if _, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 30); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Restart while ASR and the editor both have an outstanding provider call.
+	store, err = NewFileCostStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ = costcontrol.New(store, limits, func() time.Time { return now })
+	lease, err := controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 40)
+	if err != nil {
+		t.Fatalf("dead process still occupies provider slots: %v", err)
+	}
+	if err = lease.Settle(context.Background(), 0, true); err != nil {
+		t.Fatal(err)
+	}
+	// The two interrupted requests still conservatively cost 60, across restarts.
+	store, err = NewFileCostStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ = costcontrol.New(store, limits, func() time.Time { return now })
+	if _, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 41); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatalf("unknown spending was refunded: %v", err)
+	}
+}

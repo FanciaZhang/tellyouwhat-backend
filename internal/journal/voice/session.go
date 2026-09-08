@@ -174,6 +174,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		}
 	}()
 	var snapshot Snapshot
+	hasSnapshot := false
+	committedSegments := map[string]bool{}
 	var segment string
 	var pcm []byte
 	var duplicate *Receipt
@@ -273,19 +275,26 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					fail("voice_invalid_request")
 					return
 				}
+				next := *f.Snapshot
+				// A document ACK may have been sent before the latest receipt
+				// reached the client. It cannot roll back server-confirmed speech.
+				// Only the initial snapshot seeds prior-session transcript text.
+				if hasSnapshot {
+					next.Transcript = transcriptBase
+				}
+				hasSnapshot = true
 				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
 				if wasAcknowledgement {
 					awaitingRevision = -1
 				}
-				if f.Snapshot.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
+				if next.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
 					dirty = true
 				}
-				if len(snapshot.Blocks) == 0 && f.Snapshot.Transcript != "" {
+				if len(snapshot.Blocks) == 0 && next.Transcript != "" {
 					dirty = true
 				}
 				// Repeated receipt acknowledgements do not invalidate a model
 				// call that already uses the same base. Real edits still do.
-				next := *f.Snapshot
 				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
 					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.Words, next.Words) {
 					generation++
@@ -381,6 +390,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 							fail("voice_revision_conflict")
 							return
 						}
+						if !committedSegments[segment] {
+							committedSegments[segment] = true
+							transcriptBase += duplicate.Text
+							snapshot.Transcript = transcriptBase
+							tr++
+							dirty = true
+						}
 						emit(Event{Type: "receipt", Receipt: duplicate, RemainingMilliseconds: remaining})
 						segment = ""
 						pcm = nil
@@ -437,6 +453,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					}
 					return
 				}
+				committedSegments[segment] = true
 				transcriptBase += v.Text
 				segmentText = ""
 				snapshot.Transcript = transcriptBase

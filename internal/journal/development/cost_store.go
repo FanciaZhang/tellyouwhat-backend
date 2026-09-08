@@ -46,8 +46,29 @@ func NewFileCostStore(path string) (*FileCostStore, error) {
 		if err = json.Unmarshal(data, &s.events); err != nil {
 			return nil, err
 		}
+		pending := map[string]bool{}
 		for _, e := range s.events {
 			if err = s.apply(context.Background(), e); err != nil {
+				return nil, err
+			}
+			if e.Reserve != nil {
+				pending[e.Reserve.ID] = true
+			} else {
+				delete(pending, e.ID)
+			}
+		}
+		// This store belongs to the single private service process. After a
+		// restart none of its old calls can still run. Keep their reservations
+		// charged as unknown, but release the dead concurrency slots immediately.
+		if len(pending) > 0 {
+			for id := range pending {
+				e := costEvent{ID: id, Now: time.Now()}
+				if err = s.apply(context.Background(), e); err != nil {
+					return nil, err
+				}
+				s.events = append(s.events, e)
+			}
+			if err = s.persist(); err != nil {
 				return nil, err
 			}
 		}

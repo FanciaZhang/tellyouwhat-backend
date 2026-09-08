@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"golang.org/x/net/websocket"
 	"io"
 	"net/http"
@@ -146,7 +147,20 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 	if model == "" {
 		model = os.Getenv("JOURNAL_ARK_PRO_MODEL_ID")
 	}
-	service := &Service{Store: NewMemoryStore(), Secret: make([]byte, 32), Speech: ASR{Config: ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: os.Getenv("JOURNAL_SPEECH_API_KEY"), ResourceID: "volc.seedasr.sauc.duration"}}, Model: ArkRewriter{BaseURL: os.Getenv("JOURNAL_ARK_BASE_URL"), APIKey: os.Getenv("JOURNAL_ARK_API_KEY"), Model: model}}
+	// Include the real cost/concurrency wrappers; a direct provider-only check
+	// cannot detect a local budget gate blocking otherwise healthy providers.
+	budget, err := costcontrol.New(costcontrol.NewMemoryStore(), costcontrol.Limits{
+		MonthlyBudgetNanos: 100 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute,
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speech := ASR{Config: ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: os.Getenv("JOURNAL_SPEECH_API_KEY"), ResourceID: "volc.seedasr.sauc.duration"}}
+	editor := ArkRewriter{BaseURL: os.Getenv("JOURNAL_ARK_BASE_URL"), APIKey: os.Getenv("JOURNAL_ARK_API_KEY"), Model: model}
+	service := &Service{Store: NewMemoryStore(), Secret: make([]byte, 32),
+		Speech: NewBudgetedSpeech(speech, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
+		Model:  NewBudgetedRewriter(editor, budget, "journal-development", costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000}),
+	}
 	session := uuid.NewString()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
 	defer server.Close()

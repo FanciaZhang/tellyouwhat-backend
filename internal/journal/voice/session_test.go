@@ -341,3 +341,138 @@ func TestStableSpeechRewritesImmediatelyAndCatchesUpAfterAcknowledgement(t *test
 		t.Fatal(model.calls.Load())
 	}
 }
+
+func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
+	conn := &scriptedConnection{make(chan Transcript, 4), make(chan struct{})}
+	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
+	session, segment := uuid.NewString(), uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(context.Background(), Identity{Owner: "receipt-race", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(5 * time.Second))
+	read := func() Event {
+		t.Helper()
+		var event Event
+		if err := websocket.JSON.Receive(ws, &event); err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	read()
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
+	conn.result <- Transcript{Text: "今天见到一个朋友。", Stable: "今天见到一个朋友。"}
+	if e := read(); e.Type != "transcript" {
+		t.Fatal(e)
+	}
+	provisional := read()
+	if provisional.Type != "revision" {
+		t.Fatal(provisional)
+	}
+	// The client starts an ACK before receiving the final receipt. Its network
+	// write arrives later, so this snapshot legitimately still has no transcript.
+	snapshot.Revision++
+	snapshot.Blocks[0].Text = provisional.Revision.Patches[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
+	var receipt *Receipt
+	for receipt == nil {
+		e := read()
+		if e.Type == "error" {
+			t.Fatal(e)
+		}
+		receipt = e.Receipt
+	}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	final := read()
+	if final.Type != "revision" {
+		t.Fatal(final)
+	}
+	if got := final.Revision.Patches[0].Text; got != receipt.Text {
+		t.Fatalf("old ACK erased final ASR: got %q want %q", got, receipt.Text)
+	}
+	snapshot.Revision++
+	snapshot.Transcript = receipt.Text
+	snapshot.Blocks[0].Text = final.Revision.Patches[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if e := read(); e.Type != "finished" {
+		t.Fatal(e)
+	}
+}
+
+func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
+	store := NewMemoryStore()
+	owner, session, segment := "receipt-replay", uuid.NewString(), uuid.NewString()
+	now := time.Now()
+	period, _ := Period(now, now)
+	pcm := make([]byte, 6400)
+	receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: "已经确认的原始转写。", Milliseconds: 200}
+	if err := store.Lock(context.Background(), owner, "seed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(context.Background(), owner, session, period.Format(time.RFC3339), "seed", receipt, MonthlyMilliseconds); err != nil {
+		t.Fatal(err)
+	}
+	store.Unlock(context.Background(), owner, "seed")
+	speech := &scriptedSpeech{}
+	service := &Service{Store: store, Speech: speech, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := service.Issue(context.Background(), Identity{Owner: owner, Anchor: now, ExpiresAt: now.Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(now.Add(3 * time.Second))
+	read := func() Event {
+		t.Helper()
+		var event Event
+		if err := websocket.JSON.Receive(ws, &event); err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	read()
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	// Repeat a lost receipt twice; neither a second provider call nor duplicated
+	// source text may result, even before a receipt snapshot gets back to the server.
+	for i := 0; i < 2; i++ {
+		websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: pcm, Final: true})
+		if event := read(); event.Type != "receipt" {
+			t.Fatal(event)
+		}
+	}
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	event := read()
+	if event.Type != "revision" || event.Revision.Patches[0].Text != receipt.Text {
+		t.Fatalf("replayed speech lost or duplicated: %+v", event)
+	}
+	if speech.opens.Load() != 0 {
+		t.Fatal("duplicate receipt reopened speech provider")
+	}
+	snapshot.Revision++
+	snapshot.Transcript = receipt.Text
+	snapshot.Blocks[0].Text = receipt.Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if event := read(); event.Type != "finished" {
+		t.Fatal(event)
+	}
+}

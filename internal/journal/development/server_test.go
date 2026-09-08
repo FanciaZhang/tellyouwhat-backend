@@ -53,7 +53,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 			t.Fatalf("unexpected exposed route %s: %d", path, w.Code)
 		}
 	}
-	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 200 {
+	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 200 || w.Header().Get("X-Journal-Development-Protocol") != ProtocolVersion {
 		t.Fatalf("quota: %d %s", w.Code, w.Body)
 	}
 	body := `{"sessionID":"19be2f9e-bd92-4699-b561-e3816092114c","consentVersion":"journal-voice-v1"}`

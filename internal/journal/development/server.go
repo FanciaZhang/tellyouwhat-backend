@@ -26,6 +26,8 @@ import (
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
+const ProtocolVersion = "subscription-v1"
+
 type Config struct {
 	Token     string
 	Organizer provider.Organizer
@@ -79,6 +81,7 @@ func New(c Config) (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Journal-Environment", "development")
+		w.Header().Set("X-Journal-Development-Protocol", ProtocolVersion)
 		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"ready","environment":"development"}`))
