@@ -58,7 +58,11 @@ func TestLiveNativeCommandLifecycle(t *testing.T) {
 	if rollingID == "" {
 		t.Fatal("no rolling ID", commands[0].State, commands[0].Detail)
 	}
+	completed := false
 	t.Cleanup(func() {
+		if completed {
+			return
+		}
 		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = cloud.CancelRolling(cleanup, rollingID)
@@ -92,6 +96,7 @@ func TestLiveNativeCommandLifecycle(t *testing.T) {
 				if err != nil || r.Gray != 100 || ep.Model.FoundationModel.Name != in.Target.Name || ep.Model.FoundationModel.Version != in.Target.Version {
 					t.Fatal("completed command does not match live model", err)
 				}
+				completed = true
 				t.Log("native 100% and live endpoint model confirmed", r.Status)
 				return
 			}
