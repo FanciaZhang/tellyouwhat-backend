@@ -196,6 +196,8 @@ func (server *Server) SynchronizeSubscriptionTransaction(
 	expiresAt, err := server.productionEntitlement.Sync(ctx, principal, request.Body.SignedTransaction)
 	if err != nil {
 		switch {
+		case errors.Is(err, entitlement.ErrSubscriptionBindingConflict):
+			failure = newAPIFailure(http.StatusForbidden, "subscription_binding_conflict", "subscription device binding could not be updated", requestID.String())
 		case errors.Is(err, entitlement.ErrProductionSyncDenied):
 			failure = newAPIFailure(http.StatusForbidden, "transaction_verification_failed", "subscription transaction verification failed", requestID.String())
 		case errors.Is(err, entitlement.ErrSubscriptionInactive):
