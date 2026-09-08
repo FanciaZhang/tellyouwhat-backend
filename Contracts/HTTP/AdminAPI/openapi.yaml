@@ -632,7 +632,7 @@ components:
           properties:
             version: { type: string, maxLength: 36 }
             endpoint: { type: string, pattern: '^ep-[A-Za-z0-9-]+$', maxLength: 128 }
-            reasoningEffort: { type: string, enum: [minimal, low, medium, high] }
+            reasoningEffort: { type: string, enum: ["", minimal, low, medium, high, max] }
             webSearchEnabled: { type: boolean }
             timeoutSeconds: { type: integer, minimum: 1, maximum: 840 }
     HealthAIPublishRequest:
