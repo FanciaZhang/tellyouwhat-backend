@@ -32,6 +32,7 @@ type AppPolicy struct {
 }
 
 type Policy struct {
+	Automation              *AutomationPolicy    `json:"automation,omitempty"`
 	MonthlyBudgetNanos      int64                `json:"monthlyBudgetNanos"`
 	MaxConcurrent           int                  `json:"maxConcurrent"`
 	BudgetWarningPercent    int                  `json:"budgetWarningPercent"`
@@ -81,6 +82,9 @@ func Operation(app, op string) string {
 }
 
 func (p Policy) Validate() error {
+	if err := p.AutomationRules().Validate(); err != nil {
+		return err
+	}
 	const maxBudget = 1_000_000 * costcontrol.NanosPerCNY
 	if p.MonthlyBudgetNanos <= 0 || p.MonthlyBudgetNanos > maxBudget || p.MaxConcurrent < 1 || p.MaxConcurrent > 100 ||
 		p.BudgetWarningPercent < 1 || p.BudgetWarningPercent > 100 || p.ErrorWarningPercent < 1 || p.ErrorWarningPercent > 100 ||
