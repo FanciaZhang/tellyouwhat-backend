@@ -34,6 +34,9 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		return policyErr
 	}
 	if policyErr == nil {
+		if err = platformops.ReserveAutomation(ctx, tx, current.Policy, attempt); err != nil {
+			return err
+		}
 		limits.MonthlyBudgetNanos = current.Policy.MonthlyBudgetNanos
 		limits.MaxConcurrent = current.Policy.MaxConcurrent
 		app, ok := current.Policy.Apps[attempt.AppID]

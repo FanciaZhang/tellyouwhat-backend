@@ -13,6 +13,7 @@ type Cost struct {
 	Pending       int64  `json:"pending"`
 }
 type Activity struct {
+	Cancelled           int64   `json:"cancelled"`
 	AppID               string  `json:"appID"`
 	Operation           string  `json:"operation"`
 	Model               string  `json:"model"`
@@ -38,14 +39,15 @@ type Rejection struct {
 	Count     int64  `json:"count"`
 }
 type Metrics struct {
-	Insights    Insights    `json:"insights"`
-	AsOf        time.Time   `json:"asOf"`
-	MonthStart  time.Time   `json:"monthStart"`
-	WindowStart time.Time   `json:"windowStart"`
-	Costs       []Cost      `json:"costs"`
-	Activity    []Activity  `json:"activity"`
-	Queues      []Queue     `json:"queues"`
-	Rejections  []Rejection `json:"rejections"`
+	Automation  AutomationSnapshot `json:"automation"`
+	Insights    Insights           `json:"insights"`
+	AsOf        time.Time          `json:"asOf"`
+	MonthStart  time.Time          `json:"monthStart"`
+	WindowStart time.Time          `json:"windowStart"`
+	Costs       []Cost             `json:"costs"`
+	Activity    []Activity         `json:"activity"`
+	Queues      []Queue            `json:"queues"`
+	Rejections  []Rejection        `json:"rejections"`
 }
 
 func (s Store) RecordRejection(ctx context.Context, app, operation, reason string, now time.Time) error {
@@ -58,7 +60,7 @@ func (s Store) RecordRejection(ctx context.Context, app, operation, reason strin
 		return ErrInvalid
 	}
 	switch reason {
-	case "paused", "quota", "budget", "concurrency":
+	case "paused", "quota", "budget", "concurrency", "automatic_protection":
 	default:
 		return ErrInvalid
 	}
@@ -93,13 +95,13 @@ func (s Store) Metrics(ctx context.Context, now time.Time) (Metrics, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err = tx.QueryContext(ctx, `SELECT app_id,operation,model_name,COUNT(*),COALESCE(SUM(outcome='success'),0),COALESCE(SUM(outcome='error'),0),SUM(outcome IS NULL),COALESCE(AVG(latency_ms),0),COALESCE(SUM(input_tokens),0),COALESCE(SUM(output_tokens),0) FROM ai_cost_attempts WHERE created_at>=? GROUP BY app_id,operation,model_name ORDER BY app_id,operation,model_name`, out.WindowStart)
+	rows, err = tx.QueryContext(ctx, `SELECT app_id,operation,model_name,COUNT(*),COALESCE(SUM(outcome='success' AND cancelled=FALSE),0),COALESCE(SUM(outcome='error' AND cancelled=FALSE),0),SUM(outcome IS NULL),SUM(cancelled),COALESCE(AVG(CASE WHEN cancelled=FALSE THEN latency_ms END),0),COALESCE(SUM(input_tokens),0),COALESCE(SUM(output_tokens),0) FROM ai_cost_attempts WHERE created_at>=? GROUP BY app_id,operation,model_name ORDER BY app_id,operation,model_name`, out.WindowStart)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var r Activity
-		if err = rows.Scan(&r.AppID, &r.Operation, &r.Model, &r.Calls, &r.Succeeded, &r.Failed, &r.Unobserved, &r.AverageMilliseconds, &r.InputTokens, &r.OutputTokens); err != nil {
+		if err = rows.Scan(&r.AppID, &r.Operation, &r.Model, &r.Calls, &r.Succeeded, &r.Failed, &r.Unobserved, &r.Cancelled, &r.AverageMilliseconds, &r.InputTokens, &r.OutputTokens); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -145,6 +147,10 @@ func (s Store) Metrics(ctx context.Context, now time.Time) (Metrics, error) {
 		return out, err
 	}
 	out.Insights, err = readInsights(ctx, tx, now)
+	if err != nil {
+		return out, err
+	}
+	out.Automation, err = readAutomation(ctx, tx)
 	if err != nil {
 		return out, err
 	}

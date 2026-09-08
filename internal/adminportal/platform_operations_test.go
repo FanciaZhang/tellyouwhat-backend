@@ -90,13 +90,28 @@ func TestOperationsHTTPPublicationLifecycle(t *testing.T) {
 		repo.user.Role = adminauth.RoleAdmin
 		check(call("GET", root+path, nil, true, false, ""), 200)
 	}
+	var configuration struct {
+		AutomationRules platformops.AutomationPolicy `json:"automationRules"`
+	}
+	if err = json.Unmarshal(call("GET", root+"/config", nil, true, false, "").Body.Bytes(), &configuration); err != nil || configuration.AutomationRules != platformops.DefaultAutomationPolicy() {
+		t.Fatal("effective automation defaults missing", err)
+	}
 	policy.MonthlyBudgetNanos *= 2
+	rules := platformops.DefaultAutomationPolicy()
+	rules.Mode = "observe"
+	rules.CooldownSeconds = 300
+	policy.Automation = &rules
 	input := platformops.DraftInput{BaseVersion: current.ID, Policy: policy}
 	check(call("POST", root+"/config/drafts", input, true, false, uuid.NewString()), 403)
 	s.config.OperationsWritesEnabled = false
 	check(call("POST", root+"/config/drafts", input, true, true, uuid.NewString()), 503)
 	s.config.OperationsWritesEnabled = true
 	check(call("POST", root+"/config/drafts", input, true, true, ""), 400)
+	invalid := input
+	bad := rules
+	bad.FailurePercent = 1
+	invalid.Policy.Automation = &bad
+	check(call("POST", root+"/config/drafts", invalid, true, true, uuid.NewString()), 422)
 	session.ReauthenticatedAt = time.Time{}
 	put()
 	res := call("POST", root+"/config/drafts", input, true, true, uuid.NewString())
@@ -131,6 +146,10 @@ func TestOperationsHTTPPublicationLifecycle(t *testing.T) {
 	key := uuid.NewString()
 	res = call("POST", root+"/config/publish", body, true, true, key)
 	check(res, 200)
+	published, err := store.Current(ctx)
+	if err != nil || published.Policy.Automation == nil || *published.Policy.Automation != rules {
+		t.Fatal("automation publication missing", err)
+	}
 	now = now.Add(6 * time.Minute)
 	session.ReauthenticatedAt = now
 	put()

@@ -51,8 +51,21 @@ EOF
 make_timer backup '*-*-* 03:05:00 Asia/Shanghai'
 make_timer maintenance '*-*-* 03:25:00 Asia/Shanghai'
 make_timer restore 'Sun *-*-* 04:05:00 Asia/Shanghai'
+cat > "$unit_dir/tellyouwhat-health.timer" <<EOF
+[Unit]
+Description=Continuous TellYouWhat health monitoring
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=tellyouwhat-operation@health.service
+
+[Install]
+WantedBy=timers.target
+EOF
 sudo -n systemd-analyze verify "$unit_dir"/*.service "$unit_dir"/*.timer
 sudo -n install -m 644 "$unit_dir"/*.service "$unit_dir"/*.timer /etc/systemd/system/
 sudo -n systemctl daemon-reload
-sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer
+sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer tellyouwhat-health.timer
 systemctl list-timers 'tellyouwhat-*' --no-pager

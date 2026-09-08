@@ -156,6 +156,7 @@ func run(logger *slog.Logger) error {
 	}
 	background, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()
+	go ops.RunPatrol(background, logger)
 	if ai != nil {
 		go ai.Rollouts.Run(background)
 	}

@@ -34,7 +34,7 @@ func (client *BudgetedClient) Complete(ctx context.Context, request contracts.Re
 		return Response{}, err
 	}
 	response, providerErr := client.next.Complete(ctx, request)
-	client.settle(ctx, lease, response, price, client.record(ctx, request, response, price), providerErr == nil)
+	client.settle(ctx, lease, response, price, client.record(ctx, request, response, price), providerErr == nil, costcontrol.IsCancellation(ctx, providerErr))
 	return response, providerErr
 }
 
@@ -44,13 +44,16 @@ func (client *BudgetedClient) Stream(ctx context.Context, request contracts.Requ
 		return err
 	}
 	var completed Response
+	consumerCancelled := false
 	err = client.next.Stream(ctx, request, func(event StreamEvent) error {
 		if event.Completed != nil {
 			completed = *event.Completed
 		}
-		return yield(event)
+		yieldErr := yield(event)
+		consumerCancelled = consumerCancelled || yieldErr != nil
+		return yieldErr
 	})
-	client.settle(ctx, lease, completed, price, client.record(ctx, request, completed, price), err == nil)
+	client.settle(ctx, lease, completed, price, client.record(ctx, request, completed, price), err == nil, consumerCancelled || costcontrol.IsCancellation(ctx, err))
 	return err
 }
 
@@ -66,7 +69,7 @@ func (client *BudgetedClient) reserve(ctx context.Context, request contracts.Req
 	return client.controller.Reserve(ctx, client.appID, string(request.Operation), "ark", reserved)
 }
 
-func (client *BudgetedClient) settle(ctx context.Context, lease *costcontrol.Lease, response Response, price costcontrol.TokenPrice, attributed, success bool) {
+func (client *BudgetedClient) settle(ctx context.Context, lease *costcontrol.Lease, response Response, price costcontrol.TokenPrice, attributed, success, cancelled bool) {
 	actual, err := price.Cost(response.InputTokens, response.OutputTokens)
 	_, known := response.KnownTokenTotal()
 	if err != nil || !attributed {
@@ -75,7 +78,7 @@ func (client *BudgetedClient) settle(ctx context.Context, lease *costcontrol.Lea
 	}
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Success: success, UsageKnown: response.InputTokens >= 0 && response.OutputTokens >= 0 && (response.InputTokens > 0 || response.OutputTokens > 0), InputTokens: max(0, response.InputTokens), OutputTokens: max(0, response.OutputTokens), Model: response.ActualModel})
+	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Cancelled: cancelled, Success: success, UsageKnown: response.InputTokens >= 0 && response.OutputTokens >= 0 && (response.InputTokens > 0 || response.OutputTokens > 0), InputTokens: max(0, response.InputTokens), OutputTokens: max(0, response.OutputTokens), Model: response.ActualModel})
 }
 
 func (client *BudgetedClient) CleanupManagedMedia(ctx context.Context, media []contracts.Media) {

@@ -9,7 +9,7 @@ import sys
 
 from ops_backup import create_backup, prune_backups, restore_drill
 from ops_common import OperationError, Runtime
-from ops_health import health
+from ops_health import health, report_health
 
 
 def main():
@@ -24,7 +24,9 @@ def main():
     try:
         runtime = Runtime(args.backend_dir, args.backup_dir, args.environment_file)
         if args.operation == "health":
-            result = health(runtime)
+            with runtime.lock("health"):
+                result = health(runtime)
+                report_health(runtime, result)
         else:
             with runtime.lock():
                 result = operate(runtime, args)

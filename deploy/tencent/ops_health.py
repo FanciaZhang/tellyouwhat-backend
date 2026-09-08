@@ -1,6 +1,7 @@
 """Check live dependencies and the freshness of scheduled operations."""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 import time
@@ -26,7 +27,7 @@ def health(runtime):
         try:
             record = json.loads((runtime.state / (name + ".json")).read_text())
             age = int(now - record["completed_at"])
-            valid = 0 <= age <= maximum_age
+            valid = 0 <= age <= maximum_age and record.get("passed", True) is True
             if name == "backup":
                 filename = record["filename"]
                 valid = valid and Path(filename).name == filename and (runtime.backups / filename).is_file()
@@ -34,3 +35,10 @@ def health(runtime):
             pass
         checks.append({"name": name + "_freshness", "passed": valid, "age_seconds": age})
     return runtime.record("health", passed=all(check["passed"] for check in checks), checks=checks)
+
+
+def report_health(runtime, result):
+    payload = {"checkedAt": datetime.fromtimestamp(result["completed_at"], timezone.utc).isoformat(),
+               "checks": result["checks"]}
+    runtime.execute("health-report", runtime.compose("run", "--rm", "--no-deps", "-T", "adminctl", "operations-health"),
+                    input=json.dumps(payload).encode(), timeout=60)

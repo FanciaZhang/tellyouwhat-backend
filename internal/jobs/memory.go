@@ -112,6 +112,19 @@ func (store *MemoryStore) Succeed(_ context.Context, jobID string, attempt int, 
 	return nil
 }
 
+func (store *MemoryStore) DeferAdmission(_ context.Context, jobID string, attempt int, now time.Time) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	job, ok := store.jobs[jobID]
+	if !ok || job.Status != StatusRunning || job.AttemptCount != attempt || attempt < 1 || !now.Before(job.ExpiresAt) || !now.Before(job.ClaimExpiresAt) {
+		return ErrJobNotClaimable
+	}
+	job.Status, job.AttemptCount, job.ClaimExpiresAt, job.UpdatedAt = StatusQueued, attempt-1, time.Time{}, now
+	store.jobs[jobID] = job
+	store.outbox[jobID] = DispatchItem{JobID: jobID}
+	return nil
+}
+
 func (store *MemoryStore) RetryOrFail(_ context.Context, jobID string, attempt int, category string, now time.Time) (bool, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()

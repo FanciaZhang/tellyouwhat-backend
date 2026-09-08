@@ -15,7 +15,11 @@ func (s *Server) operationsFailure(ctx context.Context, operation, requestID str
 		return nil
 	}
 	if errors.Is(err, platformops.ErrPaused) {
-		s.recordOperationRejection(ctx, operation, "paused")
+		reason := "paused"
+		if errors.Is(err, costcontrol.ErrProtectionActive) {
+			reason = "automatic_protection"
+		}
+		s.recordOperationRejection(ctx, operation, reason)
 		return newAPIFailure(503, "ai_paused", "this cloud function is temporarily paused", requestID)
 	}
 	return newAPIFailure(503, "operations_unavailable", "cloud configuration is unavailable", requestID)

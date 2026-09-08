@@ -43,6 +43,23 @@ class ReleaseRecoveryTests(unittest.TestCase):
         self.assertEqual((self.root / "compose.production.yaml").read_text(), "old compose")
         self.assertEqual((self.root / "secrets" / KEY_FILES[0]).read_text(), "old key")
 
+    def test_automatic_protection_prevents_downgrade_before_activation(self):
+        def execute(label, command, **kwargs):
+            if label == "release-capabilities":
+                return b"1\n1\n1\n1\n" if command[-1].endswith(":new") else b"<no value>\n" * 4
+            return b""
+        with patch.object(self.runtime, "execute", side_effect=execute), patch("release.internally_ready", return_value=True):
+            self.run_deploy()
+        with patch.object(self.runtime, "execute") as execute:
+            with self.assertRaisesRegex(OperationError, "automatic protection"):
+                rollback(self.runtime, 1)
+            execute.assert_not_called()
+        self.assertEqual(read_environment(self.root / ".env.production")["IMAGE_TAG"], "new")
+        with patch.object(self.runtime, "execute", return_value=b"<no value>\n" * 4) as execute:
+            with self.assertRaisesRegex(OperationError, "automatic protection"):
+                deploy(self.runtime, "legacy", "registry/app", "internal", None, 1)
+            self.assertFalse(any(c.args[0] in ("release-migrate", "release-activate") for c in execute.call_args_list))
+
     def test_migration_failure_does_not_replace_active_configuration(self):
         def execute(label, *_args, **_kwargs):
             if label == "release-migrate":
