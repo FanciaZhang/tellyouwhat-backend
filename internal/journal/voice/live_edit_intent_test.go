@@ -46,6 +46,9 @@ func TestLiveManualEditIntent(t *testing.T) {
 		{"old_explicit_correction_does_not_undo_later_manual_edit", "门票花了十五元。",
 			"门票是十二元。不对，门票应该是十元。",
 			"门票花了十五元。", "", "五", "门票花了十", "元。"},
+		{"pending_earlier_correction_does_not_undo_manual_edit", "门票花了十五元。",
+			"门票是十二元。不对，门票应该是十元。",
+			"门票花了十五元。", "", "五", "门票花了十", "元。"},
 		{"explicit_uncertainty_does_not_invent_certainty", "周六我和小林去了公园。",
 			"同行的人可能是小明，也可能不是，我记不清了。",
 			"周六我和小林去了公园。", "明", "林", "周六我和小", "去了公园。"},
@@ -53,6 +56,9 @@ func TestLiveManualEditIntent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			id := uuid.NewString()
 			snapshot := Snapshot{Revision: 2, Blocks: []Block{{id, tc.current}}, Transcript: tc.transcript, EditedBlockIDs: []string{id}, ManualEdits: []ManualEdit{{BlockID: id, Before: tc.before, After: tc.after, ContextBefore: tc.contextBefore, ContextAfter: tc.contextAfter}}}
+			if strings.HasPrefix(tc.name, "pending_") {
+				snapshot.ManualEdits[0].PendingEarlierSpeech = true
+			}
 			if strings.HasPrefix(tc.name, "old_") {
 				snapshot.ManualEdits[0].TranscriptOffset = len([]rune(tc.transcript))
 			}

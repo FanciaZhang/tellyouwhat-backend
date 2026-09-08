@@ -209,3 +209,20 @@ func TestTicketsCannotChangeSessionOrOwner(t *testing.T) {
 		t.Fatal("invalid signature")
 	}
 }
+
+func TestPendingEarlierSpeechCannotOverrideManualEdit(t *testing.T) {
+	snapshot := Snapshot{Transcript: "前面说错了，是十元。", ManualEdits: []ManualEdit{{Before: "十", After: "十五", PendingEarlierSpeech: true}}}
+	document := editorialDocument(snapshot)
+	if document.ManualEdits[0].HasLaterSpeech || document.ManualEdits[0].TranscriptOffset != len([]rune(snapshot.Transcript)) {
+		t.Fatal("late ASR became later speech")
+	}
+	if snapshot.ManualEdits[0].TranscriptOffset != 0 {
+		t.Fatal("rewriter mutated session snapshot")
+	}
+	snapshot.ManualEdits[0].PendingEarlierSpeech = false
+	snapshot.ManualEdits[0].TranscriptOffset = len([]rune(snapshot.Transcript))
+	snapshot.Transcript += "刚才手改错了，应当是十二元。"
+	if !editorialDocument(snapshot).ManualEdits[0].HasLaterSpeech {
+		t.Fatal("explicit later correction was blocked")
+	}
+}

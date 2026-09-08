@@ -186,3 +186,19 @@ not redeploy the shared production stack. This uses GitHub's documented
 [per-push workflow skip](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs);
 it does not change any workflow or deployment variable. A later ordinary
 production release can include this Journal-only source change.
+
+## 2026-09-08 late-recognition review repair
+
+Manual edits now include `pendingEarlierSpeech`. While audio captured before an
+edit is awaiting its final receipt, the editorial adapter treats all in-flight
+recognition as earlier speech. Once the receipt arrives, the client supplies the
+boundary derived from recorded segment identities; later audio can explicitly
+correct the edit. The adapter clones hints before deriving boundaries, so model
+input cannot mutate session state.
+
+Race tests and vet passed for voice and journaldevserver. Six synthetic scenarios
+passed through the deployed private development HTTPS/WebSocket service, including
+pending earlier audio containing an explicit correction. Gateway, worker and admin
+container IDs were unchanged across deployment. Only `journal-private-development`
+was replaced. This commit uses `[skip ci]` to avoid triggering a shared production
+deployment; no workflow, production entitlement or Health configuration changed.

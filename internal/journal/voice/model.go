@@ -48,6 +48,14 @@ type rewriteDocument struct {
 
 func editorialDocument(s Snapshot) rewriteDocument {
 	text := []rune(s.Transcript)
+	// A late transcription is still earlier speech. Until its final receipt
+	// arrives, none of this in-flight transcript can supersede that manual edit.
+	s.ManualEdits = slices.Clone(s.ManualEdits)
+	for i := range s.ManualEdits {
+		if s.ManualEdits[i].PendingEarlierSpeech {
+			s.ManualEdits[i].TranscriptOffset = len(text)
+		}
+	}
 	boundaries := []int{0, len(text)}
 	for _, edit := range s.ManualEdits {
 		boundaries = append(boundaries, edit.TranscriptOffset)

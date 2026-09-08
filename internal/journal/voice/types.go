@@ -28,12 +28,13 @@ type Block struct {
 
 // ManualEdit describes the actual user change; it never grants a permanent lock.
 type ManualEdit struct {
-	BlockID          string `json:"blockID"`
-	Before           string `json:"before"`
-	After            string `json:"after"`
-	ContextBefore    string `json:"contextBefore"`
-	ContextAfter     string `json:"contextAfter"`
-	TranscriptOffset int    `json:"transcriptOffset"`
+	BlockID              string `json:"blockID"`
+	Before               string `json:"before"`
+	After                string `json:"after"`
+	ContextBefore        string `json:"contextBefore"`
+	ContextAfter         string `json:"contextAfter"`
+	TranscriptOffset     int    `json:"transcriptOffset"`
+	PendingEarlierSpeech bool   `json:"pendingEarlierSpeech"`
 }
 
 func (e ManualEdit) characters() int {
