@@ -21,6 +21,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/adminui"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/cloudbilling"
 	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
@@ -48,6 +49,7 @@ type OfferManager interface {
 }
 
 type Config struct {
+	Billing                 *cloudbilling.Cache
 	Operations              *platformops.Store
 	OperationsWritesEnabled bool
 	AI                      *AIConfig

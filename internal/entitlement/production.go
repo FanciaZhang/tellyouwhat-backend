@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 )
 
 type SubscriptionState struct {
+	Payment               purchase.Evidence
 	OriginalTransactionID string
 	TransactionID         string
 	Environment           string
@@ -85,6 +87,7 @@ func (service *ProductionService) Sync(
 		return time.Time{}, ErrSubscriptionInactive
 	}
 	record := Record{
+		Payment:            state.Payment,
 		KeyID:              principal.KeyID,
 		TransactionID:      state.OriginalTransactionID,
 		ExpiresAt:          state.ExpiresAt,

@@ -38,6 +38,7 @@ type Rejection struct {
 	Count     int64  `json:"count"`
 }
 type Metrics struct {
+	Insights    Insights    `json:"insights"`
 	AsOf        time.Time   `json:"asOf"`
 	MonthStart  time.Time   `json:"monthStart"`
 	WindowStart time.Time   `json:"windowStart"`
@@ -140,6 +141,10 @@ func (s Store) Metrics(ctx context.Context, now time.Time) (Metrics, error) {
 	}
 	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	out.Insights, err = readInsights(ctx, tx, now)
 	if err != nil {
 		return out, err
 	}

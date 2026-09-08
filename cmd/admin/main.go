@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/cloudbilling"
 	"log/slog"
 	"net/http"
 	"os"
@@ -99,8 +100,14 @@ func run(logger *slog.Logger) error {
 		offerClients[app.id] = client
 		adminApps = append(adminApps, adminportal.AdminApp{ID: app.id, DisplayName: app.displayName})
 	}
+	var bills *cloudbilling.Cache
 	var ai *adminportal.AIConfig
 	if path := os.Getenv("ARK_MANAGEMENT_CREDENTIAL_FILE"); path != "" {
+		billingClient, err := cloudbilling.NewFromFile(path)
+		if err != nil {
+			return err
+		}
+		bills = &cloudbilling.Cache{Reader: billingClient}
 		client, err := arkcontrol.NewFromFile(path)
 		if err != nil {
 			return err
@@ -129,6 +136,7 @@ func run(logger *slog.Logger) error {
 	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
 		AI:                      ai,
+		Billing:                 bills,
 		Operations:              &ops,
 		OperationsWritesEnabled: strings.EqualFold(os.Getenv("PLATFORM_OPERATIONS_WRITES_ENABLED"), "true"),
 		PreviewSigningKey:       configuration.previewSigningKey,

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"golang.org/x/net/websocket"
 )
 
@@ -162,7 +163,7 @@ type rewriteResult struct {
 }
 
 func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
-	ctx, cancel := context.WithCancel(ws.Request().Context())
+	ctx, cancel := context.WithCancel(costcontrol.WithAccess(ws.Request().Context(), claim.Identity.KeyID, true))
 	defer cancel()
 	defer ws.Close()
 	ws.MaxPayloadBytes = 512 << 10

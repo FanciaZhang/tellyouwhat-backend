@@ -50,13 +50,17 @@ func (repository *EntitlementRepository) ApplyNotification(
 	}
 	if _, err := transaction.ExecContext(ctx, `
         UPDATE managed_entitlements
-        SET environment = ?, expires_at = ?, updated_at = UTC_TIMESTAMP(6)
+        SET environment = ?, expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
 		WHERE app_id = ? AND original_transaction_id = ?`,
 		state.Environment,
 		state.ExpiresAt,
+		purchasePrice(state.CurrentPayment),
 		repository.appID,
 		state.OriginalTransactionID,
 	); err != nil {
+		return false, err
+	}
+	if err := observePurchase(ctx, transaction, repository.appID, "", state.Environment, state.Payment); err != nil {
 		return false, err
 	}
 	if err := insertOfferRedemption(ctx, transaction, repository.appID, state.Environment, state.TransactionID,
@@ -77,13 +81,14 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 	defer func() { _ = transaction.Rollback() }()
 	if _, err = transaction.ExecContext(ctx, `
         INSERT INTO managed_entitlements
-			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
+			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, price_milli, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
         ON DUPLICATE KEY UPDATE
             original_transaction_id = VALUES(original_transaction_id),
             environment = VALUES(environment),
             expires_at = VALUES(expires_at),
             started_at = COALESCE(VALUES(started_at), started_at),
+ price_milli = VALUES(price_milli),
             updated_at = UTC_TIMESTAMP(6)`,
 		repository.appID,
 		record.KeyID,
@@ -91,7 +96,11 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		record.Environment,
 		record.ExpiresAt,
 		nullableVoiceDate(record.StartedAt),
+		purchasePrice(record.Payment),
 	); err != nil {
+		return err
+	}
+	if err := observePurchase(ctx, transaction, repository.appID, record.KeyID, record.Environment, record.Payment); err != nil {
 		return err
 	}
 	if err := insertOfferRedemption(ctx, transaction, repository.appID, record.Environment, record.OfferTransactionID,

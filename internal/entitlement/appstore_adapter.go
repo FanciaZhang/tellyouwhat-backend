@@ -45,6 +45,7 @@ func (adapter *appStoreSubscriptionAdapter) Resolve(
 		return SubscriptionState{}, mapAppStoreError(err)
 	}
 	return SubscriptionState{
+		Payment:               state.Payment,
 		OriginalTransactionID: state.OriginalTransactionID,
 		TransactionID:         state.TransactionID,
 		Environment:           state.Environment,
@@ -73,6 +74,8 @@ func (adapter *appStoreNotificationAdapter) ResolveNotification(
 	}
 	return NotificationState{
 		NotificationUUID:      state.NotificationUUID,
+		Payment:               state.Payment,
+		CurrentPayment:        state.CurrentPayment,
 		OriginalTransactionID: state.OriginalTransactionID,
 		Environment:           state.Environment,
 		TransactionID:         state.TransactionID,

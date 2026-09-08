@@ -75,7 +75,7 @@ func (client *BudgetedClient) settle(ctx context.Context, lease *costcontrol.Lea
 	}
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Success: success, InputTokens: max(0, response.InputTokens), OutputTokens: max(0, response.OutputTokens), Model: response.ActualModel})
+	_ = lease.Finish(settlement, actual, known, costcontrol.Outcome{Success: success, UsageKnown: response.InputTokens >= 0 && response.OutputTokens >= 0 && (response.InputTokens > 0 || response.OutputTokens > 0), InputTokens: max(0, response.InputTokens), OutputTokens: max(0, response.OutputTokens), Model: response.ActualModel})
 }
 
 func (client *BudgetedClient) CleanupManagedMedia(ctx context.Context, media []contracts.Media) {

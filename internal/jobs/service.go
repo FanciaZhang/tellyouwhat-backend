@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
@@ -231,6 +233,7 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		close(stopHeartbeat)
 		<-heartbeatDone
 	}()
+	workContext = costcontrol.WithAccess(workContext, job.OwnerKeyID, !strings.HasPrefix(job.OwnerTransactionID, quota.FreeRecognitionTransactionPrefix))
 	response, err := worker.provider.Complete(workContext, job.Request)
 	worker.reconcileQuota(ctx, job, reservationID, response)
 	if err != nil {
