@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=path.resolve('internal/adminui/static');
-const server=http.createServer(async(req,res)=>{try{const file=path.join(root,req.url==='/'?'index.html':req.url);const content=await fs.readFile(file);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(content);}catch{res.writeHead(404);res.end();}});
+const server=http.createServer(async(req,res)=>{res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");try{const file=path.join(root,req.url==='/'?'index.html':req.url);const content=await fs.readFile(file);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(content);}catch{res.writeHead(404);res.end();}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 const operations=['voice_transcription','meal_photo_capture','hydration_cup_estimate','meal_text_capture','meal_decision','diet_analysis','health_nutrition_analysis','health_behavior_analysis'];
@@ -16,6 +16,7 @@ const models=[{Name:target.Name,DisplayName:'Doubao Seed 2.1 Pro'},{Name:'deepse
 const rows=operations.map((operation,i)=>({operation,endpointID:`ep-${i}`,endpoint:{Id:`ep-${i}`,Name:`接入点 ${i}`,Status:'Running',ModelReference:{FoundationModel:source}},history:[],syncedAt:new Date().toISOString()}));
 let rolling=null,commands=[],lastInput=null,checks=0,posts=0,draft;
 const context=await browser.newContext({viewport:{width:1280,height:1000}}),page=await context.newPage(),errors=[];
+await page.addInitScript(()=>{window.cspFailures=[];document.addEventListener('securitypolicyviolation',e=>window.cspFailures.push(e.violatedDirective));});
 page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
 await page.route('**/api/**',async route=>{
  const request=route.request(),url=new URL(request.url()),pathname=url.pathname;let data={},status=200;
@@ -62,5 +63,5 @@ try{
  await page.getByRole('button',{name:'← 返回',exact:true}).click();await page.getByRole('button',{name:'← 返回',exact:true}).click();await waitHeading('AI 管理');
  for(const width of [360,390,736,1280]){for(const colorScheme of ['light','dark']){await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme});await overflow();if(process.env.AI_UI_SCREENSHOT_DIR){await fs.mkdir(process.env.AI_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.AI_UI_SCREENSHOT_DIR,`overview-${width}-${colorScheme}.png`),fullPage:true});}}}
  await page.getByRole('tab',{name:'模型与接入点',exact:true}).click();await settle();assert.equal(await page.locator('.ai-row').count(),8);await page.getByRole('tab',{name:'变更记录',exact:true}).click();await settle();assert.ok(await page.locator('.ai-history-row').count()>=2);
- assert.deepEqual(errors,[]);console.log('PASS overview, full catalog, incompatibility, one Passkey, publish, duplicate guard, 90% rollback, completion/reverse, history and responsive light/dark layouts');
+ assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.cspFailures),[]);console.log('PASS overview, full catalog, incompatibility, one Passkey, publish, duplicate guard, 90% rollback, completion/reverse, history and responsive light/dark layouts');
 }finally{await browser.close();server.close();}

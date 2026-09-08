@@ -23,8 +23,8 @@ type Capability struct {
 func Catalog() []Capability {
 	return []Capability{
 		{arkcontrol.FoundationModel{Name: "doubao-seed-2-0-mini", Version: "260215"}, []string{"minimal", "low", "medium", "high"}, false, true, true},
-		{arkcontrol.FoundationModel{Name: "doubao-seed-2-0-mini", Version: "260428"}, []string{"minimal", "low", "medium", "high"}, true, true, true},
-		{arkcontrol.FoundationModel{Name: "doubao-seed-2-0-lite", Version: "260428"}, []string{"minimal", "low", "medium", "high"}, true, true, true},
+		{arkcontrol.FoundationModel{Name: "doubao-seed-2-0-mini", Version: "260428"}, []string{"minimal", "low", "medium", "high", "max"}, true, true, true},
+		{arkcontrol.FoundationModel{Name: "doubao-seed-2-0-lite", Version: "260428"}, []string{"minimal", "low", "medium", "high", "max"}, true, true, true},
 	}
 }
 func Supports(m arkcontrol.FoundationModel, op contracts.Operation, p contracts.ExecutionPolicy) bool {

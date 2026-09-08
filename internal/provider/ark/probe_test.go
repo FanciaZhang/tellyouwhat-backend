@@ -46,7 +46,7 @@ func TestLiveSelectedModelProtocol(t *testing.T) {
 	if model == "" || key == "" {
 		t.Skip("explicit selected-model inference test required")
 	}
-	p := contracts.ExecutionPolicy{Version: "protocol-test", Endpoint: model, ReasoningEffort: os.Getenv("ARK_PROTOCOL_TEST_EFFORT"), TimeoutSeconds: 25}
+	p := contracts.ExecutionPolicy{Version: "protocol-test", Endpoint: model, ReasoningEffort: os.Getenv("ARK_PROTOCOL_TEST_EFFORT"), WebSearchEnabled: os.Getenv("ARK_PROTOCOL_TEST_SEARCH") == "1", TimeoutSeconds: 25}
 	op := contracts.OperationMealTextCapture
 	if value := os.Getenv("ARK_PROTOCOL_TEST_OPERATION"); value != "" {
 		op = contracts.Operation(value)

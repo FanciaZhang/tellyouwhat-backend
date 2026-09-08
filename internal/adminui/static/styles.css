@@ -144,8 +144,10 @@ small { line-height: 1.5; }
 .ai-model-option span { color: var(--green); font-size: 12px; margin-top: 20px; font-weight: 500; }
 .ai-diff { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 20px; align-items: center; margin: 10px 0 26px; }
 .ai-diff strong { display: block; font-weight: 550; overflow-wrap: anywhere; margin-top: 8px; }
-.ai-meter { height: 10px; border-radius: 8px; overflow: hidden; background: var(--line); }
-.ai-meter span { height: 100%; display: block; background: var(--green); transition: width .3s; }
+.ai-meter { appearance: none; border: 0; width: 100%; height: 10px; border-radius: 8px; overflow: hidden; background: var(--line); }
+.ai-meter::-webkit-progress-bar { background: var(--line); }
+.ai-meter::-webkit-progress-value { background: var(--green); }
+.ai-meter::-moz-progress-bar { background: var(--green); }
 .ai-progress { font-size: 36px; font-weight: 500; color: var(--green); margin: 14px 0; }
 .ai-command-status { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
 .ai-history-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
@@ -174,4 +176,4 @@ small { line-height: 1.5; }
   #ai-view .primary { background: #386c4c; color: #fff; }
   #ai-view .secondary { background: #293c30; color: #c7e2d0; }
 }
-@media(prefers-reduced-motion:reduce) { .ai-meter span { transition:none; } }
+

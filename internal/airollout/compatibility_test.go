@@ -78,7 +78,7 @@ func TestCompatibilityUsesBoundFeaturesAndSupportsUnlistedModels(t *testing.T) {
 func TestLegacyRequirementsRemainEndpointScoped(t *testing.T) {
 	service := &Service{Endpoints: map[contracts.Operation]string{contracts.OperationMealTextCapture: "ep-text", contracts.OperationVoiceTranscription: "ep-audio", contracts.OperationMealDecision: "ep-search"}}
 	req, err := service.Requirements(context.Background(), "ep-text")
-	if err != nil || len(req) != 5 {
+	if err != nil || len(req) != 6 {
 		t.Fatal(req, err)
 	}
 	for _, r := range req {
@@ -135,7 +135,7 @@ func TestMySQLQueuedJobsRetainHistoricalEndpointRequirements(t *testing.T) {
 		t.Fatal(err)
 	}
 	required, err := s.Requirements(ctx, id)
-	if err != nil || len(required) != 5 {
+	if err != nil || len(required) != 6 {
 		t.Fatal("old queued endpoint lost legacy requirements", required, err)
 	}
 	if _, err = s.Store.DB.Exec("UPDATE ai_jobs SET status='succeeded' WHERE app_id='health' AND id=?", actor); err != nil {

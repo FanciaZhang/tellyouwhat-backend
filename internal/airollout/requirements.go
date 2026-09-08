@@ -31,7 +31,7 @@ func (s *Service) Requirements(ctx context.Context, endpoint string) ([]Requirem
 				required[Requirement{op, p.ReasoningEffort, p.WebSearchEnabled}] = true
 			}
 		} else if s.Endpoints[op] == endpoint {
-			for _, effort := range []string{"", "minimal", "low", "medium", "high"} {
+			for _, effort := range []string{"", "minimal", "low", "medium", "high", "max"} {
 				required[Requirement{op, effort, false}] = true
 				if op == contracts.OperationMealDecision {
 					required[Requirement{op, effort, true}] = true

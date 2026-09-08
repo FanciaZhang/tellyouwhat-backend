@@ -122,7 +122,7 @@ func (s *Server) ListAIModels(c *gin.Context) {
 	writeJSON(c.Writer, 200, map[string]any{"models": models.Value, "syncedAt": models.SyncedAt, "stale": models.Stale, "syncError": models.SyncError})
 }
 func (s *Server) validateAIPolicy(ctx context.Context, op contracts.Operation, p contracts.ExecutionPolicy) error {
-	if p.Validate(op) != nil || p.ReasoningEffort == "max" {
+	if p.Validate(op) != nil {
 		return aiconfig.ErrInvalid
 	}
 	// Only exclusively owned Health bindings with a compatible model are accepted.
