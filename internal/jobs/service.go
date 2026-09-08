@@ -173,7 +173,7 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		}
 		if existing.Status == StatusQueued || existing.Status == StatusRunning {
 			if err = worker.Admit(ctx, string(existing.Request.Operation)); err != nil {
-				return err
+				return errors.Join(ErrAdmissionDeferred, err)
 			}
 		}
 	}

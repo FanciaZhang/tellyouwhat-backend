@@ -5,10 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"time"
 )
+
+var ErrAdmissionDeferred = errors.New("job admission deferred")
+
+const DispatchDeferred = "admission_deferred"
 
 type Dispatcher interface {
 	Dispatch(context.Context, string) error
@@ -74,10 +79,15 @@ func (pump *OutboxPump) drain(ctx context.Context) error {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
+			dispatchErr := pump.dispatcher.Dispatch(ctx, item.JobID)
 			persistContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			if dispatchErr := pump.dispatcher.Dispatch(ctx, item.JobID); dispatchErr != nil {
-				_ = pump.store.RetryDispatch(persistContext, item.JobID, pump.now(), "worker dispatch rejected")
+			if dispatchErr != nil {
+				category := "worker dispatch rejected"
+				if errors.Is(dispatchErr, ErrAdmissionDeferred) {
+					category = DispatchDeferred
+				}
+				_ = pump.store.RetryDispatch(persistContext, item.JobID, pump.now(), category)
 				return
 			}
 			_ = pump.store.CompleteDispatch(persistContext, item.JobID, pump.now())
@@ -125,6 +135,16 @@ func (dispatcher *HTTPDispatcher) Dispatch(ctx context.Context, jobID string) er
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusServiceUnavailable {
+		var failure struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(response.Body, 2048)).Decode(&failure) == nil && failure.Error.Code == DispatchDeferred {
+			return ErrAdmissionDeferred
+		}
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return errors.New("worker dispatch was rejected")
 	}

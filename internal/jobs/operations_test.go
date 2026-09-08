@@ -42,3 +42,46 @@ func TestPausedJobWaitsWithoutUsingAttemptsOrLosingReservation(t *testing.T) {
 		t.Fatalf("resume failed: %+v %v", completed, err)
 	}
 }
+
+func TestOutboxAdmissionDeferralDoesNotExhaustDeliveries(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	now := time.Now().UTC()
+	service := NewService(store, func() time.Time { return now })
+	job, err := service.Enqueue(ctx, attestation.Principal{KeyID: "key", DeviceID: "device"}, jobRequest(), "digest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paused := true
+	dispatcher := dispatchFunction(func(context.Context, string) error {
+		if paused {
+			return ErrAdmissionDeferred
+		}
+		return nil
+	})
+	pump := NewOutboxPump(store, dispatcher, func() time.Time { return now })
+	for i := 0; i < 30; i++ {
+		if err := pump.drain(ctx); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(31 * time.Second)
+	}
+	got, err := store.Get(ctx, job.ID)
+	if err != nil || got.Status != StatusQueued || got.AttemptCount != 0 {
+		t.Fatalf("deferred: %+v %v", got, err)
+	}
+	if store.outbox[job.ID].Attempts != 0 {
+		t.Fatal("deferral consumed delivery")
+	}
+	paused = false
+	if err = pump.drain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if store.outbox[job.ID].Attempts != 1 {
+		t.Fatal("resume did not deliver")
+	}
+}
+
+type dispatchFunction func(context.Context, string) error
+
+func (f dispatchFunction) Dispatch(ctx context.Context, id string) error { return f(ctx, id) }

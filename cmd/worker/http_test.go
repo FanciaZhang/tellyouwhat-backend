@@ -2,12 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWorkerRouterUsesGeneratedContractAndAuthentication(t *testing.T) {
@@ -48,5 +55,28 @@ func TestWorkerRouterEnforcesBodyLimitBeforeDecoding(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(response.Body.String(), `"code":"payload_too_large"`) {
 		t.Fatalf("oversized body = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestWorkerAdmissionDeferralSurvivesHTTPDispatch(t *testing.T) {
+	ctx := context.Background()
+	store := jobs.NewMemoryStore()
+	id := "00000000-0000-4000-8000-000000000001"
+	_, err := store.CreateOrGet(ctx, jobs.Job{ID: id, RequestID: id, Status: jobs.StatusQueued, ExpiresAt: time.Now().Add(time.Hour), Request: contracts.Request{Operation: contracts.OperationMealDecision}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := jobs.NewWorker(store, nil, nil)
+	worker.Admit = func(context.Context, string) error { return platformops.ErrPaused }
+	router := newWorkerRouter("fixture", map[appregistry.AppID]*jobs.Worker{appregistry.Health: worker}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	server := httptest.NewServer(router)
+	defer server.Close()
+	dispatcher := jobs.NewHTTPDispatcher(server.URL+"/internal/jobs/process", "fixture", "health", server.Client())
+	if err := dispatcher.Dispatch(ctx, id); !errors.Is(err, jobs.ErrAdmissionDeferred) {
+		t.Fatalf("deferred protocol: %v", err)
+	}
+	got, err := store.Get(ctx, id)
+	if err != nil || got.Status != jobs.StatusQueued || got.AttemptCount != 0 {
+		t.Fatalf("queue: %+v %v", got, err)
 	}
 }
