@@ -1,5 +1,5 @@
 // Package development is used only by cmd/journaldevserver. The production
-// gateway must never import it. Access is through a private SSH tunnel.
+// gateway must never import it. Access requires an operator-provisioned development credential.
 package development
 
 import (
@@ -28,7 +28,6 @@ import (
 
 type Config struct {
 	Token     string
-	ExpiresAt time.Time
 	Organizer provider.Organizer
 	Speech    voice.Speech
 	Rewriter  voice.Rewriter
@@ -46,23 +45,17 @@ func (authenticator) Authenticate(ctx context.Context, _ attestation.RequestProo
 	return p, nil
 }
 
-// All state belongs to this developer session, not to an installation or an
-// Apple purchase. No production database, Redis, or object storage is opened.
+// Mock records belong only to authenticated development installations.
+// No production database, Redis, Apple purchase, or object storage is opened.
 func New(c Config) (http.Handler, error) {
 	if c.Now == nil {
 		c.Now = time.Now
 	}
-	now := c.Now()
-	if len(c.Token) < 43 || !c.ExpiresAt.After(now) || c.ExpiresAt.Sub(now) > 24*time.Hour || c.Organizer == nil || c.Speech == nil || c.Rewriter == nil {
-		return nil, errors.New("developer session requires a random token, providers and an expiry within 24 hours")
+	if len(c.Token) < 43 || c.Organizer == nil || c.Speech == nil || c.Rewriter == nil {
+		return nil, errors.New("developer service requires a provisioned random token and providers")
 	}
 	digest := sha256.Sum256([]byte(c.Token))
-	id := hex.EncodeToString(digest[:])
-	p := attestation.Principal{AppID: "journal", KeyID: id, DeviceID: id, TransactionID: "development:" + id}
 	store := entitlement.NewMemoryStore()
-	if err := store.Upsert(context.Background(), entitlement.Record{KeyID: id, TransactionID: p.TransactionID, Environment: "development", StartedAt: now, ExpiresAt: c.ExpiresAt}); err != nil {
-		return nil, err
-	}
 	limiter := quota.NewMemoryLimiter(quota.Limits{DailyTokensPerTransaction: 100_000, MonthlyTokensPerTransaction: 100_000, RequestsPerMinutePerOperation: 10, MaxConcurrentPerDevice: 2})
 	consent := privacy.NewService(privacy.NewMemoryRepository(), nil, nil, c.Now)
 	secret := make([]byte, 32)
@@ -78,7 +71,7 @@ func New(c Config) (http.Handler, error) {
 		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope},
 		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: "journal-organize-2026-08-31"},
 		JournalAnalysisVersion: "journal-organize-2026-08-31",
-		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 10 * 60 * 1000}, VoiceEntitlements: store,
+		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000}, VoiceEntitlements: store,
 		Now: c.Now,
 	})
 	router := s.Router()
@@ -86,10 +79,6 @@ func New(c Config) (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Journal-Environment", "development")
-		if !c.Now().Before(c.ExpiresAt) {
-			deny(w, 401, "development_session_expired")
-			return
-		}
 		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"ready","environment":"development"}`))
@@ -110,6 +99,19 @@ func New(c Config) (http.Handler, error) {
 				deny(w, 401, "development_access_denied")
 				return
 			}
+			record, err := simulatedRecord(r, c.Now())
+			if err != nil {
+				deny(w, 400, "development_simulation_invalid")
+				return
+			}
+			identity := sha256.Sum256([]byte(c.Token + ":" + record.KeyID))
+			id := hex.EncodeToString(identity[:])
+			record.KeyID, record.TransactionID = id, "development:"+id
+			if err := store.Upsert(r.Context(), record); err != nil {
+				deny(w, 503, "development_state_unavailable")
+				return
+			}
+			p := attestation.Principal{AppID: "journal", KeyID: id, DeviceID: id, TransactionID: record.TransactionID}
 			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, p))
 		}
 		router.ServeHTTP(w, r)
