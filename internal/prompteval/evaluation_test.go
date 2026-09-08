@@ -257,3 +257,34 @@ func TestMySQLEngineTraceJudgeFailureAndPublicationGate(t *testing.T) {
 		t.Fatal("stale pass accepted", err)
 	}
 }
+
+func TestMySQLFailedOutputDiagnosticsAreEncrypted(t *testing.T) {
+	s, m := testStore(t)
+	ctx := context.Background()
+	now := time.Now()
+	p := testPlan(t)
+	run, err := s.Start(ctx, p, m, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := s.Claim(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic := "synthetic malformed output {not valid JSON}"
+	result := ItemResult{Outputs: []Output{{Error: "output_contract_failed", DiagnosticOutput: diagnostic}}, Judgment: Judgment{Status: "incomplete", DiagnosticOutput: diagnostic}}
+	if err = s.SaveResult(ctx, claim, result, true); err != nil {
+		t.Fatal(err)
+	}
+	var encrypted []byte
+	if err = s.DB.QueryRow(`SELECT payload FROM prompt_eval_items WHERE run_id=? AND item_index=?`, run.ID, claim.Index).Scan(&encrypted); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encrypted, []byte(diagnostic)) {
+		t.Fatal("plaintext diagnostics in database")
+	}
+	item, err := s.Result(ctx, run.ID, claim.Index, now)
+	if err != nil || item.Result.Outputs[0].DiagnosticOutput != diagnostic || item.Result.Judgment.DiagnosticOutput != diagnostic {
+		t.Fatal("diagnostic trace missing", err)
+	}
+}

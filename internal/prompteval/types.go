@@ -96,6 +96,7 @@ type Plan struct {
 	Requests      []json.RawMessage       `json:"requests"`
 }
 type Output struct {
+	DiagnosticOutput   string          `json:"diagnosticOutput,omitempty"`
 	SpeechCostNanos    int64           `json:"speechCostNanos"`
 	SpeechMilliseconds int             `json:"speechMilliseconds"`
 	Candidate          int             `json:"candidate"`
@@ -128,16 +129,17 @@ type Score struct {
 	Style        Criterion `json:"style"`
 }
 type Judgment struct {
-	AnonymousOrder []int           `json:"anonymousOrder"`
-	Request        json.RawMessage `json:"request,omitempty"`
-	Model          string          `json:"model"`
-	Rubric         string          `json:"rubric"`
-	Status         string          `json:"status"`
-	Scores         []Score         `json:"scores"`
-	Error          string          `json:"error,omitempty"`
-	InputTokens    int             `json:"inputTokens"`
-	OutputTokens   int             `json:"outputTokens"`
-	CostNanos      int64           `json:"costNanos"`
+	DiagnosticOutput string          `json:"diagnosticOutput,omitempty"`
+	AnonymousOrder   []int           `json:"anonymousOrder"`
+	Request          json.RawMessage `json:"request,omitempty"`
+	Model            string          `json:"model"`
+	Rubric           string          `json:"rubric"`
+	Status           string          `json:"status"`
+	Scores           []Score         `json:"scores"`
+	Error            string          `json:"error,omitempty"`
+	InputTokens      int             `json:"inputTokens"`
+	OutputTokens     int             `json:"outputTokens"`
+	CostNanos        int64           `json:"costNanos"`
 }
 type ItemResult struct {
 	Outputs  []Output `json:"outputs"`

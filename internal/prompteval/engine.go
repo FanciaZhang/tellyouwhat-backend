@@ -138,6 +138,9 @@ func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller
 		model := voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: e.Provider.BaseURL, APIKey: e.Provider.APIKey}, controller, "journal", e.Price)
 		value, err := model.Rewrite(ctx, snapshot, 1)
 		callErr = err
+		if err != nil {
+			out.DiagnosticOutput = value.OutputText
+		}
 		out.Model, out.InputTokens, out.OutputTokens = value.Model, value.InputTokens, value.OutputTokens
 		if err == nil {
 			blocks, callErr = voice.ApplyRevision(snapshot, value.Revision)
@@ -156,6 +159,9 @@ func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller
 		model := provider.NewBudgetedClient(provider.New(e.Provider, nil), controller, "journal", e.Price)
 		value, err := model.Organize(ctx, *sample.Organize, sample.Kind == "organize_pro")
 		callErr = err
+		if err != nil {
+			out.DiagnosticOutput = value.OutputText
+		}
 		out.Model, out.InputTokens, out.OutputTokens = value.Model, value.InputTokens, value.OutputTokens
 		if err == nil {
 			out.Structured, _ = json.Marshal(value.Value)

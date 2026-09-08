@@ -123,6 +123,7 @@ func (e *Engine) judge(ctx context.Context, budget *costcontrol.Controller, plan
 			}
 		}
 	}
+	result.DiagnosticOutput = text
 	var decoded struct {
 		Scores []Score `json:"scores"`
 	}
@@ -147,6 +148,7 @@ func (e *Engine) judge(ctx context.Context, budget *costcontrol.Controller, plan
 		}
 		decoded.Scores[i].Candidate = order[s.Candidate]
 	}
+	result.DiagnosticOutput = ""
 	result.Status = "completed"
 	result.Scores = decoded.Scores
 	return result

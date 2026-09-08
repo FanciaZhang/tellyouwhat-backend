@@ -14,6 +14,7 @@ import (
 )
 
 type RewriteResult struct {
+	OutputText                string `json:"-"`
 	Revision                  Revision
 	InputTokens, OutputTokens int
 	Model                     string `json:"model"`
@@ -133,6 +134,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 			}
 		}
 	}
+	metered.OutputText = text
 	var revision Revision
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()

@@ -19,6 +19,7 @@ var ErrRefusal = errors.New("model refused the request")
 var ErrInvalidResult = errors.New("model returned an invalid structured result")
 
 type Result struct {
+	OutputText    string `json:"-"`
 	Value         contracts.ModelResult
 	InputTokens   int
 	OutputTokens  int
@@ -116,6 +117,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 			}
 		}
 	}
+	metered.OutputText = text
 	if text == "" {
 		return metered, errors.New("provider returned no output_text")
 	}

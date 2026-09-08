@@ -28,7 +28,7 @@ AI 管理首页提供健康系统提示词，以及手记智能整理、语音�
 
 调用复用生产请求组装、解析、引用检查与段落应用。结构、媒体、手改顺序与管理员的内容断言分别检查。原草稿最新评测必须包含 Lite、Pro、语音三种路径，并通过全部候选协议检查后才能发布。
 
-AI 评分使用当前发布版的 Pro 模型，记录实际模型、匿名排列、评分请求与规则版本，按事实忠实度、内容保留、编辑意图和风格符合度评分。评分失败显示未完成，不作为协议通过证据；AI 分数不决定发布。
+AI 评分使用当前发布版的 Pro 模型，记录实际模型、匿名排列、评分请求与规则版本，按事实忠实度、内容保留、编辑意图和风格符合度评分。格式失败时加密保留模型输出供管理员查看，界面按纯文本呈现，不执行其中的内容。评分失败显示未完成，不作为协议通过证据；AI 分数不决定发布。
 
 评测预留计入同一项目预算，逐次调用使用原有费用结算和并发控制。未使用预留在结束、取消或恢复时释放。管理评测不扣用户权益，不进入用户转化或生产错误率自动保护统计。
 
@@ -41,9 +41,11 @@ AI 评分使用当前发布版的 Pro 模型，记录实际模型、匿名排列
 真实模型验收可以从后台启动内置样例。服务运维还可在有数据库和火山服务身份的运行环境执行：
 
 ```sh
-/service synthetic-evaluation preview
-/service synthetic-evaluation start <preview-digest> <idempotency-uuid>
+/service synthetic-evaluation preview [sample-ids]
+/service synthetic-evaluation start <preview-digest> <idempotency-uuid> [sample-ids]
 /service synthetic-evaluation status <run-uuid>
 ```
 
 上述命令属于 `adminctl`，只使用内置合成样例，不发布配置或更改模型 Endpoint。预览不调用推理；开始执行时预留预算，任务与费用在管理后台可追溯。同一开始请求重试必须复用幂等 UUID。
+
+`sample-ids` 为可选的逗号分隔内置样例 ID，用于只复测相关样例；不传时运行完整内置集合。

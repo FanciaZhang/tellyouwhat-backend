@@ -65,6 +65,9 @@ func TestJudgeAnonymousMappingAndMalformedScores(t *testing.T) {
 			budget, _ := costcontrol.New(costcontrol.NewMemoryStore(), costcontrol.Limits{MonthlyBudgetNanos: 100e9, MaxConcurrent: 2, LeaseDuration: time.Hour}, time.Now)
 			e := Engine{Provider: provider.Config{BaseURL: server.URL}}
 			result := e.judge(context.Background(), budget, p, p.Samples[0], outputs)
+			if (mode == "missing_score" || mode == "duplicate") && result.DiagnosticOutput == "" {
+				t.Fatal("malformed judge output was lost")
+			}
 			if mode != "valid" {
 				if result.Status != "incomplete" {
 					t.Fatal("malformed judge claimed completion", result)
