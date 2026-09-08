@@ -88,6 +88,14 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                     INSERT INTO job_dispatch_outbox VALUES (11);
                     CREATE TABLE operations_collection (singleton_id INT PRIMARY KEY, started_at DATETIME);
                     INSERT INTO operations_collection VALUES (1, '2026-09-08 00:00:00');
+                    CREATE TABLE platform_ops_patrol (id INT PRIMARY KEY, document JSON);
+                    INSERT INTO platform_ops_patrol VALUES (1, JSON_OBJECT("state", "durable-automation-patrol"));
+                    CREATE TABLE platform_ops_circuits (id INT PRIMARY KEY, document JSON);
+                    INSERT INTO platform_ops_circuits VALUES (1, JSON_OBJECT("state", "durable-automation-circuits"));
+                    CREATE TABLE platform_ops_incidents (id INT PRIMARY KEY, document JSON);
+                    INSERT INTO platform_ops_incidents VALUES (1, JSON_OBJECT("state", "durable-automation-incidents"));
+                    CREATE TABLE platform_ops_events (id INT PRIMARY KEY, document JSON);
+                    INSERT INTO platform_ops_events VALUES (1, JSON_OBJECT("state", "durable-automation-events"));
                     CREATE TABLE operations_free_cohorts (id INT PRIMARY KEY, key_id VARCHAR(64));
                     INSERT INTO operations_free_cohorts VALUES (1, 'private-cohort-key');
                     CREATE TABLE operations_purchase_observations (id INT PRIMARY KEY, evidence TEXT);
@@ -102,11 +110,13 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                     "ai_cost_control_state": 1, "ai_cost_months": 1, "ai_cost_attempts": 1,
                     "app_attest_keys": 0, "privacy_consents": 0, "future_user_data": 0,
                     "ai_jobs": 0, "job_dispatch_outbox": 0,
+                    "platform_ops_patrol": 1, "platform_ops_circuits": 1, "platform_ops_incidents": 1, "platform_ops_events": 1,
                     "operations_collection": 1, "operations_free_cohorts": 0, "operations_purchase_observations": 0,
                 })
                 self.assertEqual(manifest["included_data_tables"], [
                     "schema_migrations", "apps", "privacy_deletion_receipts",
                     "ai_cost_control_state", "ai_cost_months", "ai_cost_attempts", "operations_collection",
+                    "platform_ops_patrol", "platform_ops_circuits", "platform_ops_incidents", "platform_ops_events",
                 ])
                 self.assertEqual(manifest["excluded_data_tables"], [
                     "ai_jobs", "app_attest_keys", "future_user_data", "job_dispatch_outbox", "operations_free_cohorts", "operations_purchase_observations", "privacy_consents",
@@ -114,6 +124,8 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                 decrypted = root / "decrypted.gz"
                 crypt(runtime, path, decrypted, decrypt=True)
                 dump = gzip.decompress(decrypted.read_bytes())
+                for name in ("patrol", "circuits", "incidents", "events"):
+                    self.assertIn(("durable-automation-" + name).encode(), dump)
                 for payload in (
                     b"temporary AI request fixture", b"temporary AI result fixture",
                     b"private attestation receipt", b"future private fixture record", b"private-cohort-key", b"private purchase metadata",
@@ -124,7 +136,7 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                 self.assertIn(b"ABABABAB", dump.upper())
                 restore = restore_drill(runtime)
                 self.assertEqual(restore["sha256"], backup["sha256"])
-                self.assertEqual(restore["tables"], 14)
+                self.assertEqual(restore["tables"], 18)
                 remaining = runtime.execute("fixture-source-count", sql + ["--database=" + database],
                                             env=credentials, input=b"SELECT COUNT(*) FROM ai_jobs;")
                 self.assertEqual(remaining.strip(), b"1")

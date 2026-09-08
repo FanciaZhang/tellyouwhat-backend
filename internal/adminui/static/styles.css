@@ -314,3 +314,37 @@ small { line-height: 1.5; }
  #platform-view .secondary { background:#293c30; color:#c7e2d0; }
  #platform-view .primary { background:#386c4c; color:#fff; }
 }
+
+.automation-summary { padding:24px 0; border-bottom:1px solid var(--line); }
+.automation-summary h3 { font-size:26px; margin:8px 0; letter-spacing:-.025em; }
+.automation-summary .ops-setting { gap:20px; }
+.automation-summary-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; margin:28px 0 18px; }
+.automation-summary-facts span,.automation-summary-facts strong { display:block; }
+.automation-summary-facts span { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.automation-summary-facts strong { font-size:22px; font-weight:550; }
+.automation-incidents,.automation-protections { margin:26px 0; }
+.automation-row { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:18px 0; border-bottom:1px solid var(--line); }
+.automation-row>div { min-width:0; }
+.automation-row strong { font-size:14px; }
+.automation-row p { font-size:13px; line-height:1.8; margin:8px 0; }
+.automation-row small { font-size:11px; }
+.automation-row .chip { flex-shrink:0; }
+.automation-empty { padding:20px 0; font-size:13px; color:var(--muted); line-height:1.8; }
+.automation-details { border-bottom:1px solid var(--line); padding:18px 0; }
+.automation-details summary { cursor:pointer; font-size:14px; line-height:1.8; }
+.automation-details summary span { color:var(--muted); font-size:12px; margin-left:10px; }
+.automation-host-grid { display:grid; grid-template-columns:1fr 1fr; column-gap:30px; }
+.automation-host-grid>div { display:flex; justify-content:space-between; gap:12px; padding:14px 0; font-size:13px; border-bottom:1px solid var(--line); }
+.automation-host-grid strong { font-weight:500; }
+.automation-timeline { padding-left:18px; }
+.automation-timeline li { padding:10px 0 14px 8px; border-bottom:1px solid var(--line); font-size:13px; }
+.automation-timeline li>div { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.automation-timeline time { color:var(--muted); font-size:11px; }
+.automation-timeline p { font-size:12px; line-height:1.8; margin:8px 0; }
+@media(max-width:760px) {
+ .automation-summary .ops-setting { align-items:start; flex-direction:column; }
+ .automation-summary-facts { gap:12px; }
+ .automation-summary-facts strong { font-size:18px; }
+ .automation-host-grid { grid-template-columns:1fr; }
+ .automation-details summary span { display:block; margin-left:18px; }
+}

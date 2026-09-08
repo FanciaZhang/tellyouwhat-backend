@@ -119,6 +119,19 @@ def recover(runtime, previous, attempts, verify=True):
         raise OperationError("restored version failed readiness verification")
 
 
+def automation_version(runtime, tag, registry):
+    services = ("gateway", "worker", "admin", "adminctl")
+    images = [registry + "-" + service + ":" + tag for service in services]
+    result = runtime.execute("release-capabilities", ["docker", "image", "inspect", "--format",
+                             '{{ index .Config.Labels "cn.tellyouwhat.operations-automation" }}', *images])
+    return 1 if result.decode().splitlines() == ["1"] * len(services) else 0
+
+
+def require_automation_compatibility(current, target):
+    if current.get("automationVersion", 0) > target.get("automationVersion", 0):
+        raise OperationError("target release does not support the active automatic protection; use a compatible recovery image")
+
+
 def deploy(runtime, tag, registry, acceptance, bundle, attempts):
     source = Path(bundle).resolve() if bundle else runtime.root
     if bundle and source != runtime.root / (".incoming-" + tag):
@@ -129,13 +142,19 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
     runtime.execute("release-config", candidate + ["config", "--quiet"], env=env)
     runtime.execute("release-pull", candidate + ["pull", "gateway", "worker", "admin", "adminctl", "migrate", "maintenance"],
                     env=env, timeout=900)
+    version = automation_version(runtime, tag, registry)
+    release_record = runtime.state / "release.json"
+    if release_record.exists():
+        require_automation_compatibility(json.loads(release_record.read_text()).get("current", {}),
+                                         {"automationVersion": version})
     if acceptance == "public" and config.get("PUBLIC_PROXY_MODE", "docker") == "docker":
         runtime.execute("release-proxy-pull", candidate + ["pull", "caddy"], env=env, timeout=180)
     previous = None
     old = read_environment(runtime.environment_file) if runtime.environment_file.exists() else {}
     if old.get("IMAGE_TAG") and old.get("IMAGE_REGISTRY_PREFIX"):
         previous = {"tag": old["IMAGE_TAG"], "registry": old["IMAGE_REGISTRY_PREFIX"],
-                    "snapshot": snapshot(runtime, "before-" + tag), "healthy": internally_ready(old, 1)}
+                    "snapshot": snapshot(runtime, "before-" + tag), "healthy": internally_ready(old, 1),
+                    "automationVersion": automation_version(runtime, old["IMAGE_TAG"], old["IMAGE_REGISTRY_PREFIX"])}
     runtime.execute("release-migrate", candidate + ["run", "--rm", "--no-deps", "migrate"], env=env, timeout=300)
     activated = False
     try:
@@ -153,7 +172,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
             raise OperationError("internal gateway, worker, or admin readiness failed")
         if acceptance == "public" and config.get("PUBLIC_PROXY_MODE", "docker") == "docker":
             runtime.execute("release-proxy", runtime.compose("up", "-d", "--no-build", "caddy"), env=env)
-        current = {"tag": tag, "registry": registry, "snapshot": snapshot(runtime, "healthy-" + tag), "healthy": True}
+        current = {"tag": tag, "registry": registry, "snapshot": snapshot(runtime, "healthy-" + tag), "healthy": True, "automationVersion": version}
         result = runtime.record("release", current=current, previous=previous if previous and previous["healthy"] else None,
                                 acceptance=acceptance)
         if bundle:
@@ -174,6 +193,7 @@ def rollback(runtime, attempts):
     if not previous:
         raise OperationError("no verified previous release is available")
     current = record["current"]
+    require_automation_compatibility(current, previous)
     try:
         recover(runtime, previous, attempts)
     except Exception:

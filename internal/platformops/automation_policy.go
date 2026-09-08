@@ -45,16 +45,17 @@ func (p AutomationPolicy) Validate() error {
 func (p AutomationPolicy) Window() time.Duration { return time.Duration(p.WindowMinutes) * time.Minute }
 
 type Circuit struct {
-	Phase      string    `json:"phase"`
-	LastWindow time.Time `json:"lastWindow"`
-	Baseline   time.Time `json:"baseline"`
-	BadWindows int       `json:"badWindows"`
-	OpenCount  int       `json:"openCount"`
-	RetryAt    time.Time `json:"retryAt"`
-	Successes  int       `json:"successes"`
-	ProbeID    string    `json:"-"`
-	ProbeUntil time.Time `json:"probeUntil"`
-	ChangedAt  time.Time `json:"changedAt"`
+	SamplingRules [4]int    `json:"samplingRules"`
+	Phase         string    `json:"phase"`
+	LastWindow    time.Time `json:"lastWindow"`
+	Baseline      time.Time `json:"baseline"`
+	BadWindows    int       `json:"badWindows"`
+	OpenCount     int       `json:"openCount"`
+	RetryAt       time.Time `json:"retryAt"`
+	Successes     int       `json:"successes"`
+	ProbeID       string    `json:"-"`
+	ProbeUntil    time.Time `json:"probeUntil"`
+	ChangedAt     time.Time `json:"changedAt"`
 }
 
 type AutomationSample struct {
@@ -64,6 +65,14 @@ type AutomationSample struct {
 
 // Observe evaluates each complete, non-overlapping window at most once.
 func (c *Circuit) Observe(p AutomationPolicy, sample AutomationSample, now time.Time) string {
+	rules := [4]int{p.WindowMinutes, p.MinimumSamples, p.FailurePercent, p.TriggerWindows}
+	if c.SamplingRules != rules {
+		c.BadWindows = 0
+		c.SamplingRules = rules
+	}
+	if sample.Completed < 0 || sample.Failed < 0 || sample.Failed > sample.Completed {
+		return ""
+	}
 	if sample.End.After(now) || !sample.End.After(c.LastWindow) || sample.Start.Before(c.Baseline) || sample.End.Sub(sample.Start) != p.Window() {
 		return ""
 	}
@@ -79,7 +88,7 @@ func (c *Circuit) Observe(p AutomationPolicy, sample AutomationSample, now time.
 		c.BadWindows = 0
 		return ""
 	}
-	c.BadWindows++
+	c.BadWindows = min(c.BadWindows+1, p.TriggerWindows)
 	if c.BadWindows >= p.TriggerWindows && p.Mode == "protect" {
 		c.open(p, now)
 		return "protected"

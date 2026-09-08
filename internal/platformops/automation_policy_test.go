@@ -145,3 +145,19 @@ func TestAutomationPolicyRejectsUnsafeConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestAutomationChangedSamplingRulesRequireNewEvidence(t *testing.T) {
+	p := platformops.DefaultAutomationPolicy()
+	end := time.Now().UTC().Truncate(p.Window())
+	c := platformops.Circuit{}
+	c.Observe(p, platformops.AutomationSample{Start: end.Add(-p.Window()), End: end, Completed: 20, Failed: 12}, end)
+	p.FailurePercent = 90
+	end = end.Add(p.Window())
+	if got := c.Observe(p, platformops.AutomationSample{Start: end.Add(-p.Window()), End: end, Completed: 20, Failed: 20}, end); got != "" || c.BadWindows != 1 {
+		t.Fatal("old threshold evidence reused", got, c)
+	}
+	end = end.Add(p.Window())
+	if got := c.Observe(p, platformops.AutomationSample{Start: end.Add(-p.Window()), End: end, Completed: 20, Failed: 20}, end); got != "protected" {
+		t.Fatal("new evidence did not protect", got)
+	}
+}
