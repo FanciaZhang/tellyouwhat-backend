@@ -274,3 +274,19 @@ func decodeClaims(t *testing.T, token string) map[string]any {
 func serverURL(request *http.Request) string {
 	return "http://" + request.Host
 }
+
+func TestRequestRejectionUsesOnlyRecognizedFieldPointers(t *testing.T) {
+	for _, field := range []string{"numberOfCodes", "expirationDate", "customCode"} {
+		body := fmt.Sprintf(`{"errors":[{"detail":"private upstream payload","source":{"pointer":"/data/attributes/%s"}}]}`, field)
+		err := requestRejection(strings.NewReader(body))
+		var rejection *RequestRejection
+		if !errors.Is(err, ErrRejected) || !errors.As(err, &rejection) || rejection.Field != field || strings.Contains(err.Error(), "private") {
+			t.Fatalf("unexpected rejection: %v", err)
+		}
+	}
+	for _, body := range []string{`invalid`, `{"errors":[{"detail":"private upstream payload","source":{"pointer":"/data/attributes/private"}}]}`, `{}`} {
+		if err := requestRejection(strings.NewReader(body)); err != ErrRejected {
+			t.Fatalf("unknown response exposed as %v", err)
+		}
+	}
+}

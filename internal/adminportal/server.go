@@ -436,7 +436,15 @@ func (server *Server) CreateCustomCode(context *gin.Context, rawAppID adminhttpa
 		expirationDate = input.ExpirationDate.String()
 	}
 	offerID := cleanID(rawOfferID)
-	if offerID == "" || !customCodePattern.MatchString(input.Code) || input.NumberOfCodes < 1 || input.NumberOfCodes > 25000 || !validFutureDate(expirationDate, true, server.now()) {
+	if !validCodePoolCount(input.NumberOfCodes, false) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_count", "正式邀请码需选择 500～25,000 次，且为 500 的整数倍")
+		return
+	}
+	if !validCodePoolExpiration(expirationDate, true, server.now()) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_expiration", "邀请码到期日需在未来六个月内")
+		return
+	}
+	if offerID == "" || !customCodePattern.MatchString(input.Code) {
 		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "自定义码池参数无效")
 		return
 	}
@@ -476,8 +484,19 @@ func (server *Server) CreateOneTimeCodeBatch(context *gin.Context, rawAppID admi
 	environment := strings.ToUpper(strings.TrimSpace(string(input.Environment)))
 	expirationDate := input.ExpirationDate.String()
 	offerID := cleanID(rawOfferID)
-	if offerID == "" || input.NumberOfCodes < 1 || input.NumberOfCodes > 25000 ||
-		!validFutureDate(expirationDate, false, server.now()) || environment != "PRODUCTION" && environment != "SANDBOX" {
+	if !validCodePoolCount(input.NumberOfCodes, environment == "SANDBOX") {
+		message := "正式邀请码需选择 500～25,000 次，且为 500 的整数倍"
+		if environment == "SANDBOX" {
+			message = "沙盒邀请码请选择 10、100、500 或 1,000 个"
+		}
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_count", message)
+		return
+	}
+	if !validCodePoolExpiration(expirationDate, false, server.now()) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_expiration", "邀请码到期日需在未来六个月内")
+		return
+	}
+	if offerID == "" || environment != "PRODUCTION" && environment != "SANDBOX" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "一次性码池参数无效")
 		return
 	}
@@ -704,6 +723,17 @@ func writeAppleFailure(writer http.ResponseWriter, err error) {
 		status, code, message = http.StatusFailedDependency, "apple_credentials_forbidden", "App Store Connect 专用密钥没有所需权限"
 	} else if errors.Is(err, appstoreconnect.ErrRejected) {
 		status, code, message = http.StatusUnprocessableEntity, "apple_request_rejected", "Apple 未接受这些设置，请核对名称、优惠条件及订阅的销售地区和状态"
+		var rejection *appstoreconnect.RequestRejection
+		if errors.As(err, &rejection) {
+			switch rejection.Field {
+			case "numberOfCodes":
+				message = "Apple 未接受兑换数量，请选择页面提供的批次数量"
+			case "expirationDate":
+				message = "Apple 未接受到期日，请选择未来六个月内的日期"
+			case "customCode":
+				message = "Apple 未接受这个自定义码，请核对字符及该码是否已用于其他优惠"
+			}
+		}
 	} else if errors.Is(err, appstoreconnect.ErrMethodNotAllowed) {
 		code, message = "apple_method_not_allowed", "App Store Connect 不支持此请求，请检查后台接口配置"
 	}

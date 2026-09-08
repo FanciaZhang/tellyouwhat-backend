@@ -238,9 +238,16 @@ async function deactivate(id, name) {
 
 async function openCodes(id) {
   const form = $("#codes-form");
-  form.reset();
-  form.offerID.value = id;
-  form.expirationDate.value = new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10);
+  if (form.offerID.value !== id) {
+    form.reset();
+    form.offerID.value = id;
+    form.numberOfCodes.value = "500";
+    form.expirationDate.value = new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10);
+  }
+  const today = new Date();
+  const lastDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 7, 0)).getUTCDate();
+  form.expirationDate.min = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  form.expirationDate.max = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, Math.min(today.getUTCDate(), lastDay))).toISOString().slice(0, 10);
   toggleCodeKind();
   $("#codes-dialog").showModal();
   const target = $("#code-pools");
@@ -278,10 +285,18 @@ async function downloadBatch(id, shouldReauthenticate = true) {
 }
 
 function toggleCodeKind() {
-  const oneTime = $("#codes-form").kind.value === "oneTime";
+  const form = $("#codes-form");
+  const oneTime = form.kind.value === "oneTime";
+  const sandbox = oneTime && form.environment.value === "SANDBOX";
   $("#custom-code-label").classList.toggle("hidden", oneTime);
   $("#environment-label").classList.toggle("hidden", !oneTime);
-  $("#codes-form").code.required = !oneTime;
+  form.code.required = !oneTime;
+  form.code.disabled = oneTime;
+  const previous = Number(form.numberOfCodes.value);
+  const counts = sandbox ? [10, 100, 500, 1000] : Array.from({ length: 50 }, (_, index) => (index + 1) * 500);
+  form.numberOfCodes.innerHTML = '<option value="">请选择兑换次数</option>' + counts.map(count => `<option value="${count}">${count.toLocaleString("zh-CN")}</option>`).join("");
+  form.numberOfCodes.value = counts.includes(previous) ? String(previous) : "";
+  $("#code-count-help").textContent = sandbox ? "沙盒码仅供测试，可选 10、100、500 或 1,000 个。" : "正式邀请码以 500 为一批，最多 25,000 次。";
 }
 
 async function loadPasskeys() {
@@ -551,6 +566,7 @@ $("#confirm-create").onclick = () => run(async () => {
 });
 
 $("#codes-form").kind.onchange = toggleCodeKind;
+$("#codes-form").environment.onchange = toggleCodeKind;
 $("#codes-form").onsubmit = event => {
   event.preventDefault();
   run(async () => {
@@ -566,6 +582,7 @@ $("#codes-form").onsubmit = event => {
       method: "POST", body, csrfRequired: true, idempotent: true
     });
     $("#codes-dialog").close();
+    $("#codes-form").offerID.value = "";
     if (kind === "oneTime") await downloadBatch(data.codePool.id, false);
     else notice(`自定义码 ${data.codePool.code} 已创建`);
     await loadOffers();

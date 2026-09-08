@@ -909,14 +909,18 @@ components:
       required: [code, numberOfCodes]
       properties:
         code: { type: string, pattern: "^[A-Za-z0-9]{4,64}$" }
-        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        numberOfCodes: { type: integer, minimum: 500, maximum: 25000, multipleOf: 500 }
         expirationDate: { type: string, format: date }
     OneTimeCodeBatchRequest:
       type: object
       additionalProperties: false
       required: [numberOfCodes, expirationDate, environment]
       properties:
-        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        numberOfCodes:
+          type: integer
+          minimum: 10
+          maximum: 25000
+          description: Production requires multiples of 500 from 500 to 25000. Sandbox accepts 10, 100, 500, or 1000.
         expirationDate: { type: string, format: date }
         environment: { type: string, enum: [PRODUCTION, SANDBOX] }
     ErrorResponse:
