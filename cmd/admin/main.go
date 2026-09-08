@@ -108,6 +108,7 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		bills = &cloudbilling.Cache{Reader: billingClient}
+		bills.Snapshot(time.Now())
 		client, err := arkcontrol.NewFromFile(path)
 		if err != nil {
 			return err
