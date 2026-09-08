@@ -57,6 +57,19 @@ func TestMySQLPausedDeliveryPreservesQueueAndOriginalExpiry(t *testing.T) {
 	if err != nil || got.AttemptCount != 1 {
 		t.Fatalf("resume: %+v %v", got, err)
 	}
+	for i := 0; i < 8; i++ {
+		if err = store.DeferAdmission(ctx, job.ID, got.AttemptCount, now); err != nil {
+			t.Fatal(err)
+		}
+		got, err = store.Get(ctx, job.ID)
+		if err != nil || got.Status != jobs.StatusQueued || got.AttemptCount != 0 || !got.ExpiresAt.Equal(job.ExpiresAt) {
+			t.Fatalf("automatic deferral lost job: %+v %v", got, err)
+		}
+		got, err = store.Claim(ctx, job.ID, now)
+		if err != nil || got.AttemptCount != 1 {
+			t.Fatalf("automatic deferral consumed attempt: %+v %v", got, err)
+		}
+	}
 	if _, err = store.ClaimDispatches(ctx, start.Add(25*time.Hour), 10); err != nil {
 		t.Fatal(err)
 	}

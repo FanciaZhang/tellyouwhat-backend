@@ -63,7 +63,7 @@ func (s *Server) GetOperationsConfig(c *gin.Context) {
 		operationsFailure(c, err)
 		return
 	}
-	writeJSON(c.Writer, 200, map[string]any{"current": r, "freeSessionReservationTokens": contracts.MaxFreeRecognitionSessionReservationTokens, "writesEnabled": s.config.OperationsWritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
+	writeJSON(c.Writer, 200, map[string]any{"current": r, "automationRules": r.Policy.AutomationRules(), "freeSessionReservationTokens": contracts.MaxFreeRecognitionSessionReservationTokens, "writesEnabled": s.config.OperationsWritesEnabled, "operations": map[string][]string{"health": platformops.Operations("health"), "journal": platformops.Operations("journal")}})
 }
 func (s *Server) GetOperationsMetrics(c *gin.Context) {
 	if _, ok := s.operationsAccess(c, false, false); !ok {

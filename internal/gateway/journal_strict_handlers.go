@@ -80,6 +80,11 @@ func (server *Server) OrganizeJournal(
 	ctx = costcontrol.WithAccess(ctx, principal.KeyID, true)
 	result, err := server.journalOrganizer.Organize(ctx, input)
 	if err != nil {
+		if errors.Is(err, costcontrol.ErrProtectionActive) {
+			lease.Release(0)
+			failure = newAPIFailure(http.StatusServiceUnavailable, "ai_paused", "automatic service protection is active", input.RequestID)
+			return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+		}
 		actualTokens := estimatedTokens
 		if tokens, known := result.KnownTokenTotal(); known {
 			actualTokens = tokens

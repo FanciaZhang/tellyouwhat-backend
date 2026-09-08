@@ -208,6 +208,29 @@ func (repository *JobRepository) Fail(ctx context.Context, jobID string, attempt
 	return transaction.Commit()
 }
 
+func (repository *JobRepository) DeferAdmission(ctx context.Context, jobID string, attempt int, now time.Time) error {
+	if attempt < 1 {
+		return jobs.ErrJobNotClaimable
+	}
+	tx, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	n, err := affectedRows(tx.ExecContext(ctx, `UPDATE ai_jobs SET status='queued',attempt_count=attempt_count-1,claim_expires_at=NULL,updated_at=? WHERE app_id=? AND id=? AND status='running' AND attempt_count=? AND expires_at>? AND claim_expires_at>?`, now, repository.appID, jobID, attempt, now, now))
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return jobs.ErrJobNotClaimable
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO job_dispatch_outbox(app_id,job_id,available_at) VALUES(?,?,?) ON DUPLICATE KEY UPDATE available_at=VALUES(available_at),claimed_until=NULL`, repository.appID, jobID, now.Add(time.Minute))
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (repository *JobRepository) RetryOrFail(ctx context.Context, jobID string, attempt int, category string, now time.Time) (bool, error) {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {

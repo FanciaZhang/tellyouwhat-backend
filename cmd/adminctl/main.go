@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/adminauth"
+	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
@@ -37,6 +38,11 @@ func run() error {
 	defer database.Close()
 	repository := adminauth.NewMySQLRepository(database)
 	switch os.Args[1] {
+	case "operations-health":
+		if len(os.Args) != 2 {
+			return usageError()
+		}
+		return (platformops.Store{DB: database}).RecordHostHealth(ctx, os.Stdin, time.Now().UTC())
 	case "bootstrap":
 		if len(os.Args) != 2 {
 			return usageError()
@@ -166,5 +172,5 @@ func printEnrollmentURL(origin, path, token string, expiresAt time.Time) {
 }
 
 func usageError() error {
-	return errors.New("usage: adminctl bootstrap | adminctl users | adminctl recover <user-id>")
+	return errors.New("usage: adminctl bootstrap | adminctl users | adminctl recover <user-id> | adminctl operations-health")
 }

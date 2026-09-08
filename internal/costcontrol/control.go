@@ -14,6 +14,7 @@ import (
 const NanosPerCNY int64 = 1_000_000_000
 
 var (
+	ErrProtectionActive      = errors.New("automatic service protection is active")
 	ErrBudgetExceeded        = errors.New("project AI monthly budget exceeded")
 	ErrConcurrencyExceeded   = errors.New("project AI concurrency exceeded")
 	ErrConfigurationConflict = errors.New("project AI budget configuration conflicts with the active month")
@@ -51,11 +52,17 @@ type Store interface {
 }
 
 type Outcome struct {
+	Cancelled                 bool
 	UsageKnown                bool
 	Success                   bool
 	InputTokens, OutputTokens int
 	Model                     string
 }
+
+func IsCancellation(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
+}
+
 type OutcomeRecorder interface {
 	RecordOutcome(context.Context, string, Outcome, time.Time) error
 }
@@ -99,6 +106,8 @@ func (controller *Controller) Reserve(ctx context.Context, appID, operation, met
 				reason = "budget"
 			} else if errors.Is(err, ErrConcurrencyExceeded) {
 				reason = "concurrency"
+			} else if errors.Is(err, ErrProtectionActive) {
+				reason = "automatic_protection"
 			}
 			if reason != "" {
 				_ = recorder.RecordRejection(ctx, appID, operation, reason, now)

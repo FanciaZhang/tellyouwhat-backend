@@ -150,7 +150,15 @@ func Check(ctx context.Context, reader Reader, app, operation string) error {
 	if err != nil {
 		return err
 	}
-	return r.Policy.Check(app, operation)
+	if err = r.Policy.Check(app, operation); err != nil {
+		return err
+	}
+	if automated, ok := reader.(interface {
+		CheckAutomation(context.Context, string, string) error
+	}); ok {
+		return automated.CheckAutomation(ctx, app, operation)
+	}
+	return nil
 }
 
 func QuotaResolver(reader Reader, app string, base quota.Limits, free bool) func(context.Context) (quota.Limits, error) {

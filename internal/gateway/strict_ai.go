@@ -26,6 +26,11 @@ func (server *Server) CompleteAIRequest(
 	ctx = costcontrol.WithAccess(ctx, principal.KeyID, managed)
 	response, err := server.provider.Complete(ctx, artifact)
 	if err != nil {
+		if errors.Is(err, costcontrol.ErrProtectionActive) {
+			lease.Release(0)
+			failure = newAPIFailure(http.StatusServiceUnavailable, "ai_paused", "automatic service protection is active", artifact.RequestID)
+			return healthhttpapi.CompleteAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+		}
 		lease.Release(contracts.ReservationTokens(artifact))
 		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", artifact.RequestID)
 		return healthhttpapi.CompleteAIRequest502JSONResponse{BadGatewayJSONResponse: healthhttpapi.BadGatewayJSONResponse(healthErrorResponse(failure))}, nil
@@ -117,8 +122,12 @@ func (server *Server) StreamAIRequest(
 		if err == nil {
 			cleanupManagedMedia(ctx, server.provider, artifact.Media)
 		} else {
+			code := "upstream_error"
+			if errors.Is(err, costcontrol.ErrProtectionActive) {
+				actualTokens, code = 0, "ai_paused"
+			}
 			_ = writeSSE(writer, "error", map[string]string{
-				"code": "upstream_error", "requestID": artifact.RequestID,
+				"code": code, "requestID": artifact.RequestID,
 			})
 		}
 		lease.Release(actualTokens)

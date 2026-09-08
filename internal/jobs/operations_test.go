@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/quota"
 )
 
@@ -85,3 +88,61 @@ func TestOutboxAdmissionDeferralDoesNotExhaustDeliveries(t *testing.T) {
 type dispatchFunction func(context.Context, string) error
 
 func (f dispatchFunction) Dispatch(ctx context.Context, id string) error { return f(ctx, id) }
+
+func TestAutomaticProtectionAfterClaimPreservesAttemptAndQuota(t *testing.T) {
+	ctx := context.Background()
+	reserved := contracts.ReservationTokens(jobRequest())
+	store, job, limiter := newBudgetedJob(t, reserved, reserved)
+	blocked := true
+	model := observingJobProvider{complete: func(ctx context.Context) (providerapi.Response, error) {
+		if blocked {
+			return providerapi.Response{}, costcontrol.ErrProtectionActive
+		}
+		return fixedJobProvider{}.Complete(ctx, job.Request)
+	}}
+	worker := NewWorker(store, model, limiter)
+	for i := 0; i < 8; i++ {
+		if err := worker.Process(ctx, job.ID); !errors.Is(err, ErrAdmissionDeferred) {
+			t.Fatalf("deferral: %v", err)
+		}
+		got, err := store.Get(ctx, job.ID)
+		if err != nil || got.Status != StatusQueued || got.AttemptCount != 0 || !got.ExpiresAt.Equal(job.ExpiresAt) {
+			t.Fatalf("lost deferred job: %+v %v", got, err)
+		}
+		snapshot, err := limiter.Snapshot(ctx, job.OwnerTransactionID, time.Now())
+		if err != nil || snapshot.DailyUsed != reserved {
+			t.Fatalf("repeated admission consumed extra quota: %+v %v", snapshot, err)
+		}
+	}
+	blocked = false
+	if err := worker.Process(ctx, job.ID); err != nil {
+		t.Fatal("resume failed", err)
+	}
+	got, err := store.Get(ctx, job.ID)
+	if err != nil || got.Status != StatusSucceeded || got.AttemptCount != 1 {
+		t.Fatalf("resume: %+v %v", got, err)
+	}
+	snapshot, err := limiter.Snapshot(ctx, job.OwnerTransactionID, time.Now())
+	if err != nil || snapshot.DailyUsed != got.InputTokens+got.OutputTokens {
+		t.Fatalf("actual settlement: %+v %v", snapshot, err)
+	}
+}
+
+func TestAutomaticProtectionCannotResurrectCancelledJob(t *testing.T) {
+	ctx := context.Background()
+	reserved := contracts.ReservationTokens(jobRequest())
+	store, job, limiter := newBudgetedJob(t, reserved, reserved)
+	model := observingJobProvider{complete: func(ctx context.Context) (providerapi.Response, error) {
+		if err := store.Cancel(ctx, job.ID, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		return providerapi.Response{}, costcontrol.ErrProtectionActive
+	}}
+	if err := NewWorker(store, model, limiter).Process(ctx, job.ID); !errors.Is(err, ErrJobNotClaimable) {
+		t.Fatalf("cancelled admission: %v", err)
+	}
+	got, err := store.Get(ctx, job.ID)
+	if err != nil || got.Status != StatusCancelled {
+		t.Fatal("cancelled job resurrected", err)
+	}
+}
