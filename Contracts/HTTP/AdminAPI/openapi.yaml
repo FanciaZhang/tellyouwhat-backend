@@ -750,7 +750,9 @@ components:
       additionalProperties: false
       required: [action]
       properties:
-        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal] }
+        code: { type: string, maxLength: 64 }
+        deliveredAt: { type: string, format: date-time }
+        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external] }
         requestID: { type: string, maxLength: 40 }
         version: { type: integer, minimum: 1 }
         requestKey: { type: string, maxLength: 128 }

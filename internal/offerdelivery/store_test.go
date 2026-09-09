@@ -333,3 +333,44 @@ func TestLedgerSearchInventoryConfirmationAndEvidence(t *testing.T) {
 		t.Fatal("missing real evidence", err)
 	}
 }
+
+func TestHistoricalDeliveryUsesKnownCodeAndDoesNotCreateApplication(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	codes := []string{"ABC123", "XYZ456"}
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", codes, now); err != nil {
+		t.Fatal(err)
+	}
+	// Past delivery remains recordable after the pool expires and is deactivated.
+	p.Active = false
+	p.ExpiresAt = now.Add(-time.Hour)
+	if err := s.SyncPool(ctx, "health", p); err != nil {
+		t.Fatal(err)
+	}
+	recipient := Recipient{Name: "历史领取人", Channel: "朋友邀请"}
+	at := now.Add(-24 * time.Hour)
+	r, err := s.RecordExternal(ctx, "health", p.ID, "past-delivery-1", "admin", recipient, "ABC123", at, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Source != "external" || r.Status != "delivered" || r.DeliveredAt == nil || !r.DeliveredAt.Equal(at) {
+		t.Fatal("lost historical delivery", r)
+	}
+	retry, err := s.RecordExternal(ctx, "health", p.ID, "past-delivery-1", "admin", recipient, "ABC123", at, now)
+	if err != nil || retry.ID != r.ID {
+		t.Fatal("not idempotent", err)
+	}
+	if _, err = s.RecordExternal(ctx, "health", p.ID, "past-delivery-2", "admin", recipient, "ABC123", at, now); !errors.Is(err, ErrConflict) {
+		t.Fatal("assigned a code twice", err)
+	}
+	if _, err = s.RecordExternal(ctx, "health", p.ID, "past-delivery-3", "admin", recipient, "NOTKNOWN", at, now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("unknown code accepted", err)
+	}
+	if _, err = s.RecordExternal(ctx, "health", p.ID, "past-delivery-4", "admin", recipient, "XYZ456", now.Add(time.Hour), now); !errors.Is(err, ErrInvalid) {
+		t.Fatal("future delivery accepted", err)
+	}
+	summary, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Requests != 1 || summary.Applications != 0 || summary.ExternalDeliveries != 1 || summary.Delivered != 1 || summary.External != 1 || summary.LinkedVerified != 0 {
+		t.Fatal("confused applications, delivery or redemption", summary, err)
+	}
+}

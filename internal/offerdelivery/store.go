@@ -60,6 +60,7 @@ func (r Recipient) Valid() bool {
 }
 
 type Request struct {
+	Source             string     `json:"source"`
 	ID                 string     `json:"id"`
 	PoolID             string     `json:"poolID"`
 	Recipient          Recipient  `json:"recipient"`
@@ -73,16 +74,18 @@ type Request struct {
 	VerifiedAt         *time.Time `json:"verifiedAt,omitempty"`
 }
 type Summary struct {
-	Imported         int `json:"imported"`
-	Available        int `json:"available"`
-	External         int `json:"external"`
-	AssignedCodes    int `json:"assignedCodes"`
-	AssignedRequests int `json:"assignedRequests"`
-	Requests         int `json:"requests"`
-	Pending          int `json:"pending"`
-	Delivered        int `json:"delivered"`
-	ReportedRedeemed int `json:"reportedRedeemed"`
-	LinkedVerified   int `json:"linkedVerified"`
+	Applications       int `json:"applications"`
+	ExternalDeliveries int `json:"externalDeliveries"`
+	Imported           int `json:"imported"`
+	Available          int `json:"available"`
+	External           int `json:"external"`
+	AssignedCodes      int `json:"assignedCodes"`
+	AssignedRequests   int `json:"assignedRequests"`
+	Requests           int `json:"requests"`
+	Pending            int `json:"pending"`
+	Delivered          int `json:"delivered"`
+	ReportedRedeemed   int `json:"reportedRedeemed"`
+	LinkedVerified     int `json:"linkedVerified"`
 }
 
 func aad(app, kind, id string) []byte { return []byte("offer-delivery:" + app + ":" + kind + ":" + id) }
@@ -334,14 +337,14 @@ func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, 
 	return s.Get(ctx, app, id)
 }
 
-const requestColumns = `id,pool_id,ciphertext,nonce,status,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,reported_redeemed_at,verified_at`
+const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,reported_redeemed_at,verified_at`
 
 type scanner interface{ Scan(...any) error }
 
 func (s Store) scan(app string, row scanner) (Request, error) {
 	var r Request
 	var raw, nonce []byte
-	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ReportedRedeemedAt, &r.VerifiedAt)
+	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Source, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ReportedRedeemedAt, &r.VerifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -385,7 +388,7 @@ func (s Store) Summary(ctx context.Context, app, pool string) (Summary, error) {
 	if err != nil {
 		return r, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.ReportedRedeemed, &r.LinkedVerified)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(source<>'external'),0),COALESCE(SUM(source='external'),0),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Applications, &r.ExternalDeliveries, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.ReportedRedeemed, &r.LinkedVerified)
 	if err != nil {
 		return r, err
 	}

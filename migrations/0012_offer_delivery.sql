@@ -40,6 +40,7 @@ CREATE TABLE offer_delivery_requests (
  request_hash BINARY(32) NOT NULL,
  ciphertext MEDIUMBLOB NOT NULL,
  nonce VARBINARY(32) NOT NULL,
+ source VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'manual',
  status VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  version INT UNSIGNED NOT NULL DEFAULT 1,
  code_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,

@@ -30,7 +30,7 @@ await page.route('**/api/**',async route=>{
    default:throw new Error('missing fixture command '+b.action);
    }
   }else{
-   const q=(url.searchParams.get('q')||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
+   const q=(url.searchParams.get('q')||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,applications:records.length,externalDeliveries:0,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
   }
  }else {status=404;data={error:{message:'missing fixture'}};}
  await route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
@@ -42,7 +42,7 @@ try{
  await page.getByRole('button',{name:'管理发放',exact:true}).waitFor();
  assert.equal(await page.locator('#delivery-create-pool').isDisabled(),true);
  await page.getByRole('button',{name:'管理发放',exact:true}).click();
- await page.locator('#delivery-ledger-count').filter({hasText:'累计 0 条申请'}).waitFor();
+ await page.locator('#delivery-ledger-count').filter({hasText:'0 条申请'}).waitFor();
  await page.getByText('库存管理与统计口径',{exact:true}).click();
  await page.getByRole('button',{name:'从 Apple 导入完整码池'}).click();
  await page.locator('#delivery-inventory').filter({hasText:'已导入 500 枚'}).waitFor();

@@ -142,6 +142,8 @@ func (s *Server) GetOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer 
 }
 
 type deliveryCommand struct {
+	Code          string                  `json:"code"`
+	DeliveredAt   time.Time               `json:"deliveredAt"`
 	Action        string                  `json:"action"`
 	RequestID     string                  `json:"requestID"`
 	Version       int                     `json:"version"`
@@ -159,7 +161,7 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 	if !decodeJSON(c.Writer, c.Request, &in) {
 		return
 	}
-	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified"
+	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified" || in.Action == "record_external"
 	actor, ok := s.deliveryAccess(c, app, true, recent)
 	if !ok {
 		return
@@ -202,6 +204,12 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 		}
 	case "confirm_inventory":
 		err = store.ConfirmExternalInventory(ctx, app, pool, actor, in.ExpectedCount, now)
+	case "record_external":
+		if !idempotencyPattern.MatchString(in.RequestKey) {
+			deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
+			return
+		}
+		result, err = store.RecordExternal(ctx, app, pool, in.RequestKey, actor, in.Recipient, in.Code, in.DeliveredAt, now)
 	case "request":
 		if !idempotencyPattern.MatchString(in.RequestKey) {
 			deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
