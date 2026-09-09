@@ -602,6 +602,12 @@ paths:
           AppAttestRequestID: []
       parameters:
         - "$ref": "#/components/parameters/RequestIDHeader"
+        - in: header
+          name: X-Health-Job-Result-Delivery
+          required: false
+          description: Send download-v1 to request a resultToken. Without opt-in the response retains the legacy closed schema.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -1456,7 +1462,7 @@ components:
         resultToken:
           type: string
           minLength: 1
-          description: Read-only result capability with the same expiresAt; absent on older gateways.
+          description: Read-only result capability with the same expiresAt; returned only for download-v1 opt-in.
         jobID:
           type: string
           format: uuid

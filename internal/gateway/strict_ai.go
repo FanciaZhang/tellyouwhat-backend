@@ -178,8 +178,12 @@ func (server *Server) IssueAIJobCapability(
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
 	}
+	var resultToken *string
+	if request.Params.XHealthJobResultDelivery != nil && *request.Params.XHealthJobResultDelivery == "download-v1" && issued.ResultToken != "" {
+		resultToken = &issued.ResultToken
+	}
 	return healthhttpapi.IssueAIJobCapability201JSONResponse{
-		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt, ResultToken: &issued.ResultToken,
+		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt, ResultToken: resultToken,
 	}, nil
 }
 

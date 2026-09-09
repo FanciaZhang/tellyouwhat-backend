@@ -1,8 +1,8 @@
 # Background AI result delivery
 
 Health submits a durable job with its existing digest-bound upload capability.
-The capability response also includes an optional `resultToken`, with the same
-expiry. This is a separate read-only credential: it cannot submit work, and the
+Clients opt in with `X-Health-Job-Result-Delivery: download-v1`. Only opted-in
+capability responses include `resultToken`, with the same expiry. This is a separate read-only credential: it cannot submit work, and the
 upload credential cannot read results. Tokens must stay out of URLs and logs.
 
 `GET /v1/ai/jobs/{id}/result` accepts `X-Health-Job-Result-Capability` and a fresh
@@ -24,7 +24,8 @@ same job, with a bounded retry count; they do not consume another inference.
 ## Compatibility and rollout
 
 Deploy the additive gateway contract before distributing the updated client.
-Older clients ignore `resultToken`. Updated clients retain foreground polling
+Older clients receive the unchanged three-field capability response; their
+closed-schema decoders never see `resultToken`. Updated clients retain foreground polling
 for old jobs and gateways that do not provide it. That compatibility path does
 not provide result retrieval while iOS suspends the app.
 
