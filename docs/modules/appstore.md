@@ -29,3 +29,19 @@ Allowed dependencies are the Go standard library, configured Apple root certific
 ## Error model
 
 Malformed or untrusted Apple data is a permanent verification denial. Apple network/rate-limit/server failures are retryable service-unavailable errors. A valid but inactive subscription produces a forbidden entitlement result. Duplicate notifications acknowledge success without applying a second mutation.
+
+## Switching StoreKit environments
+
+An attested device can synchronize an active, Apple-verified sandbox or production
+subscription. The current entitlement and active transaction binding switch
+atomically. Each environment retains its original transaction binding, so a
+production → sandbox → production round trip restores the same production
+purchase. A different purchase in an already bound environment still returns
+`subscription_binding_conflict`.
+
+Existing verified entitlements initialize the environment anchors on their next
+successful synchronization. App Store notifications refresh matching active
+entitlements and never select a different environment. Privacy deletion removes
+both environment anchors and includes their transaction identities in cache and
+notification cleanup. Xcode's local subscription simulation does not establish an
+Apple-verified server entitlement.
