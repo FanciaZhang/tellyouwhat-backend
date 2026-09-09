@@ -290,3 +290,52 @@ func TestRequestRejectionUsesOnlyRecognizedFieldPointers(t *testing.T) {
 		}
 	}
 }
+
+func TestCodePoolPaginationIsCompleteAndScoped(t *testing.T) {
+	for _, bad := range []string{"", "host", "path", "cycle", "duplicate"} {
+		t.Run(bad, func(t *testing.T) {
+			key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				resource := "subscriptionOfferCodeOneTimeUseCodes"
+				if strings.HasSuffix(r.URL.Path, "customCodes") {
+					resource = "subscriptionOfferCodeCustomCodes"
+				}
+				claims := decodeClaims(t, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+				scope := claims["scope"].([]any)
+				if scope[0] != "GET "+r.URL.Path {
+					t.Error("scope changed")
+				}
+				id := resource + "-1"
+				next := ""
+				if r.URL.Query().Get("page") == "2" {
+					if bad != "duplicate" {
+						id = resource + "-2"
+					}
+				} else {
+					next = serverURL(r) + r.URL.Path + "?page=2"
+				}
+				switch bad {
+				case "host":
+					next = "https://attacker.invalid" + r.URL.Path
+				case "path":
+					next = serverURL(r) + "/v1/other"
+				case "cycle":
+					next = serverURL(r) + r.URL.RequestURI()
+				}
+				json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"type": resource, "id": id, "attributes": map[string]any{"numberOfCodes": 500, "active": true}}}, "links": map[string]string{"next": next}})
+			}))
+			defer server.Close()
+			client, _ := NewClient(Config{BaseURL: server.URL, IssuerID: "issuer", KeyID: "key", SubscriptionID: "sub", SigningKey: key})
+			pools, err := client.ListCodePools(context.Background(), "offer")
+			if bad == "" {
+				if err != nil || len(pools) != 4 || requests != 4 {
+					t.Fatalf("truncated pools: %d %d %v", len(pools), requests, err)
+				}
+			} else if !errors.Is(err, ErrInvalid) {
+				t.Fatal("accepted unsafe/incomplete pagination", err)
+			}
+		})
+	}
+}

@@ -349,17 +349,17 @@ func (client *Client) ListCodePools(ctx context.Context, offerID string) ([]Code
 }
 
 func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		CustomCode     string `json:"customCode"`
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeCustomCodes" {
 			return nil, ErrInvalid
 		}
@@ -370,17 +370,17 @@ func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]C
 }
 
 func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Environment    string `json:"environment"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeOneTimeUseCodes" {
 			return nil, ErrInvalid
 		}
@@ -388,6 +388,43 @@ func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]
 			ExpirationDate: resource.Attributes.ExpirationDate, Environment: resource.Attributes.Environment, Active: resource.Attributes.Active})
 	}
 	return pools, nil
+}
+
+// listPoolResources requires complete pagination and rejects cross-resource continuation links.
+func listPoolResources[T any](ctx context.Context, client *Client, path string) ([]jsonAPIResource[T], error) {
+	next := strings.TrimRight(client.config.BaseURL, "/") + path + "?limit=200"
+	base, _ := url.Parse(client.config.BaseURL)
+	out := []jsonAPIResource[T]{}
+	seenPages := map[string]bool{}
+	seenIDs := map[string]bool{}
+	for page := 0; next != "" && page < maximumPaginationPages; page++ {
+		if seenPages[next] {
+			return nil, ErrInvalid
+		}
+		seenPages[next] = true
+		var payload listResponse[T]
+		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+			return nil, err
+		}
+		for _, resource := range payload.Data {
+			if seenIDs[resource.ID] {
+				return nil, ErrInvalid
+			}
+			seenIDs[resource.ID] = true
+			out = append(out, resource)
+		}
+		next = payload.Links.Next
+		if next != "" {
+			u, err := url.Parse(next)
+			if err != nil || u.Scheme != base.Scheme || u.Host != base.Host || u.Path != path || u.User != nil || u.Fragment != "" {
+				return nil, ErrInvalid
+			}
+		}
+	}
+	if next != "" {
+		return nil, ErrInvalid
+	}
+	return out, nil
 }
 
 func (client *Client) DownloadOneTimeCodes(ctx context.Context, batchID string) ([]byte, error) {

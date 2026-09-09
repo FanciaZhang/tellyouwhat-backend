@@ -129,11 +129,16 @@ func (s *Server) GetOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer 
 		deliveryFailure(c.Writer, err)
 		return
 	}
+	observed, err := s.config.Delivery.ObservedOfferCount(c.Request.Context(), app, p)
+	if err != nil {
+		deliveryFailure(c.Writer, err)
+		return
+	}
 	moreVerified := len(verified) > 100
 	if moreVerified {
 		verified = verified[:100]
 	}
-	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
+	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
 }
 
 type deliveryCommand struct {

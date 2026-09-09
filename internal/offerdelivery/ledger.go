@@ -156,3 +156,10 @@ func (s Store) ManagedExport(ctx context.Context, app, pool, actor string, now t
 	}
 	return err
 }
+
+// ObservedOfferCount covers every pool of the same Offer; Apple does not identify one-time pools.
+func (s Store) ObservedOfferCount(ctx context.Context, app string, p Pool) (int, error) {
+	var count int
+	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(DISTINCT original_transaction_hash) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND offer_type=3`, app, p.Environment, p.OfferName).Scan(&count)
+	return count, err
+}

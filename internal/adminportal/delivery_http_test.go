@@ -96,6 +96,9 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 	}
 	command := func(in deliveryCommand) *httptest.ResponseRecorder { return call("POST", base, in, true, true) }
 	check(call("GET", base, nil, false, false), 401)
+	check(call("GET", "/api/v1/apps/health/offers/unknown/code-pools", nil, true, false), 404)
+	check(call("POST", "/api/v1/apps/health/one-time-code-batches/unknown/download", nil, true, true), 404)
+
 	check(call("POST", base, deliveryCommand{Action: "sync"}, true, false), 403)
 	check(command(deliveryCommand{Action: "sync"}), 200)
 	check(call("POST", "/api/v1/apps/health/offers/other/code-pools/pool-1/delivery", deliveryCommand{Action: "sync"}, true, true), 404)

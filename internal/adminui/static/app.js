@@ -180,6 +180,7 @@ async function loadApps() {
   picker.innerHTML = state.apps.map(app => `<option value="${escapeHTML(app.id)}">${escapeHTML(app.displayName)}</option>`).join("");
   picker.value = state.currentApp;
   picker.onchange = async () => {
+    if (typeof closeOfferDelivery === "function") closeOfferDelivery();
     state.currentApp = picker.value;
     localStorage.setItem("admin-app", state.currentApp);
     await run(loadOffers);
@@ -218,7 +219,7 @@ function renderOffers(){
   $('#synced-at').textContent=formatTime(data.syncedAt);
   state.offerCreationAllowed=!!data.writesEnabled&&data.activeCount<data.activeLimit;syncPersistentControls();
   $('#offers').innerHTML=offers.length?offers.map(o=>offerCard(o,metrics.get(o.name),data.writesEnabled,metricData!==null,environment)).join(''):'<article class="card empty">还没有 Offer。创建后再为它生成邀请码池。</article>';
-  $$('[data-codes]').forEach(b=>b.onclick=()=>openCodes(b.dataset.codes));
+  $$('[data-codes]').forEach(b=>b.onclick=()=>openOfferInventory(b.dataset.codes));
   $$('[data-deactivate]').forEach(b=>b.onclick=()=>deactivate(b.dataset.deactivate,b.dataset.name));
 }
 $('#offer-environment').onchange=renderOffers;
@@ -259,14 +260,7 @@ async function openCodes(id) {
   form.expirationDate.max = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, Math.min(today.getUTCDate(), lastDay))).toISOString().slice(0, 10);
   toggleCodeKind();
   $("#codes-dialog").showModal();
-  const target = $("#code-pools");
-  target.textContent = "正在读取现有码池…";
-  try {
-    const data = await api(appPath(`/offers/${encodeURIComponent(id)}/code-pools`));
-    const pools = Array.isArray(data.codePools) ? data.codePools : [];
-    target.innerHTML = pools.length ? pools.map(poolRow).join("") : "还没有码池";
-    $$('[data-download-batch]').forEach(button => button.onclick = () => run(() => downloadBatch(button.dataset.downloadBatch)));
-  } catch (error) { target.textContent = error.message; }
+  $("#code-pools").classList.add("hidden");
 }
 
 function poolRow(pool) {
@@ -592,8 +586,8 @@ $("#codes-form").onsubmit = event => {
     });
     $("#codes-dialog").close();
     $("#codes-form").offerID.value = "";
-    if (kind === "oneTime") await downloadBatch(data.codePool.id, false);
-    else notice(`自定义码 ${data.codePool.code} 已创建`);
+    notice("码池已创建，可在发放管理中登记领取人");
+    if (typeof openOfferInventory === "function") await openOfferInventory(id);
     await loadOffers();
   });
 };

@@ -7,6 +7,7 @@
   <title>Tellyouwhat 管理后台</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
+  <script src="/delivery.js" defer></script>
   <script src="/ai.js" defer></script>
   <script src="/prompts.js" defer></script>
   <script src="/evaluations.js" defer></script>
@@ -53,6 +54,7 @@
       </nav>
 
       <section id="operations-section" class="workspace-section" role="tabpanel" aria-labelledby="operations-tab">
+<div id="offer-overview">
         <label class="app-picker">App<select id="app-picker" aria-label="选择 App"></select></label>
         <label class="app-picker">统计环境<select id="offer-environment"><option value="production">正式环境</option><option value="sandbox">沙盒测试</option></select></label><button class="quiet" id="offer-refresh">刷新 Offer 与统计</button>
         <div class="summary-grid">
@@ -63,6 +65,7 @@
         </div>
         <div class="section-head"><div><h2>现有 Offer</h2><p class="muted">创建和停用等生产写操作都需要再次验证通行密钥。</p></div><button id="new-offer" class="primary">新建 Offer</button></div>
         <div id="offers" class="offer-list"></div>
+</div><div id="delivery-view" class="hidden"></div>
       </section>
 
       <section id="ai-section" class="workspace-section hidden" role="tabpanel" aria-labelledby="ai-tab">

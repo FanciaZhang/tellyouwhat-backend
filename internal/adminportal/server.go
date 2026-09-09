@@ -184,10 +184,22 @@ func (server *Server) ListCodePools(context *gin.Context, rawAppID adminhttpapi.
 		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 标识无效")
 		return
 	}
+	known, err := offers.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	if !slices.ContainsFunc(known, func(o appstoreconnect.Offer) bool { return o.ID == offerID }) {
+		writeFailure(writer, 404, "offer_not_found", "未找到这个 App 的 Offer")
+		return
+	}
 	pools, err := offers.ListCodePools(request.Context(), offerID)
 	if err != nil {
 		writeAppleFailure(writer, err)
 		return
+	}
+	for i := range pools {
+		pools[i].Code = ""
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"codePools": pools})
 }
@@ -205,6 +217,27 @@ func (server *Server) DownloadOneTimeCodes(context *gin.Context, rawAppID adminh
 	batchID := cleanID(rawBatchID)
 	if batchID == "" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "一次性码池标识无效")
+		return
+	}
+	known, err := offers.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	found := false
+	for _, offer := range known {
+		pools, err := offers.ListCodePools(request.Context(), offer.ID)
+		if err != nil {
+			writeAppleFailure(writer, err)
+			return
+		}
+		if slices.ContainsFunc(pools, func(p appstoreconnect.CodePool) bool { return p.ID == batchID && p.Kind == "oneTime" }) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeFailure(writer, 404, "code_pool_not_found", "未找到这个 App 的一次性码池")
 		return
 	}
 	data, err := offers.DownloadOneTimeCodes(request.Context(), batchID)
