@@ -166,56 +166,54 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(call("POST", "/api/v1/apps/health/offers/offer-1/code-pools/pool-2/delivery", deliveryCommand{Action: "reveal", RequestID: recipient.ID}, true, true), 404)
+
 	apple.fail = false
-	created := command(deliveryCommand{Action: "create_link", RequestKey: "public-link-fixture", Label: "领取活动", MaxApplications: 1, ExpiresAt: now.Add(time.Hour)})
-	check(created, 200)
-	var linkResponse struct{ Token string }
-	json.Unmarshal(created.Body.Bytes(), &linkResponse)
-	public := func(in claimCommand) *httptest.ResponseRecorder {
-		return call("POST", "/api/v1/offer-claim", in, false, false)
-	}
-	check(public(claimCommand{Action: "inspect", Token: linkResponse.Token}), 200)
-	check(public(claimCommand{Action: "status", Token: linkResponse.Token}), 404)
-	check(public(claimCommand{Action: "inspect", Token: linkResponse.Token + "tampered"}), 404)
-	application := claimCommand{Action: "apply", Token: linkResponse.Token, RequestKey: uuid.NewString(), Name: "自行申请者", Contact: "self@example.test"}
-	check(public(application), 422)
-	application.Consent = true
-	applied := public(application)
-	check(applied, 200)
-	var receipt struct{ ReceiptToken string }
-	json.Unmarshal(applied.Body.Bytes(), &receipt)
-	repeatedApply := public(application)
-	check(repeatedApply, 200)
-	var repeatedReceipt struct{ ReceiptToken string }
-	json.Unmarshal(repeatedApply.Body.Bytes(), &repeatedReceipt)
-	if receipt.ReceiptToken == "" || receipt.ReceiptToken != repeatedReceipt.ReceiptToken {
-		t.Fatal("receipt replay failed")
-	}
-	check(public(claimCommand{Action: "claim", Token: receipt.ReceiptToken}), 409)
-	claimApp, claimID, valid := server.parseDeliveryToken("receipt", receipt.ReceiptToken)
-	if !valid {
-		t.Fatal("invalid generated receipt")
-	}
-	claimedRequest, err := store.Get(ctx, claimApp, claimID)
+	current, err := store.Get(ctx, "health", recipient.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Assign(ctx, claimApp, claimID, "admin", claimedRequest.Version, now); err != nil {
-		t.Fatal(err)
+	shared := command(deliveryCommand{Action: "share_claim", RequestID: current.ID, Version: current.Version})
+	check(shared, 200)
+	var linkResponse struct {
+		Token   string
+		Request offerdelivery.Request
 	}
-	received := public(claimCommand{Action: "claim", Token: receipt.ReceiptToken})
+	json.Unmarshal(shared.Body.Bytes(), &linkResponse)
+	public := func(in claimCommand) *httptest.ResponseRecorder {
+		return call("POST", "/api/v1/offer-claim", in, false, false)
+	}
+	check(public(claimCommand{Action: "status", Token: linkResponse.Token}), 200)
+	check(public(claimCommand{Action: "apply", Token: linkResponse.Token}), 422)
+	check(public(claimCommand{Action: "status", Token: linkResponse.Token + "tampered"}), 404)
+	received := public(claimCommand{Action: "claim", Token: linkResponse.Token})
 	check(received, 200)
 	if received.Header().Get("Cache-Control") != "no-store" || !bytes.Contains(received.Body.Bytes(), []byte(`"code"`)) {
 		t.Fatal("claim did not privately deliver code")
 	}
-	check(public(claimCommand{Action: "feedback", Token: receipt.ReceiptToken}), 200)
-	check(public(claimCommand{Action: "feedback", Token: receipt.ReceiptToken}), 200)
-	privateStatus := public(claimCommand{Action: "status", Token: receipt.ReceiptToken})
+	privateStatus := public(claimCommand{Action: "status", Token: linkResponse.Token})
 	check(privateStatus, 200)
-	if bytes.Contains(privateStatus.Body.Bytes(), []byte("self@example.test")) || bytes.Contains(privateStatus.Body.Bytes(), []byte("fixture@example.test")) || bytes.Contains(privateStatus.Body.Bytes(), []byte(`"code"`)) {
+	if bytes.Contains(privateStatus.Body.Bytes(), []byte("fixture@example.test")) || bytes.Contains(privateStatus.Body.Bytes(), []byte(`"code"`)) || bytes.Contains(privateStatus.Body.Bytes(), []byte(`"name"`)) {
 		t.Fatal("status exposed unnecessary private data")
 	}
+	current, err = store.Get(ctx, "health", recipient.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(command(deliveryCommand{Action: "revoke_claim", RequestID: current.ID, Version: current.Version}), 200)
+	check(public(claimCommand{Action: "claim", Token: linkResponse.Token}), 404)
+	current, err = store.Get(ctx, "health", recipient.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reshared := command(deliveryCommand{Action: "share_claim", RequestID: current.ID, Version: current.Version})
+	check(reshared, 200)
+	var newLink struct{ Token string }
+	json.Unmarshal(reshared.Body.Bytes(), &newLink)
+	if newLink.Token == linkResponse.Token {
+		t.Fatal("revoked link reactivated")
+	}
+	check(public(claimCommand{Action: "status", Token: linkResponse.Token}), 404)
+	check(public(claimCommand{Action: "status", Token: newLink.Token}), 200)
 	now = now.Add(91 * 24 * time.Hour)
-	check(public(claimCommand{Action: "status", Token: receipt.ReceiptToken}), 404)
-
+	check(public(claimCommand{Action: "status", Token: newLink.Token}), 404)
 }

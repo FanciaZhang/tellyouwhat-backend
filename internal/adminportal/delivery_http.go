@@ -137,35 +137,26 @@ func (s *Server) readOfferDelivery(c *gin.Context, app, offer, pool, query, stat
 		deliveryFailure(c.Writer, err)
 		return
 	}
-	links, err := s.config.Delivery.Links(c.Request.Context(), app, pool)
-	if err != nil {
-		deliveryFailure(c.Writer, err)
-		return
-	}
 	moreVerified := len(verified) > 100
 	if moreVerified {
 		verified = verified[:100]
 	}
-	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "links": links, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
+	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
 }
 
 type deliveryCommand struct {
-	Query           string                  `json:"query"`
-	Status          string                  `json:"status"`
-	Cursor          string                  `json:"cursor"`
-	Label           string                  `json:"label"`
-	MaxApplications int                     `json:"maxApplications"`
-	ExpiresAt       time.Time               `json:"expiresAt"`
-	LinkID          string                  `json:"linkID"`
-	Code            string                  `json:"code"`
-	DeliveredAt     time.Time               `json:"deliveredAt"`
-	Action          string                  `json:"action"`
-	RequestID       string                  `json:"requestID"`
-	Version         int                     `json:"version"`
-	RequestKey      string                  `json:"requestKey"`
-	ExpectedCount   int                     `json:"expectedCount"`
-	Reference       string                  `json:"reference"`
-	Recipient       offerdelivery.Recipient `json:"recipient"`
+	Query         string                  `json:"query"`
+	Status        string                  `json:"status"`
+	Cursor        string                  `json:"cursor"`
+	Code          string                  `json:"code"`
+	DeliveredAt   time.Time               `json:"deliveredAt"`
+	Action        string                  `json:"action"`
+	RequestID     string                  `json:"requestID"`
+	Version       int                     `json:"version"`
+	RequestKey    string                  `json:"requestKey"`
+	ExpectedCount int                     `json:"expectedCount"`
+	Reference     string                  `json:"reference"`
+	Recipient     offerdelivery.Recipient `json:"recipient"`
 }
 
 func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer adminhttpapi.OfferID, pool string, _ adminhttpapi.CommandOfferDeliveryParams) {
@@ -183,7 +174,7 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 		s.readOfferDelivery(c, app, offer, pool, in.Query, in.Status, in.Cursor)
 		return
 	}
-	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified" || in.Action == "record_external" || in.Action == "create_link" || in.Action == "copy_link" || in.Action == "revoke_link"
+	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified" || in.Action == "record_external" || in.Action == "share_claim" || in.Action == "revoke_claim"
 	actor, ok := s.deliveryAccess(c, app, true, recent)
 	if !ok {
 		return
@@ -194,7 +185,7 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 	var p offerdelivery.Pool
 	var err error
 	switch in.Action {
-	case "sync", "import", "confirm_inventory", "request", "assign", "create_link":
+	case "sync", "import", "confirm_inventory", "request", "assign":
 		p, err = s.syncDeliveryPool(ctx, app, offer, pool)
 	default:
 		p, err = store.GetPool(ctx, app, pool)
@@ -226,19 +217,6 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 		}
 	case "confirm_inventory":
 		err = store.ConfirmExternalInventory(ctx, app, pool, actor, in.ExpectedCount, now)
-	case "create_link":
-		var l offerdelivery.Link
-		l, err = store.CreateLink(ctx, app, pool, in.RequestKey, actor, in.Label, in.MaxApplications, in.ExpiresAt, now)
-		result = map[string]any{"link": l, "token": s.deliveryToken("link", app, l.ID)}
-	case "copy_link":
-		var l offerdelivery.Link
-		l, err = store.GetLink(ctx, app, in.LinkID)
-		if err == nil && l.PoolID != pool {
-			err = offerdelivery.ErrNotFound
-		}
-		result = map[string]any{"link": l, "token": s.deliveryToken("link", app, l.ID)}
-	case "revoke_link":
-		err = store.RevokeLink(ctx, app, pool, in.LinkID, actor, now)
 	case "record_external":
 		if !idempotencyPattern.MatchString(in.RequestKey) {
 			deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
@@ -251,7 +229,7 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 			return
 		}
 		result, err = store.CreateRequest(ctx, app, pool, in.RequestKey, actor, in.Recipient, now)
-	case "assign", "reveal", "deliver", "cancel", "reject", "report_redeemed", "link_verified":
+	case "assign", "reveal", "deliver", "cancel", "reject", "report_redeemed", "link_verified", "share_claim", "revoke_claim":
 		var r offerdelivery.Request
 		r, err = store.Get(ctx, app, in.RequestID)
 		if err != nil {
@@ -263,6 +241,12 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 			return
 		}
 		switch in.Action {
+		case "share_claim", "revoke_claim":
+			r, err = store.SetClaimLink(ctx, app, in.RequestID, actor, in.Version, in.Action == "share_claim", now)
+			result = map[string]any{"request": r}
+			if err == nil && in.Action == "share_claim" {
+				result = map[string]any{"request": r, "token": s.deliveryToken(app, r.ID, r.ClaimGeneration)}
+			}
 		case "assign":
 			result, err = store.Assign(ctx, app, in.RequestID, actor, in.Version, now)
 		case "reveal":

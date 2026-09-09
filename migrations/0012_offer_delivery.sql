@@ -50,6 +50,8 @@ CREATE TABLE offer_delivery_requests (
  reported_redeemed_at DATETIME(6),
  verified_original_hash BINARY(32),
  verified_at DATETIME(6),
+ claim_generation INT UNSIGNED NOT NULL DEFAULT 0,
+ claim_expires_at DATETIME(6),
  PRIMARY KEY(app_id,id),
  UNIQUE KEY offer_delivery_request_key(app_id,request_key),
  UNIQUE KEY offer_delivery_assigned_code(app_id,code_id),
@@ -81,24 +83,3 @@ CREATE TABLE offer_delivery_verified_links (
  UNIQUE KEY offer_delivery_verified_subscription(app_id,environment,offer_name,original_hash),
  FOREIGN KEY(app_id,request_id) REFERENCES offer_delivery_requests(app_id,id)
 ) ENGINE=InnoDB;
-
-CREATE TABLE offer_delivery_links (
- app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- pool_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- request_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
- request_hash BINARY(32) NOT NULL,
- label VARCHAR(240) NOT NULL,
- max_applications INT UNSIGNED NOT NULL,
- created_at DATETIME(6) NOT NULL,
- expires_at DATETIME(6) NOT NULL,
- revoked_at DATETIME(6),
- PRIMARY KEY(app_id,id),
- UNIQUE KEY offer_delivery_link_key(app_id,request_key),
- INDEX offer_delivery_link_pool(app_id,pool_id,created_at),
- FOREIGN KEY(app_id,pool_id) REFERENCES offer_delivery_pools(app_id,pool_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-ALTER TABLE offer_delivery_requests ADD COLUMN link_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
- ADD INDEX offer_delivery_request_link(app_id,link_id),
- ADD FOREIGN KEY(app_id,link_id) REFERENCES offer_delivery_links(app_id,id);

@@ -375,83 +375,65 @@ func TestHistoricalDeliveryUsesKnownCodeAndDoesNotCreateApplication(t *testing.T
 	}
 }
 
-func TestClaimLinksBoundApplicationsAndPreservePrivateReceipts(t *testing.T) {
+func TestDirectClaimNeedsNoRecipientSubmissionAndCanBeRevoked(t *testing.T) {
 	s, p, now := fixture(t)
 	ctx := context.Background()
-	link, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-1", "admin", "内测申请", 1, now.Add(30*time.Minute), now)
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"ABC123", "XYZ456"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.CreateRequest(ctx, "health", p.ID, "direct-claim-fixture", "admin", Recipient{Name: "后台备注的小王"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replay, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-1", "admin", "内测申请", 1, now.Add(30*time.Minute), now)
-	if err != nil || replay.ID != link.ID {
-		t.Fatal("link retry changed identity", err)
+	if _, err = s.SetClaimLink(ctx, "health", r.ID, "admin", r.Version, true, now); !errors.Is(err, ErrConflict) {
+		t.Fatal("unallocated record made claimable", err)
 	}
-	key := "e66189d5-5546-4e01-b0a1-86bdc1f3e2a9"
-	r, err := s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test", Channel: "forged"}, now)
+	r, err = s.Assign(ctx, "health", r.ID, "admin", r.Version, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Source != "link" || r.Recipient.Channel != "内测申请" || r.Status != "requested" {
-		t.Fatal("public application attributed incorrectly", r)
-	}
-	again, err := s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test"}, now)
-	if err != nil || again.ID != r.ID {
-		t.Fatal("claim retry duplicated application", err)
-	}
-	if _, err = s.ApplyLink(ctx, "health", link.ID, "70f2f119-7b89-4ee5-b231-51d83e4e4b89", Recipient{Name: "其他人"}, now); !errors.Is(err, ErrUnavailable) {
-		t.Fatal("link capacity exceeded", err)
-	}
-	if _, err = s.ApplyLink(ctx, "journal", link.ID, key, Recipient{Name: "领取人"}, now); !errors.Is(err, ErrNotFound) {
-		t.Fatal("cross-app application accepted", err)
-	}
-	if err = s.RevokeLink(ctx, "health", p.ID, link.ID, "admin", now); err != nil {
-		t.Fatal(err)
-	}
-	// Recovering the receipt for an already accepted request remains idempotent after revocation.
-	if _, err = s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test"}, now); err != nil {
-		t.Fatal(err)
-	}
-	list, err := s.Links(ctx, "health", p.ID)
-	if err != nil || len(list) != 1 || list[0].Applications != 1 || list[0].RevokedAt == nil {
-		t.Fatal("link ledger incorrect", list, err)
-	}
-	l2, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-2", "admin", "到期测试", 1, now.Add(time.Minute), now)
+	r, err = s.SetClaimLink(ctx, "health", r.ID, "admin", r.Version, true, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.ApplyLink(ctx, "health", l2.ID, key, Recipient{Name: "领取人"}, now.Add(2*time.Minute)); !errors.Is(err, ErrUnavailable) {
+	generation := r.ClaimGeneration
+	status, code, err := s.AccessClaim(ctx, "health", r.ID, generation, "status", now)
+	if err != nil || code != "" || status.DeliveredAt != nil {
+		t.Fatal("status revealed code or recorded delivery", err)
+	}
+	r, code, err = s.AccessClaim(ctx, "health", r.ID, generation, "claim", now)
+	if err != nil || code == "" || r.DeliveredAt == nil {
+		t.Fatal("direct claim failed", err)
+	}
+	sum, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || sum.Requests != 1 || sum.Delivered != 1 || sum.LinkedVerified != 0 {
+		t.Fatal("claim fabricated identity/redemption", sum, err)
+	}
+	r, _, err = s.AccessClaim(ctx, "health", r.ID, generation, "feedback", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err = s.SetClaimLink(ctx, "health", r.ID, "admin", r.Version, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.AccessClaim(ctx, "health", r.ID, generation, "claim", now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("revoked link still disclosed code", err)
+	}
+	r, err = s.SetClaimLink(ctx, "health", r.ID, "admin", r.Version, true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ClaimGeneration == generation {
+		t.Fatal("revocation generation reused")
+	}
+	if _, _, err = s.AccessClaim(ctx, "health", r.ID, generation, "status", now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("reissuing reactivated old link", err)
+	}
+	if _, _, err = s.AccessClaim(ctx, "health", r.ID, r.ClaimGeneration, "status", now.Add(91*24*time.Hour)); !errors.Is(err, ErrNotFound) {
 		t.Fatal("expired link accepted", err)
-	}
-}
-
-func TestConcurrentLinkApplicantsDoNotExceedLimit(t *testing.T) {
-	s, p, now := fixture(t)
-	ctx := context.Background()
-	l, err := s.CreateLink(ctx, "health", p.ID, "link-concurrent", "admin", "并发申请", 1, now.Add(time.Minute), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	results := make(chan error, 2)
-	for _, key := range []string{"e66189d5-5546-4e01-b0a1-86bdc1f3e2a9", "70f2f119-7b89-4ee5-b231-51d83e4e4b89"} {
-		wg.Add(1)
-		go func(key string) {
-			defer wg.Done()
-			_, err := s.ApplyLink(ctx, "health", l.ID, key, Recipient{Name: "并发领取人"}, now)
-			results <- err
-		}(key)
-	}
-	wg.Wait()
-	close(results)
-	success := 0
-	for err := range results {
-		if err == nil {
-			success++
-		} else if !errors.Is(err, ErrUnavailable) {
-			t.Fatal(err)
-		}
-	}
-	if success != 1 {
-		t.Fatal("overbooked public applications", success)
 	}
 }

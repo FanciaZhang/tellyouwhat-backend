@@ -29,13 +29,8 @@ paths:
               additionalProperties: false
               required: [action, token]
               properties:
-                action: { type: string, enum: [inspect, apply, status, claim, feedback] }
+                action: { type: string, enum: [status, claim, feedback] }
                 token: { type: string, maxLength: 200 }
-                requestKey: { type: string, format: uuid }
-                name: { type: string, maxLength: 240 }
-                contact: { type: string, maxLength: 500 }
-                note: { type: string, maxLength: 3000 }
-                consent: { type: boolean }
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
@@ -776,14 +771,10 @@ components:
       properties:
         code: { type: string, maxLength: 64 }
         deliveredAt: { type: string, format: date-time }
-        label: { type: string, maxLength: 240 }
-        maxApplications: { type: integer, minimum: 1, maximum: 10000 }
-        expiresAt: { type: string, format: date-time }
-        linkID: { type: string, maxLength: 40 }
         query: { type: string, maxLength: 500 }
         status: { type: string, maxLength: 24 }
         cursor: { type: string, maxLength: 40 }
-        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external, create_link, revoke_link, copy_link, search] }
+        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external, share_claim, revoke_claim, search] }
         requestID: { type: string, maxLength: 40 }
         version: { type: integer, minimum: 1 }
         requestKey: { type: string, maxLength: 128 }

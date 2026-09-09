@@ -2,7 +2,7 @@
 let delivery = null;
 let deliveryGeneration = 0;
 const deliveryStatus = {requested:'待处理',assigned:'已分配，待发放',delivered:'已发放',cancelled:'已取消',rejected:'已拒绝'};
-const deliveryActions = {'link.create':'创建申请链接','link.revoke':'撤销申请链接','inventory.import':'导入完整码池','inventory.confirm_available':'确认未发放库存','inventory.export':'导出 CSV，移出可分配库存','request.record_external':'补录历史发放','request.create':'登记申请','request.assign':'分配兑换码','request.reveal':'查看兑换码','request.deliver':'记录实际发放','request.cancel':'取消申请','request.reject':'拒绝申请','request.report_redeemed':'记录领取人反馈','request.link_verified':'人工关联已验证订阅'};
+const deliveryActions = {'request.share_claim':'生成或复制专属领取链接','request.revoke_claim':'撤销专属领取链接','inventory.import':'导入完整码池','inventory.confirm_available':'确认未发放库存','inventory.export':'导出 CSV，移出可分配库存','request.record_external':'补录历史发放','request.create':'登记申请','request.assign':'分配兑换码','code.reveal':'查看兑换码','request.deliver':'记录实际发放','request.cancel':'取消申请','request.reject':'拒绝申请','request.report_redeemed':'记录领取人反馈','request.link_verified':'人工关联已验证订阅'};
 const deliveryPath = d => `/api/v1/apps/${encodeURIComponent(d.app)}/offers/${encodeURIComponent(d.offer.id)}/code-pools/${encodeURIComponent(d.poolID)}/delivery`;
 function deliveryMessage(message,error=false){const node=$('#delivery-message');if(node){node.textContent=message;node.className=`notice${error?' error':''}`;}}
 function closeOfferDelivery(){deliveryGeneration++;delivery=null;$('#delivery-view').replaceChildren();$('#delivery-view').classList.add('hidden');$('#offer-overview').classList.remove('hidden');document.querySelector('#delivery-secret-dialog')?.remove();}
@@ -35,12 +35,12 @@ async function openOfferInventory(id){
  }catch(e){if(delivery===d){$('#delivery-pools').textContent='未能读取码池';deliveryMessage(e.message,true);}}
 }
 async function openDeliveryPool(parent,poolID){
- const d={app:parent.app,offer:parent.offer,poolID,cursor:'',query:'',status:'',requestKey:uuid(),externalKey:uuid(),linkKey:uuid(),data:null};delivery=d;deliveryGeneration++;
+ const d={app:parent.app,offer:parent.offer,poolID,cursor:'',query:'',status:'',requestKey:uuid(),externalKey:uuid(),data:null};delivery=d;deliveryGeneration++;
  mountDelivery(deliveryHeader(d.offer,'库存与领取台账')+`
  <div class="delivery-toolbar"><button id="delivery-refresh" class="secondary">同步 Apple 库存</button><span id="delivery-pool-meta" class="muted">正在读取…</span></div>
  <div id="delivery-summary" class="delivery-metrics"></div>
  <details class="card delivery-inventory"><summary>库存管理与统计口径</summary><div id="delivery-inventory"></div></details>
- <details class="card" id="delivery-link-panel"><summary>申请链接</summary><p class="muted">发给领取人自行登记。通过审批、分配后，对方使用自己的回执领取兑换码。撤销链接仅停止新申请。</p><form id="delivery-create-link" class="delivery-form"><label>活动或渠道名称<input name="label" maxlength="80" required placeholder="例如：九月内测招募"></label><label>最多接收申请数<input name="maxApplications" type="number" min="1" max="10000" value="100" required></label><label>申请截止时间<input name="expiresAt" type="datetime-local" required></label><div class="actions"><button class="primary">创建申请链接</button></div></form><div id="delivery-links" class="stack"></div></details><details class="card" id="delivery-new"><summary>登记领取申请</summary><form id="delivery-request-form" class="delivery-form">
+ <details class="card" id="delivery-new"><summary>登记领取申请</summary><form id="delivery-request-form" class="delivery-form">
  <label>姓名或昵称<input name="name" required maxlength="80" autocomplete="off" placeholder="用于识别领取人"></label>
  <label>联系方式<input name="contact" maxlength="160" autocomplete="off" placeholder="邮箱、手机号或其他联系方式"></label>
  <label>内部编号<input name="reference" maxlength="80" autocomplete="off" placeholder="可选，例如测试者编号"></label>
@@ -57,8 +57,6 @@ async function openDeliveryPool(parent,poolID){
  historicalForm.querySelector('[name=deliveredAt]').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
  historical.append(historicalForm);$('#delivery-new').after(historical);
  historicalForm.onsubmit=e=>{e.preventDefault();const values=Object.fromEntries(new FormData(historicalForm)),{code,deliveredAt,...recipient}=values;deliveryRun(async()=>{await deliveryCommand({action:'record_external',recipient,code,deliveredAt:new Date(deliveredAt).toISOString(),requestKey:d.externalKey});d.externalKey=uuid();historicalForm.reset();historical.open=false;d.cursor='';await refreshDelivery();deliveryMessage('历史发放已补录，码值不会再次进入可分配库存');});};
- $('#delivery-create-link [name=expiresAt]').value=new Date(Date.now()+7*86400000-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
- $('#delivery-create-link').onsubmit=e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));deliveryRun(async()=>{const result=await deliveryCommand({action:'create_link',label:values.label,maxApplications:Number(values.maxApplications),expiresAt:new Date(values.expiresAt).toISOString(),requestKey:d.linkKey});d.linkKey=uuid();await refreshDelivery();showDeliveryClaimLink(result.token);});};
  $('#delivery-back').onclick=()=>openOfferInventory(d.offer.id);
  $('#delivery-refresh').onclick=()=>deliveryRun(async()=>{await deliveryCommand({action:'sync'});await refreshDelivery();deliveryMessage('Apple 库存已同步');});
  $('#delivery-request-form').onsubmit=e=>{e.preventDefault();const form=e.currentTarget;const recipient=Object.fromEntries(new FormData(form));deliveryRun(async()=>{await deliveryCommand({action:'request',recipient,requestKey:d.requestKey});d.requestKey=uuid();form.reset();$('#delivery-new').open=false;d.cursor='';await refreshDelivery();deliveryMessage('申请已登记，尚未分配兑换码');});};
@@ -74,7 +72,7 @@ async function refreshDelivery(){
  const d=delivery;if(!d?.poolID)return;const gen=++deliveryGeneration;
  const data=await api(deliveryPath(d),{method:'POST',csrfRequired:true,body:{action:'search',query:d.query,status:d.status,cursor:d.cursor}});
  if(delivery!==d||gen!==deliveryGeneration)return;d.data=data;
- renderDeliverySummary(data);renderDeliveryRequests(data);renderDeliveryLinks(data);
+ renderDeliverySummary(data);renderDeliveryRequests(data);
  $('#delivery-ledger-count').textContent=`${data.summary.applications} 条申请 · ${data.summary.externalDeliveries} 条历史发放`;
  $('#delivery-first').disabled=!d.cursor;$('#delivery-next').disabled=!data.nextCursor;
  $('#delivery-events').innerHTML=(data.events||[]).map(e=>`<div class="delivery-event"><strong>${escapeHTML(deliveryActions[e.action]||e.action)}</strong><small>${formatTime(e.createdAt)} · ${e.quantity} 条 · 操作者 ${escapeHTML(e.actorID)}</small></div>`).join('')||'<p class="muted">暂无操作记录</p>';
@@ -102,16 +100,17 @@ function renderDeliveryRequests(data){
   const v=r.recipient;let actions='';
   const button=(action,label,disabled=false)=>`<button class="${action==='assign'?'primary':'secondary'}" data-delivery-action="${action}" data-request="${escapeHTML(r.id)}" ${disabled?'disabled':''}>${label}</button>`;
   if(r.status==='requested')actions=button('assign','分配兑换码',!usable)+button('reject','拒绝')+button('cancel','取消');
-  if(r.status==='assigned')actions=button('reveal','查看兑换码')+button('deliver','记录已发放')+button('cancel','取消');
-  if(r.status==='delivered')actions=button('reveal','查看兑换码')+(!r.reportedRedeemedAt?button('report_redeemed','记录已兑换反馈'):'')+(!r.verifiedAt?button('link_verified','关联核销证据'):'');
+  if(r.status==='assigned')actions=button('share_claim','专属领取链接')+button('reveal','查看兑换码')+button('deliver','记录已发放')+button('cancel','取消');
+  if(r.status==='delivered')actions=button('share_claim','专属领取链接')+button('reveal','查看兑换码')+(!r.reportedRedeemedAt?button('report_redeemed','记录已兑换反馈'):'')+(!r.verifiedAt?button('link_verified','关联核销证据'):'');
+  if(r.claimExpiresAt)actions+=button('revoke_claim','撤销领取链接');
   return `<article class="card delivery-recipient"><div class="section-head"><h3>${escapeHTML(v.name)}</h3><span class="chip">${deliveryStatus[r.status]||escapeHTML(r.status)}</span></div><p>${escapeHTML(v.contact||'未填联系方式')}${v.reference?' · '+escapeHTML(v.reference):''}</p><p class="muted">${escapeHTML(v.channel||'未填渠道')} · ${r.source==='external'?'历史发放补录于':'申请于'} ${formatTime(r.requestedAt)}</p>${v.note?`<p class="delivery-note">${escapeHTML(v.note)}</p>`:''}<div class="delivery-stages">${r.assignedAt?`<small>分配：${formatTime(r.assignedAt)}</small>`:''}${r.deliveredAt?`<small>发放：${formatTime(r.deliveredAt)}</small>`:''}${r.reportedRedeemedAt?'<small>领取人反馈已兑换（未据此核销）</small>':''}${r.verifiedAt?'<small>管理员已关联 Apple 验证订阅</small>':''}</div><div class="offer-actions">${actions}</div></article>`;
  }).join(''):`<p class="card muted">${data.nextCursor?'本页未找到匹配记录，可继续下一页检索。':'没有匹配的领取记录。'}</p>`;
  $$('[data-delivery-action]').forEach(b=>b.onclick=()=>{
   const r=data.requests.find(r=>r.id===b.dataset.request),action=b.dataset.deliveryAction;
   if(action==='link_verified'){showDeliveryLink(r);return;}
-  const messages={cancel:'取消后，已经分配的码不会重新进入库存。确认取消？',deliver:'确认已经把兑换码发给这位领取人？此操作只记录发放，不表示已兑换。',report_redeemed:'确认已收到这位领取人的兑换反馈？反馈会单独记录，不作为 Apple 核销证据。',reject:'确认拒绝这条领取申请？'};
+  const messages={revoke_claim:'撤销后，旧链接不能再查看兑换码。已经复制出去的码无法通过此操作收回。确认撤销？',cancel:'取消后，已经分配的码不会重新进入库存。确认取消？',deliver:'确认已经把兑换码发给这位领取人？此操作只记录发放，不表示已兑换。',report_redeemed:'确认已收到这位领取人的兑换反馈？反馈会单独记录，不作为 Apple 核销证据。',reject:'确认拒绝这条领取申请？'};
   if(messages[action]&&!confirm(messages[action]))return;
-  deliveryRun(async()=>{const result=await deliveryCommand({action,requestID:r.id,version:r.version});if(action==='reveal'){showDeliverySecret(r,result.code);return;}await refreshDelivery();deliveryMessage('记录已更新');});
+  deliveryRun(async()=>{const result=await deliveryCommand({action,requestID:r.id,version:r.version});if(action==='reveal'){showDeliverySecret(r,result.code);return;}if(action==='share_claim'){await refreshDelivery();showDeliveryClaimLink(result.token);return;}await refreshDelivery();deliveryMessage('记录已更新');});
  });
 }
 function deliveryDialog(title,body){
@@ -129,13 +128,7 @@ function showDeliveryLink(r){
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)document.querySelector('#delivery-secret-dialog[data-clear-on-hide]')?.remove();});
 function showDeliveryClaimLink(token){
- const dialog=deliveryDialog('发送领取申请链接','<p class="muted">任何获得此链接的人都可以申请，是否发放由你审批。请通过你选择的渠道发送。</p><label>申请链接<input id="delivery-claim-link" readonly></label><button id="delivery-copy-claim-link" class="primary">复制链接</button><p id="delivery-link-copy-message" role="status"></p>');
+ const dialog=deliveryDialog('发送专属领取链接','<p class="muted">对方点开即可领取，无需填写姓名或邮箱。请只发给这条记录对应的人；链接被转发后无法确认领取者身份。</p><label>领取链接<input id="delivery-claim-link" readonly></label><button id="delivery-copy-claim-link" class="primary">复制链接</button><p id="delivery-link-copy-message" role="status"></p>');
  dialog.dataset.clearOnHide='true';
- const link=location.origin+'/offer-claim#link='+encodeURIComponent(token);dialog.querySelector('input').value=link;dialog.querySelector('#delivery-copy-claim-link').onclick=async()=>{try{await navigator.clipboard.writeText(link);dialog.querySelector('#delivery-link-copy-message').textContent='已复制';}catch{dialog.querySelector('input').select();dialog.querySelector('#delivery-link-copy-message').textContent='请手动复制完整链接';}};
-}
-function renderDeliveryLinks(data){
- const node=$('#delivery-links');node.innerHTML=(data.links||[]).map(l=>`<article class="delivery-event"><strong>${escapeHTML(l.label)}</strong><small>${l.applications} / ${l.maxApplications} 条申请 · 截止 ${formatTime(l.expiresAt)}${l.revokedAt?' · 已撤销':''}</small><div class="delivery-toolbar"><button class="secondary" data-copy-claim="${escapeHTML(l.id)}" ${l.revokedAt?'disabled':''}>复制申请链接</button><button class="quiet" data-revoke-claim="${escapeHTML(l.id)}" ${l.revokedAt?'disabled':''}>停止接收新申请</button></div></article>`).join('')||'<p class="muted">暂无申请链接。</p>';
- node.querySelectorAll('[data-copy-claim]').forEach(b=>b.onclick=()=>deliveryRun(async()=>{const result=await deliveryCommand({action:'copy_link',linkID:b.dataset.copyClaim});showDeliveryClaimLink(result.token);}));
- node.querySelectorAll('[data-revoke-claim]').forEach(b=>b.onclick=()=>{if(!confirm('停止这个链接接收新申请？已有申请和已分配的兑换码会保留。'))return;deliveryRun(async()=>{await deliveryCommand({action:'revoke_link',linkID:b.dataset.revokeClaim});await refreshDelivery();deliveryMessage('申请链接已停止接收新申请');});});
- $('#delivery-create-link button').disabled=!data.pool.active||new Date(data.pool.expiresAt)<=new Date();
+ const link=location.origin+'/offer-claim#receipt='+encodeURIComponent(token);dialog.querySelector('input').value=link;dialog.querySelector('#delivery-copy-claim-link').onclick=async()=>{try{await navigator.clipboard.writeText(link);dialog.querySelector('#delivery-link-copy-message').textContent='已复制';}catch{dialog.querySelector('input').select();dialog.querySelector('#delivery-link-copy-message').textContent='请手动复制完整链接';}};
 }

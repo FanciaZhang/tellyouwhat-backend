@@ -24,6 +24,8 @@ await page.route('**/api/**',async route=>{
    case 'confirm_inventory':assert.equal(b.expectedCount,500);available=500;external=0;break;
    case 'request':data={id:'request-1',poolID:'pool-1',recipient:b.recipient,status:'requested',version:1,requestedAt:now};records.push(data);break;
    case 'assign':r.status='assigned';r.version++;r.assignedAt=now;available--;data=r;break;
+   case 'share_claim':r.version++;r.claimGeneration=1;r.claimExpiresAt='2030-01-01T00:00:00Z';data={token:'health.request.1.signature',request:r};break;
+   case 'revoke_claim':r.version++;delete r.claimExpiresAt;break;
    case 'reveal':data={code:'FIXTURE123'};break;
    case 'deliver':r.status='delivered';r.version++;r.deliveredAt=now;data=r;break;
    case 'report_redeemed':r.version++;r.reportedRedeemedAt=now;data=r;break;
@@ -59,6 +61,9 @@ try{
  await page.getByRole('button',{name:'保存申请',exact:true}).click();
  await page.locator('#delivery-requests').filter({hasText:'小林'}).waitFor();
  await page.getByRole('button',{name:'分配兑换码',exact:true}).click();
+ await page.getByRole('button',{name:'专属领取链接',exact:true}).click();
+ assert.ok((await page.locator('#delivery-claim-link').inputValue()).includes('/offer-claim#receipt='));
+ await page.locator('#delivery-secret-dialog').getByRole('button',{name:'关闭',exact:true}).click();
  await page.getByRole('button',{name:'查看兑换码',exact:true}).click();
  assert.equal(await page.locator('#delivery-secret').inputValue(),'FIXTURE123');
  assert.equal(records[0].status,'assigned','reveal must not mark delivered');

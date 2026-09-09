@@ -60,6 +60,8 @@ func (r Recipient) Valid() bool {
 }
 
 type Request struct {
+	ClaimGeneration    int        `json:"claimGeneration"`
+	ClaimExpiresAt     *time.Time `json:"claimExpiresAt,omitempty"`
 	Source             string     `json:"source"`
 	ID                 string     `json:"id"`
 	PoolID             string     `json:"poolID"`
@@ -337,14 +339,14 @@ func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, 
 	return s.Get(ctx, app, id)
 }
 
-const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,reported_redeemed_at,verified_at`
+const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,reported_redeemed_at,verified_at,claim_generation,claim_expires_at`
 
 type scanner interface{ Scan(...any) error }
 
 func (s Store) scan(app string, row scanner) (Request, error) {
 	var r Request
 	var raw, nonce []byte
-	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Source, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ReportedRedeemedAt, &r.VerifiedAt)
+	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Source, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ReportedRedeemedAt, &r.VerifiedAt, &r.ClaimGeneration, &r.ClaimExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
