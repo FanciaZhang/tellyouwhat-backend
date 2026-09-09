@@ -77,6 +77,7 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 		raw, _ := json.Marshal(body)
 		req := httptest.NewRequest(method, path, bytes.NewReader(raw))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", uuid.NewString())
 		if authenticated {
 			req.AddCookie(&http.Cookie{Name: "__Host-tellyouwhat_admin_session", Value: token})
 		}
@@ -98,6 +99,24 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 	check(call("GET", base, nil, false, false), 401)
 	check(call("GET", "/api/v1/apps/health/offers/unknown/code-pools", nil, true, false), 404)
 	check(call("POST", "/api/v1/apps/health/one-time-code-batches/unknown/download", nil, true, true), 404)
+
+	// Cloud mutations must stop before reserving an operation or writing to an Offer outside this App.
+	server.config.WritesEnabled = true
+	expiry := now.AddDate(0, 0, 30).Format("2006-01-02")
+	for _, mutation := range []struct {
+		path string
+		body any
+	}{
+		{"custom-codes", map[string]any{"code": "FRIENDS", "numberOfCodes": 500, "expirationDate": expiry}},
+		{"one-time-code-batches", map[string]any{"numberOfCodes": 500, "environment": "PRODUCTION", "expirationDate": expiry}},
+		{"deactivate", nil},
+	} {
+		check(call("POST", "/api/v1/apps/health/offers/other/"+mutation.path, mutation.body, true, true), 404)
+		apple.fail = true
+		check(call("POST", "/api/v1/apps/health/offers/offer-1/"+mutation.path, mutation.body, true, true), 502)
+		apple.fail = false
+	}
+	server.config.WritesEnabled = false
 
 	check(call("POST", base, deliveryCommand{Action: "sync"}, true, false), 403)
 	check(command(deliveryCommand{Action: "sync"}), 200)

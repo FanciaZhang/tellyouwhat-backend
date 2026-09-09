@@ -170,6 +170,19 @@ func (server *Server) offerManager(writer http.ResponseWriter, rawAppID string) 
 	return appID, manager, true
 }
 
+func requireScopedOffer(writer http.ResponseWriter, request *http.Request, manager OfferManager, offerID string) bool {
+	offers, err := manager.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return false
+	}
+	if !slices.ContainsFunc(offers, func(offer appstoreconnect.Offer) bool { return offer.ID == offerID }) {
+		writeFailure(writer, http.StatusNotFound, "offer_not_found", "未找到这个 App 的 Offer")
+		return false
+	}
+	return true
+}
+
 func (server *Server) ListCodePools(context *gin.Context, rawAppID adminhttpapi.AppID, rawOfferID adminhttpapi.OfferID) {
 	writer, request := context.Writer, context.Request
 	appID, offers, ok := server.offerManager(writer, rawAppID)
@@ -460,6 +473,9 @@ func (server *Server) DeactivateOffer(context *gin.Context, rawAppID adminhttpap
 		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 标识无效")
 		return
 	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
+		return
+	}
 	if !server.beginOperation(writer, request, appID, session.User.ID, "offer.deactivate", map[string]string{"offerID": offerID}) {
 		return
 	}
@@ -504,6 +520,9 @@ func (server *Server) CreateCustomCode(context *gin.Context, rawAppID adminhttpa
 	}
 	if offerID == "" || !customCodePattern.MatchString(input.Code) {
 		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "自定义码池参数无效")
+		return
+	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
 		return
 	}
 	operationInput := struct {
@@ -556,6 +575,9 @@ func (server *Server) CreateOneTimeCodeBatch(context *gin.Context, rawAppID admi
 	}
 	if offerID == "" || environment != "PRODUCTION" && environment != "SANDBOX" {
 		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "一次性码池参数无效")
+		return
+	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
 		return
 	}
 	operationInput := struct {
