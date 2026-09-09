@@ -93,8 +93,9 @@ func (repository *EntitlementRepository) UpsertVerified(ctx context.Context, rec
 	}
 	defer func() { _ = transaction.Rollback() }()
 	var boundID string
-	if err := transaction.QueryRowContext(ctx, `SELECT transaction_id FROM app_attest_keys
-		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID); err != nil {
+	var bindings entitlement.VerifiedTransactionBindings
+	if err := transaction.QueryRowContext(ctx, `SELECT transaction_id, production_transaction_id, sandbox_transaction_id FROM app_attest_keys
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID, &bindings.ProductionID, &bindings.SandboxID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return entitlement.ErrSubscriptionBindingConflict
 		}
@@ -106,11 +107,12 @@ func (repository *EntitlementRepository) UpsertVerified(ctx context.Context, rec
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if !entitlement.CanBindVerifiedTransaction(boundID, existing, record) {
+	bindings, allowed := entitlement.BindVerifiedTransaction(boundID, existing, record, bindings)
+	if !allowed {
 		return entitlement.ErrSubscriptionBindingConflict
 	}
-	if _, err := transaction.ExecContext(ctx, `UPDATE app_attest_keys SET transaction_id = ?, updated_at = UTC_TIMESTAMP(6)
-		WHERE app_id = ? AND key_id = ?`, record.TransactionID, repository.appID, record.KeyID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `UPDATE app_attest_keys SET transaction_id = ?, production_transaction_id = ?, sandbox_transaction_id = ?, updated_at = UTC_TIMESTAMP(6)
+		WHERE app_id = ? AND key_id = ?`, record.TransactionID, bindings.ProductionID, bindings.SandboxID, repository.appID, record.KeyID); err != nil {
 		return err
 	}
 	if err := repository.upsert(ctx, transaction, record); err != nil {

@@ -18,7 +18,7 @@ func TestVerifiedBindingTransitionPolicy(t *testing.T) {
 		{"first sandbox", "", "", "", "test", "sandbox", true},
 		{"renewal", "paid", "paid", "production", "paid", "production", true},
 		{"sandbox to production", "test", "test", "sandbox", "paid", "production", true},
-		{"sandbox cannot replace production", "paid", "paid", "production", "test", "sandbox", false},
+		{"production to sandbox", "paid", "paid", "production", "test", "sandbox", true},
 		{"different production purchase", "paid", "paid", "production", "other", "production", false},
 		{"different sandbox purchase", "test", "test", "sandbox", "other", "sandbox", false},
 		{"missing previous evidence", "test", "", "", "paid", "production", false},
@@ -27,7 +27,7 @@ func TestVerifiedBindingTransitionPolicy(t *testing.T) {
 		{"empty transaction", "", "", "", "", "production", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got := CanBindVerifiedTransaction(test.bound, Record{TransactionID: test.existingID, Environment: test.existingEnv}, Record{TransactionID: test.incomingID, Environment: test.incomingEnv})
+			_, got := BindVerifiedTransaction(test.bound, Record{TransactionID: test.existingID, Environment: test.existingEnv}, Record{TransactionID: test.incomingID, Environment: test.incomingEnv}, VerifiedTransactionBindings{})
 			if got != test.allowed {
 				t.Fatalf("allowed=%v, want %v", got, test.allowed)
 			}
@@ -76,5 +76,35 @@ func TestProductionSyncUsesAtomicStoreOnlyAfterVerification(t *testing.T) {
 				t.Fatalf("active sync: %v", err)
 			}
 		})
+	}
+}
+
+func TestVerifiedBindingRetainsBothEnvironments(t *testing.T) {
+	for _, first := range []string{"sandbox", "production"} {
+		t.Run(first, func(t *testing.T) {
+			var bound string
+			var existing Record
+			var bindings VerifiedTransactionBindings
+			other := "production"
+			if first == other {
+				other = "sandbox"
+			}
+			for _, env := range []string{first, other, first, other} {
+				incoming := Record{TransactionID: env + "-purchase", Environment: env}
+				next, allowed := BindVerifiedTransaction(bound, existing, incoming, bindings)
+				if !allowed {
+					t.Fatalf("switch to %s rejected", env)
+				}
+				bindings, bound, existing = next, incoming.TransactionID, incoming
+			}
+			for _, env := range []string{"production", "sandbox"} {
+				if _, allowed := BindVerifiedTransaction(bound, existing, Record{TransactionID: "other", Environment: env}, bindings); allowed {
+					t.Fatalf("switching environments replaced %s purchase", env)
+				}
+			}
+		})
+	}
+	if _, allowed := BindVerifiedTransaction("paid", Record{TransactionID: "paid", Environment: "production"}, Record{TransactionID: "test", Environment: "sandbox"}, VerifiedTransactionBindings{ProductionID: "other"}); allowed {
+		t.Fatal("inconsistent stored anchor accepted")
 	}
 }

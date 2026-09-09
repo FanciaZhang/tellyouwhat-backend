@@ -67,7 +67,7 @@ func TestMySQLVerifiedEntitlementPromotionIsAtomic(t *testing.T) {
 	if err := db.QueryRow(`SELECT product_id FROM app_store_offer_redemptions WHERE app_id='health' AND offer_identifier='FRIENDS'`).Scan(&product); err != nil || product != production.ProductID {
 		t.Fatalf("verified offer lost product: %q %v", product, err)
 	}
-	for _, denied := range []entitlement.Record{sandbox, {KeyID: key.KeyID, TransactionID: "other-paid", Environment: "production", ExpiresAt: production.ExpiresAt}} {
+	for _, denied := range []entitlement.Record{{KeyID: key.KeyID, TransactionID: "other-paid", Environment: "production", ExpiresAt: production.ExpiresAt}} {
 		if err := store.UpsertVerified(ctx, denied); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
 			t.Fatalf("expected conflict: %v", err)
 		}
@@ -132,5 +132,105 @@ func TestMySQLConcurrentVerifiedPromotionsChooseOnePurchase(t *testing.T) {
 	r, ok, err := store.Get(ctx, key.KeyID)
 	if err != nil || !ok || r.TransactionID != k.TransactionID || r.Environment != "production" {
 		t.Fatalf("inconsistent winner: %v", err)
+	}
+}
+
+func TestMySQLVerifiedSubscriptionEnvironmentRoundTrip(t *testing.T) {
+	for _, first := range []string{"sandbox", "production"} {
+		t.Run(first, func(t *testing.T) {
+			db := testutil.MySQL(t)
+			ctx := context.Background()
+			keys := mysqlstore.NewKeyRepository(db, "health")
+			store := mysqlstore.NewEntitlementRepository(db, "health")
+			key := attestation.RegisteredKey{KeyID: "round-trip", DeviceID: uuid.NewString(), PublicKey: []byte("fixture"), Environment: "production", Receipt: []byte("fixture")}
+			if err := keys.Register(ctx, key); err != nil {
+				t.Fatal(err)
+			}
+			makeRecord := func(env string) entitlement.Record {
+				return entitlement.Record{KeyID: key.KeyID, TransactionID: env + "-purchase", Environment: env, ExpiresAt: time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)}
+			}
+			// Seed the pre-migration state: existing verified entitlement and active
+			// binding, with no per-environment anchors populated yet.
+			legacy := makeRecord(first)
+			if err := keys.BindTransaction(ctx, key.KeyID, legacy.TransactionID); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Upsert(ctx, legacy); err != nil {
+				t.Fatal(err)
+			}
+			other := "production"
+			if first == other {
+				other = "sandbox"
+			}
+			assertState := func(want entitlement.Record) {
+				t.Helper()
+				got, ok, err := store.Get(ctx, key.KeyID)
+				bound, keyErr := keys.Get(ctx, key.KeyID)
+				if err != nil || keyErr != nil || !ok || got.TransactionID != want.TransactionID || got.Environment != want.Environment || bound.TransactionID != want.TransactionID || !got.ExpiresAt.Equal(want.ExpiresAt) {
+					t.Fatalf("inconsistent active subscription: %+v, %v, %v", got, err, keyErr)
+				}
+			}
+			// A failed persistence operation cannot leave the device or anchors
+			// switched to the other environment.
+			broken := makeRecord(other)
+			broken.OfferIdentifier, broken.OfferTransactionID = strings.Repeat("x", 1024), "broken-offer"
+			broken.OfferType, broken.OfferSignedAt = 3, time.Now()
+			if err := store.UpsertVerified(ctx, broken); err == nil {
+				t.Fatal("expected persistence failure")
+			}
+			assertState(legacy)
+			var productionAnchor, sandboxAnchor string
+			if err := db.QueryRow(`SELECT production_transaction_id, sandbox_transaction_id FROM app_attest_keys WHERE app_id='health' AND key_id=?`, key.KeyID).Scan(&productionAnchor, &sandboxAnchor); err != nil || productionAnchor != "" || sandboxAnchor != "" {
+				t.Fatalf("anchors survived rollback: %v", err)
+			}
+			var active entitlement.Record
+			for _, env := range []string{other, first, other, first} {
+				active = makeRecord(env)
+				if err := store.UpsertVerified(ctx, active); err != nil {
+					t.Fatalf("switch to %s: %v", env, err)
+				}
+				assertState(active)
+				// Neither a different production purchase nor a different sandbox
+				// purchase can use an environment hop to replace an existing anchor.
+				for _, deniedEnv := range []string{"production", "sandbox"} {
+					denied := makeRecord(deniedEnv)
+					denied.TransactionID = "other-purchase"
+					if err := store.UpsertVerified(ctx, denied); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
+						t.Fatalf("replacement accepted: %v", err)
+					}
+					assertState(active)
+				}
+			}
+			if err := db.QueryRow(`SELECT production_transaction_id, sandbox_transaction_id FROM app_attest_keys WHERE app_id='health' AND key_id=?`, key.KeyID).Scan(&productionAnchor, &sandboxAnchor); err != nil || productionAnchor != "production-purchase" || sandboxAnchor != "sandbox-purchase" {
+				t.Fatalf("lost environment binding: %v", err)
+			}
+			// A notification updates only the matching active environment.
+			for _, env := range []string{"sandbox", "production"} {
+				id := makeRecord(env).TransactionID
+				expiry := active.ExpiresAt
+				if env != active.Environment {
+					expiry = time.Now().Add(-time.Hour)
+				}
+				if _, err := store.ApplyNotification(ctx, entitlement.NotificationState{NotificationUUID: uuid.NewString(), OriginalTransactionID: id, Environment: env, ExpiresAt: expiry}); err != nil {
+					t.Fatal(err)
+				}
+				assertState(active)
+			}
+			privacyStore := mysqlstore.NewPrivacyRepository(db, "health")
+			principal := attestation.Principal{KeyID: key.KeyID, DeviceID: key.DeviceID, TransactionID: active.TransactionID}
+			plan, err := privacyStore.PlanDeletion(ctx, principal)
+			if err != nil || len(plan.Principals) != 2 {
+				t.Fatalf("missing environment cache deletion: %+v %v", plan, err)
+			}
+			if err := privacyStore.DeletePrincipal(ctx, principal); err != nil {
+				t.Fatal(err)
+			}
+			for _, table := range []string{"app_attest_keys", "managed_entitlements", "app_store_notifications"} {
+				var count int
+				if err := db.QueryRow("SELECT COUNT(*) FROM " + table + " WHERE app_id='health'").Scan(&count); err != nil || count != 0 {
+					t.Fatalf("environment state retained in %s: %d %v", table, count, err)
+				}
+			}
+		})
 	}
 }

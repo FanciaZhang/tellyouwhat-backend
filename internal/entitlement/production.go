@@ -57,25 +57,50 @@ type TransactionBinder interface {
 }
 
 // VerifiedTransactionStore commits the verified entitlement and device binding
-// together, including the one-way transition from sandbox to production.
+// together while retaining a separate purchase binding for each StoreKit environment.
 type VerifiedTransactionStore interface {
 	UpsertVerified(context.Context, Record) error
 }
 
-func CanBindVerifiedTransaction(boundID string, existing Record, incoming Record) bool {
-	if incoming.TransactionID == "" || (incoming.Environment != "sandbox" && incoming.Environment != "production") {
-		return false
-	}
-	if boundID == "" {
-		return existing.TransactionID == ""
-	}
+// VerifiedTransactionBindings keeps environment switches from replacing an already
+// bound purchase in the other environment.
+type VerifiedTransactionBindings struct {
+	ProductionID string
+	SandboxID    string
+}
+
+func BindVerifiedTransaction(boundID string, existing Record, incoming Record, bindings VerifiedTransactionBindings) (VerifiedTransactionBindings, bool) {
 	if existing.TransactionID != boundID {
-		return false
+		return bindings, false
 	}
-	if boundID == incoming.TransactionID && existing.Environment == incoming.Environment {
+	bind := func(id, environment string) bool {
+		if id == "" {
+			return false
+		}
+		var anchor *string
+		switch environment {
+		case "production":
+			anchor = &bindings.ProductionID
+		case "sandbox":
+			anchor = &bindings.SandboxID
+		default:
+			return false
+		}
+		if *anchor != "" && *anchor != id {
+			return false
+		}
+		*anchor = id
 		return true
 	}
-	return existing.Environment == "sandbox" && incoming.Environment == "production"
+	// Existing verified records seed bindings for devices enrolled before the
+	// environment-specific anchors were introduced.
+	if boundID != "" && !bind(boundID, existing.Environment) {
+		return bindings, false
+	}
+	if !bind(incoming.TransactionID, incoming.Environment) {
+		return bindings, false
+	}
+	return bindings, true
 }
 
 func NewProductionService(store Store, resolver SubscriptionResolver, now func() time.Time) *ProductionService {
