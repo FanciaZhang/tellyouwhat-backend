@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -187,6 +188,20 @@ func TestRecordingSubmissionStreamsCanonicalAudioAndFlags(t *testing.T) {
 	a := RecordingASR{Config: ASRConfig{URL: server.URL, ResourceID: "volc.seedasr.auc"}}
 	if err := a.Submit(context.Background(), recordingTask, wav); err != nil {
 		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "recording.wav")
+	if err := os.WriteFile(path, wav, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SubmitFile(context.Background(), recordingTask, path); err != nil {
+		t.Fatal(err)
+	}
+	// Validation reads the real file length, not just the claimed WAV header.
+	if err := os.WriteFile(path, wav[:len(wav)-2], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SubmitFile(context.Background(), recordingTask, path); !errors.Is(err, ErrInvalid) {
+		t.Fatal("truncated spool accepted", err)
 	}
 }
 

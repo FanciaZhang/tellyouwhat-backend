@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -57,6 +58,34 @@ func (a RecordingASR) Submit(ctx context.Context, taskID string, wav []byte) err
 	if _, err := uuid.Parse(taskID); err != nil || !validRecordingWAV(wav) {
 		return ErrInvalid
 	}
+	return a.submitAudio(ctx, taskID, bytes.NewReader(wav), int64(len(wav)))
+}
+
+// SubmitFile keeps a long recording on private temporary storage instead of
+// allocating its whole PCM and base64 copies in the development service heap.
+func (a RecordingASR) SubmitFile(ctx context.Context, taskID, path string) error {
+	if _, err := uuid.Parse(taskID); err != nil {
+		return ErrInvalid
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return ErrInvalid
+	}
+	header := make([]byte, 44)
+	if _, err = io.ReadFull(file, header); err != nil || recordingWAVDuration(header, info.Size()) <= 0 {
+		return ErrInvalid
+	}
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	return a.submitAudio(ctx, taskID, io.LimitReader(file, info.Size()), info.Size())
+}
+func (a RecordingASR) submitAudio(ctx context.Context, taskID string, audio io.Reader, audioLength int64) error {
 	// Stream base64 into the HTTP request instead of holding both 58 MB PCM
 	// and its 77 MB JSON copy in the private service's 192 MB memory limit.
 	prefix := `{"user":{"uid":"journal-recording"},"audio":{"format":"wav","data":"`
@@ -67,7 +96,7 @@ func (a RecordingASR) Submit(ctx context.Context, taskID string, wav []byte) err
 		_, err := io.WriteString(writer, prefix)
 		if err == nil {
 			encoder := base64.NewEncoder(base64.StdEncoding, writer)
-			_, err = encoder.Write(wav)
+			_, err = io.Copy(encoder, audio)
 			if closeErr := encoder.Close(); err == nil {
 				err = closeErr
 			}
@@ -77,7 +106,7 @@ func (a RecordingASR) Submit(ctx context.Context, taskID string, wav []byte) err
 		}
 		_ = writer.CloseWithError(err)
 	}()
-	length := int64(len(prefix) + base64.StdEncoding.EncodedLen(len(wav)) + len(suffix))
+	length := int64(len(prefix) + base64.StdEncoding.EncodedLen(int(audioLength)) + len(suffix))
 	_, err := a.callBody(ctx, "submit", taskID, reader, length)
 	return err
 }
@@ -199,7 +228,10 @@ func validRecordingWAV(wav []byte) bool { return RecordingWAVMilliseconds(wav) >
 // Preserve one or two source channels for file analysis; streaming capture's
 // mono format must not be imposed on an imported stereo recording.
 func RecordingWAVMilliseconds(wav []byte) int {
-	if len(wav) < 76 || len(wav) > SessionMilliseconds*64+44 {
+	return recordingWAVDuration(wav, int64(len(wav)))
+}
+func recordingWAVDuration(wav []byte, size int64) int {
+	if len(wav) < 44 || size < 76 || size > SessionMilliseconds*64+44 {
 		return 0
 	}
 	u16 := binary.LittleEndian.Uint16
@@ -209,10 +241,10 @@ func RecordingWAVMilliseconds(wav []byte) int {
 		return 0
 	}
 	frameBytes := channels * 2
-	if string(wav[:4]) != "RIFF" || u32(wav[4:8]) != uint32(len(wav)-8) || string(wav[8:16]) != "WAVEfmt " || u32(wav[16:20]) != 16 || u16(wav[20:22]) != 1 || u32(wav[24:28]) != 16000 || u32(wav[28:32]) != uint32(16000*frameBytes) || u16(wav[32:34]) != uint16(frameBytes) || u16(wav[34:36]) != 16 || string(wav[36:40]) != "data" || u32(wav[40:44]) != uint32(len(wav)-44) || (len(wav)-44)%frameBytes != 0 {
+	if string(wav[:4]) != "RIFF" || int64(u32(wav[4:8])) != size-8 || string(wav[8:16]) != "WAVEfmt " || u32(wav[16:20]) != 16 || u16(wav[20:22]) != 1 || u32(wav[24:28]) != 16000 || u32(wav[28:32]) != uint32(16000*frameBytes) || u16(wav[32:34]) != uint16(frameBytes) || u16(wav[34:36]) != 16 || string(wav[36:40]) != "data" || int64(u32(wav[40:44])) != size-44 || (size-44)%int64(frameBytes) != 0 {
 		return 0
 	}
-	milliseconds := (len(wav) - 44) / (16 * frameBytes)
+	milliseconds := int((size - 44) / int64(16*frameBytes))
 	if milliseconds <= 0 || milliseconds > SessionMilliseconds {
 		return 0
 	}
