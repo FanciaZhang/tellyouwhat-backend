@@ -16,13 +16,16 @@ func Handle(context *gin.Context) {
 	if name == "" || name == "setup" || name == "enroll" {
 		name = "index.html"
 	}
+	if name == "offer-claim" {
+		name = "offer-claim.html"
+	}
 	data, err := files.ReadFile("static/" + name)
 	if err != nil || strings.Contains(name, "..") {
 		context.Status(404)
 		return
 	}
 	contentType := "application/octet-stream"
-	if name == "index.html" {
+	if strings.HasSuffix(name, ".html") {
 		contentType = "text/html; charset=utf-8"
 	} else if strings.HasSuffix(name, ".css") {
 		contentType = "text/css; charset=utf-8"

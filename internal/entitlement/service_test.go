@@ -49,6 +49,7 @@ func TestProductionSyncBindsVerifiedActiveSubscriptionToAttestedKey(t *testing.T
 		TransactionID:         "offer-transaction-1",
 		Environment:           "Production",
 		OfferIdentifier:       "friends-september",
+		ProductID:             "app.monthly",
 		OfferType:             3,
 		ExpiresAt:             expiresAt,
 		SignedAt:              now,
@@ -70,7 +71,7 @@ func TestProductionSyncBindsVerifiedActiveSubscriptionToAttestedKey(t *testing.T
 		t.Fatalf("load entitlement: ok=%v err=%v", ok, err)
 	}
 	if record.TransactionID != "original-transaction-1" || record.Environment != "production" ||
-		record.OfferTransactionID != "offer-transaction-1" || record.OfferIdentifier != "friends-september" || record.OfferType != 3 {
+		record.ProductID != "app.monthly" || record.OfferTransactionID != "offer-transaction-1" || record.OfferIdentifier != "friends-september" || record.OfferType != 3 {
 		t.Fatalf("unexpected stored entitlement: %+v", record)
 	}
 	if binder.keyID != "key-1" || binder.transactionID != "original-transaction-1" {

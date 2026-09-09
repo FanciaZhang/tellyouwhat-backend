@@ -101,6 +101,25 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                     CREATE TABLE operations_purchase_observations (id INT PRIMARY KEY, evidence TEXT);
                     INSERT INTO operations_purchase_observations VALUES (1, 'private purchase metadata');
                 """
+                fixture += b"CREATE TABLE app_store_offer_redemptions (id INT PRIMARY KEY);"
+                fixture += (Path(__file__).resolve().parents[2] / "migrations/0012_offer_delivery.sql").read_bytes()
+                fixture += b"""
+                    INSERT INTO app_store_offer_redemptions VALUES(1,'app.monthly');
+                    INSERT INTO offer_delivery_pools(app_id,pool_id,offer_id,offer_name,kind,environment,capacity,active,expires_at,synced_at)
+                        VALUES('health','pool','offer','FRIENDS','oneTime','production',1,1,'2030-01-01',NOW(6));
+                    INSERT INTO offer_delivery_codes(app_id,id,pool_id,code_hash,ciphertext,nonce,inventory_state,created_at)
+                        VALUES('health','10000000-0000-4000-8000-000000000001','pool',UNHEX(REPEAT('ab',32)),UNHEX('01020304'),UNHEX('aabbccdd'),'assigned',NOW(6));
+                    INSERT INTO offer_delivery_requests(app_id,id,pool_id,request_key,request_hash,ciphertext,nonce,source,status,code_id,requested_at,assigned_at,delivered_at,claimed_at)
+                        VALUES('health','10000000-0000-4000-8000-000000000002','pool','personal:fixture',UNHEX(REPEAT('bc',32)),UNHEX('11121314'),UNHEX('aabbccdd'),'personal','delivered','10000000-0000-4000-8000-000000000001',NOW(6),NOW(6),NOW(6),NOW(6));
+                    INSERT INTO offer_delivery_events(app_id,target_id,actor_id,action,created_at)
+                        VALUES('health','10000000-0000-4000-8000-000000000002','admin','request.claim',NOW(6));
+                    INSERT INTO offer_personal_deliveries(app_id,id,offer_id,input_hash,ciphertext,nonce,state,pool_id,request_id,created_at)
+                        VALUES('health','10000000-0000-4000-8000-000000000003','offer',UNHEX(REPEAT('cd',32)),UNHEX('21222324'),UNHEX('aabbccdd'),'ready','pool','10000000-0000-4000-8000-000000000002',NOW(6));
+                    INSERT INTO offer_redemption_report_days VALUES('health','2026-09-08','123',UNHEX(REPEAT('de',32)),NOW(6));
+                    INSERT INTO offer_redemption_report_rows VALUES('health','2026-09-08','456','FRIENDS',UNHEX(REPEAT('ab',32)),'CN',1);
+                    INSERT INTO offer_redemption_report_sync VALUES('health','ready',NOW(6));
+                    INSERT INTO offer_delivery_verified_links VALUES('health','10000000-0000-4000-8000-000000000002','production','FRIENDS',UNHEX(REPEAT('fa',32)),NOW(6));
+                """
                 runtime.execute("fixture-seed", sql + ["--database=" + database], env=credentials, input=fixture)
                 backup = create_backup(runtime)
                 path = runtime.backups / backup["filename"]
@@ -112,14 +131,20 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                     "ai_jobs": 0, "job_dispatch_outbox": 0,
                     "platform_ops_patrol": 1, "platform_ops_circuits": 1, "platform_ops_incidents": 1, "platform_ops_events": 1,
                     "operations_collection": 1, "operations_free_cohorts": 0, "operations_purchase_observations": 0,
+                    "offer_delivery_pools": 1, "offer_delivery_codes": 1, "offer_delivery_requests": 1,
+                    "offer_delivery_events": 1, "offer_personal_deliveries": 1,
+                    "offer_redemption_report_days": 1, "offer_redemption_report_rows": 1, "offer_redemption_report_sync": 1,
+                    "offer_delivery_verified_links": 0, "app_store_offer_redemptions": 0,
                 })
                 self.assertEqual(manifest["included_data_tables"], [
                     "schema_migrations", "apps", "privacy_deletion_receipts",
                     "ai_cost_control_state", "ai_cost_months", "ai_cost_attempts", "operations_collection",
                     "platform_ops_patrol", "platform_ops_circuits", "platform_ops_incidents", "platform_ops_events",
+                    "offer_delivery_pools", "offer_delivery_codes", "offer_delivery_requests", "offer_delivery_events",
+                    "offer_personal_deliveries", "offer_redemption_report_days", "offer_redemption_report_rows", "offer_redemption_report_sync",
                 ])
                 self.assertEqual(manifest["excluded_data_tables"], [
-                    "ai_jobs", "app_attest_keys", "future_user_data", "job_dispatch_outbox", "operations_free_cohorts", "operations_purchase_observations", "privacy_consents",
+                    "ai_jobs", "app_attest_keys", "app_store_offer_redemptions", "future_user_data", "job_dispatch_outbox", "offer_delivery_verified_links", "operations_free_cohorts", "operations_purchase_observations", "privacy_consents",
                 ])
                 decrypted = root / "decrypted.gz"
                 crypt(runtime, path, decrypted, decrypt=True)
@@ -132,11 +157,14 @@ class BackupMySQLIntegrationTests(unittest.TestCase):
                 ):
                     self.assertNotIn(payload, dump)
                     self.assertNotIn(payload.hex().encode().upper(), dump.upper())
+                self.assertIn(b"personal:fixture", dump)
+                self.assertIn(b"21222324", dump.upper())
+                self.assertNotIn(b"FA" * 32, dump.upper())
                 self.assertIn(b"Health fixture", dump)
                 self.assertIn(b"ABABABAB", dump.upper())
                 restore = restore_drill(runtime)
                 self.assertEqual(restore["sha256"], backup["sha256"])
-                self.assertEqual(restore["tables"], 18)
+                self.assertEqual(restore["tables"], 28)
                 remaining = runtime.execute("fixture-source-count", sql + ["--database=" + database],
                                             env=credentials, input=b"SELECT COUNT(*) FROM ai_jobs;")
                 self.assertEqual(remaining.strip(), b"1")

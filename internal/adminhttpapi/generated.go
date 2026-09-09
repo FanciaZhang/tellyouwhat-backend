@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
@@ -27,25 +28,25 @@ import (
 
 // Defines values for AIRollingInputAction.
 const (
-	AcceptCurrent AIRollingInputAction = "accept_current"
-	Cancel        AIRollingInputAction = "cancel"
-	Reconcile     AIRollingInputAction = "reconcile"
-	Start         AIRollingInputAction = "start"
-	StepBack      AIRollingInputAction = "step_back"
+	AIRollingInputActionAcceptCurrent AIRollingInputAction = "accept_current"
+	AIRollingInputActionCancel        AIRollingInputAction = "cancel"
+	AIRollingInputActionReconcile     AIRollingInputAction = "reconcile"
+	AIRollingInputActionStart         AIRollingInputAction = "start"
+	AIRollingInputActionStepBack      AIRollingInputAction = "step_back"
 )
 
 // Valid indicates whether the value is a known member of the AIRollingInputAction enum.
 func (e AIRollingInputAction) Valid() bool {
 	switch e {
-	case AcceptCurrent:
+	case AIRollingInputActionAcceptCurrent:
 		return true
-	case Cancel:
+	case AIRollingInputActionCancel:
 		return true
-	case Reconcile:
+	case AIRollingInputActionReconcile:
 		return true
-	case Start:
+	case AIRollingInputActionStart:
 		return true
-	case StepBack:
+	case AIRollingInputActionStepBack:
 		return true
 	default:
 		return false
@@ -229,6 +230,63 @@ func (e InvitationRequestRole) Valid() bool {
 	}
 }
 
+// Defines values for OfferDeliveryCommandAction.
+const (
+	OfferDeliveryCommandActionAssign           OfferDeliveryCommandAction = "assign"
+	OfferDeliveryCommandActionCancel           OfferDeliveryCommandAction = "cancel"
+	OfferDeliveryCommandActionConfirmInventory OfferDeliveryCommandAction = "confirm_inventory"
+	OfferDeliveryCommandActionDeliver          OfferDeliveryCommandAction = "deliver"
+	OfferDeliveryCommandActionImport           OfferDeliveryCommandAction = "import"
+	OfferDeliveryCommandActionLinkVerified     OfferDeliveryCommandAction = "link_verified"
+	OfferDeliveryCommandActionRecordExternal   OfferDeliveryCommandAction = "record_external"
+	OfferDeliveryCommandActionReject           OfferDeliveryCommandAction = "reject"
+	OfferDeliveryCommandActionReportRedeemed   OfferDeliveryCommandAction = "report_redeemed"
+	OfferDeliveryCommandActionRequest          OfferDeliveryCommandAction = "request"
+	OfferDeliveryCommandActionReveal           OfferDeliveryCommandAction = "reveal"
+	OfferDeliveryCommandActionRevokeClaim      OfferDeliveryCommandAction = "revoke_claim"
+	OfferDeliveryCommandActionSearch           OfferDeliveryCommandAction = "search"
+	OfferDeliveryCommandActionShareClaim       OfferDeliveryCommandAction = "share_claim"
+	OfferDeliveryCommandActionSync             OfferDeliveryCommandAction = "sync"
+)
+
+// Valid indicates whether the value is a known member of the OfferDeliveryCommandAction enum.
+func (e OfferDeliveryCommandAction) Valid() bool {
+	switch e {
+	case OfferDeliveryCommandActionAssign:
+		return true
+	case OfferDeliveryCommandActionCancel:
+		return true
+	case OfferDeliveryCommandActionConfirmInventory:
+		return true
+	case OfferDeliveryCommandActionDeliver:
+		return true
+	case OfferDeliveryCommandActionImport:
+		return true
+	case OfferDeliveryCommandActionLinkVerified:
+		return true
+	case OfferDeliveryCommandActionRecordExternal:
+		return true
+	case OfferDeliveryCommandActionReject:
+		return true
+	case OfferDeliveryCommandActionReportRedeemed:
+		return true
+	case OfferDeliveryCommandActionRequest:
+		return true
+	case OfferDeliveryCommandActionReveal:
+		return true
+	case OfferDeliveryCommandActionRevokeClaim:
+		return true
+	case OfferDeliveryCommandActionSearch:
+		return true
+	case OfferDeliveryCommandActionShareClaim:
+		return true
+	case OfferDeliveryCommandActionSync:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OfferDraftCustomerEligibilities.
 const (
 	EXISTING OfferDraftCustomerEligibilities = "EXISTING"
@@ -361,6 +419,45 @@ func (e UserUpdateRequestStatus) Valid() bool {
 	case UserUpdateRequestStatusActive:
 		return true
 	case UserUpdateRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreatePersonalDeliveryJSONBodyAction.
+const (
+	Create CreatePersonalDeliveryJSONBodyAction = "create"
+	Resume CreatePersonalDeliveryJSONBodyAction = "resume"
+)
+
+// Valid indicates whether the value is a known member of the CreatePersonalDeliveryJSONBodyAction enum.
+func (e CreatePersonalDeliveryJSONBodyAction) Valid() bool {
+	switch e {
+	case Create:
+		return true
+	case Resume:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicOfferClaimJSONBodyAction.
+const (
+	Claim    PublicOfferClaimJSONBodyAction = "claim"
+	Feedback PublicOfferClaimJSONBodyAction = "feedback"
+	Status   PublicOfferClaimJSONBodyAction = "status"
+)
+
+// Valid indicates whether the value is a known member of the PublicOfferClaimJSONBodyAction enum.
+func (e PublicOfferClaimJSONBodyAction) Valid() bool {
+	switch e {
+	case Claim:
+		return true
+	case Feedback:
+		return true
+	case Status:
 		return true
 	default:
 		return false
@@ -542,6 +639,31 @@ type InvitationRequestRole string
 
 // JSONDocument defines model for JSONDocument.
 type JSONDocument map[string]interface{}
+
+// OfferDeliveryCommand defines model for OfferDeliveryCommand.
+type OfferDeliveryCommand struct {
+	Action        OfferDeliveryCommandAction `json:"action"`
+	Code          *string                    `json:"code,omitempty"`
+	Cursor        *string                    `json:"cursor,omitempty"`
+	DeliveredAt   *time.Time                 `json:"deliveredAt,omitempty"`
+	ExpectedCount *int                       `json:"expectedCount,omitempty"`
+	Query         *string                    `json:"query,omitempty"`
+	Recipient     *struct {
+		Channel   *string `json:"channel,omitempty"`
+		Contact   *string `json:"contact,omitempty"`
+		Name      string  `json:"name"`
+		Note      *string `json:"note,omitempty"`
+		Reference *string `json:"reference,omitempty"`
+	} `json:"recipient,omitempty"`
+	Reference  *string `json:"reference,omitempty"`
+	RequestID  *string `json:"requestID,omitempty"`
+	RequestKey *string `json:"requestKey,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	Version    *int    `json:"version,omitempty"`
+}
+
+// OfferDeliveryCommandAction defines model for OfferDeliveryCommand.Action.
+type OfferDeliveryCommandAction string
 
 // OfferDraft defines model for OfferDraft.
 type OfferDraft struct {
@@ -867,6 +989,11 @@ type PreviewOfferParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
 }
 
+// CommandOfferDeliveryParams defines parameters for CommandOfferDelivery.
+type CommandOfferDeliveryParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // CreateCustomCodeParams defines parameters for CreateCustomCode.
 type CreateCustomCodeParams struct {
 	Origin         *Origin         `json:"Origin,omitempty"`
@@ -887,6 +1014,28 @@ type CreateOneTimeCodeBatchParams struct {
 	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
+
+// ListPersonalDeliveriesParams defines parameters for ListPersonalDeliveries.
+type ListPersonalDeliveriesParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreatePersonalDeliveryJSONBody defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryJSONBody struct {
+	Action     CreatePersonalDeliveryJSONBodyAction `json:"action"`
+	Name       *string                              `json:"name,omitempty"`
+	PoolID     *string                              `json:"poolID,omitempty"`
+	RequestKey openapi_types.UUID                   `json:"requestKey"`
+}
+
+// CreatePersonalDeliveryParams defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryParams struct {
+	Origin     *Origin    `json:"Origin,omitempty"`
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// CreatePersonalDeliveryJSONBodyAction defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryJSONBodyAction string
 
 // DownloadOneTimeCodesParams defines parameters for DownloadOneTimeCodes.
 type DownloadOneTimeCodesParams struct {
@@ -927,6 +1076,15 @@ type BeginReauthenticationParams struct {
 type FinishSetupParams struct {
 	XAdminCeremonyID *CeremonyID `json:"X-Admin-Ceremony-ID,omitempty"`
 }
+
+// PublicOfferClaimJSONBody defines parameters for PublicOfferClaim.
+type PublicOfferClaimJSONBody struct {
+	Action PublicOfferClaimJSONBodyAction `json:"action"`
+	Token  string                         `json:"token"`
+}
+
+// PublicOfferClaimJSONBodyAction defines parameters for PublicOfferClaim.
+type PublicOfferClaimJSONBodyAction string
 
 // CreateOperationsDraftParams defines parameters for CreateOperationsDraft.
 type CreateOperationsDraftParams struct {
@@ -1003,11 +1161,17 @@ type CreateOfferJSONRequestBody = CreateOfferRequest
 // PreviewOfferJSONRequestBody defines body for PreviewOffer for application/json ContentType.
 type PreviewOfferJSONRequestBody = OfferDraft
 
+// CommandOfferDeliveryJSONRequestBody defines body for CommandOfferDelivery for application/json ContentType.
+type CommandOfferDeliveryJSONRequestBody = OfferDeliveryCommand
+
 // CreateCustomCodeJSONRequestBody defines body for CreateCustomCode for application/json ContentType.
 type CreateCustomCodeJSONRequestBody = CustomCodeRequest
 
 // CreateOneTimeCodeBatchJSONRequestBody defines body for CreateOneTimeCodeBatch for application/json ContentType.
 type CreateOneTimeCodeBatchJSONRequestBody = OneTimeCodeBatchRequest
+
+// CreatePersonalDeliveryJSONRequestBody defines body for CreatePersonalDelivery for application/json ContentType.
+type CreatePersonalDeliveryJSONRequestBody CreatePersonalDeliveryJSONBody
 
 // FinishEnrollmentJSONRequestBody defines body for FinishEnrollment for application/json ContentType.
 type FinishEnrollmentJSONRequestBody = WebAuthnCredential
@@ -1029,6 +1193,9 @@ type FinishSetupJSONRequestBody = WebAuthnCredential
 
 // BeginSetupJSONRequestBody defines body for BeginSetup for application/json ContentType.
 type BeginSetupJSONRequestBody = SetupRequest
+
+// PublicOfferClaimJSONRequestBody defines body for PublicOfferClaim for application/json ContentType.
+type PublicOfferClaimJSONRequestBody PublicOfferClaimJSONBody
 
 // CreateOperationsDraftJSONRequestBody defines body for CreateOperationsDraft for application/json ContentType.
 type CreateOperationsDraftJSONRequestBody = OperationsDraft
@@ -1156,6 +1323,12 @@ type ServerInterface interface {
 	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools)
 	ListCodePools(c *gin.Context, appID AppID, offerID OfferID)
 
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	GetOfferDelivery(c *gin.Context, appID AppID, offerID OfferID, poolID string)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	CommandOfferDelivery(c *gin.Context, appID AppID, offerID OfferID, poolID string, params CommandOfferDeliveryParams)
+
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/custom-codes)
 	CreateCustomCode(c *gin.Context, appID AppID, offerID OfferID, params CreateCustomCodeParams)
 
@@ -1164,6 +1337,12 @@ type ServerInterface interface {
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/one-time-code-batches)
 	CreateOneTimeCodeBatch(c *gin.Context, appID AppID, offerID OfferID, params CreateOneTimeCodeBatchParams)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	ListPersonalDeliveries(c *gin.Context, appID AppID, offerID OfferID, params ListPersonalDeliveriesParams)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	CreatePersonalDelivery(c *gin.Context, appID AppID, offerID OfferID, params CreatePersonalDeliveryParams)
 
 	// (POST /api/v1/apps/{appID}/one-time-code-batches/{batchID}/download)
 	DownloadOneTimeCodes(c *gin.Context, appID AppID, batchID BatchID, params DownloadOneTimeCodesParams)
@@ -1194,6 +1373,9 @@ type ServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(c *gin.Context)
+
+	// (POST /api/v1/offer-claim)
+	PublicOfferClaim(c *gin.Context)
 
 	// (GET /api/v1/platform/config)
 	GetOperationsConfig(c *gin.Context)
@@ -2700,6 +2882,116 @@ func (siw *ServerInterfaceWrapper) ListCodePools(c *gin.Context) {
 	siw.Handler.ListCodePools(c, appID, offerID)
 }
 
+// GetOfferDelivery operation middleware
+func (siw *ServerInterfaceWrapper) GetOfferDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "poolID" -------------
+	var poolID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "poolID", c.Param("poolID"), &poolID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter poolID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOfferDelivery(c, appID, offerID, poolID)
+}
+
+// CommandOfferDelivery operation middleware
+func (siw *ServerInterfaceWrapper) CommandOfferDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "poolID" -------------
+	var poolID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "poolID", c.Param("poolID"), &poolID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter poolID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CommandOfferDeliveryParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CommandOfferDelivery(c, appID, offerID, poolID, params)
+}
+
 // CreateCustomCode operation middleware
 func (siw *ServerInterfaceWrapper) CreateCustomCode(c *gin.Context) {
 
@@ -2986,6 +3278,128 @@ func (siw *ServerInterfaceWrapper) CreateOneTimeCodeBatch(c *gin.Context) {
 	}
 
 	siw.Handler.CreateOneTimeCodeBatch(c, appID, offerID, params)
+}
+
+// ListPersonalDeliveries operation middleware
+func (siw *ServerInterfaceWrapper) ListPersonalDeliveries(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPersonalDeliveriesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPersonalDeliveries(c, appID, offerID, params)
+}
+
+// CreatePersonalDelivery operation middleware
+func (siw *ServerInterfaceWrapper) CreatePersonalDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePersonalDeliveryParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Origin" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Origin")]; found {
+		var Origin Origin
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Origin, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Origin", valueList[0], &Origin, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uri"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Origin: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.Origin = &Origin
+
+	}
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePersonalDelivery(c, appID, offerID, params)
 }
 
 // DownloadOneTimeCodes operation middleware
@@ -3418,6 +3832,19 @@ func (siw *ServerInterfaceWrapper) BeginSetup(c *gin.Context) {
 	}
 
 	siw.Handler.BeginSetup(c)
+}
+
+// PublicOfferClaim operation middleware
+func (siw *ServerInterfaceWrapper) PublicOfferClaim(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PublicOfferClaim(c)
 }
 
 // GetOperationsConfig operation middleware
@@ -3900,6 +4327,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/api/v1/offer-claim", wrapper.PublicOfferClaim)
 	router.GET(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.ListEvaluationSamples)
 	router.POST(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.SaveEvaluationSample)
 	router.DELETE(options.BaseURL+"/api/v1/ai/evaluations/samples/:sample", wrapper.DeleteEvaluationSample)
@@ -3959,10 +4387,14 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/apps/:appID/metrics/offers", wrapper.GetOfferMetrics)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/preview", wrapper.PreviewOffer)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/deactivate", wrapper.DeactivateOffer)
+	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/personal-deliveries", wrapper.ListPersonalDeliveries)
+	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/personal-deliveries", wrapper.CreatePersonalDelivery)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/custom-codes", wrapper.CreateCustomCode)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/one-time-code-batches", wrapper.CreateOneTimeCodeBatch)
 	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools", wrapper.ListCodePools)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/one-time-code-batches/:batchID/download", wrapper.DownloadOneTimeCodes)
+	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools/:poolID/delivery", wrapper.GetOfferDelivery)
+	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools/:poolID/delivery", wrapper.CommandOfferDelivery)
 }
 
 type CreatedJSONResponse JSONDocument
@@ -5469,6 +5901,90 @@ func (response ListCodePoolsdefaultJSONResponse) VisitListCodePoolsResponse(w ht
 	return err
 }
 
+type GetOfferDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	PoolID  string  `json:"poolID"`
+}
+
+type GetOfferDeliveryResponseObject interface {
+	VisitGetOfferDeliveryResponse(w http.ResponseWriter) error
+}
+
+type GetOfferDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response GetOfferDelivery200JSONResponse) VisitGetOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOfferDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetOfferDeliverydefaultJSONResponse) VisitGetOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommandOfferDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	PoolID  string  `json:"poolID"`
+	Params  CommandOfferDeliveryParams
+	Body    *CommandOfferDeliveryJSONRequestBody
+}
+
+type CommandOfferDeliveryResponseObject interface {
+	VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error
+}
+
+type CommandOfferDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response CommandOfferDelivery200JSONResponse) VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommandOfferDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CommandOfferDeliverydefaultJSONResponse) VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateCustomCodeRequestObject struct {
 	AppID   AppID   `json:"appID"`
 	OfferID OfferID `json:"offerID"`
@@ -5583,6 +6099,89 @@ type CreateOneTimeCodeBatchdefaultJSONResponse struct {
 }
 
 func (response CreateOneTimeCodeBatchdefaultJSONResponse) VisitCreateOneTimeCodeBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPersonalDeliveriesRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	Params  ListPersonalDeliveriesParams
+}
+
+type ListPersonalDeliveriesResponseObject interface {
+	VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error
+}
+
+type ListPersonalDeliveries200JSONResponse struct{ OKJSONResponse }
+
+func (response ListPersonalDeliveries200JSONResponse) VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPersonalDeliveriesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListPersonalDeliveriesdefaultJSONResponse) VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePersonalDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	Params  CreatePersonalDeliveryParams
+	Body    *CreatePersonalDeliveryJSONRequestBody
+}
+
+type CreatePersonalDeliveryResponseObject interface {
+	VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error
+}
+
+type CreatePersonalDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response CreatePersonalDelivery200JSONResponse) VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePersonalDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreatePersonalDeliverydefaultJSONResponse) VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5978,6 +6577,45 @@ type BeginSetupdefaultJSONResponse struct {
 }
 
 func (response BeginSetupdefaultJSONResponse) VisitBeginSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublicOfferClaimRequestObject struct {
+	Body *PublicOfferClaimJSONRequestBody
+}
+
+type PublicOfferClaimResponseObject interface {
+	VisitPublicOfferClaimResponse(w http.ResponseWriter) error
+}
+
+type PublicOfferClaim200JSONResponse struct{ OKJSONResponse }
+
+func (response PublicOfferClaim200JSONResponse) VisitPublicOfferClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublicOfferClaimdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PublicOfferClaimdefaultJSONResponse) VisitPublicOfferClaimResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6616,6 +7254,12 @@ type StrictServerInterface interface {
 	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools)
 	ListCodePools(ctx context.Context, request ListCodePoolsRequestObject) (ListCodePoolsResponseObject, error)
 
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	GetOfferDelivery(ctx context.Context, request GetOfferDeliveryRequestObject) (GetOfferDeliveryResponseObject, error)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	CommandOfferDelivery(ctx context.Context, request CommandOfferDeliveryRequestObject) (CommandOfferDeliveryResponseObject, error)
+
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/custom-codes)
 	CreateCustomCode(ctx context.Context, request CreateCustomCodeRequestObject) (CreateCustomCodeResponseObject, error)
 
@@ -6624,6 +7268,12 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/one-time-code-batches)
 	CreateOneTimeCodeBatch(ctx context.Context, request CreateOneTimeCodeBatchRequestObject) (CreateOneTimeCodeBatchResponseObject, error)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	ListPersonalDeliveries(ctx context.Context, request ListPersonalDeliveriesRequestObject) (ListPersonalDeliveriesResponseObject, error)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	CreatePersonalDelivery(ctx context.Context, request CreatePersonalDeliveryRequestObject) (CreatePersonalDeliveryResponseObject, error)
 
 	// (POST /api/v1/apps/{appID}/one-time-code-batches/{batchID}/download)
 	DownloadOneTimeCodes(ctx context.Context, request DownloadOneTimeCodesRequestObject) (DownloadOneTimeCodesResponseObject, error)
@@ -6654,6 +7304,9 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(ctx context.Context, request BeginSetupRequestObject) (BeginSetupResponseObject, error)
+
+	// (POST /api/v1/offer-claim)
+	PublicOfferClaim(ctx context.Context, request PublicOfferClaimRequestObject) (PublicOfferClaimResponseObject, error)
 
 	// (GET /api/v1/platform/config)
 	GetOperationsConfig(ctx context.Context, request GetOperationsConfigRequestObject) (GetOperationsConfigResponseObject, error)
@@ -7802,6 +8455,70 @@ func (sh *strictHandler) ListCodePools(ctx *gin.Context, appID AppID, offerID Of
 	}
 }
 
+// GetOfferDelivery operation middleware
+func (sh *strictHandler) GetOfferDelivery(ctx *gin.Context, appID AppID, offerID OfferID, poolID string) {
+	var request GetOfferDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.PoolID = poolID
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOfferDelivery(ctx, request.(GetOfferDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOfferDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOfferDeliveryResponseObject); ok {
+		if err := validResponse.VisitGetOfferDeliveryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CommandOfferDelivery operation middleware
+func (sh *strictHandler) CommandOfferDelivery(ctx *gin.Context, appID AppID, offerID OfferID, poolID string, params CommandOfferDeliveryParams) {
+	var request CommandOfferDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.PoolID = poolID
+	request.Params = params
+
+	var body CommandOfferDeliveryJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CommandOfferDelivery(ctx, request.(CommandOfferDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CommandOfferDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CommandOfferDeliveryResponseObject); ok {
+		if err := validResponse.VisitCommandOfferDeliveryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateCustomCode operation middleware
 func (sh *strictHandler) CreateCustomCode(ctx *gin.Context, appID AppID, offerID OfferID, params CreateCustomCodeParams) {
 	var request CreateCustomCodeRequestObject
@@ -7893,6 +8610,69 @@ func (sh *strictHandler) CreateOneTimeCodeBatch(ctx *gin.Context, appID AppID, o
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateOneTimeCodeBatchResponseObject); ok {
 		if err := validResponse.VisitCreateOneTimeCodeBatchResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPersonalDeliveries operation middleware
+func (sh *strictHandler) ListPersonalDeliveries(ctx *gin.Context, appID AppID, offerID OfferID, params ListPersonalDeliveriesParams) {
+	var request ListPersonalDeliveriesRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPersonalDeliveries(ctx, request.(ListPersonalDeliveriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPersonalDeliveries")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListPersonalDeliveriesResponseObject); ok {
+		if err := validResponse.VisitListPersonalDeliveriesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePersonalDelivery operation middleware
+func (sh *strictHandler) CreatePersonalDelivery(ctx *gin.Context, appID AppID, offerID OfferID, params CreatePersonalDeliveryParams) {
+	var request CreatePersonalDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.Params = params
+
+	var body CreatePersonalDeliveryJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePersonalDelivery(ctx, request.(CreatePersonalDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePersonalDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreatePersonalDeliveryResponseObject); ok {
+		if err := validResponse.VisitCreatePersonalDeliveryResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -8201,6 +8981,37 @@ func (sh *strictHandler) BeginSetup(ctx *gin.Context) {
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(BeginSetupResponseObject); ok {
 		if err := validResponse.VisitBeginSetupResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublicOfferClaim operation middleware
+func (sh *strictHandler) PublicOfferClaim(ctx *gin.Context) {
+	var request PublicOfferClaimRequestObject
+
+	var body PublicOfferClaimJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PublicOfferClaim(ctx, request.(PublicOfferClaimRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublicOfferClaim")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PublicOfferClaimResponseObject); ok {
+		if err := validResponse.VisitPublicOfferClaimResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -8568,83 +9379,90 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -17,7 +17,9 @@ from ops_common import OperationError, atomic_json
 
 # App data is local-first. Disaster recovery retains only the backend control
 # plane, opaque deletion-completion receipts, and the identity-free project
-# cost ledger. Every current or future table outside this allowlist is restored
+# cost ledger, and operator-maintained encrypted Offer distribution records.
+# Apple transaction-to-recipient associations are excluded with App purchase data.
+# Every current or future table outside this allowlist is restored
 # with its schema and no rows, so an older backup cannot recreate an App Attest
 # identity, consent, entitlement, quota, media record, AI request, or
 # purchase-derived user state.
@@ -54,6 +56,14 @@ RECOVERY_DATA_TABLES = (
     "health_ai_rollout_commands",
     "health_ai_endpoint_prices",
     "health_ai_model_attempts",
+    "offer_delivery_pools",
+    "offer_delivery_codes",
+    "offer_delivery_requests",
+    "offer_delivery_events",
+    "offer_personal_deliveries",
+    "offer_redemption_report_days",
+    "offer_redemption_report_rows",
+    "offer_redemption_report_sync",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
 

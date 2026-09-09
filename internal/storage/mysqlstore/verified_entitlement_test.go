@@ -32,6 +32,11 @@ func TestMySQLVerifiedEntitlementPromotionIsAtomic(t *testing.T) {
 	production.TransactionID = "paid"
 	production.Environment = "production"
 	production.ExpiresAt = sandbox.ExpiresAt.Add(30 * 24 * time.Hour)
+	production.ProductID = "health.premium.subscription.monthly"
+	production.OfferTransactionID = "verified-offer-transaction"
+	production.OfferIdentifier = "FRIENDS"
+	production.OfferType = 3
+	production.OfferSignedAt = time.Now()
 	broken := production
 	broken.OfferTransactionID = "offer"
 	broken.OfferIdentifier = strings.Repeat("x", 1024)
@@ -58,6 +63,10 @@ func TestMySQLVerifiedEntitlementPromotionIsAtomic(t *testing.T) {
 		}
 	}
 	assertRecord(production)
+	var product string
+	if err := db.QueryRow(`SELECT product_id FROM app_store_offer_redemptions WHERE app_id='health' AND offer_identifier='FRIENDS'`).Scan(&product); err != nil || product != production.ProductID {
+		t.Fatalf("verified offer lost product: %q %v", product, err)
+	}
 	for _, denied := range []entitlement.Record{sandbox, {KeyID: key.KeyID, TransactionID: "other-paid", Environment: "production", ExpiresAt: production.ExpiresAt}} {
 		if err := store.UpsertVerified(ctx, denied); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
 			t.Fatalf("expected conflict: %v", err)

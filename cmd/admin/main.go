@@ -28,6 +28,7 @@ import (
 	platformconfig "github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/offerdelivery"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/prompteval"
@@ -94,7 +95,7 @@ func run(logger *slog.Logger) error {
 	for _, app := range configuration.apps {
 		client, err := appstoreconnect.NewClient(appstoreconnect.Config{
 			BaseURL: app.baseURL, IssuerID: app.issuerID, KeyID: app.keyID,
-			SubscriptionID: app.subscriptionID, SigningKey: app.signingKey,
+			SubscriptionID: app.subscriptionID, AppAppleID: app.appAppleID, VendorNumber: app.vendorNumber, SigningKey: app.signingKey,
 		})
 		if err != nil {
 			return fmt.Errorf("configure App Store Connect for %s: %w", app.id, err)
@@ -157,8 +158,33 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	evaluations := prompteval.Store{DB: database, Cipher: evaluationCipher, Limits: evaluationCost.Limits}
+	deliveryStore := &offerdelivery.Store{DB: database, Cipher: evaluationCipher}
+	for appID, manager := range offerClients {
+		source, ok := manager.(offerdelivery.ReportSource)
+		if !ok || !source.ReportsConfigured() {
+			continue
+		}
+		go func(app string, source offerdelivery.ReportSource) {
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
+			for {
+				cycle, cancel := context.WithTimeout(background, 10*time.Minute)
+				err := deliveryStore.SyncReports(cycle, app, source, time.Now(), 185)
+				cancel()
+				if err != nil && background.Err() == nil {
+					logger.Warn("offer redemption report sync incomplete", "app", app)
+				}
+				select {
+				case <-background.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}(appID, source)
+	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		AI: ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
+		Delivery: deliveryStore,
+		AI:       ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
 		Prompts: &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,
@@ -211,8 +237,8 @@ type config struct {
 }
 
 type adminAppConfig struct {
-	id, displayName, baseURL, issuerID, keyID, subscriptionID string
-	signingKey                                                *ecdsa.PrivateKey
+	id, displayName, baseURL, issuerID, keyID, subscriptionID, appAppleID, vendorNumber string
+	signingKey                                                                          *ecdsa.PrivateKey
 }
 
 func loadConfig() (config, error) {
@@ -256,7 +282,7 @@ func loadAdminApp(prefix, id, displayName string) (adminAppConfig, error) {
 		id: id, displayName: displayName,
 		baseURL:  value(prefix+"_APP_STORE_CONNECT_BASE_URL", "https://api.appstoreconnect.apple.com"),
 		issuerID: read("APP_STORE_CONNECT_ISSUER_ID"), keyID: read("APP_STORE_CONNECT_KEY_ID"),
-		subscriptionID: read("APP_STORE_CONNECT_SUBSCRIPTION_ID"), signingKey: privateKey,
+		subscriptionID: read("APP_STORE_CONNECT_SUBSCRIPTION_ID"), appAppleID: read("APP_STORE_APP_APPLE_ID"), vendorNumber: read("APP_STORE_CONNECT_VENDOR_NUMBER"), signingKey: privateKey,
 	}
 	if app.issuerID == "" || app.keyID == "" || app.subscriptionID == "" {
 		return adminAppConfig{}, fmt.Errorf("%s App Store Connect configuration is required", id)

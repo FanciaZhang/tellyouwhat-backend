@@ -65,7 +65,7 @@ func (repository *EntitlementRepository) ApplyNotification(
 		return false, err
 	}
 	if err := insertOfferRedemption(ctx, transaction, repository.appID, state.Environment, state.TransactionID,
-		state.OriginalTransactionID, state.OfferIdentifier, state.OfferType, state.SignedAt, state.ExpiresAt); err != nil {
+		state.OriginalTransactionID, state.OfferIdentifier, state.ProductID, state.OfferType, state.SignedAt, state.ExpiresAt); err != nil {
 		return false, err
 	}
 	if err := transaction.Commit(); err != nil {
@@ -145,14 +145,14 @@ func (repository *EntitlementRepository) upsert(ctx context.Context, transaction
 		return err
 	}
 	if err := insertOfferRedemption(ctx, transaction, repository.appID, record.Environment, record.OfferTransactionID,
-		record.TransactionID, record.OfferIdentifier, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
+		record.TransactionID, record.OfferIdentifier, record.ProductID, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
 		return err
 	}
 	return nil
 }
 
 func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, environment, transactionID,
-	originalTransactionID, offerIdentifier string, offerType int32, signedAt, expiresAt time.Time) error {
+	originalTransactionID, offerIdentifier, productID string, offerType int32, signedAt, expiresAt time.Time) error {
 	if transactionID == "" || originalTransactionID == "" || offerIdentifier == "" || offerType <= 0 || signedAt.IsZero() {
 		return nil
 	}
@@ -160,10 +160,10 @@ func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, envi
 	originalHash := sha256.Sum256([]byte(originalTransactionID))
 	_, err := transaction.ExecContext(ctx, `
 		INSERT INTO app_store_offer_redemptions
-			(app_id, environment, transaction_hash, original_transaction_hash, offer_identifier, offer_type, redeemed_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE expires_at = GREATEST(expires_at, VALUES(expires_at))`,
-		appID, environment, transactionHash[:], originalHash[:], offerIdentifier, offerType, signedAt.UTC(), expiresAt.UTC())
+			(app_id, environment, transaction_hash, original_transaction_hash, offer_identifier, product_id, offer_type, redeemed_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE product_id = IF(product_id='', VALUES(product_id), product_id), expires_at = GREATEST(expires_at, VALUES(expires_at))`,
+		appID, environment, transactionHash[:], originalHash[:], offerIdentifier, productID, offerType, signedAt.UTC(), expiresAt.UTC())
 	return err
 }
 

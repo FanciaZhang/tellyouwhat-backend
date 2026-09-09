@@ -358,3 +358,39 @@ small { line-height: 1.5; }
 }
 
 @media(max-width:700px){.prompt-version-tabs:has([data-eval-output]){display:flex;gap:8px;margin-bottom:16px}}
+
+/* Named Offer delivery separates generated capacity from confirmed inventory. */
+#delivery-view { overflow-wrap:anywhere; }
+#delivery-view .card { box-shadow:none; border-radius:14px; }
+#delivery-view summary { cursor:pointer; font-weight:600; padding:8px 0; }
+#delivery-view details.card { margin:18px 0; }
+.delivery-pool { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center; }
+.delivery-pool p { margin-bottom:8px; }
+.delivery-toolbar { display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0; }
+.delivery-metrics { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0; }
+.delivery-metrics .metric { padding:18px; }
+.delivery-metrics strong { font-size:26px; }
+.delivery-form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px; }
+.delivery-wide { grid-column:1/-1; }
+.delivery-form textarea { width:100%;font:inherit;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:12px;resize:vertical; }
+.delivery-search { display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:12px;align-items:end;margin-bottom:20px; }
+.delivery-search label { margin:0; }
+.delivery-recipient h3 { margin-bottom:0; }
+.delivery-recipient .section-head { margin-bottom:12px; }
+.delivery-recipient .offer-actions { justify-content:flex-start;margin-top:16px; }
+.delivery-stages { display:grid;gap:6px;color:var(--muted); }
+.delivery-note { white-space:pre-wrap; }
+.delivery-event { display:grid;gap:5px;padding:12px 0;border-bottom:1px solid var(--line); }
+.delivery-event small { color:var(--muted); }
+@media(max-width:720px){
+ .delivery-metrics { grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+ .delivery-pool,.delivery-form { grid-template-columns:1fr; }
+ .delivery-search { grid-template-columns:1fr 1fr; }
+ .delivery-search label:first-child { grid-column:1/-1; }
+ .delivery-pool button { justify-self:start; }
+ #delivery-view .section-head { flex-wrap:wrap; }
+}
+.claim-shell { max-width:560px; }
+.claim-shell h1 { margin-bottom:18px; }
+.claim-shell h2 { overflow-wrap:anywhere; }
+.claim-shell textarea { width:100%;font:inherit;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:12px;resize:vertical; }

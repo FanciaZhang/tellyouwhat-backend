@@ -39,6 +39,8 @@ type Config struct {
 	IssuerID       string
 	KeyID          string
 	SubscriptionID string
+	AppAppleID     string
+	VendorNumber   string
 	SigningKey     *ecdsa.PrivateKey
 	HTTPClient     *http.Client
 	Now            func() time.Time
@@ -72,6 +74,9 @@ func requestRejection(reader io.Reader) error {
 }
 
 type Offer struct {
+	SubscriptionID         string   `json:"subscriptionID"`
+	ProductID              string   `json:"productID"`
+	SubscriptionName       string   `json:"subscriptionName"`
 	ID                     string   `json:"id"`
 	Name                   string   `json:"name"`
 	CustomerEligibilities  []string `json:"customerEligibilities"`
@@ -150,41 +155,75 @@ func NewClient(config Config) (*Client, error) {
 	return &Client{config: config}, nil
 }
 
+// ListOffers enumerates every subscription of the configured App. A missing App
+// identity explicitly limits inventory to the configured creation subscription.
 func (client *Client) ListOffers(ctx context.Context) ([]Offer, error) {
-	path := "/v1/subscriptions/" + url.PathEscape(client.config.SubscriptionID) + "/offerCodes"
-	next := strings.TrimRight(client.config.BaseURL, "/") + path + "?limit=200"
-	var offers []Offer
-	for page := 0; page < maximumPaginationPages && next != ""; page++ {
-		var payload listResponse[offerAttributes]
-		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+	subscriptions, err := client.listSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	offers := []Offer{}
+	seen := map[string]bool{}
+	for _, subscription := range subscriptions {
+		path := "/v1/subscriptions/" + url.PathEscape(subscription.ID) + "/offerCodes"
+		resources, err := listPoolResources[offerAttributes](ctx, client, path)
+		if err != nil {
 			return nil, err
 		}
-		for _, resource := range payload.Data {
-			if resource.ID == "" || resource.Type != "subscriptionOfferCodes" || resource.Attributes.Name == "" {
+		for _, resource := range resources {
+			offer, err := mapOffer(resource)
+			if err != nil || seen[offer.ID] {
 				return nil, ErrInvalid
 			}
-			attributes := resource.Attributes
-			offers = append(offers, Offer{
-				ID: resource.ID, Name: attributes.Name,
-				CustomerEligibilities: attributes.CustomerEligibilities,
-				OfferEligibility:      attributes.OfferEligibility, Duration: attributes.Duration,
-				OfferMode: attributes.OfferMode, NumberOfPeriods: attributes.NumberOfPeriods,
-				TotalNumberOfCodes:  attributes.TotalNumberOfCodes,
-				ProductionCodeCount: attributes.ProductionCodeCount,
-				SandboxCodeCount:    attributes.SandboxCodeCount, Active: attributes.Active,
-				AutoRenewEnabled:       attributes.AutoRenewEnabled,
-				TargetSubscriptionPlan: attributes.TargetSubscriptionPlanType,
-			})
+			seen[offer.ID] = true
+			offer.SubscriptionID, offer.ProductID, offer.SubscriptionName = subscription.ID, subscription.Attributes.ProductID, subscription.Attributes.Name
+			offers = append(offers, offer)
 		}
-		next = payload.Links.Next
-		if next != "" && !client.allowedNextURL(next) {
-			return nil, ErrInvalid
-		}
-	}
-	if next != "" {
-		return nil, ErrInvalid
 	}
 	return offers, nil
+}
+
+type subscriptionAttributes struct {
+	Name      string `json:"name"`
+	ProductID string `json:"productId"`
+}
+
+func (client *Client) listSubscriptions(ctx context.Context) ([]jsonAPIResource[subscriptionAttributes], error) {
+	if client.config.AppAppleID == "" {
+		return []jsonAPIResource[subscriptionAttributes]{{ID: client.config.SubscriptionID, Type: "subscriptions"}}, nil
+	}
+	groups, err := listPoolResources[struct{}](ctx, client, "/v1/apps/"+url.PathEscape(client.config.AppAppleID)+"/subscriptionGroups")
+	if err != nil {
+		return nil, err
+	}
+	subscriptions := []jsonAPIResource[subscriptionAttributes]{}
+	seen := map[string]bool{}
+	for _, group := range groups {
+		if group.ID == "" || group.Type != "subscriptionGroups" {
+			return nil, ErrInvalid
+		}
+		rows, err := listPoolResources[subscriptionAttributes](ctx, client, "/v1/subscriptionGroups/"+url.PathEscape(group.ID)+"/subscriptions")
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.ID == "" || row.Type != "subscriptions" || row.Attributes.ProductID == "" || seen[row.ID] {
+				return nil, ErrInvalid
+			}
+			seen[row.ID] = true
+			subscriptions = append(subscriptions, row)
+		}
+	}
+	// The default creation product must belong to this App; never silently fall
+	// back to an unrelated configured product after a partial inventory read.
+	if !seen[client.config.SubscriptionID] {
+		return nil, ErrInvalid
+	}
+	return subscriptions, nil
+}
+
+func (client *Client) OfferScope() (appAppleID, creationSubscriptionID string) {
+	return client.config.AppAppleID, client.config.SubscriptionID
 }
 
 func (client *Client) CreateFreeOffer(ctx context.Context, draft OfferDraft) (Offer, error) {
@@ -294,6 +333,9 @@ func (client *Client) DeactivateOffer(ctx context.Context, id string) (Offer, er
 }
 
 func (client *Client) CreateCustomCode(ctx context.Context, offerID, code string, count int, expirationDate string) (CodePool, error) {
+	if count < 500 || count > 25000 {
+		return CodePool{}, ErrInvalid
+	}
 	attributes := map[string]any{"customCode": code, "numberOfCodes": count}
 	if expirationDate != "" {
 		attributes["expirationDate"] = expirationDate
@@ -349,17 +391,17 @@ func (client *Client) ListCodePools(ctx context.Context, offerID string) ([]Code
 }
 
 func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		CustomCode     string `json:"customCode"`
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeCustomCodes" {
 			return nil, ErrInvalid
 		}
@@ -370,17 +412,17 @@ func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]C
 }
 
 func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Environment    string `json:"environment"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeOneTimeUseCodes" {
 			return nil, ErrInvalid
 		}
@@ -388,6 +430,43 @@ func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]
 			ExpirationDate: resource.Attributes.ExpirationDate, Environment: resource.Attributes.Environment, Active: resource.Attributes.Active})
 	}
 	return pools, nil
+}
+
+// listPoolResources requires complete pagination and rejects cross-resource continuation links.
+func listPoolResources[T any](ctx context.Context, client *Client, path string) ([]jsonAPIResource[T], error) {
+	next := strings.TrimRight(client.config.BaseURL, "/") + path + "?limit=200"
+	base, _ := url.Parse(client.config.BaseURL)
+	out := []jsonAPIResource[T]{}
+	seenPages := map[string]bool{}
+	seenIDs := map[string]bool{}
+	for page := 0; next != "" && page < maximumPaginationPages; page++ {
+		if seenPages[next] {
+			return nil, ErrInvalid
+		}
+		seenPages[next] = true
+		var payload listResponse[T]
+		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+			return nil, err
+		}
+		for _, resource := range payload.Data {
+			if seenIDs[resource.ID] {
+				return nil, ErrInvalid
+			}
+			seenIDs[resource.ID] = true
+			out = append(out, resource)
+		}
+		next = payload.Links.Next
+		if next != "" {
+			u, err := url.Parse(next)
+			if err != nil || u.Scheme != base.Scheme || u.Host != base.Host || u.Path != path || u.User != nil || u.Fragment != "" {
+				return nil, ErrInvalid
+			}
+		}
+	}
+	if next != "" {
+		return nil, ErrInvalid
+	}
+	return out, nil
 }
 
 func (client *Client) DownloadOneTimeCodes(ctx context.Context, batchID string) ([]byte, error) {
@@ -547,13 +626,6 @@ func (client *Client) bearerToken(scope []string) (string, error) {
 	}
 	signature := append(fixedWidth(r, 32), fixedWidth(s, 32)...)
 	return input + "." + base64.RawURLEncoding.EncodeToString(signature), nil
-}
-
-func (client *Client) allowedNextURL(value string) bool {
-	base, baseErr := url.Parse(client.config.BaseURL)
-	next, nextErr := url.Parse(value)
-	return baseErr == nil && nextErr == nil && next.Scheme == base.Scheme && next.Host == base.Host &&
-		strings.HasPrefix(next.Path, "/v1/subscriptions/"+url.PathEscape(client.config.SubscriptionID)+"/offerCodes")
 }
 
 func encodeJSONSegment(value any) (string, error) {

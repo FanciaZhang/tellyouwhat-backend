@@ -21,6 +21,7 @@ type Record struct {
 	Environment        string
 	OfferTransactionID string
 	OfferIdentifier    string
+	ProductID          string
 	OfferType          int32
 	OfferSignedAt      time.Time
 }

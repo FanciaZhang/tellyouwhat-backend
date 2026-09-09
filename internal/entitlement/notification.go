@@ -18,6 +18,7 @@ type NotificationState struct {
 	Environment           string
 	TransactionID         string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	SignedAt              time.Time
 	ExpiresAt             time.Time
