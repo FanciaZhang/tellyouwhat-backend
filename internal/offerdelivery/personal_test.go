@@ -4,152 +4,206 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
-type personalCloudFixture struct {
-	mu          sync.Mutex
-	createCount int
-	pools       []appstoreconnect.CodePool
-	uncertain   bool
-	rejection   error
-}
-
-func (f *personalCloudFixture) ListOffers(context.Context) ([]appstoreconnect.Offer, error) {
-	return []appstoreconnect.Offer{{ID: "friends", Name: "FRIENDS", Active: true, SubscriptionID: "456", ProductID: "app.monthly"}}, nil
-}
-func (f *personalCloudFixture) ListCodePools(context.Context, string) ([]appstoreconnect.CodePool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.pools, nil
-}
-func (f *personalCloudFixture) CreateCustomCode(_ context.Context, offer, code string, count int, expiry string) (appstoreconnect.CodePool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.createCount++
-	if f.rejection != nil {
-		return appstoreconnect.CodePool{}, f.rejection
-	}
-	if offer != "friends" || count != 1 {
-		return appstoreconnect.CodePool{}, ErrInvalid
-	}
-	p := appstoreconnect.CodePool{ID: "personal-cloud-pool", Code: code, Kind: "custom", NumberOfCodes: count, ExpirationDate: expiry, Active: true}
-	f.pools = append(f.pools, p)
-	if f.uncertain {
-		return appstoreconnect.CodePool{}, appstoreconnect.ErrUnavailable
-	}
-	return p, nil
-}
-func TestPersonalCodeResumesUncertainCreationWithoutDuplication(t *testing.T) {
-	s, _, now := fixture(t)
+func TestPersonalAllocatesExistingOneTimeCodesAndKeepsClaimsSeparate(t *testing.T) {
+	s, p, now := fixture(t)
 	ctx := context.Background()
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"AAAA111", "BBBB222"}, now); err != nil {
+		t.Fatal(err)
+	}
 	id := uuid.NewString()
-	expiry := now.AddDate(0, 0, 30).Format("2006-01-02")
-	v, err := s.PreparePersonal(ctx, "health", "friends", id, "Known friend", expiry, now)
-	if err != nil {
+	if _, _, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("allocated unconfirmed inventory", err)
+	}
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 2, now); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(v.Code, "Known") || len(v.Code) < 30 {
-		t.Fatal("personal code is identifiable or guessable")
+	v, r, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now)
+	if err != nil || v.State != "ready" || r.CodeID == "" || r.Source != "personal" || r.ClaimedAt != nil || r.DeliveredAt != nil || r.ClaimGeneration != 1 {
+		t.Fatalf("allocation %+v %+v %v", v, r, err)
 	}
-	var encrypted []byte
-	if err = s.DB.QueryRow(`SELECT ciphertext FROM offer_personal_deliveries WHERE app_id='health' AND id=?`, id).Scan(&encrypted); err != nil || bytes.Contains(encrypted, []byte("Known friend")) || bytes.Contains(encrypted, []byte(v.Code)) {
-		t.Fatal("intent exposed personal details", err)
+	_, other, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, uuid.NewString(), "Second friend", "admin", now)
+	if err != nil || other.CodeID == r.CodeID {
+		t.Fatal("same pool must support distinct recipients", err)
 	}
-	cloud := &personalCloudFixture{uncertain: true}
-	if _, _, err = s.CompletePersonal(ctx, "health", id, "admin", cloud, now); !errors.Is(err, ErrPersonalUncertain) {
-		t.Fatal(err)
+	if _, _, err = s.IssuePersonal(ctx, "health", p.OfferID, p.ID, uuid.NewString(), "No inventory", "admin", now); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("oversold", err)
 	}
-	v, r, err := s.CompletePersonal(ctx, "health", id, "admin", cloud, now)
-	if err != nil || v.State != "ready" || r.Status != "assigned" || r.ClaimExpiresAt == nil || cloud.createCount != 1 {
-		t.Fatalf("resume failed %+v %+v %v", v, r, err)
+	_, replay, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now)
+	if err != nil || replay.ID != r.ID {
+		t.Fatal("duplicate allocation", err)
 	}
-	if _, _, err = s.CompletePersonal(ctx, "health", id, "admin", cloud, now); err != nil || cloud.createCount != 1 {
-		t.Fatal("retry created another cloud code", err)
+	if _, _, err = s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Other name", "admin", now); !errors.Is(err, ErrConflict) {
+		t.Fatal("idempotency mismatch", err)
 	}
-	raw := []byte(reportHeader + reportLine(now.AddDate(0, 0, -1).Format("2006-01-02"), "123", "456", "FRIENDS", v.Code, 1))
-	if err = s.ImportAppleReport(ctx, "health", "123", now.AddDate(0, 0, -1).Format("2006-01-02"), raw, now); err != nil {
-		t.Fatal(err)
+	if _, _, err = s.IssuePersonal(ctx, "journal", p.OfferID, p.ID, id, "Friend", "admin", now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("cross-App access", err)
 	}
-	p, err := s.GetPool(ctx, "health", v.PoolID)
-	if err != nil {
-		t.Fatal(err)
+	var raw []byte
+	if err = s.DB.QueryRow(`SELECT ciphertext FROM offer_personal_deliveries WHERE app_id='health' AND id=?`, id).Scan(&raw); err != nil || bytes.Contains(raw, []byte("Friend")) {
+		t.Fatal("plaintext name", err)
 	}
-	report, err := s.PoolReport(ctx, "health", p)
-	if err != nil || report.Redemptions != 1 {
-		t.Fatalf("dedicated code redemption not found %+v %v", report, err)
+	r, err = s.Transition(ctx, "health", r.ID, "admin", "deliver", r.Version, now)
+	if err != nil || r.ClaimedAt != nil {
+		t.Fatal("manual delivery implied claim", err)
+	}
+	r, code, err := s.AccessClaim(ctx, "health", r.ID, r.ClaimGeneration, "claim", now)
+	if err != nil || code == "" || r.ClaimedAt == nil || r.VerifiedAt != nil {
+		t.Fatal("claim implied redemption", err)
+	}
+	summary, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Applications != 0 || summary.AssignedCodes != 2 || summary.Claimed != 1 || summary.LinkedVerified != 0 {
+		t.Fatalf("summary %+v %v", summary, err)
 	}
 	r, err = s.SetClaimLink(ctx, "health", r.ID, "admin", r.Version, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, retry, err := s.CompletePersonal(ctx, "health", id, "admin", cloud, now)
-	if err != nil || retry.ClaimExpiresAt != nil {
-		t.Fatal("idempotent create revived a revoked link", err)
+	_, replay, err = s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now)
+	if err != nil || replay.ClaimExpiresAt != nil {
+		t.Fatal("retry revived revoked link", err)
 	}
-	if _, err = s.PreparePersonal(ctx, "health", "friends", id, "Different friend", expiry, now); !errors.Is(err, ErrConflict) {
-		t.Fatal("request reused for another recipient")
-	}
-	if _, _, err = s.CompletePersonal(ctx, "journal", id, "admin", cloud, now); !errors.Is(err, ErrNotFound) {
-		t.Fatal("cross-App intent access")
+	var count int
+	if err = s.DB.QueryRow(`SELECT COUNT(*) FROM offer_personal_deliveries`).Scan(&count); err != nil || count != 2 {
+		t.Fatal("failed allocation left a partial record", count, err)
 	}
 }
-func TestPersonalConcurrentCompletionAllocatesOnce(t *testing.T) {
-	s, _, now := fixture(t)
+
+func TestPersonalConcurrentAllocationsCannotReuseOrOversell(t *testing.T) {
+	s, p, now := fixture(t)
 	ctx := context.Background()
-	id := uuid.NewString()
-	if _, err := s.PreparePersonal(ctx, "health", "friends", id, "Friend", now.AddDate(0, 0, 30).Format("2006-01-02"), now); err != nil {
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"AAAA111", "BBBB222"}, now); err != nil {
 		t.Fatal(err)
 	}
-	cloud := &personalCloudFixture{}
-	var group sync.WaitGroup
-	results := make(chan error, 2)
-	for range 2 {
-		group.Add(1)
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	results := make(chan error, 3)
+	for range 3 {
+		wg.Add(1)
 		go func() {
-			defer group.Done()
-			_, _, err := s.CompletePersonal(ctx, "health", id, "admin", cloud, now)
+			defer wg.Done()
+			_, _, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, uuid.NewString(), "Friend", "admin", now)
 			results <- err
 		}()
 	}
-	group.Wait()
+	wg.Wait()
 	close(results)
-	succeeded := 0
+	success := 0
 	for err := range results {
 		if err == nil {
-			succeeded++
-		} else if !errors.Is(err, ErrConflict) {
+			success++
+		} else if !errors.Is(err, ErrUnavailable) {
 			t.Fatal(err)
 		}
 	}
-	if succeeded < 1 || cloud.createCount != 1 {
-		t.Fatalf("concurrent duplicate: success=%d creates=%d", succeeded, cloud.createCount)
+	if success != 2 {
+		t.Fatal("wrong allocation count", success)
+	}
+	var codes int
+	if err := s.DB.QueryRow(`SELECT COUNT(DISTINCT code_id) FROM offer_delivery_requests`).Scan(&codes); err != nil || codes != 2 {
+		t.Fatal("reused code", codes, err)
 	}
 }
-func TestPersonalDefinitiveAppleRejectionDoesNotRaiseCapacity(t *testing.T) {
-	s, _, now := fixture(t)
+
+func TestPersonalRetryAfterTransactionFailureKeepsInventory(t *testing.T) {
+	s, p, now := fixture(t)
 	ctx := context.Background()
-	id := uuid.NewString()
-	if _, err := s.PreparePersonal(ctx, "health", "friends", id, "Friend", now.AddDate(0, 0, 30).Format("2006-01-02"), now); err != nil {
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"AAAA111", "BBBB222"}, now); err != nil {
 		t.Fatal(err)
 	}
-	cloud := &personalCloudFixture{rejection: appstoreconnect.ErrRejected}
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	normal := s.Cipher
+	s.Cipher = personalFailCipher{normal}
+	id := uuid.NewString()
+	if _, _, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now); err == nil {
+		t.Fatal("injected persistence failure was ignored")
+	}
+	summary, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Available != 2 || summary.Requests != 0 {
+		t.Fatalf("partial allocation %+v %v", summary, err)
+	}
+	s.Cipher = normal
+	var wg sync.WaitGroup
+	results := make(chan Request, 2)
+	failures := make(chan error, 2)
 	for range 2 {
-		if _, _, err := s.CompletePersonal(ctx, "health", id, "admin", cloud, now); !errors.Is(err, appstoreconnect.ErrRejected) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, r, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", now)
+			results <- r
+			failures <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(failures)
+	for err := range failures {
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if cloud.createCount != 1 {
-		t.Fatal("retried a rejected code or changed capacity")
+	requestID := ""
+	for r := range results {
+		if requestID != "" && requestID != r.ID {
+			t.Fatal("concurrent retry assigned twice")
+		}
+		requestID = r.ID
+	}
+	summary, err = s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Available != 1 || summary.Requests != 1 {
+		t.Fatalf("retry duplicated assignment %+v %v", summary, err)
 	}
 }
+
+type personalFailCipher struct{ Cipher }
+
+func (c personalFailCipher) Encrypt(raw, aad []byte) ([]byte, []byte, error) {
+	if bytes.Contains(aad, []byte("personal")) {
+		return nil, nil, ErrInvalid
+	}
+	return c.Cipher.Encrypt(raw, aad)
+}
+
+func TestPersonalRejectsSharedSandboxInactiveAndWrongOfferPools(t *testing.T) {
+	for _, kind := range []string{"custom", "sandbox", "inactive", "wrong-offer"} {
+		t.Run(kind, func(t *testing.T) {
+			s, p, now := fixture(t)
+			ctx := context.Background()
+			offer := p.OfferID
+			p.ID = "unsupported-pool"
+			switch kind {
+			case "custom":
+				p.Kind = "custom"
+				p.Code = "SHAREDCODE"
+			case "sandbox":
+				p.Environment = "sandbox"
+			case "inactive":
+				p.Active = false
+			case "wrong-offer":
+				offer = "other"
+			}
+			if err := s.SyncPool(ctx, "health", p); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := s.IssuePersonal(ctx, "health", offer, p.ID, uuid.NewString(), "Friend", "admin", now); err == nil {
+				t.Fatal("unsupported pool allocated")
+			}
+		})
+	}
+}
+
 func TestAppleCodeExpiryUsesPacificMidnight(t *testing.T) {
 	for _, v := range []struct{ day, hour string }{{"2026-09-09", "07:00"}, {"2026-12-09", "08:00"}} {
 		got, err := AppleCodeExpiry(v.day)

@@ -1023,8 +1023,8 @@ type ListPersonalDeliveriesParams struct {
 // CreatePersonalDeliveryJSONBody defines parameters for CreatePersonalDelivery.
 type CreatePersonalDeliveryJSONBody struct {
 	Action     CreatePersonalDeliveryJSONBodyAction `json:"action"`
-	Expiration *openapi_types.Date                  `json:"expiration,omitempty"`
 	Name       *string                              `json:"name,omitempty"`
+	PoolID     *string                              `json:"poolID,omitempty"`
 	RequestKey openapi_types.UUID                   `json:"requestKey"`
 }
 
@@ -9452,17 +9452,17 @@ var swaggerSpec = []string{
 	"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",
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

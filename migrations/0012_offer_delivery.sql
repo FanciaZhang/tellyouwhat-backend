@@ -127,7 +127,7 @@ CREATE TABLE offer_personal_deliveries (
  created_at DATETIME(6) NOT NULL,
  PRIMARY KEY(app_id,id),
  INDEX offer_personal_list(app_id,offer_id,id),
- UNIQUE KEY offer_personal_pool(app_id,pool_id),
+ INDEX offer_personal_pool(app_id,pool_id),
  UNIQUE KEY offer_personal_request(app_id,request_id),
  FOREIGN KEY(app_id,request_id) REFERENCES offer_delivery_requests(app_id,id)
 ) ENGINE=InnoDB;

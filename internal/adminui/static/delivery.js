@@ -2,7 +2,7 @@
 let delivery = null;
 let deliveryGeneration = 0;
 const deliveryStatus = {requested:'待处理',assigned:'已分配，待发放',delivered:'已发放',cancelled:'已取消',rejected:'已拒绝'};
-const deliveryActions = {'request.claim':'领取人通过专属链接领码','request.share_claim':'生成或复制专属领取链接','request.revoke_claim':'撤销专属领取链接','inventory.import':'导入完整码池','inventory.confirm_available':'确认未发放库存','inventory.export':'导出 CSV，移出可分配库存','request.record_external':'补录历史发放','request.create':'登记申请','request.assign':'分配兑换码','code.reveal':'查看兑换码','request.deliver':'记录实际发放','request.cancel':'取消申请','request.reject':'拒绝申请','request.report_redeemed':'记录领取人反馈','request.link_verified':'人工关联已验证订阅'};
+const deliveryActions = {'request.claim':'领取人通过专属链接领码','request.share_claim':'生成或复制专属领取链接','request.revoke_claim':'撤销专属领取链接','inventory.import':'导入完整码池','inventory.confirm_available':'确认未发放库存','inventory.export':'导出 CSV，移出可分配库存','request.record_external':'补录历史发放','request.personal_create':'为朋友分配一次性码','request.create':'登记申请','request.assign':'分配兑换码','code.reveal':'查看兑换码','request.deliver':'记录实际发放','request.cancel':'取消申请','request.reject':'拒绝申请','request.report_redeemed':'记录领取人反馈','request.link_verified':'人工关联已验证订阅'};
 const deliveryPath = d => `/api/v1/apps/${encodeURIComponent(d.app)}/offers/${encodeURIComponent(d.offer.id)}/code-pools/${encodeURIComponent(d.poolID)}/delivery`;
 function deliveryMessage(message,error=false){const node=$('#delivery-message');if(node){node.textContent=message;node.className=`notice${error?' error':''}`;}}
 function closeOfferDelivery(){deliveryGeneration++;delivery=null;$('#delivery-view').replaceChildren();$('#delivery-view').classList.add('hidden');$('#offer-overview').classList.remove('hidden');document.querySelector('#delivery-secret-dialog')?.remove();}
@@ -57,7 +57,7 @@ async function openDeliveryPool(parent,poolID){
  historicalForm.querySelector('[name=deliveredAt]').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
  historical.append(historicalForm);$('#delivery-new').after(historical);
  historicalForm.onsubmit=e=>{e.preventDefault();const values=Object.fromEntries(new FormData(historicalForm)),{code,deliveredAt,...recipient}=values;deliveryRun(async()=>{await deliveryCommand({action:'record_external',recipient,code,deliveredAt:new Date(deliveredAt).toISOString(),requestKey:d.externalKey});d.externalKey=uuid();historicalForm.reset();historical.open=false;d.cursor='';await refreshDelivery();deliveryMessage('历史发放已补录，码值不会再次进入可分配库存');});};
- $('#delivery-back').onclick=()=>openOfferInventory(d.offer.id);
+ $('#delivery-back').onclick=()=>parent.kind==='personal'?openPersonalDelivery(d.offer.id):openOfferInventory(d.offer.id);
  $('#delivery-refresh').onclick=()=>deliveryRun(async()=>{await deliveryCommand({action:'sync'});await refreshDelivery();deliveryMessage('Apple 库存已同步');});
  $('#delivery-request-form').onsubmit=e=>{e.preventDefault();const form=e.currentTarget;const recipient=Object.fromEntries(new FormData(form));deliveryRun(async()=>{await deliveryCommand({action:'request',recipient,requestKey:d.requestKey});d.requestKey=uuid();form.reset();$('#delivery-new').open=false;d.cursor='';await refreshDelivery();deliveryMessage('申请已登记，尚未分配兑换码');});};
  $('#delivery-search').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;d.query=f.query.value;d.status=f.status.value;d.cursor='';deliveryRun(refreshDelivery);};
@@ -142,30 +142,72 @@ function renderDeliveryReport(data){
 }
 
 
+
 const personalPath=d=>`/api/v1/apps/${encodeURIComponent(d.app)}/offers/${encodeURIComponent(d.offer.id)}/personal-deliveries`;
 async function openPersonalDelivery(offerID){
  const offer=state.offerData?.offers?.find(v=>v.id===offerID);if(!offer)return;
- const d={app:state.currentApp,offer,kind:'personal',cursor:'',requestKey:uuid(),busy:false};delivery=d;deliveryGeneration++;
- mountDelivery(deliveryHeader(offer,'历史发放记录')+`
- <p class="card muted">Apple 自定义码最低为 500 次兑换额度，不支持创建限兑一次的专属码。</p>
- <p id="personal-report-status" class="muted"></p>
- <div class="section-head subhead"><h3>熟人发放记录</h3><button id="personal-refresh" class="secondary">刷新记录</button></div><div id="personal-list" class="stack"></div><div class="actions"><button id="personal-first" class="quiet">回到第一页</button><button id="personal-next" class="secondary" disabled>下一页</button></div>`);
+ const d={app:state.currentApp,offer,kind:'personal',cursor:'',requestKey:uuid(),busy:false,pending:null};delivery=d;deliveryGeneration++;
+ mountDelivery(deliveryHeader(offer,'每位朋友分配一枚 Apple 一次性码，对方无需填写个人信息。')+`
+ <form id="personal-form" class="card delivery-form"><label>朋友的称呼<input name="name" required maxlength="80" autocomplete="off" placeholder="例如小王，仅后台可见"></label><label>使用哪批一次性码<select name="poolID" required disabled><option value="">正在读取库存…</option></select></label><p id="personal-stock-note" class="delivery-wide muted"></p><button class="primary" disabled>分配一枚并生成链接</button></form>
+ <div class="actions"><button id="personal-inventory" class="secondary">准备一次性码库存</button></div><p class="muted">库存不足时可创建新批次，Apple 每批至少生成 500 枚，每枚各用一次。分配使用该批次的有效期。</p>
+ <p class="card muted">领取不等于兑换。Apple 不提供每枚一次性码的兑换状态，个人兑换情况需人工核对。</p>
+ <div class="section-head subhead"><h3>熟人发放记录</h3><button id="personal-refresh" class="secondary">刷新</button></div><div id="personal-list" class="stack"></div><div class="actions"><button id="personal-first" class="quiet">回到第一页</button><button id="personal-next" class="secondary" disabled>下一页</button></div>`);
  $('#delivery-back').onclick=closeOfferDelivery;
+ $('#personal-inventory').onclick=()=>openOfferInventory(offerID);
  $('#personal-refresh').onclick=()=>refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));
  $('#personal-first').onclick=()=>{d.cursor='';refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));};
  $('#personal-next').onclick=()=>{d.cursor=d.nextCursor;refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));};
- await refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));
+ const form=$('#personal-form');
+ form.onsubmit=async e=>{
+  e.preventDefault();if(d.busy)return;d.busy=true;
+  if(!d.pending)d.pending={action:'create',requestKey:d.requestKey,...Object.fromEntries(new FormData(form))};
+  const button=form.querySelector('button');button.disabled=true;form.elements.name.readOnly=true;form.elements.poolID.disabled=true;
+  try{
+   await reauthenticate();if(delivery!==d)return;
+   const result=await api(personalPath(d),{method:'POST',csrfRequired:true,body:d.pending});
+   if(delivery!==d)return;
+   d.pending=null;d.requestKey=uuid();form.elements.name.value='';d.cursor='';await refreshPersonal(d);showPersonalLink(result);
+  }catch(e){if(delivery===d){
+   if(['inventory_unavailable','invalid_delivery','delivery_not_found','reauthentication_required','forbidden'].includes(e.code)){d.pending=null;}
+   deliveryMessage(d.pending?`${e.message}。重试会核对同一次分配，不会再发一枚码。`:e.message,true);
+   await refreshPersonal(d).catch(()=>{});
+  }}finally{d.busy=false;if(delivery===d){form.elements.name.readOnly=!!d.pending;form.elements.poolID.disabled=!!d.pending||!d.hasStock;button.disabled=!d.pending&&!d.hasStock;button.textContent=d.pending?'重试同一次分配':'分配一枚并生成链接';}}
+ };
+ await refreshPersonal(d).catch(e=>{if(delivery===d){$('#personal-stock-note').textContent='库存暂不可用，请刷新后重试。';deliveryMessage(e.message,true);}});
 }
 async function refreshPersonal(d){
  const data=await api(personalPath(d)+(d.cursor?'?cursor='+encodeURIComponent(d.cursor):''));if(delivery!==d)return;
- d.nextCursor=data.nextCursor;$('#personal-next').disabled=!data.nextCursor;
- const sync=data.reportSync||{};
- $('#personal-report-status').textContent=sync.state==='not_configured'?'自动核销对账尚未配置供应商编号，兑换结果暂时待确认。':sync.state==='forbidden'?'Apple 报表权限不足，兑换结果保留上次记录。':sync.state==='failed'?'最近一次 Apple 报表同步未完成，保留上次结果。':'Apple 日报定期同步，兑换结果可能有延迟。';
+ d.nextCursor=data.nextCursor;$('#personal-next').disabled=!data.nextCursor;$('#personal-first').disabled=!d.cursor;
+ const pools=data.pools||[],ready=pools.filter(p=>p.active&&p.available>0);
+ d.hasStock=ready.length>0&&!data.inventoryError;
+ const form=$('#personal-form'),select=form.elements.poolID,selected=select.value;
+ if(!d.pending){
+  select.innerHTML=ready.length?ready.map(p=>`<option value="${escapeHTML(p.id)}">可分配 ${Number(p.available)} 枚 · ${escapeHTML(p.expiration)} 到期</option>`).join(''):'<option value="">暂无可分配的一次性码</option>';
+  if(ready.some(p=>p.id===selected))select.value=selected;
+ }
+ select.disabled=!!d.pending||!d.hasStock||d.busy;
+ form.querySelector('button').disabled=d.busy||(!d.pending&&!d.hasStock);
+ $('#personal-stock-note').textContent=data.inventoryError||(ready.length?'只分配库存中已确认未发出的码。有效期与原批次一致。':pools.some(p=>p.active&&!p.managed)?'已有一次性码批次，请先导入并确认未发放库存。':'暂无可分配库存，请先准备一次性码批次。');
  const rows=data.deliveries||[];
  $('#personal-list').innerHTML=rows.length?rows.map(item=>{
-  const v=item.delivery,r=item.request,report=item.appleReport;
-  const redeemed=report?.days?(report.redemptions>0?`Apple 已确认：这枚码兑换 ${Number(report.redemptions)} 次`:`尚未在已取得的日报中发现兑换`):'实际兑换：待 Apple 日报确认';
-  return `<article class="card"><h3>${escapeHTML(v.name)}</h3><p>${r?.claimedAt?'已领取 · '+formatTime(r.claimedAt):r?.deliveredAt?'已发出，尚未通过链接领取':v.state==='ready'?'尚未领取':v.state==='rejected'?'Apple 未创建兑换码':'兑换码准备结果待核对'}</p><p>${redeemed}</p>${report?.days?`<p class="muted">已同步至 ${escapeHTML(report.lastDay)}，共 ${Number(report.days)} 天日报</p>`:''}<p class="muted">兑换截止 ${escapeHTML(v.expiration)}。转发后不能确认兑换者本人。</p><div class="offer-actions">${v.poolID?`<button class="quiet" data-personal-pool="${escapeHTML(v.poolID)}">发放详情</button>`:''}</div></article>`;
+  const v=item.delivery,r=item.request;
+  const claim=r?.status==='cancelled'?'已取消':r?.claimedAt?'已领取 · '+formatTime(r.claimedAt):r?.deliveredAt?'已发出，尚未通过链接领取':'已分配，尚未领取';
+  const redemption=r?.verifiedAt?'已人工关联 Apple 核销证据':r?.reportedRedeemedAt?'对方反馈已兑换，尚未核实':'兑换情况：待核对';
+  const canShare=r&&(r.status==='assigned'||r.status==='delivered')&&r.claimExpiresAt&&new Date(r.claimExpiresAt)>new Date();
+  return `<article class="card"><h3>${escapeHTML(v.name)}</h3><p>${claim}</p><p>${redemption}</p><p class="muted">批次有效期至 ${escapeHTML(v.expiration)}。${r?.verifiedAt?'人工关联不代表 Apple 确认此人的姓名或具体码。':''}</p><div class="offer-actions">${canShare?`<button class="secondary" data-personal-link="${escapeHTML(v.id)}">复制领取链接</button>`:''}<button class="quiet" data-personal-pool="${escapeHTML(v.poolID)}">查看发放详情</button></div></article>`;
  }).join(''):'<p class="card empty">还没有熟人发放记录。</p>';
  $$('[data-personal-pool]').forEach(b=>b.onclick=()=>openDeliveryPool(d,b.dataset.personalPool));
+ $$('[data-personal-link]').forEach(b=>b.onclick=async()=>{
+  if(d.busy)return;d.busy=true;b.disabled=true;
+  try{await reauthenticate();if(delivery!==d)return;const result=await api(personalPath(d),{method:'POST',csrfRequired:true,body:{action:'resume',requestKey:b.dataset.personalLink}});if(delivery===d)showPersonalLink(result);}
+  catch(e){if(delivery===d)deliveryMessage(e.message,true);}
+  finally{d.busy=false;if(b.isConnected)b.disabled=false;}
+ });
+}
+function showPersonalLink(result){
+ deliveryMessage('一次性码已准备好，可复制领取链接发给朋友。');
+ if(!result.token){deliveryMessage('领取链接已撤销或过期，可在发放详情中重新签发。');return;}
+ const dialog=deliveryDialog('把领取链接发给这位朋友',`<p>已为这位朋友分配一枚一次性码。对方点击领取后，可前往 Apple 兑换，无需填写姓名或邮箱。</p><label>专属领取链接<input id="personal-link" readonly autocomplete="off"></label><button class="primary" id="personal-copy">复制链接</button>`);
+ dialog.dataset.clearOnHide='true';const input=dialog.querySelector('#personal-link');input.value=location.origin+'/offer-claim#receipt='+encodeURIComponent(result.token);
+ dialog.querySelector('#personal-copy').onclick=async()=>{try{await navigator.clipboard.writeText(input.value);deliveryMessage('链接已复制，发送后可在发放详情中记录已发出');}catch{input.select();deliveryMessage('请手动复制链接');}};
 }

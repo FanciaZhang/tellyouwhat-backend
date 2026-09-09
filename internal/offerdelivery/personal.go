@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -13,16 +12,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/google/uuid"
-	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 )
-
-var ErrPersonalUncertain = errors.New("personal code creation requires Apple reconciliation")
-
-type PersonalCloud interface {
-	ListOffers(context.Context) ([]appstoreconnect.Offer, error)
-	ListCodePools(context.Context, string) ([]appstoreconnect.CodePool, error)
-	CreateCustomCode(context.Context, string, string, int, string) (appstoreconnect.CodePool, error)
-}
 
 type PersonalDelivery struct {
 	ID         string    `json:"id"`
@@ -32,7 +22,6 @@ type PersonalDelivery struct {
 	PoolID     string    `json:"poolID,omitempty"`
 	RequestID  string    `json:"requestID,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
-	Code       string    `json:"-"`
 	Expiration string    `json:"expiration"`
 }
 
@@ -50,172 +39,110 @@ func (s Store) Personal(ctx context.Context, app, id string) (PersonalDelivery, 
 	if err != nil {
 		return v, err
 	}
-	var secret struct{ Name, Code, Expiration string }
+	var secret struct{ Name, Expiration string }
 	if err = json.Unmarshal(raw, &secret); err != nil {
 		return v, err
 	}
-	v.Name, v.Code, v.Expiration = secret.Name, secret.Code, secret.Expiration
+	v.Name, v.Expiration = secret.Name, secret.Expiration
 	return v, nil
 }
 
-// PreparePersonal persists the recipient and random code before any cloud write.
-func (s Store) PreparePersonal(ctx context.Context, app, offer, id, name, expiry string, now time.Time) (PersonalDelivery, error) {
+// IssuePersonal atomically reserves one confirmed one-time code and its claim link.
+// It never creates codes at Apple, changes their expiry, or releases an assigned code.
+func (s Store) IssuePersonal(ctx context.Context, app, offer, pool, id, name, actor string, now time.Time) (PersonalDelivery, Request, error) {
+	var v PersonalDelivery
+	var r Request
+	name = strings.TrimSpace(name)
 	if _, err := uuid.Parse(id); err != nil {
-		return PersonalDelivery{}, ErrInvalid
+		return v, r, ErrInvalid
 	}
-	if !validApp(app) || !idPattern.MatchString(offer) || !(Recipient{Name: name}).Valid() {
-		return PersonalDelivery{}, ErrInvalid
+	if !validApp(app) || !idPattern.MatchString(offer) || !idPattern.MatchString(pool) || !(Recipient{Name: name}).Valid() || actor == "" {
+		return v, r, ErrInvalid
 	}
-	if _, err := time.Parse("2006-01-02", expiry); err != nil {
-		return PersonalDelivery{}, ErrInvalid
-	}
-	input, _ := json.Marshal([]string{offer, name, expiry})
-	hash := sha256.Sum256(input)
-	return s.preparePersonal(ctx, app, offer, id, name, expiry, hash, now)
-}
-func (s Store) preparePersonal(ctx context.Context, app, offer, id, name, expiry string, hash [32]byte, now time.Time) (PersonalDelivery, error) {
-	random := uuid.New()
-	code := "TYW" + strings.ToUpper(hex.EncodeToString(random[:]))
-	raw, _ := json.Marshal(struct{ Name, Code, Expiration string }{name, code, expiry})
-	encrypted, nonce, err := s.Cipher.Encrypt(raw, aad(app, "personal", id))
+	rawInput, _ := json.Marshal([]string{offer, pool, name})
+	inputHash := sha256.Sum256(rawInput)
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return PersonalDelivery{}, err
+		return v, r, err
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO offer_personal_deliveries(app_id,id,offer_id,input_hash,ciphertext,nonce,state,created_at) VALUES(?,?,?,?,?,?,'prepared',?) ON DUPLICATE KEY UPDATE id=id`, app, id, offer, hash[:], encrypted, nonce, now.UTC())
+	defer tx.Rollback()
+	p, err := s.pool(ctx, tx, app, pool)
 	if err != nil {
-		return PersonalDelivery{}, err
+		return v, r, err
 	}
-	var oldHash []byte
-	if err = s.DB.QueryRowContext(ctx, `SELECT input_hash FROM offer_personal_deliveries WHERE app_id=? AND id=?`, app, id).Scan(&oldHash); err != nil {
-		return PersonalDelivery{}, err
-	}
-	if !bytes.Equal(hash[:], oldHash) {
-		return PersonalDelivery{}, ErrConflict
-	}
-	return s.Personal(ctx, app, id)
-}
-
-// CompletePersonal is resumable after any local failure. Once a cloud create
-// starts, retry only reconciles its random code; it never creates a second code.
-func (s Store) CompletePersonal(ctx context.Context, app, id, actor string, cloud PersonalCloud, now time.Time) (PersonalDelivery, Request, error) {
-	var request Request
-	connection, err := s.DB.Conn(ctx)
-	if err != nil {
-		return PersonalDelivery{}, request, err
-	}
-	defer connection.Close()
-	lockHash := sha256.Sum256([]byte(app + ":" + id))
-	lockName := "offer-personal:" + hex.EncodeToString(lockHash[:20])
-	var locked int
-	if err = connection.QueryRowContext(ctx, `SELECT GET_LOCK(?,0)`, lockName).Scan(&locked); err != nil || locked != 1 {
-		return PersonalDelivery{}, request, ErrConflict
-	}
-	defer func() {
-		release, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		connection.ExecContext(release, `SELECT RELEASE_LOCK(?)`, lockName)
-	}()
-	v, err := s.Personal(ctx, app, id)
-	if err != nil {
-		return v, request, err
-	}
-	if v.State == "rejected" {
-		return v, request, appstoreconnect.ErrRejected
-	}
-	if v.State == "ready" {
-		request, err = s.Get(ctx, app, v.RequestID)
-		return v, request, err
-	}
-	offers, err := cloud.ListOffers(ctx)
-	if err != nil {
-		return v, request, err
-	}
-	var offer appstoreconnect.Offer
-	for _, o := range offers {
-		if o.ID == v.OfferID {
-			offer = o
-			break
+	var previous []byte
+	err = tx.QueryRowContext(ctx, `SELECT input_hash FROM offer_personal_deliveries WHERE app_id=? AND id=?`, app, id).Scan(&previous)
+	if err == nil {
+		if !bytes.Equal(previous, inputHash[:]) {
+			return v, r, ErrConflict
 		}
-	}
-	if offer.ID == "" || !offer.Active || offer.SubscriptionID == "" || offer.ProductID == "" {
-		return v, request, ErrUnavailable
-	}
-	var pool appstoreconnect.CodePool
-	if v.State == "prepared" {
-		// Durable intent precedes the network side effect, so a crash is reconcilable.
-		if _, err = s.DB.ExecContext(ctx, `UPDATE offer_personal_deliveries SET state='creating' WHERE app_id=? AND id=? AND state='prepared'`, app, id); err != nil {
-			return v, request, err
-		}
-		pool, err = cloud.CreateCustomCode(ctx, offer.ID, v.Code, 1, v.Expiration)
+		tx.Rollback()
+		v, err = s.Personal(ctx, app, id)
 		if err != nil {
-			if errors.Is(err, appstoreconnect.ErrForbidden) {
-				_, updateErr := s.DB.ExecContext(ctx, `UPDATE offer_personal_deliveries SET state='prepared' WHERE app_id=? AND id=?`, app, id)
-				if updateErr != nil {
-					return v, request, updateErr
-				}
-				return v, request, err
-			}
-			if errors.Is(err, appstoreconnect.ErrRejected) {
-				_, updateErr := s.DB.ExecContext(ctx, `UPDATE offer_personal_deliveries SET state='rejected' WHERE app_id=? AND id=?`, app, id)
-				if updateErr != nil {
-					return v, request, updateErr
-				}
-				return v, request, err
-			}
-			return v, request, ErrPersonalUncertain
+			return v, r, err
 		}
-	} else {
-		pools, err := cloud.ListCodePools(ctx, offer.ID)
-		if err != nil {
-			return v, request, err
-		}
-		for _, candidate := range pools {
-			if candidate.Kind == "custom" && candidate.Code == v.Code {
-				if pool.ID != "" {
-					return v, request, ErrConflict
-				}
-				pool = candidate
-			}
-		}
-		if pool.ID == "" {
-			return v, request, ErrPersonalUncertain
-		}
+		r, err = s.Get(ctx, app, v.RequestID)
+		return v, r, err
 	}
-	if pool.ID == "" || pool.Kind != "custom" || pool.Code != v.Code || pool.NumberOfCodes != 1 || !pool.Active || pool.ExpirationDate != v.Expiration {
-		return v, request, ErrConflict
+	if !errors.Is(err, sql.ErrNoRows) {
+		return v, r, err
 	}
-	expiry, err := AppleCodeExpiry(v.Expiration)
+	if p.OfferID != offer {
+		return v, r, ErrNotFound
+	}
+	if p.Kind != "oneTime" || p.Environment != "production" || !p.Active || !p.ExpiresAt.After(now) {
+		return v, r, ErrUnavailable
+	}
+	var codeID string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM offer_delivery_codes WHERE app_id=? AND pool_id=? AND inventory_state='available' ORDER BY id LIMIT 1 FOR UPDATE`, app, pool).Scan(&codeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, r, ErrUnavailable
+	}
 	if err != nil {
-		return v, request, err
+		return v, r, err
 	}
-	p := Pool{ID: pool.ID, OfferID: offer.ID, OfferName: offer.Name, SubscriptionID: offer.SubscriptionID, ProductID: offer.ProductID, Kind: "custom", Code: v.Code, Environment: "production", Capacity: 1, Active: true, ExpiresAt: expiry, SyncedAt: now}
-	if err = s.SyncPool(ctx, app, p); err != nil {
-		return v, request, err
-	}
-	if _, err = s.DB.ExecContext(ctx, `UPDATE offer_personal_deliveries SET state='provisioned',pool_id=? WHERE app_id=? AND id=?`, pool.ID, app, id); err != nil {
-		return v, request, err
-	}
-	request, err = s.createRequest(ctx, app, p.ID, "personal:"+id, actor, Recipient{Name: v.Name, Channel: "熟人专属码"}, "personal", now)
+	requestID := uuid.NewString()
+	recipient := Recipient{Name: name, Channel: "熟人发放"}
+	rawRecipient, _ := json.Marshal(recipient)
+	requestHash := sha256.Sum256(append([]byte("personal:"+pool+":"), rawRecipient...))
+	encrypted, nonce, err := s.Cipher.Encrypt(rawRecipient, aad(app, "recipient", requestID))
 	if err != nil {
-		return v, request, err
+		return v, r, err
 	}
-	if request.Status == "requested" {
-		request, err = s.Assign(ctx, app, request.ID, actor, request.Version, now)
-		if err != nil {
-			return v, request, err
+	_, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_requests(app_id,id,pool_id,request_key,request_hash,ciphertext,nonce,source,status,code_id,requested_at,assigned_at,claim_generation,claim_expires_at) VALUES(?,?,?,?,?,?,?,'personal','assigned',?,?,?,1,?)`, app, requestID, pool, "personal:"+id, requestHash[:], encrypted, nonce, codeID, now.UTC(), now.UTC(), now.Add(90*24*time.Hour).UTC())
+	if err != nil {
+		return v, r, err
+	}
+	zone, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		return v, r, err
+	}
+	secret, _ := json.Marshal(struct{ Name, Expiration string }{name, p.ExpiresAt.In(zone).Format("2006-01-02")})
+	encrypted, nonce, err = s.Cipher.Encrypt(secret, aad(app, "personal", id))
+	if err != nil {
+		return v, r, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO offer_personal_deliveries(app_id,id,offer_id,input_hash,ciphertext,nonce,state,pool_id,request_id,created_at) VALUES(?,?,?,?,?,?,'ready',?,?,?)`, app, id, offer, inputHash[:], encrypted, nonce, pool, requestID, now.UTC())
+	if err != nil {
+		return v, r, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE offer_delivery_codes SET inventory_state='assigned' WHERE app_id=? AND id=?`, app, codeID); err != nil {
+		return v, r, err
+	}
+	for _, action := range []string{"request.personal_create", "request.assign", "request.share_claim"} {
+		if err = event(ctx, tx, app, requestID, actor, action, 1, now); err != nil {
+			return v, r, err
 		}
 	}
-	if request.ClaimGeneration == 0 {
-		request, err = s.SetClaimLink(ctx, app, request.ID, actor, request.Version, true, now)
-		if err != nil {
-			return v, request, err
-		}
-	}
-	if _, err = s.DB.ExecContext(ctx, `UPDATE offer_personal_deliveries SET state='ready',request_id=? WHERE app_id=? AND id=?`, request.ID, app, id); err != nil {
-		return v, request, err
+	if err = tx.Commit(); err != nil {
+		return v, r, err
 	}
 	v, err = s.Personal(ctx, app, id)
-	return v, request, err
+	if err != nil {
+		return v, r, err
+	}
+	r, err = s.Get(ctx, app, requestID)
+	return v, r, err
 }
 
 // Apple expires offer codes at midnight Pacific time, including daylight saving.

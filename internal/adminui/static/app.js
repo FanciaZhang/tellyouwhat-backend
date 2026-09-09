@@ -231,7 +231,7 @@ $('#offer-refresh').onclick=()=>run(loadOffers);
 
 function offerCard(offer,metric,writesEnabled,metricsAvailable,environment,summary,deliveryAvailable,legacyMetric){
   const chips=[durationLabels[offer.duration]||offer.duration,offer.autoRenewEnabled?'到期自动续订':'到期自动结束',...(offer.customerEligibilities||[]).map(v=>eligibilityLabels[v]||v),offer.active?'启用中':'已停用'];
-  const actions=`<button class="primary" data-codes="${escapeHTML(offer.id)}">查看码池</button>`+(offer.active&&writesEnabled?`<button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>`:'');
+  const actions=(environment==='production'&&deliveryAvailable?`<button class="primary" data-personal="${escapeHTML(offer.id)}">熟人发放</button>`:'')+`<button class="secondary" data-codes="${escapeHTML(offer.id)}">查看码池</button>`+(offer.active&&writesEnabled?`<button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>`:'');
   const observed=!metricsAvailable?'统计暂不可用':metric?`已验证核销订阅 ${metric.redemptions} 个`:'尚未观测到核销';
   const tracked=!deliveryAvailable?'发放统计暂不可用':summary?`登记申请 ${summary.applications} · 已发放 ${summary.delivered} · 待处理 ${summary.pending}（已纳入台账 ${summary.pools} 个码池）`:'尚未纳入发放台账';
   const legacy=legacyMetric?`<p class="muted"><small>另有同参考名称的历史核销 ${legacyMetric.redemptions} 个，未记录产品，不能归入此产品。</small></p>`:'';
