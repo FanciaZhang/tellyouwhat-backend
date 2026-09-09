@@ -67,6 +67,7 @@ func New(c Config) (http.Handler, error) {
 	limiter := quota.NewMemoryLimiter(quota.Limits{DailyTokensPerTransaction: 100_000, MonthlyTokensPerTransaction: 100_000, RequestsPerMinutePerOperation: 10, MaxConcurrentPerDevice: 2})
 	consent := privacy.NewService(privacy.NewMemoryRepository(), nil, nil, c.Now)
 	recordings := newRecordingHTTP(c.Recording, store, consent, c.Now)
+	recordings.rewriter = c.Rewriter
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err

@@ -1,7 +1,6 @@
 package voice
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -139,12 +138,24 @@ func TestRecordingReviewFlagsLostNumericQualifierWithoutChangingDraft(t *testing
 	}
 }
 
-func TestDialogueCannotFallBackToGenerativeRewrite(t *testing.T) {
+func TestDialoguePreviewCannotDropRewriteOrDuplicateTurns(t *testing.T) {
 	r := recordingContextFixture(t)
 	r.Mode = "dialogue"
-	s := Snapshot{Transcript: r.Analysis.Text, RecordingContext: &r}
-	if _, err := (ArkRewriter{}).Rewrite(context.Background(), s, 1); err == nil || err.Error() != "recording_dialogue_requires_turn_rendering" {
-		t.Fatal("dialogue reached model", err)
+	id := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
+	s := Snapshot{Transcript: r.Analysis.Text, RecordingContext: &r, Blocks: []Block{{ID: id, Text: "原正文"}}}
+	canonical, err := RecordingDialogueText(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := Revision{Patches: []Patch{{ID: id, Text: canonical}}}
+	if err := ValidateRecordingDialogueRevision(s, revision); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"遗漏所有发言", canonical + "\n\n" + canonical} {
+		revision.Patches[0].Text = text
+		if ValidateRecordingDialogueRevision(s, revision) == nil {
+			t.Fatal("accepted missing or duplicate dialogue")
+		}
 	}
 }
 

@@ -61,7 +61,7 @@ type recordingFixture struct {
 	now                             time.Time
 }
 
-func newRecordingFixture(t *testing.T, budgetLimit int64) *recordingFixture {
+func newRecordingFixture(t *testing.T, budgetLimit int64, rewriters ...voice.Rewriter) *recordingFixture {
 	t.Helper()
 	f := &recordingFixture{t: t, root: t.TempDir(), token: strings.Repeat("r", 43), installation: uuid.NewString(), mode: "forced", now: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), provider: &recordingProvider{}}
 	store, err := voice.NewRecordingJobStore(f.root, func() time.Time { return f.now })
@@ -72,7 +72,11 @@ func newRecordingFixture(t *testing.T, budgetLimit int64) *recordingFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.h, err = New(Config{Token: f.token, Now: func() time.Time { return f.now }, Organizer: &model{}, Speech: voice.ASR{}, Rewriter: voice.ArkRewriter{}, Recording: &voice.RecordingExecutor{Store: store, Provider: f.provider, Budget: budget, AppID: "journal-development", Price: costcontrol.DurationPrice{NanosPerHour: 3600}}})
+	var rewriter voice.Rewriter = voice.ArkRewriter{}
+	if len(rewriters) > 0 {
+		rewriter = rewriters[0]
+	}
+	f.h, err = New(Config{Token: f.token, Now: func() time.Time { return f.now }, Organizer: &model{}, Speech: voice.ASR{}, Rewriter: rewriter, Recording: &voice.RecordingExecutor{Store: store, Provider: f.provider, Budget: budget, AppID: "journal-development", Price: costcontrol.DurationPrice{NanosPerHour: 3600}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,5 +232,64 @@ func TestRecordingRouteBudgetRejectsProviderCall(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(f.root, "*.wav"))
 	if len(files) != 1 {
 		t.Fatal("budget rejection discarded retry input")
+	}
+}
+
+type previewRewriter struct {
+	calls    int
+	snapshot voice.Snapshot
+}
+
+func (p *previewRewriter) Rewrite(_ context.Context, s voice.Snapshot, revision int) (voice.RewriteResult, error) {
+	p.calls++
+	p.snapshot = s
+	return voice.RewriteResult{Revision: voice.Revision{BaseRevision: s.Revision, TranscriptRevision: revision, Patches: []voice.Patch{{ID: s.Blocks[0].ID, Text: "妻子当时很害怕。"}}, Questions: []string{}}}, nil
+}
+func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
+	model := &previewRewriter{}
+	f := newRecordingFixture(t, 100, model)
+	f.grant()
+	id := uuid.NewString()
+	path := recordingPrefix + id
+	job := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(1000))), 202)
+	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 202)
+	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 200)
+	analysis := *job.Result
+	// The client's saved stream is allowed to contain a detail the file ASR lost.
+	analysis.Text = "38周加一天。"
+	analysis.Utterances[0].Text = analysis.Text
+	analysis.Utterances[0].Speaker = "wife"
+	input := recordingPreviewRequest{RequestID: uuid.NewString(), AudioHash: job.AudioHash, ReviewRevision: 7, Snapshot: voice.Snapshot{Revision: 4, Transcript: analysis.Text, Blocks: []voice.Block{{ID: uuid.NewString(), Text: "原正文"}}, RecordingContext: &voice.RecordingContext{Mode: "narrative", Speakers: []voice.RecordingSpeaker{{ID: "wife", Name: "妻子"}}, Analysis: analysis}}}
+	call := func() *httptest.ResponseRecorder {
+		body, _ := json.Marshal(input)
+		return f.request("POST", path+"/preview", "application/json", bytes.NewReader(body))
+	}
+	first := call()
+	if first.Code != 200 {
+		t.Fatal(first.Code, first.Body)
+	}
+	if second := call(); second.Code != 200 || second.Body.String() != first.Body.String() || model.calls != 1 {
+		t.Fatal("duplicate preview was regenerated", second.Code, model.calls)
+	}
+	if model.snapshot.Transcript != "38周加一天。" {
+		t.Fatal("stream detail lost")
+	}
+	input.Snapshot.Blocks[0].Text = "等待期间新的手改"
+	if response := call(); response.Code != 409 {
+		t.Fatal("reused ID accepted another snapshot", response.Code)
+	}
+	input.RequestID = uuid.NewString()
+	input.AudioHash = strings.Repeat("b", 64)
+	if response := call(); response.Code != 409 || model.calls != 1 {
+		t.Fatal("wrong source reached provider", response.Code)
+	}
+	input.AudioHash = job.AudioHash
+	f.installation = uuid.NewString()
+	f.grant()
+	if response := call(); response.Code != 404 {
+		t.Fatal("another owner read source", response.Code)
+	}
+	if f.provider.submissions != 1 {
+		t.Fatal("preview resubmitted audio")
 	}
 }

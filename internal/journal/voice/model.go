@@ -47,6 +47,7 @@ type recordingEditorialTurn struct {
 	AcousticEmotion   string `json:"acousticEmotion,omitempty"`
 }
 type recordingEditorialContext struct {
+	DialogueText      string                   `json:"dialogueText,omitempty"`
 	Mode              string                   `json:"mode"`
 	NarratorSpeakerID string                   `json:"narratorSpeakerID"`
 	Speakers          []RecordingSpeaker       `json:"speakers"`
@@ -58,6 +59,9 @@ func recordingEditorial(r *RecordingContext) *recordingEditorialContext {
 		return nil
 	}
 	out := &recordingEditorialContext{Mode: r.Mode, NarratorSpeakerID: r.NarratorSpeakerID, Speakers: r.Speakers, Utterances: []recordingEditorialTurn{}}
+	if r.Mode == "dialogue" {
+		out.DialogueText, _ = RecordingDialogueText(*r)
+	}
 	for _, u := range r.Analysis.Utterances {
 		out.Utterances = append(out.Utterances, recordingEditorialTurn{u.Speaker, u.StartMilliseconds, u.Text, u.AcousticEmotion})
 	}
@@ -101,9 +105,6 @@ func editorialDocument(s Snapshot) rewriteDocument {
 func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteResult, error) {
 	if err := s.Validate(); err != nil {
 		return RewriteResult{}, err
-	}
-	if s.RecordingContext != nil && s.RecordingContext.Mode == "dialogue" {
-		return RewriteResult{}, errors.New("recording_dialogue_requires_turn_rendering")
 	}
 	styleInstructions, _ := s.WritingStyle.instructions() // Validate already enforces the closed catalog.
 	input, _ := json.Marshal(map[string]any{"document": editorialDocument(s), "transcriptRevision": tr})
@@ -179,6 +180,9 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	}
 	if revision.TranscriptRevision != tr {
 		return metered, ErrConflict
+	}
+	if err := ValidateRecordingDialogueRevision(s, revision); err != nil {
+		return metered, err
 	}
 	metered.Revision = revision
 	return metered, nil

@@ -28,10 +28,12 @@ func recordingRoute(r *http.Request) bool {
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, recordingPrefix), "/")
 	return len(parts) == 1 && (r.Method == http.MethodPut || r.Method == http.MethodGet) ||
-		len(parts) == 2 && parts[1] == "process" && r.Method == http.MethodPost
+		len(parts) == 2 && (parts[1] == "process" || parts[1] == "preview") && r.Method == http.MethodPost
 }
 
 type recordingHTTP struct {
+	rewriter     voice.Rewriter
+	previews     recordingPreviewCache
 	executor     *voice.RecordingExecutor
 	entitlements entitlement.Store
 	consent      *privacy.Service
@@ -42,7 +44,7 @@ type recordingHTTP struct {
 }
 
 func newRecordingHTTP(e *voice.RecordingExecutor, records entitlement.Store, consent *privacy.Service, now func() time.Time) *recordingHTTP {
-	return &recordingHTTP{e, records, consent, now, make(chan struct{}, 2)}
+	return &recordingHTTP{executor: e, entitlements: records, consent: consent, now: now, admission: make(chan struct{}, 2), previews: recordingPreviewCache{entries: map[string]previewCacheEntry{}}}
 }
 
 func (h *recordingHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +89,10 @@ func (h *recordingHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Retry-After", "3")
 		deny(w, 429, "recording_busy")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "preview" {
+		h.preview(w, r, owner, id)
 		return
 	}
 	var job voice.RecordingJob
