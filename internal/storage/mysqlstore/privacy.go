@@ -155,6 +155,9 @@ func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, princi
 		); err != nil {
 			return err
 		}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM offer_delivery_verified_links WHERE app_id=? AND original_hash=?`, repository.appID, originalHash[:]); err != nil {
+			return err
+		}
 	}
 	if _, err := transaction.ExecContext(ctx, `
         DELETE FROM app_attest_keys

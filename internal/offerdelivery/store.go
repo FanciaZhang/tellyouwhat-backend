@@ -346,7 +346,7 @@ func (s Store) createRequest(ctx context.Context, app, pool, key, actor string, 
 	return s.Get(ctx, app, id)
 }
 
-const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,claimed_at,reported_redeemed_at,verified_at,claim_generation,claim_expires_at`
+const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,claimed_at,reported_redeemed_at,(SELECT l.linked_at FROM offer_delivery_verified_links l WHERE l.app_id=offer_delivery_requests.app_id AND l.request_id=offer_delivery_requests.id),claim_generation,claim_expires_at`
 
 type scanner interface{ Scan(...any) error }
 
@@ -397,8 +397,11 @@ func (s Store) Summary(ctx context.Context, app, pool string) (Summary, error) {
 	if err != nil {
 		return r, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(source='manual'),0),COALESCE(SUM(source='external'),0),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(claimed_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Applications, &r.ExternalDeliveries, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.Claimed, &r.ReportedRedeemed, &r.LinkedVerified)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(source='manual'),0),COALESCE(SUM(source='external'),0),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(claimed_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Applications, &r.ExternalDeliveries, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.Claimed, &r.ReportedRedeemed)
 	if err != nil {
+		return r, err
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM offer_delivery_verified_links l JOIN offer_delivery_requests r ON r.app_id=l.app_id AND r.id=l.request_id WHERE r.app_id=? AND r.pool_id=?`, app, pool).Scan(&r.LinkedVerified); err != nil {
 		return r, err
 	}
 	return r, tx.Commit()
@@ -599,7 +602,10 @@ func (s Store) LinkVerified(ctx context.Context, app, id, actor, originalHex str
 		return r, err
 	}
 	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND product_id=? AND offer_type=3 AND original_transaction_hash=?`, app, environment, offerName, productID, original).Scan(&count); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT 1 FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND product_id=? AND offer_type=3 AND original_transaction_hash=? LIMIT 1 FOR UPDATE`, app, environment, offerName, productID, original).Scan(&count); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return r, ErrNotFound
+		}
 		return r, err
 	}
 	if count == 0 {
@@ -609,7 +615,7 @@ func (s Store) LinkVerified(ctx context.Context, app, id, actor, originalHex str
 	if _, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_verified_links(app_id,request_id,environment,offer_name,original_hash,linked_at) VALUES(?,?,?,?,?,?)`, app, id, environment, offerName, original, now.UTC()); err != nil {
 		return r, err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE offer_delivery_requests SET verified_original_hash=?,verified_at=?,version=version+1 WHERE app_id=? AND id=?`, original, now.UTC(), app, id); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE offer_delivery_requests SET version=version+1 WHERE app_id=? AND id=?`, app, id); err != nil {
 		return r, err
 	}
 	if err = event(ctx, tx, app, id, actor, "request.link_verified", 1, now); err != nil {

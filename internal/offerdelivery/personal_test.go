@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
 type personalCloudFixture struct {
@@ -154,5 +156,41 @@ func TestAppleCodeExpiryUsesPacificMidnight(t *testing.T) {
 		if err != nil || got.Format("15:04") != v.hour {
 			t.Fatalf("expiry=%v err=%v", got, err)
 		}
+	}
+}
+
+func TestAppDeletionRemovesTransactionAssociationButPreservesOperatorLedger(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"AAAA111", "BBBB222"}, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.RecordExternal(ctx, "health", p.ID, "historic", "admin", Recipient{Name: "Operator-known friend"}, "AAAA111", now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := "private-original-transaction"
+	if _, err = s.DB.Exec(`INSERT INTO app_store_offer_redemptions(app_id,environment,transaction_hash,original_transaction_hash,offer_identifier,offer_type,redeemed_at,expires_at) VALUES('health','production',UNHEX(SHA2('tx',256)),UNHEX(SHA2(?,256)),'FRIENDS',3,?,?)`, original, now, now); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := s.VerifiedSubscriptions(ctx, "health", p.ID)
+	if err != nil || len(evidence) != 1 {
+		t.Fatal(err)
+	}
+	r, err = s.LinkVerified(ctx, "health", r.ID, "admin", evidence[0].Reference, r.Version, now)
+	if err != nil || r.VerifiedAt == nil {
+		t.Fatal(err)
+	}
+	privacy := mysqlstore.NewPrivacyRepository(s.DB, "health")
+	if err = privacy.DeletePrincipal(ctx, attestation.Principal{KeyID: "fixture", TransactionID: original}); err != nil {
+		t.Fatal(err)
+	}
+	r, err = s.Get(ctx, "health", r.ID)
+	if err != nil || r.VerifiedAt != nil || r.Recipient.Name != "Operator-known friend" || r.DeliveredAt == nil {
+		t.Fatalf("incorrect deletion boundary %+v %v", r, err)
+	}
+	summary, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.LinkedVerified != 0 || summary.Delivered != 1 {
+		t.Fatalf("stale verified count %+v %v", summary, err)
 	}
 }

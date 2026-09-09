@@ -53,8 +53,6 @@ CREATE TABLE offer_delivery_requests (
  delivered_at DATETIME(6),
  claimed_at DATETIME(6),
  reported_redeemed_at DATETIME(6),
- verified_original_hash BINARY(32),
- verified_at DATETIME(6),
  claim_generation INT UNSIGNED NOT NULL DEFAULT 0,
  claim_expires_at DATETIME(6),
  PRIMARY KEY(app_id,id),
