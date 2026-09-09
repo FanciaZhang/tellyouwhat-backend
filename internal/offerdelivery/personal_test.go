@@ -248,3 +248,62 @@ func TestAppDeletionRemovesTransactionAssociationButPreservesOperatorLedger(t *t
 		t.Fatalf("stale verified count %+v %v", summary, err)
 	}
 }
+
+func TestPersonalConfirmImportAndAssignAreAtomicAndRetrySafe(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	codes := []string{"AAAA111", "BBBB222"}
+	id := uuid.NewString()
+	broken := s
+	broken.Cipher = personalFailCipher{s.Cipher}
+	if _, _, err := broken.IssuePersonalWithUnissuedCodes(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", codes, now); err == nil {
+		t.Fatal("expected transaction failure")
+	}
+	summary, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Imported != 0 {
+		t.Fatalf("failed issuance imported codes %+v %v", summary, err)
+	}
+	_, r, err := s.IssuePersonalWithUnissuedCodes(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", codes, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err = s.Summary(ctx, "health", p.ID)
+	if err != nil || summary.Available != 1 || summary.AssignedCodes != 1 || summary.External != 0 {
+		t.Fatalf("one-step issuance %+v %v", summary, err)
+	}
+	// An export after issuance must not be undone by a lost-response retry.
+	if _, err = s.DB.Exec(`UPDATE offer_delivery_codes SET inventory_state='external' WHERE app_id='health' AND pool_id=? AND inventory_state='available'`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, retry, err := s.IssuePersonalWithUnissuedCodes(ctx, "health", p.OfferID, p.ID, id, "Friend", "admin", codes, now)
+	if err != nil || retry.ID != r.ID {
+		t.Fatal("retry", err)
+	}
+	summary, _ = s.Summary(ctx, "health", p.ID)
+	if summary.Available != 0 || summary.External != 1 || summary.AssignedCodes != 1 {
+		t.Fatalf("retry revived exported stock %+v", summary)
+	}
+}
+
+func TestPersonalFreshImportIsReadyWithoutRevivingExistingCodes(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	codes := []string{"AAAA111", "BBBB222"}
+	if err := s.ImportFreshCodes(ctx, "health", p.ID, "admin", codes, now); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.IssuePersonal(ctx, "health", p.OfferID, p.ID, uuid.NewString(), "Friend", "admin", now)
+	if err != nil {
+		t.Fatal("fresh batch not immediately usable", err)
+	}
+	if _, err = s.DB.Exec(`UPDATE offer_delivery_codes SET inventory_state='external' WHERE app_id='health' AND pool_id=? AND inventory_state='available'`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ImportFreshCodes(ctx, "health", p.ID, "admin", codes, now); err != nil {
+		t.Fatal(err)
+	}
+	summary, _ := s.Summary(ctx, "health", p.ID)
+	if summary.Available != 0 || summary.External != 1 || summary.AssignedCodes != 1 {
+		t.Fatalf("reimport revived old codes %+v", summary)
+	}
+}

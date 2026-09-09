@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +40,33 @@ func (f *personalHTTPOffers) CreateCustomCode(_ context.Context, _ string, code 
 	f.pool = appstoreconnect.CodePool{ID: "private-pool", Code: code, Kind: "custom", NumberOfCodes: count, ExpirationDate: expiry, Active: true}
 	return f.pool, nil
 }
+func (f *personalHTTPOffers) DownloadOneTimeCodes(_ context.Context, pool string) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("Code\n")
+	for i := 0; i < 500; i++ {
+		prefix := "TEST"
+		if pool == "new-batch" {
+			prefix = "FRESH"
+		}
+		fmt.Fprintf(&b, "%s%06d\n", prefix, i)
+	}
+	return []byte(b.String()), nil
+}
+
+type personalHTTPOperations struct{ result *OperationResult }
+
+func (f *personalHTTPOperations) Begin(context.Context, string, string, string, string, [32]byte) (*OperationResult, error) {
+	return f.result, nil
+}
+func (f *personalHTTPOperations) Complete(_ context.Context, _, _, _ string, status int, body []byte, _ time.Time) error {
+	f.result = &OperationResult{Status: status, Body: body}
+	return nil
+}
+func (f *personalHTTPOffers) CreateOneTimeCodeBatch(_ context.Context, _ string, count int, expiry, environment string) (appstoreconnect.CodePool, error) {
+	f.calls++
+	f.pool = appstoreconnect.CodePool{ID: "new-batch", Kind: "oneTime", NumberOfCodes: count, ExpirationDate: expiry, Environment: environment, Active: true}
+	return f.pool, nil
+}
 func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -66,17 +94,7 @@ func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 	if err = store.SyncPool(ctx, "health", p); err != nil {
 		t.Fatal(err)
 	}
-	codes := []string{}
-	for i := 0; i < 500; i++ {
-		codes = append(codes, fmt.Sprintf("TEST%06d", i))
-	}
-	if err = store.ImportCodes(ctx, "health", p.ID, "admin", codes, now); err != nil {
-		t.Fatal(err)
-	}
-	if err = store.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 500, now); err != nil {
-		t.Fatal(err)
-	}
-	server := &Server{auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store, WritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
+	server := &Server{operations: &personalHTTPOperations{}, auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store, WritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
 	router := gin.New()
 	router.Use(limitAdminRequestBody())
 	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: server, Service: auth})
@@ -84,6 +102,7 @@ func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 		raw, _ := json.Marshal(body)
 		request := httptest.NewRequest(method, path, bytes.NewReader(raw))
 		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "test-new-batch-request")
 		request.Header.Set("Origin", "https://admin.example.test")
 		if cookie {
 			request.AddCookie(&http.Cookie{Name: "__Host-tellyouwhat_admin_session", Value: token})
@@ -107,6 +126,14 @@ func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 
 	// Allocating existing stock must not require permission to create new batches at Apple.
 	server.config.WritesEnabled = false
+	listBefore := call("GET", path, nil, true, false)
+	if listBefore.Code != 200 || !bytes.Contains(listBefore.Body.Bytes(), []byte(`"unconfirmed":500`)) {
+		t.Fatalf("existing Apple batch hidden: %s", listBefore.Body.String())
+	}
+	if got := call("POST", path, body, true, true); got.Code != 409 {
+		t.Fatalf("unconfirmed batch allocated: %d", got.Code)
+	}
+	body["confirmUnissued"] = true
 	w := call("POST", path, body, true, true)
 	if w.Code != 200 {
 		t.Fatalf("allocation %d %s", w.Code, w.Body.String())
@@ -156,4 +183,27 @@ func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 	if apple.calls != 0 {
 		t.Fatal("allocated by creating codes at Apple")
 	}
+	server.config.WritesEnabled = true
+	batchBody := map[string]any{"numberOfCodes": 500, "environment": "PRODUCTION", "expirationDate": expiry}
+	batchPath := "/api/v1/apps/health/offers/friends/one-time-code-batches"
+	created := call("POST", batchPath, batchBody, true, true)
+	if created.Code != 201 || !bytes.Contains(created.Body.Bytes(), []byte(`"deliveryReady":true`)) {
+		t.Fatalf("fresh creation did not connect inventory: %d %s", created.Code, created.Body.String())
+	}
+	freshSummary, err := store.Summary(ctx, "health", "new-batch")
+	if err != nil || freshSummary.Available != 500 || freshSummary.External != 0 {
+		t.Fatalf("new batch requires manual import: %+v %v", freshSummary, err)
+	}
+	if replay := call("POST", batchPath, batchBody, true, true); replay.Code != 201 || apple.calls != 1 {
+		t.Fatalf("creation retry repeated Apple call: %d %d", replay.Code, apple.calls)
+	}
+	body = map[string]any{"action": "create", "requestKey": uuid.NewString(), "name": "New friend", "poolID": "new-batch"}
+	if issued := call("POST", path, body, true, true); issued.Code != 200 {
+		t.Fatalf("newly created batch cannot be issued: %d %s", issued.Code, issued.Body.String())
+	}
+	freshSummary, _ = store.Summary(ctx, "health", "new-batch")
+	if freshSummary.Available != 499 {
+		t.Fatalf("fresh stock %+v", freshSummary)
+	}
+
 }

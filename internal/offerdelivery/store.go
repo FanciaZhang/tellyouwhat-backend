@@ -211,6 +211,48 @@ func (s Store) ImportCodes(ctx context.Context, app, pool, actor string, codes [
 	if err != nil {
 		return err
 	}
+	if err = s.importCodes(ctx, tx, app, p, codes, "external", now); err != nil {
+		return err
+	}
+	if err = event(ctx, tx, app, pool, actor, "inventory.import", len(codes), now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ImportFreshCodes is only for a batch just created by this server. Replays never
+// change an existing code's inventory state, including exported or assigned codes.
+func (s Store) ImportFreshCodes(ctx context.Context, app, pool, actor string, codes []string, now time.Time) error {
+	if !validApp(app) || actor == "" {
+		return ErrInvalid
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	p, err := s.pool(ctx, tx, app, pool)
+	if err != nil {
+		return err
+	}
+	if !p.Active || !p.ExpiresAt.After(now) {
+		return ErrUnavailable
+	}
+	if err = s.importCodes(ctx, tx, app, p, codes, "available", now); err != nil {
+		return err
+	}
+	if err = event(ctx, tx, app, pool, actor, "inventory.import_fresh", len(codes), now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s Store) importCodes(ctx context.Context, tx *sql.Tx, app string, p Pool, codes []string, initialState string, now time.Time) error {
+	pool := p.ID
+	var err error
+	if len(codes) == 0 || len(codes) > 25000 {
+		return ErrInvalid
+	}
 	if p.Kind != "oneTime" || len(codes) != p.Capacity {
 		return ErrInvalid
 	}
@@ -237,14 +279,11 @@ func (s Store) ImportCodes(ctx context.Context, app, pool, actor string, codes [
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_codes(app_id,id,pool_id,code_hash,ciphertext,nonce,inventory_state,created_at) VALUES(?,?,?,?,?,?,'external',?)`, app, id, pool, hash[:], encrypted, nonce, now.UTC()); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_codes(app_id,id,pool_id,code_hash,ciphertext,nonce,inventory_state,created_at) VALUES(?,?,?,?,?,?,?,?)`, app, id, pool, hash[:], encrypted, nonce, initialState, now.UTC()); err != nil {
 			return err
 		}
 	}
-	if err = event(ctx, tx, app, pool, actor, "inventory.import", len(codes), now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return nil
 }
 
 // ConfirmAvailable is an explicit operator inventory declaration, not an Apple redemption result.
