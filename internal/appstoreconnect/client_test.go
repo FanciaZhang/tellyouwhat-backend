@@ -403,3 +403,13 @@ func TestAppInventoryIncludesEverySubscriptionAndRejectsPartialResults(t *testin
 		})
 	}
 }
+
+func TestCustomCodeInvalidQuotaNeverContactsApple(t *testing.T) {
+	// A zero-value client cannot make HTTP requests; validation must precede signing and sending.
+	client := &Client{}
+	for _, count := range []int{-1, 0, 1, 5, 100, 250, 499, 25001} {
+		if _, err := client.CreateCustomCode(context.Background(), "offer", "FRIEND", count, ""); err != ErrInvalid {
+			t.Fatalf("count %d: %v", count, err)
+		}
+	}
+}

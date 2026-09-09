@@ -1,13 +1,8 @@
 package adminportal
 
 import (
-	"errors"
-	"strings"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
-	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/offerdelivery"
 )
 
@@ -57,72 +52,14 @@ func (s *Server) ListPersonalDeliveries(c *gin.Context, app adminhttpapi.AppID, 
 	writeJSON(c.Writer, 200, map[string]any{"deliveries": out, "nextCursor": next, "reportSync": status})
 }
 
+// Single-redemption custom codes are not supported by Apple's minimum batch quota.
 func (s *Server) CreatePersonalDelivery(c *gin.Context, app adminhttpapi.AppID, offer adminhttpapi.OfferID, _ adminhttpapi.CreatePersonalDeliveryParams) {
-	actor, ok := s.deliveryAccess(c, app, true, true)
-	if !ok {
+	if _, ok := s.deliveryAccess(c, app, true, true); !ok {
 		return
 	}
 	if !s.config.WritesEnabled {
 		writeFailure(c.Writer, 403, "writes_disabled", "Apple 写操作尚未启用")
 		return
 	}
-	var in struct{ Action, RequestKey, Name, Expiration string }
-	if !decodeJSON(c.Writer, c.Request, &in) {
-		return
-	}
-	if _, err := uuid.Parse(in.RequestKey); err != nil {
-		deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
-		return
-	}
-	store := s.config.Delivery
-	ctx := c.Request.Context()
-	now := s.now()
-	switch in.Action {
-	case "create":
-		if !validCodePoolExpiration(in.Expiration, false, now) {
-			deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
-			return
-		}
-		if _, err := store.PreparePersonal(ctx, app, offer, in.RequestKey, strings.TrimSpace(in.Name), in.Expiration, now); err != nil {
-			deliveryFailure(c.Writer, err)
-			return
-		}
-	case "resume":
-	default:
-		deliveryFailure(c.Writer, offerdelivery.ErrInvalid)
-		return
-	}
-	planned, err := store.Personal(ctx, app, in.RequestKey)
-	if err != nil {
-		deliveryFailure(c.Writer, err)
-		return
-	}
-	if planned.OfferID != offer {
-		deliveryFailure(c.Writer, offerdelivery.ErrNotFound)
-		return
-	}
-	row, request, err := store.CompletePersonal(ctx, app, in.RequestKey, actor, s.offers[app], now)
-	if err != nil {
-		s.auth.RecordAudit(ctx, actor, app, c.Request, "offer.personal_create", "incomplete", "personal_delivery", in.RequestKey, nil)
-		if errors.Is(err, appstoreconnect.ErrRejected) {
-			writeFailure(c.Writer, 422, "personal_code_rejected", "Apple 拒绝创建这枚最多兑换一次的专属码。没有自动提高兑换次数，也没有重复创建。")
-			return
-		}
-		if errors.Is(err, appstoreconnect.ErrForbidden) {
-			writeFailure(c.Writer, 403, "apple_forbidden", "Apple 创建权限不足，修复权限后可继续此记录。")
-			return
-		}
-		if errors.Is(err, offerdelivery.ErrPersonalUncertain) {
-			writeFailure(c.Writer, 409, "personal_code_uncertain", "Apple 创建结果待确认。请使用此记录的“继续核对”，不会重复创建兑换码。")
-			return
-		}
-		deliveryFailure(c.Writer, err)
-		return
-	}
-	s.auth.RecordAudit(ctx, actor, app, c.Request, "offer.personal_create", "succeeded", "personal_delivery", row.ID, nil)
-	out := map[string]any{"delivery": row, "request": request}
-	if request.ClaimExpiresAt != nil && request.ClaimExpiresAt.After(now) && (request.Status == "assigned" || request.Status == "delivered") {
-		out["token"] = s.deliveryToken(app, request.ID, request.ClaimGeneration)
-	}
-	writeJSON(c.Writer, 200, out)
+	writeFailure(c.Writer, 410, "personal_code_unsupported", "Apple 自定义码最低为 500 次兑换额度，不支持创建限兑一次的专属码。此入口已关闭。")
 }

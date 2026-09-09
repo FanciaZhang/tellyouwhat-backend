@@ -3,7 +3,6 @@ package adminportal
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +15,6 @@ import (
 	"github.com/tellyouwhat/backend/internal/adminhttpapi"
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/offerdelivery"
-	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
-	"github.com/tellyouwhat/backend/internal/testutil"
 )
 
 type personalHTTPOffers struct {
@@ -38,15 +35,10 @@ func (f *personalHTTPOffers) CreateCustomCode(_ context.Context, _ string, code 
 	f.pool = appstoreconnect.CodePool{ID: "private-pool", Code: code, Kind: "custom", NumberOfCodes: count, ExpirationDate: expiry, Active: true}
 	return f.pool, nil
 }
-func TestPersonalHTTPAuthAndClaimRedemptionSeparation(t *testing.T) {
-	db := testutil.MySQL(t)
+func TestPersonalHTTPRejectsUnsupportedSingleRedemptionWithoutCloudWrite(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	cipher, err := mysqlstore.NewPayloadCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := &offerdelivery.Store{DB: db, Cipher: cipher}
+	store := &offerdelivery.Store{} // Any database access in the unsupported flow must fail the test.
 	repo := &aiAuthFixture{user: adminauth.User{ID: uuid.NewString(), Role: adminauth.RoleAdmin, Status: adminauth.UserStatusActive}}
 	sessions := adminauth.NewMemoryStateStore(func() time.Time { return now })
 	auth, err := adminauth.NewService(repo, sessions, adminauth.Config{RPID: "admin.example.test", Origin: "https://admin.example.test", AppIDs: []string{"health", "journal"}}, func() time.Time { return now })
@@ -95,52 +87,15 @@ func TestPersonalHTTPAuthAndClaimRedemptionSeparation(t *testing.T) {
 	if apple.calls != 0 {
 		t.Fatal("unauthorized cloud write")
 	}
-	w := call("POST", path, body, true, true)
-	if w.Code != 200 {
-		t.Fatalf("create %d %s", w.Code, w.Body.String())
+
+	for _, action := range []string{"create", "resume"} {
+		body["action"] = action
+		w := call("POST", path, body, true, true)
+		if w.Code != 410 || !bytes.Contains(w.Body.Bytes(), []byte("personal_code_unsupported")) {
+			t.Fatalf("unsupported single redemption: %d %s", w.Code, w.Body.String())
+		}
 	}
-	var result struct {
-		Delivery offerdelivery.PersonalDelivery
-		Request  offerdelivery.Request
-		Token    string
-	}
-	if err = json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Token == "" || result.Request.ClaimedAt != nil || result.Request.DeliveredAt != nil {
-		t.Fatal("new code falsely marked claimed", err)
-	}
-	if bytes.Contains(w.Body.Bytes(), []byte(apple.pool.Code)) {
-		t.Fatal("creation response exposed actual code")
-	}
-	if got := call("POST", path, body, true, true); got.Code != 200 || apple.calls != 1 {
-		t.Fatal("duplicate create")
-	}
-	status := call("POST", "/api/v1/offer-claim", map[string]string{"action": "status", "token": result.Token}, false, false)
-	if status.Code != 200 || bytes.Contains(status.Body.Bytes(), []byte("Private friend")) {
-		t.Fatal("public status exposed name")
-	}
-	r, err := store.Transition(ctx, "health", result.Request.ID, "admin", "deliver", result.Request.Version, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.ClaimedAt != nil {
-		t.Fatal("manual delivery impersonated a claim")
-	}
-	claimed := call("POST", "/api/v1/offer-claim", map[string]string{"action": "claim", "token": result.Token}, false, false)
-	if !bytes.Contains(claimed.Body.Bytes(), []byte("https://apps.apple.com/redeem?")) {
-		t.Fatal("missing Apple redemption link")
-	}
-	if claimed.Code != 200 {
-		t.Fatalf("claim failed %d", claimed.Code)
-	}
-	r, err = store.Get(ctx, "health", r.ID)
-	if err != nil || r.ClaimedAt == nil {
-		t.Fatal("claim was not recorded independently", err)
-	}
-	summary, err := store.Summary(ctx, "health", result.Delivery.PoolID)
-	if err != nil || summary.Claimed != 1 || summary.Delivered != 1 || summary.LinkedVerified != 0 || summary.Applications != 0 {
-		t.Fatalf("claim conflated with redemption %+v %v", summary, err)
-	}
-	list := call("GET", path, nil, true, false)
-	if list.Code != 200 || !bytes.Contains(list.Body.Bytes(), []byte("Private friend")) || bytes.Contains(list.Body.Bytes(), []byte(apple.pool.Code)) {
-		t.Fatalf("ledger response %d", list.Code)
+	if apple.calls != 0 {
+		t.Fatal("unsupported flow contacted Apple")
 	}
 }

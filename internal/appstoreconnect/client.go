@@ -333,6 +333,9 @@ func (client *Client) DeactivateOffer(ctx context.Context, id string) (Offer, er
 }
 
 func (client *Client) CreateCustomCode(ctx context.Context, offerID, code string, count int, expirationDate string) (CodePool, error) {
+	if count < 500 || count > 25000 {
+		return CodePool{}, ErrInvalid
+	}
 	attributes := map[string]any{"customCode": code, "numberOfCodes": count}
 	if expirationDate != "" {
 		attributes["expirationDate"] = expirationDate

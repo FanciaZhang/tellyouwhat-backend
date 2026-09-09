@@ -146,23 +146,14 @@ const personalPath=d=>`/api/v1/apps/${encodeURIComponent(d.app)}/offers/${encode
 async function openPersonalDelivery(offerID){
  const offer=state.offerData?.offers?.find(v=>v.id===offerID);if(!offer)return;
  const d={app:state.currentApp,offer,kind:'personal',cursor:'',requestKey:uuid(),busy:false};delivery=d;deliveryGeneration++;
- const writable=!!state.offerData.writesEnabled&&offer.active;
- mountDelivery(deliveryHeader(offer,'正式环境 · 给认识的人发专属码，分别查看领取与实际兑换状态')+`
+ mountDelivery(deliveryHeader(offer,'历史发放记录')+`
+ <p class="card muted">Apple 自定义码最低为 500 次兑换额度，不支持创建限兑一次的专属码。</p>
  <p id="personal-report-status" class="muted"></p>
- ${writable?`<form id="personal-form" class="card delivery-form"><label>对方的称呼<input name="name" required maxlength="80" autocomplete="off" placeholder="例如小王，仅后台可见"></label><label>兑换截止日<input name="expiration" type="date" required></label><p class="delivery-wide muted">每人创建一枚独立自定义码，向 Apple 申请最多兑换一次。对方无需填写信息或登录后台；兑换资格由 Apple 确认。</p><button class="primary">创建专属领取链接</button></form>`:'<p class="muted">当前可查看历史发放；新建需要启用 Apple 写操作和此 Offer。</p>'}
  <div class="section-head subhead"><h3>熟人发放记录</h3><button id="personal-refresh" class="secondary">刷新记录</button></div><div id="personal-list" class="stack"></div><div class="actions"><button id="personal-first" class="quiet">回到第一页</button><button id="personal-next" class="secondary" disabled>下一页</button></div>`);
  $('#delivery-back').onclick=closeOfferDelivery;
  $('#personal-refresh').onclick=()=>refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));
  $('#personal-first').onclick=()=>{d.cursor='';refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));};
  $('#personal-next').onclick=()=>{d.cursor=d.nextCursor;refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));};
- const form=$('#personal-form');
- if(form){form.expiration.value=new Date(Date.now()+30*86400000).toISOString().slice(0,10);form.onsubmit=async e=>{
-  e.preventDefault();if(d.busy)return;d.busy=true;const button=form.querySelector('button');button.disabled=true;
-  const values=Object.fromEntries(new FormData(form));
-  try{await reauthenticate();const result=await api(personalPath(d),{method:'POST',csrfRequired:true,body:{action:'create',requestKey:d.requestKey,...values}});if(delivery!==d)return;d.requestKey=uuid();form.elements.namedItem('name').value='';await refreshPersonal(d);showPersonalLink(result);}
-  catch(e){if(delivery===d){if(e.code==='personal_code_rejected')d.requestKey=uuid();deliveryMessage(e.message,true);await refreshPersonal(d).catch(()=>{});}}
-  finally{d.busy=false;if(button.isConnected)button.disabled=false;}
- };}
  await refreshPersonal(d).catch(e=>deliveryMessage(e.message,true));
 }
 async function refreshPersonal(d){
@@ -174,20 +165,7 @@ async function refreshPersonal(d){
  $('#personal-list').innerHTML=rows.length?rows.map(item=>{
   const v=item.delivery,r=item.request,report=item.appleReport;
   const redeemed=report?.days?(report.redemptions>0?`Apple 已确认：这枚码兑换 ${Number(report.redemptions)} 次`:`尚未在已取得的日报中发现兑换`):'实际兑换：待 Apple 日报确认';
-  return `<article class="card"><h3>${escapeHTML(v.name)}</h3><p>${r?.claimedAt?'已领取 · '+formatTime(r.claimedAt):r?.deliveredAt?'已发出，尚未通过链接领取':v.state==='ready'?'尚未领取':v.state==='rejected'?'Apple 未创建兑换码':'兑换码准备结果待核对'}</p><p>${redeemed}</p>${report?.days?`<p class="muted">已同步至 ${escapeHTML(report.lastDay)}，共 ${Number(report.days)} 天日报</p>`:''}<p class="muted">兑换截止 ${escapeHTML(v.expiration)}。转发后不能确认兑换者本人。</p><div class="offer-actions">${state.offerData?.writesEnabled&&v.state!=='rejected'?`<button class="secondary" data-personal-resume="${escapeHTML(v.id)}">${v.state==='ready'?'专属领取链接':'继续核对'}</button>`:''}${v.poolID?`<button class="quiet" data-personal-pool="${escapeHTML(v.poolID)}">发放详情</button>`:''}</div></article>`;
+  return `<article class="card"><h3>${escapeHTML(v.name)}</h3><p>${r?.claimedAt?'已领取 · '+formatTime(r.claimedAt):r?.deliveredAt?'已发出，尚未通过链接领取':v.state==='ready'?'尚未领取':v.state==='rejected'?'Apple 未创建兑换码':'兑换码准备结果待核对'}</p><p>${redeemed}</p>${report?.days?`<p class="muted">已同步至 ${escapeHTML(report.lastDay)}，共 ${Number(report.days)} 天日报</p>`:''}<p class="muted">兑换截止 ${escapeHTML(v.expiration)}。转发后不能确认兑换者本人。</p><div class="offer-actions">${v.poolID?`<button class="quiet" data-personal-pool="${escapeHTML(v.poolID)}">发放详情</button>`:''}</div></article>`;
  }).join(''):'<p class="card empty">还没有熟人发放记录。</p>';
  $$('[data-personal-pool]').forEach(b=>b.onclick=()=>openDeliveryPool(d,b.dataset.personalPool));
- $$('[data-personal-resume]').forEach(b=>b.onclick=async()=>{
-  if(d.busy)return;d.busy=true;b.disabled=true;
-  try{await reauthenticate();const result=await api(personalPath(d),{method:'POST',csrfRequired:true,body:{action:'resume',requestKey:b.dataset.personalResume}});if(delivery===d){if(d.requestKey===b.dataset.personalResume){d.requestKey=uuid();const form=$('#personal-form');if(form)form.elements.namedItem('name').value='';}await refreshPersonal(d);showPersonalLink(result);}}
-  catch(e){if(delivery===d)deliveryMessage(e.message,true);}
-  finally{d.busy=false;if(b.isConnected)b.disabled=false;}
- });
-}
-function showPersonalLink(result){
- deliveryMessage('兑换码已准备好，可复制专属领取链接发给朋友。');
- if(!result.token){deliveryMessage('原领取链接已撤销或过期，请在发放详情中重新签发。');return;}
- const dialog=deliveryDialog('发给这位朋友',`<p>对方打开链接即可领取，无需填写个人信息。请只发给对应的朋友。</p><label>专属领取链接<input id="personal-link" readonly autocomplete="off"></label><button class="primary" id="personal-copy">复制链接</button>`);
- dialog.dataset.clearOnHide='true';const input=dialog.querySelector('#personal-link');input.value=location.origin+'/offer-claim#receipt='+encodeURIComponent(result.token);
- dialog.querySelector('#personal-copy').onclick=async()=>{try{await navigator.clipboard.writeText(input.value);deliveryMessage('链接已复制');}catch{input.select();deliveryMessage('请手动复制链接');}};
 }
