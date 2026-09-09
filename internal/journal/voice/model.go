@@ -40,7 +40,32 @@ type editorialManualEdit struct {
 	ManualEdit
 	HasLaterSpeech bool `json:"hasLaterSpeech"`
 }
+type recordingEditorialTurn struct {
+	Speaker           string `json:"speaker"`
+	StartMilliseconds int    `json:"startMilliseconds"`
+	Text              string `json:"text"`
+	AcousticEmotion   string `json:"acousticEmotion,omitempty"`
+}
+type recordingEditorialContext struct {
+	Mode              string                   `json:"mode"`
+	NarratorSpeakerID string                   `json:"narratorSpeakerID"`
+	Speakers          []RecordingSpeaker       `json:"speakers"`
+	Utterances        []recordingEditorialTurn `json:"utterances"`
+}
+
+func recordingEditorial(r *RecordingContext) *recordingEditorialContext {
+	if r == nil {
+		return nil
+	}
+	out := &recordingEditorialContext{Mode: r.Mode, NarratorSpeakerID: r.NarratorSpeakerID, Speakers: r.Speakers, Utterances: []recordingEditorialTurn{}}
+	for _, u := range r.Analysis.Utterances {
+		out.Utterances = append(out.Utterances, recordingEditorialTurn{u.Speaker, u.StartMilliseconds, u.Text, u.AcousticEmotion})
+	}
+	return out
+}
+
 type rewriteDocument struct {
+	RecordingContext *recordingEditorialContext `json:"recordingContext,omitempty"`
 	Snapshot
 	Transcript  []transcriptSection   `json:"transcript"`
 	ManualEdits []editorialManualEdit `json:"manualEdits"`
@@ -62,7 +87,7 @@ func editorialDocument(s Snapshot) rewriteDocument {
 	}
 	slices.Sort(boundaries)
 	boundaries = slices.Compact(boundaries)
-	result := rewriteDocument{Snapshot: s, Transcript: []transcriptSection{}, ManualEdits: []editorialManualEdit{}}
+	result := rewriteDocument{Snapshot: s, RecordingContext: recordingEditorial(s.RecordingContext), Transcript: []transcriptSection{}, ManualEdits: []editorialManualEdit{}}
 	for _, edit := range s.ManualEdits {
 		result.ManualEdits = append(result.ManualEdits, editorialManualEdit{ManualEdit: edit, HasLaterSpeech: edit.TranscriptOffset < len(text)})
 	}
@@ -77,11 +102,18 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	if err := s.Validate(); err != nil {
 		return RewriteResult{}, err
 	}
+	if s.RecordingContext != nil && s.RecordingContext.Mode == "dialogue" {
+		return RewriteResult{}, errors.New("recording_dialogue_requires_turn_rendering")
+	}
 	styleInstructions, _ := s.WritingStyle.instructions() // Validate already enforces the closed catalog.
 	input, _ := json.Marshal(map[string]any{"document": editorialDocument(s), "transcriptRevision": tr})
+	instructions := rewriteInstructions
+	if s.RecordingContext != nil {
+		instructions += recordingRewriteInstructions
+	}
 	fields := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "text", "afterID"}, "properties": map[string]any{"id": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "afterID": map[string]string{"type": "string"}}}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "questions"}, "properties": map[string]any{"baseRevision": map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"}, "patches": map[string]any{"type": "array", "items": fields}, "questions": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}}
-	payload, _ := json.Marshal(map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": rewriteInstructions + "\n本次写作风格（仅作用于需要整理的部分）：" + styleInstructions, "input": string(input), "max_output_tokens": 12000, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision", "strict": true, "schema": schema}}})
+	payload, _ := json.Marshal(map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": instructions + "\n本次写作风格（仅作用于需要整理的部分）：" + styleInstructions, "input": string(input), "max_output_tokens": 12000, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision", "strict": true, "schema": schema}}})
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(m.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
 		return RewriteResult{}, err

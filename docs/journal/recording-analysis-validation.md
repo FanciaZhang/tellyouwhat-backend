@@ -93,3 +93,44 @@ buffer is still present and further end-to-end upload/storage design is required
 Live harness improvements: explicit stable task ID, query-only recovery, longer
 poll deadline, and a private output-file option. Remote temporary audio and
 results were removed after retrieval. No production service deployment occurred.
+
+## Source fidelity and channel probes
+
+The real two-person sample yielded two clusters with lexical speech and a third
+cluster containing only eight acknowledgements/laughs. SpeakerEvidence now keeps
+that evidence without treating the extra cluster as a confirmed third identity.
+All source IDs remain unchanged. An entire-recording diarization accuracy score
+is still unavailable without a manually timed reference.
+
+Independent on-device Whisper transcription found a short supplementary fact
+missing from the full ASR result; the user explicitly confirmed it. Four eight-
+second probes then compared downmix, left, right and preserved stereo. Only the
+left-channel probe recovered the supplement. Merely preserving stereo in a
+standard request did NOT solve it. The recovered text still shared one speaker
+label with the other voice, so blindly merging local speaker IDs would be wrong.
+Canonical WAV validation now preserves one/two channels and counts duration by
+frames, not channel samples. No automatic source correction is claimed.
+
+Three rewrite variants were compared on the same private transcription. An eight-
+item source-fidelity regression checklist scored 2/8 for the original rewriter,
+5/8 with speaker context, and 7/8 after tightening attribution and uncertainty
+instructions. This is a single-sample, post-discovery checklist, NOT a general
+accuracy benchmark. Lost numeric uncertainty remains a failure, and another
+activity was mislabeled as an examination. A narrow review helper detects numeric
+qualifier loss without silently rewriting it; it is not an exhaustive semantic
+validator or an app-level apply gate.
+
+The LLM ignored dialogue formatting, so dialogue rendering now operates directly
+on the validated utterances. All 217 utterance IDs/texts were preserved in order
+in 66 consecutive speaker turns. Unmapped labels remain unconfirmed. Narration
+still uses the rewriter; dialogue callers must use RenderRecordingDialogue,
+not ArkRewriter. App integration/confirmation/preview remains to be implemented.
+
+Removing provider bookkeeping from the model input reduced input tokens from
+26722 to 13861 in this sample (about 48%). The second narrative took 43.2 s versus
+46.9 s previously; one run is not enough to claim a latency improvement. Emotion
+strings are retained verbatim and never interpreted as the event-time feelings.
+
+Private output files, the user's text, case facts and sample-specific rubric are
+not committed. Only synthetic pattern tests and general implementation are stored
+in Git. No Health production or private Journal service deployment was performed.

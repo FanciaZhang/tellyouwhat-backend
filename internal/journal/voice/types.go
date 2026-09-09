@@ -42,14 +42,15 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	WritingStyle      WritingStyle `json:"writingStyle"`
-	Revision          int          `json:"revision"`
-	Blocks            []Block      `json:"blocks"`
-	Transcript        string       `json:"transcript"`
-	EditedBlockIDs    []string     `json:"editedBlockIDs"`
-	MediaOnlyBlockIDs []string     `json:"mediaOnlyBlockIDs"`
-	ManualEdits       []ManualEdit `json:"manualEdits"`
-	Words             []string     `json:"words"`
+	RecordingContext  *RecordingContext `json:"recordingContext,omitempty"`
+	WritingStyle      WritingStyle      `json:"writingStyle"`
+	Revision          int               `json:"revision"`
+	Blocks            []Block           `json:"blocks"`
+	Transcript        string            `json:"transcript"`
+	EditedBlockIDs    []string          `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs []string          `json:"mediaOnlyBlockIDs"`
+	ManualEdits       []ManualEdit      `json:"manualEdits"`
+	Words             []string          `json:"words"`
 }
 type Patch struct {
 	ID   string `json:"id"`
@@ -88,6 +89,11 @@ type Frame struct {
 }
 
 func (s Snapshot) Validate() error {
+	if s.RecordingContext != nil {
+		if err := s.RecordingContext.Validate(s.Transcript); err != nil {
+			return err
+		}
+	}
 	if _, err := s.WritingStyle.instructions(); err != nil {
 		return err
 	}
