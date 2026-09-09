@@ -71,6 +71,12 @@ Pull Request 与 `main` push 会执行：
 5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证两个 App、Worker 和管理后台；
 6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 验证三个域名的真实 DNS、可信 TLS、HTTP 200 和 `status: ready` 响应。
 
+构建缓存按服务名隔离。GitHub Actions 缓存导出最多等待两分钟，使用 BuildKit 的 `ignore-error=true` 将缓存写入失败降为非阻断结果；后续构建可以重新生成缓存。此设置仅作用于缓存导出，编译、测试、镜像导出和 GHCR 上传失败仍会阻止部署，不对整个构建任务设置 `continue-on-error`。参数语义见 [Docker 缓存文档](https://docs.docker.com/build/cache/backends/gha/)。
+
+单机部署使用 `docker compose up -d` 替换每个服务的唯一容器，存在停止旧进程到新进程就绪的不可用窗口。Gateway 最多等待约 20 秒完成正在处理的请求，随后还需要新进程启动；长连接可能中断。就绪检查和失败回滚用于确认、恢复服务，不提供零停机保证。备份和拉取镜像在切换容器前执行，其耗时不等于接口中断时长。
+
+每次部署保留迁移前的加密数据库备份。备份使用 `mysqldump --single-transaction --quick` 在线读取，不主动停止应用；仍会消耗数据库读资源。备份只保留恢复策略允许的后台控制数据，其余表仅保存结构。数据库迁移可能改变结构或数据，回退镜像不能代替数据恢复。纯代码发布并非一定需要新的备份，但当前统一备份策略保留发布前恢复基线；如改为按需备份，应根据目标数据库实际待执行的迁移与最近有效备份判定，不能仅根据 Git diff 跳过。
+
 手动运行仅允许 `main` 分支，`deployment` 输入有三个值：
 
 | 值 | 行为 | 验收结果 |
