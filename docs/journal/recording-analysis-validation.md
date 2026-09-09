@@ -156,3 +156,31 @@ Focused deterministic tests cover lost-response/restart recovery, exhausted
 budget, repeated completion, concurrent calls, late results and invalid provider
 identity; the executor tests also pass the Go race detector. No new deployment
 was performed for this foundation.
+
+## Private development HTTP integration, 2026-09-10
+
+The Journal-only development entrypoint now configures the standard recording
+provider, persistent spool, existing cost controller and minute-based temporary
+cleanup. The production gateway and Health deployment are unchanged.
+
+| Request | Effect |
+| --- | --- |
+| `PUT /v1/journal/voice/recordings/{id}` (`audio/wav`) | Streams a validated canonical recording into private temporary storage; duplicate bytes reuse the job |
+| `POST /v1/journal/voice/recordings/{id}/process` (empty body) | Advances submit/query using the saved provider task; provider budget admission occurs only on initial submit |
+| `GET /v1/journal/voice/recordings/{id}` (empty body) | Reads the owned job and bounded result; does not call ASR |
+
+The provisioned development credential, installation identity and managed-AI
+consent are required. Upload/process also require an active simulated entitlement;
+previous results remain readable when that entitlement expires. Expired result
+content returns 410, including duplicate PUT. Audio bypasses the gateway's JSON
+buffering middleware, with duration/byte limits, two concurrent HTTP operations,
+read/write deadlines and private spool permissions. Provider errors do not expose
+the provider body or credentials. Tests cover admission before body reads, a
+6.4 MB upload, owner separation, repeat requests, changed bytes, malformed audio,
+body rejection, result expiry and provider-budget denial; race checks pass.
+
+The HTTP layer does not yet provide background scheduling or a user-facing
+retry/confirmation flow. A `process` request is one bounded step; after a lost
+response callers read the job and query its existing provider identity. Unknown
+provider submissions are never automatically resubmitted. App wiring and live
+contract acceptance must be verified separately before this is a completed stage.

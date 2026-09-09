@@ -58,17 +58,40 @@ func run() error {
 	}
 	price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000}
 	model := provider.New(provider.Config{BaseURL: base, APIKey: key, LiteModel: lite, ProModel: pro}, &http.Client{Timeout: 2 * time.Minute})
+	recordingStore, err := voice.NewRecordingJobStore(filepath.Join(stateDir, "recordings"), time.Now)
+	if err != nil {
+		return err
+	}
+	recordingASR := asr
+	recordingASR.URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel"
+	recordingASR.ResourceID = "volc.seedasr.auc"
+	recording := &voice.RecordingExecutor{Store: recordingStore, Provider: voice.RecordingASR{Config: recordingASR}, Budget: budget, AppID: "journal-development", Price: costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}}
 	handler, err := development.New(development.Config{
 		Token:     os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
 		Organizer: provider.NewBudgetedClient(model, budget, "journal-development", price),
 		Speech:    voice.NewBudgetedSpeech(voice.ASR{Config: asr}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
 		Rewriter:  voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite}, budget, "journal-development", price),
+		Recording: recording,
 	})
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := recordingStore.Cleanup(); err != nil {
+					log.Print("journal recording temporary cleanup failed")
+				}
+			}
+		}
+	}()
 	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: nil}
 	go func() { <-ctx.Done(); _ = server.Close() }()
 	fmt.Println("Journal development ready; credential valid until revoked; audio 120 minutes/month")
