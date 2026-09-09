@@ -40,11 +40,11 @@ func (s *Server) syncDeliveryPool(ctx context.Context, app, offer, pool string) 
 	if err != nil {
 		return offerdelivery.Pool{}, err
 	}
-	name := ""
+	name, subscriptionID, productID := "", "", ""
 	active := false
 	for _, o := range offers {
 		if o.ID == offer {
-			name = o.Name
+			name, subscriptionID, productID = o.Name, o.SubscriptionID, o.ProductID
 			active = o.Active
 			break
 		}
@@ -70,7 +70,7 @@ func (s *Server) syncDeliveryPool(ctx context.Context, app, offer, pool string) 
 			if env == "" && v.Kind == "custom" {
 				env = "production"
 			}
-			p := offerdelivery.Pool{ID: v.ID, OfferID: offer, OfferName: name, Code: v.Code, Kind: v.Kind, Environment: env, Capacity: v.NumberOfCodes, Active: active && v.Active, ExpiresAt: expiry, SyncedAt: s.now()}
+			p := offerdelivery.Pool{ID: v.ID, OfferID: offer, OfferName: name, SubscriptionID: subscriptionID, ProductID: productID, Code: v.Code, Kind: v.Kind, Environment: env, Capacity: v.NumberOfCodes, Active: active && v.Active, ExpiresAt: expiry, SyncedAt: s.now()}
 			return p, s.config.Delivery.SyncPool(ctx, app, p)
 		}
 	}
@@ -137,11 +137,16 @@ func (s *Server) readOfferDelivery(c *gin.Context, app, offer, pool, query, stat
 		deliveryFailure(c.Writer, err)
 		return
 	}
+	unknownProduct, err := s.config.Delivery.UnknownProductOfferCount(c.Request.Context(), app, p)
+	if err != nil {
+		deliveryFailure(c.Writer, err)
+		return
+	}
 	moreVerified := len(verified) > 100
 	if moreVerified {
 		verified = verified[:100]
 	}
-	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
+	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "unknownProductSubscriptions": unknownProduct, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
 }
 
 type deliveryCommand struct {

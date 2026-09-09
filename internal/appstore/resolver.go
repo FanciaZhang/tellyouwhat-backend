@@ -37,6 +37,7 @@ type SubscriptionState struct {
 	TransactionID         string
 	Environment           string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	ExpiresAt             time.Time
 	StartedAt             time.Time
@@ -118,6 +119,7 @@ func (resolver *SubscriptionResolver) Resolve(
 		TransactionID:         active.TransactionID,
 		Environment:           active.Environment,
 		OfferIdentifier:       active.OfferIdentifier,
+		ProductID:             active.ProductID,
 		OfferType:             active.OfferType,
 		ExpiresAt:             active.ExpiresAt,
 		StartedAt:             active.StartedAt,

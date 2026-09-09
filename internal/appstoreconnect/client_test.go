@@ -339,3 +339,67 @@ func TestCodePoolPaginationIsCompleteAndScoped(t *testing.T) {
 		})
 	}
 }
+
+func TestAppInventoryIncludesEverySubscriptionAndRejectsPartialResults(t *testing.T) {
+	for _, failure := range []string{"", "annual", "cross-group", "wrong-default"} {
+		t.Run(failure, func(t *testing.T) {
+			key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			calls := map[string]int{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls[r.URL.Path]++
+				claims := decodeClaims(t, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+				scope := claims["scope"].([]any)
+				if len(scope) != 1 || scope[0] != "GET "+r.URL.Path {
+					t.Errorf("unscoped inventory request")
+				}
+				switch r.URL.Path {
+				case "/v1/apps/app-1/subscriptionGroups":
+					if r.URL.Query().Get("page") == "2" {
+						fmt.Fprint(w, `{"data":[{"type":"subscriptionGroups","id":"g2"}]}`)
+					} else {
+						fmt.Fprintf(w, `{"data":[{"type":"subscriptionGroups","id":"g1"}],"links":{"next":%q}}`, serverURL(r)+r.URL.Path+"?page=2")
+					}
+				case "/v1/subscriptionGroups/g1/subscriptions":
+					if failure == "cross-group" {
+						fmt.Fprintf(w, `{"data":[],"links":{"next":%q}}`, serverURL(r)+"/v1/subscriptionGroups/unrelated/subscriptions")
+						return
+					}
+					fmt.Fprint(w, `{"data":[{"type":"subscriptions","id":"monthly","attributes":{"name":"Monthly","productId":"app.monthly"}}]}`)
+				case "/v1/subscriptionGroups/g2/subscriptions":
+					fmt.Fprint(w, `{"data":[{"type":"subscriptions","id":"annual","attributes":{"name":"Annual","productId":"app.annual"}}]}`)
+				case "/v1/subscriptions/monthly/offerCodes", "/v1/subscriptions/annual/offerCodes":
+					if failure == "annual" && strings.Contains(r.URL.Path, "annual") {
+						w.WriteHeader(503)
+						return
+					}
+					fmt.Fprintf(w, `{"data":[{"type":"subscriptionOfferCodes","id":%q,"attributes":{"name":"FRIENDS","active":true,"productionCodeCount":500}}]}`, strings.Split(r.URL.Path, "/")[3]+"-offer")
+				default:
+					t.Errorf("unrelated path %s", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			subscription := "monthly"
+			if failure == "wrong-default" {
+				subscription = "not-in-app"
+			}
+			client, err := NewClient(Config{BaseURL: server.URL, IssuerID: "issuer", KeyID: "key", AppAppleID: "app-1", SubscriptionID: subscription, SigningKey: key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			offers, err := client.ListOffers(context.Background())
+			if failure != "" {
+				if err == nil || offers != nil {
+					t.Fatal("accepted partial or unscoped inventory")
+				}
+				return
+			}
+			if err != nil || len(offers) != 2 || offers[0].ProductID != "app.monthly" || offers[1].ProductID != "app.annual" || offers[1].SubscriptionID != "annual" || offers[1].SubscriptionName != "Annual" {
+				t.Fatalf("missing subscription inventory: %+v %v", offers, err)
+			}
+			if calls["/v1/apps/app-1/subscriptionGroups"] != 2 {
+				t.Fatal("groups were not paginated")
+			}
+		})
+	}
+}

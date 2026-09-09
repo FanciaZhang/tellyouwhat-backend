@@ -95,7 +95,7 @@ func run(logger *slog.Logger) error {
 	for _, app := range configuration.apps {
 		client, err := appstoreconnect.NewClient(appstoreconnect.Config{
 			BaseURL: app.baseURL, IssuerID: app.issuerID, KeyID: app.keyID,
-			SubscriptionID: app.subscriptionID, SigningKey: app.signingKey,
+			SubscriptionID: app.subscriptionID, AppAppleID: app.appAppleID, SigningKey: app.signingKey,
 		})
 		if err != nil {
 			return fmt.Errorf("configure App Store Connect for %s: %w", app.id, err)
@@ -213,8 +213,8 @@ type config struct {
 }
 
 type adminAppConfig struct {
-	id, displayName, baseURL, issuerID, keyID, subscriptionID string
-	signingKey                                                *ecdsa.PrivateKey
+	id, displayName, baseURL, issuerID, keyID, subscriptionID, appAppleID string
+	signingKey                                                            *ecdsa.PrivateKey
 }
 
 func loadConfig() (config, error) {
@@ -258,7 +258,7 @@ func loadAdminApp(prefix, id, displayName string) (adminAppConfig, error) {
 		id: id, displayName: displayName,
 		baseURL:  value(prefix+"_APP_STORE_CONNECT_BASE_URL", "https://api.appstoreconnect.apple.com"),
 		issuerID: read("APP_STORE_CONNECT_ISSUER_ID"), keyID: read("APP_STORE_CONNECT_KEY_ID"),
-		subscriptionID: read("APP_STORE_CONNECT_SUBSCRIPTION_ID"), signingKey: privateKey,
+		subscriptionID: read("APP_STORE_CONNECT_SUBSCRIPTION_ID"), appAppleID: read("APP_STORE_APP_APPLE_ID"), signingKey: privateKey,
 	}
 	if app.issuerID == "" || app.keyID == "" || app.subscriptionID == "" {
 		return adminAppConfig{}, fmt.Errorf("%s App Store Connect configuration is required", id)

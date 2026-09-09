@@ -36,16 +36,18 @@ type Store struct {
 	Cipher Cipher
 }
 type Pool struct {
-	Code        string    `json:"-"`
-	ID          string    `json:"id"`
-	OfferID     string    `json:"offerID"`
-	OfferName   string    `json:"offerName"`
-	Kind        string    `json:"kind"`
-	Environment string    `json:"environment"`
-	Capacity    int       `json:"capacity"`
-	Active      bool      `json:"active"`
-	ExpiresAt   time.Time `json:"expiresAt"`
-	SyncedAt    time.Time `json:"syncedAt"`
+	SubscriptionID string    `json:"subscriptionID"`
+	ProductID      string    `json:"productID"`
+	Code           string    `json:"-"`
+	ID             string    `json:"id"`
+	OfferID        string    `json:"offerID"`
+	OfferName      string    `json:"offerName"`
+	Kind           string    `json:"kind"`
+	Environment    string    `json:"environment"`
+	Capacity       int       `json:"capacity"`
+	Active         bool      `json:"active"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+	SyncedAt       time.Time `json:"syncedAt"`
 }
 type Recipient struct {
 	Name      string `json:"name"`
@@ -115,13 +117,13 @@ func (s Store) SyncPool(ctx context.Context, app string, p Pool) error {
 	}
 	defer tx.Rollback()
 	previous, err := s.pool(ctx, tx, app, p.ID)
-	if err == nil && (previous.OfferID != p.OfferID || previous.Kind != p.Kind || previous.Environment != p.Environment) {
+	if err == nil && (previous.OfferID != p.OfferID || previous.ProductID != p.ProductID || previous.SubscriptionID != p.SubscriptionID || previous.Kind != p.Kind || previous.Environment != p.Environment) {
 		return ErrConflict
 	}
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_pools(app_id,pool_id,offer_id,offer_name,kind,environment,capacity,active,expires_at,synced_at,ciphertext,nonce) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE offer_name=VALUES(offer_name),capacity=VALUES(capacity),active=VALUES(active),expires_at=VALUES(expires_at),synced_at=VALUES(synced_at),ciphertext=VALUES(ciphertext),nonce=VALUES(nonce)`, app, p.ID, p.OfferID, p.OfferName, p.Kind, p.Environment, p.Capacity, p.Active, p.ExpiresAt.UTC(), p.SyncedAt.UTC(), encrypted, nonce)
+	_, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_pools(app_id,pool_id,offer_id,offer_name,subscription_id,product_id,kind,environment,capacity,active,expires_at,synced_at,ciphertext,nonce) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE offer_name=VALUES(offer_name),capacity=VALUES(capacity),active=VALUES(active),expires_at=VALUES(expires_at),synced_at=VALUES(synced_at),ciphertext=VALUES(ciphertext),nonce=VALUES(nonce)`, app, p.ID, p.OfferID, p.OfferName, p.SubscriptionID, p.ProductID, p.Kind, p.Environment, p.Capacity, p.Active, p.ExpiresAt.UTC(), p.SyncedAt.UTC(), encrypted, nonce)
 	if err != nil {
 		return err
 	}
@@ -130,7 +132,7 @@ func (s Store) SyncPool(ctx context.Context, app string, p Pool) error {
 func (s Store) pool(ctx context.Context, tx *sql.Tx, app, id string) (Pool, error) {
 	var p Pool
 	p.ID = id
-	err := tx.QueryRowContext(ctx, `SELECT offer_id,offer_name,kind,environment,capacity,active,expires_at,synced_at FROM offer_delivery_pools WHERE app_id=? AND pool_id=? FOR UPDATE`, app, id).Scan(&p.OfferID, &p.OfferName, &p.Kind, &p.Environment, &p.Capacity, &p.Active, &p.ExpiresAt, &p.SyncedAt)
+	err := tx.QueryRowContext(ctx, `SELECT offer_id,offer_name,subscription_id,product_id,kind,environment,capacity,active,expires_at,synced_at FROM offer_delivery_pools WHERE app_id=? AND pool_id=? FOR UPDATE`, app, id).Scan(&p.OfferID, &p.OfferName, &p.SubscriptionID, &p.ProductID, &p.Kind, &p.Environment, &p.Capacity, &p.Active, &p.ExpiresAt, &p.SyncedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -587,12 +589,12 @@ func (s Store) LinkVerified(ctx context.Context, app, id, actor, originalHex str
 	if r.Version != version || r.Status != "delivered" || r.VerifiedAt != nil {
 		return r, ErrConflict
 	}
-	var offerName, environment string
-	if err = tx.QueryRowContext(ctx, `SELECT offer_name,environment FROM offer_delivery_pools WHERE app_id=? AND pool_id=?`, app, r.PoolID).Scan(&offerName, &environment); err != nil {
+	var offerName, environment, productID string
+	if err = tx.QueryRowContext(ctx, `SELECT offer_name,environment,product_id FROM offer_delivery_pools WHERE app_id=? AND pool_id=?`, app, r.PoolID).Scan(&offerName, &environment, &productID); err != nil {
 		return r, err
 	}
 	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND offer_type=3 AND original_transaction_hash=?`, app, environment, offerName, original).Scan(&count); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND product_id=? AND offer_type=3 AND original_transaction_hash=?`, app, environment, offerName, productID, original).Scan(&count); err != nil {
 		return r, err
 	}
 	if count == 0 {

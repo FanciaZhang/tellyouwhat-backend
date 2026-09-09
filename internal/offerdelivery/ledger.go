@@ -132,7 +132,7 @@ func (s Store) VerifiedSubscriptions(ctx context.Context, app, pool string) ([]V
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT LOWER(HEX(r.original_transaction_hash)),MIN(r.redeemed_at),COALESCE(MAX(l.request_id),'') FROM app_store_offer_redemptions r LEFT JOIN offer_delivery_verified_links l ON l.app_id=r.app_id AND l.environment=r.environment AND BINARY l.offer_name=BINARY r.offer_identifier AND l.original_hash=r.original_transaction_hash WHERE r.app_id=? AND r.environment=? AND BINARY r.offer_identifier=BINARY ? AND r.offer_type=3 GROUP BY r.original_transaction_hash ORDER BY MIN(r.redeemed_at) DESC LIMIT 101`, app, p.Environment, p.OfferName)
+	rows, err := s.DB.QueryContext(ctx, `SELECT LOWER(HEX(r.original_transaction_hash)),MIN(r.redeemed_at),COALESCE(MAX(l.request_id),'') FROM app_store_offer_redemptions r LEFT JOIN offer_delivery_verified_links l ON l.app_id=r.app_id AND l.environment=r.environment AND BINARY l.offer_name=BINARY r.offer_identifier AND l.original_hash=r.original_transaction_hash WHERE r.app_id=? AND r.environment=? AND BINARY r.offer_identifier=BINARY ? AND r.product_id=? AND r.offer_type=3 GROUP BY r.original_transaction_hash ORDER BY MIN(r.redeemed_at) DESC LIMIT 101`, app, p.Environment, p.OfferName, p.ProductID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +160,43 @@ func (s Store) ManagedExport(ctx context.Context, app, pool, actor string, now t
 // ObservedOfferCount covers every pool of the same Offer; Apple does not identify one-time pools.
 func (s Store) ObservedOfferCount(ctx context.Context, app string, p Pool) (int, error) {
 	var count int
-	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(DISTINCT original_transaction_hash) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND offer_type=3`, app, p.Environment, p.OfferName).Scan(&count)
+	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(DISTINCT original_transaction_hash) FROM app_store_offer_redemptions WHERE app_id=? AND environment=? AND BINARY offer_identifier=BINARY ? AND product_id=? AND offer_type=3`, app, p.Environment, p.OfferName, p.ProductID).Scan(&count)
 	return count, err
+}
+
+// OfferSummary is operational ledger coverage, not Apple's remaining inventory.
+type OfferSummary struct {
+	OfferID            string `json:"offerID"`
+	Environment        string `json:"environment"`
+	Pools              int    `json:"pools"`
+	Applications       int    `json:"applications"`
+	Delivered          int    `json:"delivered"`
+	Pending            int    `json:"pending"`
+	ExternalDeliveries int    `json:"externalDeliveries"`
+}
+
+func (s Store) OfferSummaries(ctx context.Context, app string) ([]OfferSummary, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT p.offer_id,p.environment,COUNT(DISTINCT p.pool_id),COALESCE(SUM(r.source<>'external'),0),COUNT(r.delivered_at),COALESCE(SUM(r.status='requested'),0),COALESCE(SUM(r.source='external'),0) FROM offer_delivery_pools p LEFT JOIN offer_delivery_requests r ON r.app_id=p.app_id AND r.pool_id=p.pool_id WHERE p.app_id=? GROUP BY p.offer_id,p.environment`, app)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OfferSummary{}
+	for rows.Next() {
+		var v OfferSummary
+		if err = rows.Scan(&v.OfferID, &v.Environment, &v.Pools, &v.Applications, &v.Delivered, &v.Pending, &v.ExternalDeliveries); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// UnknownProductOfferCount preserves legacy evidence without assigning it to a product.
+func (s Store) UnknownProductOfferCount(ctx context.Context, app string, p Pool) (int, error) {
+	if p.ProductID == "" {
+		return 0, nil
+	}
+	p.ProductID = ""
+	return s.ObservedOfferCount(ctx, app, p)
 }

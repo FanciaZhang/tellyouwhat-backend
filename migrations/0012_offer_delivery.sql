@@ -1,8 +1,12 @@
+ALTER TABLE app_store_offer_redemptions ADD COLUMN product_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '';
+
 CREATE TABLE offer_delivery_pools (
  app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  pool_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  offer_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  offer_name VARCHAR(255) NOT NULL,
+ subscription_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
+ product_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
  kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  capacity INT UNSIGNED NOT NULL,

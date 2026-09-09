@@ -18,6 +18,10 @@ App Store 交易中的 Offer 标识是参考名称，不能用 App Store Connect
 
 500 次生成额度不代表 500 次已发放，也不代表还有 500 次可用。统计读取失败显示不可用；未观测到交易不证明没有核销。正式环境与沙盒单独展示。Offer 已停用或写操作关闭时，仍可查看库存与历史记录。
 
+配置 App Apple ID 时，清单遍历此 App 的全部订阅组、订阅产品和 Offer，各层分页必须完整成功。只配置订阅资源 ID 时，页面明确标明清单范围。新建 Offer 使用配置的默认订阅产品，启用数量上限按该产品单独计算。
+
+新的已验证核销记录保存同一笔 Apple 交易的产品 ID，按产品、参考名称和环境分别统计。同参考名称的历史记录缺少产品 ID 时保留在汇总中，单独展示为产品待确认，不推断归属，也不能关联到一个有明确产品的领取记录。首页的登记申请和发放统计来自已纳入台账的码池，未管理码池不推断为零。
+
 Apple 的订阅优惠核销报表对一次性码不返回具体码值。领取人反馈不是 Apple 核销证据。管理员可将已验证的同 App、同环境、同 Offer 订阅关联到一条发放记录，界面明确标为人工关联；不能据此声称 Apple 验证了领取人的姓名或具体一次性码。同一已验证订阅不得关联给多名领取人。
 
 参考：[Apple Offer 标识](https://developer.apple.com/documentation/storekit/transaction/offerid)、[Apple 核销报表字段](https://developer.apple.com/help/app-store-connect/reference/reporting/subscription-offer-redemption-report)。

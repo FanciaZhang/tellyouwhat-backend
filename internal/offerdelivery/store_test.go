@@ -437,3 +437,73 @@ func TestDirectClaimNeedsNoRecipientSubmissionAndCanBeRevoked(t *testing.T) {
 		t.Fatal("expired link accepted", err)
 	}
 }
+
+func TestProductScopedEvidenceAndOfferOverview(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	p.ID = "monthly-pool"
+	p.ProductID = "app.monthly"
+	p.SubscriptionID = "monthly"
+	if err := s.SyncPool(ctx, "health", p); err != nil {
+		t.Fatal(err)
+	}
+	annual := p
+	annual.ID = "annual-pool"
+	annual.OfferID = "annual-offer"
+	annual.ProductID = "app.annual"
+	annual.SubscriptionID = "annual"
+	if err := s.SyncPool(ctx, "health", annual); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []struct{ product, tx, original string }{{"app.monthly", "m1", "monthly"}, {"app.monthly", "m2", "monthly"}, {"app.annual", "a1", "annual"}, {"", "legacy", "unknown"}} {
+		if _, err := s.DB.Exec(`INSERT INTO app_store_offer_redemptions(app_id,environment,transaction_hash,original_transaction_hash,offer_identifier,product_id,offer_type,redeemed_at,expires_at) VALUES('health','production',UNHEX(SHA2(?,256)),UNHEX(SHA2(?,256)),'FRIENDS',?,3,?,?)`, v.tx, v.original, v.product, now, now.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.ObservedOfferCount(ctx, "health", p); err != nil || n != 1 {
+		t.Fatalf("cross-product inflation %d %v", n, err)
+	}
+	if n, err := s.UnknownProductOfferCount(ctx, "health", p); err != nil || n != 1 {
+		t.Fatalf("lost legacy evidence %d %v", n, err)
+	}
+	evidence, err := s.VerifiedSubscriptions(ctx, "health", p.ID)
+	if err != nil || len(evidence) != 1 {
+		t.Fatalf("unscoped evidence %+v %v", evidence, err)
+	}
+	if err = s.ImportCodes(ctx, "health", p.ID, "admin", []string{"MNTH001", "MNTH002"}, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.RecordExternal(ctx, "health", p.ID, "historic", "admin", Recipient{Name: "Known recipient"}, "MNTH001", now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong, err := s.VerifiedSubscriptions(ctx, "health", annual.ID)
+	if err != nil || len(wrong) != 1 {
+		t.Fatal(err)
+	}
+	if _, err = s.LinkVerified(ctx, "health", r.ID, "admin", wrong[0].Reference, r.Version, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("accepted another product evidence: %v", err)
+	}
+	if _, err = s.LinkVerified(ctx, "health", r.ID, "admin", evidence[0].Reference, r.Version, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreateRequest(ctx, "health", p.ID, "new", "admin", Recipient{Name: "New recipient"}, now); err != nil {
+		t.Fatal(err)
+	}
+	overview, err := s.OfferSummaries(ctx, "health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range overview {
+		if v.OfferID == p.OfferID {
+			found = true
+			if v.Pools != 2 || v.Applications != 1 || v.Delivered != 1 || v.ExternalDeliveries != 1 || v.Pending != 1 {
+				t.Fatalf("incorrect overview %+v", v)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing offer overview")
+	}
+}

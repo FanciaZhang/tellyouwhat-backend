@@ -58,12 +58,13 @@
         <label class="app-picker">App<select id="app-picker" aria-label="选择 App"></select></label>
         <label class="app-picker">统计环境<select id="offer-environment"><option value="production">正式环境</option><option value="sandbox">沙盒测试</option></select></label><button class="quiet" id="offer-refresh">刷新 Offer 与统计</button>
         <div class="summary-grid">
-          <article class="card metric"><span>启用中的 Offer</span><strong id="active-count">—</strong><small>Apple 上限 <span id="active-limit">—</span></small></article>
+          <article class="card metric"><span>启用中的 Offer</span><strong id="active-count">—</strong><small>每个订阅产品上限 <span id="active-limit">—</span></small></article>
           <article class="card metric"><span>已生成兑换额度</span><strong id="generated-count">—</strong><small>向 Apple 申请成功的额度</small></article>
           <article class="card metric"><span>已验证核销订阅</span><strong id="redemption-count">—</strong><small id="offer-observation-note">正在读取</small></article>
           <article class="card metric"><span>最近同步</span><strong id="synced-at">—</strong><small>以 App Store Connect 为准</small></article>
         </div>
         <div class="section-head"><div><h2>现有 Offer</h2><p class="muted">创建和停用等生产写操作都需要再次验证通行密钥。</p></div><button id="new-offer" class="primary">新建 Offer</button></div>
+        <p id="offer-scope-note" class="muted"></p>
         <div id="offers" class="offer-list"></div>
 </div><div id="delivery-view" class="hidden"></div>
       </section>

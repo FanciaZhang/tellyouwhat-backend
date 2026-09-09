@@ -48,6 +48,7 @@ type NotificationResult struct {
 	Environment           string
 	TransactionID         string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	SignedAt              time.Time
 	ExpiresAt             time.Time
@@ -141,6 +142,7 @@ func (processor *NotificationProcessor) Process(
 				Environment:           transaction.Environment,
 				TransactionID:         transaction.TransactionID,
 				OfferIdentifier:       transaction.OfferIdentifier,
+				ProductID:             transaction.ProductID,
 				OfferType:             transaction.OfferType,
 				SignedAt:              transaction.SignedAt,
 				ExpiresAt:             expiresAt,
@@ -157,6 +159,7 @@ func (processor *NotificationProcessor) Process(
 		Environment:           state.Environment,
 		TransactionID:         state.TransactionID,
 		OfferIdentifier:       state.OfferIdentifier,
+		ProductID:             state.ProductID,
 		OfferType:             state.OfferType,
 		SignedAt:              state.SignedAt,
 		ExpiresAt:             state.ExpiresAt,

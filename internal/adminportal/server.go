@@ -334,15 +334,31 @@ func (server *Server) ListOffers(context *gin.Context, rawAppID adminhttpapi.App
 		writeAppleFailure(writer, err)
 		return
 	}
-	active := 0
+	active, creationActive := 0, 0
+	appAppleID, creationSubscriptionID := offerScope(manager)
 	for _, offer := range offers {
 		if offer.Active {
 			active++
 		}
+		if offer.Active && (creationSubscriptionID == "" || offer.SubscriptionID == creationSubscriptionID) {
+			creationActive++
+		}
+	}
+	var deliverySummary []offerdelivery.OfferSummary
+	deliveryAvailable := server.config.Delivery != nil
+	if deliveryAvailable {
+		deliverySummary, err = server.config.Delivery.OfferSummaries(request.Context(), appID)
+		deliveryAvailable = err == nil
+	}
+	scope := "subscription"
+	if appAppleID != "" {
+		scope = "app"
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"offers": offers, "activeCount": active, "activeLimit": 10, "syncedAt": server.now().UTC(),
-		"writesEnabled": server.config.WritesEnabled,
+		"writesEnabled": server.config.WritesEnabled, "creationActiveCount": creationActive,
+		"creationSubscriptionID": creationSubscriptionID, "inventoryScope": scope,
+		"deliverySummary": deliverySummary, "deliveryAvailable": deliveryAvailable,
 	})
 }
 
@@ -401,8 +417,9 @@ func (server *Server) CreateOffer(context *gin.Context, rawAppID adminhttpapi.Ap
 		return
 	}
 	active := 0
+	_, creationSubscriptionID := offerScope(offers)
 	for _, offer := range existing {
-		if offer.Active {
+		if offer.Active && (creationSubscriptionID == "" || offer.SubscriptionID == creationSubscriptionID) {
 			active++
 		}
 	}
@@ -790,4 +807,12 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(value)
+}
+
+// The creation subscription remains explicit while inventory spans the whole App.
+func offerScope(manager OfferManager) (string, string) {
+	if scoped, ok := manager.(interface{ OfferScope() (string, string) }); ok {
+		return scoped.OfferScope()
+	}
+	return "", ""
 }

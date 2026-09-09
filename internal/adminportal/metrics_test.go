@@ -44,3 +44,24 @@ func TestOfferMetricsCountCodeSubscriptionsWithoutRenewalOrPromotionInflation(t 
 		}
 	}
 }
+
+func TestOfferMetricsKeepProductsAndLegacySeparate(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx := context.Background()
+	for _, product := range []string{"app.monthly", "app.annual", ""} {
+		if _, err := db.Exec(`INSERT INTO app_store_offer_redemptions(app_id,environment,transaction_hash,original_transaction_hash,offer_identifier,product_id,offer_type,redeemed_at,expires_at) VALUES('health','production',UNHEX(SHA2(?,256)),UNHEX(SHA2(?,256)),'FRIENDS',?,3,?,?)`, product, product, product, time.Now(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := NewMySQLMetricsReader(db).OfferMetrics(ctx, "health")
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("product/legacy grouping %+v %v", rows, err)
+	}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if seen[r.ProductID] || r.Redemptions != 1 {
+			t.Fatalf("duplicated evidence %+v", r)
+		}
+		seen[r.ProductID] = true
+	}
+}
