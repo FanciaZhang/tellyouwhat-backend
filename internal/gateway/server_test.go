@@ -1333,7 +1333,7 @@ type fakeCapabilities struct {
 func (service *fakeCapabilities) IssueWithOutputBudgetAt(_ Principal, binding capability.Binding, issuedAt time.Time, budget contracts.OutputBudget) (capability.Issued, error) {
 	service.issuedBinding = binding
 	service.outputBudget = budget
-	return capability.Issued{JobID: "19be2f9e-bd92-4699-b561-e3816092114c", Token: "valid-token", ExpiresAt: issuedAt.Add(time.Hour)}, nil
+	return capability.Issued{JobID: "19be2f9e-bd92-4699-b561-e3816092114c", Token: "valid-token", ResultToken: "valid-result-token", ExpiresAt: issuedAt.Add(time.Hour)}, nil
 }
 
 func (service *fakeCapabilities) Consume(_ context.Context, token string, binding capability.Binding) (Principal, error) {
@@ -1456,4 +1456,8 @@ func TestProductionBindingConflictHasActionableErrorCode(t *testing.T) {
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "subscription_binding_conflict") {
 		t.Fatalf("binding response: %d %s", response.Code, response.Body.String())
 	}
+}
+
+func (service *fakeCapabilities) ValidateResult(token, jobID string) (Principal, string, error) {
+	return Principal{}, "", capability.ErrInvalid
 }

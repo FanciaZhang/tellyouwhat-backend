@@ -27,7 +27,7 @@ func TestPublicContractsComposeOneCanonicalPlatformAPI(t *testing.T) {
 		appPathCount    int
 		publicPathCount int
 	}{
-		{name: "Health", sourcePath: "Contracts/HTTP/HealthAPI/app.openapi.yaml", publicPath: "Contracts/HTTP/HealthAPI/openapi.yaml", appPathCount: 8, publicPathCount: 19},
+		{name: "Health", sourcePath: "Contracts/HTTP/HealthAPI/app.openapi.yaml", publicPath: "Contracts/HTTP/HealthAPI/openapi.yaml", appPathCount: 9, publicPathCount: 20},
 		{name: "Journal", sourcePath: "Contracts/HTTP/JournalAPI/app.openapi.yaml", publicPath: "Contracts/HTTP/JournalAPI/openapi.yaml", appPathCount: 4, publicPathCount: 15},
 	}
 	for _, app := range apps {
