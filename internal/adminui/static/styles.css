@@ -390,3 +390,7 @@ small { line-height: 1.5; }
  .delivery-pool button { justify-self:start; }
  #delivery-view .section-head { flex-wrap:wrap; }
 }
+.claim-shell { max-width:560px; }
+.claim-shell h1 { margin-bottom:18px; }
+.claim-shell h2 { overflow-wrap:anywhere; }
+.claim-shell textarea { width:100%;font:inherit;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:12px;resize:vertical; }

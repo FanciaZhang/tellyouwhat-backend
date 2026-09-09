@@ -15,6 +15,30 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/offer-claim:
+    post:
+      operationId: publicOfferClaim
+      security: []
+      tags: [Offers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, token]
+              properties:
+                action: { type: string, enum: [inspect, apply, status, claim, feedback] }
+                token: { type: string, maxLength: 200 }
+                requestKey: { type: string, format: uuid }
+                name: { type: string, maxLength: 240 }
+                contact: { type: string, maxLength: 500 }
+                note: { type: string, maxLength: 3000 }
+                consent: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/ai/evaluations/samples: {"get": {"operationId": "listEvaluationSamples", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}, "post": {"operationId": "saveEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"$ref": "#/components/parameters/CSRFToken"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EvaluationSample"}}}}}}
   /api/v1/ai/evaluations/samples/{sample}: {"get": {"operationId": "getEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "sample", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}]}, "delete": {"operationId": "deleteEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "sample", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"$ref": "#/components/parameters/CSRFToken"}]}}
   /api/v1/ai/evaluations/preview: {"post": {"operationId": "previewEvaluation", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"$ref": "#/components/parameters/CSRFToken"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EvaluationInput"}}}}}}
@@ -752,7 +776,14 @@ components:
       properties:
         code: { type: string, maxLength: 64 }
         deliveredAt: { type: string, format: date-time }
-        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external] }
+        label: { type: string, maxLength: 240 }
+        maxApplications: { type: integer, minimum: 1, maximum: 10000 }
+        expiresAt: { type: string, format: date-time }
+        linkID: { type: string, maxLength: 40 }
+        query: { type: string, maxLength: 500 }
+        status: { type: string, maxLength: 24 }
+        cursor: { type: string, maxLength: 40 }
+        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external, create_link, revoke_link, copy_link, search] }
         requestID: { type: string, maxLength: 40 }
         version: { type: integer, minimum: 1 }
         requestKey: { type: string, maxLength: 128 }

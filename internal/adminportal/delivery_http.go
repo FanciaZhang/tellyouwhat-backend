@@ -97,6 +97,9 @@ func (s *Server) deliveryAccess(c *gin.Context, app string, write, recent bool) 
 	return auth.User.ID, true
 }
 func (s *Server) GetOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer adminhttpapi.OfferID, pool string) {
+	s.readOfferDelivery(c, app, offer, pool, "", "", c.Query("cursor"))
+}
+func (s *Server) readOfferDelivery(c *gin.Context, app, offer, pool, query, status, cursor string) {
 	if _, ok := s.deliveryAccess(c, app, false, false); !ok {
 		return
 	}
@@ -114,7 +117,7 @@ func (s *Server) GetOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer 
 		deliveryFailure(c.Writer, err)
 		return
 	}
-	page, err := s.config.Delivery.Search(c.Request.Context(), app, pool, c.Query("cursor"), c.Query("q"), c.Query("status"))
+	page, err := s.config.Delivery.Search(c.Request.Context(), app, pool, cursor, query, status)
 	if err != nil {
 		deliveryFailure(c.Writer, err)
 		return
@@ -134,23 +137,35 @@ func (s *Server) GetOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer 
 		deliveryFailure(c.Writer, err)
 		return
 	}
+	links, err := s.config.Delivery.Links(c.Request.Context(), app, pool)
+	if err != nil {
+		deliveryFailure(c.Writer, err)
+		return
+	}
 	moreVerified := len(verified) > 100
 	if moreVerified {
 		verified = verified[:100]
 	}
-	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
+	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "links": links, "observedOfferSubscriptions": observed, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
 }
 
 type deliveryCommand struct {
-	Code          string                  `json:"code"`
-	DeliveredAt   time.Time               `json:"deliveredAt"`
-	Action        string                  `json:"action"`
-	RequestID     string                  `json:"requestID"`
-	Version       int                     `json:"version"`
-	RequestKey    string                  `json:"requestKey"`
-	ExpectedCount int                     `json:"expectedCount"`
-	Reference     string                  `json:"reference"`
-	Recipient     offerdelivery.Recipient `json:"recipient"`
+	Query           string                  `json:"query"`
+	Status          string                  `json:"status"`
+	Cursor          string                  `json:"cursor"`
+	Label           string                  `json:"label"`
+	MaxApplications int                     `json:"maxApplications"`
+	ExpiresAt       time.Time               `json:"expiresAt"`
+	LinkID          string                  `json:"linkID"`
+	Code            string                  `json:"code"`
+	DeliveredAt     time.Time               `json:"deliveredAt"`
+	Action          string                  `json:"action"`
+	RequestID       string                  `json:"requestID"`
+	Version         int                     `json:"version"`
+	RequestKey      string                  `json:"requestKey"`
+	ExpectedCount   int                     `json:"expectedCount"`
+	Reference       string                  `json:"reference"`
+	Recipient       offerdelivery.Recipient `json:"recipient"`
 }
 
 func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, offer adminhttpapi.OfferID, pool string, _ adminhttpapi.CommandOfferDeliveryParams) {
@@ -161,7 +176,14 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 	if !decodeJSON(c.Writer, c.Request, &in) {
 		return
 	}
-	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified" || in.Action == "record_external"
+	if in.Action == "search" {
+		if _, ok := s.auth.RequirePermission(c.Writer, c.Request, adminauth.PermissionOfferRead, app, true, false); !ok {
+			return
+		}
+		s.readOfferDelivery(c, app, offer, pool, in.Query, in.Status, in.Cursor)
+		return
+	}
+	recent := in.Action == "reveal" || in.Action == "import" || in.Action == "confirm_inventory" || in.Action == "link_verified" || in.Action == "record_external" || in.Action == "create_link" || in.Action == "copy_link" || in.Action == "revoke_link"
 	actor, ok := s.deliveryAccess(c, app, true, recent)
 	if !ok {
 		return
@@ -172,7 +194,7 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 	var p offerdelivery.Pool
 	var err error
 	switch in.Action {
-	case "sync", "import", "confirm_inventory", "request", "assign":
+	case "sync", "import", "confirm_inventory", "request", "assign", "create_link":
 		p, err = s.syncDeliveryPool(ctx, app, offer, pool)
 	default:
 		p, err = store.GetPool(ctx, app, pool)
@@ -204,6 +226,19 @@ func (s *Server) CommandOfferDelivery(c *gin.Context, app adminhttpapi.AppID, of
 		}
 	case "confirm_inventory":
 		err = store.ConfirmExternalInventory(ctx, app, pool, actor, in.ExpectedCount, now)
+	case "create_link":
+		var l offerdelivery.Link
+		l, err = store.CreateLink(ctx, app, pool, in.RequestKey, actor, in.Label, in.MaxApplications, in.ExpiresAt, now)
+		result = map[string]any{"link": l, "token": s.deliveryToken("link", app, l.ID)}
+	case "copy_link":
+		var l offerdelivery.Link
+		l, err = store.GetLink(ctx, app, in.LinkID)
+		if err == nil && l.PoolID != pool {
+			err = offerdelivery.ErrNotFound
+		}
+		result = map[string]any{"link": l, "token": s.deliveryToken("link", app, l.ID)}
+	case "revoke_link":
+		err = store.RevokeLink(ctx, app, pool, in.LinkID, actor, now)
 	case "record_external":
 		if !idempotencyPattern.MatchString(in.RequestKey) {
 			deliveryFailure(c.Writer, offerdelivery.ErrInvalid)

@@ -16,7 +16,7 @@ await page.route('**/api/**',async route=>{
  else if(url.pathname.endsWith('/offers'))data={offers:[{id:'offer-1',name:'九月朋友体验',duration:'ONE_MONTH',active:true,productionCodeCount:500,sandboxCodeCount:0}],activeCount:1,activeLimit:10,writesEnabled:false,syncedAt:now};
  else if(url.pathname.endsWith('/code-pools'))data={codePools:[{id:'pool-1',kind:'oneTime',environment:'PRODUCTION',active:true,numberOfCodes:500,expirationDate:'2030-01-01'}]};
  else if(url.pathname.endsWith('/delivery')){
-  if(request.method()==='POST'){
+  if(request.method()==='POST'&&request.postDataJSON().action!=='search'){
    const b=request.postDataJSON();commands.push(b);const r=records.find(r=>r.id===b.requestID);
    switch(b.action){
    case 'sync':if(failSync){status=503;data={error:{message:'Apple 暂不可用'}};}break;
@@ -30,7 +30,7 @@ await page.route('**/api/**',async route=>{
    default:throw new Error('missing fixture command '+b.action);
    }
   }else{
-   const q=(url.searchParams.get('q')||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,applications:records.length,externalDeliveries:0,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
+   const q=(request.postDataJSON()?.query||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,applications:records.length,externalDeliveries:0,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
   }
  }else {status=404;data={error:{message:'missing fixture'}};}
  await route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});

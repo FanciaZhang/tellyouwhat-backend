@@ -374,3 +374,84 @@ func TestHistoricalDeliveryUsesKnownCodeAndDoesNotCreateApplication(t *testing.T
 		t.Fatal("confused applications, delivery or redemption", summary, err)
 	}
 }
+
+func TestClaimLinksBoundApplicationsAndPreservePrivateReceipts(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	link, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-1", "admin", "内测申请", 1, now.Add(30*time.Minute), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-1", "admin", "内测申请", 1, now.Add(30*time.Minute), now)
+	if err != nil || replay.ID != link.ID {
+		t.Fatal("link retry changed identity", err)
+	}
+	key := "e66189d5-5546-4e01-b0a1-86bdc1f3e2a9"
+	r, err := s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test", Channel: "forged"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Source != "link" || r.Recipient.Channel != "内测申请" || r.Status != "requested" {
+		t.Fatal("public application attributed incorrectly", r)
+	}
+	again, err := s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test"}, now)
+	if err != nil || again.ID != r.ID {
+		t.Fatal("claim retry duplicated application", err)
+	}
+	if _, err = s.ApplyLink(ctx, "health", link.ID, "70f2f119-7b89-4ee5-b231-51d83e4e4b89", Recipient{Name: "其他人"}, now); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("link capacity exceeded", err)
+	}
+	if _, err = s.ApplyLink(ctx, "journal", link.ID, key, Recipient{Name: "领取人"}, now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("cross-app application accepted", err)
+	}
+	if err = s.RevokeLink(ctx, "health", p.ID, link.ID, "admin", now); err != nil {
+		t.Fatal(err)
+	}
+	// Recovering the receipt for an already accepted request remains idempotent after revocation.
+	if _, err = s.ApplyLink(ctx, "health", link.ID, key, Recipient{Name: "领取人", Contact: "test@example.test"}, now); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.Links(ctx, "health", p.ID)
+	if err != nil || len(list) != 1 || list[0].Applications != 1 || list[0].RevokedAt == nil {
+		t.Fatal("link ledger incorrect", list, err)
+	}
+	l2, err := s.CreateLink(ctx, "health", p.ID, "link-fixture-2", "admin", "到期测试", 1, now.Add(time.Minute), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyLink(ctx, "health", l2.ID, key, Recipient{Name: "领取人"}, now.Add(2*time.Minute)); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("expired link accepted", err)
+	}
+}
+
+func TestConcurrentLinkApplicantsDoNotExceedLimit(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	l, err := s.CreateLink(ctx, "health", p.ID, "link-concurrent", "admin", "并发申请", 1, now.Add(time.Minute), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for _, key := range []string{"e66189d5-5546-4e01-b0a1-86bdc1f3e2a9", "70f2f119-7b89-4ee5-b231-51d83e4e4b89"} {
+		wg.Add(1)
+		go func(key string) {
+			defer wg.Done()
+			_, err := s.ApplyLink(ctx, "health", l.ID, key, Recipient{Name: "并发领取人"}, now)
+			results <- err
+		}(key)
+	}
+	wg.Wait()
+	close(results)
+	success := 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else if !errors.Is(err, ErrUnavailable) {
+			t.Fatal(err)
+		}
+	}
+	if success != 1 {
+		t.Fatal("overbooked public applications", success)
+	}
+}

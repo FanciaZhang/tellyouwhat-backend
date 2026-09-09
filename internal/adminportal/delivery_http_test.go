@@ -67,7 +67,7 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 	}
 	put()
 	apple := &deliveryOffers{active: true}
-	server := &Server{auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store}}
+	server := &Server{auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
 	router := gin.New()
 	router.Use(limitAdminRequestBody())
 	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: server, Service: auth})
@@ -143,7 +143,7 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 	check(command(deliveryCommand{Action: "report_redeemed", RequestID: recipient.ID, Version: 3}), 200)
 	// The ledger remains readable when Apple is unavailable; new allocations do not bypass the outage.
 	apple.fail = true
-	r = call("GET", base+"?q=fixture", nil, true, false)
+	r = command(deliveryCommand{Action: "search", Query: "fixture"})
 	check(r, 200)
 	var page struct {
 		Requests []offerdelivery.Request
@@ -154,7 +154,7 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 		t.Fatal("delivery confused with verified redemption")
 	}
 	check(command(deliveryCommand{Action: "sync"}), 503)
-	check(call("GET", base+"?q=absent", nil, true, false), 200)
+	check(command(deliveryCommand{Action: "search", Query: "absent"}), 200)
 	// App-scoped operators cannot observe another App, even with a guessed record ID.
 	repo.user.Role = adminauth.RoleOperator
 	repo.user.AppIDs = []string{"journal"}
@@ -166,4 +166,56 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(call("POST", "/api/v1/apps/health/offers/offer-1/code-pools/pool-2/delivery", deliveryCommand{Action: "reveal", RequestID: recipient.ID}, true, true), 404)
+	apple.fail = false
+	created := command(deliveryCommand{Action: "create_link", RequestKey: "public-link-fixture", Label: "领取活动", MaxApplications: 1, ExpiresAt: now.Add(time.Hour)})
+	check(created, 200)
+	var linkResponse struct{ Token string }
+	json.Unmarshal(created.Body.Bytes(), &linkResponse)
+	public := func(in claimCommand) *httptest.ResponseRecorder {
+		return call("POST", "/api/v1/offer-claim", in, false, false)
+	}
+	check(public(claimCommand{Action: "inspect", Token: linkResponse.Token}), 200)
+	check(public(claimCommand{Action: "status", Token: linkResponse.Token}), 404)
+	check(public(claimCommand{Action: "inspect", Token: linkResponse.Token + "tampered"}), 404)
+	application := claimCommand{Action: "apply", Token: linkResponse.Token, RequestKey: uuid.NewString(), Name: "自行申请者", Contact: "self@example.test"}
+	check(public(application), 422)
+	application.Consent = true
+	applied := public(application)
+	check(applied, 200)
+	var receipt struct{ ReceiptToken string }
+	json.Unmarshal(applied.Body.Bytes(), &receipt)
+	repeatedApply := public(application)
+	check(repeatedApply, 200)
+	var repeatedReceipt struct{ ReceiptToken string }
+	json.Unmarshal(repeatedApply.Body.Bytes(), &repeatedReceipt)
+	if receipt.ReceiptToken == "" || receipt.ReceiptToken != repeatedReceipt.ReceiptToken {
+		t.Fatal("receipt replay failed")
+	}
+	check(public(claimCommand{Action: "claim", Token: receipt.ReceiptToken}), 409)
+	claimApp, claimID, valid := server.parseDeliveryToken("receipt", receipt.ReceiptToken)
+	if !valid {
+		t.Fatal("invalid generated receipt")
+	}
+	claimedRequest, err := store.Get(ctx, claimApp, claimID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Assign(ctx, claimApp, claimID, "admin", claimedRequest.Version, now); err != nil {
+		t.Fatal(err)
+	}
+	received := public(claimCommand{Action: "claim", Token: receipt.ReceiptToken})
+	check(received, 200)
+	if received.Header().Get("Cache-Control") != "no-store" || !bytes.Contains(received.Body.Bytes(), []byte(`"code"`)) {
+		t.Fatal("claim did not privately deliver code")
+	}
+	check(public(claimCommand{Action: "feedback", Token: receipt.ReceiptToken}), 200)
+	check(public(claimCommand{Action: "feedback", Token: receipt.ReceiptToken}), 200)
+	privateStatus := public(claimCommand{Action: "status", Token: receipt.ReceiptToken})
+	check(privateStatus, 200)
+	if bytes.Contains(privateStatus.Body.Bytes(), []byte("self@example.test")) || bytes.Contains(privateStatus.Body.Bytes(), []byte("fixture@example.test")) || bytes.Contains(privateStatus.Body.Bytes(), []byte(`"code"`)) {
+		t.Fatal("status exposed unnecessary private data")
+	}
+	now = now.Add(91 * 24 * time.Hour)
+	check(public(claimCommand{Action: "status", Token: receipt.ReceiptToken}), 404)
+
 }

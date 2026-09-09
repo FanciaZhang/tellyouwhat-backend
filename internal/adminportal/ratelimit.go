@@ -31,6 +31,9 @@ func (limiter *rateLimiter) allow(request *http.Request) bool {
 	if strings.HasPrefix(request.URL.Path, "/api/v1/auth/") || strings.HasPrefix(request.URL.Path, "/api/v1/security/") {
 		limit, bucket = 30, "auth"
 	}
+	if request.URL.Path == "/api/v1/offer-claim" {
+		limit, bucket = 30, "offer-claim"
+	}
 	ip := strings.TrimSpace(request.Header.Get("X-Real-IP"))
 	if net.ParseIP(ip) == nil {
 		host, _, err := net.SplitHostPort(request.RemoteAddr)
