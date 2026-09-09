@@ -11,7 +11,7 @@ import (
 )
 
 // Opt-in only. Supply synthetic or dedicated consented test audio, never a
-// user's journal. Each invocation submits exactly one billable provider task.
+// user's journal unless the owner explicitly authorizes that specific file. Each invocation submits exactly one billable provider task.
 func TestLiveRecordingAnalysis(t *testing.T) {
 	if os.Getenv("JOURNAL_LIVE_RECORDING") != "1" {
 		t.Skip("explicit live recording opt-in required")
@@ -23,13 +23,22 @@ func TestLiveRecordingAnalysis(t *testing.T) {
 	}
 	milliseconds := (len(audio) - 44) / 32
 	a := RecordingASR{Config: ASRConfig{ResourceID: "volc.seedasr.auc", APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY")}}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	id := uuid.NewString()
+	id := os.Getenv("JOURNAL_LIVE_RECORDING_TASK_ID")
+	if id == "" {
+		id = uuid.NewString()
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		t.Fatal("invalid task ID")
+	}
 	start := time.Now()
 	t.Logf("task=%s milliseconds=%d", id, milliseconds)
-	if err := a.Submit(ctx, id, audio); err != nil {
-		t.Fatal(err)
+	if os.Getenv("JOURNAL_LIVE_RECORDING_QUERY_ONLY") != "1" {
+		if err := a.Submit(ctx, id, audio); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("submissionAcceptedAfter=%s", time.Since(start))
 	}
 	for {
 		select {
@@ -45,7 +54,14 @@ func TestLiveRecordingAnalysis(t *testing.T) {
 			t.Fatal(err)
 		}
 		encoded, _ := json.Marshal(result)
-		t.Logf("elapsed=%s result=%s", time.Since(start), encoded)
+		if destination := os.Getenv("JOURNAL_LIVE_RECORDING_OUTPUT"); destination != "" {
+			if err := os.WriteFile(destination, encoded, 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("elapsed=%s utterances=%d; private result saved", time.Since(start), len(result.Utterances))
+		} else {
+			t.Logf("elapsed=%s result=%s", time.Since(start), encoded)
+		}
 		return
 	}
 }

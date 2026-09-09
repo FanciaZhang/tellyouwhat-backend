@@ -5,6 +5,7 @@ package voice
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -56,12 +57,28 @@ func (a RecordingASR) Submit(ctx context.Context, taskID string, wav []byte) err
 	if _, err := uuid.Parse(taskID); err != nil || !validRecordingWAV(wav) {
 		return ErrInvalid
 	}
-	payload := struct {
-		User    map[string]string `json:"user"`
-		Audio   map[string]any    `json:"audio"`
-		Request map[string]any    `json:"request"`
-	}{map[string]string{"uid": "journal-recording"}, map[string]any{"data": wav, "format": "wav"}, map[string]any{"model_name": "bigmodel", "enable_itn": true, "enable_punc": true, "show_utterances": true, "enable_speaker_info": true, "enable_emotion_detection": true}}
-	_, err := a.call(ctx, "submit", taskID, payload)
+	// Stream base64 into the HTTP request instead of holding both 58 MB PCM
+	// and its 77 MB JSON copy in the private service's 192 MB memory limit.
+	prefix := `{"user":{"uid":"journal-recording"},"audio":{"format":"wav","data":"`
+	suffix := `"},"request":{"model_name":"bigmodel","enable_itn":true,"enable_punc":true,"show_utterances":true,"enable_speaker_info":true,"enable_emotion_detection":true}}`
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	go func() {
+		_, err := io.WriteString(writer, prefix)
+		if err == nil {
+			encoder := base64.NewEncoder(base64.StdEncoding, writer)
+			_, err = encoder.Write(wav)
+			if closeErr := encoder.Close(); err == nil {
+				err = closeErr
+			}
+		}
+		if err == nil {
+			_, err = io.WriteString(writer, suffix)
+		}
+		_ = writer.CloseWithError(err)
+	}()
+	length := int64(len(prefix) + base64.StdEncoding.EncodedLen(len(wav)) + len(suffix))
+	_, err := a.callBody(ctx, "submit", taskID, reader, length)
 	return err
 }
 func (a RecordingASR) Query(ctx context.Context, taskID string, milliseconds int) (RecordingAnalysis, error) {
@@ -75,6 +92,13 @@ func (a RecordingASR) Query(ctx context.Context, taskID string, milliseconds int
 	return parseRecordingAnalysis(data, taskID, milliseconds)
 }
 func (a RecordingASR) call(ctx context.Context, action, taskID string, payload any) ([]byte, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return a.callBody(ctx, action, taskID, bytes.NewReader(data), int64(len(data)))
+}
+func (a RecordingASR) callBody(ctx context.Context, action, taskID string, body io.Reader, length int64) ([]byte, error) {
 	// Never allow a turbo/idle resource to silently replace the validated standard API.
 	if a.Config.ResourceID != "volc.seedasr.auc" && a.Config.ResourceID != "volc.bigasr.auc" {
 		return nil, ErrInvalid
@@ -83,14 +107,11 @@ func (a RecordingASR) call(ctx context.Context, action, taskID string, payload a
 	if base == "" {
 		base = "https://openspeech.bytedance.com/api/v3/auc/bigmodel"
 	}
-	data, err := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/"+action, body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/"+action, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
+	req.ContentLength = length
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Resource-Id", a.Config.ResourceID)
 	req.Header.Set("X-Api-Request-Id", taskID)
@@ -103,7 +124,7 @@ func (a RecordingASR) call(ctx context.Context, action, taskID string, payload a
 	}
 	client := a.Client
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = &http.Client{Timeout: 3 * time.Minute}
 	}
 	// Redirects must never forward provider credentials, even with a custom client.
 	copyClient := *client
@@ -113,7 +134,7 @@ func (a RecordingASR) call(ctx context.Context, action, taskID string, payload a
 		return nil, err
 	}
 	defer response.Body.Close()
-	data, err = io.ReadAll(io.LimitReader(response.Body, maxRecordingResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxRecordingResponseBytes+1))
 	if err != nil {
 		return nil, err
 	}

@@ -72,3 +72,24 @@ All returned emotion strings were again `neutral`. Emotion field availability
 is proven; emotion usefulness/accuracy remains unverified. Both probes submitted
 79.041 seconds in total. This is measured provider duration, not confirmed billed
 amount. No private Journal deployment or Health production restart was performed.
+
+## Authorized real recording, 2026-09-09: long-input transport
+
+A user explicitly supplied one approximately 15-minute two-person recording for
+this evaluation. Neither audio, transcript, inferred identities nor rewrite
+content belongs in this repository. Private evaluation files stay outside Git.
+
+The original 60-second submit deadline failed with an uncertain result. Querying
+the SAME task returned `cannot find task`; the next attempt retained that task ID.
+With a three-minute HTTP deadline and streamed base64 (instead of a second full
+JSON copy in memory), the task completed in 192.8 seconds, returning 217 timed
+utterances for 912128 milliseconds of decoded audio. This is end-to-end time,
+not pure inference time; phase-level timing was added for future probes.
+
+The measured memory improvement is structural: no full base64 JSON allocation
+is made by Submit. Peak process RSS has not yet been measured. The old input
+buffer is still present and further end-to-end upload/storage design is required.
+
+Live harness improvements: explicit stable task ID, query-only recovery, longer
+poll deadline, and a private output-file option. Remote temporary audio and
+results were removed after retrieval. No production service deployment occurred.

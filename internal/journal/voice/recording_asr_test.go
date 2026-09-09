@@ -1,9 +1,12 @@
 package voice
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -135,5 +138,54 @@ func TestRecordingRejectsMalformedAudioBeforeBilling(t *testing.T) {
 		if err := a.Submit(context.Background(), recordingTask, audio); !errors.Is(err, ErrInvalid) {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestRecordingSubmissionStreamsCanonicalAudioAndFlags(t *testing.T) {
+	pcm := bytes.Repeat([]byte{17, 23}, 16000)
+	wav := make([]byte, 44+len(pcm))
+	copy(wav, "RIFF")
+	binary.LittleEndian.PutUint32(wav[4:], uint32(len(wav)-8))
+	copy(wav[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(wav[16:], 16)
+	binary.LittleEndian.PutUint16(wav[20:], 1)
+	binary.LittleEndian.PutUint16(wav[22:], 1)
+	binary.LittleEndian.PutUint32(wav[24:], 16000)
+	binary.LittleEndian.PutUint32(wav[28:], 32000)
+	binary.LittleEndian.PutUint16(wav[32:], 2)
+	binary.LittleEndian.PutUint16(wav[34:], 16)
+	copy(wav[36:], "data")
+	binary.LittleEndian.PutUint32(wav[40:], uint32(len(pcm)))
+	copy(wav[44:], pcm)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if int64(len(raw)) != r.ContentLength {
+			t.Error("incorrect streaming content length")
+		}
+		var wire struct {
+			Audio struct {
+				Data   []byte
+				Format string
+			}
+			Request struct {
+				Speaker    bool `json:"enable_speaker_info"`
+				Emotion    bool `json:"enable_emotion_detection"`
+				Utterances bool `json:"show_utterances"`
+			}
+		}
+		if json.Unmarshal(raw, &wire) != nil || !bytes.Equal(wire.Audio.Data, wav) || wire.Audio.Format != "wav" || !wire.Request.Speaker || !wire.Request.Emotion || !wire.Request.Utterances {
+			t.Error("stream altered provider payload")
+		}
+		w.Header().Set("X-Api-Status-Code", "20000000")
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	a := RecordingASR{Config: ASRConfig{URL: server.URL, ResourceID: "volc.seedasr.auc"}}
+	if err := a.Submit(context.Background(), recordingTask, wav); err != nil {
+		t.Fatal(err)
 	}
 }
