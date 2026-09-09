@@ -188,38 +188,47 @@ async function loadApps() {
 }
 
 async function loadOffers() {
-  if (!state.currentApp) {
-    state.offerCreationAllowed = false;
-    syncPersistentControls();
-    $("#offers").innerHTML = '<article class="card empty">当前账号没有可管理的 App。</article>';
-    return;
+  const app=state.currentApp,generation=(state.offerLoadGeneration||0)+1;
+  state.offerLoadGeneration=generation;
+  if (!app) {
+    state.offerCreationAllowed=false;syncPersistentControls();
+    $('#offers').innerHTML='<article class="card empty">当前账号没有可管理的 App。</article>';return;
   }
-  const [data, metricData] = await Promise.all([
-    api(appPath("/offers")), api(appPath("/metrics/offers")).catch(() => ({ metrics: [] }))
+  const [data,metricData]=await Promise.all([
+    api(`/api/v1/apps/${encodeURIComponent(app)}/offers`),
+    api(`/api/v1/apps/${encodeURIComponent(app)}/metrics/offers`).catch(()=>null)
   ]);
-  const offers = Array.isArray(data.offers) ? data.offers : [];
-  const production = (Array.isArray(metricData.metrics) ? metricData.metrics : [])
-    .filter(metric => metric.environment === "production");
-  const metrics = new Map(production.map(metric => [metric.offerIdentifier, metric]));
-  $("#redemption-count").textContent = production.reduce((sum, metric) => sum + metric.redemptions, 0);
-  $("#active-count").textContent = data.activeCount;
-  $("#active-limit").textContent = data.activeLimit;
-  $("#synced-at").textContent = formatTime(data.syncedAt);
-  state.offerCreationAllowed = !!data.writesEnabled && data.activeCount < data.activeLimit;
-  syncPersistentControls();
-  $("#offers").innerHTML = offers.length
-    ? offers.map(offer => offerCard(offer, metrics.get(offer.id), data.writesEnabled)).join("")
-    : '<article class="card empty">还没有 Offer。创建后再为它生成邀请码池。</article>';
-  $$('[data-codes]').forEach(button => button.onclick = () => openCodes(button.dataset.codes));
-  $$('[data-deactivate]').forEach(button => button.onclick = () => deactivate(button.dataset.deactivate, button.dataset.name));
+  if(generation!==state.offerLoadGeneration||app!==state.currentApp)return;
+  state.offerData=data;state.offerMetrics=metricData;
+  renderOffers();
 }
 
-function offerCard(offer, metric, writesEnabled) {
-  const chips = [durationLabels[offer.duration] || offer.duration, offer.autoRenewEnabled ? "到期自动续订" : "到期自动结束",
-    ...(offer.customerEligibilities || []).map(value => eligibilityLabels[value] || value), offer.active ? "启用中" : "已停用"];
-  const actions = offer.active && writesEnabled
-    ? `<button class="secondary" data-codes="${escapeHTML(offer.id)}">创建码池</button><button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>` : "";
-  return `<article class="card offer"><div><h3>${escapeHTML(offer.name)}</h3><div class="chips">${chips.map((value, index) => `<span class="chip ${!offer.active && index === chips.length - 1 ? "inactive" : ""}">${escapeHTML(value)}</span>`).join("")}</div><p class="muted"><small>正式码 ${offer.productionCodeCount || 0} · 沙盒码 ${offer.sandboxCodeCount || 0} · 已兑换 ${metric?.redemptions || 0} 次</small></p></div><div class="offer-actions">${actions}</div></article>`;
+function renderOffers(){
+  const data=state.offerData,metricData=state.offerMetrics;
+  if(!data)return;
+  const environment=$('#offer-environment').value;
+  const offers=Array.isArray(data.offers)?data.offers:[];
+  const rows=metricData?.metrics||[];
+  const selected=rows.filter(m=>m.environment.toLowerCase()===environment);
+  const metrics=new Map(selected.map(m=>[m.offerIdentifier,m]));
+  $('#redemption-count').textContent=metricData?selected.reduce((sum,m)=>sum+m.redemptions,0):'暂不可用';
+  $('#offer-observation-note').textContent=metricData?'来自后端收到并验证的 Apple 交易，可能不含全部历史兑换。':'兑换统计读取失败，请刷新重试；不能据此判断没有兑换。';
+  $('#generated-count').textContent=offers.reduce((sum,o)=>sum+(environment==='production'?o.productionCodeCount:o.sandboxCodeCount),0);
+  $('#active-count').textContent=data.activeCount;$('#active-limit').textContent=data.activeLimit;
+  $('#synced-at').textContent=formatTime(data.syncedAt);
+  state.offerCreationAllowed=!!data.writesEnabled&&data.activeCount<data.activeLimit;syncPersistentControls();
+  $('#offers').innerHTML=offers.length?offers.map(o=>offerCard(o,metrics.get(o.name),data.writesEnabled,metricData!==null,environment)).join(''):'<article class="card empty">还没有 Offer。创建后再为它生成邀请码池。</article>';
+  $$('[data-codes]').forEach(b=>b.onclick=()=>openCodes(b.dataset.codes));
+  $$('[data-deactivate]').forEach(b=>b.onclick=()=>deactivate(b.dataset.deactivate,b.dataset.name));
+}
+$('#offer-environment').onchange=renderOffers;
+$('#offer-refresh').onclick=()=>run(loadOffers);
+
+function offerCard(offer,metric,writesEnabled,metricsAvailable,environment){
+  const chips=[durationLabels[offer.duration]||offer.duration,offer.autoRenewEnabled?'到期自动续订':'到期自动结束',...(offer.customerEligibilities||[]).map(v=>eligibilityLabels[v]||v),offer.active?'启用中':'已停用'];
+  const actions=`<button class="secondary" data-codes="${escapeHTML(offer.id)}">查看码池</button>`+(offer.active&&writesEnabled?`<button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>`:'');
+  const observed=!metricsAvailable?'统计暂不可用':metric?`已验证核销订阅 ${metric.redemptions} 个`:'尚未观测到核销';
+  return `<article class="card offer"><div><h3>${escapeHTML(offer.name)}</h3><div class="chips">${chips.map((v,i)=>`<span class="chip ${!offer.active&&i===chips.length-1?'inactive':''}">${escapeHTML(v)}</span>`).join('')}</div><p class="muted"><small>${environment==='production'?'正式':'沙盒'}已生成 ${environment==='production'?offer.productionCodeCount:offer.sandboxCodeCount} 次兑换额度 · ${observed}</small></p>${metric?`<small class="muted">最近收到核销记录：${formatTime(metric.lastRedeemedAt)}</small>`:''}</div><div class="offer-actions">${actions}</div></article>`;
 }
 
 async function reauthenticate() {

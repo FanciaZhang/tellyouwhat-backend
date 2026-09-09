@@ -26,9 +26,9 @@ func NewMySQLMetricsReader(database *sql.DB) *MySQLMetricsReader {
 
 func (reader *MySQLMetricsReader) OfferMetrics(ctx context.Context, appID string) ([]OfferMetric, error) {
 	rows, err := reader.database.QueryContext(ctx, `
-		SELECT offer_identifier, environment, COUNT(*), COUNT(DISTINCT original_transaction_hash), MAX(redeemed_at)
+		SELECT offer_identifier, environment, COUNT(DISTINCT original_transaction_hash), COUNT(DISTINCT original_transaction_hash), MAX(redeemed_at)
 		FROM app_store_offer_redemptions
-		WHERE app_id = ?
+		WHERE app_id = ? AND offer_type = 3
 		GROUP BY offer_identifier, environment
 		ORDER BY MAX(redeemed_at) DESC`, appID)
 	if err != nil {
