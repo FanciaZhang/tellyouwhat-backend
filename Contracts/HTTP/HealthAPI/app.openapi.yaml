@@ -388,8 +388,40 @@ paths:
           "$ref": "#/components/responses/ServiceUnavailable"
         default:
           "$ref": "#/components/responses/Error"
+  "/v1/ai/jobs/{id}/result":
+    get:
+      operationId: downloadAIJobResult
+      tags: [Health, Jobs]
+      summary: Wait up to four minutes for a job result for a system background download
+      description: Reusable read-only capability bound to one job and owner. A nonterminal response can be downloaded again without resubmitting inference. Responses must not be cached.
+      security:
+      - JobResultAuthentication: []
+      parameters:
+      - "$ref": "#/components/parameters/JobIDPath"
+      - "$ref": "#/components/parameters/RequestIDHeader"
+      - "$ref": "#/components/parameters/JobResultCapabilityHeader"
+      responses:
+        '200':
+          description: Terminal job state, or current state after the bounded wait.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AIJob"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
 components:
   securitySchemes:
+    JobResultAuthentication:
+      type: apiKey
+      in: header
+      name: X-Health-Job-Result-Capability
+      description: Expiring reusable read-only capability for one job.
     JobCapabilityAuthentication:
       type: apiKey
       in: header
@@ -401,6 +433,13 @@ components:
       name: X-Health-Job-ID
       description: Job UUID bound into the one-time capability.
   parameters:
+    JobResultCapabilityHeader:
+      in: header
+      name: X-Health-Job-Result-Capability
+      required: true
+      schema:
+        type: string
+        minLength: 1
     JobIDHeader:
       in: header
       name: X-Health-Job-ID
@@ -679,6 +718,10 @@ components:
       - token
       - expiresAt
       properties:
+        resultToken:
+          type: string
+          minLength: 1
+          description: Read-only result capability with the same expiresAt; absent on older gateways.
         jobID:
           type: string
           format: uuid

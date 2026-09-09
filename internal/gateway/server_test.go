@@ -1457,3 +1457,7 @@ func TestProductionBindingConflictHasActionableErrorCode(t *testing.T) {
 		t.Fatalf("binding response: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func (service *fakeCapabilities) ValidateResult(token, jobID string) (Principal, string, error) {
+	return Principal{}, "", capability.ErrInvalid
+}

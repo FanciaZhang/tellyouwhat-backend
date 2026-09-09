@@ -283,7 +283,10 @@ type ErrorResponse struct {
 type JobCapability struct {
 	ExpiresAt time.Time          `json:"expiresAt"`
 	JobID     openapi_types.UUID `json:"jobID"`
-	Token     string             `json:"token"`
+
+	// ResultToken Read-only result capability with the same expiresAt; absent on older gateways.
+	ResultToken *string `json:"resultToken,omitempty"`
+	Token       string  `json:"token"`
 }
 
 // MediaUploadAuthorization defines model for MediaUploadAuthorization.
@@ -345,6 +348,9 @@ type JobIDHeader = openapi_types.UUID
 // JobIDPath defines model for JobIDPath.
 type JobIDPath = openapi_types.UUID
 
+// JobResultCapabilityHeader defines model for JobResultCapabilityHeader.
+type JobResultCapabilityHeader = string
+
 // RequestIDHeader defines model for RequestIDHeader.
 type RequestIDHeader = openapi_types.UUID
 
@@ -403,6 +409,12 @@ type GetAIJobParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// DownloadAIJobResultParams defines parameters for DownloadAIJobResult.
+type DownloadAIJobResultParams struct {
+	XTellyouwhatRequestID      RequestIDHeader           `json:"X-Tellyouwhat-Request-ID"`
+	XHealthJobResultCapability JobResultCapabilityHeader `json:"X-Health-Job-Result-Capability"`
+}
+
 // CancelRecognitionSessionParams defines parameters for CancelRecognitionSession.
 type CancelRecognitionSessionParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
@@ -457,6 +469,9 @@ type ServerInterface interface {
 	// GetAIJob Read a background job
 	// (GET /v1/ai/jobs/{id})
 	GetAIJob(c *gin.Context, id JobIDPath, params GetAIJobParams)
+	// DownloadAIJobResult Wait up to four minutes for a job result for a system background download
+	// (GET /v1/ai/jobs/{id}/result)
+	DownloadAIJobResult(c *gin.Context, id JobIDPath, params DownloadAIJobResultParams)
 	// CancelRecognitionSession Release an unfinished free meal-recognition reservation
 	// (DELETE /v1/ai/recognition-sessions/{id})
 	CancelRecognitionSession(c *gin.Context, id openapi_types.UUID, params CancelRecognitionSessionParams)
@@ -715,6 +730,80 @@ func (siw *ServerInterfaceWrapper) GetAIJob(c *gin.Context) {
 	}
 
 	siw.Handler.GetAIJob(c, id, params)
+}
+
+// DownloadAIJobResult operation middleware
+func (siw *ServerInterfaceWrapper) DownloadAIJobResult(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id JobIDPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadAIJobResultParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-Health-Job-Result-Capability" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Health-Job-Result-Capability")]; found {
+		var XHealthJobResultCapability JobResultCapabilityHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Health-Job-Result-Capability, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Health-Job-Result-Capability", valueList[0], &XHealthJobResultCapability, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Health-Job-Result-Capability: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XHealthJobResultCapability = XHealthJobResultCapability
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Health-Job-Result-Capability is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DownloadAIJobResult(c, id, params)
 }
 
 // CancelRecognitionSession operation middleware
@@ -986,6 +1075,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/v1/ai/jobs", wrapper.EnqueueAIJob)
 	router.DELETE(options.BaseURL+"/v1/ai/jobs/:id", wrapper.CancelAIJob)
 	router.GET(options.BaseURL+"/v1/ai/jobs/:id", wrapper.GetAIJob)
+	router.GET(options.BaseURL+"/v1/ai/jobs/:id/result", wrapper.DownloadAIJobResult)
 }
 
 type BadGatewayJSONResponse ErrorResponse
@@ -1479,6 +1569,88 @@ type GetAIJobdefaultJSONResponse struct {
 }
 
 func (response GetAIJobdefaultJSONResponse) VisitGetAIJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadAIJobResultRequestObject struct {
+	Id     JobIDPath `json:"id"`
+	Params DownloadAIJobResultParams
+}
+
+type DownloadAIJobResultResponseObject interface {
+	VisitDownloadAIJobResultResponse(w http.ResponseWriter) error
+}
+
+type DownloadAIJobResult200JSONResponse AIJob
+
+func (response DownloadAIJobResult200JSONResponse) VisitDownloadAIJobResultResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadAIJobResult401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DownloadAIJobResult401JSONResponse) VisitDownloadAIJobResultResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadAIJobResult404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DownloadAIJobResult404JSONResponse) VisitDownloadAIJobResultResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadAIJobResult503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DownloadAIJobResult503JSONResponse) VisitDownloadAIJobResultResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadAIJobResultdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response DownloadAIJobResultdefaultJSONResponse) VisitDownloadAIJobResultResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2185,6 +2357,9 @@ type StrictServerInterface interface {
 	// GetAIJob Read a background job
 	// (GET /v1/ai/jobs/{id})
 	GetAIJob(ctx context.Context, request GetAIJobRequestObject) (GetAIJobResponseObject, error)
+	// DownloadAIJobResult Wait up to four minutes for a job result for a system background download
+	// (GET /v1/ai/jobs/{id}/result)
+	DownloadAIJobResult(ctx context.Context, request DownloadAIJobResultRequestObject) (DownloadAIJobResultResponseObject, error)
 	// CancelRecognitionSession Release an unfinished free meal-recognition reservation
 	// (DELETE /v1/ai/recognition-sessions/{id})
 	CancelRecognitionSession(ctx context.Context, request CancelRecognitionSessionRequestObject) (CancelRecognitionSessionResponseObject, error)
@@ -2379,6 +2554,33 @@ func (sh *strictHandler) GetAIJob(ctx *gin.Context, id JobIDPath, params GetAIJo
 	}
 }
 
+// DownloadAIJobResult operation middleware
+func (sh *strictHandler) DownloadAIJobResult(ctx *gin.Context, id JobIDPath, params DownloadAIJobResultParams) {
+	var request DownloadAIJobResultRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadAIJobResult(ctx, request.(DownloadAIJobResultRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadAIJobResult")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(DownloadAIJobResultResponseObject); ok {
+		if err := validResponse.VisitDownloadAIJobResultResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CancelRecognitionSession operation middleware
 func (sh *strictHandler) CancelRecognitionSession(ctx *gin.Context, id openapi_types.UUID, params CancelRecognitionSessionParams) {
 	var request CancelRecognitionSessionRequestObject
@@ -2537,63 +2739,67 @@ func (sh *strictHandler) AuthorizeMediaUpload(ctx *gin.Context, params Authorize
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"cqV4LcUD1WrM0P+y1wHL8+V/AgAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

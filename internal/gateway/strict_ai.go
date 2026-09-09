@@ -179,7 +179,7 @@ func (server *Server) IssueAIJobCapability(
 		return healthhttpapi.IssueAIJobCapability503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
 	}
 	return healthhttpapi.IssueAIJobCapability201JSONResponse{
-		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt,
+		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt, ResultToken: &issued.ResultToken,
 	}, nil
 }
 
