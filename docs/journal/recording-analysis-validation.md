@@ -134,3 +134,25 @@ strings are retained verbatim and never interpreted as the event-time feelings.
 Private output files, the user's text, case facts and sample-specific rubric are
 not committed. Only synthetic pattern tests and general implementation are stored
 in Git. No Health production or private Journal service deployment was performed.
+
+## Durable execution foundation, 2026-09-10 (not yet an HTTP/App feature)
+
+`RecordingExecutor.Process` performs one operation on a persisted recording job.
+Only an uploaded job reserves provider budget and submits audio. Submitting or
+processing jobs query the saved provider ID, including after a lost submission
+response or server restart. Repeated completion reads do not call the provider.
+Concurrent calls for the same owner/job are rejected, and the store revision
+rejects a completion arriving after another operation has failed/cancelled it.
+Invalid result identities/ranges fail without inventing replacement data.
+
+Provider budget admission uses the existing cost controller. This does not debit
+the user's streaming-minute quota. Reservations are conservative estimates, not
+confirmed invoices. A budget denial leaves the upload available for later retry.
+After an uncertain submission the executor only queries: a missing-task response
+is not yet classified as safe resubmission. Scheduling, authenticated HTTP routes,
+expiry maintenance, explicit retry policy and App integration remain pending.
+
+Focused deterministic tests cover lost-response/restart recovery, exhausted
+budget, repeated completion, concurrent calls, late results and invalid provider
+identity; the executor tests also pass the Go race detector. No new deployment
+was performed for this foundation.
