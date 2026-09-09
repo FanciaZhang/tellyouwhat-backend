@@ -142,11 +142,24 @@ func (s *Server) readOfferDelivery(c *gin.Context, app, offer, pool, query, stat
 		deliveryFailure(c.Writer, err)
 		return
 	}
+	report, err := s.config.Delivery.PoolReport(c.Request.Context(), app, p)
+	if err != nil {
+		deliveryFailure(c.Writer, err)
+		return
+	}
+	reportStatus, err := s.config.Delivery.ReportStatus(c.Request.Context(), app)
+	if err != nil {
+		deliveryFailure(c.Writer, err)
+		return
+	}
+	if source, ok := s.offers[app].(offerdelivery.ReportSource); !ok || !source.ReportsConfigured() {
+		reportStatus.State = "not_configured"
+	}
 	moreVerified := len(verified) > 100
 	if moreVerified {
 		verified = verified[:100]
 	}
-	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "unknownProductSubscriptions": unknownProduct, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
+	writeJSON(c.Writer, 200, map[string]any{"pool": p, "summary": summary, "observedOfferSubscriptions": observed, "unknownProductSubscriptions": unknownProduct, "appleReport": report, "reportSync": reportStatus, "requests": page.Requests, "nextCursor": page.NextCursor, "events": events, "verifiedSubscriptions": verified, "moreVerified": moreVerified, "stale": s.now().Sub(p.SyncedAt) > 5*time.Minute})
 }
 
 type deliveryCommand struct {

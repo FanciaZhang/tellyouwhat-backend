@@ -8,7 +8,7 @@ const server=http.createServer(async(req,res)=>{try{const file=path.join(root,re
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 const page=await browser.newPage({viewport:{width:390,height:920}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
-const records=[],commands=[];let imported=0,available=0,external=0;const now='2026-09-09T08:00:00Z';let failSync=false;
+const records=[],commands=[];let imported=0,available=0,external=0;const now='2026-09-09T08:00:00Z';let failSync=false;let report={scope:"custom_code",days:0,redemptions:0};let reportState="not_configured";
 await page.route('**/api/**',async route=>{
  const request=route.request(),url=new URL(request.url());let status=200,data={};
  if(url.pathname.endsWith('/session')){status=401;data={error:{message:'login'}};}
@@ -32,7 +32,7 @@ await page.route('**/api/**',async route=>{
    default:throw new Error('missing fixture command '+b.action);
    }
   }else{
-   const q=(request.postDataJSON()?.query||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,applications:records.length,externalDeliveries:0,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
+   const q=(request.postDataJSON()?.query||'').toLowerCase();data={pool:{id:'pool-1',offerID:'offer-1',offerName:'九月朋友体验',kind:'oneTime',capacity:500,active:true,environment:'production',expiresAt:'2030-01-01T00:00:00Z',syncedAt:now},summary:{requests:records.length,applications:records.length,externalDeliveries:0,pending:records.filter(r=>r.status==='requested').length,assignedRequests:records.filter(r=>r.assignedAt).length,assignedCodes:records.filter(r=>r.assignedAt).length,imported,available,external,delivered:records.filter(r=>r.deliveredAt).length,reportedRedeemed:records.filter(r=>r.reportedRedeemedAt).length,linkedVerified:0},appleReport:report,reportSync:{state:reportState},observedOfferSubscriptions:3,requests:records.filter(r=>JSON.stringify(r.recipient).toLowerCase().includes(q)),events:[],verifiedSubscriptions:[],stale:failSync};
   }
  }else {status=404;data={error:{message:'missing fixture'}};}
  await route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
@@ -82,5 +82,14 @@ try{
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile horizontal overflow');
  await fs.mkdir('/tmp/offer-delivery-acceptance',{recursive:true});await page.screenshot({path:'/tmp/offer-delivery-acceptance/mobile.png',fullPage:true});
  await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:'/tmp/offer-delivery-acceptance/mobile-dark.png',fullPage:true});
+ assert.match(await page.locator('#delivery-apple-report').innerText(),/待确认/);
+ assert.doesNotMatch(await page.locator('#delivery-apple-report').innerText(),/已兑换 0/);
+ report={scope:'custom_code',days:2,redemptions:1,firstDay:'2026-09-06',lastDay:'2026-09-08',fetchedAt:now};reportState='ready';
+ await page.evaluate(()=>refreshDelivery());
+ assert.match(await page.locator('#delivery-apple-report').innerText(),/这枚自定义码已兑换 1 次/);
+ assert.match(await page.locator('#delivery-apple-report').innerText(),/缺失日期不算零/);
+ reportState='forbidden';await page.evaluate(()=>refreshDelivery());
+ assert.match(await page.locator('#delivery-apple-report').innerText(),/权限不足/);
+ assert.match(await page.locator('#delivery-apple-report').innerText(),/已兑换 1 次/);
  assert.deepEqual(errors,[]);console.log('PASS named request, inventory confirmation, allocation, secret lifecycle, delivery/feedback distinction, search cursor, mobile and dark mode');
 }finally{await browser.close();server.close();}

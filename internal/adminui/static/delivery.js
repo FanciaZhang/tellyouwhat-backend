@@ -38,7 +38,7 @@ async function openDeliveryPool(parent,poolID){
  const d={app:parent.app,offer:parent.offer,poolID,cursor:'',query:'',status:'',requestKey:uuid(),externalKey:uuid(),data:null};delivery=d;deliveryGeneration++;
  mountDelivery(deliveryHeader(d.offer,'库存与领取台账')+`
  <div class="delivery-toolbar"><button id="delivery-refresh" class="secondary">同步 Apple 库存</button><span id="delivery-pool-meta" class="muted">正在读取…</span></div>
- <div id="delivery-summary" class="delivery-metrics"></div>
+ <div id="delivery-summary" class="delivery-metrics"></div><section id="delivery-apple-report" class="card"></section>
  <details class="card delivery-inventory"><summary>库存管理与统计口径</summary><div id="delivery-inventory"></div></details>
  <details class="card" id="delivery-new"><summary>登记领取申请</summary><form id="delivery-request-form" class="delivery-form">
  <label>姓名或昵称<input name="name" required maxlength="80" autocomplete="off" placeholder="用于识别领取人"></label>
@@ -81,6 +81,7 @@ function renderDeliverySummary(data){
  const p=data.pool,s=data.summary;const usable=p.active&&new Date(p.expiresAt)>new Date();
  $('#delivery-pool-meta').textContent=`${p.environment==='sandbox'?'沙盒测试':'正式环境'} · ${p.kind==='custom'?'自定义共享码':'一次性码'} · ${usable?'可发放':'已停用或过期'} · 同步于 ${formatTime(p.syncedAt)}${data.stale?'（已过期，请刷新）':''}`;
  const metrics=[['生成兑换额度',p.capacity],['领取申请',s.applications],['已发放',s.delivered],['Offer 已验证核销',data.observedOfferSubscriptions]];
+ renderDeliveryReport(data);
  $('#delivery-summary').innerHTML=metrics.map(([name,value])=>`<article class="card metric"><span>${name}</span><strong>${value==null?'—':Number(value).toLocaleString()}</strong></article>`).join('')+`<p class="delivery-wide muted">待处理 ${s.pending} · 已分配 ${s.assignedRequests} · 反馈已兑换 ${s.reportedRedeemed} · 人工关联已验证订阅 ${s.linkedVerified}<br><small>Offer 核销覆盖同产品、同环境下的全部码池，来自后端收到并验证的 Apple 交易，可能不含全部历史。</small>${data.unknownProductSubscriptions?`<br><small>同参考名称另有 ${Number(data.unknownProductSubscriptions)} 个历史核销未记录产品，不能归入此码池或关联到领取人。</small>`:''}</p>`;
  $('#delivery-request-form').querySelector('button').disabled=!usable;
  $('#delivery-external-code').classList.toggle('hidden',p.kind==='custom');$('#delivery-external-code input').required=p.kind==='oneTime';
@@ -131,4 +132,11 @@ function showDeliveryClaimLink(token){
  const dialog=deliveryDialog('发送专属领取链接','<p class="muted">对方点开即可领取，无需填写姓名或邮箱。请只发给这条记录对应的人；链接被转发后无法确认领取者身份。</p><label>领取链接<input id="delivery-claim-link" readonly></label><button id="delivery-copy-claim-link" class="primary">复制链接</button><p id="delivery-link-copy-message" role="status"></p>');
  dialog.dataset.clearOnHide='true';
  const link=location.origin+'/offer-claim#receipt='+encodeURIComponent(token);dialog.querySelector('input').value=link;dialog.querySelector('#delivery-copy-claim-link').onclick=async()=>{try{await navigator.clipboard.writeText(link);dialog.querySelector('#delivery-link-copy-message').textContent='已复制';}catch{dialog.querySelector('input').select();dialog.querySelector('#delivery-link-copy-message').textContent='请手动复制完整链接';}};
+}
+function renderDeliveryReport(data){
+ const r=data.appleReport, sync=data.reportSync||{};
+ if(!r){$('#delivery-apple-report').textContent='Apple 核销报表暂不可用';return;}
+ const scope=r.scope==='custom_code'?'这枚自定义码':r.scope==='one_time_offer'?'此 Offer 的所有一次性码':'当前码池';
+ const state={not_configured:'尚未配置 Apple 报表供应商编号',pending:'等待首次同步',forbidden:'Apple 报表权限不足，请检查密钥的销售与趋势权限',failed:'最近同步未完成，保留上次成功的报表',ready:'定期同步已启用'}[sync.state]||'等待同步';
+ $('#delivery-apple-report').innerHTML=`<h3>Apple 报表确认的兑换</h3><p>${r.scope==='unavailable'?'此环境或订阅产品暂不支持报表对账':!r.days?'待确认：尚未取得可用日报':r.redemptions>0?`${scope}已兑换 <strong>${Number(r.redemptions)}</strong> 次`:`已取得的日报中尚未发现${scope}兑换`}</p>${r.days?`<p class="muted">${escapeHTML(r.firstDay)} 至 ${escapeHTML(r.lastDay)}，已取得 ${Number(r.days)} 天日报；缺失日期不算零。更新于 ${formatTime(r.fetchedAt)}</p>`:''}<p class="muted">${state}。报表有延迟，领取和本人反馈不作为核销证据。${r.scope==='custom_code'?'统计覆盖同产品、同 Offer 下使用相同码值的批次；转发后不能确认兑换者本人。':'一次性码报表不能确定具体码或领取人。'}</p>`;
 }

@@ -40,6 +40,7 @@ type Config struct {
 	KeyID          string
 	SubscriptionID string
 	AppAppleID     string
+	VendorNumber   string
 	SigningKey     *ecdsa.PrivateKey
 	HTTPClient     *http.Client
 	Now            func() time.Time

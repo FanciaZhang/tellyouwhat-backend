@@ -87,3 +87,30 @@ CREATE TABLE offer_delivery_verified_links (
  UNIQUE KEY offer_delivery_verified_subscription(app_id,environment,offer_name,original_hash),
  FOREIGN KEY(app_id,request_id) REFERENCES offer_delivery_requests(app_id,id)
 ) ENGINE=InnoDB;
+
+CREATE TABLE offer_redemption_report_days (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ report_date DATE NOT NULL,
+ app_apple_id VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ digest BINARY(32) NOT NULL,
+ fetched_at DATETIME(6) NOT NULL,
+ PRIMARY KEY(app_id,report_date)
+) ENGINE=InnoDB;
+
+CREATE TABLE offer_redemption_report_rows (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ report_date DATE NOT NULL,
+ subscription_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ offer_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+ code_hash BINARY(32) NOT NULL,
+ territory CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ redemptions INT UNSIGNED NOT NULL,
+ PRIMARY KEY(app_id,report_date,subscription_id,offer_name,code_hash,territory),
+ FOREIGN KEY(app_id,report_date) REFERENCES offer_redemption_report_days(app_id,report_date)
+) ENGINE=InnoDB;
+
+CREATE TABLE offer_redemption_report_sync (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+ status VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ attempted_at DATETIME(6) NOT NULL
+) ENGINE=InnoDB;
