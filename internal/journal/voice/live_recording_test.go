@@ -21,7 +21,10 @@ func TestLiveRecordingAnalysis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	milliseconds := (len(audio) - 44) / 32
+	milliseconds := RecordingWAVMilliseconds(audio)
+	if milliseconds == 0 {
+		t.Fatal("invalid canonical recording WAV")
+	}
 	a := RecordingASR{Config: ASRConfig{ResourceID: "volc.seedasr.auc", APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY")}}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()

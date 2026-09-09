@@ -189,3 +189,26 @@ func TestRecordingSubmissionStreamsCanonicalAudioAndFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecordingStereoDurationUsesFramesNotChannelSamples(t *testing.T) {
+	wav := make([]byte, 44+16000*2*2)
+	copy(wav, "RIFF")
+	binary.LittleEndian.PutUint32(wav[4:], uint32(len(wav)-8))
+	copy(wav[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(wav[16:], 16)
+	binary.LittleEndian.PutUint16(wav[20:], 1)
+	binary.LittleEndian.PutUint16(wav[22:], 2)
+	binary.LittleEndian.PutUint32(wav[24:], 16000)
+	binary.LittleEndian.PutUint32(wav[28:], 64000)
+	binary.LittleEndian.PutUint16(wav[32:], 4)
+	binary.LittleEndian.PutUint16(wav[34:], 16)
+	copy(wav[36:], "data")
+	binary.LittleEndian.PutUint32(wav[40:], uint32(len(wav)-44))
+	if got := RecordingWAVMilliseconds(wav); got != 1000 {
+		t.Fatalf("stereo doubled duration: %d", got)
+	}
+	binary.LittleEndian.PutUint16(wav[32:], 2)
+	if RecordingWAVMilliseconds(wav) != 0 {
+		t.Fatal("accepted inconsistent stereo block alignment")
+	}
+}

@@ -194,11 +194,27 @@ func parseRecordingAnalysis(data []byte, taskID string, milliseconds int) (Recor
 
 // Canonical WAV is created by the app from PCM chunks. Reject a mismatched
 // header before provider submission so declared duration cannot bypass limits.
-func validRecordingWAV(wav []byte) bool {
-	if len(wav) < 46 || len(wav) > SessionMilliseconds*32+44 || (len(wav)-44)%2 != 0 {
-		return false
+func validRecordingWAV(wav []byte) bool { return RecordingWAVMilliseconds(wav) > 0 }
+
+// Preserve one or two source channels for file analysis; streaming capture's
+// mono format must not be imposed on an imported stereo recording.
+func RecordingWAVMilliseconds(wav []byte) int {
+	if len(wav) < 76 || len(wav) > SessionMilliseconds*64+44 {
+		return 0
 	}
 	u16 := binary.LittleEndian.Uint16
 	u32 := binary.LittleEndian.Uint32
-	return string(wav[:4]) == "RIFF" && u32(wav[4:8]) == uint32(len(wav)-8) && string(wav[8:16]) == "WAVEfmt " && u32(wav[16:20]) == 16 && u16(wav[20:22]) == 1 && u16(wav[22:24]) == 1 && u32(wav[24:28]) == 16000 && u32(wav[28:32]) == 32000 && u16(wav[32:34]) == 2 && u16(wav[34:36]) == 16 && string(wav[36:40]) == "data" && u32(wav[40:44]) == uint32(len(wav)-44)
+	channels := int(u16(wav[22:24]))
+	if channels != 1 && channels != 2 {
+		return 0
+	}
+	frameBytes := channels * 2
+	if string(wav[:4]) != "RIFF" || u32(wav[4:8]) != uint32(len(wav)-8) || string(wav[8:16]) != "WAVEfmt " || u32(wav[16:20]) != 16 || u16(wav[20:22]) != 1 || u32(wav[24:28]) != 16000 || u32(wav[28:32]) != uint32(16000*frameBytes) || u16(wav[32:34]) != uint16(frameBytes) || u16(wav[34:36]) != 16 || string(wav[36:40]) != "data" || u32(wav[40:44]) != uint32(len(wav)-44) || (len(wav)-44)%frameBytes != 0 {
+		return 0
+	}
+	milliseconds := (len(wav) - 44) / (16 * frameBytes)
+	if milliseconds <= 0 || milliseconds > SessionMilliseconds {
+		return 0
+	}
+	return milliseconds
 }
