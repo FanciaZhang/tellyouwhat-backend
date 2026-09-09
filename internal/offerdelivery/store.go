@@ -77,6 +77,7 @@ type Summary struct {
 	Available        int `json:"available"`
 	External         int `json:"external"`
 	AssignedCodes    int `json:"assignedCodes"`
+	AssignedRequests int `json:"assignedRequests"`
 	Requests         int `json:"requests"`
 	Pending          int `json:"pending"`
 	Delivered        int `json:"delivered"`
@@ -384,7 +385,7 @@ func (s Store) Summary(ctx context.Context, app, pool string) (Summary, error) {
 	if err != nil {
 		return r, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(status='requested'),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Pending, &r.Delivered, &r.ReportedRedeemed, &r.LinkedVerified)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.ReportedRedeemed, &r.LinkedVerified)
 	if err != nil {
 		return r, err
 	}

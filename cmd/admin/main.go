@@ -28,6 +28,7 @@ import (
 	platformconfig "github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/offerdelivery"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/prompteval"
@@ -158,7 +159,8 @@ func run(logger *slog.Logger) error {
 	}
 	evaluations := prompteval.Store{DB: database, Cipher: evaluationCipher, Limits: evaluationCost.Limits}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		AI: ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
+		Delivery: &offerdelivery.Store{DB: database, Cipher: evaluationCipher},
+		AI:       ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
 		Prompts: &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,

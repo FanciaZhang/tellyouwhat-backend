@@ -27,25 +27,25 @@ import (
 
 // Defines values for AIRollingInputAction.
 const (
-	AcceptCurrent AIRollingInputAction = "accept_current"
-	Cancel        AIRollingInputAction = "cancel"
-	Reconcile     AIRollingInputAction = "reconcile"
-	Start         AIRollingInputAction = "start"
-	StepBack      AIRollingInputAction = "step_back"
+	AIRollingInputActionAcceptCurrent AIRollingInputAction = "accept_current"
+	AIRollingInputActionCancel        AIRollingInputAction = "cancel"
+	AIRollingInputActionReconcile     AIRollingInputAction = "reconcile"
+	AIRollingInputActionStart         AIRollingInputAction = "start"
+	AIRollingInputActionStepBack      AIRollingInputAction = "step_back"
 )
 
 // Valid indicates whether the value is a known member of the AIRollingInputAction enum.
 func (e AIRollingInputAction) Valid() bool {
 	switch e {
-	case AcceptCurrent:
+	case AIRollingInputActionAcceptCurrent:
 		return true
-	case Cancel:
+	case AIRollingInputActionCancel:
 		return true
-	case Reconcile:
+	case AIRollingInputActionReconcile:
 		return true
-	case Start:
+	case AIRollingInputActionStart:
 		return true
-	case StepBack:
+	case AIRollingInputActionStepBack:
 		return true
 	default:
 		return false
@@ -223,6 +223,51 @@ func (e InvitationRequestRole) Valid() bool {
 	case InvitationRequestRoleAdmin:
 		return true
 	case InvitationRequestRoleOperator:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OfferDeliveryCommandAction.
+const (
+	OfferDeliveryCommandActionAssign           OfferDeliveryCommandAction = "assign"
+	OfferDeliveryCommandActionCancel           OfferDeliveryCommandAction = "cancel"
+	OfferDeliveryCommandActionConfirmInventory OfferDeliveryCommandAction = "confirm_inventory"
+	OfferDeliveryCommandActionDeliver          OfferDeliveryCommandAction = "deliver"
+	OfferDeliveryCommandActionImport           OfferDeliveryCommandAction = "import"
+	OfferDeliveryCommandActionLinkVerified     OfferDeliveryCommandAction = "link_verified"
+	OfferDeliveryCommandActionReject           OfferDeliveryCommandAction = "reject"
+	OfferDeliveryCommandActionReportRedeemed   OfferDeliveryCommandAction = "report_redeemed"
+	OfferDeliveryCommandActionRequest          OfferDeliveryCommandAction = "request"
+	OfferDeliveryCommandActionReveal           OfferDeliveryCommandAction = "reveal"
+	OfferDeliveryCommandActionSync             OfferDeliveryCommandAction = "sync"
+)
+
+// Valid indicates whether the value is a known member of the OfferDeliveryCommandAction enum.
+func (e OfferDeliveryCommandAction) Valid() bool {
+	switch e {
+	case OfferDeliveryCommandActionAssign:
+		return true
+	case OfferDeliveryCommandActionCancel:
+		return true
+	case OfferDeliveryCommandActionConfirmInventory:
+		return true
+	case OfferDeliveryCommandActionDeliver:
+		return true
+	case OfferDeliveryCommandActionImport:
+		return true
+	case OfferDeliveryCommandActionLinkVerified:
+		return true
+	case OfferDeliveryCommandActionReject:
+		return true
+	case OfferDeliveryCommandActionReportRedeemed:
+		return true
+	case OfferDeliveryCommandActionRequest:
+		return true
+	case OfferDeliveryCommandActionReveal:
+		return true
+	case OfferDeliveryCommandActionSync:
 		return true
 	default:
 		return false
@@ -542,6 +587,26 @@ type InvitationRequestRole string
 
 // JSONDocument defines model for JSONDocument.
 type JSONDocument map[string]interface{}
+
+// OfferDeliveryCommand defines model for OfferDeliveryCommand.
+type OfferDeliveryCommand struct {
+	Action        OfferDeliveryCommandAction `json:"action"`
+	ExpectedCount *int                       `json:"expectedCount,omitempty"`
+	Recipient     *struct {
+		Channel   *string `json:"channel,omitempty"`
+		Contact   *string `json:"contact,omitempty"`
+		Name      string  `json:"name"`
+		Note      *string `json:"note,omitempty"`
+		Reference *string `json:"reference,omitempty"`
+	} `json:"recipient,omitempty"`
+	Reference  *string `json:"reference,omitempty"`
+	RequestID  *string `json:"requestID,omitempty"`
+	RequestKey *string `json:"requestKey,omitempty"`
+	Version    *int    `json:"version,omitempty"`
+}
+
+// OfferDeliveryCommandAction defines model for OfferDeliveryCommand.Action.
+type OfferDeliveryCommandAction string
 
 // OfferDraft defines model for OfferDraft.
 type OfferDraft struct {
@@ -867,6 +932,11 @@ type PreviewOfferParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
 }
 
+// CommandOfferDeliveryParams defines parameters for CommandOfferDelivery.
+type CommandOfferDeliveryParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // CreateCustomCodeParams defines parameters for CreateCustomCode.
 type CreateCustomCodeParams struct {
 	Origin         *Origin         `json:"Origin,omitempty"`
@@ -1002,6 +1072,9 @@ type CreateOfferJSONRequestBody = CreateOfferRequest
 
 // PreviewOfferJSONRequestBody defines body for PreviewOffer for application/json ContentType.
 type PreviewOfferJSONRequestBody = OfferDraft
+
+// CommandOfferDeliveryJSONRequestBody defines body for CommandOfferDelivery for application/json ContentType.
+type CommandOfferDeliveryJSONRequestBody = OfferDeliveryCommand
 
 // CreateCustomCodeJSONRequestBody defines body for CreateCustomCode for application/json ContentType.
 type CreateCustomCodeJSONRequestBody = CustomCodeRequest
@@ -1155,6 +1228,12 @@ type ServerInterface interface {
 
 	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools)
 	ListCodePools(c *gin.Context, appID AppID, offerID OfferID)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	GetOfferDelivery(c *gin.Context, appID AppID, offerID OfferID, poolID string)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	CommandOfferDelivery(c *gin.Context, appID AppID, offerID OfferID, poolID string, params CommandOfferDeliveryParams)
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/custom-codes)
 	CreateCustomCode(c *gin.Context, appID AppID, offerID OfferID, params CreateCustomCodeParams)
@@ -2700,6 +2779,116 @@ func (siw *ServerInterfaceWrapper) ListCodePools(c *gin.Context) {
 	siw.Handler.ListCodePools(c, appID, offerID)
 }
 
+// GetOfferDelivery operation middleware
+func (siw *ServerInterfaceWrapper) GetOfferDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "poolID" -------------
+	var poolID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "poolID", c.Param("poolID"), &poolID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter poolID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOfferDelivery(c, appID, offerID, poolID)
+}
+
+// CommandOfferDelivery operation middleware
+func (siw *ServerInterfaceWrapper) CommandOfferDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "poolID" -------------
+	var poolID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "poolID", c.Param("poolID"), &poolID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter poolID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CommandOfferDeliveryParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CommandOfferDelivery(c, appID, offerID, poolID, params)
+}
+
 // CreateCustomCode operation middleware
 func (siw *ServerInterfaceWrapper) CreateCustomCode(c *gin.Context) {
 
@@ -3963,6 +4152,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/one-time-code-batches", wrapper.CreateOneTimeCodeBatch)
 	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools", wrapper.ListCodePools)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/one-time-code-batches/:batchID/download", wrapper.DownloadOneTimeCodes)
+	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools/:poolID/delivery", wrapper.GetOfferDelivery)
+	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools/:poolID/delivery", wrapper.CommandOfferDelivery)
 }
 
 type CreatedJSONResponse JSONDocument
@@ -5469,6 +5660,90 @@ func (response ListCodePoolsdefaultJSONResponse) VisitListCodePoolsResponse(w ht
 	return err
 }
 
+type GetOfferDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	PoolID  string  `json:"poolID"`
+}
+
+type GetOfferDeliveryResponseObject interface {
+	VisitGetOfferDeliveryResponse(w http.ResponseWriter) error
+}
+
+type GetOfferDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response GetOfferDelivery200JSONResponse) VisitGetOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOfferDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetOfferDeliverydefaultJSONResponse) VisitGetOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommandOfferDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	PoolID  string  `json:"poolID"`
+	Params  CommandOfferDeliveryParams
+	Body    *CommandOfferDeliveryJSONRequestBody
+}
+
+type CommandOfferDeliveryResponseObject interface {
+	VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error
+}
+
+type CommandOfferDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response CommandOfferDelivery200JSONResponse) VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommandOfferDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CommandOfferDeliverydefaultJSONResponse) VisitCommandOfferDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateCustomCodeRequestObject struct {
 	AppID   AppID   `json:"appID"`
 	OfferID OfferID `json:"offerID"`
@@ -6615,6 +6890,12 @@ type StrictServerInterface interface {
 
 	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools)
 	ListCodePools(ctx context.Context, request ListCodePoolsRequestObject) (ListCodePoolsResponseObject, error)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	GetOfferDelivery(ctx context.Context, request GetOfferDeliveryRequestObject) (GetOfferDeliveryResponseObject, error)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery)
+	CommandOfferDelivery(ctx context.Context, request CommandOfferDeliveryRequestObject) (CommandOfferDeliveryResponseObject, error)
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/custom-codes)
 	CreateCustomCode(ctx context.Context, request CreateCustomCodeRequestObject) (CreateCustomCodeResponseObject, error)
@@ -7802,6 +8083,70 @@ func (sh *strictHandler) ListCodePools(ctx *gin.Context, appID AppID, offerID Of
 	}
 }
 
+// GetOfferDelivery operation middleware
+func (sh *strictHandler) GetOfferDelivery(ctx *gin.Context, appID AppID, offerID OfferID, poolID string) {
+	var request GetOfferDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.PoolID = poolID
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOfferDelivery(ctx, request.(GetOfferDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOfferDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetOfferDeliveryResponseObject); ok {
+		if err := validResponse.VisitGetOfferDeliveryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CommandOfferDelivery operation middleware
+func (sh *strictHandler) CommandOfferDelivery(ctx *gin.Context, appID AppID, offerID OfferID, poolID string, params CommandOfferDeliveryParams) {
+	var request CommandOfferDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.PoolID = poolID
+	request.Params = params
+
+	var body CommandOfferDeliveryJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CommandOfferDelivery(ctx, request.(CommandOfferDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CommandOfferDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CommandOfferDeliveryResponseObject); ok {
+		if err := validResponse.VisitCommandOfferDeliveryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateCustomCode operation middleware
 func (sh *strictHandler) CreateCustomCode(ctx *gin.Context, appID AppID, offerID OfferID, params CreateCustomCodeParams) {
 	var request CreateCustomCodeRequestObject
@@ -8568,83 +8913,87 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

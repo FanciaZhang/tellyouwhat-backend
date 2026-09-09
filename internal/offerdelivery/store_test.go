@@ -281,3 +281,55 @@ func TestExportQuarantinesAvailableCodesAndRetainsAssignedCodes(t *testing.T) {
 		t.Fatal("export left externally exposed codes available")
 	}
 }
+
+func TestLedgerSearchInventoryConfirmationAndEvidence(t *testing.T) {
+	s, p, now := fixture(t)
+	ctx := context.Background()
+	if err := s.ImportCodes(ctx, "health", p.ID, "admin", []string{"ABC123", "XYZ456"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 1, now); !errors.Is(err, ErrConflict) {
+		t.Fatal("accepted stale inventory count", err)
+	}
+	if err := s.ConfirmExternalInventory(ctx, "health", p.ID, "admin", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.CreateRequest(ctx, "health", p.ID, "ledger-test", "admin", Recipient{Name: "小林", Contact: "Lin@example.test", Channel: "朋友"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Search(ctx, "health", p.ID, "", "LIN@", "requested")
+	if err != nil || len(page.Requests) != 1 || page.Requests[0].ID != r.ID {
+		t.Fatal("named search failed", err)
+	}
+	page, err = s.Search(ctx, "health", p.ID, "", "小林", "delivered")
+	if err != nil || len(page.Requests) != 0 {
+		t.Fatal("status filter ignored", err)
+	}
+	page, err = s.Search(ctx, "journal", p.ID, "", "小林", "")
+	if err != nil || len(page.Requests) != 0 {
+		t.Fatal("cross-app search leak", err)
+	}
+	if _, err = s.Assign(ctx, "health", r.ID, "admin", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := s.Summary(ctx, "health", p.ID)
+	if err != nil || sum.AssignedRequests != 1 || sum.Available != 1 {
+		t.Fatal("wrong allocation summary", sum, err)
+	}
+	events, err := s.Events(ctx, "health", p.ID)
+	if err != nil || len(events) != 4 {
+		t.Fatal("missing ledger audit", len(events), err)
+	}
+	verified, err := s.VerifiedSubscriptions(ctx, "health", p.ID)
+	if err != nil || len(verified) != 0 {
+		t.Fatal("fabricated evidence", err)
+	}
+	if _, err = s.DB.ExecContext(ctx, `INSERT INTO app_store_offer_redemptions(app_id,environment,transaction_hash,original_transaction_hash,offer_identifier,offer_type,redeemed_at,expires_at) VALUES('health','production',?,?,?,?,?,?)`, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32), p.OfferName, 3, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	verified, err = s.VerifiedSubscriptions(ctx, "health", p.ID)
+	if err != nil || len(verified) != 1 || len(verified[0].Reference) != 64 {
+		t.Fatal("missing real evidence", err)
+	}
+}

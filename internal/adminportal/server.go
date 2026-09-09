@@ -23,6 +23,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/offerdelivery"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/prompteval"
@@ -52,6 +53,7 @@ type OfferManager interface {
 }
 
 type Config struct {
+	Delivery                *offerdelivery.Store
 	Evaluations             *prompteval.Store
 	EvaluationSpeechPrice   costcontrol.DurationPrice
 	Billing                 *cloudbilling.Cache
@@ -211,6 +213,12 @@ func (server *Server) DownloadOneTimeCodes(context *gin.Context, rawAppID adminh
 			"offer_codes.download", "code_batch", batchID)
 		writeAppleFailure(writer, err)
 		return
+	}
+	if server.config.Delivery != nil {
+		if err := server.config.Delivery.ManagedExport(request.Context(), appID, batchID, authenticated.User.ID, server.now()); err != nil {
+			deliveryFailure(writer, err)
+			return
+		}
 	}
 	writer.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	writer.Header().Set("Content-Disposition", `attachment; filename="offer-codes-`+batchID+`.csv"`)
