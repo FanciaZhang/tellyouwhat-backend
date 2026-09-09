@@ -15,6 +15,7 @@ await page.route('**/api/**',async route=>{
  if(url.pathname.endsWith('/session')){status=401;data={error:{message:'login'}};}
  else if(url.pathname.endsWith('/metrics/offers'))data={metrics:[]};
  else if(url.pathname.endsWith('/offers'))data={deliveryAvailable:true,offers:[{id:'friends',name:'朋友体验',productID:'health.premium.subscription.monthly',subscriptionID:'456',active:true,productionCodeCount:500,sandboxCodeCount:0}],writesEnabled:false,creationActiveCount:1,activeCount:1,activeLimit:10,syncedAt:now};
+ else if(url.pathname.endsWith('/code-pools'))data={codePools:[{id:'batch-500',kind:'oneTime',environment:'PRODUCTION',numberOfCodes:500,active:true,expirationDate:'2030-01-01'},{id:'shared',kind:'custom',environment:'PRODUCTION',numberOfCodes:500,active:true},{id:'sandbox',kind:'oneTime',environment:'SANDBOX',numberOfCodes:10,active:true,expirationDate:'2030-01-01'}]};
  else if(url.pathname.endsWith('/personal-deliveries')){
   if(req.method()==='GET')data={deliveries:item?[item]:[],pools:outage?[]:[{id:'batch-500',expiration:'2030-01-01',capacity:500,available:stock,managed:true,active:true}],inventoryError:outage?'库存暂时不可用':''};
   else{
@@ -55,6 +56,14 @@ try{
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
  await fs.mkdir('/tmp/offer-delivery-acceptance',{recursive:true});await page.screenshot({path:'/tmp/offer-delivery-acceptance/personal-one-time-outage.png',fullPage:true});
  await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:'/tmp/offer-delivery-acceptance/personal-one-time-dark.png',fullPage:true});
+ await page.evaluate(()=>{state.offerData.writesEnabled=true;});
+ await page.getByRole('button',{name:'准备一次性码库存',exact:true}).click();
+ await page.locator('[data-delivery-pool="batch-500"]').waitFor();
+ assert.equal(await page.locator('[data-delivery-pool]').count(),1,'personal inventory must exclude shared and sandbox pools');
+ await page.getByRole('button',{name:'新建一次性码批次',exact:true}).click();
+ assert.equal(await page.locator('#codes-form [name=kind]').inputValue(),'oneTime');
+ assert.equal(await page.locator('#codes-form [name=environment]').inputValue(),'PRODUCTION');
+ assert.equal(await page.locator('#codes-form [name=numberOfCodes]').inputValue(),'500');
  assert.deepEqual(errors,[]);
  console.log('PASS one-time stock allocation, stable typing, lost-response retry, claim/redemption distinction, stock exhaustion and outage');
 }finally{await browser.close();server.close();}
