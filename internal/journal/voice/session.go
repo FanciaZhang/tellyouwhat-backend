@@ -456,7 +456,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				return
 			}
 			v := result.value
-			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable})
+			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)})
 			if v.Text != segmentText {
 				segmentText = v.Text
 				tr++
@@ -467,7 +467,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					fail("voice_invalid_request")
 					return
 				}
-				receipt := Receipt{segment, hash(string(pcm)), v.Text, (len(pcm) + 31) / 32}
+				receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: v.Text, Milliseconds: (len(pcm) + 31) / 32, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)}
 				var err error
 				remaining, err = s.Store.Commit(ctx, claim.Identity.Owner, claim.SessionID, segmentPeriod, fence, receipt, s.limit())
 				if err != nil {

@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,7 +36,7 @@ func run() error {
 	}
 	base, key := os.Getenv("JOURNAL_ARK_BASE_URL"), os.Getenv("JOURNAL_ARK_API_KEY")
 	lite, pro, rewrite := os.Getenv("JOURNAL_ARK_LITE_MODEL"), os.Getenv("JOURNAL_ARK_PRO_MODEL"), os.Getenv("JOURNAL_VOICE_MODEL")
-	asr := voice.ASRConfig{URL: os.Getenv("JOURNAL_VOICE_ASR_URL"), APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY"), ResourceID: os.Getenv("JOURNAL_VOICE_ASR_RESOURCE_ID")}
+	asr := voice.ASRConfig{StreamInsights: true, ObserveSchema: func(v []voice.StreamSchema) { data, _ := json.Marshal(v); log.Printf("journal_stream_schema=%s", data) }, URL: os.Getenv("JOURNAL_VOICE_ASR_URL"), APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY"), ResourceID: os.Getenv("JOURNAL_VOICE_ASR_RESOURCE_ID")}
 	if base == "" || key == "" || lite == "" || pro == "" || rewrite == "" || asr.URL == "" || asr.ResourceID == "" || (asr.APIKey == "" && (asr.AppKey == "" || asr.AccessKey == "")) {
 		return errors.New("missing Journal provider configuration")
 	}

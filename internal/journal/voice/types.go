@@ -65,20 +65,22 @@ type Revision struct {
 	Questions          []string `json:"questions"`
 }
 type Receipt struct {
-	SegmentID    string `json:"segmentID"`
-	SHA256       string `json:"sha256"`
-	Text         string `json:"text"`
-	Milliseconds int    `json:"milliseconds"`
+	Utterances   []StreamUtterance `json:"utterances,omitempty"`
+	SegmentID    string            `json:"segmentID"`
+	SHA256       string            `json:"sha256"`
+	Text         string            `json:"text"`
+	Milliseconds int               `json:"milliseconds"`
 }
 type Event struct {
-	Type                  string    `json:"type"`
-	SegmentID             string    `json:"segmentID,omitempty"`
-	Text                  string    `json:"text,omitempty"`
-	Stable                string    `json:"stable,omitempty"`
-	Receipt               *Receipt  `json:"receipt,omitempty"`
-	Revision              *Revision `json:"revision,omitempty"`
-	RemainingMilliseconds int       `json:"remainingMilliseconds"`
-	Code                  string    `json:"code,omitempty"`
+	Utterances            []StreamUtterance `json:"utterances,omitempty"`
+	Type                  string            `json:"type"`
+	SegmentID             string            `json:"segmentID,omitempty"`
+	Text                  string            `json:"text,omitempty"`
+	Stable                string            `json:"stable,omitempty"`
+	Receipt               *Receipt          `json:"receipt,omitempty"`
+	Revision              *Revision         `json:"revision,omitempty"`
+	RemainingMilliseconds int               `json:"remainingMilliseconds"`
+	Code                  string            `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`

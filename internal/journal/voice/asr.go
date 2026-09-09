@@ -16,10 +16,16 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-type ASRConfig struct{ URL, APIKey, AppKey, AccessKey, ResourceID string }
+type ASRConfig struct {
+	URL, APIKey, AppKey, AccessKey, ResourceID string
+	// Enabled only by the Journal development entry point until live acceptance.
+	StreamInsights bool
+	ObserveSchema  func([]StreamSchema)
+}
 type Transcript struct {
 	Text, Stable string
 	Final        bool
+	Utterances   []StreamUtterance
 }
 type SpeechConnection interface {
 	Send([]byte, bool) error
@@ -30,7 +36,10 @@ type Speech interface {
 	Open(context.Context, []string) (SpeechConnection, error)
 }
 type ASR struct{ Config ASRConfig }
-type asrConnection struct{ ws *websocket.Conn }
+type asrConnection struct {
+	ws            *websocket.Conn
+	observeSchema func([]StreamSchema)
+}
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
 func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error) {
@@ -57,16 +66,24 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		hotwords = append(hotwords, map[string]string{"word": w})
 	}
 	corpus, _ := json.Marshal(map[string]any{"hotwords": hotwords})
+	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": true, "enable_punc": true, "enable_ddc": false, "corpus": map[string]string{"context": string(corpus)}}
+	if a.Config.StreamInsights {
+		request["enable_speaker_info"] = true
+		request["ssd_version"] = "200"
+		request["enable_emotion_detection"] = true
+		request["show_volume"] = true
+		request["show_speech_rate"] = true
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"user":    map[string]string{"uid": uuid.NewString()},
 		"audio":   map[string]any{"format": "pcm", "codec": "raw", "rate": 16000, "bits": 16, "channel": 1},
-		"request": map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": true, "enable_punc": true, "corpus": map[string]string{"context": string(corpus)}},
+		"request": request,
 	})
 	if err = websocket.Message.Send(ws, asrPacket(1, false, payload)); err != nil {
 		ws.Close()
 		return nil, err
 	}
-	return &asrConnection{ws}, nil
+	return &asrConnection{ws: ws, observeSchema: a.Config.ObserveSchema}, nil
 }
 func asrPacket(kind byte, final bool, payload []byte) []byte {
 	flags := byte(0)
@@ -94,9 +111,10 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err := websocket.Message.Receive(c.ws, &packet); err != nil {
 		return Transcript{}, err
 	}
-	return parseASR(packet)
+	return parseASRWithObserver(packet, c.observeSchema)
 }
-func parseASR(packet []byte) (Transcript, error) {
+func parseASR(packet []byte) (Transcript, error) { return parseASRWithObserver(packet, nil) }
+func parseASRWithObserver(packet []byte, observe func([]StreamSchema)) (Transcript, error) {
 	if len(packet) < 8 || packet[0]>>4 != 1 {
 		return Transcript{}, ErrInvalid
 	}
@@ -139,11 +157,8 @@ func parseASR(packet []byte) (Transcript, error) {
 	}
 	var envelope struct {
 		Result struct {
-			Text       string `json:"text"`
-			Utterances []struct {
-				Text     string `json:"text"`
-				Definite bool   `json:"definite"`
-			} `json:"utterances"`
+			Text       string                    `json:"text"`
+			Utterances []providerStreamUtterance `json:"utterances"`
 		} `json:"result"`
 		Code int `json:"code"`
 	}
@@ -153,7 +168,11 @@ func parseASR(packet []byte) (Transcript, error) {
 	if envelope.Code != 0 && envelope.Code != 20000000 {
 		return Transcript{}, errors.New("speech_provider_error")
 	}
+	if observe != nil && flags&2 != 0 {
+		observe(streamSchema(payload))
+	}
 	result := Transcript{Text: envelope.Result.Text, Final: flags&2 != 0}
+	result.Utterances = streamUtterances(envelope.Result.Utterances)
 	for _, u := range envelope.Result.Utterances {
 		if u.Definite {
 			result.Stable += u.Text
