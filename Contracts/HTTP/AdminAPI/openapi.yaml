@@ -637,6 +637,7 @@ paths:
                 requestKey: { type: string, format: uuid }
                 name: { type: string, maxLength: 240 }
                 poolID: { type: string, minLength: 1, maxLength: 128 }
+                confirmUnissued: { type: boolean, description: Confirms that remaining unassigned codes in this batch have not been distributed elsewhere. }
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }

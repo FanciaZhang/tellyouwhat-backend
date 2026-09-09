@@ -41,12 +41,13 @@ func (s *Server) ListPersonalDeliveries(c *gin.Context, app adminhttpapi.AppID, 
 }
 
 type personalPool struct {
-	ID         string `json:"id"`
-	Expiration string `json:"expiration"`
-	Capacity   int    `json:"capacity"`
-	Available  int    `json:"available"`
-	Managed    bool   `json:"managed"`
-	Active     bool   `json:"active"`
+	ID          string `json:"id"`
+	Expiration  string `json:"expiration"`
+	Capacity    int    `json:"capacity"`
+	Available   int    `json:"available"`
+	Unconfirmed int    `json:"unconfirmed"`
+	Managed     bool   `json:"managed"`
+	Active      bool   `json:"active"`
 }
 
 func (s *Server) personalPools(ctx context.Context, app, offer string) ([]personalPool, error) {
@@ -94,7 +95,11 @@ func (s *Server) personalPools(ctx context.Context, app, offer string) ([]person
 			v.Managed = summary.Imported > 0
 			if v.Active {
 				v.Available = summary.Available
+				v.Unconfirmed = summary.External + p.NumberOfCodes - summary.Imported
 			}
+		}
+		if !v.Managed && v.Active {
+			v.Unconfirmed = p.NumberOfCodes
 		}
 		out = append(out, v)
 	}
@@ -106,7 +111,10 @@ func (s *Server) CreatePersonalDelivery(c *gin.Context, app adminhttpapi.AppID, 
 	if !ok {
 		return
 	}
-	var in struct{ Action, RequestKey, Name, PoolID string }
+	var in struct {
+		Action, RequestKey, Name, PoolID string
+		ConfirmUnissued                  bool
+	}
 	if !decodeJSON(c.Writer, c.Request, &in) {
 		return
 	}
@@ -144,7 +152,19 @@ func (s *Server) CreatePersonalDelivery(c *gin.Context, app adminhttpapi.AppID, 
 			err = offerdelivery.ErrUnavailable
 		}
 		if err == nil {
-			row, request, err = store.IssuePersonal(ctx, app, offer, in.PoolID, in.RequestKey, in.Name, actor, s.now())
+			if in.ConfirmUnissued {
+				var raw []byte
+				raw, err = s.offers[app].DownloadOneTimeCodes(ctx, pool.ID)
+				if err == nil {
+					var codes []string
+					codes, err = offerdelivery.ParseCSV(raw, pool.Capacity)
+					if err == nil {
+						row, request, err = store.IssuePersonalWithUnissuedCodes(ctx, app, offer, pool.ID, in.RequestKey, in.Name, actor, codes, s.now())
+					}
+				}
+			} else {
+				row, request, err = store.IssuePersonal(ctx, app, offer, in.PoolID, in.RequestKey, in.Name, actor, s.now())
+			}
 		}
 	}
 	if err != nil {

@@ -394,3 +394,8 @@ small { line-height: 1.5; }
 .claim-shell h1 { margin-bottom:18px; }
 .claim-shell h2 { overflow-wrap:anywhere; }
 .claim-shell textarea { width:100%;font:inherit;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:12px;resize:vertical; }
+
+.personal-send { display: grid; gap: 1rem; max-width: 38rem; }
+.personal-send > button { justify-self: start; }
+.personal-confirm { display: flex; gap: .65rem; align-items: flex-start; margin-top: 1rem; }
+.personal-confirm input { width: 1.2rem; min-width: 1.2rem; height: 1.2rem; margin-top: .2rem; }

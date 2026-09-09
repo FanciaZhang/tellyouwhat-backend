@@ -597,7 +597,15 @@ func (server *Server) CreateOneTimeCodeBatch(context *gin.Context, rawAppID admi
 	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
 		"offer_codes.batch_create", "succeeded", "offer", offerID,
 		map[string]any{"count": input.NumberOfCodes, "environment": environment})
-	server.completeOperation(writer, request, appID, session.User.ID, http.StatusCreated, map[string]any{"codePool": pool})
+	result := map[string]any{"codePool": pool}
+	if server.config.Delivery != nil {
+		prepareErr := server.prepareFreshBatch(request.Context(), appID, offerID, session.User.ID, pool)
+		result["deliveryReady"] = prepareErr == nil
+		if prepareErr != nil {
+			result["deliveryMessage"] = "Apple 已生成兑换码，后台暂未完成接入。请刷新后使用已有批次，不必再次新建。"
+		}
+	}
+	server.completeOperation(writer, request, appID, session.User.ID, http.StatusCreated, result)
 }
 
 func (server *Server) beginOperation(writer http.ResponseWriter, request *http.Request, appID, userID, action string, value any) bool {

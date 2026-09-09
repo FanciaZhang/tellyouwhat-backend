@@ -50,6 +50,20 @@ func (s Store) Personal(ctx context.Context, app, id string) (PersonalDelivery, 
 // IssuePersonal atomically reserves one confirmed one-time code and its claim link.
 // It never creates codes at Apple, changes their expiry, or releases an assigned code.
 func (s Store) IssuePersonal(ctx context.Context, app, offer, pool, id, name, actor string, now time.Time) (PersonalDelivery, Request, error) {
+	return s.issuePersonal(ctx, app, offer, pool, id, name, actor, nil, now)
+}
+
+// IssuePersonalWithUnissuedCodes confirms the operator's declaration, imports the
+// full batch, and reserves one code in the same transaction. A retry does none of
+// these again after the personal delivery exists.
+func (s Store) IssuePersonalWithUnissuedCodes(ctx context.Context, app, offer, pool, id, name, actor string, codes []string, now time.Time) (PersonalDelivery, Request, error) {
+	if len(codes) == 0 {
+		return PersonalDelivery{}, Request{}, ErrInvalid
+	}
+	return s.issuePersonal(ctx, app, offer, pool, id, name, actor, codes, now)
+}
+
+func (s Store) issuePersonal(ctx context.Context, app, offer, pool, id, name, actor string, codes []string, now time.Time) (PersonalDelivery, Request, error) {
 	var v PersonalDelivery
 	var r Request
 	name = strings.TrimSpace(name)
@@ -92,6 +106,22 @@ func (s Store) IssuePersonal(ctx context.Context, app, offer, pool, id, name, ac
 	}
 	if p.Kind != "oneTime" || p.Environment != "production" || !p.Active || !p.ExpiresAt.After(now) {
 		return v, r, ErrUnavailable
+	}
+	if codes != nil {
+		if err = s.importCodes(ctx, tx, app, p, codes, "external", now); err != nil {
+			return v, r, err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE offer_delivery_codes SET inventory_state='available' WHERE app_id=? AND pool_id=? AND inventory_state='external'`, app, pool)
+		if err != nil {
+			return v, r, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return v, r, err
+		}
+		if err = event(ctx, tx, app, pool, actor, "inventory.confirm_available", int(n), now); err != nil {
+			return v, r, err
+		}
 	}
 	var codeID string
 	err = tx.QueryRowContext(ctx, `SELECT id FROM offer_delivery_codes WHERE app_id=? AND pool_id=? AND inventory_state='available' ORDER BY id LIMIT 1 FOR UPDATE`, app, pool).Scan(&codeID)
