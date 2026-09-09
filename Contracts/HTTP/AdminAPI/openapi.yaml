@@ -605,6 +605,41 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries:
+    get:
+      operationId: listPersonalDeliveries
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 40 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createPersonalDelivery
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, requestKey]
+              properties:
+                action: { type: string, enum: [create, resume] }
+                requestKey: { type: string, format: uuid }
+                name: { type: string, maxLength: 240 }
+                expiration: { type: string, format: date }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/apps/{appID}/offers/{offerID}/custom-codes:
     post:
       operationId: createCustomCode

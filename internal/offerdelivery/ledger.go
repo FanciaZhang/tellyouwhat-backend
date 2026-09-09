@@ -176,7 +176,7 @@ type OfferSummary struct {
 }
 
 func (s Store) OfferSummaries(ctx context.Context, app string) ([]OfferSummary, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT p.offer_id,p.environment,COUNT(DISTINCT p.pool_id),COALESCE(SUM(r.source<>'external'),0),COUNT(r.delivered_at),COALESCE(SUM(r.status='requested'),0),COALESCE(SUM(r.source='external'),0) FROM offer_delivery_pools p LEFT JOIN offer_delivery_requests r ON r.app_id=p.app_id AND r.pool_id=p.pool_id WHERE p.app_id=? GROUP BY p.offer_id,p.environment`, app)
+	rows, err := s.DB.QueryContext(ctx, `SELECT p.offer_id,p.environment,COUNT(DISTINCT p.pool_id),COALESCE(SUM(r.source='manual'),0),COUNT(r.delivered_at),COALESCE(SUM(r.status='requested'),0),COALESCE(SUM(r.source='external'),0) FROM offer_delivery_pools p LEFT JOIN offer_delivery_requests r ON r.app_id=p.app_id AND r.pool_id=p.pool_id WHERE p.app_id=? GROUP BY p.offer_id,p.environment`, app)
 	if err != nil {
 		return nil, err
 	}

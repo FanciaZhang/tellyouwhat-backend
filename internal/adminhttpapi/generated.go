@@ -425,6 +425,24 @@ func (e UserUpdateRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreatePersonalDeliveryJSONBodyAction.
+const (
+	Create CreatePersonalDeliveryJSONBodyAction = "create"
+	Resume CreatePersonalDeliveryJSONBodyAction = "resume"
+)
+
+// Valid indicates whether the value is a known member of the CreatePersonalDeliveryJSONBodyAction enum.
+func (e CreatePersonalDeliveryJSONBodyAction) Valid() bool {
+	switch e {
+	case Create:
+		return true
+	case Resume:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PublicOfferClaimJSONBodyAction.
 const (
 	Claim    PublicOfferClaimJSONBodyAction = "claim"
@@ -997,6 +1015,28 @@ type CreateOneTimeCodeBatchParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// ListPersonalDeliveriesParams defines parameters for ListPersonalDeliveries.
+type ListPersonalDeliveriesParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreatePersonalDeliveryJSONBody defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryJSONBody struct {
+	Action     CreatePersonalDeliveryJSONBodyAction `json:"action"`
+	Expiration *openapi_types.Date                  `json:"expiration,omitempty"`
+	Name       *string                              `json:"name,omitempty"`
+	RequestKey openapi_types.UUID                   `json:"requestKey"`
+}
+
+// CreatePersonalDeliveryParams defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryParams struct {
+	Origin     *Origin    `json:"Origin,omitempty"`
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// CreatePersonalDeliveryJSONBodyAction defines parameters for CreatePersonalDelivery.
+type CreatePersonalDeliveryJSONBodyAction string
+
 // DownloadOneTimeCodesParams defines parameters for DownloadOneTimeCodes.
 type DownloadOneTimeCodesParams struct {
 	Origin     *Origin    `json:"Origin,omitempty"`
@@ -1129,6 +1169,9 @@ type CreateCustomCodeJSONRequestBody = CustomCodeRequest
 
 // CreateOneTimeCodeBatchJSONRequestBody defines body for CreateOneTimeCodeBatch for application/json ContentType.
 type CreateOneTimeCodeBatchJSONRequestBody = OneTimeCodeBatchRequest
+
+// CreatePersonalDeliveryJSONRequestBody defines body for CreatePersonalDelivery for application/json ContentType.
+type CreatePersonalDeliveryJSONRequestBody CreatePersonalDeliveryJSONBody
 
 // FinishEnrollmentJSONRequestBody defines body for FinishEnrollment for application/json ContentType.
 type FinishEnrollmentJSONRequestBody = WebAuthnCredential
@@ -1294,6 +1337,12 @@ type ServerInterface interface {
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/one-time-code-batches)
 	CreateOneTimeCodeBatch(c *gin.Context, appID AppID, offerID OfferID, params CreateOneTimeCodeBatchParams)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	ListPersonalDeliveries(c *gin.Context, appID AppID, offerID OfferID, params ListPersonalDeliveriesParams)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	CreatePersonalDelivery(c *gin.Context, appID AppID, offerID OfferID, params CreatePersonalDeliveryParams)
 
 	// (POST /api/v1/apps/{appID}/one-time-code-batches/{batchID}/download)
 	DownloadOneTimeCodes(c *gin.Context, appID AppID, batchID BatchID, params DownloadOneTimeCodesParams)
@@ -3231,6 +3280,128 @@ func (siw *ServerInterfaceWrapper) CreateOneTimeCodeBatch(c *gin.Context) {
 	siw.Handler.CreateOneTimeCodeBatch(c, appID, offerID, params)
 }
 
+// ListPersonalDeliveries operation middleware
+func (siw *ServerInterfaceWrapper) ListPersonalDeliveries(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPersonalDeliveriesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPersonalDeliveries(c, appID, offerID, params)
+}
+
+// CreatePersonalDelivery operation middleware
+func (siw *ServerInterfaceWrapper) CreatePersonalDelivery(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appID" -------------
+	var appID AppID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appID", c.Param("appID"), &appID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter appID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerID" -------------
+	var offerID OfferID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerID", c.Param("offerID"), &offerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePersonalDeliveryParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Origin" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Origin")]; found {
+		var Origin Origin
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Origin, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Origin", valueList[0], &Origin, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uri"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Origin: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.Origin = &Origin
+
+	}
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePersonalDelivery(c, appID, offerID, params)
+}
+
 // DownloadOneTimeCodes operation middleware
 func (siw *ServerInterfaceWrapper) DownloadOneTimeCodes(c *gin.Context) {
 
@@ -4216,6 +4387,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/apps/:appID/metrics/offers", wrapper.GetOfferMetrics)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/preview", wrapper.PreviewOffer)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/deactivate", wrapper.DeactivateOffer)
+	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/personal-deliveries", wrapper.ListPersonalDeliveries)
+	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/personal-deliveries", wrapper.CreatePersonalDelivery)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/custom-codes", wrapper.CreateCustomCode)
 	router.POST(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/one-time-code-batches", wrapper.CreateOneTimeCodeBatch)
 	router.GET(options.BaseURL+"/api/v1/apps/:appID/offers/:offerID/code-pools", wrapper.ListCodePools)
@@ -5937,6 +6110,89 @@ func (response CreateOneTimeCodeBatchdefaultJSONResponse) VisitCreateOneTimeCode
 	return err
 }
 
+type ListPersonalDeliveriesRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	Params  ListPersonalDeliveriesParams
+}
+
+type ListPersonalDeliveriesResponseObject interface {
+	VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error
+}
+
+type ListPersonalDeliveries200JSONResponse struct{ OKJSONResponse }
+
+func (response ListPersonalDeliveries200JSONResponse) VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPersonalDeliveriesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListPersonalDeliveriesdefaultJSONResponse) VisitListPersonalDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePersonalDeliveryRequestObject struct {
+	AppID   AppID   `json:"appID"`
+	OfferID OfferID `json:"offerID"`
+	Params  CreatePersonalDeliveryParams
+	Body    *CreatePersonalDeliveryJSONRequestBody
+}
+
+type CreatePersonalDeliveryResponseObject interface {
+	VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error
+}
+
+type CreatePersonalDelivery200JSONResponse struct{ OKJSONResponse }
+
+func (response CreatePersonalDelivery200JSONResponse) VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePersonalDeliverydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreatePersonalDeliverydefaultJSONResponse) VisitCreatePersonalDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DownloadOneTimeCodesRequestObject struct {
 	AppID   AppID   `json:"appID"`
 	BatchID BatchID `json:"batchID"`
@@ -7012,6 +7268,12 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/apps/{appID}/offers/{offerID}/one-time-code-batches)
 	CreateOneTimeCodeBatch(ctx context.Context, request CreateOneTimeCodeBatchRequestObject) (CreateOneTimeCodeBatchResponseObject, error)
+
+	// (GET /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	ListPersonalDeliveries(ctx context.Context, request ListPersonalDeliveriesRequestObject) (ListPersonalDeliveriesResponseObject, error)
+
+	// (POST /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries)
+	CreatePersonalDelivery(ctx context.Context, request CreatePersonalDeliveryRequestObject) (CreatePersonalDeliveryResponseObject, error)
 
 	// (POST /api/v1/apps/{appID}/one-time-code-batches/{batchID}/download)
 	DownloadOneTimeCodes(ctx context.Context, request DownloadOneTimeCodesRequestObject) (DownloadOneTimeCodesResponseObject, error)
@@ -8355,6 +8617,69 @@ func (sh *strictHandler) CreateOneTimeCodeBatch(ctx *gin.Context, appID AppID, o
 	}
 }
 
+// ListPersonalDeliveries operation middleware
+func (sh *strictHandler) ListPersonalDeliveries(ctx *gin.Context, appID AppID, offerID OfferID, params ListPersonalDeliveriesParams) {
+	var request ListPersonalDeliveriesRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPersonalDeliveries(ctx, request.(ListPersonalDeliveriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPersonalDeliveries")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListPersonalDeliveriesResponseObject); ok {
+		if err := validResponse.VisitListPersonalDeliveriesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePersonalDelivery operation middleware
+func (sh *strictHandler) CreatePersonalDelivery(ctx *gin.Context, appID AppID, offerID OfferID, params CreatePersonalDeliveryParams) {
+	var request CreatePersonalDeliveryRequestObject
+
+	request.AppID = appID
+	request.OfferID = offerID
+	request.Params = params
+
+	var body CreatePersonalDeliveryJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePersonalDelivery(ctx, request.(CreatePersonalDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePersonalDelivery")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreatePersonalDeliveryResponseObject); ok {
+		if err := validResponse.VisitCreatePersonalDeliveryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DownloadOneTimeCodes operation middleware
 func (sh *strictHandler) DownloadOneTimeCodes(ctx *gin.Context, appID AppID, batchID BatchID, params DownloadOneTimeCodesParams) {
 	var request DownloadOneTimeCodesRequestObject
@@ -9054,89 +9379,90 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7D1dV9s6tn8ly3ferkMCp+1teaPATJmeEhbQ9sx0cbMUeyfRwZZ8JDmQZuW/z7Ikf8tfgbQJU15IYlna",
-	"33tra0taWQ71A0qACG4dr6wAMeSDACa/nQTBxVn0ARPr2AqQmFu2RZAP1rGF5DPbYvBXiBm41rFgIdgW",
-	"d+bgI9WXEMCiN///20n/36j/fdh/dzA+7t+tDu3Do7frv1m2JZZB1BsXDJOZtV7b1nsknHnlsBP9dAsD",
-	"n95c//2W3gNJhp4DcoGlg//RP3F9TPpRSys7oo8efwcyE3Pr+Oj1G9vyMYm/HxqHAgY+JcsMmpVj6aZ9",
-	"ibRxyMOjty2GZOACERh5lbR1sk3qCJxFd/iqxeAXLvgBFUCc5UdYVuKcadaP2rVk6tsapl6QBRZIYEoq",
-	"0cbZJp3latwgVaPpFFjl2FQ/3YI4jxie4WpZ1o+zA00p85Gwjq2QYWOXn3kNKiHfDJN6Aq6j/nhACQdp",
-	"kk4ZIBH1HVkuIoCI6CMKAg87koeDPzmVWKfD/o3B1Dq2/meQ2rqBesoH/7wZXZ5RJ/SjnuRwLnCH4SDq",
-	"yzq2roHTkDnQc9TAB9bats4Zo+zZQJC9XWskzTD8FQIXvSnCnobgkp6mQ5tbRyN5IMDtPWAxp6HooV5M",
-	"yt6EukvZ0ejjDyRlAbADKVT6delvLq6p52EyuyBBqKBxXRy9jrwrRgNgAkdiMEUeB9sKMj+tLOSocVYW",
-	"kNC3jr9ZXCAmLNtyEHHAi0RdQDCeIOdeSqlDiYM9sGwLOQ4EYuyEjEWw35XE0LaAuAHFikSdTK9tCcRm",
-	"IJqol+D+ibrgWUrwY0X6lo5vx4gmHafg0smf4IhozEJv3Sgp3/kCjGt6FvEtYXgpLUBjwwJK8i07P1ot",
-	"LjfhxMc8hqoDQjgWp1YMUMK3jjqBBYaHJCbIoPf28N1Rs9vLYqtgKHRqQldZOOk2tMZ0xNZlaNqIrez/",
-	"TLasx/TV8N2bbpiq8dtgGnJB/VPqwmaIOtSFSrdyt3plv3ll8im2BY8BZtLEnSEBOdfnRj8YXiGhPwE2",
-	"mkbQck0i7Ed25uj1cDiUFFLfX8tvoSdw4MFoqn/QHWIiYAasRDOJSnEUE83O/UAsR+prE7XKLxNGPS+y",
-	"z5sRXBjk4/VhR0UQlfIgHeEZCIS9DSWhwRL7wDmaNbc0Myd+uxL0xId3Ax7iaKIxSNC0KfkG2YERrAXy",
-	"QhXabuBRHURcHCmEMqICfN6xBw9NlPcpsyKy+qMFMIYV6+qQv2LUD8RVOjeVBFjg2BXUsy9paWt4TJTy",
-	"0eOFQlCJs/6SygZiDC2jlhxF4cvFWZ4oZQTTDoe1PRagTbu3swyo5+6NfKlrwBS6mOaM32RpNn7wGICj",
-	"o+5NxGDiUedeTRxKfd9j4maDtigURZhE6MOj44WRIbStkDhzRGbgGoMzAY+iWQ7kSHYCjH7NRNgiy7Gb",
-	"nx6F2DWRqYgKZTNE8HcYe1jSNfkeMGrZ1oJiB4z4EB1PlR7EPXSlP3WXxv4mlN5vrNwxp86JYNnuJ5R6",
-	"gIhVnAAYxm9J2Ap6FCMsN56M5ge2C5C24bieEH1AfG4EPHrOkCMyUXLM9T9pyAjy+jGv+otD84ziEXOB",
-	"yewWzRpMSRE4Bn9KdbxFsyiG7vy2dP1KHRtJL7DwoI2NjTst0yZPzbhLW0llgQ4G5GIpNbFNqdAGxmhj",
-	"oVcSu6EFUiRua3XAxQLc98pcdWSyj0iIvHMXi40xRVMBzGw1YEqZ2UDVWXopBY/ipLJf3eB9dfcBEBeT",
-	"2TliHgZ2EwA4c7PlEQwRZQJG0ymHLHOqYvDUMWgEbU2DImQFVAyDVUDahus+uBiNiLfcjPGGsCjBNwuo",
-	"sbMHytyO4z0wHCnvjVi2MRO51nY2MtNamQOxpAIm6uRlPcahTOkaZ6EDgyTKaYi1ZFbpVyT99Ei6mHUo",
-	"ofZzQu0WmYsPgDwxP7mQCZTN5tITxMGcY/vtjcEPR6+iYoJTur9xqjGKNT4gbxzMqaBjBwUilBZrvnTV",
-	"+2MnDMbABfZVpkO2joxZprH8zQUnZraLQYwRQd6S44g+c4n+mISCSXQNzyYwRwtMWfrIFAMF1MPOsut8",
-	"uSYVm0kFQdBPs0H9u/81ZoIYIE5JZKinU6rUOiaupXM6yIvEnT5o6xP6EZJ4NpeW59E8H8E+0FDcgEOJ",
-	"m88WvX2VzRUd2gYjvWgvFQ8wuQHEnPk5QRMPXJMvrE4kF5E39FfCpdGwpoJq52Q8YXadPl2FEw/z+S+N",
-	"2lyjqjO5LZZq886gYXJQw/isY8/LQJNlTddrNxMCWZbQ2l+8eVX2Si7mgYeWhjWN5qV922JUxUGxQCHX",
-	"l6usijq5NF1V+jwzvu7PjtEyUSy37FZJLLUUW3pZLQOAhxfAlqfU95FKYTxt3W1JHMu2sB8oq+JQMsXM",
-	"H2OyACIoW1rJLDRCjXM8kzqhwMgu2KnJoPwQ9TVm4AL40i55mNyPF8DwFMvvDBaAPL2wx9wxPEaOQP7C",
-	"54jB2PEQ9lVDep9+5dLeGXUpySqnIpARmEy7kHGVwc2tmxhaahTBPRGlVYd+ZGnrsm+nNEycnnnpwehO",
-	"/gpBpWeySfvh0Kj7Dg5wrRiZo9s5IkRFp1ltMVJApmIc0QoeYlBB7T7rVJBQUXztt2EFwlNgQBxoAXpB",
-	"SyVsJnWs6tMoOblcTJPw6Ma6gKZxUZYLJEJewszQMhtw1IhSgQJa7+8qrUq8DNkpJS3oNRB4qIlnIn3j",
-	"gvrAzj08wxPs4SQ5E5v82BJdnn+1bOv8j4ub24vLf8iPVxfX52dGdU/dwm91swjbCgn+KwT9ODKskWaH",
-	"5WDi9sP1+fn47ORfN5ZtjS7Px1/Pzz9atnX7dSQ/xj9/Gl3eftC/y8/RA/Vy8vXm4o/0S/TSv85PrmuT",
-	"x11r0krSXUXoDLJ2mWNGeSBwi304pS7I6r7NXDuQBWaUxH4upvLV9ejs8+ntxegyItPJ5dn70R8VCden",
-	"r/rmK1quGHVDqQY9TT3ei1d+eY9Oe6+Hw96UUV9+ELQnDfZB7wYRd0Ife6ruhPcOh3bvcDi0o2Z2j7Lo",
-	"y/BATTAqLH3zknIe9hL6do6eRq7FAR0/CYKrTWZqLsLeUsZ6+UlQhF7y1+S/pgzgLOroBmTtR6mrTAfD",
-	"2g46QFLZ0SdKxPzpXfmqm/ehOwNxiQjlOXnERLx5leV/rvP2/T+V9gEKeZUVVs9SIckZ4EbvlBrbt63s",
-	"q5yYXQHD1P2ESSjAgFU9UQrqYeCAnRPYIhHLgmSSCJO8GqFPiGugZL02buJY6+fGGddgnCqnaZrakqIE",
-	"Qm0sSgn2tumAUk+d54Bd06tqjt0ew9Qiru14xW+jtwsk0nCkfZrIM5Ey+xUxgsnsCpgDhXnBYbNmy5qR",
-	"p3Xho8dTSuKiya4vq6eqcKFelw+3bUGNAHKPPmj6fMKeh7k5mVcEdUPDk6dlBYvNXKsGtURlW6lGg8qF",
-	"k7gA+McamWfMXHUaunqRo2Pu6gpxfg8yc7Nh5eYTUk81WSQjrHIh6BlcyYbOQi9EJTaUOzRosYComnXI",
-	"LKtx/pla6C7sgCkKPVG1tpkvx2lGdhS3lpPzpVeYszZ3oAAxLMImZRDNfXyRTUu52xi0uK8EQjtPhWoS",
-	"jzYrTZKlURssWkbvfUKP7+MCprIB1y1O54ghJ97RVtksrsIxxMCMbgJgIH9rlmjdTgFiqeFMwBdQzgNe",
-	"zZar3Ia+DoyZ0pC40gskWwhMQfwoFEEoDPOMN69fa9Mbz2DfmN247jxbxI3630/6/x72392lHw/G/bvV",
-	"0D48+j9zTbdf2LRg8C/da4Vk1az00VfApG+lJMW1HGzURhSKVM/TW0GIauCsH9ecwaxcE3Uxj9cF69dG",
-	"zVWavgwyQgb5LLZp3hbnL2RRvOdZd12WVV+3CMJcvcBQXALNQlmW8BbroYnmbTJ1aTmVyHu1yJ8suQD/",
-	"qqXNybWuweC5IsHGWK82mCtntrvFCk8I6DJut2voUF/4CnX5bXhMyrkrKma7VAy7uWq7vGNrJS3VdbUx",
-	"oPEwKV5J79Vk/bJB7SYKBfWRwM5VSBwRogJ9MzQkkTX18He4lGaEV+Wwst7x2Vx8RD+fLuAaAhC4Csiq",
-	"QKD0bg5O20wEA8Ym0t+ACIMNyysoFVwwFNxutAvIfs7ZTQEWu3G685kD+xy4SMB/TVlBdgUwec0ReAGK",
-	"XsXlmi7lCLrn2rqErzA5CcWcpAcPdKxOiDAAJ2RYLG8iLVSckKci6NRqshPdofQeQ7oXfTz+QLnoC/C8",
-	"JQ0f5kiMJcXGXL+Y8ifAH2GptitjMqXlRZ5TRCjBDvJ6cWF7b0pZT8yhpyf8fUq8ZU8OgCOplAtCHNgC",
-	"O3CQFLwfW7cpOL2TfOuTqwsrsxBrHR4MD4a6SomgAFvH1m8HhwdDaQvEXFJigAI8WBwO5MADFLpYSrXe",
-	"a5yU41y41rH1O+biRLYo7Kc/Gg6rTF/SbjD6qIoX5ESwubnaHr+WW5+jWdU3K4+tdRc9y4OfHsKgziGh",
-	"3ICF2horTyFImuet4/E3M3Bpk4E++GBtN7ZMDwRZ3yXL7+/1Xppn2TJfrnZa5/VPr34UWHbYzIP4nIQf",
-	"yLfBKnuSxlppkgdqfp9n5LWswXkiI3NHe7Rg5+aMzxH/VTMh09MZtk3+kOvYpVrro3afuQoddlL1JQ6D",
-	"lTo/ZK1zAWpfRx4d5cAThDoLjD6+ZKui8vw2ohy6tLIRu8jbAQOHLoAt+x3M/bV+5wmW4kcwfgcNNB7E",
-	"xd58sIo/riutxT9AnFycp+XhBRobjvzJ1ZK3OCzKeCjI3e6JLh5Ast2HD3SaoFpOr1SDdItQZwHdvhUp",
-	"ngSwHzYkzwgWknpflyJ5HZJd8Xd2hdTIfWTPIzPN1qpwANv2pUztkttXKRusWEhqLWVO1FoZSxaSWjvZ",
-	"tNvibn8IN9AF/NWeXT6vE/4tEPCJPn13qS1TUoNV9K+lzF4I8H8UzU0nLqrha2MGvfT1rqGob+f5xNMK",
-	"pxZ+K63U2WnXhRZQOnxml2MeDeI+uiMtP4OV+lCbVjmTvzdzxqCSPG7632Vf7RbG8sdScScNWloeW0Wu",
-	"eAfvKSVTPLN2F4mBPJ6wMeuQ2+H/ImJz45kFz2sRj4ZHO8PmQG0lr5m1qwYlwX05nC7spn+5vF4lnF0P",
-	"5pjLLcYtbNUH3bSNZc/vbq8y7lXhr9qDmx60rjYMV2TJTCXKO+wVctSPa22iqYn+uG7Diuu0RmfbvChM",
-	"cNKBW6Uw94Y5ssKtYWno4pNqtLvwD1by/3qgl8ZbIfQlbttGmNJKwBeVwFbVRLxO91RJU5XfM9mttKKu",
-	"rdLtMm1aRoLZnRIvITrI4rMvE+KYY03OPTICCr963/5kud7YsTdsRdppfWkbUtcblr1VmWw59L4pTte4",
-	"TGHcKSrbJJLaR21g6paIqDcf6X0IFWnScOJjkdwrER+v9BI0wnQnRyudONodBjau6yv/n6Cql/l3MNFd",
-	"vLrkpU309X7++hq3k6jVTzEY8rgjXoZ5sJLl0euBD4Jhhw+oalhjd2VXn1TzzoKmruv7SVazkQgNyEd8",
-	"1H3sJ952rRWRzTbFbEt1azvjTQxXHu1WHXRL4W5dKraL0rAl3mYvmtqVoLktO1f6esb1wKEu9ANKGzJq",
-	"p9SFK9lqe7zVN0butpk3km6wiv5Fv+lzMJeNrjA+mtT66bZ9y9w0Z6cVvZ6anazwS2o6UiTzrsW2xhNq",
-	"99mSyDMV+058omBd0JBekGf9EAl82UFG6bbB/YwxUlFyQe7n1IdZmgXpLGmz7ZhjN+VoDywCJersZ2kT",
-	"+vKC82bTUDxS9ZeBeLqnqTildt/MhEmcBit9cf564NIH4lHk1tgM3SJDkC0GtPF9/z9ud9awIDICHsXA",
-	"4Yu8qBhuIs9vDB9pQvekJvekR+8h3ju9+XKwDSaHYj4AeYPrYIpJ7ULM3+Xz9LrX7nEdMPApWSYTjedX",
-	"N8P5ALuhafGhA9bxt7tMgjIU8whMx5SgzLCGBg27Gt/DDJMca7ZS+1y66venx8wb0tWjM0xaSvzvUduX",
-	"JOw7y492Yh7zYysSnrkJe62JuQe0o+oaZjPRflfPf9yRFj/tZIMmSjGQ/9qp/bVsnOnvKRZgv9Kru2hY",
-	"ujK5nS15MpOfM3r82ZTjIMKgpXbIM79+RYDbt+6KKe2kOWbKNuiaO+RtD8MMOZ/qqwu66mvNHDlROk1u",
-	"9tqMlk+77Cw+Ci2+UGwK4E6Qc28+A9V4unnjbVN62Ph9wyWMO8lk0zQ28JCYUuYPHFUfWLcClJxJv6u7",
-	"ygrItKwoLl7l8RIKwoo47UWBZJF9bcqLU0Q7lRi/wMrgIvXalgcb1Polyf/elQkX+di1VjhF/Ve9cCVt",
-	"dQlgOzqmBYA7hk7s5geBOvm0vhrmKm70U/C4iUOSegxaTqJO0hhRvfgrx7A7a2JtWd1uavZ0Vu8S8wyX",
-	"Eu2MV2rLt5WTSF7DwbLqBJSNVTQzzMs8UbaK4slx2lXO6SY5OHtX0mFq9/n32uMsI1f2Ib5S76dPh2/U",
-	"keAafgbIXTaDfw3IxQT4U7zo6+FvraHfDr75NsVT3L/dRVrBgS1iRa26Z9eyrZB51rE1FyLgxwN1zOxB",
-	"5qD3A0fpmAZiFYebMTCRsuqfCmKVeZKoSbZ1Pi7KPNFpjvXd+j8BAAD//w==",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -77,9 +78,12 @@ func (s *Server) PublicOfferClaim(c *gin.Context) {
 		deliveryFailure(c.Writer, err)
 		return
 	}
-	result := map[string]any{"title": pool.OfferName, "status": r.Status, "deliveredAt": r.DeliveredAt, "reportedRedeemedAt": r.ReportedRedeemedAt, "receiptExpiresAt": r.ClaimExpiresAt}
+	result := map[string]any{"title": pool.OfferName, "status": r.Status, "deliveredAt": r.DeliveredAt, "claimedAt": r.ClaimedAt, "reportedRedeemedAt": r.ReportedRedeemedAt, "receiptExpiresAt": r.ClaimExpiresAt}
 	if in.Action == "claim" {
 		result["code"] = code
+		if appAppleID, _ := offerScope(s.offers[app]); appAppleID != "" && pool.Environment == "production" {
+			result["redeemURL"] = "https://apps.apple.com/redeem?" + url.Values{"ctx": {"offercodes"}, "id": {appAppleID}, "code": {code}}.Encode()
+		}
 	}
 	writeJSON(c.Writer, 200, result)
 }

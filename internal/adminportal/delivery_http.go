@@ -61,7 +61,7 @@ func (s *Server) syncDeliveryPool(ctx context.Context, app, offer, pool string) 
 			// Apple custom pools may have no expiry; represent this as an unbounded date.
 			expiry := time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)
 			if v.ExpirationDate != "" {
-				expiry, err = time.Parse("2006-01-02", v.ExpirationDate)
+				expiry, err = offerdelivery.AppleCodeExpiry(v.ExpirationDate)
 				if err != nil {
 					return offerdelivery.Pool{}, offerdelivery.ErrInvalid
 				}

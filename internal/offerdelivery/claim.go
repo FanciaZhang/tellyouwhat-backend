@@ -88,14 +88,17 @@ func (s Store) AccessClaim(ctx context.Context, app, id string, generation int, 
 			return r, "", err
 		}
 		code = string(raw)
-		if r.Status == "assigned" {
-			if _, err = tx.ExecContext(ctx, `UPDATE offer_delivery_requests SET status='delivered',delivered_at=?,version=version+1 WHERE app_id=? AND id=?`, now.UTC(), app, id); err != nil {
+		if r.ClaimedAt == nil {
+			if _, err = tx.ExecContext(ctx, `UPDATE offer_delivery_requests SET status='delivered',delivered_at=COALESCE(delivered_at,?),claimed_at=?,version=version+1 WHERE app_id=? AND id=?`, now.UTC(), now.UTC(), app, id); err != nil {
 				return r, "", err
 			}
+			if r.DeliveredAt == nil {
+				r.DeliveredAt = &now
+			}
+			r.ClaimedAt = &now
 			r.Status = "delivered"
-			r.DeliveredAt = &now
 			r.Version++
-			if err = event(ctx, tx, app, id, "link_holder", "request.deliver", 1, now); err != nil {
+			if err = event(ctx, tx, app, id, "link_holder", "request.claim", 1, now); err != nil {
 				return r, "", err
 			}
 		}

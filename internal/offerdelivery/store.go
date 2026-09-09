@@ -62,6 +62,7 @@ func (r Recipient) Valid() bool {
 }
 
 type Request struct {
+	ClaimedAt          *time.Time `json:"claimedAt,omitempty"`
 	ClaimGeneration    int        `json:"claimGeneration"`
 	ClaimExpiresAt     *time.Time `json:"claimExpiresAt,omitempty"`
 	Source             string     `json:"source"`
@@ -78,6 +79,7 @@ type Request struct {
 	VerifiedAt         *time.Time `json:"verifiedAt,omitempty"`
 }
 type Summary struct {
+	Claimed            int `json:"claimed"`
 	Applications       int `json:"applications"`
 	ExternalDeliveries int `json:"externalDeliveries"`
 	Imported           int `json:"imported"`
@@ -291,6 +293,9 @@ func (s Store) ConfirmAvailable(ctx context.Context, app, pool, actor string, co
 }
 
 func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, r Recipient, now time.Time) (Request, error) {
+	return s.createRequest(ctx, app, pool, key, actor, r, "manual", now)
+}
+func (s Store) createRequest(ctx context.Context, app, pool, key, actor string, r Recipient, source string, now time.Time) (Request, error) {
 	if !validApp(app) || !idPattern.MatchString(key) || !r.Valid() || actor == "" {
 		return Request{}, ErrInvalid
 	}
@@ -298,7 +303,7 @@ func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, 
 	if err != nil {
 		return Request{}, err
 	}
-	hash := sha256.Sum256(append([]byte(pool+":"), raw...))
+	hash := sha256.Sum256(append([]byte(source+":"+pool+":"), raw...))
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Request{}, err
@@ -329,7 +334,7 @@ func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, 
 	if err != nil {
 		return Request{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_requests(app_id,id,pool_id,request_key,request_hash,ciphertext,nonce,status,requested_at) VALUES(?,?,?,?,?,?,?,'requested',?)`, app, id, pool, key, hash[:], encrypted, nonce, now.UTC()); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO offer_delivery_requests(app_id,id,pool_id,request_key,request_hash,ciphertext,nonce,source,status,requested_at) VALUES(?,?,?,?,?,?,?,?,'requested',?)`, app, id, pool, key, hash[:], encrypted, nonce, source, now.UTC()); err != nil {
 		return Request{}, err
 	}
 	if err = event(ctx, tx, app, id, actor, "request.create", 1, now); err != nil {
@@ -341,14 +346,14 @@ func (s Store) CreateRequest(ctx context.Context, app, pool, key, actor string, 
 	return s.Get(ctx, app, id)
 }
 
-const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,reported_redeemed_at,verified_at,claim_generation,claim_expires_at`
+const requestColumns = `id,pool_id,ciphertext,nonce,status,source,version,COALESCE(code_id,''),requested_at,assigned_at,delivered_at,claimed_at,reported_redeemed_at,verified_at,claim_generation,claim_expires_at`
 
 type scanner interface{ Scan(...any) error }
 
 func (s Store) scan(app string, row scanner) (Request, error) {
 	var r Request
 	var raw, nonce []byte
-	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Source, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ReportedRedeemedAt, &r.VerifiedAt, &r.ClaimGeneration, &r.ClaimExpiresAt)
+	err := row.Scan(&r.ID, &r.PoolID, &raw, &nonce, &r.Status, &r.Source, &r.Version, &r.CodeID, &r.RequestedAt, &r.AssignedAt, &r.DeliveredAt, &r.ClaimedAt, &r.ReportedRedeemedAt, &r.VerifiedAt, &r.ClaimGeneration, &r.ClaimExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -392,7 +397,7 @@ func (s Store) Summary(ctx context.Context, app, pool string) (Summary, error) {
 	if err != nil {
 		return r, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(source<>'external'),0),COALESCE(SUM(source='external'),0),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Applications, &r.ExternalDeliveries, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.ReportedRedeemed, &r.LinkedVerified)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(source='manual'),0),COALESCE(SUM(source='external'),0),COALESCE(SUM(status='requested'),0),COALESCE(SUM(assigned_at IS NOT NULL),0),COALESCE(SUM(delivered_at IS NOT NULL),0),COALESCE(SUM(claimed_at IS NOT NULL),0),COALESCE(SUM(reported_redeemed_at IS NOT NULL),0),COALESCE(SUM(verified_at IS NOT NULL),0) FROM offer_delivery_requests WHERE app_id=? AND pool_id=?`, app, pool).Scan(&r.Requests, &r.Applications, &r.ExternalDeliveries, &r.Pending, &r.AssignedRequests, &r.Delivered, &r.Claimed, &r.ReportedRedeemed, &r.LinkedVerified)
 	if err != nil {
 		return r, err
 	}

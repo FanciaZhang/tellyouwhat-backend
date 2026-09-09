@@ -51,6 +51,7 @@ CREATE TABLE offer_delivery_requests (
  requested_at DATETIME(6) NOT NULL,
  assigned_at DATETIME(6),
  delivered_at DATETIME(6),
+ claimed_at DATETIME(6),
  reported_redeemed_at DATETIME(6),
  verified_original_hash BINARY(32),
  verified_at DATETIME(6),
@@ -113,4 +114,22 @@ CREATE TABLE offer_redemption_report_sync (
  app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
  status VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  attempted_at DATETIME(6) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE offer_personal_deliveries (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ offer_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ input_hash BINARY(32) NOT NULL,
+ ciphertext MEDIUMBLOB NOT NULL,
+ nonce VARBINARY(32) NOT NULL,
+ state VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ pool_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin,
+ request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+ created_at DATETIME(6) NOT NULL,
+ PRIMARY KEY(app_id,id),
+ INDEX offer_personal_list(app_id,offer_id,id),
+ UNIQUE KEY offer_personal_pool(app_id,pool_id),
+ UNIQUE KEY offer_personal_request(app_id,request_id),
+ FOREIGN KEY(app_id,request_id) REFERENCES offer_delivery_requests(app_id,id)
 ) ENGINE=InnoDB;
