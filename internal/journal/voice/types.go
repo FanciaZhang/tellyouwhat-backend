@@ -42,6 +42,8 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	rewriteAcknowledged string // server-owned, never decoded from JSON
+
 	RecordingContext  *RecordingContext `json:"recordingContext,omitempty"`
 	WritingStyle      WritingStyle      `json:"writingStyle"`
 	Revision          int               `json:"revision"`

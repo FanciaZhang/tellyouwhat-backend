@@ -30,7 +30,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if err := snapshot.Validate(); err != nil {
 		return RewriteResult{}, err
 	}
-	encoded, err := json.Marshal(map[string]any{"document": snapshot, "transcriptRevision": transcriptRevision})
+	encoded, err := json.Marshal(map[string]any{"document": editorialDocument(snapshot), "transcriptRevision": transcriptRevision})
 	if err != nil {
 		return RewriteResult{}, err
 	}

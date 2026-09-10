@@ -141,7 +141,7 @@ func TestArkRewriterRetainsUsageWhenStructuredResultIsInvalid(t *testing.T) {
 }
 
 func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing.T) {
-	for _, mode := range []string{"live", "narrative", "dialogue"} {
+	for _, mode := range []string{"live", "bounded", "narrative", "dialogue"} {
 		t.Run(mode, func(t *testing.T) {
 			store := &voiceBudgetStore{}
 			price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 1_000_000_000, OutputNanosPerMillionTokens: 2_000_000_000}
@@ -165,7 +165,10 @@ func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing
 			}))
 			defer server.Close()
 			s := Snapshot{Revision: 1, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: uuid.NewString(), Text: "已有手记"}}, Transcript: "今天出门了。"}
-			if mode != "live" {
+			if mode == "bounded" {
+				s = longEditorialFixture()
+				s.Revision = 1
+			} else if mode != "live" {
 				r := recordingContextFixture(t)
 				r.Mode = mode
 				s.Transcript = r.Analysis.Text

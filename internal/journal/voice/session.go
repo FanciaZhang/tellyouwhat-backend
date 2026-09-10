@@ -160,6 +160,7 @@ type rewriteResult struct {
 	value      RewriteResult
 	err        error
 	generation int
+	source     string
 }
 
 func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
@@ -209,6 +210,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var generation, tr, lastSubmitted int
 	var dirty, running, finishing, failed bool
 	awaitingRevision := -1
+	var acknowledgedSource, awaitingSource string
+	var awaitingPatches []Patch
 	var segmentPeriod string
 	var remaining int
 	rewriteTimer := time.NewTimer(time.Hour)
@@ -226,6 +229,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		}
 		current := snapshot
 		current.Transcript = transcriptBase + segmentText
+		current.rewriteAcknowledged = acknowledgedSource
 		if current.Validate() != nil {
 			fail("voice_context_too_large")
 			failed = true
@@ -245,7 +249,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			defer stop()
 			result, err := s.Model.Rewrite(work, current, targetTR)
 			select {
-			case rewrites <- rewriteResult{result, err, g}:
+			case rewrites <- rewriteResult{result, err, g, current.Transcript}:
 			case <-ctx.Done():
 			}
 		}()
@@ -309,6 +313,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				hasSnapshot = true
 				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
+				if wasAcknowledgement && acceptsEditorialPatches(next.Blocks, awaitingPatches) {
+					acknowledgedSource = awaitingSource
+				}
+				if styleChanged {
+					acknowledgedSource = ""
+				}
 				if awaitingRevision >= 0 && next.Revision >= awaitingRevision {
 					awaitingRevision = -1
 				}
@@ -514,6 +524,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
 					awaitingRevision = result.value.Revision.BaseRevision + 1
+					awaitingSource = result.source
+					// An unresolved question is not completed editorial work.
+					// Keep full source available until a later review resolves it.
+					if len(result.value.Revision.Questions) > 0 {
+						awaitingSource = ""
+					}
+					awaitingPatches = slices.Clone(result.value.Revision.Patches)
 					emit(Event{Type: "revision", Revision: &result.value.Revision})
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.

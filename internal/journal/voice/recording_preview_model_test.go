@@ -103,6 +103,10 @@ func TestRecordingReviewKeepsSourceIdentityAndManualEditTimingInData(t *testing.
 		d := input.Document
 		if d.RecordingContext == nil || d.RecordingContext.NarratorSpeakerID != "me" || len(d.RecordingContext.Utterances) != 3 ||
 			d.RecordingContext.Utterances[0].Speaker != "wife" || d.RecordingContext.Utterances[0].AcousticEmotion != "happy" ||
+			d.RecordingContext.Utterances[0].SpeakerName != attack || d.RecordingContext.Utterances[0].IsNarrator ||
+			d.RecordingContext.Utterances[0].SourceID != analysis.Utterances[0].ID || d.RecordingContext.Utterances[0].EndMilliseconds != 900 ||
+			!d.RecordingContext.Utterances[1].IsNarrator || d.RecordingContext.Utterances[1].SpeakerName != "我" ||
+			d.RecordingContext.Utterances[2].IsNarrator || d.RecordingContext.Utterances[2].SpeakerName != "身份未确认" ||
 			d.RecordingContext.Utterances[2].Speaker != "" || d.RecordingContext.Speakers[0].Name != attack {
 			t.Error("speaker evidence, unknown identity or original emotion was changed")
 		}
