@@ -95,7 +95,9 @@ func (a RecordingASR) submitAudio(ctx context.Context, taskID string, audio io.R
 	// Stream base64 into the HTTP request instead of holding both 58 MB PCM
 	// and its 77 MB JSON copy in the private service's 192 MB memory limit.
 	prefix := `{"user":{"uid":"journal-recording"},"audio":{"format":"wav","data":"`
-	suffix := `"},"request":{"model_name":"bigmodel","enable_itn":true,"enable_punc":true,"show_utterances":true,"enable_speaker_info":true,"enable_emotion_detection":true}}`
+	// Use the documented ASR 2.0 diarization version explicitly, as the live
+	// stream does. Omitting this option does not establish which version ran.
+	suffix := `"},"request":{"model_name":"bigmodel","enable_itn":true,"enable_punc":true,"show_utterances":true,"enable_speaker_info":true,"ssd_version":"200","enable_emotion_detection":true}}`
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	go func() {

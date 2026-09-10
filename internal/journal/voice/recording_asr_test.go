@@ -174,12 +174,13 @@ func TestRecordingSubmissionStreamsCanonicalAudioAndFlags(t *testing.T) {
 				Format string
 			}
 			Request struct {
-				Speaker    bool `json:"enable_speaker_info"`
-				Emotion    bool `json:"enable_emotion_detection"`
-				Utterances bool `json:"show_utterances"`
+				Speaker    bool   `json:"enable_speaker_info"`
+				SSDVersion string `json:"ssd_version"`
+				Emotion    bool   `json:"enable_emotion_detection"`
+				Utterances bool   `json:"show_utterances"`
 			}
 		}
-		if json.Unmarshal(raw, &wire) != nil || !bytes.Equal(wire.Audio.Data, wav) || wire.Audio.Format != "wav" || !wire.Request.Speaker || !wire.Request.Emotion || !wire.Request.Utterances {
+		if json.Unmarshal(raw, &wire) != nil || !bytes.Equal(wire.Audio.Data, wav) || wire.Audio.Format != "wav" || !wire.Request.Speaker || wire.Request.SSDVersion != "200" || !wire.Request.Emotion || !wire.Request.Utterances {
 			t.Error("stream altered provider payload")
 		}
 		w.Header().Set("X-Api-Status-Code", "20000000")
