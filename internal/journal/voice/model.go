@@ -123,10 +123,19 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	req.Header.Set("Content-Type", "application/json")
 	client := m.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		timeout := 60 * time.Second
+		if s.RecordingContext != nil {
+			// Whole-recording previews can rewrite thousands of words. Keep the
+			// streaming limit unchanged and finish inside the recording route's 3m deadline.
+			timeout = 150 * time.Second
+		}
+		client = &http.Client{Timeout: timeout}
 	}
 	response, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return RewriteResult{}, errors.New("voice_rewrite_timeout")
+		}
 		return RewriteResult{}, errors.New("voice_rewrite_unavailable")
 	}
 	defer response.Body.Close()

@@ -39,6 +39,7 @@ type ASR struct{ Config ASRConfig }
 type asrConnection struct {
 	ws            *websocket.Conn
 	observeSchema func([]StreamSchema)
+	utterances    streamUtteranceWindow
 }
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
@@ -111,7 +112,11 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err := websocket.Message.Receive(c.ws, &packet); err != nil {
 		return Transcript{}, err
 	}
-	return parseASRWithObserver(packet, c.observeSchema)
+	result, err := parseASRWithObserver(packet, c.observeSchema)
+	if err != nil {
+		return Transcript{}, err
+	}
+	return c.utterances.merge(result), nil
 }
 func parseASR(packet []byte) (Transcript, error) { return parseASRWithObserver(packet, nil) }
 func parseASRWithObserver(packet []byte, observe func([]StreamSchema)) (Transcript, error) {
