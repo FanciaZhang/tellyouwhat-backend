@@ -288,6 +288,33 @@ func TestAutomationMySQLHostEvidenceDeduplicatesAndRecoversWithoutPatrol(t *test
 	}
 }
 
+func TestAutomationMySQLBlueGreenHostEvidence(t *testing.T) {
+	s, _, _ := fixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	h := platformops.HostHealth{CheckedAt: now}
+	for _, name := range []string{"health_gateway", "journal_gateway", "worker", "admin", "disk_space", "backup_freshness", "maintenance_freshness", "restore_freshness", "deployment_state", "deployment_controller"} {
+		h.Checks = append(h.Checks, platformops.HostCheck{Name: name, Passed: name != "deployment_controller"})
+	}
+	raw, _ := json.Marshal(h)
+	if err := s.RecordHostHealth(ctx, bytes.NewReader(raw), now); err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := s.Metrics(ctx, now)
+	if err != nil || metrics.Automation.Host == nil || len(metrics.Automation.Host.Checks) != 10 {
+		t.Fatal("managed host evidence missing", err)
+	}
+	var count int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM platform_ops_incidents WHERE active_key='deployment_controller::'`).Scan(&count); err != nil || count != 1 {
+		t.Fatal("controller failure not observed", count, err)
+	}
+	h.Checks = h.Checks[:9]
+	raw, _ = json.Marshal(h)
+	if err := s.RecordHostHealth(ctx, bytes.NewReader(raw), now); !errors.Is(err, platformops.ErrInvalid) {
+		t.Fatal("partial deployment evidence accepted", err)
+	}
+}
+
 func TestAutomationMySQLWarningsRecoverWithoutDiscardingUnknownCost(t *testing.T) {
 	s, actor, _ := fixture(t)
 	ctx := context.Background()

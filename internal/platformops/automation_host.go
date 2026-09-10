@@ -34,15 +34,8 @@ func (s Store) RecordHostHealth(ctx context.Context, source io.Reader, now time.
 	if d.Decode(&h) != nil || d.Decode(new(any)) != io.EOF || h.CheckedAt.After(now.Add(30*time.Second)) || h.CheckedAt.Before(now.Add(-2*time.Minute)) {
 		return ErrInvalid
 	}
-	expected := map[string]bool{"health_gateway": true, "journal_gateway": true, "worker": true, "admin": true, "disk_space": true, "backup_freshness": true, "maintenance_freshness": true, "restore_freshness": true}
-	if len(h.Checks) != len(expected) {
-		return ErrInvalid
-	}
-	for _, check := range h.Checks {
-		if !expected[check.Name] {
-			return ErrInvalid
-		}
-		delete(expected, check.Name)
+	if err := validateHostChecks(h.Checks); err != nil {
+		return err
 	}
 	h.CheckedAt = h.CheckedAt.UTC().Truncate(time.Microsecond)
 	raw, err := json.Marshal(h)
@@ -76,4 +69,23 @@ func (s Store) RecordHostHealth(ctx context.Context, source io.Reader, now time.
 		}
 	}
 	return tx.Commit()
+}
+
+// Legacy reports contain eight checks; managed deployments add both lifecycle checks.
+func validateHostChecks(checks []HostCheck) error {
+	expected := map[string]bool{"health_gateway": true, "journal_gateway": true, "worker": true, "admin": true, "disk_space": true, "backup_freshness": true, "maintenance_freshness": true, "restore_freshness": true}
+	if len(checks) == len(expected)+2 {
+		expected["deployment_state"] = true
+		expected["deployment_controller"] = true
+	}
+	if len(checks) != len(expected) {
+		return ErrInvalid
+	}
+	for _, check := range checks {
+		if !expected[check.Name] {
+			return ErrInvalid
+		}
+		delete(expected, check.Name)
+	}
+	return nil
 }
