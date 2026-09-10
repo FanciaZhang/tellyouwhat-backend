@@ -89,11 +89,11 @@ def probe(url, host, status):
             return False
 
 
-def internally_ready(config, attempts):
-    checks = [("http://127.0.0.1:18080/readyz", config["HEALTH_API_DOMAIN"], "ready"),
-              ("http://127.0.0.1:18080/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
-              ("http://127.0.0.1:18081/healthz", "localhost", "ok"),
-              ("http://127.0.0.1:18082/readyz", config["ADMIN_DOMAIN"], "ready")]
+def internally_ready(config, attempts, ports=(18080, 18081, 18082)):
+    checks = [(f"http://127.0.0.1:{ports[0]}/readyz", config["HEALTH_API_DOMAIN"], "ready"),
+              (f"http://127.0.0.1:{ports[0]}/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
+              (f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
+              (f"http://127.0.0.1:{ports[2]}/readyz", config["ADMIN_DOMAIN"], "ready")]
     for attempt in range(attempts):
         if all(probe(*check) for check in checks):
             return True
@@ -105,6 +105,18 @@ def internally_ready(config, attempts):
 def activate(runtime, tag, registry):
     runtime.execute("release-activate", runtime.compose("up", "-d", "--no-build", "gateway", "worker", "admin"),
                     env={"IMAGE_TAG": tag, "IMAGE_REGISTRY_PREFIX": registry}, timeout=180)
+    from blue_green import action, lifecycle_capable
+    if lifecycle_capable(runtime, tag, registry):
+        slot = {"slot": "legacy", "path": "."}
+        for attempt in range(18):
+            try:
+                action(runtime, slot, "serve")
+                action(runtime, slot, "resume")
+                break
+            except OperationError:
+                if attempt == 17:
+                    raise
+                time.sleep(1)
 
 
 def recover(runtime, previous, attempts, verify=True):
@@ -132,7 +144,15 @@ def require_automation_compatibility(current, target):
         raise OperationError("target release does not support the active automatic protection; use a compatible recovery image")
 
 
-def deploy(runtime, tag, registry, acceptance, bundle, attempts):
+def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-green", source_run="", confirmation=""):
+    if strategy == "disruptive":
+        from disruptive_release import deploy as disruptive_deploy
+        return disruptive_deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, confirmation)
+    if strategy != "blue-green":
+        raise OperationError("unsupported release strategy")
+    from blue_green import read_state, deploy as slot_deploy
+    if read_state(runtime):
+        return slot_deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run)
     source = Path(bundle).resolve() if bundle else runtime.root
     if bundle and source != runtime.root / (".incoming-" + tag):
         raise OperationError("release bundle must match the requested image tag")
@@ -188,6 +208,9 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
 
 
 def rollback(runtime, attempts):
+    from blue_green import read_state, rollback as slot_rollback
+    if read_state(runtime):
+        return slot_rollback(runtime, attempts)
     record = json.loads((runtime.state / "release.json").read_text())
     previous = record.get("previous")
     if not previous:
@@ -204,12 +227,15 @@ def rollback(runtime, attempts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["deploy", "rollback"])
+    parser.add_argument("action", choices=["deploy", "rollback", "bootstrap", "maintain", "recover"])
     parser.add_argument("--backend-dir", default=os.getenv("TELLYOUWHAT_BACKEND_DIR", "/opt/tellyouwhat/backend"))
     parser.add_argument("--tag")
     parser.add_argument("--registry")
     parser.add_argument("--acceptance", default="internal")
     parser.add_argument("--bundle")
+    parser.add_argument("--strategy", choices=["blue-green", "disruptive"], default="blue-green")
+    parser.add_argument("--source-run", default="")
+    parser.add_argument("--confirm-interruption", default="")
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -218,19 +244,34 @@ def main():
             raise OperationError("READINESS_ATTEMPTS must be positive")
         runtime = Runtime(args.backend_dir)
         with runtime.lock("deployment"), runtime.lock():
+            runtime.refresh()
             if args.action == "deploy":
                 if not args.tag or not args.registry:
                     raise OperationError("image tag and registry are required")
-                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts)
-            else:
+                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
+            elif args.action == "rollback":
                 result = rollback(runtime, attempts)
+            else:
+                import blue_green
+                result = blue_green.adopt(runtime) if args.action == "bootstrap" else getattr(blue_green, args.action)(runtime, attempts)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (OperationError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+    except OperationError as error:
+        from disruptive_release import ConfirmationRequired
+        if isinstance(error, ConfirmationRequired):
+            print(json.dumps({"passed": False, "manual_interruption_available": True, "tag": args.tag, "source_run": args.source_run, "error": str(error)}))
+            return 75
+        if args.action == "maintain" and str(error).startswith("another "):
+            print(json.dumps({"passed": True, "action": "maintain", "skipped": "operation lock held"}))
+            return 0
+        print(json.dumps({"passed": False, "action": args.action, "error": str(error)}))
+        return 1
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(json.dumps({"passed": False, "action": args.action, "error": str(error)}))
         return 1
     finally:
-        subprocess.run(["docker", "logout", "ghcr.io"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if args.action == "deploy":
+            subprocess.run(["docker", "logout", "ghcr.io"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 if __name__ == "__main__":

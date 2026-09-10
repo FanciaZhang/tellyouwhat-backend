@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"net/http"
 	"slices"
 	"strings"
@@ -240,7 +241,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		lastSubmitted = tr
 		g := generation
 		targetTR := tr
+		complete := lifecycle.Track(ctx)
 		go func() {
+			defer complete()
 			work, stop := context.WithTimeout(ctx, 840*time.Second)
 			defer stop()
 			result, err := s.Model.Rewrite(work, current, targetTR)

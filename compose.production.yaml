@@ -1,4 +1,4 @@
-name: tellyouwhat-backend
+name: ${COMPOSE_PROJECT_NAME:-tellyouwhat-backend}
 
 x-app: &app
   restart: unless-stopped
@@ -55,7 +55,7 @@ services:
 
   gateway:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-gateway:${IMAGE_TAG:-local}
+    image: ${GATEWAY_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-gateway:${IMAGE_TAG:-local}}
     build:
       context: .
       args:
@@ -65,6 +65,7 @@ services:
       DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
       REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
       PORT: "8080"
+      TELLYOUWHAT_DEPLOYMENT_SLOT: ${TELLYOUWHAT_DEPLOYMENT_SLOT:-legacy}
       WORKER_ASYNC_URL: http://worker:8081/internal/jobs/process
       TRUSTED_CLIENT_IP_HEADER: X-Real-IP
     volumes:
@@ -72,14 +73,14 @@ services:
     expose:
       - "8080"
     ports:
-      - "127.0.0.1:18080:8080/tcp"
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:8080/tcp"
     stop_grace_period: 25s
     mem_limit: 384m
     pids_limit: 200
 
   worker:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-worker:${IMAGE_TAG:-local}
+    image: ${WORKER_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-worker:${IMAGE_TAG:-local}}
     build:
       context: .
       args:
@@ -89,18 +90,19 @@ services:
       DATABASE_DSN: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST:-mysql}:${MYSQL_PORT:-3306})/${MYSQL_DATABASE}?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
       REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0"
       PORT: "8081"
+      TELLYOUWHAT_DEPLOYMENT_SLOT: ${TELLYOUWHAT_DEPLOYMENT_SLOT:-legacy}
       WORKER_ASYNC_URL: http://worker:8081/internal/jobs/process
     expose:
       - "8081"
     ports:
-      - "127.0.0.1:18081:8081/tcp"
+      - "127.0.0.1:${WORKER_HOST_PORT:-18081}:8081/tcp"
     stop_grace_period: 30s
     mem_limit: 768m
     pids_limit: 300
 
   admin:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-admin:${IMAGE_TAG:-local}
+    image: ${ADMIN_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-admin:${IMAGE_TAG:-local}}
     build:
       context: .
       args:
@@ -114,6 +116,7 @@ services:
       AI_ENDPOINT_WRITES_ENABLED: ${AI_ENDPOINT_WRITES_ENABLED:-false}
       ARK_MANAGEMENT_CREDENTIAL_FILE: ${ARK_MANAGEMENT_CREDENTIAL_FILE:-}
       ADMIN_PORT: "8082"
+      TELLYOUWHAT_DEPLOYMENT_SLOT: ${TELLYOUWHAT_DEPLOYMENT_SLOT:-legacy}
       ADMIN_RP_ID: ${ADMIN_DOMAIN}
       ADMIN_ORIGIN: "https://${ADMIN_DOMAIN}"
     volumes:
@@ -121,14 +124,14 @@ services:
     expose:
       - "8082"
     ports:
-      - "127.0.0.1:18082:8082/tcp"
+      - "127.0.0.1:${ADMIN_HOST_PORT:-18082}:8082/tcp"
     stop_grace_period: 20s
     mem_limit: 192m
     pids_limit: 120
 
   adminctl:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-adminctl:${IMAGE_TAG:-local}
+    image: ${ADMINCTL_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-adminctl:${IMAGE_TAG:-local}}
     build:
       context: .
       args:
@@ -144,7 +147,7 @@ services:
 
   migrate:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-migrate:${IMAGE_TAG:-local}
+    image: ${MIGRATE_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-migrate:${IMAGE_TAG:-local}}
     build:
       context: .
       args:
@@ -159,7 +162,7 @@ services:
 
   maintenance:
     <<: *app
-    image: ${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-maintenance:${IMAGE_TAG:-local}
+    image: ${MAINTENANCE_IMAGE:-${IMAGE_REGISTRY_PREFIX:-tellyouwhat-ai}-maintenance:${IMAGE_TAG:-local}}
     build:
       context: .
       args:

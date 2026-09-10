@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"sync"
 	"time"
 
@@ -252,6 +253,13 @@ func (s *Service) Run(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
+		if !lifecycle.Wait(ctx) {
+			return
+		}
+		done, ok := lifecycle.Begin(ctx)
+		if !ok {
+			continue
+		}
 		if time.Since(lastCleanup) > time.Hour {
 			_, err := s.Store.DB.ExecContext(ctx, "DELETE FROM health_ai_model_attempts WHERE created_at < ? LIMIT 10000", time.Now().UTC().Add(-30*24*time.Hour))
 			if err == nil {
@@ -281,6 +289,7 @@ func (s *Service) Run(ctx context.Context) {
 			}(id)
 		}
 		wg.Wait()
+		done()
 		select {
 		case <-ctx.Done():
 			return

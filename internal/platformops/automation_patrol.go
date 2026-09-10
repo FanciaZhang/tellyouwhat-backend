@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"log/slog"
 	"time"
 
@@ -15,6 +16,11 @@ import (
 // deduplicates multiple replicas without keeping a lock between scans.
 func (s Store) RunPatrol(ctx context.Context, logger *slog.Logger) {
 	run := func() {
+		done, ok := lifecycle.Begin(ctx)
+		if !ok {
+			return
+		}
+		defer done()
 		work, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		if err := s.Patrol(work, time.Now()); err != nil && ctx.Err() == nil {

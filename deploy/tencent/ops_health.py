@@ -11,11 +11,24 @@ from release import probe
 
 def health(runtime):
     checks = []
+    ports = (int(runtime.config.get("GATEWAY_HOST_PORT", "18080")),
+             int(runtime.config.get("WORKER_HOST_PORT", "18081")),
+             int(runtime.config.get("ADMIN_HOST_PORT", "18082")))
+    from blue_green import read_state
+    deployment = read_state(runtime)
+    if deployment:
+        checks.append({"name": "deployment_state", "passed": deployment["phase"] in ("STABLE", "DRAINING")})
+        try:
+            record = json.loads((runtime.state / "deployment_health.json").read_text())
+            fresh = record.get("passed") is True and 0 <= time.time() - record["completed_at"] <= 90
+        except (OSError, ValueError, KeyError):
+            fresh = False
+        checks.append({"name": "deployment_controller", "passed": fresh})
     for name, url, host, status in [
-        ("health_gateway", "http://127.0.0.1:18080/readyz", runtime.config["HEALTH_API_DOMAIN"], "ready"),
-        ("journal_gateway", "http://127.0.0.1:18080/readyz", runtime.config["JOURNAL_API_DOMAIN"], "ready"),
-        ("worker", "http://127.0.0.1:18081/healthz", "localhost", "ok"),
-        ("admin", "http://127.0.0.1:18082/readyz", runtime.config["ADMIN_DOMAIN"], "ready"),
+        ("health_gateway", f"http://127.0.0.1:{ports[0]}/readyz", runtime.config["HEALTH_API_DOMAIN"], "ready"),
+        ("journal_gateway", f"http://127.0.0.1:{ports[0]}/readyz", runtime.config["JOURNAL_API_DOMAIN"], "ready"),
+        ("worker", f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
+        ("admin", f"http://127.0.0.1:{ports[2]}/readyz", runtime.config["ADMIN_DOMAIN"], "ready"),
     ]:
         checks.append({"name": name, "passed": probe(url, host, status)})
     disk = shutil.disk_usage(runtime.root)

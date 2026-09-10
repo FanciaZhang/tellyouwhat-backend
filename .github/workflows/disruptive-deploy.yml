@@ -1,0 +1,64 @@
+name: Backend Disruptive Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Failed Backend CI/CD run with successful verification and all six published images
+        required: true
+        type: string
+      expected_sha:
+        description: Full 40-character SHA from the capacity refusal (must still be main)
+        required: true
+        type: string
+      confirmation:
+        description: 'Type interrupt:<full SHA>. Accept downtime and interruption of requests, AI streams, voice and tasks.'
+        required: true
+        type: string
+      acceptance:
+        description: Same acceptance stage as the failed deployment
+        required: true
+        type: choice
+        default: internal
+        options: [internal, public]
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Verify exact failed production run and explicit confirmation
+        run: python3 deploy/tencent/verify_interruption.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+
+  deploy:
+    needs: authorize
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      acceptance: ${{ inputs.acceptance }}
+      strategy: disruptive
+      source_run: ${{ inputs.source_run }}
+      confirmation: ${{ inputs.confirmation }}
+    secrets: inherit
+
+  verify-public:
+    needs: deploy
+    if: inputs.acceptance == 'public'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - run: bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn

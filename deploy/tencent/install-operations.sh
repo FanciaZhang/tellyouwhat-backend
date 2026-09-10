@@ -64,8 +64,36 @@ Unit=tellyouwhat-operation@health.service
 [Install]
 WantedBy=timers.target
 EOF
+cat > "$unit_dir/tellyouwhat-deployment.service" <<EOF
+[Unit]
+Description=TellYouWhat active slot recovery and draining
+Requires=docker.service
+After=docker.service network-online.target caddy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$deploy_user
+WorkingDirectory=$backend_dir
+ExecStart=/usr/bin/python3 $backend_dir/deploy/tencent/release.py maintain
+TimeoutStartSec=150s
+UMask=0077
+EOF
+cat > "$unit_dir/tellyouwhat-deployment.timer" <<EOF
+[Unit]
+Description=Reconcile TellYouWhat release slots
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=tellyouwhat-deployment.service
+
+[Install]
+WantedBy=timers.target
+EOF
 sudo -n systemd-analyze verify "$unit_dir"/*.service "$unit_dir"/*.timer
 sudo -n install -m 644 "$unit_dir"/*.service "$unit_dir"/*.timer /etc/systemd/system/
 sudo -n systemctl daemon-reload
-sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer tellyouwhat-health.timer
+sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer tellyouwhat-health.timer tellyouwhat-deployment.timer
 systemctl list-timers 'tellyouwhat-*' --no-pager

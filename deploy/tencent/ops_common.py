@@ -32,19 +32,27 @@ def read_environment(path):
     return values
 
 
-def atomic_json(path, value):
+def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary = tempfile.mkstemp(prefix=".pending-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w") as output:
-            json.dump(value, output, sort_keys=True)
-            output.write("\n")
+            output.write(text)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, sort_keys=True) + "\n")
 
 
 def compose_command(root, environment_file):
@@ -73,11 +81,24 @@ def compose_command(root, environment_file):
 class Runtime:
     def __init__(self, backend_dir, backup_dir=None, environment_file=None):
         self.root = Path(backend_dir).resolve()
-        self.environment_file = Path(environment_file or self.root / ".env.production").resolve()
-        self.config = read_environment(self.environment_file)
+        self.base_environment_file = Path(environment_file or self.root / ".env.production").resolve()
         self.state = self.root / ".operations"
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.backups = Path(backup_dir or "/var/backups/tellyouwhat")
+        self.refresh()
+
+    def refresh(self):
+        self.environment_file = self.base_environment_file
+        self.compose_root = self.root
+        state_path = self.state / "blue-green.json"
+        if state_path.exists():
+            current = json.loads(state_path.read_text())["current"]
+            path = (self.root / current["path"]).resolve()
+            if path != self.root and not path.is_relative_to(self.root / ".slots"):
+                raise OperationError("invalid active slot path")
+            self.compose_root = path
+            self.environment_file = path / ".env.production"
+        self.config = read_environment(self.environment_file)
 
     @contextlib.contextmanager
     def lock(self, name="operations"):
@@ -93,6 +114,8 @@ class Runtime:
         child_env = os.environ.copy()
         child_env.update(env or {})
         child_env["TELLYOUWHAT_ENV_FILE"] = str(self.environment_file)
+        if "--env-file" in command:
+            child_env["TELLYOUWHAT_ENV_FILE"] = command[command.index("--env-file") + 1]
         result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout)
         if result.returncode:
             # Tool errors can include SQL or credentials. Diagnostics stay on the server.
@@ -104,7 +127,7 @@ class Runtime:
         return result.stdout
 
     def compose(self, *arguments):
-        return [*compose_command(self.root, self.environment_file), *arguments]
+        return [*compose_command(self.compose_root, self.environment_file), *arguments]
 
     def record(self, name, **details):
         result = {"operation": name, "completed_at": int(time.time()), **details}

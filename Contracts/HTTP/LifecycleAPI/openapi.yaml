@@ -1,0 +1,76 @@
+openapi: 3.1.0
+info:
+  title: TellYouWhat local lifecycle API
+  version: 1.0.0
+  description: Container-loopback deployment control. Never exposed through the public proxy.
+servers:
+  - url: http://127.0.0.1:19090
+paths:
+  /status:
+    get:
+      operationId: readLifecycleStatus
+      responses:
+        '200':
+          description: Admission state and outstanding work.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+  /control/{action}:
+    post:
+      operationId: changeLifecycleState
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [serve, resume, pause, seal]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [bootID]
+              properties:
+                bootID:
+                  type: string
+                  x-go-name: BootID
+                  pattern: '^[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: State change acknowledged by the expected process.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+        '409':
+          description: Process changed or outstanding work prevents transition.
+        '400':
+          description: Invalid control action or request.
+components:
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [protocol, bootID, slot, httpEnabled, backgroundEnabled, http, background]
+      properties:
+        protocol:
+          type: integer
+        bootID:
+          type: string
+          x-go-name: BootID
+        slot:
+          type: string
+        httpEnabled:
+          type: boolean
+          x-go-name: HTTPEnabled
+        backgroundEnabled:
+          type: boolean
+        http:
+          type: integer
+          x-go-name: HTTP
+        background:
+          type: integer

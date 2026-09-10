@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"io"
 	"net/http"
 
@@ -95,7 +96,9 @@ func (server *Server) StreamAIRequest(
 	ginContext.Header("Cache-Control", "no-cache, no-transform")
 	ginContext.Header("X-Accel-Buffering", "no")
 	reader, writer := io.Pipe()
+	complete := lifecycle.Track(ginContext.Request.Context())
 	go func() {
+		defer complete()
 		defer writer.Close()
 		actualTokens := contracts.ReservationTokens(artifact)
 		err := server.provider.Stream(ctx, artifact, func(event StreamEvent) error {
