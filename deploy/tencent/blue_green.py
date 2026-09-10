@@ -159,15 +159,18 @@ def switch_proxy(runtime, slot):
     backup = runtime.state / "proxy-before.caddy"
     atomic_text(backup, before)
     pending = PROXY_FILE.parent / ".tellyouwhat-fragment.pending"
+    permissions = PROXY_FILE.stat()
+    install = ["sudo", "-n", "install", "-m", format(permissions.st_mode & 0o777, "o"),
+               "-o", str(permissions.st_uid), "-g", str(permissions.st_gid)]
     try:
-        runtime.execute("proxy-install", ["sudo", "-n", "install", "-m", "644", str(candidate), str(pending)])
+        runtime.execute("proxy-install", [*install, str(candidate), str(pending)])
         runtime.execute("proxy-sync", ["sudo", "-n", "sync", "-f", str(pending)])
         runtime.execute("proxy-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
         runtime.execute("proxy-commit-sync", ["sudo", "-n", "sync", "-f", str(PROXY_FILE)])
         runtime.execute("proxy-reload", ["sudo", "-n", "caddy", "reload", "--config", str(PROXY_ROOT), "--adapter", "caddyfile"])
         assert_route(slot)
     except Exception:
-        runtime.execute("proxy-restore", ["sudo", "-n", "install", "-m", "644", str(backup), str(pending)])
+        runtime.execute("proxy-restore", [*install, str(backup), str(pending)])
         runtime.execute("proxy-restore-sync", ["sudo", "-n", "sync", "-f", str(pending)])
         runtime.execute("proxy-restore-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
         runtime.execute("proxy-restore-commit-sync", ["sudo", "-n", "sync", "-f", str(PROXY_FILE)])

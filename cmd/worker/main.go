@@ -48,11 +48,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	closeControl, err := control.Listen("worker")
-	if err != nil {
-		return err
-	}
-	defer closeControl()
 	ctx = lifecycle.WithController(ctx, control)
 	database, err := mysqlstore.Open(ctx, platform.DatabaseDSN)
 	if err != nil {
@@ -124,6 +119,11 @@ func run(logger *slog.Logger) error {
 	}
 	router := newWorkerRouter(platform.WorkerSecret, workers, logger)
 
+	closeControl, err := control.Listen("worker")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
 		Handler:           control.Handler(router),

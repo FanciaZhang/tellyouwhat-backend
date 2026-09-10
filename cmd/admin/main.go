@@ -145,11 +145,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	closeControl, err := control.Listen("admin")
-	if err != nil {
-		return err
-	}
-	defer closeControl()
 	background = lifecycle.WithController(background, control)
 	promptDefaults, err := platformconfig.LoadPromptDefaults()
 	if err != nil {
@@ -226,6 +221,11 @@ func run(logger *slog.Logger) error {
 	if ai != nil {
 		go ai.Rollouts.Run(background)
 	}
+	closeControl, err := control.Listen("admin")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 	server := &http.Server{
 		Addr: ":" + configuration.port, Handler: control.Handler(portal.Router()),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,

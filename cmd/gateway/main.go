@@ -112,11 +112,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	closeControl, err := control.Listen("gateway")
-	if err != nil {
-		return err
-	}
-	defer closeControl()
 	ctx = lifecycle.WithController(ctx, control)
 
 	rootPEM, err := os.ReadFile(platform.AppAttestRootPEMPath)
@@ -186,6 +181,11 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	closeControl, err := control.Listen("gateway")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
 		Handler:           control.Handler(hostMux),
