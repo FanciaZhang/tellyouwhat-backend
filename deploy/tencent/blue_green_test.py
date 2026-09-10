@@ -29,7 +29,7 @@ class BlueGreenTests(unittest.TestCase):
         self.route = "legacy"
         self.events = []
         self.fail = None
-        for target, replacement in [("resource_check", lambda *a: None), ("ready", lambda *a: True),
+        for target, replacement in [("resource_check", lambda *a: None), ("require_memory_capacity", lambda **kw: None), ("storage_check", lambda *a: None), ("ready", lambda *a: True),
                                     ("switch_proxy", self.switch), ("assert_route", self.assert_route),
                                     ("image_metadata", self.images)]:
             patcher = patch.object(bg, target, replacement)
@@ -72,6 +72,11 @@ class BlueGreenTests(unittest.TestCase):
             self.processes[slot] = self.processes_for(slot)
         if label == "slot-running":
             return "\n".join(self.processes.get(slot, {})).encode()
+        if label == "slot-interrupt-stop":
+            self.events.append((slot, "interrupt-stop"))
+            self.processes[slot] = {}
+        if label == "slot-start":
+            self.events.append((slot, "start"))
         if label == "slot-stop":
             if any(v["http"] or v["background"] or v["httpEnabled"] or v["backgroundEnabled"] for v in self.processes.get(slot, {}).values()):
                 raise AssertionError("stopped an unsealed instance")
@@ -205,6 +210,103 @@ class BlueGreenTests(unittest.TestCase):
             with self.assertRaisesRegex(OperationError, "memory"): self.deploy()
         self.assertEqual(self.events, [])
         self.assertEqual(bg.read_state(self.runtime)["phase"], "STABLE")
+
+
+    def interruption_offer(self):
+        import disruptive_release as dr
+        tag = "b" * 40
+        source = self.bundle(tag)
+        with patch.object(bg, "resource_check", side_effect=bg.CapacityError("RAM pressure")):
+            with self.assertRaises(dr.ConfirmationRequired):
+                bg.deploy(self.runtime, tag, "registry/app", "internal", source, 1, "123")
+        self.assertEqual(self.events, [])
+        return tag, source
+
+    def interrupt_deploy(self, tag, source, confirmation=None):
+        import disruptive_release as dr
+        return dr.deploy(self.runtime, tag, "registry/app", "internal", source, 1, "123",
+                         confirmation if confirmation is not None else "interrupt:" + tag)
+
+    def test_manual_interruption_requires_matching_confirmation_and_refusal(self):
+        tag, source = self.interruption_offer()
+        with self.assertRaisesRegex(OperationError, "confirmation"):
+            self.interrupt_deploy(tag, source, "yes")
+        self.assertEqual(self.events, [])
+        self.processes["legacy"]["worker"]["http"] = 3
+        result = self.interrupt_deploy(tag, source)
+        self.assertEqual(result["deployment"], "STABLE")
+        self.assertEqual(self.route, "green")
+        self.assertLess(self.events.index(("legacy", "interrupt-stop")), self.events.index(("green", "start")))
+        self.assertEqual(self.processes["legacy"], {})
+        with self.assertRaisesRegex(OperationError, "no capacity refusal"):
+            self.interrupt_deploy(tag, self.bundle(tag))
+
+    def test_manual_interruption_rejects_changed_configuration_and_stale_offer(self):
+        import disruptive_release as dr
+        tag, source = self.interruption_offer()
+        original = (source / ".env.production").read_text()
+        (source / ".env.production").write_text(original + "MYSQL_DATABASE=changed\n")
+        with self.assertRaisesRegex(OperationError, "stale"):
+            self.interrupt_deploy(tag, source)
+        (source / ".env.production").write_text(original)
+        offer = json.loads((self.runtime.state / dr.OFFER).read_text())
+        with patch.object(dr.time, "time", return_value=offer["created_at"] + 86401):
+            with self.assertRaisesRegex(OperationError, "stale"):
+                self.interrupt_deploy(tag, source)
+        self.assertEqual(self.events, [])
+
+    def test_manual_failed_migration_restarts_old_without_dual_capacity_or_database_restore(self):
+        tag, source = self.interruption_offer()
+        self.fail = "slot-migrate"
+        with self.assertRaisesRegex(OperationError, "previous version restarted"):
+            self.interrupt_deploy(tag, source)
+        self.assertEqual(self.route, "legacy")
+        self.assertEqual(bg.read_state(self.runtime)["phase"], "STABLE")
+        self.assertTrue(all(v["backgroundEnabled"] for v in self.processes["legacy"].values()))
+        self.assertLess(self.events.index(("green", "interrupt-stop")), self.events.index(("legacy", "start")))
+        self.assertFalse(bg.read_state(self.runtime)["previous"]["healthy"])
+
+    def test_manual_crash_after_proxy_reload_recovers_without_two_instances(self):
+        tag, source = self.interruption_offer()
+        def crash(runtime, slot):
+            self.switch(runtime, slot)
+            raise KeyboardInterrupt("interrupted controller")
+        with patch.object(bg, "switch_proxy", crash):
+            with self.assertRaises(KeyboardInterrupt): self.interrupt_deploy(tag, source)
+        self.assertEqual(bg.read_state(self.runtime)["phase"], "INTERRUPTING")
+        self.assertEqual(self.route, "green")
+        with self.assertRaisesRegex(OperationError, "interrupted"):
+            bg.maintain(self.runtime)
+        bg.recover(self.runtime, 1)
+        self.assertEqual(self.route, "legacy")
+        self.assertEqual(self.processes["green"], {})
+        self.assertLess(self.events.index(("green", "interrupt-stop")), self.events.index(("legacy", "start")))
+
+    def test_manual_interruption_rejects_changed_active_version(self):
+        tag, source = self.interruption_offer()
+        state = bg.read_state(self.runtime)
+        state["current"]["tag"] = "another-version"
+        atomic_json(self.runtime.state / bg.STATE, state)
+        with self.assertRaisesRegex(OperationError, "stale"):
+            self.interrupt_deploy(tag, source)
+        self.assertEqual(self.events, [])
+
+    def test_manual_failed_candidate_readiness_stops_candidate_before_restart(self):
+        tag, source = self.interruption_offer()
+        with patch.object(bg, "ready", side_effect=lambda r, slot, n: slot["slot"] == "legacy"):
+            with self.assertRaisesRegex(OperationError, "previous version restarted"):
+                self.interrupt_deploy(tag, source)
+        self.assertEqual(self.processes["green"], {})
+        self.assertLess(self.events.index(("green", "interrupt-stop")), self.events.index(("legacy", "start")))
+        self.assertEqual(self.route, "legacy")
+
+    def test_non_capacity_error_never_offers_interruption(self):
+        import disruptive_release as dr
+        with patch.object(bg, "resource_check", side_effect=OperationError("disk headroom")):
+            with self.assertRaisesRegex(OperationError, "disk"):
+                bg.deploy(self.runtime, "a" * 40, "registry/app", "internal", self.bundle("a" * 40), 1, "123")
+        self.assertFalse((self.runtime.state / dr.OFFER).exists())
+        self.assertEqual(self.events, [])
 
 
 class ProxyRenderingTests(unittest.TestCase):

@@ -144,10 +144,15 @@ def require_automation_compatibility(current, target):
         raise OperationError("target release does not support the active automatic protection; use a compatible recovery image")
 
 
-def deploy(runtime, tag, registry, acceptance, bundle, attempts):
+def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-green", source_run="", confirmation=""):
+    if strategy == "disruptive":
+        from disruptive_release import deploy as disruptive_deploy
+        return disruptive_deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, confirmation)
+    if strategy != "blue-green":
+        raise OperationError("unsupported release strategy")
     from blue_green import read_state, deploy as slot_deploy
     if read_state(runtime):
-        return slot_deploy(runtime, tag, registry, acceptance, bundle, attempts)
+        return slot_deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run)
     source = Path(bundle).resolve() if bundle else runtime.root
     if bundle and source != runtime.root / (".incoming-" + tag):
         raise OperationError("release bundle must match the requested image tag")
@@ -228,6 +233,9 @@ def main():
     parser.add_argument("--registry")
     parser.add_argument("--acceptance", default="internal")
     parser.add_argument("--bundle")
+    parser.add_argument("--strategy", choices=["blue-green", "disruptive"], default="blue-green")
+    parser.add_argument("--source-run", default="")
+    parser.add_argument("--confirm-interruption", default="")
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -240,7 +248,7 @@ def main():
             if args.action == "deploy":
                 if not args.tag or not args.registry:
                     raise OperationError("image tag and registry are required")
-                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts)
+                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
             elif args.action == "rollback":
                 result = rollback(runtime, attempts)
             else:
@@ -249,6 +257,10 @@ def main():
         print(json.dumps(result, sort_keys=True))
         return 0
     except OperationError as error:
+        from disruptive_release import ConfirmationRequired
+        if isinstance(error, ConfirmationRequired):
+            print(json.dumps({"passed": False, "manual_interruption_available": True, "tag": args.tag, "source_run": args.source_run, "error": str(error)}))
+            return 75
         if args.action == "maintain" and str(error).startswith("another "):
             print(json.dumps({"passed": True, "action": "maintain", "skipped": "operation lock held"}))
             return 0

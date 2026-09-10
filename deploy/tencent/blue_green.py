@@ -179,13 +179,40 @@ def switch_proxy(runtime, slot):
     return hashlib.sha256(candidate.read_bytes()).hexdigest()
 
 
-def resource_check(runtime, slot):
-    memory = dict(re.findall(r"^(MemTotal|MemAvailable):\s+(\d+)", Path("/proc/meminfo").read_text(), re.M))
-    if int(memory["MemAvailable"]) < (1344 + 512) * 1024 or int(memory["MemTotal"]) < (2688 + 192 + 512) * 1024:
-        raise OperationError("insufficient memory for two release slots; active services were retained")
+class CapacityError(OperationError):
+    """Only CPU/RAM pressure may offer a separately confirmed interruption."""
+
+
+def cpu_busy_percent():
+    def sample():
+        values = [int(v) for v in Path("/proc/stat").read_text().splitlines()[0].split()[1:9]]
+        return sum(values), values[3] + values[4]
+    total, idle = sample()
+    time.sleep(5)
+    end_total, end_idle = sample()
+    elapsed = end_total - total
+    if elapsed <= 0:
+        raise OperationError("CPU capacity sample is unavailable")
+    return 100 * (1 - (end_idle - idle) / elapsed)
+
+
+def storage_check(runtime):
     disk = shutil.disk_usage(runtime.root)
     if disk.free < max(2 * 1024**3, disk.total * 0.15):
         raise OperationError("insufficient disk headroom")
+
+
+def require_memory_capacity(dual=True):
+    memory = dict(re.findall(r"^(MemTotal|MemAvailable):\s+(\d+)", Path("/proc/meminfo").read_text(), re.M))
+    if int(memory["MemAvailable"]) < (1344 + 512) * 1024 or (dual and int(memory["MemTotal"]) < (2688 + 192 + 512) * 1024):
+        raise CapacityError("insufficient memory headroom for release startup")
+
+
+def resource_check(runtime, slot):
+    require_memory_capacity()
+    if cpu_busy_percent() >= 85:
+        raise CapacityError("CPU usage is at least 85 percent; active services were retained")
+    storage_check(runtime)
     for port in PORTS[slot]:
         with socket.socket() as listener:
             try:
@@ -289,7 +316,8 @@ def publish(runtime, state):
                    acceptance="internal", deployment=state["phase"], proxyRevision=state.get("proxyRevision"))
 
 
-def deploy(runtime, tag, registry, acceptance, bundle, attempts):
+def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run=""):
+    from disruptive_release import capacity_check, clear_offer
     from release import validate
     state = read_state(runtime)
     if state["phase"] != "STABLE":
@@ -311,12 +339,13 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
         if config.get(key) != active_config.get(key):
             raise OperationError("shared data or domain configuration changed; coordinated migration required")
     target = "green" if previous["slot"] in ("legacy", "blue") else "blue"
-    resource_check(runtime, target)
+    clear_offer(runtime)
+    capacity_check(runtime, target, source, tag, registry, acceptance, source_run, previous)
     # Strip slot settings from the protected bundle; only the host assigns them.
     environment_update(source / ".env.production", {"IMAGE_TAG": tag, "IMAGE_REGISTRY_PREFIX": registry,
                        **{s.upper() + "_IMAGE": "" for s in (*SERVICES, "adminctl", "migrate", "maintenance")}})
     runtime.execute("slot-pull", [*compose_command(source, source / ".env.production"), "pull", *SERVICES, "adminctl", "migrate", "maintenance"], timeout=900)
-    resource_check(runtime, target)
+    capacity_check(runtime, target, source, tag, registry, acceptance, source_run, previous)
     candidate = prepare(runtime, source, target, tag, registry)
     write_state(runtime, state, phase="PREPARING", candidate=candidate)
     try:
@@ -347,6 +376,9 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts):
 
 def recover(runtime, attempts):
     state = read_state(runtime)
+    if state.get("strategy") == "disruptive":
+        from disruptive_release import recover as recover_disruptive
+        return recover_disruptive(runtime, state, attempts)
     target = state.get("recovery_target") or state["current"]
     candidate = state.get("candidate")
     if not candidate:
