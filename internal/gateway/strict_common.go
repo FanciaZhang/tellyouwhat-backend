@@ -288,12 +288,17 @@ func mappedContractFailure(err error, requestID string) *apiFailure {
 	}
 }
 
-func (server *Server) apiAcquireQuota(
+func (server *Server) apiAcquireQuota(ctx context.Context, principal Principal, artifact contracts.Request, reservationID string, managed bool) (quota.Releaser, *apiFailure) {
+	return server.apiQuota(ctx, principal, artifact, reservationID, managed, false)
+}
+
+func (server *Server) apiQuota(
 	ctx context.Context,
 	principal Principal,
 	artifact contracts.Request,
 	reservationID string,
 	managed bool,
+	prepare bool,
 ) (quota.Releaser, *apiFailure) {
 	quotaService := server.quota
 	if !managed {
@@ -304,11 +309,18 @@ func (server *Server) apiAcquireQuota(
 	}
 	quotaPrincipal := principalForQuota(principal, managed)
 	ginContext := strictGinContext(ctx)
-	lease, err := quotaService.Acquire(ctx, quota.Identity{
+	identity := quota.Identity{
 		DeviceID:      quotaPrincipal.DeviceID,
 		TransactionID: quotaPrincipal.TransactionID,
 		IP:            server.ipResolver(ginContext.Request),
-	}, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	}
+	var lease quota.Releaser
+	var err error
+	if prepare {
+		err = quotaService.PrepareJob(ctx, identity, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	} else {
+		lease, err = quotaService.Acquire(ctx, identity, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	}
 	if err == nil {
 		return lease, nil
 	}

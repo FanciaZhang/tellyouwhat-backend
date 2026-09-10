@@ -110,7 +110,7 @@ func TestAutomaticProtectionAfterClaimPreservesAttemptAndQuota(t *testing.T) {
 			t.Fatalf("lost deferred job: %+v %v", got, err)
 		}
 		snapshot, err := limiter.Snapshot(ctx, job.OwnerTransactionID, time.Now())
-		if err != nil || snapshot.DailyUsed != reserved {
+		if err != nil || snapshot.DailyUsed != 0 {
 			t.Fatalf("repeated admission consumed extra quota: %+v %v", snapshot, err)
 		}
 	}

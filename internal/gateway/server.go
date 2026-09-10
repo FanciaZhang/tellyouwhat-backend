@@ -38,6 +38,7 @@ type EntitlementChecker interface {
 }
 
 type Quota interface {
+	PrepareJob(context.Context, quota.Identity, contracts.Operation, int, string, time.Time) error
 	Acquire(context.Context, quota.Identity, contracts.Operation, int, string, time.Time) (quota.Releaser, error)
 }
 

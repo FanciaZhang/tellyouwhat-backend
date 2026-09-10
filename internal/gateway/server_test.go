@@ -931,12 +931,12 @@ func TestBackgroundJobCapabilityCanBeReissuedAfterLostResponse(t *testing.T) {
 	}
 }
 
-func TestCapabilityMediaReplayCannotRefundOwnedQuotaReservation(t *testing.T) {
+func TestCapabilityMediaReplayDoesNotSpendTokens(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer()
-	lease := &recordingQuotaLease{}
-	server.quota = recordingQuota{lease: lease}
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 100_000})
+	server.quota = limiter
 	server.jobs = &fakeJobService{}
 	server.dispatcher = &fakeDispatcher{}
 	server.capabilities = &fakeCapabilities{}
@@ -951,17 +951,18 @@ func TestCapabilityMediaReplayCannotRefundOwnedQuotaReservation(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", response.Code, response.Body.String())
 	}
-	if lease.actualTokens <= 0 {
-		t.Fatalf("an owned quota reservation was refunded after a concurrent media replay: %d", lease.actualTokens)
+	snapshot, err := limiter.Snapshot(context.Background(), "transaction-1", time.Now())
+	if err != nil || snapshot.DailyUsed != 0 || snapshot.MonthlyUsed != 0 {
+		t.Fatalf("capability spent tokens: %+v err=%v", snapshot, err)
 	}
 }
 
-func TestCapabilityAdmissionFailureRetainsReservationForConcurrentRetry(t *testing.T) {
+func TestCapabilityAdmissionFailureDoesNotSpendTokens(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer()
-	lease := &recordingQuotaLease{}
-	server.quota = recordingQuota{lease: lease}
+	limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 100_000})
+	server.quota = limiter
 	server.jobs = &fakeJobService{}
 	server.dispatcher = &fakeDispatcher{}
 	server.capabilities = &fakeCapabilities{}
@@ -975,8 +976,9 @@ func TestCapabilityAdmissionFailureRetainsReservationForConcurrentRetry(t *testi
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", response.Code, response.Body.String())
 	}
-	if lease.actualTokens <= 0 {
-		t.Fatalf("an owned quota reservation was refunded while a concurrent retry could still admit: %d", lease.actualTokens)
+	snapshot, err := limiter.Snapshot(context.Background(), "transaction-1", time.Now())
+	if err != nil || snapshot.DailyUsed != 0 || snapshot.MonthlyUsed != 0 {
+		t.Fatalf("capability spent tokens: %+v err=%v", snapshot, err)
 	}
 }
 
@@ -1460,4 +1462,15 @@ func TestProductionBindingConflictHasActionableErrorCode(t *testing.T) {
 
 func (service *fakeCapabilities) ValidateResult(token, jobID string) (Principal, string, error) {
 	return Principal{}, "", capability.ErrInvalid
+}
+
+func (value fakeQuota) PrepareJob(context.Context, quotaapi.Identity, contracts.Operation, int, string, time.Time) error {
+	return value.err
+}
+func (value recordingQuota) PrepareJob(ctx context.Context, identity quotaapi.Identity, op contracts.Operation, tokens int, id string, now time.Time) error {
+	lease, err := value.Acquire(ctx, identity, op, tokens, id, now)
+	if err == nil {
+		lease.Release(0)
+	}
+	return err
 }

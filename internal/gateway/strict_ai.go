@@ -152,17 +152,15 @@ func (server *Server) IssueAIJobCapability(
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	bodyDigest := contracts.BodySHA256(rawBody)
-	lease, failure := server.apiAcquireQuota(ctx, principal, artifact, capabilityQuotaReservationID(principal, artifact.RequestID, bodyDigest), managed)
+	_, failure = server.apiQuota(ctx, principal, artifact, capabilityQuotaReservationID(principal, artifact.RequestID, bodyDigest), managed, true)
 	if failure != nil {
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	attempt, _, err := server.media.Admit(ctx, principal, artifact, bodyDigest)
 	if err != nil {
-		lease.Release(contracts.ReservationTokens(artifact))
 		failure = server.apiAdmissionFailure(err, artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
-	lease.Release(contracts.ReservationTokens(artifact))
 	mediaDigest, err := contracts.MediaDigest(artifact.Media)
 	if err != nil {
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)

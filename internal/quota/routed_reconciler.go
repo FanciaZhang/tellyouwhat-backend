@@ -52,3 +52,18 @@ func (reconciler *RoutedTokenReconciler) ReserveJobAttempt(ctx context.Context, 
 }
 
 var _ JobAttemptBudget = (*RoutedTokenReconciler)(nil)
+
+func (reconciler *RoutedTokenReconciler) DeferJobAttempt(ctx context.Context, attempt JobAttempt, now time.Time) error {
+	if reconciler == nil {
+		return ErrAttemptBudgetUnavailable
+	}
+	target := reconciler.managed
+	if strings.HasPrefix(attempt.TransactionID, FreeRecognitionTransactionPrefix) {
+		target = reconciler.freeRecognition
+	}
+	budget, ok := target.(JobAttemptBudget)
+	if !ok || budget == nil {
+		return ErrAttemptBudgetUnavailable
+	}
+	return budget.DeferJobAttempt(ctx, attempt, now)
+}
