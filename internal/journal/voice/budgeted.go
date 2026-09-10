@@ -34,10 +34,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if err != nil {
 		return RewriteResult{}, err
 	}
-	inputReservation := len(encoded) + len(rewriteInstructions) + 4_096
-	if snapshot.RecordingContext != nil {
-		inputReservation += len(recordingRewriteInstructions)
-	}
+	inputReservation := len(encoded) + len(rewriteInstructionText(snapshot)) + 4_096
 	reserved, err := rewriter.price.Cost(inputReservation, voiceRewriteOutputReservationTokens)
 	if err != nil {
 		return RewriteResult{}, err

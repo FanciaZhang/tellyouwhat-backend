@@ -104,11 +104,24 @@ func editorialDocument(s Snapshot) rewriteDocument {
 	return result
 }
 
+// Shared by request construction and conservative preflight cost reservation.
+// Snapshot validation checks the selected writing style before either call.
+func rewriteInstructionText(s Snapshot) string {
+	styleInstructions, _ := s.WritingStyle.instructions()
+	instructions := rewriteInstructions
+	if s.RecordingContext != nil {
+		instructions = recordingPreviewInstructions
+	}
+	if s.RecordingContext != nil && s.RecordingContext.Mode == "dialogue" {
+		instructions += "\n本次 dialogueText 是完整对话的插入标记。请在应放置对话的位置原样输出该标记一次，服务端会用原始发言精确展开它。不要自己复述对话，不要在标记前后再写同一段经历。正文已有本次录音形成的独白草稿时，替换为这个标记；与本次录音无关的正文仍保留。若具体手改阻止替换，返回空 patches 并说明 questions。"
+	}
+	return instructions + "\n本次写作风格（仅作用于需要整理的部分）：" + styleInstructions
+}
+
 func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteResult, error) {
 	if err := s.Validate(); err != nil {
 		return RewriteResult{}, err
 	}
-	styleInstructions, _ := s.WritingStyle.instructions() // Validate already enforces the closed catalog.
 	document := editorialDocument(s)
 	dialogueMarker := ""
 	if s.RecordingContext != nil && s.RecordingContext.Mode == "dialogue" {
@@ -116,16 +129,10 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 		document.RecordingContext.DialogueText = dialogueMarker
 	}
 	input, _ := json.Marshal(map[string]any{"document": document, "transcriptRevision": tr})
-	instructions := rewriteInstructions
-	if s.RecordingContext != nil {
-		instructions = recordingPreviewInstructions
-	}
-	if dialogueMarker != "" {
-		instructions += "\n本次 dialogueText 是完整对话的插入标记。请在应放置对话的位置原样输出该标记一次，服务端会用原始发言精确展开它。不要自己复述对话，不要在标记前后再写同一段经历。正文已有本次录音形成的独白草稿时，替换为这个标记；与本次录音无关的正文仍保留。若具体手改阻止替换，返回空 patches 并说明 questions。"
-	}
 	fields := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "text", "afterID"}, "properties": map[string]any{"id": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "afterID": map[string]string{"type": "string"}}}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "questions"}, "properties": map[string]any{"baseRevision": map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"}, "patches": map[string]any{"type": "array", "items": fields}, "questions": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}}
-	payload, _ := json.Marshal(map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": instructions + "\n本次写作风格（仅作用于需要整理的部分）：" + styleInstructions, "input": string(input), "max_output_tokens": 12000, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision", "strict": true, "schema": schema}}})
+	request := map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": rewriteInstructionText(s), "input": string(input), "max_output_tokens": voiceRewriteOutputReservationTokens, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision", "strict": true, "schema": schema}}}
+	payload, _ := json.Marshal(request)
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(m.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
 		return RewriteResult{}, err

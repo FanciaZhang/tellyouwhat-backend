@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -136,6 +137,49 @@ func TestArkRewriterRetainsUsageWhenStructuredResultIsInvalid(t *testing.T) {
 	result, err := (ArkRewriter{BaseURL: server.URL, APIKey: "secret", Model: "model", HTTP: server.Client()}).Rewrite(context.Background(), snapshot, 1)
 	if err == nil || result.InputTokens != 11 || result.OutputTokens != 22 {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing.T) {
+	for _, mode := range []string{"live", "narrative", "dialogue"} {
+		t.Run(mode, func(t *testing.T) {
+			store := &voiceBudgetStore{}
+			price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 1_000_000_000, OutputNanosPerMillionTokens: 2_000_000_000}
+			minimum := make(chan int64, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var wire struct {
+					Input, Instructions string
+					MaxOutput           int `json:"max_output_tokens"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+					t.Error(err)
+					w.WriteHeader(400)
+					return
+				}
+				cost, err := price.Cost(len(wire.Input)+len(wire.Instructions), wire.MaxOutput)
+				if err != nil {
+					t.Error(err)
+				}
+				minimum <- cost
+				_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[\"请确认发言人物。\"]}"}]}]}`))
+			}))
+			defer server.Close()
+			s := Snapshot{Revision: 1, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: uuid.NewString(), Text: "已有手记"}}, Transcript: "今天出门了。"}
+			if mode != "live" {
+				r := recordingContextFixture(t)
+				r.Mode = mode
+				s.Transcript = r.Analysis.Text
+				s.RecordingContext = &r
+			}
+			client := ArkRewriter{BaseURL: server.URL, APIKey: "test", Model: "test", HTTP: server.Client()}
+			_, err := NewBudgetedRewriter(client, voiceCostController(t, store), "journal", price).Rewrite(context.Background(), s, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if needed := <-minimum; store.attempt.ReservedNanos < needed {
+				t.Fatalf("reserved %d does not cover wire text and output cap %d", store.attempt.ReservedNanos, needed)
+			}
+		})
 	}
 }
 

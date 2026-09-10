@@ -125,3 +125,52 @@ func TestRecordingReviewKeepsSourceIdentityAndManualEditTimingInData(t *testing.
 		t.Fatal("legitimate manual-edit question was discarded")
 	}
 }
+
+func TestRewriteRetainsTotalUsageAndRejectsIncompleteReasoningResponses(t *testing.T) {
+	for _, tc := range []struct{ mode, status string }{{"live", "completed"}, {"dialogue", "completed"}, {"narrative", "completed"}, {"narrative", "incomplete"}} {
+		t.Run(tc.mode+"/"+tc.status, func(t *testing.T) {
+			contextValue := recordingContextFixture(t)
+			s := Snapshot{Revision: 7, Blocks: []Block{{ID: uuid.NewString(), Text: "已有正文"}}, Transcript: contextValue.Analysis.Text}
+			if tc.mode != "live" {
+				contextValue.Mode = tc.mode
+				s.RecordingContext = &contextValue
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Error(err)
+					w.WriteHeader(400)
+					return
+				}
+				var thinking struct{ Type string }
+				_ = json.Unmarshal(payload["thinking"], &thinking)
+				if thinking.Type != "disabled" || payload["reasoning"] != nil {
+					t.Error("synchronous rewrite unexpectedly gained reasoning latency")
+				}
+				if payload["reasoning_effort"] != nil || string(payload["store"]) != "false" || payload["tools"] != nil || string(payload["max_output_tokens"]) != "12000" {
+					t.Error("changed API dialect, storage, tools or total output budget")
+				}
+				revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请确认发言人物。"}}
+				encoded, _ := json.Marshal(revision)
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": tc.status,
+					"usage": map[string]any{"input_tokens": 11, "output_tokens": 137, "output_tokens_details": map[string]int{"reasoning_tokens": 100}},
+					"output": []any{
+						map[string]any{"type": "reasoning", "summary": []any{map[string]string{"type": "summary_text", "text": "This is reasoning, never document content."}}},
+						map[string]any{"type": "message", "content": []any{map[string]string{"type": "output_text", "text": string(encoded)}}},
+					}})
+			}))
+			defer server.Close()
+			got, err := (ArkRewriter{BaseURL: server.URL, APIKey: "test", Model: "test", HTTP: server.Client()}).Rewrite(context.Background(), s, 2)
+			if got.InputTokens != 11 || got.OutputTokens != 137 {
+				t.Fatal("reasoning usage was lost or double-counted", got)
+			}
+			if tc.status == "incomplete" {
+				if err == nil || len(got.Revision.Questions) != 0 {
+					t.Fatal("accepted a truncated response")
+				}
+			} else if err != nil || len(got.Revision.Questions) != 1 || len(got.Revision.Patches) != 0 {
+				t.Fatal("reasoning summary contaminated the revision", got, err)
+			}
+		})
+	}
+}
