@@ -32,7 +32,7 @@ type Controller struct {
 }
 
 func New(slot string) (*Controller, error) {
-	if slot != "" && slot != "blue" && slot != "green" {
+	if slot != "" && slot != "blue" && slot != "green" && slot != "legacy" {
 		return nil, errors.New("invalid deployment slot")
 	}
 	var id [16]byte
@@ -97,7 +97,7 @@ func (c *Controller) Handler(next http.Handler) http.Handler {
 		c.mu.Unlock()
 		defer func() { c.mu.Lock(); c.state.HTTP--; c.mu.Unlock() }()
 		// Do not wrap ResponseWriter: streaming, flushing and hijacking stay native.
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(WithController(r.Context(), c)))
 	})
 }
 func (c *Controller) Control() http.Handler {
@@ -205,4 +205,18 @@ func Request(role, action, bootID string) (Status, error) {
 	}
 	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&status)
 	return status, err
+}
+
+// Track accounts for child work of an already accepted request, including
+// settlement after the response disconnects. Admission belongs to the parent.
+func Track(ctx context.Context) func() {
+	c, _ := ctx.Value(key{}).(*Controller)
+	if c == nil {
+		return func() {}
+	}
+	c.mu.Lock()
+	c.state.Background++
+	c.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { c.mu.Lock(); c.state.Background--; c.mu.Unlock() }) }
 }

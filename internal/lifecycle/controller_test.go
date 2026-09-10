@@ -192,3 +192,21 @@ func TestListenerIsLoopbackOnly(t *testing.T) {
 		t.Fatal("invalid slot accepted")
 	}
 }
+
+func TestDetachedSettlementPreventsSealAfterResponse(t *testing.T) {
+	c, _ := New("")
+	var complete func()
+	response := httptest.NewRecorder()
+	c.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		complete = Track(r.Context())
+		w.WriteHeader(http.StatusAccepted)
+	})).ServeHTTP(response, httptest.NewRequest("POST", "/work", nil))
+	command(c, "pause", c.Status().BootID)
+	if c.Status().HTTP != 0 || c.Status().Background != 1 || command(c, "seal", c.Status().BootID) != 409 {
+		t.Fatal("response completion hid unfinished settlement")
+	}
+	complete()
+	if command(c, "seal", c.Status().BootID) != 200 {
+		t.Fatal("settlement did not drain")
+	}
+}

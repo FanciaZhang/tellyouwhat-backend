@@ -69,6 +69,13 @@ jobs:
           MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
+      - name: Verify real Caddy switching and long connections
+        run: |
+          container=$(docker create caddy:2.11.4-alpine)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          chmod +x "$RUNNER_TEMP/caddy"
+          CADDY_TEST_BIN="$RUNNER_TEMP/caddy" go test -race -count=1 -v ./internal/lifecycle
       - run: go vet ./...
       - run: go build ./cmd/...
       - run: make verify-generated
@@ -205,7 +212,7 @@ jobs:
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml compose.ark-management.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/operations.py deploy/tencent/ark_credentials.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/blue_green.py deploy/tencent/operations.py deploy/tencent/ark_credentials.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/secrets/"
           if test -f "$RUNNER_TEMP/ark-management.json"; then

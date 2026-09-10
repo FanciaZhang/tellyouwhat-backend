@@ -29,6 +29,7 @@ def main():
                 report_health(runtime, result)
         else:
             with runtime.lock():
+                runtime.refresh()
                 result = operate(runtime, args)
         print(json.dumps({"passed": True, **result}, sort_keys=True))
         return 0 if result.get("passed", True) else 1
