@@ -16,6 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformops"
@@ -43,6 +44,16 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
+	if err != nil {
+		return err
+	}
+	closeControl, err := control.Listen("worker")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
+	ctx = lifecycle.WithController(ctx, control)
 	database, err := mysqlstore.Open(ctx, platform.DatabaseDSN)
 	if err != nil {
 		return err
@@ -115,7 +126,7 @@ func run(logger *slog.Logger) error {
 
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           router,
+		Handler:           control.Handler(router),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      3 * time.Hour,

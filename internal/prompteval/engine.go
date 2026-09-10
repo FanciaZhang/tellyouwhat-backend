@@ -7,6 +7,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"strings"
 	"sync"
@@ -30,14 +31,22 @@ func (e *Engine) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		_ = e.Store.Recover(ctx, time.Now())
+		if done, ok := lifecycle.Begin(ctx); ok {
+			_ = e.Store.Recover(ctx, time.Now())
+			done()
+		}
 		for range 2 {
+			done, ok := lifecycle.Begin(ctx)
+			if !ok {
+				break
+			}
 			claim, err := e.Store.Claim(ctx, time.Now())
 			if err != nil {
+				done()
 				break
 			}
 			workers.Add(1)
-			go func() { defer workers.Done(); e.Process(ctx, claim) }()
+			go func() { defer workers.Done(); defer done(); e.Process(ctx, claim) }()
 		}
 		select {
 		case <-ctx.Done():
@@ -108,7 +117,10 @@ func (e *Engine) finish(c Claim, result ItemResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = e.Store.SaveResult(ctx, c, result, true)
-	_ = e.Store.Recover(ctx, time.Now())
+	if done, ok := lifecycle.Begin(ctx); ok {
+		_ = e.Store.Recover(ctx, time.Now())
+		done()
+	}
 }
 func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller, sample Sample, candidate Candidate, index int) Output {
 	started := time.Now()

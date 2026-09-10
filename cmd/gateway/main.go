@@ -35,6 +35,7 @@ import (
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -107,6 +108,16 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
+	if err != nil {
+		return err
+	}
+	closeControl, err := control.Listen("gateway")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
+	ctx = lifecycle.WithController(ctx, control)
 
 	rootPEM, err := os.ReadFile(platform.AppAttestRootPEMPath)
 	if err != nil {
@@ -177,7 +188,7 @@ func run(logger *slog.Logger) error {
 
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           hostMux,
+		Handler:           control.Handler(hostMux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      0,

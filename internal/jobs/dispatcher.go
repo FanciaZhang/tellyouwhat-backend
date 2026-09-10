@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"io"
 	"net/http"
 	"sync"
@@ -69,6 +70,11 @@ func (pump *OutboxPump) Run(ctx context.Context) error {
 }
 
 func (pump *OutboxPump) drain(ctx context.Context) error {
+	done, ok := lifecycle.Begin(ctx)
+	if !ok {
+		return nil
+	}
+	defer done()
 	items, err := pump.store.ClaimDispatches(ctx, pump.now(), 20)
 	if err != nil {
 		return err

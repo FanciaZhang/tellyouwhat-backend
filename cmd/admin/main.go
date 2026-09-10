@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"log/slog"
 	"net/http"
 	"os"
@@ -140,6 +141,16 @@ func run(logger *slog.Logger) error {
 	}
 	background, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()
+	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
+	if err != nil {
+		return err
+	}
+	closeControl, err := control.Listen("admin")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
+	background = lifecycle.WithController(background, control)
 	promptDefaults, err := platformconfig.LoadPromptDefaults()
 	if err != nil {
 		return err
@@ -168,9 +179,17 @@ func run(logger *slog.Logger) error {
 			ticker := time.NewTicker(6 * time.Hour)
 			defer ticker.Stop()
 			for {
+				if !lifecycle.Wait(background) {
+					return
+				}
+				done, ok := lifecycle.Begin(background)
+				if !ok {
+					continue
+				}
 				cycle, cancel := context.WithTimeout(background, 10*time.Minute)
 				err := deliveryStore.SyncReports(cycle, app, source, time.Now(), 185)
 				cancel()
+				done()
 				if err != nil && background.Err() == nil {
 					logger.Warn("offer redemption report sync incomplete", "app", app)
 				}
@@ -208,7 +227,7 @@ func run(logger *slog.Logger) error {
 		go ai.Rollouts.Run(background)
 	}
 	server := &http.Server{
-		Addr: ":" + configuration.port, Handler: portal.Router(),
+		Addr: ":" + configuration.port, Handler: control.Handler(portal.Router()),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
