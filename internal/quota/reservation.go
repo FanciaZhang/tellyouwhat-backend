@@ -13,6 +13,7 @@ var ErrInvalidReservation = errors.New("quota reservation is unavailable or does
 // It contains accounting metadata only, without prompts or response content.
 type TokenReservation struct {
 	Version           int    `json:"version"`
+	Charged           bool   `json:"charged,omitempty"`
 	TransactionID     string `json:"transactionID"`
 	DeviceID          string `json:"deviceID"`
 	DailyWindow       string `json:"dailyWindow"`
@@ -24,7 +25,7 @@ type TokenReservation struct {
 }
 
 func (value TokenReservation) Matches(transactionID string, reserved int) bool {
-	if value.Version != 1 || value.DeviceID == "" || transactionID == "" || value.TransactionID != transactionID ||
+	if (value.Version != 1 && value.Version != 2) || value.DeviceID == "" || transactionID == "" || value.TransactionID != transactionID ||
 		reserved < 0 || value.ReservedTokens != reserved {
 		return false
 	}

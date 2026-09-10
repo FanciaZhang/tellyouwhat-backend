@@ -206,14 +206,23 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		defer cancelPersist()
 		var persistErr error
 		if errors.Is(err, quota.ErrExceeded) || errors.Is(err, quota.ErrInvalidReservation) {
-			persistErr = worker.store.Fail(persistContext, job.ID, job.AttemptCount, "quota", time.Now())
+			persistErr = worker.store.Fail(persistContext, job.ID, job.AttemptCount, quotaFailureCategory(err), time.Now())
 		} else {
 			_, persistErr = worker.store.RetryOrFail(persistContext, job.ID, job.AttemptCount, "quota_unavailable", time.Now())
 		}
 		return errors.Join(err, persistErr)
 	}
+	providerStarted := false
+	defer func() {
+		if !providerStarted {
+			refundContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			attempt := jobAttempt(job)
+			_ = worker.reconciler.Reconcile(refundContext, attempt.TransactionID, reservationID, attempt.ReservedTokens, 0, time.Now())
+		}
+	}()
 	// Admission can race cancellation, expiry, deletion, or a reclaimed lease.
-	// An uncertain admission keeps its reservation but must not start new work.
+	// A confirmed reservation is refunded if this execution never calls the provider.
 	current, err := worker.store.Get(ctx, job.ID)
 	if err != nil {
 		return err
@@ -237,15 +246,19 @@ func (worker *Worker) Process(ctx context.Context, jobID string) error {
 		}
 	}()
 	workContext = costcontrol.WithAccess(workContext, job.OwnerKeyID, !strings.HasPrefix(job.OwnerTransactionID, quota.FreeRecognitionTransactionPrefix))
+	providerStarted = true
 	response, err := worker.provider.Complete(workContext, job.Request)
 	if errors.Is(err, costcontrol.ErrProtectionActive) {
-		// No provider call was made. Reuse this attempt's quota reservation
-		// instead of consuming a retry or charging unknown provider use.
+		// No provider call was made. Release its debit before making this
+		// attempt available again so resumption must reserve current capacity.
 		close(stopHeartbeat)
 		<-heartbeatDone
 		stopHeartbeat = nil
 		persistContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
+		if err := worker.reconciler.DeferJobAttempt(persistContext, jobAttempt(job), time.Now()); err != nil {
+			return err
+		}
 		persistErr := worker.store.DeferAdmission(persistContext, job.ID, job.AttemptCount, time.Now())
 		return errors.Join(ErrAdmissionDeferred, err, persistErr)
 	}
@@ -347,4 +360,16 @@ func newJobID() (string, error) {
 	value[8] = (value[8] & 0x3f) | 0x80
 	encoded := hex.EncodeToString(value)
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
+}
+
+func quotaFailureCategory(err error) string {
+	scope, _ := quota.ExceededScope(err)
+	switch scope {
+	case quota.LimitDailyTokens:
+		return "daily_quota_exceeded"
+	case quota.LimitMonthlyTokens:
+		return "monthly_quota_exceeded"
+	default:
+		return "quota"
+	}
 }

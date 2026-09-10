@@ -44,7 +44,8 @@ if reservationEnabled then
   if previous then
     if previous == '1' then return 2 end
     local ok, value = pcall(cjson.decode, previous)
-    if not ok or type(value) ~= 'table' or value.version ~= 1 or
+    if not ok or type(value) ~= 'table' or (value.version ~= 1 and value.version ~= 2) or
+       (ARGV[18] ~= '1' and value.version == 2) or
        value.transactionID ~= ARGV[14] or value.deviceID ~= ARGV[17] or value.reservedTokens ~= tokens then return 3 end
     return 2
   end
@@ -58,6 +59,12 @@ if concurrentLimit > 0 and current(KEYS[6]) + 1 > concurrentLimit then return 15
 for index = 1, 3 do
   local value = redis.call('INCR', KEYS[index])
   if value == 1 then redis.call('EXPIRE', KEYS[index], tonumber(ARGV[8])) end
+end
+if ARGV[18] == '1' then
+  local reservation = cjson.encode({version=2, transactionID=ARGV[14], deviceID=ARGV[17], dailyWindow=ARGV[15],
+    monthlyWindow=ARGV[16], reservedTokens=tokens, charged=false, reconciled=false})
+  redis.call('SET', KEYS[7], reservation, 'EX', tonumber(ARGV[12]))
+  return 2
 end
 local dayValue = redis.call('INCRBY', KEYS[4], tokens)
 if dayValue == tokens then redis.call('EXPIRE', KEYS[4], tonumber(ARGV[9])) end
@@ -73,13 +80,26 @@ end
 return 1
 `)
 
-func (limiter *QuotaLimiter) Acquire(
+func (limiter *QuotaLimiter) PrepareJob(ctx context.Context, identity quota.Identity, operation contracts.Operation, tokens int, id string, now time.Time) error {
+	if id == "" {
+		return quota.ErrInvalidReservation
+	}
+	_, err := limiter.acquire(ctx, identity, operation, tokens, id, now, true)
+	return err
+}
+
+func (limiter *QuotaLimiter) Acquire(ctx context.Context, identity quota.Identity, operation contracts.Operation, tokens int, id string, now time.Time) (quota.Releaser, error) {
+	return limiter.acquire(ctx, identity, operation, tokens, id, now, false)
+}
+
+func (limiter *QuotaLimiter) acquire(
 	ctx context.Context,
 	identity quota.Identity,
 	operation contracts.Operation,
 	estimatedTokens int,
 	reservationID string,
 	now time.Time,
+	prepare bool,
 ) (quota.Releaser, error) {
 	if limiter != nil && limiter.ResolveLimits != nil {
 		limits, err := limiter.ResolveLimits(ctx)
@@ -89,7 +109,7 @@ func (limiter *QuotaLimiter) Acquire(
 		copy := *limiter
 		copy.limits = limits
 		copy.ResolveLimits = nil
-		return copy.Acquire(ctx, identity, operation, estimatedTokens, reservationID, now)
+		return copy.acquire(ctx, identity, operation, estimatedTokens, reservationID, now, prepare)
 	}
 	if limiter == nil || limiter.client == nil || identity.DeviceID == "" || identity.TransactionID == "" || identity.IP == "" || estimatedTokens < 0 {
 		return nil, quota.ErrInvalidIdentity
@@ -108,6 +128,10 @@ func (limiter *QuotaLimiter) Acquire(
 	}
 	nextDay := now.UTC().Truncate(24 * time.Hour).Add(25 * time.Hour)
 	nextMonth := time.Date(now.UTC().Year(), now.UTC().Month()+1, 1, 1, 0, 0, 0, time.UTC)
+	prepareFlag := "0"
+	if prepare {
+		prepareFlag = "1"
+	}
 	result, err := acquireQuotaScript.Run(ctx, limiter.client, keys,
 		limiter.limits.RequestsPerMinutePerIP,
 		limiter.limits.RequestsPerMinutePerDevice,
@@ -126,6 +150,7 @@ func (limiter *QuotaLimiter) Acquire(
 		day,
 		month,
 		identity.DeviceID,
+		prepareFlag,
 	).Int()
 	if err != nil {
 		return nil, err
@@ -218,7 +243,8 @@ var reconcileTokensScript = redis.NewScript(`
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local ok, reservation = pcall(cjson.decode, raw)
-if not ok or type(reservation) ~= 'table' or reservation.version ~= 1 or
+if not ok or type(reservation) ~= 'table' or (reservation.version ~= 1 and reservation.version ~= 2) or
+   (reservation.version == 2 and reservation.charged ~= true) or
    reservation.transactionID ~= ARGV[2] or reservation.reservedTokens ~= tonumber(ARGV[3]) or
    reservation.dailyWindow ~= ARGV[4] or reservation.monthlyWindow ~= ARGV[5] then return 0 end
 if reservation.reconciled == true then return 2 end
