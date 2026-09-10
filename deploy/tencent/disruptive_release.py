@@ -21,7 +21,7 @@ def clear_offer(runtime):
     (runtime.state / OFFER).unlink(missing_ok=True)
 
 
-def bundle_fingerprint(source):
+def bundle_fingerprint(runtime, source):
     from release import RUNTIME_FILES, KEY_FILES
     digest = hashlib.sha256()
     for name in sorted([*RUNTIME_FILES, *["secrets/" + key for key in KEY_FILES]]):
@@ -30,6 +30,18 @@ def bundle_fingerprint(source):
             config = read_environment(path)
             for key in ["IMAGE_TAG", "IMAGE_REGISTRY_PREFIX", *[s.upper() + "_IMAGE" for s in (*bg.SERVICES, "adminctl", "migrate", "maintenance")]]:
                 config.pop(key, None)
+            credential = config.get("ARK_MANAGEMENT_CREDENTIAL_HOST_FILE")
+            if credential:
+                path = Path(credential)
+                if path.is_symlink() or not path.resolve().is_relative_to(runtime.root / ".ark-management"):
+                    raise OperationError("invalid release credential path")
+                # Install uses a fresh private filename on every upload. Bind the
+                # credential bytes, so identical re-staging remains eligible.
+                output = runtime.execute("slot-credential-fingerprint", ["sudo", "-n", "sha256sum", "--", str(path)])
+                checksum = output.decode().split()[0]
+                if not re.fullmatch(r"[0-9a-f]{64}", checksum):
+                    raise OperationError("credential fingerprint is unavailable")
+                config["ARK_MANAGEMENT_CREDENTIAL_HOST_FILE"] = "sha256:" + checksum
             content = json.dumps(config, sort_keys=True).encode()
         else:
             content = path.read_bytes() if path.exists() else b""
@@ -44,7 +56,7 @@ def capacity_check(runtime, target, source, tag, registry, acceptance, source_ru
         if not re.fullmatch(r"[0-9a-f]{40}", tag) or not re.fullmatch(r"[0-9]+", source_run):
             raise
         atomic_json(runtime.state / OFFER, {"tag": tag, "registry": registry, "acceptance": acceptance,
-                    "source_run": source_run, "previous": previous, "bundle": bundle_fingerprint(source),
+                    "source_run": source_run, "previous": previous, "bundle": bundle_fingerprint(runtime, source),
                     "created_at": int(time.time()), "reason": str(error)})
         raise ConfirmationRequired("Blue-green capacity check failed. Current services remain active. "
             "Run Backend Disruptive Deployment only after separately confirming interruption for this SHA and source run; "
@@ -62,7 +74,7 @@ def require_offer(runtime, tag, registry, acceptance, source, source_run, confir
     if (not state or state["phase"] != "STABLE" or state["current"] != offer["previous"]
             or any(offer[key] != value for key, value in {
                 "tag": tag, "registry": registry, "acceptance": acceptance,
-                "source_run": source_run, "bundle": bundle_fingerprint(source)}.items())
+                "source_run": source_run, "bundle": bundle_fingerprint(runtime, source)}.items())
             or not 0 <= time.time() - offer["created_at"] <= 86400):
         raise OperationError("capacity refusal is stale or does not match the version, configuration and active slot")
     return state

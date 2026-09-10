@@ -300,6 +300,21 @@ class BlueGreenTests(unittest.TestCase):
         self.assertLess(self.events.index(("green", "interrupt-stop")), self.events.index(("legacy", "start")))
         self.assertEqual(self.route, "legacy")
 
+    def test_reuploaded_identical_ark_credential_keeps_offer_but_rotation_invalidates_it(self):
+        import disruptive_release as dr
+        source = self.bundle("fingerprint")
+        env = source / ".env.production"
+        original = env.read_text()
+        path = self.root / ".ark-management"
+        path.mkdir()
+        with patch.object(self.runtime, "execute", return_value=("a" * 64 + "  private.json").encode()):
+            env.write_text(original + "ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=" + str(path / "first.json") + "\n")
+            first = dr.bundle_fingerprint(self.runtime, source)
+            env.write_text(original + "ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=" + str(path / "second.json") + "\n")
+            self.assertEqual(first, dr.bundle_fingerprint(self.runtime, source))
+        with patch.object(self.runtime, "execute", return_value=("b" * 64 + "  private.json").encode()):
+            self.assertNotEqual(first, dr.bundle_fingerprint(self.runtime, source))
+
     def test_non_capacity_error_never_offers_interruption(self):
         import disruptive_release as dr
         with patch.object(bg, "resource_check", side_effect=OperationError("disk headroom")):
