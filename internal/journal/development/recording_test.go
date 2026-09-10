@@ -255,6 +255,8 @@ func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 202)
 	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 200)
 	analysis := *job.Result
+	// Foundation's UUID Codable uses uppercase, Go's uuid uses lowercase.
+	analysis.TaskID = strings.ToUpper(analysis.TaskID)
 	// The client's saved stream is allowed to contain a detail the file ASR lost.
 	analysis.Text = "38周加一天。"
 	analysis.Utterances[0].Text = analysis.Text

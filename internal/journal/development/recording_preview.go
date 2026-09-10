@@ -61,7 +61,8 @@ func (h *recordingHTTP) preview(w http.ResponseWriter, r *http.Request, owner, a
 		return
 	}
 	context := input.Snapshot.RecordingContext
-	if job.AudioHash != input.AudioHash || job.ProviderTaskID != context.Analysis.TaskID || job.Milliseconds != context.Analysis.Milliseconds || job.State != voice.RecordingCompleted {
+	providerID, providerErr := uuid.Parse(context.Analysis.TaskID)
+	if providerErr != nil || len(context.Analysis.TaskID) != 36 || job.AudioHash != input.AudioHash || job.ProviderTaskID != providerID.String() || job.Milliseconds != context.Analysis.Milliseconds || job.State != voice.RecordingCompleted {
 		deny(w, 409, "recording_preview_source_changed")
 		return
 	}
