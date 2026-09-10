@@ -140,11 +140,11 @@ jobs:
               echo 'CPU/RAM capacity refused blue-green deployment. No automatic interruption will run.'
               echo 'Do you want to interrupt active requests, AI streams, voice sessions and tasks to deploy this version?'
               echo 'Only after accepting downtime, manually open [Backend Disruptive Deployment](https://github.com/${{ github.repository }}/actions/workflows/disruptive-deploy.yml).'
-              printf 'Source run: `%s`; expected SHA: `%s`; confirmation: `interrupt:%s`; acceptance: `%s`. Offer expires in 24 hours and is invalidated by an active-version/configuration change.\n' "$SOURCE_RUN" "$GITHUB_SHA" "$GITHUB_SHA" "$DEPLOYMENT_MODE"
+              printf 'Source run: %s; expected SHA: %s; confirmation: interrupt:%s; acceptance: %s. Offer expires in 24 hours and is invalidated by an active-version/configuration change.\n' "$SOURCE_RUN" "$GITHUB_SHA" "$GITHUB_SHA" "$DEPLOYMENT_MODE"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           if [ "$status" -ne 0 ]; then exit "$status"; fi
-          printf 'Internal services verified for `%s`. Requested stage: `%s`.\n' "$GITHUB_SHA" "$DEPLOYMENT_MODE" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Internal services verified for %s. Requested stage: %s.\n' "$GITHUB_SHA" "$DEPLOYMENT_MODE" >> "$GITHUB_STEP_SUMMARY"
       - name: Enable scheduled operations
         env:
           DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}

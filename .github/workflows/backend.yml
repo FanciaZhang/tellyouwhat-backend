@@ -181,4 +181,4 @@ jobs:
       - name: Verify all public runtimes
         run: |
           bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
-          printf 'Public HTTPS verified for `%s` across Health, Journal, and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Public HTTPS verified for %s across Health, Journal, and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
