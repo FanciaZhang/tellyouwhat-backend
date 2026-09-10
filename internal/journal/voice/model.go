@@ -118,7 +118,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	input, _ := json.Marshal(map[string]any{"document": document, "transcriptRevision": tr})
 	instructions := rewriteInstructions
 	if s.RecordingContext != nil {
-		instructions += recordingRewriteInstructions
+		instructions = recordingPreviewInstructions
 	}
 	if dialogueMarker != "" {
 		instructions += "\n本次 dialogueText 是完整对话的插入标记。请在应放置对话的位置原样输出该标记一次，服务端会用原始发言精确展开它。不要自己复述对话，不要在标记前后再写同一段经历。正文已有本次录音形成的独白草稿时，替换为这个标记；与本次录音无关的正文仍保留。若具体手改阻止替换，返回空 patches 并说明 questions。"
