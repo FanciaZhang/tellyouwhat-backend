@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -10,7 +9,7 @@ import socket
 import time
 import urllib.request
 
-from ops_common import OperationError, atomic_json, compose_command, read_environment
+from ops_common import OperationError, atomic_json, atomic_text, compose_command, read_environment
 
 SERVICES = ("gateway", "worker", "admin")
 PORTS = {"legacy": (18080, 18081, 18082), "blue": (18080, 18081, 18082), "green": (18180, 18181, 18182)}
@@ -148,24 +147,30 @@ def switch_proxy(runtime, slot):
     if root_before.count(str(PROXY_FILE)) != 1:
         raise OperationError("Caddy must import the dedicated backend fragment exactly once")
     candidate = runtime.state / "proxy-fragment.caddy"
-    candidate.write_text(render_proxy(before, slot))
-    candidate.chmod(0o600)
+    atomic_text(candidate, render_proxy(before, slot))
     # Keep the validation root next to the original to preserve relative imports.
     validation_root = PROXY_ROOT.parent / ".tellyouwhat-validation"
     temporary_root = runtime.state / "proxy-root.caddy"
-    temporary_root.write_text(root_before.replace(str(PROXY_FILE), str(candidate)))
+    atomic_text(temporary_root, root_before.replace(str(PROXY_FILE), str(candidate)))
     runtime.execute("proxy-stage", ["sudo", "-n", "install", "-m", "600", str(temporary_root), str(validation_root)])
     runtime.execute("proxy-validate", ["sudo", "-n", "caddy", "validate", "--config", str(validation_root), "--adapter", "caddyfile"])
     if PROXY_FILE.read_text() != before or PROXY_ROOT.read_text() != root_before:
         raise OperationError("Caddy configuration changed during preparation")
     backup = runtime.state / "proxy-before.caddy"
-    backup.write_text(before)
+    atomic_text(backup, before)
+    pending = PROXY_FILE.parent / ".tellyouwhat-fragment.pending"
     try:
-        runtime.execute("proxy-install", ["sudo", "-n", "install", "-m", "644", str(candidate), str(PROXY_FILE)])
+        runtime.execute("proxy-install", ["sudo", "-n", "install", "-m", "644", str(candidate), str(pending)])
+        runtime.execute("proxy-sync", ["sudo", "-n", "sync", "-f", str(pending)])
+        runtime.execute("proxy-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
+        runtime.execute("proxy-commit-sync", ["sudo", "-n", "sync", "-f", str(PROXY_FILE)])
         runtime.execute("proxy-reload", ["sudo", "-n", "caddy", "reload", "--config", str(PROXY_ROOT), "--adapter", "caddyfile"])
         assert_route(slot)
     except Exception:
-        runtime.execute("proxy-restore", ["sudo", "-n", "install", "-m", "644", str(backup), str(PROXY_FILE)])
+        runtime.execute("proxy-restore", ["sudo", "-n", "install", "-m", "644", str(backup), str(pending)])
+        runtime.execute("proxy-restore-sync", ["sudo", "-n", "sync", "-f", str(pending)])
+        runtime.execute("proxy-restore-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
+        runtime.execute("proxy-restore-commit-sync", ["sudo", "-n", "sync", "-f", str(PROXY_FILE)])
         runtime.execute("proxy-restore-reload", ["sudo", "-n", "caddy", "reload", "--config", str(PROXY_ROOT), "--adapter", "caddyfile"])
         raise
     return hashlib.sha256(candidate.read_bytes()).hexdigest()
@@ -203,10 +208,7 @@ def image_metadata(runtime, tag, registry):
 def environment_update(path, values):
     lines = [line for line in path.read_text().splitlines() if line.partition("=")[0] not in values]
     content = "\n".join([*lines, *[key + "=" + value for key, value in values.items()]]) + "\n"
-    temporary = path.with_name(".slot-env.pending")
-    temporary.write_text(content)
-    temporary.chmod(0o600)
-    os.replace(temporary, path)
+    atomic_text(path, content)
 
 
 def prepare(runtime, source, slot, tag, registry):

@@ -227,3 +227,32 @@ class ProxyRenderingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ProxyCommitTests(unittest.TestCase):
+    def test_reload_failure_atomically_restores_previous_fragment(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fragment = root / 'backend.caddy'
+            main = root / 'Caddyfile'
+            original = (Path(__file__).parents[1] / 'single-server/Caddyfile.external').read_text()
+            fragment.write_text(original)
+            main.write_text('import ' + str(fragment) + '\n')
+            class Fixture:
+                state = root / 'state'
+                def execute(self, label, command):
+                    if label == 'proxy-reload':
+                        raise OperationError('injected reload failure')
+                    if 'install' in command:
+                        # The active file is never a copy destination.
+                        if label != 'proxy-stage':
+                            assert Path(command[-1]) != fragment
+                        shutil.copyfile(command[-2], command[-1])
+                    if 'mv' in command:
+                        Path(command[-2]).replace(command[-1])
+                    return b''
+            runtime = Fixture()
+            with patch.object(bg, 'PROXY_FILE', fragment), patch.object(bg, 'PROXY_ROOT', main):
+                with self.assertRaisesRegex(OperationError, 'reload failure'):
+                    bg.switch_proxy(runtime, {'slot': 'green'})
+            self.assertEqual(fragment.read_text(), original)

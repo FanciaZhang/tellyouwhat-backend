@@ -32,19 +32,27 @@ def read_environment(path):
     return values
 
 
-def atomic_json(path, value):
+def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary = tempfile.mkstemp(prefix=".pending-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w") as output:
-            json.dump(value, output, sort_keys=True)
-            output.write("\n")
+            output.write(text)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, sort_keys=True) + "\n")
 
 
 def compose_command(root, environment_file):
