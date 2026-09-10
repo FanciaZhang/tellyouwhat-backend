@@ -28,7 +28,7 @@ func recordingRoute(r *http.Request) bool {
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, recordingPrefix), "/")
 	return len(parts) == 1 && (r.Method == http.MethodPut || r.Method == http.MethodGet) ||
-		len(parts) == 2 && (parts[1] == "process" || parts[1] == "preview") && r.Method == http.MethodPost
+		len(parts) == 2 && (parts[1] == "process" || parts[1] == "preview" || parts[1] == "retry") && r.Method == http.MethodPost
 }
 
 type recordingHTTP struct {
@@ -95,6 +95,24 @@ func (h *recordingHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.preview(w, r, owner, id)
 		return
 	}
+	var retryRevision int
+	if len(parts) == 2 && parts[1] == "retry" {
+		defer r.Body.Close()
+		var input struct {
+			Revision int `json:"revision"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || input.Revision < 1 {
+			deny(w, 422, "recording_invalid_retry")
+			return
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			deny(w, 422, "recording_invalid_retry")
+			return
+		}
+		retryRevision = input.Revision
+	}
 	var job voice.RecordingJob
 	switch r.Method {
 	case http.MethodPut:
@@ -112,7 +130,7 @@ func (h *recordingHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		job, err = h.executor.Store.Upload(r.Context(), owner, id, body)
 	case http.MethodGet, http.MethodPost:
 		// Process and status requests have no document/audio body.
-		if r.Body != nil {
+		if r.Body != nil && retryRevision == 0 {
 			defer r.Body.Close()
 			body, readErr := io.ReadAll(io.LimitReader(r.Body, 1))
 			if readErr != nil || len(body) != 0 {
@@ -126,7 +144,11 @@ func (h *recordingHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == nil && r.Method == http.MethodPost {
-			job, err = h.executor.Process(r.Context(), owner, id)
+			if retryRevision > 0 {
+				job, err = h.executor.Retry(r.Context(), owner, id, retryRevision)
+			} else {
+				job, err = h.executor.Process(r.Context(), owner, id)
+			}
 		}
 	}
 	if err != nil {

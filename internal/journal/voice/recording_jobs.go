@@ -241,7 +241,10 @@ func (s *RecordingJobStore) Advance(owner, id string, revision int, state Record
 		RecordingSubmitting: {RecordingProcessing: true, RecordingCompleted: true, RecordingFailed: true},
 		RecordingProcessing: {RecordingProcessing: true, RecordingCompleted: true, RecordingFailed: true},
 		// Retry always queries the persisted provider task before deciding to submit.
-		RecordingFailed: {RecordingProcessing: true},
+		RecordingFailed: {RecordingProcessing: true, RecordingCompleted: true, RecordingUploaded: true},
+	}
+	if job.State == RecordingFailed && state == RecordingUploaded && job.ErrorCode != "analysis_submission_missing" {
+		return job, ErrInvalid
 	}
 	if !allowed[job.State][state] || len(errorCode) > 128 {
 		return job, ErrInvalid

@@ -44,12 +44,18 @@ type RecordingASR struct {
 	Client *http.Client
 }
 type RecordingProviderError struct {
-	Status string
-	LogID  string
+	Status      string
+	LogID       string
+	taskMissing bool
 }
 
 func (e *RecordingProviderError) Error() string { return "recording_provider_" + e.Status }
 
+func (e *RecordingProviderError) Is(target error) bool {
+	return target == ErrRecordingTaskMissing && e.taskMissing
+}
+
+var ErrRecordingTaskMissing = errors.New("recording_task_missing")
 var ErrRecordingPending = errors.New("recording_analysis_pending")
 
 // The request ID is generated and durably saved by the caller BEFORE submit.
@@ -175,7 +181,12 @@ func (a RecordingASR) callBody(ctx context.Context, action, taskID string, body 
 		return nil, ErrRecordingPending
 	}
 	if response.StatusCode != 200 || status != "20000000" {
-		return nil, &RecordingProviderError{Status: status, LogID: response.Header.Get("X-Tt-Logid")}
+		// 45000000 alone is a generic client failure, not evidence of absence.
+		// Match only the observed query diagnostic; do not retain arbitrary
+		// provider messages (they may contain private request data).
+		missing := action == "query" && response.StatusCode == http.StatusOK && status == "45000000" &&
+			strings.TrimSpace(response.Header.Get("X-Api-Message")) == "[Client-side generic error] OperatorWrapper Process failed: cannot find task"
+		return nil, &RecordingProviderError{Status: status, LogID: response.Header.Get("X-Tt-Logid"), taskMissing: missing}
 	}
 	return data, nil
 }

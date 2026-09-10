@@ -19,10 +19,16 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 )
 
-type recordingProvider struct{ submissions, queries int }
+type recordingProvider struct {
+	submissions, queries int
+	submitErr, queryErr  error
+}
 
 func (p *recordingProvider) SubmitFile(_ context.Context, _ string, path string) error {
 	p.submissions++
+	if p.submitErr != nil {
+		return p.submitErr
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -33,6 +39,9 @@ func (p *recordingProvider) SubmitFile(_ context.Context, _ string, path string)
 }
 func (p *recordingProvider) Query(_ context.Context, id string, ms int) (voice.RecordingAnalysis, error) {
 	p.queries++
+	if p.queryErr != nil {
+		return voice.RecordingAnalysis{}, p.queryErr
+	}
 	return voice.RecordingAnalysis{TaskID: id, Version: voice.RecordingAnalysisVersion, Milliseconds: ms, Text: "一起去公园", Utterances: []voice.RecordingUtterance{{ID: uuid.NewString(), Speaker: "1", Text: "一起去公园", StartMilliseconds: 0, EndMilliseconds: ms, AcousticEmotion: "neutral"}}}, nil
 }
 
@@ -298,5 +307,52 @@ func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	}
 	if f.provider.submissions != 1 {
 		t.Fatal("preview resubmitted audio")
+	}
+}
+
+func TestRecordingHTTPMissingSubmissionRetryKeepsIdentityAndAuthorization(t *testing.T) {
+	f := newRecordingFixture(t, 2)
+	f.grant()
+	id := uuid.NewString()
+	path := recordingPrefix + id
+	original := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(1000))), 202)
+	f.provider.submitErr = context.Canceled
+	if w := f.request("POST", path+"/process", "application/json", nil); w.Code != 503 {
+		t.Fatal(w.Code, w.Body)
+	}
+	f.provider.queryErr = voice.ErrRecordingTaskMissing
+	f.now = f.now.Add(31 * time.Second)
+	failed := jobFrom(t, f.request("POST", path+"/process", "application/json", nil), 200)
+	if failed.ErrorCode != "analysis_submission_missing" {
+		t.Fatal(failed)
+	}
+	body, _ := json.Marshal(map[string]int{"revision": failed.Revision})
+	for _, invalid := range []string{`{}`, `{"revision":0}`, `{"revision":4,"force":true}`, `{"revision":4} {}`} {
+		if w := f.request("POST", path+"/retry", "application/json", strings.NewReader(invalid)); w.Code != 422 {
+			t.Fatal(w.Code, w.Body)
+		}
+	}
+	// Another installation's entitlement identity cannot access or retry this job.
+	saved := f.installation
+	f.installation = uuid.NewString()
+	f.grant()
+	if w := f.request("POST", path+"/retry", "application/json", bytes.NewReader(body)); w.Code != 404 {
+		t.Fatal(w.Code, w.Body)
+	}
+	f.installation = saved
+	jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(1000))), 200)
+	ready := jobFrom(t, f.request("POST", path+"/retry", "application/json", bytes.NewReader(body)), 202)
+	if ready.State != voice.RecordingUploaded || ready.ProviderTaskID != original.ProviderTaskID || ready.AudioHash != original.AudioHash {
+		t.Fatal(ready)
+	}
+	if w := f.request("POST", path+"/retry", "application/json", bytes.NewReader(body)); w.Code != 409 {
+		t.Fatal(w.Code, w.Body)
+	}
+	f.provider.submitErr = nil
+	f.provider.queryErr = nil
+	jobFrom(t, f.request("POST", path+"/process", "application/json", nil), 202)
+	complete := jobFrom(t, f.request("POST", path+"/process", "application/json", nil), 200)
+	if complete.State != voice.RecordingCompleted || f.provider.submissions != 2 {
+		t.Fatal(complete, f.provider.submissions)
 	}
 }

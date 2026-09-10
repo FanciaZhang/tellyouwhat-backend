@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -225,5 +226,37 @@ func TestRecordingStereoDurationUsesFramesNotChannelSamples(t *testing.T) {
 	binary.LittleEndian.PutUint16(wav[32:], 2)
 	if RecordingWAVMilliseconds(wav) != 0 {
 		t.Fatal("accepted inconsistent stereo block alignment")
+	}
+}
+
+func TestRecordingTaskMissingRequiresExactQueryEvidence(t *testing.T) {
+	message := "[Client-side generic error] OperatorWrapper Process failed: cannot find task"
+	for _, tc := range []struct {
+		action, status, message string
+		http                    int
+		missing                 bool
+	}{
+		{"query", "45000000", message, 200, true},
+		{"submit", "45000000", message, 200, false},
+		{"query", "45000000", "invalid audio, cannot find task elsewhere", 200, false},
+		{"query", "45000000", message, 503, false},
+		{"query", "55000000", message, 200, false},
+	} {
+		t.Run(tc.action+tc.status+tc.message, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Api-Status-Code", tc.status)
+				w.Header().Set("X-Api-Message", tc.message)
+				w.WriteHeader(tc.http)
+			}))
+			defer server.Close()
+			a := RecordingASR{Config: ASRConfig{URL: server.URL, ResourceID: "volc.seedasr.auc"}}
+			_, err := a.call(context.Background(), tc.action, recordingTask, struct{}{})
+			if errors.Is(err, ErrRecordingTaskMissing) != tc.missing {
+				t.Fatal(err)
+			}
+			if err != nil && strings.Contains(err.Error(), "cannot find") {
+				t.Fatal("retained provider message")
+			}
+		})
 	}
 }

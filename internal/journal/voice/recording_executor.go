@@ -3,7 +3,9 @@ package voice
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 )
@@ -28,6 +30,20 @@ type RecordingExecutor struct {
 }
 
 func (e *RecordingExecutor) Process(ctx context.Context, owner, id string) (RecordingJob, error) {
+	return e.advance(ctx, owner, id, 0)
+}
+
+// Retry is an explicit, revision-fenced user operation, not a polling side effect.
+// Query the original task first; only a confirmed missing, never-acknowledged
+// submission can return to uploaded. The provider ID and audio hash do not change.
+func (e *RecordingExecutor) Retry(ctx context.Context, owner, id string, revision int) (RecordingJob, error) {
+	if revision < 1 {
+		return RecordingJob{}, ErrInvalid
+	}
+	return e.advance(ctx, owner, id, revision)
+}
+
+func (e *RecordingExecutor) advance(ctx context.Context, owner, id string, retryRevision int) (RecordingJob, error) {
 	if e == nil || e.Store == nil || e.Provider == nil || e.Budget == nil || e.AppID == "" || e.Price.NanosPerHour <= 0 {
 		return RecordingJob{}, ErrInvalid
 	}
@@ -52,6 +68,34 @@ func (e *RecordingExecutor) Process(ctx context.Context, owner, id string) (Reco
 	job, err := e.Store.Get(owner, id)
 	if err != nil {
 		return job, err
+	}
+	if retryRevision > 0 {
+		if job.Revision != retryRevision {
+			return job, ErrConflict
+		}
+		if job.State != RecordingFailed || job.ErrorCode != "analysis_submission_missing" {
+			return job, ErrInvalid
+		}
+		result, queryErr := e.Provider.Query(ctx, job.ProviderTaskID, job.Milliseconds)
+		switch {
+		case queryErr == nil:
+			return e.Store.Advance(owner, id, job.Revision, RecordingCompleted, &result, "")
+		case errors.Is(queryErr, ErrRecordingPending):
+			return e.Store.Advance(owner, id, job.Revision, RecordingProcessing, nil, "")
+		case errors.Is(queryErr, ErrRecordingTaskMissing):
+			// Failed-job cleanup removed temporary audio; the App must restore
+			// the exact same bytes before requesting a retry.
+			path, err := e.Store.AudioPath(owner, id)
+			if err != nil {
+				return job, err
+			}
+			if _, err = os.Stat(path); err != nil {
+				return job, err
+			}
+			return e.Store.Advance(owner, id, job.Revision, RecordingUploaded, nil, "")
+		default:
+			return job, queryErr
+		}
 	}
 	if job.State == RecordingCompleted || job.State == RecordingFailed {
 		return job, nil
@@ -96,6 +140,13 @@ func (e *RecordingExecutor) Process(ctx context.Context, owner, id string) (Reco
 		return job, nil
 	}
 	if providerErr != nil {
+		if errors.Is(providerErr, ErrRecordingTaskMissing) &&
+			(job.State == RecordingSubmitting || job.ErrorCode == "analysis_submission_uncertain") &&
+			e.Store.now().Sub(job.UpdatedAt) >= 30*time.Second {
+			// Allow propagation time after an interrupted submit. A previously
+			// acknowledged task disappearing is NOT permission to resubmit.
+			return e.Store.Advance(owner, id, job.Revision, RecordingFailed, nil, "analysis_submission_missing")
+		}
 		if errors.Is(providerErr, ErrInvalid) {
 			failed, saveErr := e.Store.Advance(owner, id, job.Revision, RecordingFailed, nil, "analysis_invalid_result")
 			return failed, errors.Join(providerErr, saveErr)

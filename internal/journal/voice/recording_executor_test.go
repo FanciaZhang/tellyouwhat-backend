@@ -167,3 +167,121 @@ func TestRecordingExecutorInvalidProviderResultFailsWithoutInventingData(t *test
 		t.Fatal(got, err)
 	}
 }
+
+func TestRecordingMissingSubmissionRequiresExplicitFencedRetry(t *testing.T) {
+	e, original := recordingExecutorFixture(t, 2)
+	now := time.Now()
+	e.Store.now = func() time.Time { return now }
+	submits, queries := 0, 0
+	e.Provider = recordingProviderStub{
+		submit: func(_ context.Context, id, path string) error {
+			submits++
+			if id != original.ProviderTaskID {
+				t.Fatal("changed provider identity")
+			}
+			if submits == 1 {
+				return context.Canceled
+			}
+			return nil
+		},
+		query: func(_ context.Context, id string, ms int) (RecordingAnalysis, error) {
+			queries++
+			if submits < 2 {
+				return RecordingAnalysis{}, ErrRecordingTaskMissing
+			}
+			return RecordingAnalysis{TaskID: id, Version: RecordingAnalysisVersion, Milliseconds: ms}, nil
+		},
+	}
+	job, err := e.Process(context.Background(), "owner", original.ID)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	job, err = e.Process(context.Background(), "owner", original.ID)
+	if !errors.Is(err, ErrRecordingTaskMissing) || job.State != RecordingProcessing {
+		t.Fatal("no propagation grace", job, err)
+	}
+	now = now.Add(31 * time.Second)
+	job, err = e.Process(context.Background(), "owner", original.ID)
+	if err != nil || job.State != RecordingFailed || job.ErrorCode != "analysis_submission_missing" {
+		t.Fatal(job, err)
+	}
+	failedRevision := job.Revision
+	// Polling a terminal failure cannot create another paid task.
+	for i := 0; i < 3; i++ {
+		_, _ = e.Process(context.Background(), "owner", original.ID)
+	}
+	if submits != 1 || queries != 2 {
+		t.Fatal(submits, queries)
+	}
+	// Retry needs the retained local source to be uploaded with the same hash.
+	if _, err = e.Retry(context.Background(), "owner", original.ID, failedRevision); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if _, err = e.Store.Upload(context.Background(), "owner", original.ID, bytes.NewReader(jobWAV(2000))); !errors.Is(err, ErrConflict) {
+		t.Fatal("changed audio accepted", err)
+	}
+	if _, err = e.Store.Upload(context.Background(), "owner", original.ID, bytes.NewReader(jobWAV(1000))); err != nil {
+		t.Fatal(err)
+	}
+	job, err = e.Retry(context.Background(), "owner", original.ID, failedRevision)
+	if err != nil || job.State != RecordingUploaded || job.ProviderTaskID != original.ProviderTaskID || job.AudioHash != original.AudioHash {
+		t.Fatal(job, err)
+	}
+	// A replayed retry cannot rewind an already admitted retry.
+	if _, err = e.Retry(context.Background(), "owner", original.ID, failedRevision); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	job, err = e.Process(context.Background(), "owner", original.ID)
+	if err != nil || job.State != RecordingProcessing || submits != 2 {
+		t.Fatal(job, err, submits)
+	}
+	job, err = e.Process(context.Background(), "owner", original.ID)
+	if err != nil || job.State != RecordingCompleted || submits != 2 {
+		t.Fatal(job, err, submits)
+	}
+}
+
+func TestRecordingRetryFindsLateAcceptedTaskWithoutNewSubmission(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		t.Run(map[bool]string{false: "completed", true: "pending"}[pending], func(t *testing.T) {
+			e, job := recordingExecutorFixture(t, 1)
+			job, _ = e.Store.Advance("owner", job.ID, job.Revision, RecordingFailed, nil, "analysis_submission_missing")
+			e.Provider = recordingProviderStub{
+				submit: func(context.Context, string, string) error { t.Fatal("resubmitted existing task"); return nil },
+				query: func(_ context.Context, id string, ms int) (RecordingAnalysis, error) {
+					if pending {
+						return RecordingAnalysis{}, ErrRecordingPending
+					}
+					return RecordingAnalysis{TaskID: id, Version: RecordingAnalysisVersion, Milliseconds: ms}, nil
+				},
+			}
+			got, err := e.Retry(context.Background(), "owner", job.ID, job.Revision)
+			expected := RecordingCompleted
+			if pending {
+				expected = RecordingProcessing
+			}
+			if err != nil || got.State != expected {
+				t.Fatal(got, err)
+			}
+		})
+	}
+}
+
+func TestRecordingAcknowledgedTaskMissingIsNotResubmitted(t *testing.T) {
+	e, job := recordingExecutorFixture(t, 1)
+	e.Provider = recordingProviderStub{
+		submit: func(context.Context, string, string) error { return nil },
+		query: func(context.Context, string, int) (RecordingAnalysis, error) {
+			return RecordingAnalysis{}, ErrRecordingTaskMissing
+		},
+	}
+	job, _ = e.Process(context.Background(), "owner", job.ID)
+	e.Store.now = func() time.Time { return job.UpdatedAt.Add(time.Hour) }
+	got, err := e.Process(context.Background(), "owner", job.ID)
+	if !errors.Is(err, ErrRecordingTaskMissing) || got.State != RecordingProcessing {
+		t.Fatal(got, err)
+	}
+	if _, err = e.Retry(context.Background(), "owner", job.ID, got.Revision); !errors.Is(err, ErrInvalid) {
+		t.Fatal(err)
+	}
+}
