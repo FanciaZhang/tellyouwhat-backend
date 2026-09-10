@@ -312,8 +312,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					next.Transcript = transcriptBase
 				}
 				hasSnapshot = true
-				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
-				if wasAcknowledgement && acceptsEditorialPatches(next.Blocks, awaitingPatches) {
+				// Local typing can produce the expected ACK revision without
+				// applying our patch. Version equality alone is not an ACK.
+				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision && acceptsEditorialPatches(next.Blocks, awaitingPatches)
+				if wasAcknowledgement {
 					acknowledgedSource = awaitingSource
 				}
 				if styleChanged {
