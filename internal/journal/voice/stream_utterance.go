@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"strconv"
@@ -10,16 +11,17 @@ import (
 // Speaker is provider-local to ONE segment/connection. The enclosing segment
 // UUID must always accompany it; identical numbers in other segments are unrelated.
 type StreamUtterance struct {
-	Text                    string       `json:"text"`
-	StartMilliseconds       int          `json:"startMilliseconds"`
-	EndMilliseconds         int          `json:"endMilliseconds"`
-	ProviderEndMilliseconds *int         `json:"providerEndMilliseconds,omitempty"`
-	Definite                bool         `json:"definite"`
-	Speaker                 string       `json:"speaker,omitempty"`
-	AcousticEmotion         string       `json:"acousticEmotion,omitempty"`
-	Volume                  *float64     `json:"volume,omitempty"`
-	SpeechRate              *float64     `json:"speechRate,omitempty"`
-	Words                   []StreamWord `json:"words,omitempty"`
+	Text                     string       `json:"text"`
+	StartMilliseconds        int          `json:"startMilliseconds"`
+	EndMilliseconds          int          `json:"endMilliseconds"`
+	ProviderEndMilliseconds  *int         `json:"providerEndMilliseconds,omitempty"`
+	ProviderStartUnavailable bool         `json:"providerStartUnavailable,omitempty"`
+	Definite                 bool         `json:"definite"`
+	Speaker                  string       `json:"speaker,omitempty"`
+	AcousticEmotion          string       `json:"acousticEmotion,omitempty"`
+	Volume                   *float64     `json:"volume,omitempty"`
+	SpeechRate               *float64     `json:"speechRate,omitempty"`
+	Words                    []StreamWord `json:"words,omitempty"`
 }
 type StreamWord struct {
 	Text              string `json:"text"`
@@ -29,7 +31,7 @@ type StreamWord struct {
 type providerStreamUtterance struct {
 	Text      string                     `json:"text"`
 	Definite  bool                       `json:"definite"`
-	Start     *int                       `json:"start_time"`
+	Start     json.RawMessage            `json:"start_time"`
 	End       *int                       `json:"end_time"`
 	Additions map[string]json.RawMessage `json:"additions"`
 	Words     []struct {
@@ -44,11 +46,12 @@ func streamUtterances(source []providerStreamUtterance) []StreamUtterance {
 		return nil
 	}
 	var result []StreamUtterance
-	for _, raw := range source {
-		if raw.Start == nil || raw.End == nil || *raw.Start < 0 || *raw.End < *raw.Start || *raw.End > 15100 || utf8.RuneCountInString(raw.Text) > 4096 {
+	for index, raw := range source {
+		start, unavailable, valid := streamUtteranceStart(raw.Start, index)
+		if !valid || raw.End == nil || start < 0 || *raw.End < start || *raw.End > 15100 || utf8.RuneCountInString(raw.Text) > 4096 {
 			continue
 		}
-		u := StreamUtterance{Text: raw.Text, Definite: raw.Definite, StartMilliseconds: *raw.Start, EndMilliseconds: *raw.End}
+		u := StreamUtterance{Text: raw.Text, Definite: raw.Definite, StartMilliseconds: start, EndMilliseconds: *raw.End, ProviderStartUnavailable: unavailable}
 		// Metadata may be absent on provisional results. Never fabricate defaults.
 		u.Speaker = streamString(raw.Additions["speaker_id"], 128)
 		u.AcousticEmotion = streamString(raw.Additions["emotion"], 512)
@@ -56,7 +59,7 @@ func streamUtterances(source []providerStreamUtterance) []StreamUtterance {
 		u.SpeechRate = streamNumber(raw.Additions["speech_rate"])
 		if len(raw.Words) <= 2048 {
 			for _, w := range raw.Words {
-				if w.Start >= *raw.Start && w.End >= w.Start && w.End <= *raw.End && utf8.RuneCountInString(w.Text) <= 128 {
+				if w.Start >= start && w.End >= w.Start && w.End <= *raw.End && utf8.RuneCountInString(w.Text) <= 128 {
 					u.Words = append(u.Words, StreamWord{w.Text, w.Start, w.End})
 				}
 			}
@@ -65,6 +68,22 @@ func streamUtterances(source []providerStreamUtterance) []StreamUtterance {
 	}
 	return result
 }
+
+// The actual provider can omit the first utterance's start_time while
+// returning its text, end, words and speaker. Keep that evidence, using the
+// segment beginning only as a conservative replay bound. Record the omission;
+// it is not an invented precise onset. Explicit null/invalid values and missing
+// starts on later turns remain invalid rather than borrowing a speaker's range.
+func streamUtteranceStart(raw json.RawMessage, index int) (start int, unavailable, valid bool) {
+	if len(raw) == 0 {
+		return 0, index == 0, index == 0
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &start) != nil {
+		return 0, false, false
+	}
+	return start, false, true
+}
+
 func streamString(raw json.RawMessage, limit int) string {
 	var value string
 	if json.Unmarshal(raw, &value) != nil || utf8.RuneCountInString(value) > limit {

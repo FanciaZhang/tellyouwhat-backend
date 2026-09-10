@@ -84,3 +84,50 @@ func TestStreamBoundaryPaddingPreservesUtteranceAndOriginalEnd(t *testing.T) {
 		t.Fatal("mutated original")
 	}
 }
+
+func TestStreamOmittedFirstStartRetainsOriginalTurnAndProvenance(t *testing.T) {
+	// Reproduces the actual provider shape: start_time is absent on the first
+	// utterance, but its end, words, speaker and emotion are present.
+	raw := []byte(`{"result":{"text":"第一句。第二句。","utterances":[{"text":"第一句。","end_time":4022,"definite":true,"additions":{"speaker_id":"2","emotion":"provider-original"},"words":[{"text":"第一句","end_time":3800}]},{"text":"第二句。","start_time":4040,"end_time":6162,"definite":true,"additions":{"speaker_id":"1"}}]}}`)
+	packet := asrPacket(9, true, raw)
+	packet[2] = 0x10
+	result, err := parseASR(packet)
+	if err != nil || len(result.Utterances) != 2 {
+		t.Fatal(result, err)
+	}
+	first := result.Utterances[0]
+	if first.Text != "第一句。" || first.StartMilliseconds != 0 || !first.ProviderStartUnavailable || first.EndMilliseconds != 4022 || first.Speaker != "2" || first.AcousticEmotion != "provider-original" || len(first.Words) != 1 {
+		t.Fatal(first)
+	}
+	if result.Utterances[1].ProviderStartUnavailable {
+		t.Fatal("marked a returned onset as absent")
+	}
+	bounded := boundedStreamUtterances(result.Utterances, 15000)
+	if len(bounded) != 2 || bounded[0].Text+bounded[1].Text != result.Text || !bounded[0].ProviderStartUnavailable {
+		t.Fatal(bounded)
+	}
+}
+
+func TestStreamMissingStartDoesNotAcceptNullOrInventLaterTurnRanges(t *testing.T) {
+	for _, raw := range []string{
+		`[{"text":"bad","start_time":null,"end_time":1000}]`,
+		`[{"text":"bad","start_time":"0","end_time":1000}]`,
+		`[{"text":"bad","start_time":-1,"end_time":1000}]`,
+		`[{"text":"bad"}]`,
+	} {
+		var source []providerStreamUtterance
+		if err := json.Unmarshal([]byte(raw), &source); err != nil {
+			t.Fatal(err)
+		}
+		if got := streamUtterances(source); len(got) != 0 {
+			t.Fatal("accepted malformed onset", got)
+		}
+	}
+	var source []providerStreamUtterance
+	if err := json.Unmarshal([]byte(`[{"text":"first","start_time":0,"end_time":1000},{"text":"unknown onset","end_time":2000}]`), &source); err != nil {
+		t.Fatal(err)
+	}
+	if got := streamUtterances(source); len(got) != 1 || got[0].Text != "first" {
+		t.Fatal("assigned a later turn the recording origin", got)
+	}
+}

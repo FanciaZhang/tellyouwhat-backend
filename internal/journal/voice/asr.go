@@ -21,6 +21,7 @@ type ASRConfig struct {
 	// Enabled only by the Journal development entry point until live acceptance.
 	StreamInsights bool
 	ObserveSchema  func([]StreamSchema)
+	ObserveTrace   func([]StreamTrace)
 }
 type Transcript struct {
 	Text, Stable string
@@ -40,6 +41,8 @@ type asrConnection struct {
 	ws            *websocket.Conn
 	observeSchema func([]StreamSchema)
 	utterances    streamUtteranceWindow
+	observeTrace  func([]StreamTrace)
+	traces        []StreamTrace
 }
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
@@ -84,7 +87,7 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		ws.Close()
 		return nil, err
 	}
-	return &asrConnection{ws: ws, observeSchema: a.Config.ObserveSchema}, nil
+	return &asrConnection{ws: ws, observeSchema: a.Config.ObserveSchema, observeTrace: a.Config.ObserveTrace}, nil
 }
 func asrPacket(kind byte, final bool, payload []byte) []byte {
 	flags := byte(0)
@@ -112,14 +115,32 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err := websocket.Message.Receive(c.ws, &packet); err != nil {
 		return Transcript{}, err
 	}
-	result, err := parseASRWithObserver(packet, c.observeSchema)
+	var trace StreamTrace
+	var collect func(StreamTrace)
+	if c.observeTrace != nil {
+		collect = func(v StreamTrace) { trace = v }
+	}
+	result, err := parseASRWithObserver(packet, c.observeSchema, collect)
 	if err != nil {
 		return Transcript{}, err
 	}
-	return c.utterances.merge(result), nil
+	result = c.utterances.merge(result)
+	if c.observeTrace != nil {
+		trace.merged(result)
+		if len(c.traces) < 128 {
+			c.traces = append(c.traces, trace)
+		} else if result.Final {
+			c.traces[len(c.traces)-1] = trace
+		}
+		if result.Final {
+			c.observeTrace(c.traces)
+			c.traces = nil
+		}
+	}
+	return result, nil
 }
 func parseASR(packet []byte) (Transcript, error) { return parseASRWithObserver(packet, nil) }
-func parseASRWithObserver(packet []byte, observe func([]StreamSchema)) (Transcript, error) {
+func parseASRWithObserver(packet []byte, observe func([]StreamSchema), trace ...func(StreamTrace)) (Transcript, error) {
 	if len(packet) < 8 || packet[0]>>4 != 1 {
 		return Transcript{}, ErrInvalid
 	}
@@ -178,6 +199,9 @@ func parseASRWithObserver(packet []byte, observe func([]StreamSchema)) (Transcri
 	}
 	result := Transcript{Text: envelope.Result.Text, Final: flags&2 != 0}
 	result.Utterances = streamUtterances(envelope.Result.Utterances)
+	if len(trace) > 0 && trace[0] != nil {
+		trace[0](makeStreamTrace(envelope.Result.Utterances, result))
+	}
 	for _, u := range envelope.Result.Utterances {
 		if u.Definite {
 			result.Stable += u.Text
