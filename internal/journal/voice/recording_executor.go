@@ -140,6 +140,12 @@ func (e *RecordingExecutor) advance(ctx context.Context, owner, id string, retry
 		return job, nil
 	}
 	if providerErr != nil {
+		if errors.Is(providerErr, ErrRecordingTaskMissing) && job.State == RecordingProcessing &&
+			job.ErrorCode != "analysis_submission_uncertain" && e.Store.now().Sub(job.UpdatedAt) >= 30*time.Second {
+			// An acknowledged task has disappeared. End polling explicitly, but
+			// never turn this into permission to resubmit the old provider ID.
+			return e.Store.Advance(owner, id, job.Revision, RecordingFailed, nil, "analysis_task_missing")
+		}
 		if errors.Is(providerErr, ErrRecordingTaskMissing) &&
 			(job.State == RecordingSubmitting || job.ErrorCode == "analysis_submission_uncertain") &&
 			e.Store.now().Sub(job.UpdatedAt) >= 30*time.Second {
