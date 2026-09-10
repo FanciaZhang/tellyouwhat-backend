@@ -10,10 +10,10 @@ vet:
 	go vet ./...
 
 generate-api:
-	go generate ./internal/platformhttpapi ./internal/healthhttpapi ./internal/journalhttpapi ./internal/adminhttpapi ./internal/workerhttpapi
+	go generate ./internal/platformhttpapi ./internal/healthhttpapi ./internal/journalhttpapi ./internal/adminhttpapi ./internal/workerhttpapi ./internal/lifecyclehttpapi
 
 verify-generated: generate-api
-	git diff --exit-code -- Contracts/HTTP/HealthAPI/openapi.yaml Contracts/HTTP/JournalAPI/openapi.yaml internal/platformhttpapi/generated.go internal/healthhttpapi/generated.go internal/journalhttpapi/generated.go internal/adminhttpapi/generated.go internal/workerhttpapi/generated.go
+	git diff --exit-code -- Contracts/HTTP/HealthAPI/openapi.yaml Contracts/HTTP/JournalAPI/openapi.yaml internal/platformhttpapi/generated.go internal/healthhttpapi/generated.go internal/journalhttpapi/generated.go internal/adminhttpapi/generated.go internal/workerhttpapi/generated.go internal/lifecyclehttpapi/generated.go
 
 swift-client:
 	swift build --package-path Contracts/HTTP

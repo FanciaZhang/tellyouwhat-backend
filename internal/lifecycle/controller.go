@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/gin-gonic/gin"
+	"github.com/tellyouwhat/backend/internal/lifecyclehttpapi"
 	"io"
 	"net"
 	"net/http"
@@ -16,15 +18,7 @@ import (
 )
 
 type key struct{}
-type Status struct {
-	Protocol          int    `json:"protocol"`
-	BootID            string `json:"bootID"`
-	Slot              string `json:"slot"`
-	HTTPEnabled       bool   `json:"httpEnabled"`
-	BackgroundEnabled bool   `json:"backgroundEnabled"`
-	HTTP              int    `json:"http"`
-	Background        int    `json:"background"`
-}
+type Status = lifecyclehttpapi.Status
 
 type Controller struct {
 	mu    sync.Mutex
@@ -80,74 +74,73 @@ func Wait(ctx context.Context) bool {
 		}
 	}
 }
-func (c *Controller) Handler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Readiness remains available for candidates; it does not authorize traffic.
-		if r.Method == http.MethodGet && (r.URL.Path == "/readyz" || r.URL.Path == "/healthz") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		c.mu.Lock()
-		if !c.state.HTTPEnabled {
-			c.mu.Unlock()
-			http.Error(w, "service is in standby", http.StatusServiceUnavailable)
-			return
-		}
-		c.state.HTTP++
+
+type admittedHandler struct {
+	control *Controller
+	next    http.Handler
+}
+
+func (c *Controller) Handler(next http.Handler) http.Handler { return &admittedHandler{c, next} }
+func (h *admittedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c := h.control
+	// Readiness remains available for candidates; it does not authorize traffic.
+	if r.Method == http.MethodGet && (r.URL.Path == "/readyz" || r.URL.Path == "/healthz") {
+		h.next.ServeHTTP(w, r)
+		return
+	}
+	c.mu.Lock()
+	if !c.state.HTTPEnabled {
 		c.mu.Unlock()
-		defer func() { c.mu.Lock(); c.state.HTTP--; c.mu.Unlock() }()
-		// Do not wrap ResponseWriter: streaming, flushing and hijacking stay native.
-		next.ServeHTTP(w, r.WithContext(WithController(r.Context(), c)))
-	})
+		http.Error(w, "service is in standby", http.StatusServiceUnavailable)
+		return
+	}
+	c.state.HTTP++
+	c.mu.Unlock()
+	defer func() { c.mu.Lock(); c.state.HTTP--; c.mu.Unlock() }()
+	// Preserve the native ResponseWriter's flushing and hijacking interfaces.
+	h.next.ServeHTTP(w, r.WithContext(WithController(r.Context(), c)))
 }
 func (c *Controller) Control() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/status" {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(c.Status())
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
-			return
-		}
-		var req struct {
-			BootID string `json:"bootID"`
-		}
-		if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req) != nil {
-			http.Error(w, "invalid request", 400)
-			return
-		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if req.BootID != c.state.BootID {
-			http.Error(w, "process changed", 409)
-			return
-		}
-		switch r.URL.Path {
-		case "/serve":
-			c.state.HTTPEnabled = true
-		case "/resume":
-			if !c.state.HTTPEnabled {
-				http.Error(w, "HTTP admission is disabled", 409)
-				return
-			}
-			c.state.BackgroundEnabled = true
-		case "/pause":
-			c.state.BackgroundEnabled = false
-		case "/seal":
-			if c.state.BackgroundEnabled || c.state.HTTP != 0 || c.state.Background != 0 {
-				http.Error(w, "work is still active", 409)
-				return
-			}
-			c.state.HTTPEnabled = false
-		default:
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(c.state)
+	router := gin.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+	router.HandleMethodNotAllowed = true
+	router.Use(func(ctx *gin.Context) {
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, 1024)
+		ctx.Next()
 	})
+	lifecyclehttpapi.RegisterHandlers(router, lifecyclehttpapi.NewStrictHandler(c, nil))
+	return router
+}
+func (c *Controller) ReadLifecycleStatus(context.Context, lifecyclehttpapi.ReadLifecycleStatusRequestObject) (lifecyclehttpapi.ReadLifecycleStatusResponseObject, error) {
+	return lifecyclehttpapi.ReadLifecycleStatus200JSONResponse(c.Status()), nil
+}
+func (c *Controller) ChangeLifecycleState(_ context.Context, req lifecyclehttpapi.ChangeLifecycleStateRequestObject) (lifecyclehttpapi.ChangeLifecycleStateResponseObject, error) {
+	if req.Body == nil || !req.Action.Valid() {
+		return lifecyclehttpapi.ChangeLifecycleState400Response{}, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if req.Body.BootID != c.state.BootID {
+		return lifecyclehttpapi.ChangeLifecycleState409Response{}, nil
+	}
+	switch req.Action {
+	case lifecyclehttpapi.Serve:
+		c.state.HTTPEnabled = true
+	case lifecyclehttpapi.Resume:
+		if !c.state.HTTPEnabled {
+			return lifecyclehttpapi.ChangeLifecycleState409Response{}, nil
+		}
+		c.state.BackgroundEnabled = true
+	case lifecyclehttpapi.Pause:
+		c.state.BackgroundEnabled = false
+	case lifecyclehttpapi.Seal:
+		if c.state.BackgroundEnabled || c.state.HTTP != 0 || c.state.Background != 0 {
+			return lifecyclehttpapi.ChangeLifecycleState409Response{}, nil
+		}
+		c.state.HTTPEnabled = false
+	}
+	return lifecyclehttpapi.ChangeLifecycleState200JSONResponse(c.state), nil
 }
 func Address(role string) (string, error) {
 	switch role {
@@ -190,10 +183,15 @@ func Request(role, action, bootID string) (Status, error) {
 		method = http.MethodGet
 	}
 	body, _ := json.Marshal(map[string]string{"bootID": bootID})
-	req, err := http.NewRequest(method, "http://"+addr+"/"+action, strings.NewReader(string(body)))
+	path := "/status"
+	if action != "status" {
+		path = "/control/" + action
+	}
+	req, err := http.NewRequest(method, "http://"+addr+path, strings.NewReader(string(body)))
 	if err != nil {
 		return status, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	resp, err := client.Do(req)
 	if err != nil {

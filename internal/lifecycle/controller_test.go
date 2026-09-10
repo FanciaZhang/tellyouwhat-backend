@@ -18,7 +18,8 @@ import (
 
 func command(c *Controller, action, id string) int {
 	body, _ := json.Marshal(map[string]string{"bootID": id})
-	r := httptest.NewRequest("POST", "/"+action, strings.NewReader(string(body)))
+	r := httptest.NewRequest("POST", "/control/"+action, strings.NewReader(string(body)))
+	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	c.Control().ServeHTTP(w, r)
 	return w.Code
