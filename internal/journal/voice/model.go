@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type RewriteResult struct {
@@ -107,10 +109,19 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 		return RewriteResult{}, err
 	}
 	styleInstructions, _ := s.WritingStyle.instructions() // Validate already enforces the closed catalog.
-	input, _ := json.Marshal(map[string]any{"document": editorialDocument(s), "transcriptRevision": tr})
+	document := editorialDocument(s)
+	dialogueMarker := ""
+	if s.RecordingContext != nil && s.RecordingContext.Mode == "dialogue" {
+		dialogueMarker = "[journal-dialogue:" + uuid.NewString() + "]"
+		document.RecordingContext.DialogueText = dialogueMarker
+	}
+	input, _ := json.Marshal(map[string]any{"document": document, "transcriptRevision": tr})
 	instructions := rewriteInstructions
 	if s.RecordingContext != nil {
 		instructions += recordingRewriteInstructions
+	}
+	if dialogueMarker != "" {
+		instructions += "\n本次 dialogueText 是完整对话的插入标记。请在应放置对话的位置原样输出该标记一次，服务端会用原始发言精确展开它。不要自己复述对话，不要在标记前后再写同一段经历。正文已有本次录音形成的独白草稿时，替换为这个标记；与本次录音无关的正文仍保留。若具体手改阻止替换，返回空 patches 并说明 questions。"
 	}
 	fields := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "text", "afterID"}, "properties": map[string]any{"id": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "afterID": map[string]string{"type": "string"}}}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "questions"}, "properties": map[string]any{"baseRevision": map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"}, "patches": map[string]any{"type": "array", "items": fields}, "questions": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}}
@@ -183,6 +194,22 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	}
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return metered, ErrInvalid
+	}
+	if dialogueMarker != "" && len(revision.Patches) > 0 {
+		occurrences := 0
+		for _, patch := range revision.Patches {
+			occurrences += strings.Count(patch.Text, dialogueMarker)
+		}
+		if occurrences != 1 {
+			return metered, ErrInvalid
+		}
+		canonical, err := RecordingDialogueText(*s.RecordingContext)
+		if err != nil {
+			return metered, err
+		}
+		for i := range revision.Patches {
+			revision.Patches[i].Text = strings.ReplaceAll(revision.Patches[i].Text, dialogueMarker, canonical)
+		}
 	}
 	if err = revision.Validate(s); err != nil {
 		return metered, err

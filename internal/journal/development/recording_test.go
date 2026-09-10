@@ -273,6 +273,11 @@ func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	if second := call(); second.Code != 200 || second.Body.String() != first.Body.String() || model.calls != 1 {
 		t.Fatal("duplicate preview was regenerated", second.Code, model.calls)
 	}
+	input.RequestID = strings.ToUpper(input.RequestID)
+	pretty, _ := json.MarshalIndent(input, "", "  ")
+	if repeated := f.request("POST", path+"/preview", "application/json", bytes.NewReader(pretty)); repeated.Code != 200 || model.calls != 1 {
+		t.Fatal("JSON formatting or UUID casing defeated deduplication", repeated.Code, model.calls)
+	}
 	if model.snapshot.Transcript != "38周加一天。" {
 		t.Fatal("stream detail lost")
 	}

@@ -3,6 +3,7 @@ package development
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"io"
@@ -47,10 +48,12 @@ func (h *recordingHTTP) preview(w http.ResponseWriter, r *http.Request, owner, a
 		deny(w, 422, "recording_preview_invalid")
 		return
 	}
-	if _, err := uuid.Parse(input.RequestID); err != nil || len(input.RequestID) != 36 || input.Snapshot.RecordingContext == nil || input.Snapshot.Validate() != nil {
+	requestID, requestErr := uuid.Parse(input.RequestID)
+	if requestErr != nil || len(input.RequestID) != 36 || input.Snapshot.RecordingContext == nil || input.Snapshot.Validate() != nil {
 		deny(w, 422, "recording_preview_invalid")
 		return
 	}
+	input.RequestID = requestID.String()
 	job, err := h.executor.Store.Get(owner, archiveID)
 	if os.IsNotExist(err) {
 		deny(w, 404, "recording_not_found")
@@ -67,7 +70,15 @@ func (h *recordingHTTP) preview(w http.ResponseWriter, r *http.Request, owner, a
 		return
 	}
 	key := owner + "/" + archiveID + "/" + input.RequestID
-	digest := sha256.Sum256(body)
+	// JSONEncoder may reorder object keys on a retry. Fingerprint the decoded
+	// request, not wire formatting, while retaining all actual document changes.
+	context.Analysis.TaskID = providerID.String()
+	canonical, err := json.Marshal(input)
+	if err != nil {
+		deny(w, 422, "recording_preview_invalid")
+		return
+	}
+	digest := sha256.Sum256(canonical)
 	h.previews.mu.Lock()
 	for k, value := range h.previews.entries {
 		if value.response != nil && !value.expires.After(h.now()) {
@@ -107,7 +118,17 @@ func (h *recordingHTTP) preview(w http.ResponseWriter, r *http.Request, owner, a
 	}
 	h.previews.mu.Unlock()
 	if err != nil {
-		deny(w, 503, "recording_preview_unavailable")
+		code := "recording_preview_unavailable"
+		if errors.Is(err, voice.ErrInvalid) {
+			code = "recording_preview_invalid_result"
+		}
+		if errors.Is(err, voice.ErrConflict) {
+			code = "recording_preview_conflict"
+		}
+		if err.Error() == "voice_rewrite_timeout" {
+			code = "recording_preview_timeout"
+		}
+		deny(w, 503, code)
 		return
 	}
 	writePreview(w, response)
