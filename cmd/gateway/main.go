@@ -466,8 +466,9 @@ func buildAppHandler(
 			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {
 				return nil, errors.New("voice requires speech credentials, model, and a 32-byte capability secret")
 			}
+			voiceLogger := logger.With("app_id", app.ID, "component", "journal_voice")
 			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR, Prompts: storage.prompts}
-			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel}
+			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel, Logger: voiceLogger}
 			if costController != nil {
 				speech = voice.NewBudgetedSpeech(speech, costController, string(app.ID), platform.AICost.JournalSpeech)
 				rewriter = voice.NewBudgetedRewriter(rewriter, costController, string(app.ID), platform.AICost.JournalArk)
@@ -475,7 +476,7 @@ func buildAppHandler(
 			if storage.prompts != nil {
 				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
 			}
-			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Logger: voiceLogger, Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
 					logger.Error("voice usage record failed")
 				}

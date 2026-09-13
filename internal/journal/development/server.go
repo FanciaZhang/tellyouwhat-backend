@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Config struct {
 	Rewriter  voice.Rewriter
 	Recording *voice.RecordingExecutor
 	Now       func() time.Time
+	Logger    *slog.Logger
 }
 
 type principalContextKey struct{}
@@ -138,7 +140,7 @@ func New(c Config) (http.Handler, error) {
 		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope},
 		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: "journal-organize-2026-08-31"},
 		JournalAnalysisVersion: "journal-organize-2026-08-31",
-		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000}, VoiceEntitlements: store,
+		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000, Logger: c.Logger}, VoiceEntitlements: store,
 		Now: c.Now,
 	})
 	router := s.Router()

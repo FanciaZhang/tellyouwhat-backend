@@ -59,6 +59,40 @@ revision. Stale results must not overwrite user edits. A failed model request
 keeps the audio and transcript recoverable and must not imply successful final
 organization.
 
+## Privacy-safe diagnostics
+
+Every voice stream receives a random `voice_trace_id`. Rewrite attempts use an
+incrementing `rewrite_attempt`, so the stream, model call and result can be
+correlated without logging an account, device, session, segment, journal or
+recording identifier. The production gateway and private development service
+emit the same structured fields.
+
+Rewrite logs include the finalization state, document/transcript revision,
+generation, counts of blocks, characters, edits, media and vocabulary, provider
+call duration, HTTP status, response size/content type, allow-listed provider
+request/error identifiers, provider completion status, selected model, prompt
+configuration version, token counts and the exact validation stage. A successful
+result also records patch/question/emotion counts. Storage, ASR, protocol and
+lease failures record a stable processing stage and Go error class.
+
+These logs must never include journal or transcript text, prompts, vocabulary
+values, audio bytes, provider response text/error messages, owner/device/session
+identifiers, request bodies, authorization values, API keys or WebSocket tickets.
+Provider response metadata is allow-listed rather than logging a raw error body.
+Tests exercise both the useful fields and these negative privacy guarantees.
+
+For a reported time window, locate the active Compose gateway and filter by the
+component and trace ID. The private development service can be queried in the
+same way:
+
+```sh
+gateway_container="$(docker ps --filter label=com.docker.compose.service=gateway --format '{{.Names}}' | head -n 1)"
+docker logs --since 2026-09-13T14:35:00Z --until 2026-09-13T14:50:00Z "$gateway_container" 2>&1 \
+  | jq -c 'select(.component == "journal_voice")'
+docker logs --since 2026-09-13T14:35:00Z --until 2026-09-13T14:50:00Z journal-private-development 2>&1 \
+  | jq -c 'select(.component == "journal_voice")'
+```
+
 ## Durability, limits, and privacy
 
 The subscription-wide fenced lease and idempotent segment ledger use shared Redis;

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -43,6 +44,7 @@ type Service struct {
 	Model        Rewriter
 	Secret       []byte
 	Limit        int
+	Logger       *slog.Logger
 	// Records metadata only; never transcript, body, or vocabulary.
 	Usage func(context.Context, Identity, int, int)
 }
@@ -162,12 +164,32 @@ type rewriteResult struct {
 	err        error
 	generation int
 	source     string
+	attempt    int
+	startedAt  time.Time
+	finalizing bool
 }
 
 func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	ctx, cancel := context.WithCancel(costcontrol.WithAccess(ws.Request().Context(), claim.Identity.KeyID, true))
 	defer cancel()
 	defer ws.Close()
+	voiceTraceID := newVoiceTraceID()
+	streamStartedAt := time.Now()
+	rewriteAttempts, completedRewrites, failedRewrites := 0, 0, 0
+	if s.Logger != nil {
+		s.Logger.InfoContext(ctx, "journal voice stream started", "voice_trace_id", voiceTraceID)
+	}
+	defer func() {
+		if s.Logger != nil {
+			s.Logger.InfoContext(context.WithoutCancel(ctx), "journal voice stream closed",
+				"voice_trace_id", voiceTraceID,
+				"duration_ms", time.Since(streamStartedAt).Milliseconds(),
+				"rewrite_attempts", rewriteAttempts,
+				"completed_rewrites", completedRewrites,
+				"failed_rewrites", failedRewrites,
+			)
+		}
+	}()
 	ws.MaxPayloadBytes = 512 << 10
 	incoming := make(chan receivedFrame, 8)
 	speech := make(chan speechResult, 32)
@@ -190,7 +212,18 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		return websocket.JSON.Send(ws, e) == nil
 	}
-	fail := func(code string) { emit(Event{Type: "error", Code: code}) }
+	failWithCause := func(code, stage string, cause error) {
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "journal voice stream failure",
+				"voice_trace_id", voiceTraceID,
+				"stage", stage,
+				"client_error_code", code,
+				"error_class", errorClass(cause),
+			)
+		}
+		emit(Event{Type: "error", Code: code})
+	}
+	fail := func(code string) { failWithCause(code, "protocol", nil) }
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var asr SpeechConnection
@@ -231,8 +264,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		current := snapshot
 		current.Transcript = transcriptBase + segmentText
 		current.rewriteAcknowledged = acknowledgedSource
-		if current.Validate() != nil {
-			fail("voice_context_too_large")
+		if err := current.Validate(); err != nil {
+			failWithCause("voice_context_too_large", "validate_rewrite_context", err)
 			failed = true
 			cancel()
 			return
@@ -245,14 +278,46 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		lastSubmitted = tr
 		g := generation
 		targetTR := tr
+		rewriteAttempts++
+		attempt := rewriteAttempts
+		startedAt := time.Now()
+		finalizing := finishing
+		if s.Logger != nil {
+			bodyCharacters := 0
+			for _, block := range current.Blocks {
+				bodyCharacters += utf8.RuneCountInString(block.Text)
+			}
+			recordingMode := ""
+			if current.RecordingContext != nil {
+				recordingMode = safeDiagnosticToken(current.RecordingContext.Mode)
+			}
+			s.Logger.InfoContext(ctx, "journal voice rewrite started",
+				"voice_trace_id", voiceTraceID,
+				"rewrite_attempt", attempt,
+				"finalizing", finalizing,
+				"document_revision", current.Revision,
+				"transcript_revision", targetTR,
+				"generation", g,
+				"block_count", len(current.Blocks),
+				"body_character_count", bodyCharacters,
+				"transcript_character_count", utf8.RuneCountInString(current.Transcript),
+				"manual_edit_count", len(current.ManualEdits),
+				"edited_block_count", len(current.EditedBlockIDs),
+				"media_only_block_count", len(current.MediaOnlyBlockIDs),
+				"vocabulary_count", len(current.Words),
+				"has_recording_context", current.RecordingContext != nil,
+				"recording_mode", recordingMode,
+			)
+		}
 		complete := lifecycle.Track(ctx)
 		go func() {
 			defer complete()
 			work, stop := context.WithTimeout(ctx, 840*time.Second)
 			defer stop()
+			work = withRewriteTrace(work, voiceTraceID, attempt)
 			result, err := s.Model.Rewrite(work, current, targetTR)
 			select {
-			case rewrites <- rewriteResult{result, err, g, current.Transcript}:
+			case rewrites <- rewriteResult{result, err, g, current.Transcript, attempt, startedAt, finalizing}:
 			case <-ctx.Done():
 			}
 		}()
@@ -290,20 +355,27 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				fail("voice_session_expired")
 				return
 			}
-			if s.Store.Renew(ctx, claim.Identity.Owner, fence) != nil {
-				fail("voice_session_busy")
+			if err := s.Store.Renew(ctx, claim.Identity.Owner, fence); err != nil {
+				failWithCause("voice_session_busy", "renew_session_lease", err)
 				return
 			}
 			schedule(true)
 		case message := <-incoming:
 			if message.err != nil {
+				if s.Logger != nil {
+					s.Logger.InfoContext(ctx, "journal voice socket receive ended", "voice_trace_id", voiceTraceID, "error_class", errorClass(message.err))
+				}
 				return
 			}
 			f := message.frame
 			switch f.Type {
 			case "snapshot":
-				if f.Snapshot == nil || f.Snapshot.Validate() != nil {
-					fail("voice_invalid_request")
+				if f.Snapshot == nil {
+					failWithCause("voice_invalid_request", "missing_snapshot", ErrInvalid)
+					return
+				}
+				if err := f.Snapshot.Validate(); err != nil {
+					failWithCause("voice_invalid_request", "validate_snapshot", err)
 					return
 				}
 				next := *f.Snapshot
@@ -369,19 +441,19 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					var err error
 					duplicate, err = s.Store.Receipt(ctx, claim.Identity.Owner, claim.SessionID, segment)
 					if err != nil {
-						fail("voice_storage_unavailable")
+						failWithCause("voice_storage_unavailable", "read_segment_receipt", err)
 						return
 					}
 					billedHash, err = s.Store.BilledHash(ctx, claim.Identity.Owner, claim.SessionID, segment)
 					if err != nil {
-						fail("voice_storage_unavailable")
+						failWithCause("voice_storage_unavailable", "read_billed_segment", err)
 						return
 					}
 					start, _ := Period(claim.Identity.Anchor, time.Now())
 					segmentPeriod = start.Format(time.RFC3339)
 					remaining, err = s.Store.Remaining(ctx, claim.Identity.Owner, segmentPeriod, s.limit())
 					if err != nil {
-						fail("voice_storage_unavailable")
+						failWithCause("voice_storage_unavailable", "read_voice_allowance", err)
 						return
 					}
 					if duplicate == nil {
@@ -391,7 +463,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						}
 						asr, err = s.Speech.Open(ctx, snapshot.Words)
 						if err != nil {
-							fail("voice_speech_unavailable")
+							failWithCause("voice_speech_unavailable", "open_speech_provider", err)
 							return
 						}
 						conn, id := asr, segment
@@ -443,7 +515,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						duplicate = nil
 					}
 				} else if err := asr.Send(f.PCM, f.Final); err != nil {
-					fail("voice_speech_unavailable")
+					failWithCause("voice_speech_unavailable", "send_speech_audio", err)
 					return
 				}
 			case "finish":
@@ -467,7 +539,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				continue
 			}
 			if result.err != nil {
-				fail("voice_speech_unavailable")
+				failWithCause("voice_speech_unavailable", "receive_speech_result", result.err)
 				return
 			}
 			v := result.value
@@ -489,7 +561,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					if errors.Is(err, ErrQuota) {
 						fail("voice_quota_exhausted")
 					} else {
-						fail("voice_storage_unavailable")
+						failWithCause("voice_storage_unavailable", "commit_speech_receipt", err)
 					}
 					return
 				}
@@ -517,8 +589,39 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 		case result := <-rewrites:
 			running = false
+			diagnostics := rewriteDiagnostics(result.value, result.err)
 			if result.err != nil {
-				fail("voice_rewrite_unavailable")
+				failedRewrites++
+			} else {
+				completedRewrites++
+			}
+			if s.Logger != nil {
+				log := s.Logger.InfoContext
+				if result.err != nil {
+					log = s.Logger.WarnContext
+				}
+				log(ctx, "journal voice rewrite completed",
+					"voice_trace_id", voiceTraceID,
+					"rewrite_attempt", result.attempt,
+					"finalizing", result.finalizing,
+					"outcome", map[bool]string{true: "failed", false: "completed"}[result.err != nil],
+					"duration_ms", time.Since(result.startedAt).Milliseconds(),
+					"stage", diagnostics.Stage,
+					"http_status", diagnostics.HTTPStatus,
+					"provider_request_id", diagnostics.ProviderRequestID,
+					"provider_error_code", diagnostics.ProviderErrorCode,
+					"provider_status", diagnostics.ProviderStatus,
+					"input_token_count", result.value.InputTokens,
+					"output_token_count", result.value.OutputTokens,
+					"patch_count", len(result.value.Revision.Patches),
+					"question_count", len(result.value.Revision.Questions),
+					"emotion_count", len(result.value.Revision.Emotions),
+					"has_overall_emotion", result.value.Revision.OverallEmotion != "",
+					"error_class", errorClass(result.err),
+				)
+			}
+			if result.err != nil {
+				failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
 				dirty = true
 				if finishing {
 					return
