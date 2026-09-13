@@ -476,3 +476,64 @@ func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
 		t.Fatal(event)
 	}
 }
+
+func TestManualEditAtExpectedAcknowledgementRevisionRewritesLatestBody(t *testing.T) {
+	model := &scriptedRewriter{}
+	s := &Service{Store: NewMemoryStore(), Speech: &scriptedSpeech{}, Model: model, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(context.Background(), Identity{Owner: "typing-race", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(5 * time.Second))
+	read := func() Event {
+		t.Helper()
+		var e Event
+		if err := websocket.JSON.Receive(ws, &e); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	read()
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "已有正文"}}}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400), Final: true})
+	for {
+		if e := read(); e.Type == "receipt" {
+			snapshot.Transcript = e.Receipt.Text
+			break
+		}
+	}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	first := read()
+	if first.Type != "revision" {
+		t.Fatal(first)
+	}
+	// The user typed while this result was in flight; the client rejects it.
+	snapshot.Revision = first.Revision.BaseRevision + 1
+	snapshot.Blocks[0].Text = "刚刚手动补充的内容"
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	next := read()
+	if next.Type != "revision" || next.Revision.BaseRevision != snapshot.Revision {
+		t.Fatalf("typing was mistaken for an ACK: %+v", next)
+	}
+	snapshot.Revision++
+	snapshot.Blocks[0].Text = next.Revision.Patches[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if e := read(); e.Type != "finished" {
+		t.Fatal(e)
+	}
+	if model.calls.Load() != 2 {
+		t.Fatal(model.calls.Load())
+	}
+}

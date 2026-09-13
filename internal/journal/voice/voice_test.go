@@ -64,7 +64,7 @@ func TestFailedSegmentDoesNotChargeAndQuotaResetsByPeriod(t *testing.T) {
 	if n != 1000 {
 		t.Fatal(n)
 	}
-	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{"a", "hash", "text", 1000}, 1000)
+	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Text: "text", Milliseconds: 1000}, 1000)
 	n, _ = s.Remaining(ctx, "owner", "new", 1000)
 	if n != 1000 {
 		t.Fatal(n)
@@ -74,7 +74,7 @@ func TestExpiredTranscriptDoesNotRechargeInNextMonth(t *testing.T) {
 	s := NewMemoryStore()
 	ctx := context.Background()
 	s.Lock(ctx, "owner", "lease")
-	r := Receipt{"segment", "audio-hash", "原始转写", 1000}
+	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Text: "原始转写", Milliseconds: 1000}
 	if _, err := s.Commit(ctx, "owner", "session", "old", "lease", r, 1200); err != nil {
 		t.Fatal(err)
 	}

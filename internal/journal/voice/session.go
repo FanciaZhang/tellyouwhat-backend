@@ -161,6 +161,7 @@ type rewriteResult struct {
 	value      RewriteResult
 	err        error
 	generation int
+	source     string
 }
 
 func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
@@ -210,6 +211,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var generation, tr, lastSubmitted int
 	var dirty, running, finishing, failed bool
 	awaitingRevision := -1
+	var acknowledgedSource, awaitingSource string
+	var awaitingPatches []Patch
 	var segmentPeriod string
 	var remaining int
 	rewriteTimer := time.NewTimer(time.Hour)
@@ -227,6 +230,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		}
 		current := snapshot
 		current.Transcript = transcriptBase + segmentText
+		current.rewriteAcknowledged = acknowledgedSource
 		if current.Validate() != nil {
 			fail("voice_context_too_large")
 			failed = true
@@ -248,7 +252,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			defer stop()
 			result, err := s.Model.Rewrite(work, current, targetTR)
 			select {
-			case rewrites <- rewriteResult{result, err, g}:
+			case rewrites <- rewriteResult{result, err, g, current.Transcript}:
 			case <-ctx.Done():
 			}
 		}()
@@ -311,7 +315,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					next.Transcript = transcriptBase
 				}
 				hasSnapshot = true
-				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision
+				// Local typing can produce the expected ACK revision without
+				// applying our patch. Version equality alone is not an ACK.
+				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision && acceptsEditorialPatches(next.Blocks, awaitingPatches)
+				if wasAcknowledgement {
+					acknowledgedSource = awaitingSource
+				}
+				if styleChanged {
+					acknowledgedSource = ""
+				}
 				if awaitingRevision >= 0 && next.Revision >= awaitingRevision {
 					awaitingRevision = -1
 				}
@@ -459,7 +471,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				return
 			}
 			v := result.value
-			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable})
+			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)})
 			if v.Text != segmentText {
 				segmentText = v.Text
 				tr++
@@ -470,7 +482,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					fail("voice_invalid_request")
 					return
 				}
-				receipt := Receipt{segment, hash(string(pcm)), v.Text, (len(pcm) + 31) / 32}
+				receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: v.Text, Milliseconds: (len(pcm) + 31) / 32, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)}
 				var err error
 				remaining, err = s.Store.Commit(ctx, claim.Identity.Owner, claim.SessionID, segmentPeriod, fence, receipt, s.limit())
 				if err != nil {
@@ -517,6 +529,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
 					awaitingRevision = result.value.Revision.BaseRevision + 1
+					awaitingSource = result.source
+					// An unresolved question is not completed editorial work.
+					// Keep full source available until a later review resolves it.
+					if len(result.value.Revision.Questions) > 0 {
+						awaitingSource = ""
+					}
+					awaitingPatches = slices.Clone(result.value.Revision.Patches)
 					emit(Event{Type: "revision", Revision: &result.value.Revision})
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.
