@@ -161,6 +161,7 @@ func TestDialoguePreviewCannotDropRewriteOrDuplicateTurns(t *testing.T) {
 
 func TestRecordingEmotionRevisionRequiresTypedEvidenceAndUniqueAnchor(t *testing.T) {
 	r := recordingContextFixture(t)
+	r.Analysis.Utterances[0].AcousticEmotion = "happy"
 	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
 	s := Snapshot{Revision: 3, Transcript: r.Analysis.Text, RecordingContext: &r,
 		Blocks: []Block{{ID: block, Text: "这段山路很漂亮。后来下山了。"}}}
@@ -170,6 +171,16 @@ func TestRecordingEmotionRevisionRequiresTypedEvidenceAndUniqueAnchor(t *testing
 	}}}
 	if err := valid.Validate(s); err != nil {
 		t.Fatal(err)
+	}
+	missingPlacement := valid
+	missingPlacement.Emotions = nil
+	if missingPlacement.Validate(s) == nil {
+		t.Fatal("accepted an empty inline result despite non-neutral acoustic evidence")
+	}
+	neutral := s
+	neutral.RecordingContext.Analysis.Utterances[0].AcousticEmotion = "neutral"
+	if err := missingPlacement.Validate(neutral); err != nil {
+		t.Fatal("required an inline marker for neutral-only acoustic evidence", err)
 	}
 	for name, mutate := range map[string]func(*Revision){
 		"unknown kind":     func(value *Revision) { value.Emotions[0].Kind = "provider-happy" },

@@ -310,10 +310,14 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		"blockID": map[string]string{"type": "string"}, "anchorText": map[string]any{"type": "string", "maxLength": 80},
 		"sourceID": map[string]string{"type": "string"}, "kind": map[string]any{"type": "string", "enum": emotionKinds},
 	}}
+	emotionArray := map[string]any{"type": "array", "maxItems": 8, "items": emotionFields}
+	if recordingRequiresEmotionPlacement(s) {
+		emotionArray["minItems"] = 1
+	}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "questions", "emotions", "overallEmotion"}, "properties": map[string]any{
 		"baseRevision": map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"},
 		"patches": map[string]any{"type": "array", "items": patchFields}, "questions": map[string]any{"type": "array", "items": map[string]string{"type": "string"}},
-		"emotions":       map[string]any{"type": "array", "maxItems": 8, "items": emotionFields},
+		"emotions":       emotionArray,
 		"overallEmotion": map[string]any{"type": "string", "enum": append([]string{""}, emotionKinds...)},
 	}}
 	body := map[string]any{
@@ -329,6 +333,19 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		timeout = max(timeout, 150)
 	}
 	return PreparedRewrite{Body: payload, Parameters: settings.Voice.Parameters, Version: version, TimeoutSeconds: timeout, DialogueMarker: dialogueMarker, Document: document}, nil
+}
+
+func recordingRequiresEmotionPlacement(s Snapshot) bool {
+	if s.RecordingContext == nil {
+		return false
+	}
+	for _, utterance := range s.RecordingContext.Analysis.Utterances {
+		raw := strings.ToLower(strings.TrimSpace(utterance.AcousticEmotion))
+		if raw != "" && raw != "neutral" && raw != "calm" {
+			return true
+		}
+	}
+	return false
 }
 
 type ConfiguredRewriter struct {

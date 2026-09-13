@@ -242,9 +242,13 @@ func (r Revision) validateEmotions(s Snapshot) error {
 	}
 	evidence := map[string]bool{}
 	for _, utterance := range s.RecordingContext.Analysis.Utterances {
-		if strings.TrimSpace(utterance.AcousticEmotion) != "" {
+		raw := strings.ToLower(strings.TrimSpace(utterance.AcousticEmotion))
+		if raw != "" {
 			evidence[utterance.ID] = true
 		}
+	}
+	if recordingRequiresEmotionPlacement(s) && len(r.Emotions) == 0 {
+		return ErrInvalid
 	}
 	seenSources := map[string]bool{}
 	for _, emotion := range r.Emotions {
