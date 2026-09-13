@@ -4,6 +4,7 @@ package voice
 
 import (
 	"errors"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -60,11 +61,19 @@ type Patch struct {
 	// Empty afterID means replace an existing block; insertions need a new UUID.
 	AfterID string `json:"afterID"`
 }
+type EmotionPlacement struct {
+	BlockID    string `json:"blockID"`
+	AnchorText string `json:"anchorText"`
+	SourceID   string `json:"sourceID"`
+	Kind       string `json:"kind"`
+}
 type Revision struct {
-	BaseRevision       int      `json:"baseRevision"`
-	TranscriptRevision int      `json:"transcriptRevision"`
-	Patches            []Patch  `json:"patches"`
-	Questions          []string `json:"questions"`
+	BaseRevision       int                `json:"baseRevision"`
+	TranscriptRevision int                `json:"transcriptRevision"`
+	Patches            []Patch            `json:"patches"`
+	Questions          []string           `json:"questions"`
+	Emotions           []EmotionPlacement `json:"emotions"`
+	OverallEmotion     string             `json:"overallEmotion"`
 }
 type Receipt struct {
 	Utterances   []StreamUtterance `json:"utterances,omitempty"`
@@ -151,7 +160,7 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 {
+	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrConflict
 	}
 	known := map[string]bool{}
@@ -191,6 +200,9 @@ func (r Revision) Validate(s Snapshot) error {
 			return ErrInvalid
 		}
 	}
+	if err := r.validateEmotions(s); err != nil {
+		return err
+	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
 	}
@@ -200,6 +212,47 @@ func (r Revision) Validate(s Snapshot) error {
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
+	}
+	return nil
+}
+
+var journalEmotionKinds = map[string]bool{
+	"calm": true, "happy": true, "excited": true, "relaxed": true,
+	"moved": true, "hopeful": true, "surprised": true, "worried": true,
+	"nervous": true, "sad": true, "angry": true, "tired": true,
+}
+
+func (r Revision) validateEmotions(s Snapshot) error {
+	if s.RecordingContext == nil {
+		if len(r.Emotions) != 0 || r.OverallEmotion != "" {
+			return ErrInvalid
+		}
+		return nil
+	}
+	if !journalEmotionKinds[r.OverallEmotion] {
+		return ErrInvalid
+	}
+	texts := make(map[string]string, len(s.Blocks)+len(r.Patches))
+	for _, block := range s.Blocks {
+		texts[block.ID] = block.Text
+	}
+	for _, patch := range r.Patches {
+		texts[patch.ID] = patch.Text
+	}
+	evidence := map[string]bool{}
+	for _, utterance := range s.RecordingContext.Analysis.Utterances {
+		if strings.TrimSpace(utterance.AcousticEmotion) != "" {
+			evidence[utterance.ID] = true
+		}
+	}
+	seenSources := map[string]bool{}
+	for _, emotion := range r.Emotions {
+		if !journalEmotionKinds[emotion.Kind] || !evidence[emotion.SourceID] || seenSources[emotion.SourceID] ||
+			emotion.AnchorText == "" || utf8.RuneCountInString(emotion.AnchorText) > 80 ||
+			strings.Count(texts[emotion.BlockID], emotion.AnchorText) != 1 {
+			return ErrInvalid
+		}
+		seenSources[emotion.SourceID] = true
 	}
 	return nil
 }

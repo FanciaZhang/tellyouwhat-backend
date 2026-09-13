@@ -161,6 +161,14 @@ func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing
 					t.Error(err)
 				}
 				minimum <- cost
+				if mode == "narrative" {
+					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[],\"emotions\":[],\"overallEmotion\":\"calm\"}"}]}]}`))
+					return
+				}
+				if mode == "dialogue" {
+					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[\"请确认对话放置位置。\"],\"emotions\":[],\"overallEmotion\":\"calm\"}"}]}]}`))
+					return
+				}
 				_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[\"请确认发言人物。\"]}"}]}]}`))
 			}))
 			defer server.Close()

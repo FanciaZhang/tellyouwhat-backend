@@ -41,7 +41,7 @@ func TestDialogueModelPlacesReferenceAndServerPreservesExactTurns(t *testing.T) 
 		if !strings.HasPrefix(marker, "[journal-dialogue:") {
 			t.Error("missing typed insertion reference")
 		}
-		revision := Revision{BaseRevision: 1, TranscriptRevision: 2, Patches: []Patch{{ID: block, Text: marker}}, Questions: []string{}}
+		revision := Revision{BaseRevision: 1, TranscriptRevision: 2, Patches: []Patch{{ID: block, Text: marker}}, Questions: []string{}, Emotions: []EmotionPlacement{}, OverallEmotion: "calm"}
 		encoded, _ := json.Marshal(revision)
 		content := []map[string]string{{"type": "output_text", "text": string(encoded)}}
 		output := []map[string]any{{"content": content}}
@@ -116,7 +116,9 @@ func TestRecordingReviewKeepsSourceIdentityAndManualEditTimingInData(t *testing.
 		}
 		// A legitimate no-change response remains representable; correctness is
 		// determined by the live source review, not by forcing a synthetic patch.
-		revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请核对未归属的时间补充。"}}
+		revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请核对未归属的时间补充。"}, Emotions: []EmotionPlacement{{
+			BlockID: block, AnchorText: "我有一点紧张", SourceID: analysis.Utterances[0].ID, Kind: "happy",
+		}}, OverallEmotion: "calm"}
 		encoded, _ := json.Marshal(revision)
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(encoded)}}}}})
 	}))
@@ -125,7 +127,7 @@ func TestRecordingReviewKeepsSourceIdentityAndManualEditTimingInData(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Revision.Patches) != 0 || len(got.Revision.Questions) != 1 {
+	if len(got.Revision.Patches) != 0 || len(got.Revision.Questions) != 1 || len(got.Revision.Emotions) != 1 || got.Revision.Emotions[0].SourceID != analysis.Utterances[0].ID {
 		t.Fatal("legitimate manual-edit question was discarded")
 	}
 }
@@ -154,7 +156,10 @@ func TestRewriteRetainsTotalUsageAndRejectsIncompleteReasoningResponses(t *testi
 				if payload["reasoning_effort"] != nil || string(payload["store"]) != "false" || payload["tools"] != nil || string(payload["max_output_tokens"]) != "12000" {
 					t.Error("changed API dialect, storage, tools or total output budget")
 				}
-				revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请确认发言人物。"}}
+				revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请确认发言人物。"}, Emotions: []EmotionPlacement{}}
+				if tc.mode != "live" {
+					revision.OverallEmotion = "calm"
+				}
 				encoded, _ := json.Marshal(revision)
 				_ = json.NewEncoder(w).Encode(map[string]any{"status": tc.status,
 					"usage": map[string]any{"input_tokens": 11, "output_tokens": 137, "output_tokens_details": map[string]int{"reasoning_tokens": 100}},

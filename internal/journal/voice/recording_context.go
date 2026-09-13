@@ -99,7 +99,9 @@ mode=narrative 时，正文中没有引号的“我”始终只能是 narratorSp
 同一句或相邻两句有多个可能的指代对象时，优先用原话中明确的人物或事物名称，不使用容易串人的“他、她、它”。一句话讲物体的变化、下一句讲人物的行动，应分别写出各自主语，不能为了顺口合并成同一个主语。原话未能确定的主体不强行归给已知人物。旧草稿中自然流畅的代词也可能是错的，逐句重新核对。
 去掉录音准备、确认设备、同意开始等操作性应答，包括叙事开始前的孤立短答；事件中的答应、拒绝和确认保留，对话模式仍逐条保留原话。
 manualEdits 记录用户具体手改，before/after 是局部替换，contextBefore/contextAfter 用于定位；editedBlockIDs 不是整段手写或整段锁定的证明。transcript 按文字位置 start 分段，每条手改的 transcriptOffset 是手改时已有转写末尾，hasLaterSpeech 由服务端计算。hasLaterSpeech=false 时原转写全部早于该手改，必须保留当前 after；旧口述、历史 before 和新人物映射都不能偷偷撤销它。只有 start 大于等于 transcriptOffset 的后续口述明确纠正同一事实，才可修改该局部；不确定时保留手改并在 questions 提问。手改之外、本次录音生成的内容可以按人物与整理方式重整，用户只改几个标点不应锁住整段。任何可确认的更正都落实在原位置，不制造互相矛盾的重复版本。
-保持已有段落顺序与媒体布局，mediaOnlyBlockIDs 不可改写，不删除媒体。替换段落使用已有 id，afterID 为空；新增段落使用新 UUID 并以 afterID 指定前一段。不要返回未变化的段落。只有核对后确认正文已符合本次人物、视角、原话和整理方式，才返回空 patches；无法判断的重要主体或具体手改冲突要在 questions 明确说明，不能以空结果表示完成了无法完成的核对。只输出严格 JSON：{"baseRevision":整数,"transcriptRevision":整数,"patches":[{"id":"...","text":"...","afterID":""}],"questions":["..."]}。
+保持已有段落顺序与媒体布局，mediaOnlyBlockIDs 不可改写，不删除媒体。替换段落使用已有 id，afterID 为空；新增段落使用新 UUID 并以 afterID 指定前一段。不要返回未变化的段落。只有核对后确认正文已符合本次人物、视角、原话和整理方式，才返回空 patches；无法判断的重要主体或具体手改冲突要在 questions 明确说明，不能以空结果表示完成了无法完成的核对。
+情绪是正文旁的小符号，不是要写进正文的情绪描写。只能从 calm、happy、excited、relaxed、moved、hopeful、surprised、worried、nervous、sad、angry、tired 中选择。对每个有意义的声音情绪转折，最多返回 8 个 emotions；不要把每句话都标记。sourceID 必须原样复制有非空 acousticEmotion 的对应 utterance.sourceID；kind 是将该证据稳健映射到上述枚举，不凭文字臆测人的心理状态。blockID 必须是整理后承载对应内容的段落 id；anchorText 必须是从该段落最终 text 中原样复制、且在该段中只出现一次的连续短语（最多 80 字），小符号会放在该短语之后。dialogue 模式可以从原样展开后的发言文字中选 anchorText；如果短语不唯一就不返回该标记。overallEmotion 必须从同一枚举中选一个，表示整篇最显著的记录氛围；混合或证据不明时选 calm，不添加医学或心理结论。
+只输出严格 JSON：{"baseRevision":整数,"transcriptRevision":整数,"patches":[{"id":"...","text":"...","afterID":""}],"questions":["..."],"emotions":[{"blockID":"...","anchorText":"...","sourceID":"...","kind":"happy"}],"overallEmotion":"calm"}。
 ` + recordingRewriteInstructions
 
 const recordingRewriteInstructions = `

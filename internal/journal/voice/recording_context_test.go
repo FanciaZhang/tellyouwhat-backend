@@ -147,7 +147,7 @@ func TestDialoguePreviewCannotDropRewriteOrDuplicateTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision := Revision{Patches: []Patch{{ID: id, Text: canonical}}}
+	revision := Revision{Patches: []Patch{{ID: id, Text: canonical}}, OverallEmotion: "calm"}
 	if err := ValidateRecordingDialogueRevision(s, revision); err != nil {
 		t.Fatal(err)
 	}
@@ -156,6 +156,40 @@ func TestDialoguePreviewCannotDropRewriteOrDuplicateTurns(t *testing.T) {
 		if ValidateRecordingDialogueRevision(s, revision) == nil {
 			t.Fatal("accepted missing or duplicate dialogue")
 		}
+	}
+}
+
+func TestRecordingEmotionRevisionRequiresTypedEvidenceAndUniqueAnchor(t *testing.T) {
+	r := recordingContextFixture(t)
+	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
+	s := Snapshot{Revision: 3, Transcript: r.Analysis.Text, RecordingContext: &r,
+		Blocks: []Block{{ID: block, Text: "这段山路很漂亮。后来下山了。"}}}
+	source := r.Analysis.Utterances[0].ID
+	valid := Revision{BaseRevision: 3, OverallEmotion: "happy", Emotions: []EmotionPlacement{{
+		BlockID: block, AnchorText: "这段山路很漂亮", SourceID: source, Kind: "happy",
+	}}}
+	if err := valid.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*Revision){
+		"unknown kind":     func(value *Revision) { value.Emotions[0].Kind = "provider-happy" },
+		"unknown source":   func(value *Revision) { value.Emotions[0].SourceID = "missing" },
+		"ambiguous anchor": func(value *Revision) { value.Emotions[0].AnchorText = "山" },
+		"missing overall":  func(value *Revision) { value.OverallEmotion = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := valid
+			value.Emotions = append([]EmotionPlacement(nil), valid.Emotions...)
+			mutate(&value)
+			if value.Validate(s) == nil {
+				t.Fatal("accepted invalid emotion revision")
+			}
+		})
+	}
+	live := s
+	live.RecordingContext = nil
+	if valid.Validate(live) == nil {
+		t.Fatal("accepted recording emotions on an incremental rewrite")
 	}
 }
 
