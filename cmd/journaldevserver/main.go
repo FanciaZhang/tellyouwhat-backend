@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,6 +31,7 @@ func main() {
 }
 
 func run() error {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("app_id", "journal", "environment", "development", "component", "journal_voice")
 	// The fixed loopback listener is reached through the authenticated Journal HTTPS route.
 	if os.Getenv("DATABASE_DSN") != "" || os.Getenv("REDIS_URL") != "" || os.Getenv("APP_ENV") == "production" {
 		return errors.New("refusing production configuration in developer service")
@@ -70,8 +72,9 @@ func run() error {
 		Token:     os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
 		Organizer: provider.NewBudgetedClient(model, budget, "journal-development", price),
 		Speech:    voice.NewBudgetedSpeech(voice.ASR{Config: asr}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
-		Rewriter:  voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite}, budget, "journal-development", price),
+		Rewriter:  voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price),
 		Recording: recording,
+		Logger:    logger,
 	})
 	if err != nil {
 		return err
