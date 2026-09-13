@@ -27,9 +27,6 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if rewriter == nil || rewriter.next == nil || rewriter.controller == nil || !rewriter.price.Valid() {
 		return RewriteResult{}, costcontrol.ErrInvalidAttempt
 	}
-	if err := snapshot.Validate(); err != nil {
-		return RewriteResult{}, err
-	}
 	prepared, err := PrepareRewrite(ctx, snapshot, transcriptRevision, "")
 	if err != nil {
 		return RewriteResult{}, err

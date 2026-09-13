@@ -1,0 +1,94 @@
+{
+  "audio_info": {
+    "duration": 56392
+  },
+  "result": {
+    "additions": {
+      "duration": "56392"
+    },
+    "text": "我觉得我们可以早上出发，这样路上不会太堵。我比较想去湖边散步，那里的风景很漂亮。我来负责带午饭，在家有什么不能吃的吗？我觉得坐火车更轻松开车可能会很累我想带上相机，给大家拍一张合影。我记得湖边有一家咖啡馆我们可以在那里休息那我们就先讨论一下交通方式，晚上再确定。我同意坐火车，到站以后还可以一起走走。午饭我可以做三明治，再带一些水果。我查过时刻表9点出发的那班很合适拍完合影以后，我还想去看一下旁边的老街。好的，那我去问一下咖啡馆能不能定位。",
+    "utterances": [
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 4320,
+        "start_time": 40,
+        "text": "我觉得我们可以早上出发，这样路上不会太堵。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 8960,
+        "start_time": 4960,
+        "text": "我比较想去湖边散步，那里的风景很漂亮。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "2"
+        },
+        "end_time": 13000,
+        "start_time": 9800,
+        "text": "我来负责带午饭，在家有什么不能吃的吗？"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "3"
+        },
+        "end_time": 21680,
+        "start_time": 14160,
+        "text": "我觉得坐火车更轻松开车可能会很累我想带上相机，给大家拍一张合影。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 32410,
+        "start_time": 22910,
+        "text": "我记得湖边有一家咖啡馆我们可以在那里休息那我们就先讨论一下交通方式，晚上再确定。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 37330,
+        "start_time": 33090,
+        "text": "我同意坐火车，到站以后还可以一起走走。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "2"
+        },
+        "end_time": 41100,
+        "start_time": 38140,
+        "text": "午饭我可以做三明治，再带一些水果。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "3"
+        },
+        "end_time": 50680,
+        "start_time": 42220,
+        "text": "我查过时刻表9点出发的那班很合适拍完合影以后，我还想去看一下旁边的老街。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "3"
+        },
+        "end_time": 55030,
+        "start_time": 51950,
+        "text": "好的，那我去问一下咖啡馆能不能定位。"
+      }
+    ]
+  }
+}

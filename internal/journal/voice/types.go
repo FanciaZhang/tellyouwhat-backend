@@ -5,6 +5,7 @@ package voice
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -43,14 +44,17 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	WritingStyle      WritingStyle `json:"writingStyle"`
-	Revision          int          `json:"revision"`
-	Blocks            []Block      `json:"blocks"`
-	Transcript        string       `json:"transcript"`
-	EditedBlockIDs    []string     `json:"editedBlockIDs"`
-	MediaOnlyBlockIDs []string     `json:"mediaOnlyBlockIDs"`
-	ManualEdits       []ManualEdit `json:"manualEdits"`
-	Words             []string     `json:"words"`
+	rewriteAcknowledged string // server-owned, never decoded from JSON
+
+	RecordingContext  *RecordingContext `json:"recordingContext,omitempty"`
+	WritingStyle      WritingStyle      `json:"writingStyle"`
+	Revision          int               `json:"revision"`
+	Blocks            []Block           `json:"blocks"`
+	Transcript        string            `json:"transcript"`
+	EditedBlockIDs    []string          `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs []string          `json:"mediaOnlyBlockIDs"`
+	ManualEdits       []ManualEdit      `json:"manualEdits"`
+	Words             []string          `json:"words"`
 }
 type Patch struct {
 	ID   string `json:"id"`
@@ -58,27 +62,37 @@ type Patch struct {
 	// Empty afterID means replace an existing block; insertions need a new UUID.
 	AfterID string `json:"afterID"`
 }
+type EmotionPlacement struct {
+	BlockID    string `json:"blockID"`
+	AnchorText string `json:"anchorText"`
+	SourceID   string `json:"sourceID"`
+	Kind       string `json:"kind"`
+}
 type Revision struct {
-	BaseRevision       int      `json:"baseRevision"`
-	TranscriptRevision int      `json:"transcriptRevision"`
-	Patches            []Patch  `json:"patches"`
-	Questions          []string `json:"questions"`
+	BaseRevision       int                `json:"baseRevision"`
+	TranscriptRevision int                `json:"transcriptRevision"`
+	Patches            []Patch            `json:"patches"`
+	Questions          []string           `json:"questions"`
+	Emotions           []EmotionPlacement `json:"emotions"`
+	OverallEmotion     string             `json:"overallEmotion"`
 }
 type Receipt struct {
-	SegmentID    string `json:"segmentID"`
-	SHA256       string `json:"sha256"`
-	Text         string `json:"text"`
-	Milliseconds int    `json:"milliseconds"`
+	Utterances   []StreamUtterance `json:"utterances,omitempty"`
+	SegmentID    string            `json:"segmentID"`
+	SHA256       string            `json:"sha256"`
+	Text         string            `json:"text"`
+	Milliseconds int               `json:"milliseconds"`
 }
 type Event struct {
-	Type                  string    `json:"type"`
-	SegmentID             string    `json:"segmentID,omitempty"`
-	Text                  string    `json:"text,omitempty"`
-	Stable                string    `json:"stable,omitempty"`
-	Receipt               *Receipt  `json:"receipt,omitempty"`
-	Revision              *Revision `json:"revision,omitempty"`
-	RemainingMilliseconds int       `json:"remainingMilliseconds"`
-	Code                  string    `json:"code,omitempty"`
+	Utterances            []StreamUtterance `json:"utterances,omitempty"`
+	Type                  string            `json:"type"`
+	SegmentID             string            `json:"segmentID,omitempty"`
+	Text                  string            `json:"text,omitempty"`
+	Stable                string            `json:"stable,omitempty"`
+	Receipt               *Receipt          `json:"receipt,omitempty"`
+	Revision              *Revision         `json:"revision,omitempty"`
+	RemainingMilliseconds int               `json:"remainingMilliseconds"`
+	Code                  string            `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`
@@ -89,6 +103,11 @@ type Frame struct {
 }
 
 func (s Snapshot) Validate() error {
+	if s.RecordingContext != nil {
+		if err := s.RecordingContext.Validate(s.Transcript); err != nil {
+			return err
+		}
+	}
 	if s.WritingStyle != "" && !styleID.MatchString(string(s.WritingStyle)) {
 		return ErrInvalid
 	}
@@ -142,7 +161,7 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 {
+	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrConflict
 	}
 	known := map[string]bool{}
@@ -182,6 +201,9 @@ func (r Revision) Validate(s Snapshot) error {
 			return ErrInvalid
 		}
 	}
+	if err := r.validateEmotions(s); err != nil {
+		return err
+	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
 	}
@@ -191,6 +213,47 @@ func (r Revision) Validate(s Snapshot) error {
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
+	}
+	return nil
+}
+
+var journalEmotionKinds = map[string]bool{
+	"calm": true, "happy": true, "excited": true, "relaxed": true,
+	"moved": true, "hopeful": true, "surprised": true, "worried": true,
+	"nervous": true, "sad": true, "angry": true, "tired": true,
+}
+
+func (r Revision) validateEmotions(s Snapshot) error {
+	if s.RecordingContext == nil {
+		if len(r.Emotions) != 0 || r.OverallEmotion != "" {
+			return ErrInvalid
+		}
+		return nil
+	}
+	if !journalEmotionKinds[r.OverallEmotion] {
+		return ErrInvalid
+	}
+	texts := make(map[string]string, len(s.Blocks)+len(r.Patches))
+	for _, block := range s.Blocks {
+		texts[block.ID] = block.Text
+	}
+	for _, patch := range r.Patches {
+		texts[patch.ID] = patch.Text
+	}
+	evidence := map[string]bool{}
+	for _, utterance := range s.RecordingContext.Analysis.Utterances {
+		if strings.TrimSpace(utterance.AcousticEmotion) != "" {
+			evidence[utterance.ID] = true
+		}
+	}
+	seenSources := map[string]bool{}
+	for _, emotion := range r.Emotions {
+		if !journalEmotionKinds[emotion.Kind] || !evidence[emotion.SourceID] || seenSources[emotion.SourceID] ||
+			emotion.AnchorText == "" || utf8.RuneCountInString(emotion.AnchorText) > 80 ||
+			strings.Count(texts[emotion.BlockID], emotion.AnchorText) != 1 {
+			return ErrInvalid
+		}
+		seenSources[emotion.SourceID] = true
 	}
 	return nil
 }
