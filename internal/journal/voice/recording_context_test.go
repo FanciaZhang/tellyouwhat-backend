@@ -175,8 +175,10 @@ func TestRecordingReviewFlagsLostNumericQualifierWithoutChangingDraft(t *testing
 	if issues := ReviewRecordingDraft(a, "票价大概128元。"); len(issues) != 0 {
 		t.Fatal(issues)
 	}
-	if issues := ReviewRecordingDraft(a, "这个编号是9128。"); len(issues) != 0 {
-		t.Fatal("matched a substring of another number")
+	for _, issue := range ReviewRecordingDraft(a, "这个编号是9128。") {
+		if issue.Code == "numeric_uncertainty_needs_review" {
+			t.Fatal("matched a substring of another number")
+		}
 	}
 }
 

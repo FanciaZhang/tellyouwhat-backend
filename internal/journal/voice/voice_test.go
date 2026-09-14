@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -224,5 +225,43 @@ func TestPendingEarlierSpeechCannotOverrideManualEdit(t *testing.T) {
 	snapshot.Transcript += "刚才手改错了，应当是十二元。"
 	if !editorialDocument(snapshot).ManualEdits[0].HasLaterSpeech {
 		t.Fatal("explicit later correction was blocked")
+	}
+}
+
+func TestAppliedRevisionCannotDiscardManualFactWithoutLaterSpeech(t *testing.T) {
+	id := uuid.NewString()
+	transcript := "检查原来约在下周三。"
+	snapshot := Snapshot{
+		Revision:   4,
+		Transcript: transcript,
+		Blocks:     []Block{{ID: id, Text: "手动确认为下周五，项目可以退款。"}},
+		ManualEdits: []ManualEdit{{
+			BlockID: id, Before: "下周三", After: "下周五",
+			TranscriptOffset: utf8.RuneCountInString(transcript),
+		}},
+	}
+	stale := Revision{BaseRevision: 4, Patches: []Patch{{
+		ID: id, Text: "改成了下周二，项目可以退款。",
+	}}}
+	if _, err := ApplyRevision(snapshot, stale); !errors.Is(err, ErrConflict) {
+		t.Fatal("discarded the user's exact later choice", err)
+	}
+
+	deleted := snapshot
+	deleted.Blocks[0].Text = "项目可以退款。"
+	deleted.ManualEdits[0] = ManualEdit{
+		BlockID: id, Before: "检查原来约在下周三。", After: "",
+		TranscriptOffset: utf8.RuneCountInString(transcript),
+	}
+	restored := stale
+	restored.Patches[0].Text = "检查原来约在下周三。项目可以退款。"
+	if _, err := ApplyRevision(deleted, restored); !errors.Is(err, ErrConflict) {
+		t.Fatal("restored a fact the user explicitly deleted", err)
+	}
+
+	withLaterSpeech := snapshot
+	withLaterSpeech.Transcript += "我刚才又确认了，应该改回下周三。"
+	if _, err := ApplyRevision(withLaterSpeech, stale); err != nil {
+		t.Fatal("an explicit later correction was blocked", err)
 	}
 }

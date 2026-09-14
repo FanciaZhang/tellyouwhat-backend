@@ -14,7 +14,7 @@ func TestApplyRevisionPreservesEditOrderWithoutLockingStyle(t *testing.T) {
 	if _, err := ApplyRevision(s, r); !errors.Is(err, ErrConflict) {
 		t.Fatal("earlier speech reversed manual replacement", err)
 	}
-	r.Patches[0].Text = "午后，我们一起沿着河边走了走。"
+	r.Patches[0].Text = "午后，我和小林一起沿着河边走了走。"
 	blocks, err := ApplyRevision(s, r)
 	if err != nil || len(blocks) != 2 || blocks[1].ID != media {
 		t.Fatal("style paraphrase or media order was blocked", err)
