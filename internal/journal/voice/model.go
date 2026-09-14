@@ -149,7 +149,9 @@ func rewriteInstructionText(s Snapshot, voice promptconfig.Voice, style promptco
 	if instructions == promptconfig.VoicePrompt && voice.RemoveRepetition {
 		instructions = rewriteInstructions
 	}
-	if s.RecordingContext != nil {
+	if s.RecordingContext != nil && s.RecordingContext.Mode == "stream" {
+		instructions = recordingStreamFinalInstructions
+	} else if s.RecordingContext != nil {
 		instructions = recordingPreviewInstructions
 	} else {
 		if voice.RemoveRepetition {
