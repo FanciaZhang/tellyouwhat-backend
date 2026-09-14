@@ -110,6 +110,9 @@ func TestJournalAIConfigRetainsConfiguredTimeout(t *testing.T) {
 	if app.JournalAI.TimeoutSeconds != 135 {
 		t.Fatalf("journal timeout = %d, want 135", app.JournalAI.TimeoutSeconds)
 	}
+	if !app.VoiceASR.StreamInsights {
+		t.Fatal("Journal production voice config did not request utterance emotion evidence")
+	}
 }
 
 func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {

@@ -237,7 +237,7 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 	}
 	if defaults.ID == appregistry.Journal {
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
-		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration"}
+		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
 		config.JournalAI = JournalAIConfig{
 			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),

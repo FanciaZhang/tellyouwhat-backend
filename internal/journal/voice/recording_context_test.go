@@ -1,9 +1,11 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +77,40 @@ func TestRecordingContextRemainsOptionalForLiveSnapshots(t *testing.T) {
 	json.Unmarshal(data, &wire)
 	if _, ok := wire["recordingContext"]; ok {
 		t.Fatal("ordinary live context changed")
+	}
+}
+
+func TestStreamingFinalContextCanFinishBodyAndPlaceEmotionsWithoutInventingPeople(t *testing.T) {
+	r := recordingContextFixture(t)
+	r.Mode = "stream"
+	r.NarratorSpeakerID = ""
+	r.Speakers = nil
+	r.Analysis.Utterances[0].AcousticEmotion = "happy"
+	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
+	s := Snapshot{Revision: 4, Transcript: r.Analysis.Text, RecordingContext: &r,
+		Blocks: []Block{{ID: block, Text: "今天的手记已经整理好了。"}}}
+	valid := Revision{BaseRevision: 4, TranscriptRevision: 7, OverallEmotion: "happy", Emotions: []EmotionPlacement{{
+		BlockID: block, AnchorText: "手记已经整理好了", SourceID: r.Analysis.Utterances[0].ID, Kind: "happy",
+	}}}
+	if err := valid.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	withPatch := valid
+	withPatch.Patches = []Patch{{ID: block, Text: "今天的手记已经整理好了，补上末尾。"}}
+	if err := withPatch.Validate(s); err != nil {
+		t.Fatal("stream finalization could not incorporate the last transcript", err)
+	}
+	prepared, err := PrepareRewrite(context.Background(), s, 7, "test-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Instructions string `json:"instructions"`
+	}
+	if json.Unmarshal(prepared.Body, &body) != nil ||
+		!strings.Contains(body.Instructions, "录音关闭且所有转写已收齐") ||
+		!strings.Contains(body.Instructions, "不得从声音编号") {
+		t.Fatal("stream-final instruction was not selected")
 	}
 }
 
