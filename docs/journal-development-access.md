@@ -34,9 +34,10 @@ the server. Debug and Release both require HTTPS and the client rejects credenti
 redirects.
 
 Voice uses the regular 120-minute monthly allowance. The old 10-minute/CNY 1
-session limits are removed. A separate CNY 100 calendar-month estimated spend
+session limits are removed. A separate CNY 200 calendar-month estimated spend
 ceiling is configured by the launcher; the command reads
-`JOURNAL_DEVELOPMENT_MONTHLY_BUDGET_CNY`. The normal budget accounting implementation
+`JOURNAL_DEVELOPMENT_MONTHLY_BUDGET_CNY`. Raising the current month's limit preserves
+all existing charges; lowering it within the same month fails closed. The normal budget accounting implementation
 is backed by an atomic, private operation history in `JOURNAL_DEVELOPMENT_STATE_DIR`.
 This persists reservations and settlements across restart/credential rotation,
 conservatively retains unsettled costs, and never stores prompts, audio or output.
