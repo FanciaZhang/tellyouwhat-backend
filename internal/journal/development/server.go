@@ -29,7 +29,11 @@ import (
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
-const ProtocolVersion = "subscription-v1"
+// Version the whole private development surface, not only entitlement
+// simulation. v2 includes the required voice revision passage contract; a
+// newer Debug app must fail before starting paid provider work when the
+// independently deployed development service is stale.
+const ProtocolVersion = "subscription-v2"
 
 type Config struct {
 	Token     string

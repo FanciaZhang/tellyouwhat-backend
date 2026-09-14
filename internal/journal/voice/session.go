@@ -159,6 +159,25 @@ type speechResult struct {
 	value   Transcript
 	err     error
 }
+
+// Provider admission failures are operational state, not generic speech/model
+// failures. Preserve them on the wire so the App does not spend minutes
+// reconnecting to a service that has deliberately stopped admitting work.
+func voiceProviderFailureCode(fallback string, err error) string {
+	switch {
+	case errors.Is(err, costcontrol.ErrBudgetExceeded):
+		return "voice_service_budget_exhausted"
+	case errors.Is(err, costcontrol.ErrProtectionActive):
+		return "voice_service_protected"
+	case errors.Is(err, costcontrol.ErrConfigurationConflict):
+		return "voice_service_configuration_error"
+	case errors.Is(err, costcontrol.ErrConcurrencyExceeded):
+		return "voice_session_busy"
+	default:
+		return fallback
+	}
+}
+
 type rewriteResult struct {
 	value      RewriteResult
 	err        error
@@ -463,7 +482,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						}
 						asr, err = s.Speech.Open(ctx, snapshot.Words)
 						if err != nil {
-							failWithCause("voice_speech_unavailable", "open_speech_provider", err)
+							failWithCause(voiceProviderFailureCode("voice_speech_unavailable", err), "open_speech_provider", err)
 							return
 						}
 						conn, id := asr, segment
@@ -621,7 +640,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				)
 			}
 			if result.err != nil {
-				failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
+				failWithCause(voiceProviderFailureCode("voice_rewrite_unavailable", result.err), "rewrite_result", result.err)
 				dirty = true
 				if finishing {
 					return
