@@ -252,7 +252,15 @@ type previewRewriter struct {
 func (p *previewRewriter) Rewrite(_ context.Context, s voice.Snapshot, revision int) (voice.RewriteResult, error) {
 	p.calls++
 	p.snapshot = s
-	return voice.RewriteResult{Revision: voice.Revision{BaseRevision: s.Revision, TranscriptRevision: revision, Patches: []voice.Patch{{ID: s.Blocks[0].ID, Text: "妻子当时很害怕。"}}, Questions: []string{}, Emotions: []voice.EmotionPlacement{}, OverallEmotion: "calm"}}, nil
+	return voice.RewriteResult{Revision: voice.Revision{
+		BaseRevision: s.Revision, TranscriptRevision: revision,
+		Patches: []voice.Patch{{ID: s.Blocks[0].ID, Text: "妻子当时很害怕。"}},
+		Passages: []voice.PassageSource{{
+			BlockID: s.Blocks[0].ID, ParagraphIndex: 0,
+			SourceIDs: []string{s.RecordingContext.Analysis.Utterances[0].ID},
+		}},
+		Questions: []string{}, Emotions: []voice.EmotionPlacement{}, OverallEmotion: "calm",
+	}}, nil
 }
 func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	model := &previewRewriter{}

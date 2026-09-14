@@ -146,6 +146,7 @@ func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing
 			store := &voiceBudgetStore{}
 			price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 1_000_000_000, OutputNanosPerMillionTokens: 2_000_000_000}
 			minimum := make(chan int64, 1)
+			var responseBlockID, responseSourceID string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var wire struct {
 					Input, Instructions string
@@ -162,11 +163,15 @@ func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing
 				}
 				minimum <- cost
 				if mode == "narrative" {
-					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[],\"emotions\":[],\"overallEmotion\":\"calm\"}"}]}]}`))
+					text := `{"baseRevision":1,"transcriptRevision":1,"patches":[],"passages":[{"blockID":"` + responseBlockID + `","paragraphIndex":0,"sourceIDs":["` + responseSourceID + `"]}],"questions":[],"emotions":[],"overallEmotion":"calm"}`
+					encoded, _ := json.Marshal(text)
+					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":` + string(encoded) + `}]}]}`))
 					return
 				}
 				if mode == "dialogue" {
-					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[\"请确认对话放置位置。\"],\"emotions\":[],\"overallEmotion\":\"calm\"}"}]}]}`))
+					text := `{"baseRevision":1,"transcriptRevision":1,"patches":[],"passages":[{"blockID":"` + responseBlockID + `","paragraphIndex":0,"sourceIDs":["` + responseSourceID + `"]}],"questions":["请确认对话放置位置。"],"emotions":[],"overallEmotion":"calm"}`
+					encoded, _ := json.Marshal(text)
+					_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":` + string(encoded) + `}]}]}`))
 					return
 				}
 				_, _ = w.Write([]byte(`{"status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[{"content":[{"type":"output_text","text":"{\"baseRevision\":1,\"transcriptRevision\":1,\"patches\":[],\"questions\":[\"请确认发言人物。\"]}"}]}]}`))
@@ -181,7 +186,9 @@ func TestRewriteReservationCoversActualWireInstructionsAndOutputLimit(t *testing
 				r.Mode = mode
 				s.Transcript = r.Analysis.Text
 				s.RecordingContext = &r
+				responseSourceID = r.Analysis.Utterances[0].ID
 			}
+			responseBlockID = s.Blocks[0].ID
 			client := ArkRewriter{BaseURL: server.URL, APIKey: "test", Model: "test", HTTP: server.Client()}
 			_, err := NewBudgetedRewriter(client, voiceCostController(t, store), "journal", price).Rewrite(context.Background(), s, 1)
 			if err != nil {
