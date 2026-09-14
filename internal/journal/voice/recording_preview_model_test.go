@@ -41,7 +41,9 @@ func TestDialogueModelPlacesReferenceAndServerPreservesExactTurns(t *testing.T) 
 		if !strings.HasPrefix(marker, "[journal-dialogue:") {
 			t.Error("missing typed insertion reference")
 		}
-		revision := Revision{BaseRevision: 1, TranscriptRevision: 2, Patches: []Patch{{ID: block, Text: marker}}, Questions: []string{}, Emotions: []EmotionPlacement{}, OverallEmotion: "calm"}
+		revision := Revision{BaseRevision: 1, TranscriptRevision: 2, Patches: []Patch{{ID: block, Text: marker}},
+			Passages:  []PassageSource{sourcePassage(block, 0, analysis.Utterances[0].ID), sourcePassage(block, 1, analysis.Utterances[1].ID)},
+			Questions: []string{}, Emotions: []EmotionPlacement{}, OverallEmotion: "calm"}
 		encoded, _ := json.Marshal(revision)
 		content := []map[string]string{{"type": "output_text", "text": string(encoded)}}
 		output := []map[string]any{{"content": content}}
@@ -116,9 +118,11 @@ func TestRecordingReviewKeepsSourceIdentityAndManualEditTimingInData(t *testing.
 		}
 		// A legitimate no-change response remains representable; correctness is
 		// determined by the live source review, not by forcing a synthetic patch.
-		revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请核对未归属的时间补充。"}, Emotions: []EmotionPlacement{{
-			BlockID: block, AnchorText: "我有一点紧张", SourceID: analysis.Utterances[0].ID, Kind: "happy",
-		}}, OverallEmotion: "calm"}
+		revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{},
+			Passages:  []PassageSource{sourcePassage(block, 0, analysis.Utterances[0].ID)},
+			Questions: []string{"请核对未归属的时间补充。"}, Emotions: []EmotionPlacement{{
+				BlockID: block, AnchorText: "我有一点紧张", SourceID: analysis.Utterances[0].ID, Kind: "happy",
+			}}, OverallEmotion: "calm"}
 		encoded, _ := json.Marshal(revision)
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(encoded)}}}}})
 	}))
@@ -158,6 +162,7 @@ func TestRewriteRetainsTotalUsageAndRejectsIncompleteReasoningResponses(t *testi
 				}
 				revision := Revision{BaseRevision: 7, TranscriptRevision: 2, Patches: []Patch{}, Questions: []string{"请确认发言人物。"}, Emotions: []EmotionPlacement{}}
 				if tc.mode != "live" {
+					revision.Passages = []PassageSource{sourcePassage(s.Blocks[0].ID, 0, contextValue.Analysis.Utterances[0].ID)}
 					revision.OverallEmotion = "calm"
 				}
 				encoded, _ := json.Marshal(revision)

@@ -21,6 +21,10 @@ func recordingContextFixture(t *testing.T) RecordingContext {
 	}
 	return RecordingContext{Mode: "narrative", NarratorSpeakerID: "1", Speakers: []RecordingSpeaker{{"1", "我"}, {"2", "同行者"}}, Analysis: a}
 }
+
+func sourcePassage(blockID string, paragraphIndex int, sourceIDs ...string) PassageSource {
+	return PassageSource{BlockID: blockID, ParagraphIndex: paragraphIndex, SourceIDs: sourceIDs}
+}
 func TestRecordingContextRejectsInvalidIdentitiesAndIntervals(t *testing.T) {
 	base := recordingContextFixture(t)
 	if err := base.Validate(base.Analysis.Text); err != nil {
@@ -89,9 +93,11 @@ func TestStreamingFinalContextCanFinishBodyAndPlaceEmotionsWithoutInventingPeopl
 	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
 	s := Snapshot{Revision: 4, Transcript: r.Analysis.Text, RecordingContext: &r,
 		Blocks: []Block{{ID: block, Text: "今天的手记已经整理好了。"}}}
-	valid := Revision{BaseRevision: 4, TranscriptRevision: 7, OverallEmotion: "happy", Emotions: []EmotionPlacement{{
-		BlockID: block, AnchorText: "手记已经整理好了", SourceID: r.Analysis.Utterances[0].ID, Kind: "happy",
-	}}}
+	valid := Revision{BaseRevision: 4, TranscriptRevision: 7,
+		Passages:       []PassageSource{sourcePassage(block, 0, r.Analysis.Utterances[0].ID)},
+		OverallEmotion: "happy", Emotions: []EmotionPlacement{{
+			BlockID: block, AnchorText: "手记已经整理好了", SourceID: r.Analysis.Utterances[0].ID, Kind: "happy",
+		}}}
 	if err := valid.Validate(s); err != nil {
 		t.Fatal(err)
 	}
@@ -169,8 +175,10 @@ func TestRecordingReviewFlagsLostNumericQualifierWithoutChangingDraft(t *testing
 	if issues := ReviewRecordingDraft(a, "票价大概128元。"); len(issues) != 0 {
 		t.Fatal(issues)
 	}
-	if issues := ReviewRecordingDraft(a, "这个编号是9128。"); len(issues) != 0 {
-		t.Fatal("matched a substring of another number")
+	for _, issue := range ReviewRecordingDraft(a, "这个编号是9128。") {
+		if issue.Code == "numeric_uncertainty_needs_review" {
+			t.Fatal("matched a substring of another number")
+		}
 	}
 }
 
@@ -183,7 +191,11 @@ func TestDialoguePreviewCannotDropRewriteOrDuplicateTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision := Revision{Patches: []Patch{{ID: id, Text: canonical}}, OverallEmotion: "calm"}
+	passages := make([]PassageSource, len(r.Analysis.Utterances))
+	for index, utterance := range r.Analysis.Utterances {
+		passages[index] = sourcePassage(id, index, utterance.ID)
+	}
+	revision := Revision{Patches: []Patch{{ID: id, Text: canonical}}, Passages: passages, OverallEmotion: "calm"}
 	if err := ValidateRecordingDialogueRevision(s, revision); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +214,7 @@ func TestRecordingEmotionRevisionRequiresTypedEvidenceAndUniqueAnchor(t *testing
 	s := Snapshot{Revision: 3, Transcript: r.Analysis.Text, RecordingContext: &r,
 		Blocks: []Block{{ID: block, Text: "这段山路很漂亮。后来下山了。"}}}
 	source := r.Analysis.Utterances[0].ID
-	valid := Revision{BaseRevision: 3, OverallEmotion: "happy", Emotions: []EmotionPlacement{{
+	valid := Revision{BaseRevision: 3, Passages: []PassageSource{sourcePassage(block, 0, source)}, OverallEmotion: "happy", Emotions: []EmotionPlacement{{
 		BlockID: block, AnchorText: "这段山路很漂亮", SourceID: source, Kind: "happy",
 	}}}
 	if err := valid.Validate(s); err != nil {
@@ -237,6 +249,89 @@ func TestRecordingEmotionRevisionRequiresTypedEvidenceAndUniqueAnchor(t *testing
 	live.RecordingContext = nil
 	if valid.Validate(live) == nil {
 		t.Fatal("accepted recording emotions on an incremental rewrite")
+	}
+}
+
+func TestRecordingPassagesRequireContinuousUniqueSourcesAndRealParagraphs(t *testing.T) {
+	r := recordingContextFixture(t)
+	for index := range r.Analysis.Utterances {
+		r.Analysis.Utterances[index].AcousticEmotion = "neutral"
+	}
+	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
+	s := Snapshot{Revision: 5, Transcript: r.Analysis.Text, RecordingContext: &r,
+		Blocks: []Block{{ID: block, Text: "第一段整理。\n第二段整理。"}}}
+	validRevision := func() Revision {
+		return Revision{BaseRevision: 5, OverallEmotion: "calm", Passages: []PassageSource{
+			sourcePassage(block, 0, r.Analysis.Utterances[0].ID, r.Analysis.Utterances[1].ID),
+			sourcePassage(block, 1, r.Analysis.Utterances[2].ID),
+		}}
+	}
+	if err := validRevision().Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	sharedBoundary := validRevision()
+	sharedBoundary.Passages[1].SourceIDs = []string{
+		r.Analysis.Utterances[1].ID,
+		r.Analysis.Utterances[2].ID,
+	}
+	if err := sharedBoundary.Validate(s); err != nil {
+		t.Fatal("one long source turn may legitimately support adjacent paragraphs", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Revision)
+	}{
+		{"missing passages", func(value *Revision) { value.Passages = nil }},
+		{"noncontinuous sources", func(value *Revision) {
+			value.Passages[0].SourceIDs = []string{r.Analysis.Utterances[0].ID, r.Analysis.Utterances[2].ID}
+		}},
+		{"unknown source", func(value *Revision) { value.Passages[1].SourceIDs = []string{"forged"} }},
+		{"duplicate target", func(value *Revision) { value.Passages[1].ParagraphIndex = 0 }},
+		{"missing paragraph", func(value *Revision) { value.Passages[1].ParagraphIndex = 2 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value := validRevision()
+			tc.mutate(&value)
+			if value.Validate(s) == nil {
+				t.Fatal("accepted invalid passage provenance")
+			}
+		})
+	}
+
+	blank := s
+	blank.Blocks = []Block{{ID: block, Text: " \n\t"}}
+	if validRevision().Validate(blank) == nil {
+		t.Fatal("accepted provenance for an empty body paragraph")
+	}
+	locked := s
+	locked.MediaOnlyBlockIDs = []string{block}
+	if validRevision().Validate(locked) == nil {
+		t.Fatal("attached voice provenance to a media-only block")
+	}
+}
+
+func TestRecordingEmotionSourceMustBelongToItsAnchorParagraph(t *testing.T) {
+	r := recordingContextFixture(t)
+	for index := range r.Analysis.Utterances {
+		r.Analysis.Utterances[index].AcousticEmotion = "neutral"
+	}
+	r.Analysis.Utterances[0].AcousticEmotion = "happy"
+	r.Analysis.Utterances[1].AcousticEmotion = "nervous"
+	block := "5b7b2fe7-a8a2-48e3-ad3f-620e86fd9981"
+	s := Snapshot{Revision: 2, Transcript: r.Analysis.Text, RecordingContext: &r,
+		Blocks: []Block{{ID: block, Text: "第一段很开心。\n第二段有点紧张。"}}}
+	revision := Revision{BaseRevision: 2, OverallEmotion: "happy", Passages: []PassageSource{
+		sourcePassage(block, 0, r.Analysis.Utterances[0].ID),
+		sourcePassage(block, 1, r.Analysis.Utterances[1].ID),
+	}, Emotions: []EmotionPlacement{{
+		BlockID: block, AnchorText: "有点紧张", SourceID: r.Analysis.Utterances[1].ID, Kind: "nervous",
+	}}}
+	if err := revision.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	revision.Emotions[0].SourceID = r.Analysis.Utterances[0].ID
+	if revision.Validate(s) == nil {
+		t.Fatal("accepted emotion evidence linked to a different paragraph")
 	}
 }
 

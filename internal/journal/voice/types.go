@@ -5,6 +5,8 @@ package voice
 import (
 	"errors"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -68,10 +70,20 @@ type EmotionPlacement struct {
 	SourceID   string `json:"sourceID"`
 	Kind       string `json:"kind"`
 }
+
+// PassageSource is the authoritative provenance of one resulting paragraph.
+// paragraphIndex addresses a paragraph inside a model patch before the App
+// splits it into independently editable blocks.
+type PassageSource struct {
+	BlockID        string   `json:"blockID"`
+	ParagraphIndex int      `json:"paragraphIndex"`
+	SourceIDs      []string `json:"sourceIDs"`
+}
 type Revision struct {
 	BaseRevision       int                `json:"baseRevision"`
 	TranscriptRevision int                `json:"transcriptRevision"`
 	Patches            []Patch            `json:"patches"`
+	Passages           []PassageSource    `json:"passages"`
 	Questions          []string           `json:"questions"`
 	Emotions           []EmotionPlacement `json:"emotions"`
 	OverallEmotion     string             `json:"overallEmotion"`
@@ -161,7 +173,7 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 || len(r.Emotions) > 8 {
+	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Passages) > 1024 || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrConflict
 	}
 	known := map[string]bool{}
@@ -196,6 +208,9 @@ func (r Revision) Validate(s Snapshot) error {
 		count += utf8.RuneCountInString(p.Text)
 		lengths[p.ID] = utf8.RuneCountInString(p.Text)
 	}
+	if err := r.validatePassages(s, known, locked); err != nil {
+		return err
+	}
 	for _, q := range r.Questions {
 		if utf8.RuneCountInString(q) > 300 {
 			return ErrInvalid
@@ -215,6 +230,79 @@ func (r Revision) Validate(s Snapshot) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func (r Revision) validatePassages(s Snapshot, known, locked map[string]bool) error {
+	if s.RecordingContext == nil {
+		if len(r.Passages) != 0 {
+			return ErrInvalid
+		}
+		return nil
+	}
+	if len(r.Passages) == 0 {
+		return ErrInvalid
+	}
+	texts := make(map[string]string, len(s.Blocks)+len(r.Patches))
+	for _, block := range s.Blocks {
+		texts[block.ID] = block.Text
+	}
+	for _, patch := range r.Patches {
+		texts[patch.ID] = patch.Text
+	}
+	positions := make(map[string]int, len(s.RecordingContext.Analysis.Utterances))
+	for index, utterance := range s.RecordingContext.Analysis.Utterances {
+		positions[utterance.ID] = index
+	}
+	seen := map[string]bool{}
+	sourceCount := 0
+	for _, passage := range r.Passages {
+		key := passage.BlockID + ":" + strconv.Itoa(passage.ParagraphIndex)
+		text, exists := texts[passage.BlockID]
+		if !exists || !known[passage.BlockID] || locked[passage.BlockID] || seen[key] ||
+			passage.ParagraphIndex < 0 || passage.ParagraphIndex >= paragraphCount(text) || len(passage.SourceIDs) == 0 {
+			return ErrInvalid
+		}
+		seen[key] = true
+		previous := -2
+		for _, sourceID := range passage.SourceIDs {
+			position, exists := positions[sourceID]
+			if !exists || (previous >= 0 && position != previous+1) {
+				return ErrInvalid
+			}
+			previous = position
+			sourceCount++
+			if sourceCount > 10000 {
+				return ErrInvalid
+			}
+		}
+	}
+	return nil
+}
+
+func paragraphCount(text string) int {
+	return len(nonEmptyParagraphs(text))
+}
+
+func nonEmptyParagraphs(text string) []string {
+	paragraphs := make([]string, 0, strings.Count(text, "\n")+1)
+	for _, paragraph := range strings.Split(text, "\n") {
+		if strings.TrimSpace(paragraph) != "" {
+			paragraphs = append(paragraphs, paragraph)
+		}
+	}
+	return paragraphs
+}
+
+func uniqueAnchorParagraph(text, anchor string) (int, bool) {
+	if anchor == "" || strings.Count(text, anchor) != 1 {
+		return 0, false
+	}
+	for index, paragraph := range nonEmptyParagraphs(text) {
+		if strings.Contains(paragraph, anchor) {
+			return index, true
+		}
+	}
+	return 0, false
 }
 
 var journalEmotionKinds = map[string]bool{
@@ -252,9 +340,17 @@ func (r Revision) validateEmotions(s Snapshot) error {
 	}
 	seenSources := map[string]bool{}
 	for _, emotion := range r.Emotions {
+		paragraphIndex, uniqueAnchor := uniqueAnchorParagraph(texts[emotion.BlockID], emotion.AnchorText)
+		linked := false
+		for _, passage := range r.Passages {
+			if passage.BlockID == emotion.BlockID && passage.ParagraphIndex == paragraphIndex && slices.Contains(passage.SourceIDs, emotion.SourceID) {
+				linked = true
+				break
+			}
+		}
 		if !journalEmotionKinds[emotion.Kind] || !evidence[emotion.SourceID] || seenSources[emotion.SourceID] ||
 			emotion.AnchorText == "" || utf8.RuneCountInString(emotion.AnchorText) > 80 ||
-			strings.Count(texts[emotion.BlockID], emotion.AnchorText) != 1 {
+			!uniqueAnchor || !linked {
 			return ErrInvalid
 		}
 		seenSources[emotion.SourceID] = true

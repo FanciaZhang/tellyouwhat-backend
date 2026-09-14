@@ -3,6 +3,7 @@ package voice
 import (
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -29,16 +30,35 @@ func ApplyRevision(s Snapshot, r Revision) ([]Block, error) {
 			blocks = slices.Insert(blocks, index+1, Block{ID: p.ID, Text: p.Text})
 		}
 	}
-	// Earlier transcription cannot restore text explicitly replaced or deleted by a manual edit.
+	// Earlier transcription cannot replace or restore a concrete user choice.
+	// A later utterance may legitimately correct it, but an already captured
+	// transcript is never sufficient evidence to silently roll the edit back.
 	for _, edit := range s.ManualEdits {
-		if edit.Before == "" || (!edit.PendingEarlierSpeech && edit.TranscriptOffset < utf8.RuneCountInString(s.Transcript)) {
+		if !edit.PendingEarlierSpeech && edit.TranscriptOffset < utf8.RuneCountInString(s.Transcript) {
 			continue
 		}
 		old := slices.IndexFunc(s.Blocks, func(b Block) bool { return b.ID == edit.BlockID })
 		next := slices.IndexFunc(blocks, func(b Block) bool { return b.ID == edit.BlockID })
-		if old >= 0 && next >= 0 && !strings.Contains(s.Blocks[old].Text, edit.Before) && strings.Contains(blocks[next].Text, edit.Before) && (edit.After == "" || !strings.Contains(blocks[next].Text, edit.After)) {
+		if old < 0 || next < 0 {
+			continue
+		}
+		before, after := s.Blocks[old].Text, blocks[next].Text
+		if hasEditorialMeaning(edit.After) {
+			if strings.Count(after, edit.After) < strings.Count(before, edit.After) {
+				return nil, ErrConflict
+			}
+		} else if hasEditorialMeaning(edit.Before) && strings.Count(after, edit.Before) > strings.Count(before, edit.Before) {
 			return nil, ErrConflict
 		}
 	}
 	return blocks, nil
+}
+
+func hasEditorialMeaning(value string) bool {
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return true
+		}
+	}
+	return false
 }
