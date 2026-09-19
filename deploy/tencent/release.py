@@ -243,7 +243,8 @@ def main():
         if attempts < 1:
             raise OperationError("READINESS_ATTEMPTS must be positive")
         runtime = Runtime(args.backend_dir)
-        with runtime.lock("deployment"), runtime.lock():
+        lock_wait = 0 if args.action == "maintain" else 30
+        with runtime.lock("deployment", wait_seconds=lock_wait), runtime.lock(wait_seconds=lock_wait):
             runtime.refresh()
             if args.action == "deploy":
                 if not args.tag or not args.registry:

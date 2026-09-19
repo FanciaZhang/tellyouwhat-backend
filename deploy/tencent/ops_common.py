@@ -101,13 +101,19 @@ class Runtime:
         self.config = read_environment(self.environment_file)
 
     @contextlib.contextmanager
-    def lock(self, name="operations"):
+    def lock(self, name="operations", *, wait_seconds=0):
         descriptor = os.open(self.state / (name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
         with os.fdopen(descriptor, "w") as handle:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise OperationError(f"another {name} operation is running") from error
+            deadline = time.monotonic() + wait_seconds
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as error:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise OperationError(f"another {name} operation is running") from error
+                    time.sleep(min(0.25, remaining))
             yield
 
     def execute(self, label, command, *, env=None, input=None, timeout=300):
