@@ -150,9 +150,6 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:main
           build-args: SERVICE=${{ matrix.service }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          # PRs read the default-branch cache without exporting a separate copy.
-          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=gha,mode=min,scope={0},ignore-error=true,timeout=2m', matrix.service) || '' }}
 
   deploy:
     needs: container
