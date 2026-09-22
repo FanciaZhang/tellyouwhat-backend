@@ -52,16 +52,17 @@ func TestBusySubscriptionDeliversAnActionableSocketError(t *testing.T) {
 }
 
 type scriptedConnection struct {
-	result chan Transcript
-	closed chan struct{}
+	result    chan Transcript
+	closed    chan struct{}
+	autoFinal bool
 }
 
 func (s *scriptedSpeech) Open(context.Context, []string) (SpeechConnection, error) {
 	s.opens.Add(1)
-	return &scriptedConnection{make(chan Transcript, 1), make(chan struct{})}, nil
+	return &scriptedConnection{result: make(chan Transcript, 1), closed: make(chan struct{}), autoFinal: true}, nil
 }
 func (c *scriptedConnection) Send(_ []byte, final bool) error {
-	if final {
+	if final && c.autoFinal {
 		c.result <- Transcript{Text: "今天见到许知远。", Stable: "今天见到许知远。", Final: true}
 	}
 	return nil
@@ -87,7 +88,23 @@ type scriptedRewriter struct{ calls atomic.Int32 }
 
 func (r *scriptedRewriter) Rewrite(_ context.Context, s Snapshot, tr int) (RewriteResult, error) {
 	r.calls.Add(1)
-	return RewriteResult{Revision: Revision{BaseRevision: s.Revision, TranscriptRevision: tr, Patches: []Patch{{ID: s.Blocks[0].ID, Text: s.Transcript}}, Questions: []string{}}}, nil
+	return RewriteResult{Revision: scriptedRevision(s, tr)}, nil
+}
+
+func scriptedRevision(s Snapshot, tr int) Revision {
+	ids := make([]string, 0, len(s.PendingUtterances))
+	text := ""
+	for _, utterance := range s.PendingUtterances {
+		ids = append(ids, utterance.ID)
+		text += utterance.Text
+	}
+	passages := []Passage{}
+	if text != "" {
+		passages = append(passages, Passage{BlockID: s.Blocks[0].ID, SourceIDs: ids})
+	}
+	return Revision{BaseRevision: s.Revision, TranscriptRevision: tr,
+		Patches: []Patch{{ID: s.Blocks[0].ID, Text: text}}, Passages: passages,
+		ConsumedSourceIDs: ids, Questions: []string{}}
 }
 
 type delayedRewriter struct {
@@ -105,7 +122,7 @@ func (r *delayedRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (Rewr
 			return RewriteResult{}, ctx.Err()
 		}
 	}
-	return RewriteResult{Revision: Revision{BaseRevision: s.Revision, TranscriptRevision: tr, Patches: []Patch{{ID: s.Blocks[0].ID, Text: s.Transcript}}}}, nil
+	return RewriteResult{Revision: scriptedRevision(s, tr)}, nil
 }
 func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	model := &delayedRewriter{started: make(chan struct{}), release: make(chan struct{})}
@@ -130,7 +147,9 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	if err = websocket.JSON.Receive(ws, &event); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}, Transcript: "完整口述"}
+	sourceID := uuid.NewString()
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}, Transcript: "完整口述",
+		PendingUtterances: []SourceUtterance{{ID: sourceID, Text: "完整口述"}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	select {
@@ -274,15 +293,15 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	}
 }
 
-// Streaming results must schedule work without waiting for the lease heartbeat.
-// New speech received during a slow model call is coalesced until the client ACK.
+// Interim recognition is UI-only. A completed source segment triggers exactly
+// one bounded rewrite without waiting for the lease heartbeat.
 type streamingSpeech struct{ connection *scriptedConnection }
 
 func (s streamingSpeech) Open(context.Context, []string) (SpeechConnection, error) {
 	return s.connection, nil
 }
-func TestStableSpeechRewritesImmediatelyAndCatchesUpAfterAcknowledgement(t *testing.T) {
-	conn := &scriptedConnection{make(chan Transcript, 4), make(chan struct{})}
+func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
+	conn := &scriptedConnection{result: make(chan Transcript, 4), closed: make(chan struct{})}
 	model := &delayedRewriter{started: make(chan struct{}), release: make(chan struct{})}
 	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: model, Secret: make([]byte, 32)}
 	session := uuid.NewString()
@@ -306,19 +325,34 @@ func TestStableSpeechRewritesImmediatelyAndCatchesUpAfterAcknowledgement(t *test
 	}
 	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400)})
+	segment := uuid.NewString()
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
 	conn.result <- Transcript{Text: "今天去了公园。", Stable: "今天去了公园。"}
 	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
 		t.Fatalf("%+v %v", event, err)
 	}
 	select {
 	case <-model.started:
-	case <-time.After(time.Second):
-		t.Fatal("stable speech waited for five-second heartbeat")
+		t.Fatal("interim speech spent rewrite tokens")
+	case <-time.After(400 * time.Millisecond):
 	}
 	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。"}
 	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
-		t.Fatalf("slow rewrite blocked ASR: %+v %v", event, err)
+		t.Fatalf("interim transcript missing: %+v %v", event, err)
+	}
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
+	time.Sleep(20 * time.Millisecond)
+	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。后来去了湖边。", Final: true}
+	if event = func() Event { var value Event; _ = websocket.JSON.Receive(ws, &value); return value }(); event.Type != "transcript" {
+		t.Fatalf("final transcript missing: %+v", event)
+	}
+	if event = func() Event { var value Event; _ = websocket.JSON.Receive(ws, &value); return value }(); event.Type != "receipt" {
+		t.Fatalf("receipt missing: %+v", event)
+	}
+	select {
+	case <-model.started:
+	case <-time.After(time.Second):
+		t.Fatal("final source did not schedule rewrite")
 	}
 	websocket.JSON.Send(ws, Frame{Type: "ping"})
 	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
@@ -328,22 +362,16 @@ func TestStableSpeechRewritesImmediatelyAndCatchesUpAfterAcknowledgement(t *test
 	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
 		t.Fatalf("%+v %v", event, err)
 	}
-	snapshot.Revision++
-	snapshot.Blocks[0].Text = event.Revision.Patches[0].Text
-	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
-		t.Fatalf("latest speech waited for heartbeat: %+v %v", event, err)
-	}
 	if got := event.Revision.Patches[0].Text; got != "今天去了公园。后来去了湖边。" {
-		t.Fatal("interim words must reach the rewrite before final ASR confirmation", got)
+		t.Fatal("final source was not organized", got)
 	}
-	if model.calls.Load() != 2 {
+	if model.calls.Load() != 1 {
 		t.Fatal(model.calls.Load())
 	}
 }
 
 func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
-	conn := &scriptedConnection{make(chan Transcript, 4), make(chan struct{})}
+	conn := &scriptedConnection{result: make(chan Transcript, 4), closed: make(chan struct{})}
 	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
 	session, segment := uuid.NewString(), uuid.NewString()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
@@ -376,15 +404,11 @@ func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
 	if e := read(); e.Type != "transcript" {
 		t.Fatal(e)
 	}
-	provisional := read()
-	if provisional.Type != "revision" {
-		t.Fatal(provisional)
-	}
-	// The client starts an ACK before receiving the final receipt. Its network
-	// write arrives later, so this snapshot legitimately still has no transcript.
-	snapshot.Revision++
-	snapshot.Blocks[0].Text = provisional.Revision.Patches[0].Text
+	// A snapshot already queued by the client legitimately has no knowledge of
+	// the receipt that is about to be committed.
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
+	time.Sleep(20 * time.Millisecond)
+	conn.result <- Transcript{Text: "今天见到一个朋友。", Stable: "今天见到一个朋友。", Final: true}
 	var receipt *Receipt
 	for receipt == nil {
 		e := read()

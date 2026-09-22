@@ -4,17 +4,22 @@ package voice
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v1"
+const Version = "journal-voice-v2"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
 const MaxContextCharacters = 60000
+const MaxPendingUtterances = 512
+const MaxRewriteSourceCharacters = 6000
+const MaxRewriteContextCharacters = 4000
 
 var ErrQuota = errors.New("voice_quota_exhausted")
 var ErrBusy = errors.New("voice_session_busy")
@@ -25,12 +30,44 @@ type Block struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
 }
+type Word struct {
+	Text              string `json:"text"`
+	StartMilliseconds int    `json:"startMilliseconds"`
+	EndMilliseconds   int    `json:"endMilliseconds"`
+}
+type Utterance struct {
+	ID                       string  `json:"id,omitempty"`
+	Text                     string  `json:"text"`
+	StartMilliseconds        int     `json:"startMilliseconds"`
+	EndMilliseconds          int     `json:"endMilliseconds"`
+	ProviderEndMilliseconds  *int    `json:"providerEndMilliseconds,omitempty"`
+	ProviderStartUnavailable *bool   `json:"providerStartUnavailable,omitempty"`
+	Definite                 bool    `json:"definite"`
+	Speaker                  string  `json:"speaker,omitempty"`
+	AcousticEmotion          string  `json:"acousticEmotion,omitempty"`
+	Volume                   float64 `json:"volume,omitempty"`
+	SpeechRate               float64 `json:"speechRate,omitempty"`
+	Words                    []Word  `json:"words,omitempty"`
+}
+
+// SourceUtterance is the app-owned, recording-wide identity used by the
+// incremental editor. Provider speaker labels remain evidence only; Person is
+// present solely after the user explicitly names or assigns the voice.
+type SourceUtterance struct {
+	ID      string `json:"id"`
+	Text    string `json:"text"`
+	Speaker string `json:"speaker,omitempty"`
+	Person  string `json:"person,omitempty"`
+}
 type Snapshot struct {
-	Revision       int      `json:"revision"`
-	Blocks         []Block  `json:"blocks"`
-	Transcript     string   `json:"transcript"`
-	EditedBlockIDs []string `json:"editedBlockIDs"`
-	Words          []string `json:"words"`
+	Revision          int               `json:"revision"`
+	Blocks            []Block           `json:"blocks"`
+	Transcript        string            `json:"transcript"`
+	EditedBlockIDs    []string          `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs []string          `json:"mediaOnlyBlockIDs"`
+	PendingUtterances []SourceUtterance `json:"pendingUtterances"`
+	Words             []string          `json:"words"`
+	WritingStyle      string            `json:"writingStyle"`
 }
 type Patch struct {
 	ID   string `json:"id"`
@@ -39,26 +76,35 @@ type Patch struct {
 	AfterID string `json:"afterID"`
 }
 type Revision struct {
-	BaseRevision       int      `json:"baseRevision"`
-	TranscriptRevision int      `json:"transcriptRevision"`
-	Patches            []Patch  `json:"patches"`
-	Questions          []string `json:"questions"`
+	BaseRevision       int       `json:"baseRevision"`
+	TranscriptRevision int       `json:"transcriptRevision"`
+	Patches            []Patch   `json:"patches"`
+	Passages           []Passage `json:"passages"`
+	ConsumedSourceIDs  []string  `json:"consumedSourceIDs"`
+	Questions          []string  `json:"questions"`
+}
+type Passage struct {
+	BlockID        string   `json:"blockID"`
+	ParagraphIndex int      `json:"paragraphIndex"`
+	SourceIDs      []string `json:"sourceIDs"`
 }
 type Receipt struct {
-	SegmentID    string `json:"segmentID"`
-	SHA256       string `json:"sha256"`
-	Text         string `json:"text"`
-	Milliseconds int    `json:"milliseconds"`
+	SegmentID    string      `json:"segmentID"`
+	SHA256       string      `json:"sha256"`
+	Text         string      `json:"text"`
+	Milliseconds int         `json:"milliseconds"`
+	Utterances   []Utterance `json:"utterances,omitempty"`
 }
 type Event struct {
-	Type                  string    `json:"type"`
-	SegmentID             string    `json:"segmentID,omitempty"`
-	Text                  string    `json:"text,omitempty"`
-	Stable                string    `json:"stable,omitempty"`
-	Receipt               *Receipt  `json:"receipt,omitempty"`
-	Revision              *Revision `json:"revision,omitempty"`
-	RemainingMilliseconds int       `json:"remainingMilliseconds"`
-	Code                  string    `json:"code,omitempty"`
+	Type                  string      `json:"type"`
+	SegmentID             string      `json:"segmentID,omitempty"`
+	Text                  string      `json:"text,omitempty"`
+	Stable                string      `json:"stable,omitempty"`
+	Utterances            []Utterance `json:"utterances,omitempty"`
+	Receipt               *Receipt    `json:"receipt,omitempty"`
+	Revision              *Revision   `json:"revision,omitempty"`
+	RemainingMilliseconds int         `json:"remainingMilliseconds"`
+	Code                  string      `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`
@@ -69,7 +115,8 @@ type Frame struct {
 }
 
 func (s Snapshot) Validate() error {
-	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 {
+	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 ||
+		len(s.MediaOnlyBlockIDs) > 1024 || len(s.PendingUtterances) > MaxPendingUtterances || utf8.RuneCountInString(s.WritingStyle) > 64 {
 		return ErrInvalid
 	}
 	count := utf8.RuneCountInString(s.Transcript)
@@ -85,6 +132,24 @@ func (s Snapshot) Validate() error {
 		if !seen[id] {
 			return ErrInvalid
 		}
+	}
+	for _, id := range s.MediaOnlyBlockIDs {
+		if !seen[id] {
+			return ErrInvalid
+		}
+	}
+	sources := map[string]bool{}
+	pendingCharacters := 0
+	for _, u := range s.PendingUtterances {
+		if _, err := uuid.Parse(u.ID); err != nil || sources[u.ID] || strings.TrimSpace(u.Text) == "" ||
+			utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 {
+			return ErrInvalid
+		}
+		sources[u.ID] = true
+		pendingCharacters += utf8.RuneCountInString(u.Text)
+	}
+	if pendingCharacters > MaxContextCharacters {
+		return ErrInvalid
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
@@ -104,12 +169,15 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Questions) > 8 {
+	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Passages) > 1024 || len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 {
 		return ErrConflict
 	}
 	known := map[string]bool{}
 	lengths := map[string]int{}
 	locked := map[string]bool{}
+	for _, id := range s.MediaOnlyBlockIDs {
+		locked[id] = true
+	}
 	touched := map[string]bool{}
 	for _, b := range s.Blocks {
 		known[b.ID] = true
@@ -141,6 +209,46 @@ func (r Revision) Validate(s Snapshot) error {
 		if utf8.RuneCountInString(q) > 300 {
 			return ErrInvalid
 		}
+	}
+	sources := map[string]bool{}
+	for _, u := range s.PendingUtterances {
+		sources[u.ID] = true
+	}
+	usedSources := map[string]bool{}
+	targets := map[string]bool{}
+	for _, passage := range r.Passages {
+		if !known[passage.BlockID] || passage.ParagraphIndex < 0 || passage.ParagraphIndex > 63 || len(passage.SourceIDs) == 0 || len(passage.SourceIDs) > MaxPendingUtterances {
+			return ErrInvalid
+		}
+		target := passage.BlockID + ":" + fmt.Sprint(passage.ParagraphIndex)
+		if targets[target] {
+			return ErrInvalid
+		}
+		targets[target] = true
+		for _, id := range passage.SourceIDs {
+			if !sources[id] || usedSources[id] {
+				return ErrInvalid
+			}
+			usedSources[id] = true
+		}
+	}
+	consumed := map[string]bool{}
+	for _, id := range r.ConsumedSourceIDs {
+		if !sources[id] || consumed[id] {
+			return ErrInvalid
+		}
+		consumed[id] = true
+	}
+	if len(consumed) != len(sources) {
+		return ErrInvalid
+	}
+	for id := range usedSources {
+		if !consumed[id] {
+			return ErrInvalid
+		}
+	}
+	if len(r.Patches) > 0 && len(s.PendingUtterances) > 0 && len(r.Passages) == 0 {
+		return ErrInvalid
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid

@@ -2,7 +2,6 @@ package voice
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"sync"
 	"time"
@@ -10,7 +9,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 )
 
-const voiceRewriteOutputReservationTokens = 12_000
+const voiceRewriteOutputReservationTokens = 4_000
 
 type BudgetedRewriter struct {
 	next       Rewriter
@@ -30,7 +29,7 @@ func (rewriter *BudgetedRewriter) Rewrite(ctx context.Context, snapshot Snapshot
 	if err := snapshot.Validate(); err != nil {
 		return RewriteResult{}, err
 	}
-	encoded, err := json.Marshal(map[string]any{"document": snapshot, "transcriptRevision": transcriptRevision})
+	encoded, err := rewriteModelInput(snapshot, transcriptRevision)
 	if err != nil {
 		return RewriteResult{}, err
 	}

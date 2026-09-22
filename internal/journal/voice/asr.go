@@ -20,6 +20,7 @@ type ASRConfig struct{ URL, APIKey, AppKey, AccessKey, ResourceID string }
 type Transcript struct {
 	Text, Stable string
 	Final        bool
+	Utterances   []Utterance
 }
 type SpeechConnection interface {
 	Send([]byte, bool) error
@@ -141,8 +142,20 @@ func parseASR(packet []byte) (Transcript, error) {
 		Result struct {
 			Text       string `json:"text"`
 			Utterances []struct {
-				Text     string `json:"text"`
-				Definite bool   `json:"definite"`
+				Text       string                     `json:"text"`
+				Definite   bool                       `json:"definite"`
+				Start      *int                       `json:"start_time"`
+				End        int                        `json:"end_time"`
+				Speaker    string                     `json:"speaker"`
+				Emotion    string                     `json:"emotion"`
+				Volume     float64                    `json:"volume"`
+				SpeechRate float64                    `json:"speech_rate"`
+				Additions  map[string]json.RawMessage `json:"additions"`
+				Words      []struct {
+					Text  string `json:"text"`
+					Start int    `json:"start_time"`
+					End   int    `json:"end_time"`
+				} `json:"words"`
 			} `json:"utterances"`
 		} `json:"result"`
 		Code int `json:"code"`
@@ -155,6 +168,29 @@ func parseASR(packet []byte) (Transcript, error) {
 	}
 	result := Transcript{Text: envelope.Result.Text, Final: flags&2 != 0}
 	for _, u := range envelope.Result.Utterances {
+		startUnavailable := u.Start == nil
+		start := 0
+		if u.Start != nil {
+			start = max(0, *u.Start)
+		}
+		end := max(start, u.End)
+		speaker := firstAdditionString(u.Speaker, u.Additions, "speaker", "speaker_id")
+		emotion := firstAdditionString(u.Emotion, u.Additions, "emotion", "acoustic_emotion")
+		volume := firstAdditionNumber(u.Volume, u.Additions, "volume")
+		speechRate := firstAdditionNumber(u.SpeechRate, u.Additions, "speech_rate")
+		words := make([]Word, 0, len(u.Words))
+		for _, word := range u.Words {
+			if word.Text != "" && word.Start >= start && word.End >= word.Start && word.End <= end {
+				words = append(words, Word{Text: word.Text, StartMilliseconds: word.Start, EndMilliseconds: word.End})
+			}
+		}
+		providerEnd := u.End
+		result.Utterances = append(result.Utterances, Utterance{
+			Text: u.Text, StartMilliseconds: start, EndMilliseconds: end,
+			ProviderEndMilliseconds: &providerEnd, ProviderStartUnavailable: &startUnavailable,
+			Definite: u.Definite, Speaker: speaker, AcousticEmotion: emotion,
+			Volume: volume, SpeechRate: speechRate, Words: words,
+		})
 		if u.Definite {
 			result.Stable += u.Text
 		}
@@ -163,4 +199,40 @@ func parseASR(packet []byte) (Transcript, error) {
 		result.Stable = result.Text
 	}
 	return result, nil
+}
+
+func firstAdditionString(fallback string, additions map[string]json.RawMessage, keys ...string) string {
+	if fallback != "" {
+		return fallback
+	}
+	for _, key := range keys {
+		var value string
+		if raw := additions[key]; len(raw) > 0 && json.Unmarshal(raw, &value) == nil {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstAdditionNumber(fallback float64, additions map[string]json.RawMessage, keys ...string) float64 {
+	if fallback != 0 {
+		return fallback
+	}
+	for _, key := range keys {
+		raw := additions[key]
+		if len(raw) == 0 {
+			continue
+		}
+		var number float64
+		if json.Unmarshal(raw, &number) == nil {
+			return number
+		}
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			if _, err := fmt.Sscan(text, &number); err == nil {
+				return number
+			}
+		}
+	}
+	return 0
 }

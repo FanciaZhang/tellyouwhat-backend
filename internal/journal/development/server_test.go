@@ -56,7 +56,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 200 || w.Header().Get("X-Journal-Development-Protocol") != ProtocolVersion {
 		t.Fatalf("quota: %d %s", w.Code, w.Body)
 	}
-	body := `{"sessionID":"19be2f9e-bd92-4699-b561-e3816092114c","consentVersion":"journal-voice-v1"}`
+	body := `{"sessionID":"19be2f9e-bd92-4699-b561-e3816092114c","consentVersion":"journal-voice-v2"}`
 	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 403 {
 		t.Fatalf("missing consent: %d %s", w.Code, w.Body)
 	}

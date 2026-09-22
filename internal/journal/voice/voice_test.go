@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,7 +64,7 @@ func TestFailedSegmentDoesNotChargeAndQuotaResetsByPeriod(t *testing.T) {
 	if n != 1000 {
 		t.Fatal(n)
 	}
-	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{"a", "hash", "text", 1000}, 1000)
+	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Text: "text", Milliseconds: 1000}, 1000)
 	n, _ = s.Remaining(ctx, "owner", "new", 1000)
 	if n != 1000 {
 		t.Fatal(n)
@@ -73,7 +74,7 @@ func TestExpiredTranscriptDoesNotRechargeInNextMonth(t *testing.T) {
 	s := NewMemoryStore()
 	ctx := context.Background()
 	s.Lock(ctx, "owner", "lease")
-	r := Receipt{"segment", "audio-hash", "原始转写", 1000}
+	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Text: "原始转写", Milliseconds: 1000}
 	if _, err := s.Commit(ctx, "owner", "session", "old", "lease", r, 1200); err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +108,49 @@ func TestASRPacketFinalFlagAndMalformedPackets(t *testing.T) {
 		if _, err := parseASR(bad); err == nil {
 			t.Fatal("accepted malformed packet")
 		}
+	}
+}
+
+func TestASRPreservesTimedSpeakerEvidence(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{"result": map[string]any{
+		"text": "你好。",
+		"utterances": []map[string]any{{
+			"text": "你好。", "definite": true, "start_time": 120, "end_time": 860,
+			"additions": map[string]any{"speaker": "2", "emotion": "happy", "volume": 7.5, "speech_rate": "3.25"},
+			"words":     []map[string]any{{"text": "你好", "start_time": 120, "end_time": 700}},
+		}},
+	}})
+	packet := asrPacket(9, true, payload)
+	packet[2] = 0x10
+	result, err := parseASR(packet)
+	if err != nil || len(result.Utterances) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	utterance := result.Utterances[0]
+	if utterance.StartMilliseconds != 120 || utterance.EndMilliseconds != 860 || utterance.Speaker != "2" ||
+		utterance.AcousticEmotion != "happy" || utterance.Volume != 7.5 || utterance.SpeechRate != 3.25 || len(utterance.Words) != 1 {
+		t.Fatalf("provider evidence was dropped: %+v", utterance)
+	}
+}
+
+func TestRewriteInputIsIncrementalAndBounded(t *testing.T) {
+	old := uuid.NewString()
+	active := uuid.NewString()
+	source := uuid.NewString()
+	snapshot := Snapshot{
+		Revision:          9,
+		Blocks:            []Block{{ID: old, Text: "HEAD_SENTINEL" + strings.Repeat("旧正文", 3000)}, {ID: active, Text: "最后一段"}},
+		Transcript:        strings.Repeat("FULL_TRANSCRIPT_SENTINEL", 500),
+		PendingUtterances: []SourceUtterance{{ID: source, Text: "这是本轮新口述。", Speaker: "segment:1", Person: "小林"}},
+	}
+	raw, err := rewriteModelInput(snapshot, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "FULL_TRANSCRIPT_SENTINEL") || strings.Contains(text, "HEAD_SENTINEL") ||
+		!strings.Contains(text, "这是本轮新口述") || !strings.Contains(text, "小林") || len(raw) > 20_000 {
+		t.Fatalf("rewrite input is not bounded incremental context: bytes=%d body=%s", len(raw), text)
 	}
 }
 func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
