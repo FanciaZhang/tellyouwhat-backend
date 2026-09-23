@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v4"
+const Version = "journal-voice-v5"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -102,6 +102,7 @@ type Revision struct {
 	FormatResolutions  []FormatResolution `json:"formatResolutions"`
 	Passages           []Passage          `json:"passages"`
 	ConsumedSourceIDs  []string           `json:"consumedSourceIDs"`
+	SourcePartitions   []SourcePartition  `json:"sourcePartitions"`
 	SemanticState      SemanticState      `json:"semanticState"`
 	Questions          []string           `json:"questions"`
 	Emotions           []Emotion          `json:"emotions"`
@@ -110,6 +111,15 @@ type Revision struct {
 type Passage struct {
 	BlockID   string   `json:"blockID"`
 	SourceIDs []string `json:"sourceIDs"`
+}
+type SourcePartition struct {
+	SourceID string          `json:"sourceID"`
+	Segments []SourceSegment `json:"segments"`
+}
+type SourceSegment struct {
+	Text     string   `json:"text"`
+	Role     string   `json:"role"`
+	BlockIDs []string `json:"blockIDs"`
 }
 type SemanticState struct {
 	Entities           []Entity         `json:"entities"`
@@ -403,6 +413,9 @@ func (r Revision) Validate(s Snapshot) error {
 	}
 	if len(consumed) != len(sources) {
 		return ErrInvalid
+	}
+	if err := validateSourcePartitions(r, s); err != nil {
+		return err
 	}
 	for id := range usedSources {
 		if !consumed[id] {
