@@ -148,3 +148,40 @@ func TestFormatCommandSchemaIsClosedAndRequired(t *testing.T) {
 		t.Fatal("open command schema")
 	}
 }
+
+func TestParagraphFormatRequiresExactWholeBlock(t *testing.T) {
+	properties := voiceRevisionSchema()["properties"].(map[string]any)
+	items := properties["formatCommands"].(map[string]any)["items"].(map[string]any)
+	marks := items["properties"].(map[string]any)["mark"].(map[string]any)["enum"].([]string)
+	allowed := map[string]bool{}
+	for _, mark := range marks {
+		allowed[mark] = true
+	}
+	block, source := uuid.NewString(), uuid.NewString()
+	s := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "隐私保护", Style: "body"}},
+		EditedBlockIDs: []string{block}, PendingUtterances: []SourceUtterance{{ID: source, Text: "这段作为二级标题"}}}
+	for _, mark := range []string{"heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem"} {
+		if !allowed[mark] {
+			t.Fatalf("paragraph style missing from model schema: %s", mark)
+		}
+		command := FormatCommand{ID: uuid.NewString(), BlockID: block, SourceID: source,
+			Anchor: TextAnchor{Quote: "隐私保护"}, Instruction: "这段作为二级标题", Mark: mark, Enabled: true}
+		r := Revision{BaseRevision: 2, FormatCommands: []FormatCommand{command}, ConsumedSourceIDs: []string{source}}
+		if err := r.Validate(s); err != nil {
+			t.Fatalf("%s: %v", mark, err)
+		}
+		for _, mutate := range []func(*FormatCommand){
+			func(c *FormatCommand) { c.Anchor.Quote = "隐私" },
+			func(c *FormatCommand) { c.Anchor.Prefix = "前文" },
+			func(c *FormatCommand) { c.Anchor.Suffix = "后文" },
+			func(c *FormatCommand) { c.Enabled = false },
+		} {
+			bad := command
+			mutate(&bad)
+			r.FormatCommands = []FormatCommand{bad}
+			if r.Validate(s) == nil {
+				t.Fatalf("accepted ambiguous paragraph command: %+v", bad)
+			}
+		}
+	}
+}

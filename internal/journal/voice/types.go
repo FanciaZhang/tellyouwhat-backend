@@ -378,6 +378,10 @@ func (r Revision) Validate(s Snapshot) error {
 				return ErrInvalid
 			}
 		}
+		if paragraphFormatMark(command.Mark) && (!command.Enabled || command.Anchor.Quote != texts[command.BlockID] ||
+			command.Anchor.Prefix != "" || command.Anchor.Suffix != "") {
+			return ErrInvalid
+		}
 		foundEvidence := false
 		for _, source := range s.PendingUtterances {
 			if source.ID == command.SourceID && strings.Count(source.Text, command.Instruction) == 1 {

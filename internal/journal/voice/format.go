@@ -146,8 +146,20 @@ type FormatResolution struct {
 }
 
 func validFormatMark(mark string) bool {
+	if paragraphFormatMark(mark) {
+		return true
+	}
 	switch mark {
 	case "bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage":
+		return true
+	default:
+		return false
+	}
+}
+
+func paragraphFormatMark(mark string) bool {
+	switch mark {
+	case "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem":
 		return true
 	default:
 		return false
