@@ -95,6 +95,34 @@ func TestFormatContextIsBoundedAndSchemaRequiresResolutions(t *testing.T) {
 	}
 }
 
+func TestGroupedFormatUndoProtectsAndAttributesEveryAffectedBlock(t *testing.T) {
+	first, second, source, receipt := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	s := Snapshot{Revision: 2, Blocks: []Block{{ID: first, Text: "带伞", Style: "orderedListItem"}, {ID: second, Text: "带水", Style: "orderedListItem"}},
+		PendingUtterances: []SourceUtterance{{ID: source, Text: "撤销刚才那次排版"}},
+		FormatContext:     []FormatContext{{ReceiptID: receipt, BlockID: first, AdditionalBlockIDs: []string{second}, State: "applied"}}}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	r := Revision{BaseRevision: 2, ConsumedSourceIDs: []string{source}, FormatResolutions: []FormatResolution{{ID: uuid.NewString(), ReceiptID: receipt,
+		Action: "undo", SourceID: source, Instruction: "撤销刚才那次排版"}},
+		SourcePartitions: []SourcePartition{{SourceID: source, Segments: []SourceSegment{{Text: "撤销刚才那次排版", Role: "instruction", BlockIDs: []string{first, second}}}}}}
+	if err := r.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	r.SourcePartitions[0].Segments[0].BlockIDs = []string{first}
+	if r.Validate(s) == nil {
+		t.Fatal("lost group source attribution")
+	}
+	r.SourcePartitions = nil
+	if validateFormatResolutions(r, s, map[string]bool{second: true}) == nil {
+		t.Fatal("rewrote another member during undo")
+	}
+	s.FormatContext[0].AdditionalBlockIDs = []string{first}
+	if s.Validate() == nil {
+		t.Fatal("duplicate affected target")
+	}
+}
+
 func TestExplicitFormatCommandCanStyleUserOwnedTextWithSourceEvidence(t *testing.T) {
 	block, source := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "今天很好。", Style: "body"}},

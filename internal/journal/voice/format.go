@@ -19,6 +19,16 @@ func validateFormatContext(items []FormatContext, blocks map[string]bool) error 
 			return ErrInvalid
 		}
 		seen[item.ReceiptID] = true
+		if len(item.AdditionalBlockIDs) > 15 || (len(item.AdditionalBlockIDs) > 0 && item.State != "applied") {
+			return ErrInvalid
+		}
+		seenBlocks := map[string]bool{item.BlockID: true}
+		for _, id := range item.AdditionalBlockIDs {
+			if !blocks[id] || seenBlocks[id] {
+				return ErrInvalid
+			}
+			seenBlocks[id] = true
+		}
 		ids := map[string]bool{}
 		lastOrdinal := 0
 		for _, candidate := range item.Candidates {
@@ -53,13 +63,22 @@ func validateFormatResolutions(r Revision, s Snapshot, touched map[string]bool) 
 			touched[item.BlockID] || resolution.Instruction == "" || utf8.RuneCountInString(resolution.Instruction) > 500 {
 			return ErrInvalid
 		}
+		affected := map[string]bool{item.BlockID: true}
+		for _, id := range item.AdditionalBlockIDs {
+			affected[id] = true
+		}
+		for id := range affected {
+			if touched[id] {
+				return ErrInvalid
+			}
+		}
 		for _, correction := range r.Corrections {
-			if correction.BlockID == item.BlockID {
+			if affected[correction.BlockID] {
 				return ErrInvalid
 			}
 		}
 		for _, command := range r.FormatCommands {
-			if command.BlockID == item.BlockID {
+			if affected[command.BlockID] {
 				return ErrInvalid
 			}
 		}
@@ -128,12 +147,13 @@ type FormatCandidate struct {
 }
 
 type FormatContext struct {
-	ReceiptID  string            `json:"receiptID"`
-	State      string            `json:"state"`
-	BlockID    string            `json:"blockID"`
-	Title      string            `json:"title"`
-	Quote      string            `json:"quote"`
-	Candidates []FormatCandidate `json:"candidates"`
+	ReceiptID          string            `json:"receiptID"`
+	State              string            `json:"state"`
+	BlockID            string            `json:"blockID"`
+	Title              string            `json:"title"`
+	Quote              string            `json:"quote"`
+	Candidates         []FormatCandidate `json:"candidates"`
+	AdditionalBlockIDs []string          `json:"additionalBlockIDs"`
 }
 
 type FormatResolution struct {

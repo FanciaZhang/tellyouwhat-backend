@@ -61,6 +61,9 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				for _, item := range s.FormatContext {
 					if item.ReceiptID == c.ReceiptID {
 						add(c.Instruction, item.BlockID)
+						for _, id := range item.AdditionalBlockIDs {
+							add(c.Instruction, id)
+						}
 					}
 				}
 			}
