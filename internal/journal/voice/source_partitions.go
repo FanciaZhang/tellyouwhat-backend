@@ -56,6 +56,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.MoveCommands {
+			if c.SourceID == p.SourceID {
+				for _, id := range moveTargets(c, s) {
+					add(c.Instruction, id)
+				}
+			}
+		}
 		for _, c := range r.FormatResolutions {
 			if c.SourceID == p.SourceID {
 				for _, item := range s.FormatContext {

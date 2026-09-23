@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v5"
+const Version = "journal-voice-v6"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -78,6 +78,7 @@ type Snapshot struct {
 	Words             []string          `json:"words"`
 	WritingStyle      string            `json:"writingStyle"`
 	FormatContext     []FormatContext   `json:"formatContext"`
+	ParallelGroups    [][]string        `json:"parallelGroups"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -99,6 +100,7 @@ type Revision struct {
 	BlockEdits         []BlockEdit        `json:"blockEdits"`
 	Corrections        []TextCorrection   `json:"corrections"`
 	FormatCommands     []FormatCommand    `json:"formatCommands"`
+	MoveCommands       []MoveCommand      `json:"moveCommands"`
 	FormatResolutions  []FormatResolution `json:"formatResolutions"`
 	Passages           []Passage          `json:"passages"`
 	ConsumedSourceIDs  []string           `json:"consumedSourceIDs"`
@@ -260,6 +262,9 @@ func (s Snapshot) Validate() error {
 	if err := validateFormatContext(s.FormatContext, seen); err != nil {
 		return err
 	}
+	if err := validateParallelGroups(s); err != nil {
+		return err
+	}
 	return validateSemanticState(s.SemanticState, texts, allSources, locked)
 }
 
@@ -361,6 +366,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateMoves(r, s, touched); err != nil {
+		return err
+	}
 	if err := validateFormatResolutions(r, s, touched); err != nil {
 		return err
 	}

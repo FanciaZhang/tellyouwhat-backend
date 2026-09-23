@@ -34,6 +34,7 @@ formatCommands 承载明确口述的加粗、斜体、下划线、删除线、�
 formatContext 是 App 提供的近期操作，按最近优先排列：pending 为文字定位待选择，proposed 为批量预览待确认，applied 为当前仍可安全撤销的已应用操作。用户说“选第二处”“讲晚上的那个”时，使用 formatResolutions 的 choose，receiptID 和 candidateID 必须逐字引用匹配的已有项；ordinal 是候选位置，excerpt 是候选上下文。用户明确说“应用这次调整”“这两段就按预览改”且唯一指向 canConfirm 为 true 的 proposed 时用 confirm；“保留原样”“算了，这次不改”可 dismiss 待确认操作。canConfirm 为 false 表示正文已变化，只能 dismiss 或询问新的修改意图。用户说“撤销刚才那次排版”用 undo。confirm/undo/dismiss 的 candidateID 为空字符串。每项使用新 UUID 并附本轮 sourceID 与精确 instruction。确认口述仅作为操作证据，不写进正文。同一批中每个 receipt 最多一次操作，禁止同时改写、纠错或重新格式化它的 blockID；其他正文继续整理。无法唯一确定用户意图时用 questions 简短询问，不猜 ID。多个预览待处理而用户只说“可以”“好的”时要询问具体预览；转述、讨论如何操作和普通叙事均不是确认指令。没有澄清、确认或撤销时 formatResolutions 返回空数组。
 明确的整段样式指令也使用 formatCommands：heading1/heading2/heading3 对应一至三级标题，body 恢复正文，orderedListItem/unorderedListItem 对应有序/无序列表项。此类命令 enabled 必须为 true，anchor.quote 必须精确等于目标整段当前文字，prefix/suffix 为空。只改变结构样式，保留文字和素材；不要用 blockEdit 代替用户明确的整段排版指令，以便保留可撤销的操作记录。多个已有段落分别使用命令，每个目标须由口述唯一确定。同一句批量指令的所有命令使用同一 sourceID 和完整的同一 instruction，App 将展示整体预览等待用户确认。涉及拆段、合并、重排或标题改写时按所需操作处理，不能伪装成单段样式变更。目标不明确时用 questions 请求用户明确段落。
 formatContext 中 additionalBlockIDs 列出同一批量操作除 blockID 外影响的段落。撤销这样的操作使用一次 undo，作用于全部列出的段落；sourcePartitions 中对应 instruction 的 blockIDs 须包含 blockID 和 additionalBlockIDs。该批次不能改写、纠错或另外格式化这些目标。
+用户明确要求移动已有段落时使用 moveCommands，每项包含新 UUID id、现有目标 blockIDs、目的段落 afterID、当前口述 sourceID 和准确的 instruction。afterID 为 null 表示全文开头，其他情况为移到该段后面。目标只能引用上下文中可确定的已有段落；顺序按原文保持。parallelGroups 中每组是不可拆散的并排组合，选中其中一段会整组移动，目的地在组内则移到该组后面。App 会先展示预览等待触摸确认，不要用删除后重新生成正文代替移动。同批不要改写、纠错或格式化目标及目的组合；其他段落继续正常整理。sourcePartitions 的 instruction 应引用移动涉及的全部组成员；口述指令本身不写入正文。没有明确移动请求时 moveCommands 返回空数组；转述别人说的命令仍作为正文。目标、目的地或章节边界不能确定时用 questions 询问。
 sourcePartitions 描述需要细分用途或段落归属的口述；单一用途且各 passage 共用整句时可为空数组。同一句含组织提示、纠错说明或不同正文段落时必须提供该 sourceID 的完整 segments，按原话顺序逐字摘录，拼接后须与原始 text 完全相同，保留标点空格和完整字符。不要计算字符偏移。每段 role 为 content（正文内容）、organization（组织提示）、correction（纠错说明）、instruction（格式操作或确认）、context（未进入正文的上下文）。content/organization 的 blockIDs 必须引用本轮该来源关联的 passage；correction 只引用以该 source 为证据的 correction 目标；context 的 blockIDs 为空。instruction 必须与 formatCommands 或 formatResolutions 的 instruction 完全一致且引用其目标块。每个 passage 至少关联一段 content 或 organization，同一片段可支撑标题与概览等多个块。举例“第一个主题是隐私保护。数据由用户掌握。”可拆成“第一个主题是”(organization，标题块)、“隐私保护。”(content，标题块)、“数据由用户掌握。”(content，正文块)。纠错解释留作证据，其所说明的实际事实可单独作为正文片段。不得把相邻段落的原话全部分配给每个段落。
 只有 source 自带非空 acousticEmotion 时才可返回 emotion，不得单凭文字猜情绪。emotion.sourceID 必须属于同一 passage，anchorText 必须是该段中唯一出现、不超过 80 字的原文短句。kind 只能是 calm、happy、excited、relaxed、moved、hopeful、surprised、worried、nervous、sad、angry、tired。本轮证据不足时 emotions 返回空数组，overallEmotion 返回空字符串。只输出符合 schema 的 JSON。`
 
@@ -49,6 +50,7 @@ type rewriteModelDocument struct {
 	WritingStyle        string            `json:"writingStyle,omitempty"`
 	Words               []string          `json:"words,omitempty"`
 	FormatContext       []FormatContext   `json:"formatContext"`
+	ParallelGroups      [][]string        `json:"parallelGroups"`
 }
 
 func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
@@ -113,7 +115,8 @@ func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
 		ReplaceableBlockIDs: replaceable, CorrectionBlockIDs: correctionBlocks, AppendAfterID: appendAfter,
 		PendingUtterances: s.PendingUtterances, SemanticState: s.SemanticState,
 		WritingStyle: s.WritingStyle, Words: s.Words,
-		FormatContext: s.FormatContext,
+		FormatContext:  s.FormatContext,
+		ParallelGroups: s.ParallelGroups,
 	})
 }
 
@@ -229,14 +232,19 @@ func voiceRevisionSchema() map[string]any {
 	sourcePartition := object([]string{"sourceID", "segments"}, map[string]any{
 		"sourceID": stringField, "segments": map[string]any{"type": "array", "items": sourceSegment},
 	})
+	moveCommand := object([]string{"id", "blockIDs", "afterID", "sourceID", "instruction"}, map[string]any{
+		"id": stringField, "blockIDs": stringArray(), "afterID": map[string]any{"type": []string{"string", "null"}},
+		"sourceID": stringField, "instruction": stringField,
+	})
 	return object(
-		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
+		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
 		map[string]any{
 			"baseRevision":       map[string]string{"type": "integer"},
 			"transcriptRevision": map[string]string{"type": "integer"},
 			"blockEdits":         map[string]any{"type": "array", "items": blockEdit},
 			"corrections":        map[string]any{"type": "array", "items": correction},
 			"formatCommands":     map[string]any{"type": "array", "items": formatCommand},
+			"moveCommands":       map[string]any{"type": "array", "items": moveCommand},
 			"formatResolutions":  map[string]any{"type": "array", "items": formatResolution},
 			"passages":           map[string]any{"type": "array", "items": passage},
 			"consumedSourceIDs":  stringArray(), "semanticState": semantic,
@@ -317,7 +325,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return metered, ErrInvalid
 	}
-	if revision.FormatCommands == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {
+	if revision.FormatCommands == nil || revision.MoveCommands == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {
 		return metered, ErrInvalid
 	}
 	if err = revision.Validate(s); err != nil {
