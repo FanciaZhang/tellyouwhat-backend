@@ -179,26 +179,7 @@ func validateTables(r Revision, s Snapshot) error {
 					return ErrInvalid
 				}
 				seen[cell.ColumnID] = true
-				switch cell.Kind {
-				case "text":
-					if strings.TrimSpace(cell.Text) == "" || utf8.RuneCountInString(cell.Text) > 6000 || cell.Number != "" || cell.Unit != "" || cell.Approximate {
-						return ErrInvalid
-					}
-				case "number":
-					digits := 0
-					for _, ch := range cell.Number {
-						if ch >= '0' && ch <= '9' {
-							digits++
-						}
-					}
-					if cell.Text != "" || len(cell.Number) > 40 || digits > 28 || !tableDecimal.MatchString(cell.Number) || utf8.RuneCountInString(cell.Unit) > 32 {
-						return ErrInvalid
-					}
-				case "pending":
-					if cell.Text != "" || cell.Number != "" || cell.Unit != "" || cell.Approximate {
-						return ErrInvalid
-					}
-				default:
+				if !validateTableCellValue(cell) || (cell.Kind == "text" && strings.TrimSpace(cell.Text) == "") {
 					return ErrInvalid
 				}
 				total += utf8.RuneCountInString(cell.Text + cell.Number + cell.Unit)

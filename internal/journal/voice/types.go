@@ -66,6 +66,7 @@ type SourceUtterance struct {
 	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
+	TableContext      []TableContext      `json:"tableContext"`
 	BlockComponents   map[string][]string `json:"blockComponents"`
 	ParallelColumns   map[string]string   `json:"parallelColumns"`
 	Revision          int                 `json:"revision"`
@@ -297,6 +298,9 @@ func (s Snapshot) Validate() error {
 		return err
 	}
 	if err := validateParagraphContext(s.ParagraphContext, seen); err != nil {
+		return err
+	}
+	if err := validateTableContext(s); err != nil {
 		return err
 	}
 	return validateSemanticState(s.SemanticState, texts, allSources, locked)
