@@ -580,7 +580,14 @@ func sourceUtterances(segment string, utterances []Utterance) []SourceUtterance 
 		if utterance.Speaker != "" {
 			speaker = segment + ":" + utterance.Speaker
 		}
-		result = append(result, SourceUtterance{ID: utterance.ID, Text: utterance.Text, Speaker: speaker})
+		result = append(result, SourceUtterance{
+			ID: utterance.ID, Text: utterance.Text, Speaker: speaker,
+			StartMilliseconds: utterance.StartMilliseconds,
+			EndMilliseconds:   utterance.EndMilliseconds,
+			AcousticEmotion:   utterance.AcousticEmotion,
+			Volume:            utterance.Volume,
+			SpeechRate:        utterance.SpeechRate,
+		})
 	}
 	return result
 }

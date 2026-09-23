@@ -138,10 +138,11 @@ func TestRewriteInputIsIncrementalAndBounded(t *testing.T) {
 	active := uuid.NewString()
 	source := uuid.NewString()
 	snapshot := Snapshot{
-		Revision:          9,
-		Blocks:            []Block{{ID: old, Text: "HEAD_SENTINEL" + strings.Repeat("旧正文", 3000)}, {ID: active, Text: "最后一段"}},
-		Transcript:        strings.Repeat("FULL_TRANSCRIPT_SENTINEL", 500),
-		PendingUtterances: []SourceUtterance{{ID: source, Text: "这是本轮新口述。", Speaker: "segment:1", Person: "小林"}},
+		Revision:   9,
+		Blocks:     []Block{{ID: old, Text: "HEAD_SENTINEL" + strings.Repeat("旧正文", 3000)}, {ID: active, Text: "最后一段"}},
+		Transcript: strings.Repeat("FULL_TRANSCRIPT_SENTINEL", 500),
+		PendingUtterances: []SourceUtterance{{ID: source, Text: "这是本轮新口述。", Speaker: "segment:1", Person: "小林",
+			StartMilliseconds: 120, EndMilliseconds: 860, AcousticEmotion: "happy", Volume: 7.5, SpeechRate: 3.25}},
 	}
 	raw, err := rewriteModelInput(snapshot, 12)
 	if err != nil {
@@ -149,8 +150,39 @@ func TestRewriteInputIsIncrementalAndBounded(t *testing.T) {
 	}
 	text := string(raw)
 	if strings.Contains(text, "FULL_TRANSCRIPT_SENTINEL") || strings.Contains(text, "HEAD_SENTINEL") ||
-		!strings.Contains(text, "这是本轮新口述") || !strings.Contains(text, "小林") || len(raw) > 20_000 {
+		!strings.Contains(text, "这是本轮新口述") || !strings.Contains(text, "小林") ||
+		!strings.Contains(text, `"acousticEmotion":"happy"`) || !strings.Contains(text, `"startMilliseconds":120`) || len(raw) > 20_000 {
 		t.Fatalf("rewrite input is not bounded incremental context: bytes=%d body=%s", len(raw), text)
+	}
+}
+
+func TestRevisionAcceptsOnlyAcousticallyGroundedIncrementalEmotion(t *testing.T) {
+	block := uuid.NewString()
+	source := uuid.NewString()
+	snapshot := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "原文"}}, PendingUtterances: []SourceUtterance{{
+		ID: source, Text: "走到桥边时，我有一点害怕。", StartMilliseconds: 0, EndMilliseconds: 2_000, AcousticEmotion: "fearful",
+	}}}
+	revision := Revision{
+		BaseRevision: 2, TranscriptRevision: 3,
+		Patches:           []Patch{{ID: block, Text: "走到桥边时，我有一点害怕。"}},
+		Passages:          []Passage{{BlockID: block, SourceIDs: []string{source}}},
+		ConsumedSourceIDs: []string{source}, Questions: []string{},
+		Emotions:       []Emotion{{BlockID: block, AnchorText: "有一点害怕", SourceID: source, Kind: "nervous"}},
+		OverallEmotion: "worried",
+	}
+	if err := revision.Validate(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	withoutEvidence := snapshot
+	withoutEvidence.PendingUtterances[0].AcousticEmotion = ""
+	if revision.Validate(withoutEvidence) == nil {
+		t.Fatal("accepted an emotion inferred without acoustic evidence")
+	}
+	duplicateAnchor := revision
+	duplicateAnchor.Patches[0].Text = "害怕，仍然害怕。"
+	duplicateAnchor.Emotions[0].AnchorText = "害怕"
+	if duplicateAnchor.Validate(snapshot) == nil {
+		t.Fatal("accepted an ambiguous emotion anchor")
 	}
 }
 func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {

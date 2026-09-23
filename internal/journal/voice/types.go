@@ -5,6 +5,7 @@ package voice
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -54,10 +55,15 @@ type Utterance struct {
 // incremental editor. Provider speaker labels remain evidence only; Person is
 // present solely after the user explicitly names or assigns the voice.
 type SourceUtterance struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Speaker string `json:"speaker,omitempty"`
-	Person  string `json:"person,omitempty"`
+	ID                string  `json:"id"`
+	Text              string  `json:"text"`
+	Speaker           string  `json:"speaker,omitempty"`
+	Person            string  `json:"person,omitempty"`
+	StartMilliseconds int     `json:"startMilliseconds"`
+	EndMilliseconds   int     `json:"endMilliseconds"`
+	AcousticEmotion   string  `json:"acousticEmotion,omitempty"`
+	Volume            float64 `json:"volume,omitempty"`
+	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
 	Revision          int               `json:"revision"`
@@ -82,11 +88,19 @@ type Revision struct {
 	Passages           []Passage `json:"passages"`
 	ConsumedSourceIDs  []string  `json:"consumedSourceIDs"`
 	Questions          []string  `json:"questions"`
+	Emotions           []Emotion `json:"emotions"`
+	OverallEmotion     string    `json:"overallEmotion"`
 }
 type Passage struct {
 	BlockID        string   `json:"blockID"`
 	ParagraphIndex int      `json:"paragraphIndex"`
 	SourceIDs      []string `json:"sourceIDs"`
+}
+type Emotion struct {
+	BlockID    string `json:"blockID"`
+	AnchorText string `json:"anchorText"`
+	SourceID   string `json:"sourceID"`
+	Kind       string `json:"kind"`
 }
 type Receipt struct {
 	SegmentID    string      `json:"segmentID"`
@@ -142,7 +156,10 @@ func (s Snapshot) Validate() error {
 	pendingCharacters := 0
 	for _, u := range s.PendingUtterances {
 		if _, err := uuid.Parse(u.ID); err != nil || sources[u.ID] || strings.TrimSpace(u.Text) == "" ||
-			utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 {
+			utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 ||
+			u.StartMilliseconds < 0 || u.EndMilliseconds < u.StartMilliseconds ||
+			utf8.RuneCountInString(u.AcousticEmotion) > 512 || math.IsNaN(u.Volume) || math.IsInf(u.Volume, 0) ||
+			math.IsNaN(u.SpeechRate) || math.IsInf(u.SpeechRate, 0) {
 			return ErrInvalid
 		}
 		sources[u.ID] = true
@@ -169,7 +186,7 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Passages) > 1024 || len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 {
+	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Passages) > 1024 || len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrConflict
 	}
 	known := map[string]bool{}
@@ -249,6 +266,53 @@ func (r Revision) Validate(s Snapshot) error {
 	}
 	if len(r.Patches) > 0 && len(s.PendingUtterances) > 0 && len(r.Passages) == 0 {
 		return ErrInvalid
+	}
+	allowedEmotions := map[string]bool{
+		"calm": true, "happy": true, "excited": true, "relaxed": true,
+		"moved": true, "hopeful": true, "surprised": true, "worried": true,
+		"nervous": true, "sad": true, "angry": true, "tired": true,
+	}
+	if r.OverallEmotion != "" && !allowedEmotions[r.OverallEmotion] {
+		return ErrInvalid
+	}
+	patchText := map[string]string{}
+	for _, patch := range r.Patches {
+		patchText[patch.ID] = patch.Text
+	}
+	sourceEvidence := map[string]SourceUtterance{}
+	for _, source := range s.PendingUtterances {
+		sourceEvidence[source.ID] = source
+	}
+	emotionSources := map[string]bool{}
+	for _, emotion := range r.Emotions {
+		source, exists := sourceEvidence[emotion.SourceID]
+		text, replaced := patchText[emotion.BlockID]
+		if !replaced {
+			for _, block := range s.Blocks {
+				if block.ID == emotion.BlockID {
+					text = block.Text
+					break
+				}
+			}
+		}
+		linked := false
+		for _, passage := range r.Passages {
+			if passage.BlockID != emotion.BlockID {
+				continue
+			}
+			for _, id := range passage.SourceIDs {
+				if id == emotion.SourceID {
+					linked = true
+					break
+				}
+			}
+		}
+		if !exists || strings.TrimSpace(source.AcousticEmotion) == "" || emotionSources[emotion.SourceID] ||
+			!allowedEmotions[emotion.Kind] || strings.TrimSpace(emotion.AnchorText) == "" ||
+			utf8.RuneCountInString(emotion.AnchorText) > 80 || strings.Count(text, emotion.AnchorText) != 1 || !linked {
+			return ErrInvalid
+		}
+		emotionSources[emotion.SourceID] = true
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
