@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v8"
+const Version = "journal-voice-v9"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -82,6 +82,7 @@ type Snapshot struct {
 	FormatContext     []FormatContext     `json:"formatContext"`
 	ParallelGroups    [][]string          `json:"parallelGroups"`
 	MoveContext       []MoveContext       `json:"moveContext"`
+	ParagraphContext  []ParagraphContext  `json:"paragraphContext"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -98,22 +99,23 @@ type TextCorrection struct {
 	EvidenceSourceIDs []string `json:"evidenceSourceIDs"`
 }
 type Revision struct {
-	BaseRevision       int                `json:"baseRevision"`
-	TranscriptRevision int                `json:"transcriptRevision"`
-	BlockEdits         []BlockEdit        `json:"blockEdits"`
-	Corrections        []TextCorrection   `json:"corrections"`
-	FormatCommands     []FormatCommand    `json:"formatCommands"`
-	MoveCommands       []MoveCommand      `json:"moveCommands"`
-	ParagraphCommands  []ParagraphCommand `json:"paragraphCommands"`
-	MoveResolutions    []MoveResolution   `json:"moveResolutions"`
-	FormatResolutions  []FormatResolution `json:"formatResolutions"`
-	Passages           []Passage          `json:"passages"`
-	ConsumedSourceIDs  []string           `json:"consumedSourceIDs"`
-	SourcePartitions   []SourcePartition  `json:"sourcePartitions"`
-	SemanticState      SemanticState      `json:"semanticState"`
-	Questions          []string           `json:"questions"`
-	Emotions           []Emotion          `json:"emotions"`
-	OverallEmotion     string             `json:"overallEmotion"`
+	BaseRevision         int                   `json:"baseRevision"`
+	TranscriptRevision   int                   `json:"transcriptRevision"`
+	BlockEdits           []BlockEdit           `json:"blockEdits"`
+	Corrections          []TextCorrection      `json:"corrections"`
+	FormatCommands       []FormatCommand       `json:"formatCommands"`
+	MoveCommands         []MoveCommand         `json:"moveCommands"`
+	ParagraphCommands    []ParagraphCommand    `json:"paragraphCommands"`
+	ParagraphResolutions []ParagraphResolution `json:"paragraphResolutions"`
+	MoveResolutions      []MoveResolution      `json:"moveResolutions"`
+	FormatResolutions    []FormatResolution    `json:"formatResolutions"`
+	Passages             []Passage             `json:"passages"`
+	ConsumedSourceIDs    []string              `json:"consumedSourceIDs"`
+	SourcePartitions     []SourcePartition     `json:"sourcePartitions"`
+	SemanticState        SemanticState         `json:"semanticState"`
+	Questions            []string              `json:"questions"`
+	Emotions             []Emotion             `json:"emotions"`
+	OverallEmotion       string                `json:"overallEmotion"`
 }
 type Passage struct {
 	BlockID   string   `json:"blockID"`
@@ -293,6 +295,9 @@ func (s Snapshot) Validate() error {
 	if err := validateMoveContext(s.MoveContext, seen); err != nil {
 		return err
 	}
+	if err := validateParagraphContext(s.ParagraphContext, seen); err != nil {
+		return err
+	}
 	return validateSemanticState(s.SemanticState, texts, allSources, locked)
 }
 
@@ -394,6 +399,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateParagraphResolutions(r, s, touched); err != nil {
+		return err
+	}
 	if err := validateParagraphs(r, s, touched); err != nil {
 		return err
 	}
