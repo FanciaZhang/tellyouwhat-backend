@@ -123,6 +123,38 @@ func TestGroupedFormatUndoProtectsAndAttributesEveryAffectedBlock(t *testing.T) 
 	}
 }
 
+func TestSpokenGroupConfirmationRequiresCurrentProposalAndEvidence(t *testing.T) {
+	first, second, source, receipt := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	s := Snapshot{Revision: 2, Blocks: []Block{{ID: first, Text: "带伞", Style: "body"}, {ID: second, Text: "带水", Style: "body"}},
+		PendingUtterances: []SourceUtterance{{ID: source, Text: "应用这次调整"}},
+		FormatContext:     []FormatContext{{ReceiptID: receipt, BlockID: first, AdditionalBlockIDs: []string{second}, State: "proposed", CanConfirm: true}}}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	r := Revision{BaseRevision: 2, ConsumedSourceIDs: []string{source}, FormatResolutions: []FormatResolution{{ID: uuid.NewString(), ReceiptID: receipt,
+		Action: "confirm", SourceID: source, Instruction: "应用这次调整"}}}
+	if err := r.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	s.FormatContext[0].CanConfirm = false
+	if r.Validate(s) == nil {
+		t.Fatal("confirmed stale proposal")
+	}
+	r.FormatResolutions[0].Action = "dismiss"
+	if err := r.Validate(s); err != nil {
+		t.Fatalf("stale proposal must remain dismissible: %v", err)
+	}
+	r.FormatResolutions[0].Instruction = "没有说过"
+	if r.Validate(s) == nil {
+		t.Fatal("fabricated evidence")
+	}
+	s.FormatContext[0].State = "applied"
+	s.FormatContext[0].CanConfirm = true
+	if s.Validate() == nil {
+		t.Fatal("confirmation capability outside proposal")
+	}
+}
+
 func TestExplicitFormatCommandCanStyleUserOwnedTextWithSourceEvidence(t *testing.T) {
 	block, source := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "今天很好。", Style: "body"}},

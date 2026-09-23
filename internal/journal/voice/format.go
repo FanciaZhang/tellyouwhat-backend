@@ -13,13 +13,15 @@ func validateFormatContext(items []FormatContext, blocks map[string]bool) error 
 	totalCandidates := 0
 	for _, item := range items {
 		if !validID(item.ReceiptID) || seen[item.ReceiptID] || !blocks[item.BlockID] ||
-			(item.State != "pending" && item.State != "applied") || len(item.Candidates) > 8 ||
+			(item.State != "pending" && item.State != "proposed" && item.State != "applied") || len(item.Candidates) > 8 ||
 			utf8.RuneCountInString(item.Title) > 40 || utf8.RuneCountInString(item.Quote) > 120 ||
-			(item.State == "applied" && len(item.Candidates) != 0) {
+			(item.State != "pending" && len(item.Candidates) != 0) ||
+			(item.CanConfirm && item.State != "proposed") ||
+			(item.State == "proposed" && len(item.AdditionalBlockIDs) == 0) {
 			return ErrInvalid
 		}
 		seen[item.ReceiptID] = true
-		if len(item.AdditionalBlockIDs) > 15 || (len(item.AdditionalBlockIDs) > 0 && item.State != "applied") {
+		if len(item.AdditionalBlockIDs) > 15 || (len(item.AdditionalBlockIDs) > 0 && item.State == "pending") {
 			return ErrInvalid
 		}
 		seenBlocks := map[string]bool{item.BlockID: true}
@@ -92,6 +94,10 @@ func validateFormatResolutions(r Revision, s Snapshot, touched map[string]bool) 
 			return ErrInvalid
 		}
 		switch resolution.Action {
+		case "confirm":
+			if item.State != "proposed" || !item.CanConfirm || resolution.CandidateID != "" {
+				return ErrInvalid
+			}
 		case "choose":
 			if item.State != "pending" {
 				return ErrInvalid
@@ -110,7 +116,7 @@ func validateFormatResolutions(r Revision, s Snapshot, touched map[string]bool) 
 				return ErrInvalid
 			}
 		case "dismiss":
-			if item.State != "pending" || resolution.CandidateID != "" {
+			if (item.State != "pending" && item.State != "proposed") || resolution.CandidateID != "" {
 				return ErrInvalid
 			}
 		default:
@@ -154,6 +160,7 @@ type FormatContext struct {
 	Quote              string            `json:"quote"`
 	Candidates         []FormatCandidate `json:"candidates"`
 	AdditionalBlockIDs []string          `json:"additionalBlockIDs"`
+	CanConfirm         bool              `json:"canConfirm"`
 }
 
 type FormatResolution struct {
