@@ -24,6 +24,24 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			return ErrInvalid
 		}
 		passages, corrections, linked := map[string]bool{}, map[string]bool{}, map[string]bool{}
+		for _, edit := range r.TableEdits {
+			for _, patch := range edit.Patches {
+				cells := []TableCell{}
+				if patch.Cell != nil {
+					cells = append(cells, *patch.Cell)
+				}
+				if patch.Row != nil {
+					cells = append(cells, patch.Row.Cells...)
+				}
+				for _, cell := range cells {
+					for _, evidence := range cell.Sources {
+						if evidence.SourceID == p.SourceID && tableSourceIsContent(r, evidence, source, edit.BlockID) {
+							passages[edit.BlockID] = true
+						}
+					}
+				}
+			}
+		}
 		for _, table := range r.TableCreations {
 			for _, row := range table.Rows {
 				for _, cell := range row.Cells {
@@ -68,6 +86,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			}
 		}
 		for _, c := range r.TableCreations {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.TableEdits {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)
 			}

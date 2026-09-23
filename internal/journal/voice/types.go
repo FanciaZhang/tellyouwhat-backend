@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v10"
+const Version = "journal-voice-v11"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -101,6 +101,7 @@ type TextCorrection struct {
 }
 type Revision struct {
 	TableCreations       []TableCreation       `json:"tableCreations"`
+	TableEdits           []TableEdit           `json:"tableEdits"`
 	BaseRevision         int                   `json:"baseRevision"`
 	TranscriptRevision   int                   `json:"transcriptRevision"`
 	BlockEdits           []BlockEdit           `json:"blockEdits"`
@@ -405,6 +406,9 @@ func (r Revision) Validate(s Snapshot) error {
 	}
 	usedSources := map[string]bool{}
 	if err := validateTables(r, s); err != nil {
+		return err
+	}
+	if err := validateTableEdits(r, s); err != nil {
 		return err
 	}
 	if err := validateParagraphResolutions(r, s, touched); err != nil {
