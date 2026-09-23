@@ -77,6 +77,7 @@ type Snapshot struct {
 	SemanticState     SemanticState     `json:"semanticState"`
 	Words             []string          `json:"words"`
 	WritingStyle      string            `json:"writingStyle"`
+	FormatContext     []FormatContext   `json:"formatContext"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -93,17 +94,18 @@ type TextCorrection struct {
 	EvidenceSourceIDs []string `json:"evidenceSourceIDs"`
 }
 type Revision struct {
-	BaseRevision       int              `json:"baseRevision"`
-	TranscriptRevision int              `json:"transcriptRevision"`
-	BlockEdits         []BlockEdit      `json:"blockEdits"`
-	Corrections        []TextCorrection `json:"corrections"`
-	FormatCommands     []FormatCommand  `json:"formatCommands"`
-	Passages           []Passage        `json:"passages"`
-	ConsumedSourceIDs  []string         `json:"consumedSourceIDs"`
-	SemanticState      SemanticState    `json:"semanticState"`
-	Questions          []string         `json:"questions"`
-	Emotions           []Emotion        `json:"emotions"`
-	OverallEmotion     string           `json:"overallEmotion"`
+	BaseRevision       int                `json:"baseRevision"`
+	TranscriptRevision int                `json:"transcriptRevision"`
+	BlockEdits         []BlockEdit        `json:"blockEdits"`
+	Corrections        []TextCorrection   `json:"corrections"`
+	FormatCommands     []FormatCommand    `json:"formatCommands"`
+	FormatResolutions  []FormatResolution `json:"formatResolutions"`
+	Passages           []Passage          `json:"passages"`
+	ConsumedSourceIDs  []string           `json:"consumedSourceIDs"`
+	SemanticState      SemanticState      `json:"semanticState"`
+	Questions          []string           `json:"questions"`
+	Emotions           []Emotion          `json:"emotions"`
+	OverallEmotion     string             `json:"overallEmotion"`
 }
 type Passage struct {
 	BlockID   string   `json:"blockID"`
@@ -245,6 +247,9 @@ func (s Snapshot) Validate() error {
 	if wordBytes > 96 {
 		return ErrInvalid
 	}
+	if err := validateFormatContext(s.FormatContext, seen); err != nil {
+		return err
+	}
 	return validateSemanticState(s.SemanticState, texts, allSources, locked)
 }
 
@@ -252,7 +257,7 @@ func (r Revision) Validate(s Snapshot) error {
 	if r.BaseRevision != s.Revision {
 		return ErrConflict
 	}
-	if len(r.BlockEdits) > 64 || len(r.Corrections) > 32 || len(r.FormatCommands) > 16 || len(r.Passages) > 64 ||
+	if len(r.BlockEdits) > 64 || len(r.Corrections) > 32 || len(r.FormatCommands) > 16 || len(r.FormatResolutions) > 8 || len(r.Passages) > 64 ||
 		len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrInvalid
 	}
@@ -346,6 +351,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateFormatResolutions(r, s, touched); err != nil {
+		return err
+	}
 	commandIDs := map[string]bool{}
 	for _, command := range r.FormatCommands {
 		if !validID(command.ID) || commandIDs[command.ID] || !known[command.BlockID] ||
