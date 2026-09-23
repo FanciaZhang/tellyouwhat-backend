@@ -83,20 +83,21 @@ func TestLiveSpeechAndDiaryRewrite(t *testing.T) {
 		model = os.Getenv("JOURNAL_ARK_PRO_MODEL_ID")
 	}
 	rewriter := ArkRewriter{BaseURL: baseURL, APIKey: os.Getenv("JOURNAL_ARK_API_KEY"), Model: model}
+	blockID, sourceID := uuid.NewString(), uuid.NewString()
 	rewritten, err := rewriter.Rewrite(ctx, Snapshot{
-		Revision: 0, Blocks: []Block{{ID: uuid.NewString(), Text: ""}},
-		Transcript: speech.transcript.Text, Words: []string{"小林"},
+		Revision: 0, Blocks: []Block{{ID: blockID, Text: "", Style: "body"}}, ActiveBlockIDs: []string{blockID},
+		Transcript: speech.transcript.Text, PendingUtterances: []SourceUtterance{{ID: sourceID, Text: speech.transcript.Text}}, Words: []string{"小林"},
 	}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manuscript string
-	for _, patch := range rewritten.Revision.Patches {
-		manuscript += patch.Text
+	for _, edit := range rewritten.Revision.BlockEdits {
+		manuscript += edit.Text
 	}
 	if !strings.Contains(manuscript, "公园") || !strings.Contains(manuscript, "小林") || !strings.Contains(manuscript, "茶") {
 		t.Fatal("rewritten synthetic diary lost a stated person, place or activity")
 	}
 	t.Logf("live synthetic fixture passed: %d speech frames, %d transcript runes, %d patches, tokens %d/%d",
-		speech.frames, len([]rune(speech.transcript.Text)), len(rewritten.Revision.Patches), rewritten.InputTokens, rewritten.OutputTokens)
+		speech.frames, len([]rune(speech.transcript.Text)), len(rewritten.Revision.BlockEdits), rewritten.InputTokens, rewritten.OutputTokens)
 }

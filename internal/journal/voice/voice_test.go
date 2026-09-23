@@ -164,7 +164,7 @@ func TestRevisionAcceptsOnlyAcousticallyGroundedIncrementalEmotion(t *testing.T)
 	}}}
 	revision := Revision{
 		BaseRevision: 2, TranscriptRevision: 3,
-		Patches:           []Patch{{ID: block, Text: "走到桥边时，我有一点害怕。"}},
+		BlockEdits:        []BlockEdit{{Kind: "replace", ID: block, Text: "走到桥边时，我有一点害怕。", Style: "body"}},
 		Passages:          []Passage{{BlockID: block, SourceIDs: []string{source}}},
 		ConsumedSourceIDs: []string{source}, Questions: []string{},
 		Emotions:       []Emotion{{BlockID: block, AnchorText: "有一点害怕", SourceID: source, Kind: "nervous"}},
@@ -179,7 +179,7 @@ func TestRevisionAcceptsOnlyAcousticallyGroundedIncrementalEmotion(t *testing.T)
 		t.Fatal("accepted an emotion inferred without acoustic evidence")
 	}
 	duplicateAnchor := revision
-	duplicateAnchor.Patches[0].Text = "害怕，仍然害怕。"
+	duplicateAnchor.BlockEdits[0].Text = "害怕，仍然害怕。"
 	duplicateAnchor.Emotions[0].AnchorText = "害怕"
 	if duplicateAnchor.Validate(snapshot) == nil {
 		t.Fatal("accepted an ambiguous emotion anchor")
@@ -187,29 +187,117 @@ func TestRevisionAcceptsOnlyAcousticallyGroundedIncrementalEmotion(t *testing.T)
 }
 func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
 	block, inserted := uuid.NewString(), uuid.NewString()
-	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文"}}, EditedBlockIDs: []string{block}}
+	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文", ""}}, EditedBlockIDs: []string{block}}
 	r := Revision{BaseRevision: 3}
 	if !errors.Is(r.Validate(s), ErrConflict) {
 		t.Fatal("accepted stale revision")
 	}
 	r.BaseRevision = 4
-	r.Patches = []Patch{{ID: block, Text: "错误覆盖"}}
+	r.BlockEdits = []BlockEdit{{Kind: "replace", ID: block, Text: "错误覆盖", Style: "body"}}
 	if r.Validate(s) == nil {
 		t.Fatal("overwrote manual edit")
 	}
-	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: uuid.NewString()}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: inserted, Text: "新增", AfterID: uuid.NewString(), Style: "body"}}
 	if r.Validate(s) == nil {
 		t.Fatal("unknown anchor")
 	}
-	r.Patches = []Patch{{ID: "not-a-uuid", Text: "新增", AfterID: block}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: "not-a-uuid", Text: "新增", AfterID: block, Style: "body"}}
 	if r.Validate(s) == nil {
 		t.Fatal("accepted an ID the iOS client cannot apply")
 	}
-	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: block}}
+	source := uuid.NewString()
+	s.PendingUtterances = []SourceUtterance{{ID: source, Text: "新增"}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: inserted, Text: "新增", AfterID: block, Style: "body"}}
+	r.Passages = []Passage{{BlockID: inserted, SourceIDs: []string{source}}}
+	r.ConsumedSourceIDs = []string{source}
 	if err := r.Validate(s); err != nil {
 		t.Fatal(err)
 	}
 }
+
+func TestRevisionUsesLaterEvidenceForTargetedPronounCorrection(t *testing.T) {
+	oldSource, newSource := uuid.NewString(), uuid.NewString()
+	oldBlock, activeBlock := uuid.NewString(), uuid.NewString()
+	entityID, mentionID := uuid.NewString(), uuid.NewString()
+	snapshot := Snapshot{
+		Revision:       3,
+		Blocks:         []Block{{ID: oldBlock, Text: "今天在公园遇见他了。", Style: "body"}, {ID: activeBlock, Text: "后来才想起来。", Style: "body"}},
+		ActiveBlockIDs: []string{activeBlock}, KnownSourceIDs: []string{oldSource},
+		PendingUtterances: []SourceUtterance{{ID: newSource, Text: "我说的是那只小狗，还给它喂了水。"}},
+		SemanticState: SemanticState{
+			Entities:           []Entity{{ID: entityID, Kind: "unknown", Name: "公园遇见的对象", Reference: "unknown", EvidenceSourceIDs: []string{oldSource}}},
+			UnresolvedMentions: []Mention{{ID: mentionID, BlockID: oldBlock, Text: "他", EntityID: entityID, SourceIDs: []string{oldSource}}},
+		},
+	}
+	if err := snapshot.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := rewriteModelInput(snapshot, 4)
+	if err != nil || !strings.Contains(string(raw), "今天在公园遇见他了") || !strings.Contains(string(raw), mentionID) {
+		t.Fatalf("unresolved mention context was not selected: %v %s", err, raw)
+	}
+	revision := Revision{
+		BaseRevision: 3, TranscriptRevision: 4,
+		Corrections:       []TextCorrection{{BlockID: oldBlock, MentionID: mentionID, ExpectedText: "他", Replacement: "它", EvidenceSourceIDs: []string{newSource}}},
+		ConsumedSourceIDs: []string{newSource},
+		SemanticState: SemanticState{Entities: []Entity{{
+			ID: entityID, Kind: "animal", Name: "小狗", Reference: "it",
+			Aliases: []string{"公园遇见的对象"}, EvidenceSourceIDs: []string{oldSource, newSource},
+		}}},
+	}
+	if err := revision.Validate(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	withoutEvidence := revision
+	withoutEvidence.Corrections[0].EvidenceSourceIDs = nil
+	if withoutEvidence.Validate(snapshot) == nil {
+		t.Fatal("accepted a correction without new evidence")
+	}
+	stillUnresolved := revision
+	stillUnresolved.SemanticState.UnresolvedMentions = snapshot.SemanticState.UnresolvedMentions
+	if stillUnresolved.Validate(snapshot) == nil {
+		t.Fatal("accepted a corrected mention that remained unresolved")
+	}
+}
+
+func TestRevisionBuildsExplicitOrderedStructureWithSourceProvenance(t *testing.T) {
+	heading, first, second, third := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	sources := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	snapshot := Snapshot{
+		Revision: 1, Blocks: []Block{{ID: heading, Text: "待整理", Style: "body"}}, ActiveBlockIDs: []string{heading},
+		PendingUtterances: []SourceUtterance{
+			{ID: sources[0], Text: "第一，要把材料准备好。"},
+			{ID: sources[1], Text: "第二，明天确认时间。"},
+			{ID: sources[2], Text: "第三，出门前再检查一遍。"},
+		},
+	}
+	revision := Revision{
+		BaseRevision: 1, TranscriptRevision: 2,
+		BlockEdits: []BlockEdit{
+			{Kind: "replace", ID: heading, Text: "接下来要做的三件事", Style: "heading2"},
+			{Kind: "insert", ID: first, AfterID: heading, Text: "把材料准备好。", Style: "orderedListItem"},
+			{Kind: "insert", ID: second, AfterID: first, Text: "明天确认时间。", Style: "orderedListItem"},
+			{Kind: "insert", ID: third, AfterID: second, Text: "出门前再检查一遍。", Style: "orderedListItem"},
+		},
+		Passages: []Passage{
+			{BlockID: heading, SourceIDs: sources},
+			{BlockID: first, SourceIDs: []string{sources[0]}},
+			{BlockID: second, SourceIDs: []string{sources[1]}},
+			{BlockID: third, SourceIDs: []string{sources[2]}},
+		},
+		ConsumedSourceIDs: sources,
+		SemanticState: SemanticState{Outline: []OutlineElement{
+			{ID: uuid.NewString(), Role: "topic", Title: "接下来要做的三件事", BlockIDs: []string{heading}, SourceIDs: sources},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{first}, SourceIDs: []string{sources[0]}},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{second}, SourceIDs: []string{sources[1]}},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{third}, SourceIDs: []string{sources[2]}},
+		}},
+	}
+	if err := revision.Validate(snapshot); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTicketsCannotChangeSessionOrOwner(t *testing.T) {
 	s := Service{Store: NewMemoryStore(), Secret: make([]byte, 32)}
 	id := uuid.NewString()

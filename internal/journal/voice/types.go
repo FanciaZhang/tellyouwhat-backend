@@ -4,7 +4,6 @@ package voice
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -13,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v2"
+const Version = "journal-voice-v3"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -28,8 +27,9 @@ var ErrConflict = errors.New("voice_revision_conflict")
 var ErrInvalid = errors.New("voice_invalid_request")
 
 type Block struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
+	ID    string `json:"id"`
+	Text  string `json:"text"`
+	Style string `json:"style"`
 }
 type Word struct {
 	Text              string `json:"text"`
@@ -71,30 +71,70 @@ type Snapshot struct {
 	Transcript        string            `json:"transcript"`
 	EditedBlockIDs    []string          `json:"editedBlockIDs"`
 	MediaOnlyBlockIDs []string          `json:"mediaOnlyBlockIDs"`
+	ActiveBlockIDs    []string          `json:"activeBlockIDs"`
+	KnownSourceIDs    []string          `json:"knownSourceIDs"`
 	PendingUtterances []SourceUtterance `json:"pendingUtterances"`
+	SemanticState     SemanticState     `json:"semanticState"`
 	Words             []string          `json:"words"`
 	WritingStyle      string            `json:"writingStyle"`
 }
-type Patch struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
-	// Empty afterID means replace an existing block; insertions need a new UUID.
+type BlockEdit struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
 	AfterID string `json:"afterID"`
+	Text    string `json:"text"`
+	Style   string `json:"style"`
+}
+type TextCorrection struct {
+	BlockID           string   `json:"blockID"`
+	MentionID         string   `json:"mentionID"`
+	ExpectedText      string   `json:"expectedText"`
+	Replacement       string   `json:"replacement"`
+	EvidenceSourceIDs []string `json:"evidenceSourceIDs"`
 }
 type Revision struct {
-	BaseRevision       int       `json:"baseRevision"`
-	TranscriptRevision int       `json:"transcriptRevision"`
-	Patches            []Patch   `json:"patches"`
-	Passages           []Passage `json:"passages"`
-	ConsumedSourceIDs  []string  `json:"consumedSourceIDs"`
-	Questions          []string  `json:"questions"`
-	Emotions           []Emotion `json:"emotions"`
-	OverallEmotion     string    `json:"overallEmotion"`
+	BaseRevision       int              `json:"baseRevision"`
+	TranscriptRevision int              `json:"transcriptRevision"`
+	BlockEdits         []BlockEdit      `json:"blockEdits"`
+	Corrections        []TextCorrection `json:"corrections"`
+	Passages           []Passage        `json:"passages"`
+	ConsumedSourceIDs  []string         `json:"consumedSourceIDs"`
+	SemanticState      SemanticState    `json:"semanticState"`
+	Questions          []string         `json:"questions"`
+	Emotions           []Emotion        `json:"emotions"`
+	OverallEmotion     string           `json:"overallEmotion"`
 }
 type Passage struct {
-	BlockID        string   `json:"blockID"`
-	ParagraphIndex int      `json:"paragraphIndex"`
-	SourceIDs      []string `json:"sourceIDs"`
+	BlockID   string   `json:"blockID"`
+	SourceIDs []string `json:"sourceIDs"`
+}
+type SemanticState struct {
+	Entities           []Entity         `json:"entities"`
+	UnresolvedMentions []Mention        `json:"unresolvedMentions"`
+	Outline            []OutlineElement `json:"outline"`
+}
+type Entity struct {
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	Name              string   `json:"name"`
+	Reference         string   `json:"reference"`
+	Aliases           []string `json:"aliases"`
+	EvidenceSourceIDs []string `json:"evidenceSourceIDs"`
+}
+type Mention struct {
+	ID        string   `json:"id"`
+	BlockID   string   `json:"blockID"`
+	Text      string   `json:"text"`
+	EntityID  string   `json:"entityID"`
+	SourceIDs []string `json:"sourceIDs"`
+}
+type OutlineElement struct {
+	ID        string   `json:"id"`
+	Role      string   `json:"role"`
+	Title     string   `json:"title"`
+	BlockIDs  []string `json:"blockIDs"`
+	SourceIDs []string `json:"sourceIDs"`
+	Closed    bool     `json:"closed"`
 }
 type Emotion struct {
 	BlockID    string `json:"blockID"`
@@ -130,39 +170,60 @@ type Frame struct {
 
 func (s Snapshot) Validate() error {
 	if s.Revision < 0 || len(s.Blocks) > 1024 || len(s.Words) > 32 || len(s.EditedBlockIDs) > 1024 ||
-		len(s.MediaOnlyBlockIDs) > 1024 || len(s.PendingUtterances) > MaxPendingUtterances || utf8.RuneCountInString(s.WritingStyle) > 64 {
+		len(s.MediaOnlyBlockIDs) > 1024 || len(s.ActiveBlockIDs) > 8 || len(s.KnownSourceIDs) > 4096 ||
+		len(s.PendingUtterances) > MaxPendingUtterances || utf8.RuneCountInString(s.WritingStyle) > 64 {
 		return ErrInvalid
 	}
 	count := utf8.RuneCountInString(s.Transcript)
 	seen := map[string]bool{}
+	texts := map[string]string{}
 	for _, b := range s.Blocks {
-		if _, err := uuid.Parse(b.ID); err != nil || len(b.ID) != 36 || seen[b.ID] {
+		if !validID(b.ID) || seen[b.ID] || !validBlockStyle(b.Style) {
 			return ErrInvalid
 		}
 		seen[b.ID] = true
+		texts[b.ID] = b.Text
 		count += utf8.RuneCountInString(b.Text)
 	}
+	locked := map[string]bool{}
 	for _, id := range s.EditedBlockIDs {
 		if !seen[id] {
 			return ErrInvalid
 		}
+		locked[id] = true
 	}
 	for _, id := range s.MediaOnlyBlockIDs {
 		if !seen[id] {
 			return ErrInvalid
 		}
+		locked[id] = true
 	}
-	sources := map[string]bool{}
+	active := map[string]bool{}
+	for _, id := range s.ActiveBlockIDs {
+		if !seen[id] || active[id] || locked[id] {
+			return ErrInvalid
+		}
+		active[id] = true
+	}
+	allSources := map[string]bool{}
+	for _, id := range s.KnownSourceIDs {
+		if !validID(id) || allSources[id] {
+			return ErrInvalid
+		}
+		allSources[id] = true
+	}
+	pending := map[string]bool{}
 	pendingCharacters := 0
 	for _, u := range s.PendingUtterances {
-		if _, err := uuid.Parse(u.ID); err != nil || sources[u.ID] || strings.TrimSpace(u.Text) == "" ||
+		if !validID(u.ID) || pending[u.ID] || strings.TrimSpace(u.Text) == "" ||
 			utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 ||
 			u.StartMilliseconds < 0 || u.EndMilliseconds < u.StartMilliseconds ||
 			utf8.RuneCountInString(u.AcousticEmotion) > 512 || math.IsNaN(u.Volume) || math.IsInf(u.Volume, 0) ||
 			math.IsNaN(u.SpeechRate) || math.IsInf(u.SpeechRate, 0) {
 			return ErrInvalid
 		}
-		sources[u.ID] = true
+		pending[u.ID] = true
+		allSources[u.ID] = true
 		pendingCharacters += utf8.RuneCountInString(u.Text)
 	}
 	if pendingCharacters > MaxContextCharacters {
@@ -183,69 +244,119 @@ func (s Snapshot) Validate() error {
 	if wordBytes > 96 {
 		return ErrInvalid
 	}
-	return nil
+	return validateSemanticState(s.SemanticState, texts, allSources, locked)
 }
+
 func (r Revision) Validate(s Snapshot) error {
-	if r.BaseRevision != s.Revision || len(r.Patches) > 1024 || len(r.Passages) > 1024 || len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 || len(r.Emotions) > 8 {
+	if r.BaseRevision != s.Revision {
 		return ErrConflict
 	}
+	if len(r.BlockEdits) > 64 || len(r.Corrections) > 32 || len(r.Passages) > 64 ||
+		len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 || len(r.Emotions) > 8 {
+		return ErrInvalid
+	}
 	known := map[string]bool{}
-	lengths := map[string]int{}
+	texts := map[string]string{}
 	locked := map[string]bool{}
 	for _, id := range s.MediaOnlyBlockIDs {
 		locked[id] = true
 	}
-	touched := map[string]bool{}
 	for _, b := range s.Blocks {
 		known[b.ID] = true
-		lengths[b.ID] = utf8.RuneCountInString(b.Text)
+		texts[b.ID] = b.Text
 	}
 	for _, id := range s.EditedBlockIDs {
 		locked[id] = true
 	}
+	active := map[string]bool{}
+	for _, id := range s.ActiveBlockIDs {
+		active[id] = true
+	}
+	if len(active) == 0 {
+		for i := len(s.Blocks) - 1; i >= 0; i-- {
+			if !locked[s.Blocks[i].ID] {
+				active[s.Blocks[i].ID] = true
+				break
+			}
+		}
+	}
+	touched := map[string]bool{}
 	count := 0
-	for _, p := range r.Patches {
-		if _, err := uuid.Parse(p.ID); err != nil || len(p.ID) != 36 || touched[p.ID] || locked[p.ID] {
+	for _, edit := range r.BlockEdits {
+		if !validID(edit.ID) || touched[edit.ID] || locked[edit.ID] ||
+			!validBlockStyle(edit.Style) || edit.Style == "" || strings.TrimSpace(edit.Text) == "" ||
+			strings.ContainsAny(edit.Text, "\r\n") || utf8.RuneCountInString(edit.Text) > MaxRewriteSourceCharacters {
 			return ErrInvalid
 		}
-		touched[p.ID] = true
-		if p.AfterID == "" {
-			if !known[p.ID] {
+		touched[edit.ID] = true
+		switch edit.Kind {
+		case "replace":
+			if edit.AfterID != "" || !known[edit.ID] || !active[edit.ID] {
 				return ErrInvalid
 			}
-		} else {
-			if known[p.ID] || !known[p.AfterID] {
+		case "insert":
+			if edit.AfterID == "" || known[edit.ID] || !known[edit.AfterID] {
 				return ErrInvalid
 			}
-			known[p.ID] = true
+			known[edit.ID] = true
+		default:
+			return ErrInvalid
 		}
-		count += utf8.RuneCountInString(p.Text)
-		lengths[p.ID] = utf8.RuneCountInString(p.Text)
+		texts[edit.ID] = edit.Text
+		count += utf8.RuneCountInString(edit.Text)
 	}
 	for _, q := range r.Questions {
 		if utf8.RuneCountInString(q) > 300 {
 			return ErrInvalid
 		}
 	}
+	allSources := map[string]bool{}
+	for _, id := range s.KnownSourceIDs {
+		allSources[id] = true
+	}
 	sources := map[string]bool{}
 	for _, u := range s.PendingUtterances {
 		sources[u.ID] = true
+		allSources[u.ID] = true
+	}
+	mentions := map[string]Mention{}
+	for _, mention := range s.SemanticState.UnresolvedMentions {
+		mentions[mention.ID] = mention
+	}
+	correctedMentions := map[string]bool{}
+	for _, correction := range r.Corrections {
+		mention, exists := mentions[correction.MentionID]
+		if !exists || correctedMentions[correction.MentionID] || correction.BlockID != mention.BlockID ||
+			correction.ExpectedText != mention.Text || touched[correction.BlockID] || locked[correction.BlockID] ||
+			strings.TrimSpace(correction.Replacement) == "" || correction.Replacement == correction.ExpectedText ||
+			utf8.RuneCountInString(correction.ExpectedText) > 80 || utf8.RuneCountInString(correction.Replacement) > 80 ||
+			strings.ContainsAny(correction.Replacement, "\r\n") || strings.Count(texts[correction.BlockID], correction.ExpectedText) != 1 ||
+			len(correction.EvidenceSourceIDs) == 0 || len(correction.EvidenceSourceIDs) > 16 {
+			return ErrInvalid
+		}
+		seenEvidence := map[string]bool{}
+		for _, id := range correction.EvidenceSourceIDs {
+			if !sources[id] || seenEvidence[id] {
+				return ErrInvalid
+			}
+			seenEvidence[id] = true
+		}
+		texts[correction.BlockID] = strings.Replace(texts[correction.BlockID], correction.ExpectedText, correction.Replacement, 1)
+		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
 	targets := map[string]bool{}
 	for _, passage := range r.Passages {
-		if !known[passage.BlockID] || passage.ParagraphIndex < 0 || passage.ParagraphIndex > 63 || len(passage.SourceIDs) == 0 || len(passage.SourceIDs) > MaxPendingUtterances {
+		if !known[passage.BlockID] || len(passage.SourceIDs) == 0 || len(passage.SourceIDs) > MaxPendingUtterances || targets[passage.BlockID] {
 			return ErrInvalid
 		}
-		target := passage.BlockID + ":" + fmt.Sprint(passage.ParagraphIndex)
-		if targets[target] {
-			return ErrInvalid
-		}
-		targets[target] = true
+		targets[passage.BlockID] = true
+		passageSources := map[string]bool{}
 		for _, id := range passage.SourceIDs {
-			if !sources[id] || usedSources[id] {
+			if !sources[id] || passageSources[id] {
 				return ErrInvalid
 			}
+			passageSources[id] = true
 			usedSources[id] = true
 		}
 	}
@@ -264,8 +375,23 @@ func (r Revision) Validate(s Snapshot) error {
 			return ErrInvalid
 		}
 	}
-	if len(r.Patches) > 0 && len(s.PendingUtterances) > 0 && len(r.Passages) == 0 {
+	if len(r.BlockEdits) > 0 && len(s.PendingUtterances) > 0 && len(r.Passages) == 0 {
 		return ErrInvalid
+	}
+	for _, edit := range r.BlockEdits {
+		if !targets[edit.ID] {
+			return ErrInvalid
+		}
+	}
+	for id := range correctedMentions {
+		for _, unresolved := range r.SemanticState.UnresolvedMentions {
+			if unresolved.ID == id {
+				return ErrInvalid
+			}
+		}
+	}
+	if err := validateSemanticState(r.SemanticState, texts, allSources, locked); err != nil {
+		return err
 	}
 	allowedEmotions := map[string]bool{
 		"calm": true, "happy": true, "excited": true, "relaxed": true,
@@ -275,10 +401,6 @@ func (r Revision) Validate(s Snapshot) error {
 	if r.OverallEmotion != "" && !allowedEmotions[r.OverallEmotion] {
 		return ErrInvalid
 	}
-	patchText := map[string]string{}
-	for _, patch := range r.Patches {
-		patchText[patch.ID] = patch.Text
-	}
 	sourceEvidence := map[string]SourceUtterance{}
 	for _, source := range s.PendingUtterances {
 		sourceEvidence[source.ID] = source
@@ -286,15 +408,7 @@ func (r Revision) Validate(s Snapshot) error {
 	emotionSources := map[string]bool{}
 	for _, emotion := range r.Emotions {
 		source, exists := sourceEvidence[emotion.SourceID]
-		text, replaced := patchText[emotion.BlockID]
-		if !replaced {
-			for _, block := range s.Blocks {
-				if block.ID == emotion.BlockID {
-					text = block.Text
-					break
-				}
-			}
-		}
+		text := texts[emotion.BlockID]
 		linked := false
 		for _, passage := range r.Passages {
 			if passage.BlockID != emotion.BlockID {
@@ -318,13 +432,132 @@ func (r Revision) Validate(s Snapshot) error {
 		return ErrInvalid
 	}
 	count = utf8.RuneCountInString(s.Transcript)
-	for _, length := range lengths {
-		count += length
+	for _, text := range texts {
+		count += utf8.RuneCountInString(text)
 	}
 	if count > MaxContextCharacters {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func validID(value string) bool {
+	_, err := uuid.Parse(value)
+	return err == nil && len(value) == 36
+}
+
+func validBlockStyle(value string) bool {
+	switch value {
+	case "", "body", "heading1", "heading2", "heading3", "unorderedListItem", "orderedListItem":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateSemanticState(state SemanticState, texts map[string]string, sources, locked map[string]bool) error {
+	if len(state.Entities) > 32 || len(state.UnresolvedMentions) > 24 || len(state.Outline) > 32 {
+		return ErrInvalid
+	}
+	semanticCharacters := 0
+	entities := map[string]bool{}
+	for _, entity := range state.Entities {
+		if !validID(entity.ID) || entities[entity.ID] || strings.TrimSpace(entity.Name) == "" ||
+			utf8.RuneCountInString(entity.Name) > 80 || len(entity.Aliases) > 6 || len(entity.EvidenceSourceIDs) > 16 ||
+			!validEntityKind(entity.Kind) || !validEntityReference(entity.Reference) {
+			return ErrInvalid
+		}
+		semanticCharacters += utf8.RuneCountInString(entity.Name)
+		entities[entity.ID] = true
+		aliases := map[string]bool{}
+		for _, alias := range entity.Aliases {
+			if strings.TrimSpace(alias) == "" || utf8.RuneCountInString(alias) > 80 || aliases[alias] {
+				return ErrInvalid
+			}
+			aliases[alias] = true
+			semanticCharacters += utf8.RuneCountInString(alias)
+		}
+		if !validSourceIDs(entity.EvidenceSourceIDs, sources, 16) {
+			return ErrInvalid
+		}
+	}
+	mentions := map[string]bool{}
+	for _, mention := range state.UnresolvedMentions {
+		if !validID(mention.ID) || mentions[mention.ID] || !validID(mention.BlockID) ||
+			locked[mention.BlockID] || strings.TrimSpace(mention.Text) == "" || utf8.RuneCountInString(mention.Text) > 80 ||
+			strings.Count(texts[mention.BlockID], mention.Text) != 1 ||
+			(mention.EntityID != "" && !entities[mention.EntityID]) ||
+			!validSourceIDs(mention.SourceIDs, sources, 16) {
+			return ErrInvalid
+		}
+		mentions[mention.ID] = true
+		semanticCharacters += utf8.RuneCountInString(mention.Text)
+	}
+	outline := map[string]bool{}
+	for _, element := range state.Outline {
+		if !validID(element.ID) || outline[element.ID] || !validOutlineRole(element.Role) ||
+			utf8.RuneCountInString(element.Title) > 120 || len(element.BlockIDs) == 0 || len(element.BlockIDs) > 8 ||
+			len(element.SourceIDs) > 32 {
+			return ErrInvalid
+		}
+		outline[element.ID] = true
+		blocks := map[string]bool{}
+		for _, id := range element.BlockIDs {
+			if !validID(id) || texts[id] == "" || blocks[id] {
+				return ErrInvalid
+			}
+			blocks[id] = true
+		}
+		if !validSourceIDs(element.SourceIDs, sources, 32) {
+			return ErrInvalid
+		}
+		semanticCharacters += utf8.RuneCountInString(element.Title)
+	}
+	if semanticCharacters > MaxRewriteContextCharacters {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validSourceIDs(ids []string, sources map[string]bool, maximum int) bool {
+	if len(ids) > maximum {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if !validID(id) || !sources[id] || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
+
+func validEntityKind(value string) bool {
+	switch value {
+	case "person", "animal", "place", "object", "organization", "event", "unknown":
+		return true
+	default:
+		return false
+	}
+}
+
+func validEntityReference(value string) bool {
+	switch value {
+	case "unknown", "he", "she", "it", "they", "femaleThey", "nonhumanThey":
+		return true
+	default:
+		return false
+	}
+}
+
+func validOutlineRole(value string) bool {
+	switch value {
+	case "background", "topic", "point", "summary", "conclusion":
+		return true
+	default:
+		return false
+	}
 }
 
 // Month boundaries are anchored to the verified original purchase, clamping

@@ -103,8 +103,8 @@ func scriptedRevision(s Snapshot, tr int) Revision {
 		passages = append(passages, Passage{BlockID: s.Blocks[0].ID, SourceIDs: ids})
 	}
 	return Revision{BaseRevision: s.Revision, TranscriptRevision: tr,
-		Patches: []Patch{{ID: s.Blocks[0].ID, Text: text}}, Passages: passages,
-		ConsumedSourceIDs: ids, Questions: []string{}}
+		BlockEdits: []BlockEdit{{Kind: "replace", ID: s.Blocks[0].ID, Text: text, Style: "body"}}, Passages: passages,
+		ConsumedSourceIDs: ids, SemanticState: s.SemanticState, Questions: []string{}}
 }
 
 type delayedRewriter struct {
@@ -148,7 +148,7 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	sourceID := uuid.NewString()
-	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}, Transcript: "完整口述",
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}, Transcript: "完整口述",
 		PendingUtterances: []SourceUtterance{{ID: sourceID, Text: "完整口述"}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
@@ -170,7 +170,7 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 		t.Fatalf("finished before applying: %+v %v", event, err)
 	}
 	snapshot.Revision++
-	snapshot.Blocks[0].Text = event.Revision.Patches[0].Text
+	snapshot.Blocks[0].Text = event.Revision.BlockEdits[0].Text
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "finished" {
 		t.Fatalf("%+v %v", event, err)
@@ -209,7 +209,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 		return ws
 	}
 	ws := dial()
-	snapshot := Snapshot{Blocks: []Block{{block, ""}}, Words: []string{}}
+	snapshot := Snapshot{Blocks: []Block{{block, "", ""}}, Words: []string{}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400), Final: true})
 	var receipt *Receipt
@@ -234,7 +234,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 			t.Fatal(err)
 		}
 		if event.Type == "revision" {
-			snapshot.Blocks[0].Text = event.Revision.Patches[0].Text
+			snapshot.Blocks[0].Text = event.Revision.BlockEdits[0].Text
 			snapshot.Revision++
 			websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 		}
@@ -323,7 +323,7 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	if err := websocket.JSON.Receive(ws, &event); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	segment := uuid.NewString()
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
@@ -362,7 +362,7 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
 		t.Fatalf("%+v %v", event, err)
 	}
-	if got := event.Revision.Patches[0].Text; got != "今天去了公园。后来去了湖边。" {
+	if got := event.Revision.BlockEdits[0].Text; got != "今天去了公园。后来去了湖边。" {
 		t.Fatal("final source was not organized", got)
 	}
 	if model.calls.Load() != 1 {
@@ -397,7 +397,7 @@ func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
 		return event
 	}
 	read()
-	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
 	conn.result <- Transcript{Text: "今天见到一个朋友。", Stable: "今天见到一个朋友。"}
@@ -423,12 +423,12 @@ func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
 	if final.Type != "revision" {
 		t.Fatal(final)
 	}
-	if got := final.Revision.Patches[0].Text; got != receipt.Text {
+	if got := final.Revision.BlockEdits[0].Text; got != receipt.Text {
 		t.Fatalf("old ACK erased final ASR: got %q want %q", got, receipt.Text)
 	}
 	snapshot.Revision++
 	snapshot.Transcript = receipt.Text
-	snapshot.Blocks[0].Text = final.Revision.Patches[0].Text
+	snapshot.Blocks[0].Text = final.Revision.BlockEdits[0].Text
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	if e := read(); e.Type != "finished" {
 		t.Fatal(e)
@@ -474,7 +474,7 @@ func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
 		return event
 	}
 	read()
-	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), ""}}}
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	// Repeat a lost receipt twice; neither a second provider call nor duplicated
 	// source text may result, even before a receipt snapshot gets back to the server.
@@ -486,7 +486,7 @@ func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
 	}
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	event := read()
-	if event.Type != "revision" || event.Revision.Patches[0].Text != receipt.Text {
+	if event.Type != "revision" || event.Revision.BlockEdits[0].Text != receipt.Text {
 		t.Fatalf("replayed speech lost or duplicated: %+v", event)
 	}
 	if speech.opens.Load() != 0 {
