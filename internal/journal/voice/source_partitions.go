@@ -63,6 +63,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				}
 			}
 		}
+		for _, c := range r.ParagraphCommands {
+			if c.SourceID == p.SourceID {
+				for _, id := range c.BlockIDs {
+					add(c.Instruction, id)
+				}
+			}
+		}
 		for _, c := range r.MoveResolutions {
 			if c.SourceID == p.SourceID {
 				for _, item := range s.MoveContext {

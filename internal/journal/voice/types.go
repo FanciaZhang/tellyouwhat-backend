@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v7"
+const Version = "journal-voice-v8"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -66,20 +66,22 @@ type SourceUtterance struct {
 	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
-	Revision          int               `json:"revision"`
-	Blocks            []Block           `json:"blocks"`
-	Transcript        string            `json:"transcript"`
-	EditedBlockIDs    []string          `json:"editedBlockIDs"`
-	MediaOnlyBlockIDs []string          `json:"mediaOnlyBlockIDs"`
-	ActiveBlockIDs    []string          `json:"activeBlockIDs"`
-	KnownSourceIDs    []string          `json:"knownSourceIDs"`
-	PendingUtterances []SourceUtterance `json:"pendingUtterances"`
-	SemanticState     SemanticState     `json:"semanticState"`
-	Words             []string          `json:"words"`
-	WritingStyle      string            `json:"writingStyle"`
-	FormatContext     []FormatContext   `json:"formatContext"`
-	ParallelGroups    [][]string        `json:"parallelGroups"`
-	MoveContext       []MoveContext     `json:"moveContext"`
+	BlockComponents   map[string][]string `json:"blockComponents"`
+	ParallelColumns   map[string]string   `json:"parallelColumns"`
+	Revision          int                 `json:"revision"`
+	Blocks            []Block             `json:"blocks"`
+	Transcript        string              `json:"transcript"`
+	EditedBlockIDs    []string            `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs []string            `json:"mediaOnlyBlockIDs"`
+	ActiveBlockIDs    []string            `json:"activeBlockIDs"`
+	KnownSourceIDs    []string            `json:"knownSourceIDs"`
+	PendingUtterances []SourceUtterance   `json:"pendingUtterances"`
+	SemanticState     SemanticState       `json:"semanticState"`
+	Words             []string            `json:"words"`
+	WritingStyle      string              `json:"writingStyle"`
+	FormatContext     []FormatContext     `json:"formatContext"`
+	ParallelGroups    [][]string          `json:"parallelGroups"`
+	MoveContext       []MoveContext       `json:"moveContext"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -102,6 +104,7 @@ type Revision struct {
 	Corrections        []TextCorrection   `json:"corrections"`
 	FormatCommands     []FormatCommand    `json:"formatCommands"`
 	MoveCommands       []MoveCommand      `json:"moveCommands"`
+	ParagraphCommands  []ParagraphCommand `json:"paragraphCommands"`
 	MoveResolutions    []MoveResolution   `json:"moveResolutions"`
 	FormatResolutions  []FormatResolution `json:"formatResolutions"`
 	Passages           []Passage          `json:"passages"`
@@ -203,6 +206,26 @@ func (s Snapshot) Validate() error {
 		count += utf8.RuneCountInString(b.Text)
 	}
 	locked := map[string]bool{}
+	components := map[string]bool{}
+	for id, values := range s.BlockComponents {
+		if !seen[id] || len(values) > 12 {
+			return ErrInvalid
+		}
+		for _, value := range values {
+			if !validID(value) || components[value] {
+				return ErrInvalid
+			}
+			components[value] = true
+		}
+	}
+	for id, column := range s.ParallelColumns {
+		if !seen[id] || strings.TrimSpace(column) == "" || len(column) > 80 {
+			return ErrInvalid
+		}
+	}
+	if err := validateParagraphColumns(s); err != nil {
+		return err
+	}
 	for _, id := range s.EditedBlockIDs {
 		if !seen[id] {
 			return ErrInvalid
@@ -371,6 +394,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateParagraphs(r, s, touched); err != nil {
+		return err
+	}
 	if err := validateMoves(r, s, touched); err != nil {
 		return err
 	}
