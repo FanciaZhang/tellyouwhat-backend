@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v3"
+const Version = "journal-voice-v4"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -97,6 +97,7 @@ type Revision struct {
 	TranscriptRevision int              `json:"transcriptRevision"`
 	BlockEdits         []BlockEdit      `json:"blockEdits"`
 	Corrections        []TextCorrection `json:"corrections"`
+	FormatCommands     []FormatCommand  `json:"formatCommands"`
 	Passages           []Passage        `json:"passages"`
 	ConsumedSourceIDs  []string         `json:"consumedSourceIDs"`
 	SemanticState      SemanticState    `json:"semanticState"`
@@ -251,7 +252,7 @@ func (r Revision) Validate(s Snapshot) error {
 	if r.BaseRevision != s.Revision {
 		return ErrConflict
 	}
-	if len(r.BlockEdits) > 64 || len(r.Corrections) > 32 || len(r.Passages) > 64 ||
+	if len(r.BlockEdits) > 64 || len(r.Corrections) > 32 || len(r.FormatCommands) > 16 || len(r.Passages) > 64 ||
 		len(r.ConsumedSourceIDs) > MaxPendingUtterances || len(r.Questions) > 8 || len(r.Emotions) > 8 {
 		return ErrInvalid
 	}
@@ -345,6 +346,31 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	commandIDs := map[string]bool{}
+	for _, command := range r.FormatCommands {
+		if !validID(command.ID) || commandIDs[command.ID] || !known[command.BlockID] ||
+			!sources[command.SourceID] || !validFormatMark(command.Mark) ||
+			command.Anchor.Quote == "" || utf8.RuneCountInString(command.Anchor.Quote) > 6000 ||
+			utf8.RuneCountInString(command.Anchor.Prefix) > 80 || utf8.RuneCountInString(command.Anchor.Suffix) > 80 ||
+			command.Instruction == "" || utf8.RuneCountInString(command.Instruction) > 500 {
+			return ErrInvalid
+		}
+		for _, id := range s.MediaOnlyBlockIDs {
+			if command.BlockID == id {
+				return ErrInvalid
+			}
+		}
+		foundEvidence := false
+		for _, source := range s.PendingUtterances {
+			if source.ID == command.SourceID && strings.Count(source.Text, command.Instruction) == 1 {
+				foundEvidence = true
+			}
+		}
+		if !foundEvidence {
+			return ErrInvalid
+		}
+		commandIDs[command.ID] = true
+	}
 	targets := map[string]bool{}
 	for _, passage := range r.Passages {
 		if !known[passage.BlockID] || len(passage.SourceIDs) == 0 || len(passage.SourceIDs) > MaxPendingUtterances || targets[passage.BlockID] {
