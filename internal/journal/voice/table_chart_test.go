@@ -1,11 +1,63 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/google/uuid"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"slices"
 	"testing"
 )
+
+func TestChartModelTransportRoundTrip(t *testing.T) {
+	s, r := tableEditFixture()
+	table := s.TableContext[0]
+	instruction := "把价格画成柱状图"
+	s.PendingUtterances[0].Text = instruction
+	r.TableEdits[0].Instruction = instruction
+	r.SourcePartitions[0].Segments[0].Text = instruction
+	chart := TableChart{ID: uuid.NewString(), Title: "价格比较", Kind: "bar", CategoryColumnID: table.Columns[0].ID, ValueColumnIDs: []string{table.Columns[1].ID}}
+	r.TableEdits[0].Patches = []TablePatch{{Kind: "addChart", TargetID: table.TableID, Chart: &chart}}
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"journeyEdits", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
+		fields[key] = []any{}
+	}
+	response, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Input string `json:"input"`
+			Store bool   `json:"store"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		var input rewriteModelDocument
+		if err := json.Unmarshal([]byte(body.Input), &input); err != nil {
+			t.Error(err)
+		}
+		if body.Store || len(input.TableContext) != 1 || !reflect.DeepEqual(input.TableContext[0].Columns, table.Columns) {
+			t.Error("table projection changed")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(response)}}}}})
+	}))
+	defer server.Close()
+	result, err := (ArkRewriter{BaseURL: server.URL, APIKey: "fixture", Model: "fixture", HTTP: server.Client()}).Rewrite(context.Background(), s, 0)
+	if err != nil || !reflect.DeepEqual(result.Revision.TableEdits, r.TableEdits) {
+		t.Fatal("chart transport failed", err)
+	}
+}
 
 func TestChartReferencesValidateShapeAndDataWithoutInventingValues(t *testing.T) {
 	table := tableContextFixture().TableContext[0]
@@ -47,6 +99,35 @@ func TestChartReferencesValidateShapeAndDataWithoutInventingValues(t *testing.T)
 	chart.ValueColumnIDs = []string{chart.CategoryColumnID}
 	if chart.validShape() {
 		t.Fatal("category reused as value")
+	}
+}
+
+func TestChartModelSchemaIsStrictAndReferenceOnly(t *testing.T) {
+	schema := voiceRevisionSchema()
+	edit := schema["properties"].(map[string]any)["tableEdits"].(map[string]any)["items"].(map[string]any)
+	patch := edit["properties"].(map[string]any)["patches"].(map[string]any)["items"].(map[string]any)
+	if !slices.Contains(patch["required"].([]string), "chart") || patch["additionalProperties"] != false {
+		t.Fatal("chart payload not strict")
+	}
+	properties := patch["properties"].(map[string]any)
+	kinds := properties["kind"].(map[string]any)["enum"].([]string)
+	for _, kind := range []string{"addChart", "replaceChart", "removeChart"} {
+		if !slices.Contains(kinds, kind) {
+			t.Fatal("missing operation", kind)
+		}
+	}
+	chart := properties["chart"].(map[string]any)["anyOf"].([]any)[0].(map[string]any)
+	if chart["additionalProperties"] != false || len(chart["required"].([]string)) != 5 {
+		t.Fatal("chart schema accepts unbounded payload")
+	}
+	fields := chart["properties"].(map[string]any)
+	for _, key := range []string{"id", "title", "kind", "categoryColumnID", "valueColumnIDs"} {
+		if fields[key] == nil || !slices.Contains(chart["required"].([]string), key) {
+			t.Fatal("missing chart field", key)
+		}
+	}
+	if fields["values"] != nil || fields["sources"] != nil {
+		t.Fatal("duplicate values or evidence in chart schema")
 	}
 }
 

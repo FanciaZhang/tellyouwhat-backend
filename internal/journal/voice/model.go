@@ -680,8 +680,13 @@ func voiceRevisionSchema() map[string]any {
 	tableCalculation := object([]string{"id", "title", "kind", "columnID", "rowIDs"}, map[string]any{
 		"id": stringField, "title": stringField, "kind": map[string]any{"type": "string", "enum": []string{"sum", "difference"}}, "columnID": stringField, "rowIDs": stringArray(),
 	})
-	tablePatch := object([]string{"kind", "targetID", "title", "cell", "row", "column", "order", "calculation"}, map[string]any{
-		"kind":        map[string]any{"type": "string", "enum": []string{"setCell", "renameTable", "renameColumn", "insertRow", "insertColumn", "deleteRow", "deleteColumn", "orderRows", "orderColumns", "sortNumbersAscending", "sortNumbersDescending", "sortDatesAscending", "sortDatesDescending", "addCalculation"}},
+	tableChart := object([]string{"id", "title", "kind", "categoryColumnID", "valueColumnIDs"}, map[string]any{
+		"id": stringField, "title": stringField, "kind": map[string]any{"type": "string", "enum": []string{"bar", "line", "proportion"}},
+		"categoryColumnID": stringField, "valueColumnIDs": stringArray(),
+	})
+	tablePatch := object([]string{"kind", "targetID", "title", "cell", "row", "column", "order", "calculation", "chart"}, map[string]any{
+		"kind":        map[string]any{"type": "string", "enum": []string{"setCell", "renameTable", "renameColumn", "insertRow", "insertColumn", "deleteRow", "deleteColumn", "orderRows", "orderColumns", "sortNumbersAscending", "sortNumbersDescending", "sortDatesAscending", "sortDatesDescending", "addCalculation", "addChart", "replaceChart", "removeChart"}},
+		"chart":       nullable(tableChart),
 		"calculation": nullable(tableCalculation),
 		"targetID":    stringField, "title": stringField, "order": stringArray(), "cell": nullable(tableCell),
 		"row":    nullable(object([]string{"id", "cells"}, map[string]any{"id": stringField, "cells": map[string]any{"type": "array", "items": tableCell}})),
