@@ -53,6 +53,15 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				}
 			}
 		}
+		for _, timeline := range r.TimelineCreations {
+			for _, event := range timeline.Events {
+				for _, evidence := range event.Sources {
+					if evidence.SourceID == p.SourceID {
+						passages[timeline.BlockID] = true
+					}
+				}
+			}
+		}
 		for _, passage := range r.Passages {
 			for _, id := range passage.SourceIDs {
 				if id == p.SourceID {
@@ -95,6 +104,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			}
 		}
 		for _, c := range r.TableCreations {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.TimelineCreations {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)
 			}
