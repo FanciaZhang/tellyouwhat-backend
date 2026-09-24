@@ -55,6 +55,29 @@ func TestVoiceAdmissionRequiresOwnSubscriptionAndExplicitConsent(t *testing.T) {
 	}
 }
 
+func TestVoiceProtocolMismatchIsNotMissingConsent(t *testing.T) {
+	store := entitlement.NewMemoryStore()
+	store.Upsert(context.Background(), entitlement.Record{KeyID: "key", TransactionID: "original", Environment: "sandbox", StartedAt: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)})
+	s := New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true}, Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{"managed_subscription"}, Voice: &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}, VoiceEntitlements: store})
+	for _, version := range []string{"journal-voice-v22", "journal-voice-v999", ""} {
+		body, _ := json.Marshal(map[string]string{"sessionID": uuid.NewString(), "consentVersion": version})
+		request := httptest.NewRequest(http.MethodPost, "/v1/journal/voice/sessions", strings.NewReader(string(body)))
+		request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+		request.Header.Set("X-Tellyouwhat-Key-ID", "key")
+		request.Header.Set("X-Tellyouwhat-Assertion", "assertion")
+		request.Header.Set("X-Tellyouwhat-Nonce", "nonce")
+		response := httptest.NewRecorder()
+		s.Router().ServeHTTP(response, request)
+		code := "voice_protocol_mismatch"
+		if version == "" {
+			code = "voice_consent_required"
+		}
+		if response.Code != 422 || !strings.Contains(response.Body.String(), code) {
+			t.Fatalf("incorrect admission error: %d %s", response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestGeneratedVoiceStreamUpgradesAndRejectsTicketReplay(t *testing.T) {
 	service := &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}
 	sessionID := uuid.NewString()
