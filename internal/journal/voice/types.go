@@ -67,6 +67,7 @@ type SourceUtterance struct {
 }
 type Snapshot struct {
 	JourneySourceContext []TableSource         `json:"journeySourceContext"`
+	JourneyContext       []JourneyContext      `json:"journeyContext"`
 	TimelineContext      []TimelineContext     `json:"timelineContext"`
 	TableContext         []TableContext        `json:"tableContext"`
 	TableReceiptContext  []TableReceiptContext `json:"tableReceiptContext"`
@@ -312,6 +313,9 @@ func (s Snapshot) Validate() error {
 		return err
 	}
 	if err := validateJourneySourceContext(s); err != nil {
+		return err
+	}
+	if err := validateJourneyContext(s); err != nil {
 		return err
 	}
 	if err := validateTableContext(s); err != nil {

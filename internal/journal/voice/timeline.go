@@ -118,6 +118,12 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 			used[event.ID] = true
 		}
 	}
+	for _, c := range s.JourneyContext {
+		used[c.MapID] = true
+		for _, stop := range c.Stops {
+			used[stop.ID] = true
+		}
+	}
 	for _, c := range r.TableCreations {
 		used[c.ID] = true
 		used[c.BlockID] = true
