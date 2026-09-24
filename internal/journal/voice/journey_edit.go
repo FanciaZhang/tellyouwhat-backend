@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // Sparse changes preserve everything the speaker did not ask to change.
@@ -34,6 +35,191 @@ type JourneyEdit struct {
 	Insertions     []JourneyStopInsertion `json:"insertions"`
 	RemovedStopIDs []string               `json:"removedStopIDs"`
 	StopOrder      []string               `json:"stopOrder"`
+}
+
+func validateJourneyEdits(r Revision, s Snapshot) error {
+	if len(r.JourneyEdits) == 0 {
+		return nil
+	}
+	if len(r.JourneyEdits) > 4 || len(r.MoveCommands)+len(r.MoveResolutions)+len(r.ParagraphCommands)+len(r.ParagraphResolutions) > 0 {
+		return ErrInvalid
+	}
+	if err := validateJourneyContext(s); err != nil {
+		return err
+	}
+	used, touched := map[string]bool{}, map[string]bool{}
+	claim := func(id string) bool {
+		key := strings.ToLower(id)
+		if !validID(id) || used[key] {
+			return false
+		}
+		used[key] = true
+		return true
+	}
+	reserve := func(ids ...string) {
+		for _, id := range ids {
+			used[strings.ToLower(id)] = true
+		}
+	}
+	for _, b := range s.Blocks {
+		reserve(b.ID)
+	}
+	for _, ids := range s.BlockComponents {
+		reserve(ids...)
+	}
+	for _, c := range s.JourneyContext {
+		for _, stop := range c.Stops {
+			reserve(stop.ID)
+		}
+	}
+	for _, c := range s.TimelineContext {
+		for _, e := range c.Events {
+			reserve(e.ID)
+		}
+	}
+	for _, c := range s.TableContext {
+		for _, v := range c.Rows {
+			reserve(v.ID)
+		}
+		for _, v := range c.Columns {
+			reserve(v.ID)
+		}
+		for _, v := range c.Calculations {
+			reserve(v.ID)
+		}
+	}
+	for _, c := range s.FormatContext {
+		reserve(c.ReceiptID)
+	}
+	for _, c := range s.MoveContext {
+		reserve(c.ReceiptID)
+	}
+	for _, c := range s.ParagraphContext {
+		reserve(c.ReceiptID)
+	}
+	for _, c := range s.TableReceiptContext {
+		reserve(c.ReceiptID)
+	}
+	for _, c := range r.BlockEdits {
+		reserve(c.ID)
+		touched[c.ID] = true
+	}
+	for _, c := range r.Corrections {
+		touched[c.BlockID] = true
+	}
+	for _, c := range r.FormatCommands {
+		reserve(c.ID)
+		touched[c.BlockID] = true
+	}
+	for _, c := range r.FormatResolutions {
+		reserve(c.ID)
+		for _, context := range s.FormatContext {
+			if context.ReceiptID == c.ReceiptID {
+				touched[context.BlockID] = true
+			}
+		}
+	}
+	for _, c := range r.TableResolutions {
+		reserve(c.ID)
+		for _, context := range s.TableReceiptContext {
+			if context.ReceiptID == c.ReceiptID {
+				touched[context.BlockID] = true
+			}
+		}
+	}
+	for _, c := range r.TableCreations {
+		reserve(c.ID, c.BlockID, c.TableID)
+		for _, v := range c.Rows {
+			reserve(v.ID)
+		}
+		for _, v := range c.Columns {
+			reserve(v.ID)
+		}
+	}
+	for _, c := range r.TableEdits {
+		reserve(c.ID)
+		touched[c.BlockID] = true
+		for _, p := range c.Patches {
+			if p.Row != nil {
+				reserve(p.Row.ID)
+			}
+			if p.Column != nil {
+				reserve(p.Column.ID)
+			}
+			if p.Calculation != nil {
+				reserve(p.Calculation.ID)
+			}
+		}
+	}
+	for _, c := range r.TimelineCreations {
+		reserve(c.ID, c.BlockID, c.TimelineID)
+		for _, e := range c.Events {
+			reserve(e.ID)
+		}
+	}
+	for _, c := range r.TimelineEdits {
+		reserve(c.ID)
+		touched[c.BlockID] = true
+		for _, e := range c.Insertions {
+			reserve(e.ID)
+		}
+	}
+	for _, c := range r.JourneyCreations {
+		reserve(c.ID, c.BlockID, c.MapID)
+		for _, v := range c.Visits {
+			reserve(v.ID)
+		}
+	}
+	sources := map[string]string{}
+	for _, u := range s.PendingUtterances {
+		if _, ok := sources[u.ID]; ok {
+			return ErrInvalid
+		}
+		sources[u.ID] = u.Text
+	}
+	seen := map[string]bool{}
+	for _, c := range r.JourneyEdits {
+		if !claim(c.ID) || seen[c.MapID] || touched[c.BlockID] || c.Updates == nil || c.Insertions == nil || c.RemovedStopIDs == nil ||
+			!slices.Contains(r.ConsumedSourceIDs, c.SourceID) || strings.TrimSpace(c.Instruction) == "" ||
+			utf8.RuneCountInString(c.Instruction) > 500 || strings.Count(sources[c.SourceID], c.Instruction) != 1 {
+			return ErrInvalid
+		}
+		seen[c.MapID] = true
+		for _, v := range c.Insertions {
+			if !claim(v.ID) || !strings.Contains(c.Instruction, v.Expression) {
+				return ErrInvalid
+			}
+		}
+		for _, p := range c.Updates {
+			if p.Expression != nil && !strings.Contains(c.Instruction, *p.Expression) {
+				return ErrInvalid
+			}
+		}
+		matches, authorized := 0, false
+		for _, p := range r.SourcePartitions {
+			if p.SourceID != c.SourceID {
+				continue
+			}
+			matches++
+			var text strings.Builder
+			for _, segment := range p.Segments {
+				text.WriteString(segment.Text)
+				if segment.Role == "instruction" && segment.Text == c.Instruction && slices.Equal(segment.BlockIDs, []string{c.BlockID}) {
+					authorized = true
+				}
+			}
+			if text.String() != sources[c.SourceID] {
+				return ErrInvalid
+			}
+		}
+		if matches != 1 || !authorized {
+			return ErrInvalid
+		}
+		if err := validateJourneyEditResult(c, s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Produces an isolated candidate. Source authorization belongs to the revision
