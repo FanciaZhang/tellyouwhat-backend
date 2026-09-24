@@ -150,7 +150,15 @@ func validateJourneyCreations(r Revision, s Snapshot) error {
 			}
 		}
 	}
+	// UUIDs are identities, not case-sensitive labels. Swift may encode them
+	// uppercase even when an existing snapshot used lowercase.
+	canonicalUsed := make(map[string]bool, len(used))
+	for id := range used {
+		canonicalUsed[strings.ToLower(id)] = true
+	}
+	used = canonicalUsed
 	claim := func(id string) bool {
+		id = strings.ToLower(id)
 		if !validID(id) || used[id] {
 			return false
 		}
