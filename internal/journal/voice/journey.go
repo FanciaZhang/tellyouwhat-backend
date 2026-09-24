@@ -75,6 +75,12 @@ func validateJourneyCreations(r Revision, s Snapshot) error {
 			used[e.ID] = true
 		}
 	}
+	for _, c := range s.JourneyContext {
+		used[c.MapID] = true
+		for _, stop := range c.Stops {
+			used[stop.ID] = true
+		}
+	}
 	for _, t := range s.TableContext {
 		used[t.TableID] = true
 		for _, x := range t.Rows {

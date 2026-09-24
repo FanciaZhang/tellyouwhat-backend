@@ -630,6 +630,9 @@ func (s Snapshot) validateIncremental() error {
 	if err := validateJourneySourceContext(s); err != nil {
 		return err
 	}
+	if err := validateJourneyContext(s); err != nil {
+		return err
+	}
 	if err := validateTableContext(s); err != nil {
 		return err
 	}
