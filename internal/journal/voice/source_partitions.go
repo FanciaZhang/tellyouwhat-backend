@@ -62,6 +62,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				}
 			}
 		}
+		for _, journey := range r.JourneyCreations {
+			for _, visit := range journey.Visits {
+				if visit.SourceID == p.SourceID {
+					passages[journey.BlockID] = true
+				}
+			}
+		}
 		for _, passage := range r.Passages {
 			for _, id := range passage.SourceIDs {
 				if id == p.SourceID {
@@ -109,6 +116,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			}
 		}
 		for _, c := range r.TimelineCreations {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.JourneyCreations {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)
 			}

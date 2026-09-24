@@ -627,6 +627,9 @@ func (s Snapshot) validateIncremental() error {
 	if err := validateTimelineContext(s); err != nil {
 		return err
 	}
+	if err := validateJourneySourceContext(s); err != nil {
+		return err
+	}
 	if err := validateTableContext(s); err != nil {
 		return err
 	}
@@ -734,6 +737,9 @@ func (r Revision) validateIncremental(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateJourneyCreations(r, s); err != nil {
+		return err
+	}
 	if err := validateTimelineEdits(r, s); err != nil {
 		return err
 	}

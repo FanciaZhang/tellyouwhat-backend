@@ -446,27 +446,28 @@ sourcePartitions 描述需要细分用途或段落归属的口述；单一用途
 只有 source 自带非空 acousticEmotion 时才可返回 emotion，不得单凭文字猜情绪。emotion.sourceID 必须属于同一 passage，anchorText 必须是该段中唯一出现、不超过 80 字的原文短句。kind 只能是 calm、happy、excited、relaxed、moved、hopeful、surprised、worried、nervous、sad、angry、tired。本轮证据不足时 emotions 返回空数组，overallEmotion 返回空字符串。只输出符合 schema 的 JSON。`
 
 type rewriteModelDocument struct {
-	TimelineContext     []TimelineContext     `json:"timelineContext"`
-	TableReceiptContext []TableReceiptContext `json:"tableReceiptContext"`
-	TableContext        []TableContext        `json:"tableContext"`
-	ContextTargets      []ContextTarget       `json:"contextTargets"`
-	DocumentBlockCount  int                   `json:"documentBlockCount"`
-	BaseRevision        int                   `json:"baseRevision"`
-	TranscriptRevision  int                   `json:"transcriptRevision"`
-	ContextBlocks       []Block               `json:"contextBlocks"`
-	ReplaceableBlockIDs []string              `json:"replaceableBlockIDs"`
-	CorrectionBlockIDs  []string              `json:"correctionBlockIDs"`
-	AppendAfterID       string                `json:"appendAfterID"`
-	PendingUtterances   []SourceUtterance     `json:"pendingUtterances"`
-	SemanticState       SemanticState         `json:"semanticState"`
-	WritingStyle        string                `json:"writingStyle,omitempty"`
-	Words               []string              `json:"words,omitempty"`
-	FormatContext       []FormatContext       `json:"formatContext"`
-	ParallelGroups      [][]string            `json:"parallelGroups"`
-	BlockComponents     map[string][]string   `json:"blockComponents"`
-	ParallelColumns     map[string]string     `json:"parallelColumns"`
-	MoveContext         []MoveContext         `json:"moveContext"`
-	ParagraphContext    []ParagraphContext    `json:"paragraphContext"`
+	JourneySourceContext []TableSource         `json:"journeySourceContext"`
+	TimelineContext      []TimelineContext     `json:"timelineContext"`
+	TableReceiptContext  []TableReceiptContext `json:"tableReceiptContext"`
+	TableContext         []TableContext        `json:"tableContext"`
+	ContextTargets       []ContextTarget       `json:"contextTargets"`
+	DocumentBlockCount   int                   `json:"documentBlockCount"`
+	BaseRevision         int                   `json:"baseRevision"`
+	TranscriptRevision   int                   `json:"transcriptRevision"`
+	ContextBlocks        []Block               `json:"contextBlocks"`
+	ReplaceableBlockIDs  []string              `json:"replaceableBlockIDs"`
+	CorrectionBlockIDs   []string              `json:"correctionBlockIDs"`
+	AppendAfterID        string                `json:"appendAfterID"`
+	PendingUtterances    []SourceUtterance     `json:"pendingUtterances"`
+	SemanticState        SemanticState         `json:"semanticState"`
+	WritingStyle         string                `json:"writingStyle,omitempty"`
+	Words                []string              `json:"words,omitempty"`
+	FormatContext        []FormatContext       `json:"formatContext"`
+	ParallelGroups       [][]string            `json:"parallelGroups"`
+	BlockComponents      map[string][]string   `json:"blockComponents"`
+	ParallelColumns      map[string]string     `json:"parallelColumns"`
+	MoveContext          []MoveContext         `json:"moveContext"`
+	ParagraphContext     []ParagraphContext    `json:"paragraphContext"`
 }
 
 func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
@@ -702,6 +703,11 @@ func voiceRevisionSchema() map[string]any {
 		"id": stringField, "blockID": stringField, "timelineID": stringField, "afterID": map[string]any{"type": []string{"string", "null"}},
 		"sourceID": stringField, "instruction": stringField, "title": stringField, "events": map[string]any{"type": "array", "items": timelineEvent},
 	})
+	journeyVisit := object([]string{"id", "expression", "sourceID", "anchor"}, map[string]any{"id": stringField, "expression": stringField, "sourceID": stringField, "anchor": object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField})})
+	journeyCreation := object([]string{"id", "blockID", "mapID", "afterID", "sourceID", "instruction", "title", "visits"}, map[string]any{
+		"id": stringField, "blockID": stringField, "mapID": stringField, "afterID": map[string]any{"type": []string{"string", "null"}},
+		"sourceID": stringField, "instruction": stringField, "title": stringField, "visits": map[string]any{"type": "array", "items": journeyVisit},
+	})
 	timelineTime := object([]string{"expression", "day", "precision", "period", "minute", "approximate", "afterEventID"}, map[string]any{
 		"expression": stringField, "day": stringField,
 		"precision": map[string]any{"type": "string", "enum": []string{"unspecified", "day", "period", "minute"}},
@@ -727,10 +733,11 @@ func voiceRevisionSchema() map[string]any {
 		"eventOrder": nullable(map[string]any{"type": "array", "items": stringField}),
 	})
 	return object(
-		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
+		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
 		map[string]any{
 			"timelineEdits":        map[string]any{"type": "array", "items": timelineEdit},
 			"timelineCreations":    map[string]any{"type": "array", "items": timelineCreation},
+			"journeyCreations":     map[string]any{"type": "array", "items": journeyCreation},
 			"tableResolutions":     map[string]any{"type": "array", "items": moveResolution},
 			"tableEdits":           map[string]any{"type": "array", "items": tableEdit},
 			"tableCreations":       map[string]any{"type": "array", "items": tableCreation},
