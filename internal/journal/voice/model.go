@@ -279,6 +279,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		if revision.Patches != nil || revision.TimelineEdits == nil || revision.TimelineCreations == nil || revision.TableResolutions == nil || revision.TableEdits == nil || revision.TableCreations == nil || revision.FormatCommands == nil || revision.MoveCommands == nil || revision.ParagraphCommands == nil || revision.ParagraphResolutions == nil || revision.MoveResolutions == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {
 			return failedRewrite(result, "voice_rewrite_unavailable", "validate_incremental_contract", ErrInvalid, started)
 		}
+		revision = groundedIncrementalEmotions(revision, s)
 		if err = revision.Validate(s); err != nil {
 			return failedRewrite(result, "voice_rewrite_unavailable", "validate_incremental_revision", err, started)
 		}
