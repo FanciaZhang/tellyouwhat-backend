@@ -1,6 +1,6 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v11`. This protocol is not deployed. The iOS client currently uses v10 and must adopt `tableEdits` before coordinated delivery; real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v11`. This protocol is not deployed. The iOS client now uses v11 and adopts `tableEdits` through source-linked confirmation previews; real-provider and device acceptance remain pending.
 
 `tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
 
@@ -28,7 +28,7 @@ The shared value validator preserves the stricter creation rule requiring nonbla
 
 The local `TablePatch` core supports setting a cell, renaming a table or column, inserting/deleting rows and columns, and explicitly ordering rows/columns. Targets use existing stable identities. Insert targets mean “after this row/column”; an empty target inserts at the beginning. A new column starts with pending cells, which subsequent cell operations can fill. Ordering must be an exact permutation. A batch has at most 128 operations, validates each intermediate shape/budget, rejects unused payload fields and never reuses a deleted identity within the batch.
 
-Materialization copies the request table and preserves untouched values and evidence. Failure returns no partial result and does not mutate the request. The v11 model contract now exposes these patches in required `tableEdits`; App decoding/application remains pending.
+Materialization copies the request table and preserves untouched values and evidence. Failure returns no partial result and does not mutate the request. The v11 model contract exposes these patches in required `tableEdits`; App decoding, source validation, preview, confirmed application and undo are wired and covered by focused local tests. Spoken confirmation and real-service acceptance remain pending.
 
 Tests exercise combined numeric/structural changes, exact decimal and evidence preservation, insertion/reordering/deletion, snapshot immutability, missing or irrelevant payloads, incomplete/duplicate permutations, invalid targets, identity reuse and invalid table shapes. `go test ./internal/journal/voice ./internal/journal/service` passes. No deployment or Health behavior changes.
 
