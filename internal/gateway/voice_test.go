@@ -42,6 +42,15 @@ func TestVoiceAdmissionRequiresOwnSubscriptionAndExplicitConsent(t *testing.T) {
 			if response.Code != tt.status {
 				t.Fatalf("%d %s", response.Code, response.Body.String())
 			}
+			if tt.name == "paid" {
+				mismatch := httptest.NewRequest(http.MethodPost, "/v1/journal/voice/sessions", strings.NewReader(`{"sessionID":"19be2f9e-bd92-4699-b561-e3816092114c","consentVersion":"journal-voice-outdated"}`))
+				mismatch.Header = request.Header.Clone()
+				result := httptest.NewRecorder()
+				s.Router().ServeHTTP(result, mismatch)
+				if result.Code != 409 || !strings.Contains(result.Body.String(), "voice_protocol_mismatch") || strings.Contains(result.Body.String(), "voice_consent_required") {
+					t.Fatalf("protocol mismatch misreported: %d %s", result.Code, result.Body.String())
+				}
+			}
 		})
 	}
 }

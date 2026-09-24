@@ -29,8 +29,11 @@ func (s *Server) CreateJournalVoiceSession(ctx context.Context, request journalh
 	if failure = s.apiRequireConsents(ctx, principal, s.requiredConsentScopes, requestID.String()); failure != nil {
 		return deny(failure)
 	}
-	if request.Body == nil || request.Body.ConsentVersion != voice.Version {
+	if request.Body == nil || request.Body.ConsentVersion == "" {
 		return fail(422, "voice_consent_required", "voice consent is required")
+	}
+	if request.Body.ConsentVersion != voice.Version {
+		return fail(409, "voice_protocol_mismatch", "voice protocol version does not match this service")
 	}
 	record, ok, err := s.voiceEntitlements.Get(ctx, principal.KeyID)
 	if err != nil || !ok || !record.ExpiresAt.After(s.now()) {

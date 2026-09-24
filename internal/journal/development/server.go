@@ -29,7 +29,8 @@ import (
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
-const ProtocolVersion = "subscription-v1"
+// v2 requires passage provenance in voice revisions, including incremental v20.
+const ProtocolVersion = "subscription-v2"
 
 type Config struct {
 	Token     string
