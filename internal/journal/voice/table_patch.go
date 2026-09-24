@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"cmp"
 	"math/big"
 	"slices"
 )
@@ -140,6 +141,43 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 				}
 				comparison := lhs.Cmp(rhs)
 				if p.Kind == "sortNumbersDescending" {
+					return -comparison
+				}
+				return comparison
+			})
+		case "sortDatesAscending", "sortDatesDescending":
+			if column < 0 {
+				return TableContext{}, ErrInvalid
+			}
+			values := map[string]string{}
+			for _, r := range result.Rows {
+				index := slices.IndexFunc(r.Cells, func(c TableCell) bool { return c.ColumnID == p.TargetID })
+				if index < 0 {
+					return TableContext{}, ErrInvalid
+				}
+				cell := r.Cells[index]
+				if cell.NeedsReview || cell.Kind == "pending" {
+					continue
+				}
+				if cell.Kind != "date" || !validateTableCellValue(cell) {
+					return TableContext{}, ErrInvalid
+				}
+				values[r.ID] = cell.Text
+			}
+			slices.SortStableFunc(result.Rows, func(a, b TableRow) int {
+				lhs, rhs := values[a.ID], values[b.ID]
+				if lhs == "" && rhs == "" {
+					return 0
+				}
+				if lhs == "" {
+					return 1
+				}
+				if rhs == "" {
+					return -1
+				}
+				// Valid fixed-width Gregorian YYYY-MM-DD values compare chronologically.
+				comparison := cmp.Compare(lhs, rhs)
+				if p.Kind == "sortDatesDescending" {
 					return -comparison
 				}
 				return comparison

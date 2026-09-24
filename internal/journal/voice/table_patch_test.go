@@ -143,3 +143,61 @@ func TestNumericTableSortUsesExactValuesAndStableMissingTail(t *testing.T) {
 		t.Fatal("mixed types accepted")
 	}
 }
+
+func TestDateTableSortPreservesRowsSourcesAndStableMissingTail(t *testing.T) {
+	before := tableContextFixture().TableContext[0]
+	column := before.Columns[1].ID
+	original := before.Rows[0]
+	makeRow := func(day string, review bool) TableRow {
+		row := TableRow{ID: uuid.NewString(), Cells: append([]TableCell(nil), original.Cells...)}
+		cell := &row.Cells[1]
+		cell.Kind, cell.Text, cell.Number, cell.Unit = "date", day, "", ""
+		cell.Approximate, cell.NeedsReview = false, review
+		if day == "" {
+			*cell = TableCell{ColumnID: column, Kind: "pending"}
+		}
+		return row
+	}
+	before.Rows = []TableRow{makeRow("2026-10-01", false), makeRow("", false), makeRow("2024-02-29", false), makeRow("2024-02-29", false), makeRow("2023-01-01", true)}
+	encoded, _ := json.Marshal(before)
+	for _, test := range []struct {
+		kind  string
+		order []int
+	}{
+		{"sortDatesAscending", []int{2, 3, 0, 1, 4}},
+		{"sortDatesDescending", []int{0, 2, 3, 1, 4}},
+	} {
+		after, err := applyTablePatches(before, []TablePatch{{Kind: test.kind, TargetID: column}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, originalIndex := range test.order {
+			if !reflect.DeepEqual(after.Rows[index], before.Rows[originalIndex]) {
+				t.Fatal("changed row data, evidence or stable order")
+			}
+		}
+	}
+	unchanged, _ := json.Marshal(before)
+	if string(encoded) != string(unchanged) {
+		t.Fatal("mutated snapshot")
+	}
+	for _, bad := range []TablePatch{
+		{Kind: "sortDatesAscending", TargetID: uuid.NewString()},
+		{Kind: "sortDatesAscending", TargetID: column, Order: []string{before.Rows[0].ID}},
+		{Kind: "sortNumbersAscending", TargetID: column},
+	} {
+		if _, err := applyTablePatches(before, []TablePatch{bad}); err == nil {
+			t.Fatal("invalid patch accepted")
+		}
+	}
+	for _, bad := range []TableCell{
+		{ColumnID: column, Kind: "text", Text: "2024-02-29"},
+		{ColumnID: column, Kind: "number", Number: "20240229"},
+		{ColumnID: column, Kind: "date", Text: "2023-02-29"},
+	} {
+		before.Rows[2].Cells[1] = bad
+		if _, err := applyTablePatches(before, []TablePatch{{Kind: "sortDatesAscending", TargetID: column}}); err == nil {
+			t.Fatal("invalid date column accepted")
+		}
+	}
+}

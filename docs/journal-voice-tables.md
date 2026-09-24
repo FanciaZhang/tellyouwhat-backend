@@ -1,18 +1,20 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v14`. This protocol is not deployed. The iOS client uses v14 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v15`. This protocol is not deployed. The iOS client uses v15 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
 
 ## Calendar dates
 
-Cell kind `date` stores a complete Gregorian date in `text` as strict `YYYY-MM-DD`. Number and unit are empty; approximate is false. Calendar-invalid dates and unused payload are rejected. The same encoding applies to creation, sparse cell edits and source-free table context; creation/edit evidence authorization still applies. Incomplete and uncertain spoken dates remain text or require clarification instead of inventing a year or precision. Dates are never numeric inputs to sums or numeric sorting. Native date sorting is currently a client editing action; spoken date-sort operations remain pending.
-
-## Deterministic numeric sorting
+Cell kind `date` stores a complete Gregorian date in `text` as strict `YYYY-MM-DD`. Number and unit are empty; approximate is false. Calendar-invalid dates and unused payload are rejected. The same encoding applies to creation, sparse cell edits and source-free table context; creation/edit evidence authorization still applies. Incomplete and uncertain spoken dates remain text or require clarification instead of inventing a year or precision. Dates are never numeric inputs to sums or numeric sorting.
 
 The date validator matches the native picker boundary: Gregorian-invalid leap days and the 1582-10-05 through 1582-10-14 reform gap are rejected rather than normalized. Such historical expressions can remain text.
 
+`sortDatesAscending` (earliest first) and `sortDatesDescending` (latest first) address a date column with `targetID`; all other fields are empty or null, including `order`. Both runtimes sort complete typed dates deterministically, retain equal-date order, and keep pending/review-required rows stably at the end in either direction. Confirmed text and numbers are rejected rather than interpreted as dates. Whole rows, identities, values and source anchors remain intact. The existing source-partition, preview, persistence, conflict and undo pipeline applies. The model selects the column and direction, not the row permutation.
+
+## Deterministic numeric sorting
+
 `sortNumbersAscending` and `sortNumbersDescending` patches address a numeric column with `targetID`. All other payload fields are empty or null, including `order`. The model identifies intent, not the resulting row permutation. Server validation uses exact rational decimal comparisons; the App uses Decimal and the same stable ordering rules. Equal values retain their original order. Pending and review-required cells remain at the end in their original order in both directions. Approximate values keep their flag. Confirmed text or mixed units are rejected; there is no implicit unit conversion or date parsing. Source-partition authorization, preview confirmation, persistence and undo use the existing edit pipeline. No-op proposals are rejected. This protocol change is Journal-scoped and has not been deployed to the shared service.
 
-`tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
+`tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `date`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
 
 Creation is a proposal for a standalone table. Existing prose remains present. The App owns confirmation, dismissal, insertion and undo. A revision can propose at most four tables; each has at most 16 columns, 64 rows and 512 cells. Across the revision, cell values contain at most 20,000 Unicode code points. These are bounded generation batches, not a limit on the persisted table model.
 
