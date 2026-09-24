@@ -178,6 +178,8 @@ func validateJourneyEdits(r Revision, s Snapshot) error {
 		sources[u.ID] = u.Text
 	}
 	seen := map[string]bool{}
+	combined := s
+	combined.JourneyContext = slices.Clone(s.JourneyContext)
 	for _, c := range r.JourneyEdits {
 		if !claim(c.ID) || seen[c.MapID] || touched[c.BlockID] || c.Updates == nil || c.Insertions == nil || c.RemovedStopIDs == nil ||
 			!slices.Contains(r.ConsumedSourceIDs, c.SourceID) || strings.TrimSpace(c.Instruction) == "" ||
@@ -218,8 +220,14 @@ func validateJourneyEdits(r Revision, s Snapshot) error {
 		if err := validateJourneyEditResult(c, s); err != nil {
 			return err
 		}
+		index := slices.IndexFunc(combined.JourneyContext, func(item JourneyContext) bool { return item.MapID == c.MapID && item.BlockID == c.BlockID })
+		updated, err := applyJourneyEdit(combined.JourneyContext[index], c)
+		if err != nil {
+			return err
+		}
+		combined.JourneyContext[index] = updated
 	}
-	return nil
+	return validateJourneyContext(combined)
 }
 
 // Produces an isolated candidate. Source authorization belongs to the revision

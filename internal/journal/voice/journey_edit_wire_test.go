@@ -126,3 +126,36 @@ func TestJourneyEditModelWireContract(t *testing.T) {
 		})
 	}
 }
+
+func TestJourneyEditsEnforceCombinedResultBudget(t *testing.T) {
+	s := journeyContextFixture()
+	s.JourneyContext = nil
+	r := Revision{BaseRevision: s.Revision}
+	for i := 0; i < 2; i++ {
+		id, source := uuid.NewString(), uuid.NewString()
+		c := JourneyContext{BlockID: s.Blocks[0].ID, MapID: id, Title: "路线"}
+		for j := 0; j < 19; j++ {
+			c.Stops = append(c.Stops, JourneyContextStop{ID: uuid.NewString(), Expression: strings.Repeat("字", 500), Resolution: "needsDetails", TransportToNext: "unspecified"})
+		}
+		s.JourneyContext = append(s.JourneyContext, c)
+		s.BlockComponents[c.BlockID] = append(s.BlockComponents[c.BlockID], id)
+		text := strings.Repeat("山", 500)
+		s.PendingUtterances = append(s.PendingUtterances, SourceUtterance{ID: source, Text: text})
+		r.ConsumedSourceIDs = append(r.ConsumedSourceIDs, source)
+		r.SourcePartitions = append(r.SourcePartitions, SourcePartition{SourceID: source, Segments: []SourceSegment{{Text: text, Role: "instruction", BlockIDs: []string{c.BlockID}}}})
+		r.JourneyEdits = append(r.JourneyEdits, JourneyEdit{ID: uuid.NewString(), BlockID: c.BlockID, MapID: id,
+			SourceID: source, Instruction: text, Updates: []JourneyStopUpdate{}, RemovedStopIDs: []string{},
+			Insertions: []JourneyStopInsertion{{ID: uuid.NewString(), Expression: text, TransportToNext: "unspecified"}}})
+	}
+	if err := validateJourneyContext(s); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range r.JourneyEdits {
+		if err := validateJourneyEditResult(c, s); err != nil {
+			t.Fatal("each individual result should fit", err)
+		}
+	}
+	if validateJourneyEdits(r, s) == nil {
+		t.Fatal("combined map edits exceeded shared budget")
+	}
+}
