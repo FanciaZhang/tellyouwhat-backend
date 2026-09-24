@@ -11,13 +11,14 @@ import (
 // These operations are materialized against the exact request snapshot before
 // a revision can be offered to the app. Source authorization is a separate gate.
 type TablePatch struct {
-	Kind     string       `json:"kind"`
-	TargetID string       `json:"targetID"`
-	Title    string       `json:"title"`
-	Cell     *TableCell   `json:"cell"`
-	Row      *TableRow    `json:"row"`
-	Column   *TableColumn `json:"column"`
-	Order    []string     `json:"order"`
+	Kind        string            `json:"kind"`
+	TargetID    string            `json:"targetID"`
+	Title       string            `json:"title"`
+	Cell        *TableCell        `json:"cell"`
+	Row         *TableRow         `json:"row"`
+	Column      *TableColumn      `json:"column"`
+	Order       []string          `json:"order"`
+	Calculation *TableCalculation `json:"calculation"`
 }
 
 func applyTablePatches(before TableContext, patches []TablePatch) (TableContext, error) {
@@ -27,6 +28,7 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 	result := before
 	result.Columns = slices.Clone(before.Columns)
 	result.Rows = slices.Clone(before.Rows)
+	result.Calculations = slices.Clone(before.Calculations)
 	for i := range result.Rows {
 		result.Rows[i].Cells = slices.Clone(result.Rows[i].Cells)
 	}
@@ -36,6 +38,9 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 	}
 	for _, r := range before.Rows {
 		claimed[r.ID] = true
+	}
+	for _, c := range before.Calculations {
+		claimed[c.ID] = true
 	}
 	claim := func(id string) bool {
 		if !validID(id) || claimed[id] {
@@ -50,11 +55,19 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 		// Unused payload fields are rejected, not silently interpreted later.
 		if (p.Cell != nil) != (p.Kind == "setCell") || (p.Row != nil) != (p.Kind == "insertRow") ||
 			(p.Column != nil) != (p.Kind == "insertColumn") ||
+			(p.Calculation != nil) != (p.Kind == "addCalculation") ||
 			(len(p.Order) > 0 && p.Kind != "orderRows" && p.Kind != "orderColumns") ||
 			(p.Title != "" && p.Kind != "renameTable" && p.Kind != "renameColumn") {
 			return TableContext{}, ErrInvalid
 		}
 		switch p.Kind {
+		case "addCalculation":
+			if p.TargetID != before.TableID || !claim(p.Calculation.ID) || !p.Calculation.canEvaluate(result) {
+				return TableContext{}, ErrInvalid
+			}
+			calculation := *p.Calculation
+			calculation.RowIDs = slices.Clone(calculation.RowIDs)
+			result.Calculations = append(result.Calculations, calculation)
 		case "setCell":
 			if row < 0 || !validateTableCellValue(*p.Cell) {
 				return TableContext{}, ErrInvalid

@@ -11,11 +11,12 @@ import (
 // may be manually entered; this is current document state, not ASR evidence.
 // Row and column ordering is significant for spoken ordinal references.
 type TableContext struct {
-	BlockID string        `json:"blockID"`
-	TableID string        `json:"tableID"`
-	Title   string        `json:"title"`
-	Columns []TableColumn `json:"columns"`
-	Rows    []TableRow    `json:"rows"`
+	BlockID      string             `json:"blockID"`
+	TableID      string             `json:"tableID"`
+	Title        string             `json:"title"`
+	Columns      []TableColumn      `json:"columns"`
+	Rows         []TableRow         `json:"rows"`
+	Calculations []TableCalculation `json:"calculations"`
 }
 
 func validateTableCellValue(cell TableCell) bool {
@@ -95,6 +96,15 @@ func validateTableContext(s Snapshot) error {
 				seen[cell.ColumnID] = true
 				total += utf8.RuneCountInString(cell.Text + cell.Number + cell.Unit)
 			}
+		}
+		if len(table.Calculations) > 64 {
+			return ErrInvalid
+		}
+		for _, calculation := range table.Calculations {
+			if !claim(calculation.ID) || !calculation.validShape() {
+				return ErrInvalid
+			}
+			total += utf8.RuneCountInString(calculation.Title)
 		}
 		if total > 20000 {
 			return ErrInvalid

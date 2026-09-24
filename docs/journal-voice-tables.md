@@ -1,6 +1,8 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v15`. This protocol is not deployed. The iOS client uses v15 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v16`. This protocol is not deployed. The iOS client uses v16 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+
+`addCalculation` targets a table ID and supplies `calculation: {id, title, kind, columnID, rowIDs}`. `sum` requires an empty row list; `difference` requires two distinct row IDs in minuend/subtrahend order. No computed value is accepted. Other payloads are empty or null. The request's `calculations` context carries existing expressions without cached results or historical quotes. IDs use lowercase UUID strings. Expression titles count toward the existing context budget; a table holds at most 64 expressions. Existing dangling operands remain representable, whereas new calculations must have compatible confirmed numeric operands and matching units. Sums exclude pending/review rows and require at least one confirmed value. Differences require both operands. Source instruction partition, identity reservation, preview confirmation and undo remain mandatory. Arithmetic is performed by the client's deterministic Decimal calculator; server validation does not manufacture or persist results.
 
 ## Calendar dates
 

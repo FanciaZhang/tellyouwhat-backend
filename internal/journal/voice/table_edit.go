@@ -42,6 +42,9 @@ func validateTableEdits(r Revision, s Snapshot) error {
 		for _, row := range t.Rows {
 			used[row.ID] = true
 		}
+		for _, c := range t.Calculations {
+			used[c.ID] = true
+		}
 	}
 	for _, c := range r.BlockEdits {
 		used[c.ID] = true
@@ -100,6 +103,9 @@ func validateTableEdits(r Revision, s Snapshot) error {
 			return ErrInvalid
 		}
 		for _, patch := range edit.Patches {
+			if patch.Calculation != nil && !claim(patch.Calculation.ID) {
+				return ErrInvalid
+			}
 			cells := []TableCell{}
 			if patch.Cell != nil {
 				cells = append(cells, *patch.Cell)
