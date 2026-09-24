@@ -163,7 +163,7 @@ func boundedEditorialBlocks(s Snapshot) ([]Block, []editorialFragment, int) {
 	refs := []editorialFragment{}
 	for i, f := range fragments {
 		if selected[i] {
-			blocks = append(blocks, Block{f.ID, f.text})
+			blocks = append(blocks, Block{ID: f.ID, Text: f.text})
 			refs = append(refs, f.editorialFragment)
 		}
 	}

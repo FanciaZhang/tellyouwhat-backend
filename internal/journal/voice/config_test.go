@@ -16,7 +16,7 @@ func TestDynamicStyleAndEditorialRulesUseFrozenConfiguration(t *testing.T) {
 	policy.Journal.Voice.Parameters.MaxOutputTokens = 4096
 	revision := promptconfig.Revision{ID: "frozen", Scope: "journal", Policy: policy}
 	ctx := promptconfig.WithRevision(context.Background(), revision)
-	snapshot := Snapshot{WritingStyle: "custom-style", Blocks: []Block{{uuid.NewString(), ""}}, Transcript: "合成口述"}
+	snapshot := Snapshot{WritingStyle: "custom-style", Blocks: []Block{{ID: uuid.NewString(), Text: ""}}, Transcript: "合成口述"}
 	prepared, err := PrepareRewrite(ctx, snapshot, 1, "")
 	if err != nil {
 		t.Fatal(err)

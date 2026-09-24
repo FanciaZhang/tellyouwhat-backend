@@ -111,85 +111,191 @@ func TestASRPacketFinalFlagAndMalformedPackets(t *testing.T) {
 		}
 	}
 }
-func TestRevisionAllowsManualParagraphCorrectionButRejectsStaleAndMediaChanges(t *testing.T) {
+
+func TestASRPreservesTimedSpeakerEvidence(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{"result": map[string]any{
+		"text": "你好。",
+		"utterances": []map[string]any{{
+			"text": "你好。", "definite": true, "start_time": 120, "end_time": 860,
+			"additions": map[string]any{"speaker": "2", "emotion": "happy", "volume": 7.5, "speech_rate": "3.25"},
+			"words":     []map[string]any{{"text": "你好", "start_time": 120, "end_time": 700}},
+		}},
+	}})
+	packet := asrPacket(9, true, payload)
+	packet[2] = 0x10
+	result, err := parseASR(packet)
+	if err != nil || len(result.Utterances) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	utterance := result.Utterances[0]
+	if utterance.StartMilliseconds != 120 || utterance.EndMilliseconds != 860 || utterance.Speaker != "2" ||
+		utterance.AcousticEmotion != "happy" || utterance.Volume == nil || *utterance.Volume != 7.5 || utterance.SpeechRate == nil || *utterance.SpeechRate != 3.25 || len(utterance.Words) != 1 {
+		t.Fatalf("provider evidence was dropped: %+v", utterance)
+	}
+}
+
+func TestRewriteInputIsIncrementalAndBounded(t *testing.T) {
+	old := uuid.NewString()
+	active := uuid.NewString()
+	source := uuid.NewString()
+	snapshot := Snapshot{
+		Revision:   9,
+		Blocks:     []Block{{ID: old, Text: "HEAD_SENTINEL" + strings.Repeat("旧正文", 3000)}, {ID: active, Text: "最后一段"}},
+		Transcript: strings.Repeat("FULL_TRANSCRIPT_SENTINEL", 500),
+		PendingUtterances: []SourceUtterance{{ID: source, Text: "这是本轮新口述。", Speaker: "segment:1", Person: "小林",
+			StartMilliseconds: 120, EndMilliseconds: 860, AcousticEmotion: "happy", Volume: 7.5, SpeechRate: 3.25}},
+	}
+	raw, err := rewriteModelInput(snapshot, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "FULL_TRANSCRIPT_SENTINEL") || strings.Contains(text, "HEAD_SENTINEL") ||
+		!strings.Contains(text, "这是本轮新口述") || !strings.Contains(text, "小林") ||
+		!strings.Contains(text, `"acousticEmotion":"happy"`) || !strings.Contains(text, `"startMilliseconds":120`) || len(raw) > 20_000 {
+		t.Fatalf("rewrite input is not bounded incremental context: bytes=%d body=%s", len(raw), text)
+	}
+}
+
+func TestRevisionAcceptsOnlyAcousticallyGroundedIncrementalEmotion(t *testing.T) {
+	block := uuid.NewString()
+	source := uuid.NewString()
+	snapshot := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "原文"}}, PendingUtterances: []SourceUtterance{{
+		ID: source, Text: "走到桥边时，我有一点害怕。", StartMilliseconds: 0, EndMilliseconds: 2_000, AcousticEmotion: "fearful",
+	}}}
+	revision := Revision{
+		BaseRevision: 2, TranscriptRevision: 3,
+		BlockEdits:        []BlockEdit{{Kind: "replace", ID: block, Text: "走到桥边时，我有一点害怕。", Style: "body"}},
+		Passages:          []Passage{{BlockID: block, SourceIDs: []string{source}}},
+		ConsumedSourceIDs: []string{source}, Questions: []string{},
+		Emotions:       []Emotion{{BlockID: block, AnchorText: "有一点害怕", SourceID: source, Kind: "nervous"}},
+		OverallEmotion: "worried",
+	}
+	if err := revision.Validate(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	withoutEvidence := snapshot
+	withoutEvidence.PendingUtterances[0].AcousticEmotion = ""
+	if revision.Validate(withoutEvidence) == nil {
+		t.Fatal("accepted an emotion inferred without acoustic evidence")
+	}
+	duplicateAnchor := revision
+	duplicateAnchor.BlockEdits[0].Text = "害怕，仍然害怕。"
+	duplicateAnchor.Emotions[0].AnchorText = "害怕"
+	if duplicateAnchor.Validate(snapshot) == nil {
+		t.Fatal("accepted an ambiguous emotion anchor")
+	}
+}
+func TestRevisionRejectsUnknownBlocksAndManualEdits(t *testing.T) {
 	block, inserted := uuid.NewString(), uuid.NewString()
-	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文"}}, EditedBlockIDs: []string{block}}
+	s := Snapshot{Revision: 4, Blocks: []Block{{block, "原文", ""}}, EditedBlockIDs: []string{block}}
 	r := Revision{BaseRevision: 3}
 	if !errors.Is(r.Validate(s), ErrConflict) {
 		t.Fatal("accepted stale revision")
 	}
 	r.BaseRevision = 4
-	r.Patches = []Patch{{ID: block, Text: "依据后续口述局部纠正"}}
-	if err := r.Validate(s); err != nil {
-		t.Fatal("manual editing must not permanently lock a paragraph", err)
-	}
-	s.MediaOnlyBlockIDs = []string{block}
+	r.BlockEdits = []BlockEdit{{Kind: "replace", ID: block, Text: "错误覆盖", Style: "body"}}
 	if r.Validate(s) == nil {
-		t.Fatal("overwrote media-only composition")
+		t.Fatal("overwrote manual edit")
 	}
-	s.MediaOnlyBlockIDs = nil
-	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: uuid.NewString()}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: inserted, Text: "新增", AfterID: uuid.NewString(), Style: "body"}}
 	if r.Validate(s) == nil {
 		t.Fatal("unknown anchor")
 	}
-	r.Patches = []Patch{{ID: "not-a-uuid", Text: "新增", AfterID: block}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: "not-a-uuid", Text: "新增", AfterID: block, Style: "body"}}
 	if r.Validate(s) == nil {
 		t.Fatal("accepted an ID the iOS client cannot apply")
 	}
-	r.Patches = []Patch{{ID: inserted, Text: "新增", AfterID: block}}
+	source := uuid.NewString()
+	s.PendingUtterances = []SourceUtterance{{ID: source, Text: "新增"}}
+	r.BlockEdits = []BlockEdit{{Kind: "insert", ID: inserted, Text: "新增", AfterID: block, Style: "body"}}
+	r.Passages = []Passage{{BlockID: inserted, SourceIDs: []string{source}}}
+	r.ConsumedSourceIDs = []string{source}
 	if err := r.Validate(s); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestSnapshotRejectsUnknownMediaAndManualReferences(t *testing.T) {
-	for _, media := range []bool{false, true} {
-		s := Snapshot{Blocks: []Block{{uuid.NewString(), "正文"}}}
-		if media {
-			s.MediaOnlyBlockIDs = []string{uuid.NewString()}
-		} else {
-			s.EditedBlockIDs = []string{uuid.NewString()}
-		}
-		if s.Validate() == nil {
-			t.Fatal("accepted metadata referring to an absent block")
-		}
+func TestRevisionUsesLaterEvidenceForTargetedPronounCorrection(t *testing.T) {
+	oldSource, newSource := uuid.NewString(), uuid.NewString()
+	oldBlock, activeBlock := uuid.NewString(), uuid.NewString()
+	entityID, mentionID := uuid.NewString(), uuid.NewString()
+	snapshot := Snapshot{
+		Revision:       3,
+		Blocks:         []Block{{ID: oldBlock, Text: "今天在公园遇见他了。", Style: "body"}, {ID: activeBlock, Text: "后来才想起来。", Style: "body"}},
+		ActiveBlockIDs: []string{activeBlock}, KnownSourceIDs: []string{oldSource},
+		PendingUtterances: []SourceUtterance{{ID: newSource, Text: "我说的是那只小狗，还给它喂了水。"}},
+		SemanticState: SemanticState{
+			Entities:           []Entity{{ID: entityID, Kind: "unknown", Name: "公园遇见的对象", Reference: "unknown", EvidenceSourceIDs: []string{oldSource}}},
+			UnresolvedMentions: []Mention{{ID: mentionID, BlockID: oldBlock, Text: "他", EntityID: entityID, SourceIDs: []string{oldSource}}},
+		},
+	}
+	if err := snapshot.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := rewriteModelInput(snapshot, 4)
+	if err != nil || !strings.Contains(string(raw), "今天在公园遇见他了") || !strings.Contains(string(raw), mentionID) {
+		t.Fatalf("unresolved mention context was not selected: %v %s", err, raw)
+	}
+	revision := Revision{
+		BaseRevision: 3, TranscriptRevision: 4,
+		Corrections:       []TextCorrection{{BlockID: oldBlock, MentionID: mentionID, ExpectedText: "他", Replacement: "它", EvidenceSourceIDs: []string{newSource}}},
+		ConsumedSourceIDs: []string{newSource},
+		SemanticState: SemanticState{Entities: []Entity{{
+			ID: entityID, Kind: "animal", Name: "小狗", Reference: "it",
+			Aliases: []string{"公园遇见的对象"}, EvidenceSourceIDs: []string{oldSource, newSource},
+		}}},
+	}
+	if err := revision.Validate(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	withoutEvidence := revision
+	withoutEvidence.Corrections[0].EvidenceSourceIDs = nil
+	if withoutEvidence.Validate(snapshot) == nil {
+		t.Fatal("accepted a correction without new evidence")
+	}
+	stillUnresolved := revision
+	stillUnresolved.SemanticState.UnresolvedMentions = snapshot.SemanticState.UnresolvedMentions
+	if stillUnresolved.Validate(snapshot) == nil {
+		t.Fatal("accepted a corrected mention that remained unresolved")
 	}
 }
 
-func TestSnapshotRejectsInvalidManualEditHints(t *testing.T) {
-	id := uuid.NewString()
-	for _, edits := range [][]ManualEdit{
-		{{BlockID: uuid.NewString(), Before: "甲", After: "乙"}},
-		{{BlockID: id, Before: "甲", After: "甲"}},
-		{{BlockID: id, Before: strings.Repeat("字", 4097), After: "乙"}},
-		{{BlockID: id, Before: "甲", After: "乙", TranscriptOffset: -1}},
-		{{BlockID: id, Before: "甲", After: "乙", TranscriptOffset: 1}},
-	} {
-		if (Snapshot{Blocks: []Block{{id, "当前正文"}}, ManualEdits: edits}).Validate() == nil {
-			t.Fatal("accepted invalid or unbounded manual-edit context")
-		}
+func TestRevisionBuildsExplicitOrderedStructureWithSourceProvenance(t *testing.T) {
+	heading, first, second, third := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	sources := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	snapshot := Snapshot{
+		Revision: 1, Blocks: []Block{{ID: heading, Text: "待整理", Style: "body"}}, ActiveBlockIDs: []string{heading},
+		PendingUtterances: []SourceUtterance{
+			{ID: sources[0], Text: "第一，要把材料准备好。"},
+			{ID: sources[1], Text: "第二，明天确认时间。"},
+			{ID: sources[2], Text: "第三，出门前再检查一遍。"},
+		},
 	}
-}
-func TestEditorialTranscriptPreservesUnicodeAndManualEditOrder(t *testing.T) {
-	old, later := "旧纠正👩🏽‍🦱。", "后来再次纠正。"
-	boundary := len([]rune(old))
-	snapshot := Snapshot{Transcript: old + later, ManualEdits: []ManualEdit{{TranscriptOffset: boundary}, {TranscriptOffset: 0}, {TranscriptOffset: boundary}, {TranscriptOffset: len([]rune(old + later))}}}
-	raw, err := json.Marshal(editorialDocument(snapshot))
-	if err != nil {
+	revision := Revision{
+		BaseRevision: 1, TranscriptRevision: 2,
+		BlockEdits: []BlockEdit{
+			{Kind: "replace", ID: heading, Text: "接下来要做的三件事", Style: "heading2"},
+			{Kind: "insert", ID: first, AfterID: heading, Text: "把材料准备好。", Style: "orderedListItem"},
+			{Kind: "insert", ID: second, AfterID: first, Text: "明天确认时间。", Style: "orderedListItem"},
+			{Kind: "insert", ID: third, AfterID: second, Text: "出门前再检查一遍。", Style: "orderedListItem"},
+		},
+		Passages: []Passage{
+			{BlockID: heading, SourceIDs: sources},
+			{BlockID: first, SourceIDs: []string{sources[0]}},
+			{BlockID: second, SourceIDs: []string{sources[1]}},
+			{BlockID: third, SourceIDs: []string{sources[2]}},
+		},
+		ConsumedSourceIDs: sources,
+		SemanticState: SemanticState{Outline: []OutlineElement{
+			{ID: uuid.NewString(), Role: "topic", Title: "接下来要做的三件事", BlockIDs: []string{heading}, SourceIDs: sources},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{first}, SourceIDs: []string{sources[0]}},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{second}, SourceIDs: []string{sources[1]}},
+			{ID: uuid.NewString(), Role: "point", BlockIDs: []string{third}, SourceIDs: []string{sources[2]}},
+		}},
+	}
+	if err := revision.Validate(snapshot); err != nil {
 		t.Fatal(err)
-	}
-	var document rewriteDocument
-	if err = json.Unmarshal(raw, &document); err != nil {
-		t.Fatal(err)
-	}
-	if len(document.Transcript) != 2 || document.Transcript[0].Text != old || document.Transcript[1].Text != later || document.Transcript[1].Start != boundary {
-		t.Fatalf("lost speech order: %s", raw)
-	}
-	if len(document.ManualEdits) != 4 || !document.ManualEdits[0].HasLaterSpeech || document.ManualEdits[3].HasLaterSpeech {
-		t.Fatal("lost explicit before/after edit relationship")
-	}
-	if strings.Count(string(raw), old) != 1 || strings.Count(string(raw), later) != 1 {
-		t.Fatal("transcript was duplicated for each manual edit")
 	}
 }
 

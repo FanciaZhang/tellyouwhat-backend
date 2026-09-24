@@ -73,7 +73,7 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 			}
 			defer ws.Close()
 			_ = ws.SetDeadline(time.Now().Add(75 * time.Second))
-			snapshot := Snapshot{WritingStyle: style, Blocks: []Block{{uuid.NewString(), "早上八点，我出门上班。"}, {uuid.NewString(), "晚上八点，我回到家。"}},
+			snapshot := Snapshot{WritingStyle: style, Blocks: []Block{{ID: uuid.NewString(), Text: "早上八点，我出门上班。"}, {ID: uuid.NewString(), Text: "晚上八点，我回到家。"}},
 				Transcript: "补充一下，下午三点我去河边走了走，买了杯热茶，坐了一会儿，心情轻松了些。对了，中午十二点还在公司附近吃了面。不是牛肉面，是番茄鸡蛋面。"}
 			snapshot.EditedBlockIDs = []string{snapshot.Blocks[0].ID, snapshot.Blocks[1].ID}
 			send := func(frame Frame) {
@@ -115,7 +115,7 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 					} else {
 						for i := range snapshot.Blocks {
 							if snapshot.Blocks[i].ID == patch.AfterID {
-								snapshot.Blocks = append(snapshot.Blocks[:i+1], append([]Block{{patch.ID, patch.Text}}, snapshot.Blocks[i+1:]...)...)
+								snapshot.Blocks = append(snapshot.Blocks[:i+1], append([]Block{{ID: patch.ID, Text: patch.Text}}, snapshot.Blocks[i+1:]...)...)
 								break
 							}
 						}

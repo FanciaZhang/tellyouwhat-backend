@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"log/slog"
 	"net/http"
@@ -244,8 +245,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var generation, tr, lastSubmitted int
 	var dirty, running, finishing, failed bool
 	awaitingRevision := -1
-	var acknowledgedSource, awaitingSource string
-	var awaitingPatches []Patch
+	var awaitingSources []string
 	var segmentPeriod string
 	var remaining int
 	rewriteTimer := time.NewTimer(time.Hour)
@@ -258,14 +258,14 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	}
 	maxEnd := minTime(time.Now().Add(31*time.Minute), claim.Identity.ExpiresAt)
 	launch := func() {
-		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 {
+		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 || len(snapshot.PendingUtterances) == 0 {
 			return
 		}
 		current := snapshot
 		current.Transcript = transcriptBase + segmentText
-		current.rewriteAcknowledged = acknowledgedSource
-		if err := current.Validate(); err != nil {
-			failWithCause("voice_context_too_large", "validate_rewrite_context", err)
+		current.PendingUtterances = pendingRewriteBatch(current.PendingUtterances)
+		if current.Validate() != nil {
+			fail("voice_context_too_large")
 			failed = true
 			cancel()
 			return
@@ -325,7 +325,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	// Interim ASR is revisable source text, not a committed receipt. Coalesce
 	// updates and keep one model call in flight; finalization bypasses pacing.
 	schedule := func(immediate bool) {
-		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 {
+		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 || len(snapshot.PendingUtterances) == 0 {
 			return
 		}
 		due := time.Now()
@@ -379,7 +379,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					return
 				}
 				next := *f.Snapshot
-				styleChanged := hasSnapshot && next.WritingStyle != snapshot.WritingStyle
+				hadSnapshot := hasSnapshot
 				// A document ACK may have been sent before the latest receipt
 				// reached the client. It cannot roll back server-confirmed speech.
 				// Only the initial snapshot seeds prior-session transcript text.
@@ -389,26 +389,33 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				hasSnapshot = true
 				// Local typing can produce the expected ACK revision without
 				// applying our patch. Version equality alone is not an ACK.
-				wasAcknowledgement := f.Snapshot.Revision == awaitingRevision && acceptsEditorialPatches(next.Blocks, awaitingPatches)
+				wasAcknowledgement := acknowledgesIncrementalSources(next, awaitingRevision, awaitingSources)
 				if wasAcknowledgement {
-					acknowledgedSource = awaitingSource
-				}
-				if styleChanged {
-					acknowledgedSource = ""
-				}
-				if awaitingRevision >= 0 && next.Revision >= awaitingRevision {
 					awaitingRevision = -1
+					next.PendingUtterances = mergePendingUtterances(
+						removePendingUtterances(snapshot.PendingUtterances, awaitingSources),
+						removePendingUtterances(next.PendingUtterances, awaitingSources),
+					)
+					awaitingSources = nil
+				} else if hadSnapshot {
+					// A snapshot sent before the latest receipt cannot erase source
+					// utterances that the server has already committed.
+					next.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, next.PendingUtterances)
+					if awaitingRevision >= 0 && next.Revision >= awaitingRevision {
+						awaitingRevision = -1
+						awaitingSources = nil
+						dirty = true
+					}
 				}
-				if (styleChanged && transcriptBase+segmentText != "") || next.Transcript != transcriptBase || (!wasAcknowledgement && f.Snapshot.Revision != snapshot.Revision) {
-					dirty = true
-				}
-				if len(snapshot.Blocks) == 0 && next.Transcript != "" {
+				if len(next.PendingUtterances) > 0 && (!hadSnapshot || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances)) {
 					dirty = true
 				}
 				// Repeated receipt acknowledgements do not invalidate a model
 				// call that already uses the same base. Real edits still do.
-				if snapshot.WritingStyle != next.WritingStyle || snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
-					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) || !slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !slices.Equal(snapshot.ManualEdits, next.ManualEdits) || !slices.Equal(snapshot.Words, next.Words) {
+				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
+					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) ||
+					!slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances) ||
+					!slices.Equal(snapshot.Words, next.Words) || snapshot.WritingStyle != next.WritingStyle {
 					generation++
 				}
 				snapshot = next
@@ -502,12 +509,16 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 							fail("voice_revision_conflict")
 							return
 						}
+						if len(duplicate.Utterances) == 0 && duplicate.Text != "" {
+							duplicate.Utterances = identifiedUtterances(duplicate.SegmentID, duplicate.Text, nil, duplicate.Milliseconds)
+						}
 						if !committedSegments[segment] {
 							committedSegments[segment] = true
 							transcriptBase += duplicate.Text
 							snapshot.Transcript = transcriptBase
+							snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(duplicate.SegmentID, duplicate.Utterances))
 							tr++
-							dirty = true
+							dirty = len(snapshot.PendingUtterances) > 0
 						}
 						emit(Event{Type: "receipt", Receipt: duplicate, RemainingMilliseconds: remaining})
 						segment = ""
@@ -543,18 +554,19 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				return
 			}
 			v := result.value
-			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)})
+			wireUtterances := identifiedUtterances(segment, v.Text, incrementalUtterances(v.Utterances, (len(pcm)+31)/32), (len(pcm)+31)/32)
+			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: wireUtterances})
 			if v.Text != segmentText {
 				segmentText = v.Text
 				tr++
-				dirty = true
 			}
 			if v.Final {
 				if !inputFinal || len(pcm) == 0 {
 					fail("voice_invalid_request")
 					return
 				}
-				receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: v.Text, Milliseconds: (len(pcm) + 31) / 32, Utterances: boundedStreamUtterances(v.Utterances, (len(pcm)+31)/32)}
+				receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: v.Text,
+					Milliseconds: (len(pcm) + 31) / 32, Utterances: wireUtterances}
 				var err error
 				remaining, err = s.Store.Commit(ctx, claim.Identity.Owner, claim.SessionID, segmentPeriod, fence, receipt, s.limit())
 				if err != nil {
@@ -569,13 +581,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				transcriptBase += v.Text
 				segmentText = ""
 				snapshot.Transcript = transcriptBase
+				snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(segment, wireUtterances))
+				dirty = len(snapshot.PendingUtterances) > 0
 				emit(Event{Type: "receipt", Receipt: &receipt, RemainingMilliseconds: remaining})
 				asr.Close()
 				asr = nil
 				segment = ""
 				pcm = nil
 				if finishing {
-					dirty = dirty || lastSubmitted != tr
+					dirty = dirty || (lastSubmitted != tr && len(snapshot.PendingUtterances) > 0)
 					launch()
 					if !failed && !running && awaitingRevision < 0 {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
@@ -584,8 +598,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					}
 				}
 			}
-			if !finishing && (v.Stable != "" || utf8.RuneCountInString(transcriptBase+segmentText) >= 8) {
-				schedule(v.Final)
+			if !finishing && v.Final {
+				// The client can attach a live person assignment in the receipt ACK
+				// before this short coalescing window closes.
+				schedule(false)
 			}
 		case result := <-rewrites:
 			running = false
@@ -632,13 +648,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
 					awaitingRevision = result.value.Revision.BaseRevision + 1
-					awaitingSource = result.source
-					// An unresolved question is not completed editorial work.
-					// Keep full source available until a later review resolves it.
-					if len(result.value.Revision.Questions) > 0 {
-						awaitingSource = ""
-					}
-					awaitingPatches = slices.Clone(result.value.Revision.Patches)
+					awaitingSources = append([]string(nil), result.value.Revision.ConsumedSourceIDs...)
 					emit(Event{Type: "revision", Revision: &result.value.Revision})
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.
@@ -669,4 +679,137 @@ func minTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+func acknowledgesIncrementalSources(next Snapshot, revision int, sources []string) bool {
+	if revision < 0 || next.Revision < revision || len(sources) == 0 {
+		return false
+	}
+	for _, source := range sources {
+		if !slices.Contains(next.KnownSourceIDs, source) {
+			return false
+		}
+		for _, pending := range next.PendingUtterances {
+			if pending.ID == source {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func incrementalUtterances(provider []StreamUtterance, milliseconds int) []Utterance {
+	result := make([]Utterance, 0, len(provider))
+	for _, u := range boundedStreamUtterances(provider, milliseconds) {
+		missing := u.ProviderStartUnavailable
+		value := Utterance{Text: u.Text, StartMilliseconds: u.StartMilliseconds, EndMilliseconds: u.EndMilliseconds,
+			ProviderEndMilliseconds: u.ProviderEndMilliseconds, ProviderStartUnavailable: &missing,
+			Definite: u.Definite, Speaker: u.Speaker, AcousticEmotion: u.AcousticEmotion}
+		if u.Volume != nil {
+			value.Volume = *u.Volume
+		}
+		if u.SpeechRate != nil {
+			value.SpeechRate = *u.SpeechRate
+		}
+		for _, w := range u.Words {
+			value.Words = append(value.Words, Word{Text: w.Text, StartMilliseconds: w.StartMilliseconds, EndMilliseconds: w.EndMilliseconds})
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func identifiedUtterances(segment, text string, provider []Utterance, milliseconds int) []Utterance {
+	joined := ""
+	for _, utterance := range provider {
+		joined += utterance.Text
+	}
+	pieces := provider
+	if text != joined {
+		pieces = nil
+		if joined != "" && strings.HasSuffix(text, joined) && len(provider) > 0 && provider[0].StartMilliseconds > 0 {
+			prefixEnd := min(milliseconds, provider[0].StartMilliseconds)
+			pieces = append(pieces, Utterance{Text: strings.TrimSuffix(text, joined), StartMilliseconds: 0, EndMilliseconds: prefixEnd, Definite: true})
+			pieces = append(pieces, provider...)
+		} else if text != "" {
+			pieces = []Utterance{{Text: text, StartMilliseconds: 0, EndMilliseconds: max(0, milliseconds), Definite: true}}
+		}
+	}
+	result := make([]Utterance, 0, len(pieces))
+	for index, utterance := range pieces {
+		if strings.TrimSpace(utterance.Text) == "" {
+			continue
+		}
+		utterance.StartMilliseconds = min(max(0, utterance.StartMilliseconds), max(0, milliseconds))
+		utterance.EndMilliseconds = min(max(utterance.StartMilliseconds, utterance.EndMilliseconds), max(0, milliseconds))
+		digest := sha256.Sum256([]byte(segment + "/" + fmt.Sprint(index) + "/" + utterance.Text))
+		id, _ := uuid.FromBytes(digest[:16])
+		utterance.ID = id.String()
+		result = append(result, utterance)
+	}
+	return result
+}
+
+func sourceUtterances(segment string, utterances []Utterance) []SourceUtterance {
+	result := make([]SourceUtterance, 0, len(utterances))
+	for _, utterance := range utterances {
+		speaker := ""
+		if utterance.Speaker != "" {
+			speaker = segment + ":" + utterance.Speaker
+		}
+		result = append(result, SourceUtterance{
+			ID: utterance.ID, Text: utterance.Text, Speaker: speaker,
+			StartMilliseconds: utterance.StartMilliseconds,
+			EndMilliseconds:   utterance.EndMilliseconds,
+			AcousticEmotion:   utterance.AcousticEmotion,
+			Volume:            utterance.Volume,
+			SpeechRate:        utterance.SpeechRate,
+		})
+	}
+	return result
+}
+
+func mergePendingUtterances(base, updates []SourceUtterance) []SourceUtterance {
+	result := append([]SourceUtterance(nil), base...)
+	indices := map[string]int{}
+	for index, utterance := range result {
+		indices[utterance.ID] = index
+	}
+	for _, utterance := range updates {
+		if index, exists := indices[utterance.ID]; exists {
+			result[index] = utterance
+		} else {
+			indices[utterance.ID] = len(result)
+			result = append(result, utterance)
+		}
+	}
+	return result
+}
+
+func removePendingUtterances(source []SourceUtterance, removed []string) []SourceUtterance {
+	ids := map[string]bool{}
+	for _, id := range removed {
+		ids[id] = true
+	}
+	result := make([]SourceUtterance, 0, len(source))
+	for _, utterance := range source {
+		if !ids[utterance.ID] {
+			result = append(result, utterance)
+		}
+	}
+	return result
+}
+
+func pendingRewriteBatch(source []SourceUtterance) []SourceUtterance {
+	result := make([]SourceUtterance, 0, len(source))
+	characters := 0
+	for _, utterance := range source {
+		length := len([]rune(utterance.Text))
+		if len(result) > 0 && characters+length > MaxRewriteSourceCharacters {
+			break
+		}
+		result = append(result, utterance)
+		characters += length
+	}
+	return result
 }

@@ -48,7 +48,7 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "ready" {
 		t.Fatalf("ready=%+v err=%v", event, err)
 	}
-	snapshot := Snapshot{Revision: 4, Blocks: []Block{{ID: uuid.NewString(), Text: privateBody}}, Transcript: privateTranscript}
+	snapshot := Snapshot{Revision: 4, Blocks: []Block{{ID: uuid.NewString(), Text: privateBody}}, Transcript: privateTranscript, PendingUtterances: []SourceUtterance{{ID: uuid.NewString(), Text: privateTranscript}}}
 	if err = websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}); err != nil {
 		t.Fatal(err)
 	}

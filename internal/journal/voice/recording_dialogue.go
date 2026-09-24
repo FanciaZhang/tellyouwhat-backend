@@ -77,7 +77,7 @@ func ValidateRecordingDialogueRevision(s Snapshot, r Revision) error {
 			if patch.AfterID != "" && block.ID == patch.AfterID {
 				blocks = append(blocks, Block{})
 				copy(blocks[i+2:], blocks[i+1:])
-				blocks[i+1] = Block{patch.ID, patch.Text}
+				blocks[i+1] = Block{ID: patch.ID, Text: patch.Text}
 				break
 			}
 		}

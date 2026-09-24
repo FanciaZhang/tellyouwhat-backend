@@ -255,11 +255,12 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 				segmentBytes = 0
 				segment = uuid.NewString()
 			case "revision":
-				for _, p := range e.Revision.Patches {
+				for _, p := range e.Revision.BlockEdits {
 					found := false
 					for i := range snapshot.Blocks {
 						if snapshot.Blocks[i].ID == p.ID {
 							snapshot.Blocks[i].Text = p.Text
+							snapshot.Blocks[i].Style = p.Style
 							found = true
 							break
 						}
@@ -274,9 +275,10 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 						}
 						snapshot.Blocks = append(snapshot.Blocks, Block{})
 						copy(snapshot.Blocks[at+1:], snapshot.Blocks[at:])
-						snapshot.Blocks[at] = Block{ID: p.ID, Text: p.Text}
+						snapshot.Blocks[at] = Block{ID: p.ID, Text: p.Text, Style: p.Style}
 					}
 				}
+				snapshot.SemanticState = e.Revision.SemanticState
 				snapshot.Revision++
 				send(Frame{Type: "snapshot", Snapshot: &snapshot})
 				revisions++

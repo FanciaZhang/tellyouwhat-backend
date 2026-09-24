@@ -55,7 +55,7 @@ func TestLiveManualEditIntent(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			id := uuid.NewString()
-			snapshot := Snapshot{Revision: 2, Blocks: []Block{{id, tc.current}}, Transcript: tc.transcript, EditedBlockIDs: []string{id}, ManualEdits: []ManualEdit{{BlockID: id, Before: tc.before, After: tc.after, ContextBefore: tc.contextBefore, ContextAfter: tc.contextAfter}}}
+			snapshot := Snapshot{Revision: 2, Blocks: []Block{{ID: id, Text: tc.current}}, Transcript: tc.transcript, EditedBlockIDs: []string{id}, ManualEdits: []ManualEdit{{BlockID: id, Before: tc.before, After: tc.after, ContextBefore: tc.contextBefore, ContextAfter: tc.contextAfter}}}
 			if strings.HasPrefix(tc.name, "pending_") {
 				snapshot.ManualEdits[0].PendingEarlierSpeech = true
 			}

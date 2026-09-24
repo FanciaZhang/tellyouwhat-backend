@@ -16,7 +16,7 @@ import (
 func longEditorialFixture() Snapshot {
 	block := uuid.NewString()
 	old := strings.Repeat("过去的口述。", 600)
-	return Snapshot{Revision: 7, Blocks: []Block{{block, strings.Repeat("保留已有文字。", 3000)}}, Transcript: old + "后来回了家。", rewriteAcknowledged: old}
+	return Snapshot{Revision: 7, Blocks: []Block{{ID: block, Text: strings.Repeat("保留已有文字。", 3000)}}, Transcript: old + "后来回了家。", rewriteAcknowledged: old}
 }
 
 func TestEditorialWindowKeepsPendingSpeechAndAbsoluteEditTiming(t *testing.T) {
@@ -95,7 +95,7 @@ func TestEditorialWindowRetrievesOlderCorrectionTarget(t *testing.T) {
 		if i == 7 {
 			text = "那天的紫藤花架在北门。" + text
 		}
-		s.Blocks = append(s.Blocks, Block{uuid.NewString(), text})
+		s.Blocks = append(s.Blocks, Block{ID: uuid.NewString(), Text: text})
 	}
 	s.Transcript = s.rewriteAcknowledged + "补充一下，紫藤花架是在南门，不是北门。"
 	d := editorialDocument(s)
@@ -116,7 +116,7 @@ func TestEditorialWindowNeverTrustsClientCheckpoint(t *testing.T) {
 	if s.rewriteAcknowledged != "" || incrementalTranscriptStart(s) != 0 {
 		t.Fatal("client can forge processed speech")
 	}
-	b := Block{uuid.NewString(), "用户在等待时修改了"}
+	b := Block{ID: uuid.NewString(), Text: "用户在等待时修改了"}
 	if acceptsEditorialPatches([]Block{b}, []Patch{{ID: b.ID, Text: "迟到结果"}}) {
 		t.Fatal("unapplied patch advanced boundary")
 	}
@@ -139,7 +139,7 @@ func TestCompletedRecordingAlwaysRetainsWholeSource(t *testing.T) {
 
 func TestRecordingEditorialDoesNotRepeatAnonymousTranscript(t *testing.T) {
 	r := recordingContextFixture(t)
-	s := Snapshot{Revision: 1, Blocks: []Block{{uuid.NewString(), "可恢复草稿"}}, Transcript: r.Analysis.Text, RecordingContext: &r}
+	s := Snapshot{Revision: 1, Blocks: []Block{{ID: uuid.NewString(), Text: "可恢复草稿"}}, Transcript: r.Analysis.Text, RecordingContext: &r}
 	d := editorialDocument(s)
 	if len(d.Transcript) != 0 || len(d.RecordingContext.Utterances) != len(r.Analysis.Utterances) {
 		t.Fatal("dropped source or repeated an anonymous transcript")
@@ -173,13 +173,15 @@ func (m checkpointRewriter) Rewrite(_ context.Context, s Snapshot, tr int) (Rewr
 	if m.unresolved {
 		questions = []string{"前面的发言是谁说的？"}
 	}
-	return RewriteResult{Revision: Revision{BaseRevision: s.Revision, TranscriptRevision: tr, Patches: []Patch{{ID: s.Blocks[0].ID, Text: s.Blocks[0].Text + "整理。"}}, Questions: questions}}, nil
+	revision := scriptedRevision(s, tr)
+	revision.Questions = questions
+	return RewriteResult{Revision: revision}, nil
 }
 func TestSocketAdvancesWindowOnlyAfterAppliedRevision(t *testing.T) {
 	for _, tc := range []struct{ accept, unresolved bool }{{false, false}, {true, false}, {true, true}} {
 		accept := tc.accept
 		t.Run(strconv.FormatBool(accept)+"/question="+strconv.FormatBool(tc.unresolved), func(t *testing.T) {
-			conn := &scriptedConnection{make(chan Transcript, 4), make(chan struct{})}
+			conn := &scriptedConnection{result: make(chan Transcript, 4), closed: make(chan struct{})}
 			calls := make(chan Snapshot, 4)
 			service := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: checkpointRewriter{calls, tc.unresolved}, Secret: make([]byte, 32)}
 			session := uuid.NewString()
@@ -205,32 +207,41 @@ func TestSocketAdvancesWindowOnlyAfterAppliedRevision(t *testing.T) {
 				}
 			}
 			receive("ready")
-			s := longEditorialFixture()
-			s.rewriteAcknowledged = ""
+			sourceID := uuid.NewString()
+			s := Snapshot{Blocks: []Block{{ID: uuid.NewString(), Text: "已有正文。"}}, PendingUtterances: []SourceUtterance{{ID: sourceID, Text: "第一次口述。"}}}
 			websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &s})
 			receive("revision")
 			first := <-calls
-			if first.rewriteAcknowledged != "" {
-				t.Fatal("first source already acknowledged")
+			if len(first.PendingUtterances) != 1 || first.PendingUtterances[0].ID != sourceID {
+				t.Fatal("initial source missing")
 			}
 			if accept {
-				s.Blocks[0].Text = event.Revision.Patches[0].Text
+				s.Blocks[0].Text = event.Revision.BlockEdits[0].Text
+				acknowledgeTestRevision(&s, event.Revision)
+				s.PendingUtterances = append(s.PendingUtterances, SourceUtterance{ID: uuid.NewString(), Text: "补充的新内容。"})
 			} else {
 				s.Blocks[0].Text = "用户另改的正文。"
 			}
 			s.Revision++
 			websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &s})
-			websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400)})
-			conn.result <- Transcript{Text: "补充了新的内容。", Stable: "补充了新的内容。"}
-			receive("transcript")
 			receive("revision")
 			second := <-calls
-			if accept && !tc.unresolved && (second.rewriteAcknowledged != s.Transcript || incrementalTranscriptStart(second) == 0) {
-				t.Fatal("applied result did not advance source")
+			retained := false
+			for _, u := range second.PendingUtterances {
+				if u.ID == sourceID {
+					retained = true
+				}
 			}
-			if (!accept || tc.unresolved) && second.rewriteAcknowledged != "" {
-				t.Fatal("unapplied revision cropped source")
+			if retained == accept {
+				t.Fatal("source consumption did not match explicit acceptance")
 			}
+			if len(second.PendingUtterances) != 1 {
+				t.Fatal("pending sources lost or duplicated")
+			}
+			if tc.unresolved && len(event.Revision.Questions) != 1 {
+				t.Fatal("clarification lost")
+			}
+
 		})
 	}
 }

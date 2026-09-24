@@ -29,12 +29,16 @@ type StreamWord struct {
 	EndMilliseconds   int    `json:"endMilliseconds"`
 }
 type providerStreamUtterance struct {
-	Text      string                     `json:"text"`
-	Definite  bool                       `json:"definite"`
-	Start     json.RawMessage            `json:"start_time"`
-	End       *int                       `json:"end_time"`
-	Additions map[string]json.RawMessage `json:"additions"`
-	Words     []struct {
+	Speaker    json.RawMessage            `json:"speaker"`
+	Emotion    json.RawMessage            `json:"emotion"`
+	Volume     json.RawMessage            `json:"volume"`
+	SpeechRate json.RawMessage            `json:"speech_rate"`
+	Text       string                     `json:"text"`
+	Definite   bool                       `json:"definite"`
+	Start      json.RawMessage            `json:"start_time"`
+	End        *int                       `json:"end_time"`
+	Additions  map[string]json.RawMessage `json:"additions"`
+	Words      []struct {
 		Text  string `json:"text"`
 		Start int    `json:"start_time"`
 		End   int    `json:"end_time"`
@@ -53,10 +57,10 @@ func streamUtterances(source []providerStreamUtterance) []StreamUtterance {
 		}
 		u := StreamUtterance{Text: raw.Text, Definite: raw.Definite, StartMilliseconds: start, EndMilliseconds: *raw.End, ProviderStartUnavailable: unavailable}
 		// Metadata may be absent on provisional results. Never fabricate defaults.
-		u.Speaker = streamString(raw.Additions["speaker_id"], 128)
-		u.AcousticEmotion = streamString(raw.Additions["emotion"], 512)
-		u.Volume = streamNumber(raw.Additions["volume"])
-		u.SpeechRate = streamNumber(raw.Additions["speech_rate"])
+		u.Speaker = firstStreamString(128, raw.Speaker, raw.Additions["speaker_id"], raw.Additions["speaker"])
+		u.AcousticEmotion = firstStreamString(512, raw.Emotion, raw.Additions["emotion"], raw.Additions["acoustic_emotion"])
+		u.Volume = firstStreamNumber(raw.Volume, raw.Additions["volume"])
+		u.SpeechRate = firstStreamNumber(raw.SpeechRate, raw.Additions["speech_rate"])
 		if len(raw.Words) <= 2048 {
 			for _, w := range raw.Words {
 				if w.Start >= start && w.End >= w.Start && w.End <= *raw.End && utf8.RuneCountInString(w.Text) <= 128 {
@@ -82,6 +86,24 @@ func streamUtteranceStart(raw json.RawMessage, index int) (start int, unavailabl
 		return 0, false, false
 	}
 	return start, false, true
+}
+
+func firstStreamString(limit int, values ...json.RawMessage) string {
+	for _, raw := range values {
+		if value := streamString(raw, limit); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstStreamNumber(values ...json.RawMessage) *float64 {
+	for _, raw := range values {
+		if value := streamNumber(raw); value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func streamString(raw json.RawMessage, limit int) string {
