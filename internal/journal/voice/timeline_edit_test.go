@@ -3,10 +3,63 @@ package voice
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 )
+
+func TestTimelineEditRevisionAuthorizesSpeechAndRejectsConflicts(t *testing.T) {
+	fixture := func() (Snapshot, Revision) {
+		s, c := timelineEditFixture()
+		s.PendingUtterances = []SourceUtterance{{ID: c.SourceID, Text: c.Instruction}}
+		r := Revision{BaseRevision: s.Revision, TimelineEdits: []TimelineEdit{c}, ConsumedSourceIDs: []string{c.SourceID},
+			SourcePartitions: []SourcePartition{{SourceID: c.SourceID, Segments: []SourceSegment{{
+				Text: c.Instruction, Role: "instruction", BlockIDs: []string{c.BlockID},
+			}}}}}
+		return s, r
+	}
+	s, r := fixture()
+	if err := r.Validate(s); err != nil {
+		t.Fatal("full revision rejected", err)
+	}
+	if err := validateTimelineEdits(r, s); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSourcePartitions(r, s); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(voiceRevisionSchema()["required"].([]string), "timelineEdits") {
+		t.Fatal("missing required wire field")
+	}
+	for name, mutate := range map[string]func(*Revision){
+		"not consumed":           func(r *Revision) { r.ConsumedSourceIDs = nil },
+		"fabricated instruction": func(r *Revision) { r.TimelineEdits[0].Instruction = "没有说过" },
+		"wrong source role":      func(r *Revision) { r.SourcePartitions[0].Segments[0].Role = "content" },
+		"wrong source owner":     func(r *Revision) { r.SourcePartitions[0].Segments[0].BlockIDs = []string{uuid.NewString()} },
+		"missing partition":      func(r *Revision) { r.SourcePartitions = nil },
+		"repeated partition":     func(r *Revision) { r.SourcePartitions = append(r.SourcePartitions, r.SourcePartitions[0]) },
+		"duplicate command":      func(r *Revision) { r.TimelineEdits = append(r.TimelineEdits, r.TimelineEdits[0]) },
+		"duplicate target": func(r *Revision) {
+			c := r.TimelineEdits[0]
+			c.ID = uuid.NewString()
+			r.TimelineEdits = append(r.TimelineEdits, c)
+		},
+		"component identity": func(r *Revision) { r.TimelineEdits[0].ID = r.TimelineEdits[0].TimelineID },
+		"mixed body edit":    func(r *Revision) { r.BlockEdits = []BlockEdit{{ID: r.TimelineEdits[0].BlockID}} },
+		"mixed formatting": func(r *Revision) {
+			r.FormatCommands = []FormatCommand{{ID: uuid.NewString(), BlockID: r.TimelineEdits[0].BlockID}}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := fixture()
+			mutate(&r)
+			if err := validateTimelineEdits(r, s); err == nil {
+				t.Fatal("accepted invalid evidence or conflict")
+			}
+		})
+	}
+}
 
 func timelineEditFixture() (Snapshot, TimelineEdit) {
 	s := timelineContextFixture()

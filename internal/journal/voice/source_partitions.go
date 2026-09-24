@@ -113,6 +113,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.TimelineEdits {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
 		for _, c := range r.TableEdits {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)

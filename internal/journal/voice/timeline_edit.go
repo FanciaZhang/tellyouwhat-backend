@@ -3,6 +3,8 @@ package voice
 import (
 	"reflect"
 	"slices"
+	"strings"
+	"unicode/utf8"
 )
 
 // Nullable fields mean unchanged. A supplied time replaces the whole temporal
@@ -36,6 +38,161 @@ type TimelineEdit struct {
 	Updates         []TimelineEventUpdate `json:"updates"`
 	RemovedEventIDs []string              `json:"removedEventIDs"`
 	EventOrder      []string              `json:"eventOrder"`
+}
+
+func validateTimelineEdits(r Revision, s Snapshot) error {
+	if len(r.TimelineEdits) == 0 {
+		return nil
+	}
+	if len(r.TimelineEdits) > 4 || len(r.MoveCommands)+len(r.MoveResolutions)+len(r.ParagraphCommands)+len(r.ParagraphResolutions) > 0 {
+		return ErrInvalid
+	}
+	used := map[string]bool{}
+	for _, b := range s.Blocks {
+		used[b.ID] = true
+	}
+	for _, ids := range s.BlockComponents {
+		for _, id := range ids {
+			used[id] = true
+		}
+	}
+	for _, t := range s.TimelineContext {
+		used[t.TimelineID] = true
+		for _, e := range t.Events {
+			used[e.ID] = true
+		}
+	}
+	for _, t := range s.TableContext {
+		used[t.TableID] = true
+		for _, c := range t.Columns {
+			used[c.ID] = true
+		}
+		for _, row := range t.Rows {
+			used[row.ID] = true
+		}
+		for _, c := range t.Calculations {
+			used[c.ID] = true
+		}
+	}
+	for _, c := range s.FormatContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.MoveContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.ParagraphContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.TableReceiptContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range r.BlockEdits {
+		used[c.ID] = true
+	}
+	for _, c := range r.FormatCommands {
+		used[c.ID] = true
+	}
+	for _, c := range r.FormatResolutions {
+		used[c.ID] = true
+	}
+	for _, c := range r.TableResolutions {
+		used[c.ID] = true
+	}
+	for _, c := range r.TableCreations {
+		used[c.ID], used[c.BlockID], used[c.TableID] = true, true, true
+		for _, column := range c.Columns {
+			used[column.ID] = true
+		}
+		for _, row := range c.Rows {
+			used[row.ID] = true
+		}
+	}
+	for _, c := range r.TableEdits {
+		used[c.ID] = true
+		for _, p := range c.Patches {
+			if p.Row != nil {
+				used[p.Row.ID] = true
+			}
+			if p.Column != nil {
+				used[p.Column.ID] = true
+			}
+			if p.Calculation != nil {
+				used[p.Calculation.ID] = true
+			}
+		}
+	}
+	for _, c := range r.TimelineCreations {
+		used[c.ID], used[c.BlockID], used[c.TimelineID] = true, true, true
+		for _, e := range c.Events {
+			used[e.ID] = true
+		}
+	}
+	sources, seen := map[string]string{}, map[string]bool{}
+	for _, u := range s.PendingUtterances {
+		if _, duplicate := sources[u.ID]; duplicate {
+			return ErrInvalid
+		}
+		sources[u.ID] = u.Text
+	}
+	for _, c := range r.TimelineEdits {
+		if !validID(c.ID) || used[c.ID] || seen[c.TimelineID] || !slices.Contains(r.ConsumedSourceIDs, c.SourceID) ||
+			strings.TrimSpace(c.Instruction) == "" || utf8.RuneCountInString(c.Instruction) > 500 ||
+			strings.Count(sources[c.SourceID], c.Instruction) != 1 {
+			return ErrInvalid
+		}
+		used[c.ID], seen[c.TimelineID] = true, true
+		for _, edit := range r.BlockEdits {
+			if edit.ID == c.BlockID {
+				return ErrInvalid
+			}
+		}
+		for _, edit := range r.Corrections {
+			if edit.BlockID == c.BlockID {
+				return ErrInvalid
+			}
+		}
+		for _, edit := range r.FormatCommands {
+			if edit.BlockID == c.BlockID {
+				return ErrInvalid
+			}
+		}
+		for _, edit := range r.TableEdits {
+			if edit.BlockID == c.BlockID {
+				return ErrInvalid
+			}
+		}
+		for _, resolution := range r.TableResolutions {
+			for _, context := range s.TableReceiptContext {
+				if resolution.ReceiptID == context.ReceiptID && context.BlockID == c.BlockID {
+					return ErrInvalid
+				}
+			}
+		}
+		matches, authorized := 0, false
+		for _, p := range r.SourcePartitions {
+			if p.SourceID != c.SourceID {
+				continue
+			}
+			matches++
+			var text strings.Builder
+			for _, segment := range p.Segments {
+				text.WriteString(segment.Text)
+				if segment.Role == "instruction" && segment.Text == c.Instruction && slices.Equal(segment.BlockIDs, []string{c.BlockID}) {
+					authorized = true
+				}
+			}
+			if text.String() != sources[c.SourceID] {
+				return ErrInvalid
+			}
+		}
+		if matches != 1 || !authorized {
+			return ErrInvalid
+		}
+		if err := validateTimelineEditResult(c, s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Materialization is side-effect free. Evidence authorization and identity
