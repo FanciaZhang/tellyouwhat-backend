@@ -50,7 +50,7 @@ func run() error {
 	if err != nil || monthlyCNY < 1 || monthlyCNY > 1000 {
 		return errors.New("invalid development monthly budget")
 	}
-	store, err := development.NewFileCostStore(filepath.Join(stateDir, "cost-events.json"))
+	store, err := development.NewFileCostStore(filepath.Join(stateDir, "cost-events.json"), monthlyCNY*costcontrol.NanosPerCNY, time.Now())
 	if err != nil {
 		return err
 	}

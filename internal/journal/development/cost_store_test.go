@@ -3,18 +3,19 @@ package development
 import (
 	"context"
 	"errors"
-	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 )
 
 func TestCostBudgetSurvivesRestartAndResetsByCalendarMonth(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cost.json")
 	now := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
 	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: time.Minute}
-	store, err := NewFileCostStore(path)
+	store, err := NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestCostBudgetSurvivesRestartAndResetsByCalendarMonth(t *testing.T) {
 	if err = lease.Settle(context.Background(), 30, true); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := NewFileCostStore(path)
+	reopened, err := NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +51,12 @@ func TestUnsettledCostRemainsChargedAfterRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cost.json")
 	now := time.Now()
 	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: time.Minute}
-	store, _ := NewFileCostStore(path)
+	store, _ := NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	c, _ := costcontrol.New(store, limits, func() time.Time { return now })
 	if _, err := c.Reserve(context.Background(), "journal-development", "test", "tokens", 80); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewFileCostStore(path)
+	store, err := NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestUnsettledCostRemainsChargedAfterRestart(t *testing.T) {
 	if err = os.WriteFile(path, []byte("corrupt"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = NewFileCostStore(path); err == nil {
+	if _, err = NewFileCostStore(path, limits.MonthlyBudgetNanos, now); err == nil {
 		t.Fatal("corrupt state silently reset")
 	}
 }
@@ -76,7 +77,7 @@ func TestRestartReleasesDeadConcurrencyWithoutRefundingUncertainCost(t *testing.
 	path := filepath.Join(t.TempDir(), "cost.json")
 	now := time.Now()
 	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}
-	store, err := NewFileCostStore(path)
+	store, err := NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestRestartReleasesDeadConcurrencyWithoutRefundingUncertainCost(t *testing.
 		}
 	}
 	// Restart while ASR and the editor both have an outstanding provider call.
-	store, err = NewFileCostStore(path)
+	store, err = NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,12 +101,88 @@ func TestRestartReleasesDeadConcurrencyWithoutRefundingUncertainCost(t *testing.
 		t.Fatal(err)
 	}
 	// The two interrupted requests still conservatively cost 60, across restarts.
-	store, err = NewFileCostStore(path)
+	store, err = NewFileCostStore(path, limits.MonthlyBudgetNanos, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	controller, _ = costcontrol.New(store, limits, func() time.Time { return now })
 	if _, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 41); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
 		t.Fatalf("unknown spending was refunded: %v", err)
+	}
+}
+
+func TestMonthlyBudgetCanOnlyIncreaseWithoutResettingSpend(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cost.json")
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	oldLimits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: time.Minute}
+	store, err := NewFileCostStore(path, oldLimits.MonthlyBudgetNanos, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ := costcontrol.New(store, oldLimits, func() time.Time { return now })
+	lease, err := controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = lease.Settle(context.Background(), 99, true); err != nil {
+		t.Fatal(err)
+	}
+
+	newLimits := oldLimits
+	newLimits.MonthlyBudgetNanos = 200
+	store, err = NewFileCostStore(path, newLimits.MonthlyBudgetNanos, now)
+	if err != nil {
+		t.Fatalf("raise monthly budget: %v", err)
+	}
+	controller, _ = costcontrol.New(store, newLimits, func() time.Time { return now })
+	lease, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 101)
+	if err != nil {
+		t.Fatalf("old spend was reset or raised budget was not applied: %v", err)
+	}
+	if err = lease.Settle(context.Background(), 101, true); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = NewFileCostStore(path, newLimits.MonthlyBudgetNanos, now)
+	if err != nil {
+		t.Fatalf("reopen raised budget: %v", err)
+	}
+	controller, _ = costcontrol.New(store, newLimits, func() time.Time { return now })
+	if _, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 1); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatalf("reopen lost prior spend: %v", err)
+	}
+
+	if _, err = NewFileCostStore(path, oldLimits.MonthlyBudgetNanos, now); !errors.Is(err, costcontrol.ErrConfigurationConflict) {
+		t.Fatalf("monthly budget was allowed to decrease: %v", err)
+	}
+}
+
+func TestNewCalendarMonthUsesNewConfiguredBudget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cost.json")
+	september := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	limits := costcontrol.Limits{MonthlyBudgetNanos: 100, MaxConcurrent: 2, LeaseDuration: time.Minute}
+	store, err := NewFileCostStore(path, limits.MonthlyBudgetNanos, september)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ := costcontrol.New(store, limits, func() time.Time { return september })
+	lease, err := controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = lease.Settle(context.Background(), 100, true); err != nil {
+		t.Fatal(err)
+	}
+
+	october := september.AddDate(0, 1, 0)
+	newLimits := limits
+	newLimits.MonthlyBudgetNanos = 200
+	store, err = NewFileCostStore(path, newLimits.MonthlyBudgetNanos, october)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, _ = costcontrol.New(store, newLimits, func() time.Time { return october })
+	if _, err = controller.Reserve(context.Background(), "journal-development", "voice", "tokens", 200); err != nil {
+		t.Fatalf("new month did not use configured budget: %v", err)
 	}
 }
