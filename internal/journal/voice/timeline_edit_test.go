@@ -1,13 +1,73 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 )
+
+func TestTimelineEditModelResponseContract(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "valid", true: "missing edits"}[missing], func(t *testing.T) {
+			s, c := timelineEditFixture()
+			s.PendingUtterances = []SourceUtterance{{ID: c.SourceID, Text: c.Instruction}}
+			r := Revision{BaseRevision: s.Revision, TranscriptRevision: 1, TimelineEdits: []TimelineEdit{c},
+				ConsumedSourceIDs: []string{c.SourceID}, SourcePartitions: []SourcePartition{{SourceID: c.SourceID,
+					Segments: []SourceSegment{{Text: c.Instruction, Role: "instruction", BlockIDs: []string{c.BlockID}}}}}}
+			data, err := json.Marshal(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
+				fields[key] = []any{}
+			}
+			if missing {
+				delete(fields, "timelineEdits")
+			}
+			body, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requests := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				requests <- struct{}{}
+				if request.URL.Path != "/responses" {
+					t.Error("wrong endpoint")
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "usage": map[string]int{"input_tokens": 20, "output_tokens": 30},
+					"output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(body)}}}}})
+			}))
+			defer server.Close()
+			result, err := (ArkRewriter{BaseURL: server.URL, APIKey: "test", Model: "fixture", HTTP: server.Client()}).Rewrite(context.Background(), s, 1)
+			select {
+			case <-requests:
+			default:
+				t.Fatal("response decoder was not exercised", err)
+			}
+			if missing {
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatal("missing field accepted", err)
+				}
+			} else if err != nil || !reflect.DeepEqual(result.Revision.TimelineEdits, r.TimelineEdits) {
+				t.Fatal("edit response changed", err)
+			}
+			if result.InputTokens != 20 || result.OutputTokens != 30 {
+				t.Fatal("lost metering")
+			}
+		})
+	}
+}
 
 func TestTimelineEditRevisionAuthorizesSpeechAndRejectsConflicts(t *testing.T) {
 	fixture := func() (Snapshot, Revision) {
