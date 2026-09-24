@@ -71,7 +71,6 @@ func validateTimelineContext(s Snapshot) error {
 		}
 		seenTimelines[timeline.TimelineID] = true
 		total += utf8.RuneCountInString(timeline.Title)
-		events := map[string]TimelineEvent{}
 		for _, e := range timeline.Events {
 			if !validID(e.ID) || used[e.ID] || strings.TrimSpace(e.Title) == "" || utf8.RuneCountInString(e.Title) > 300 ||
 				utf8.RuneCountInString(e.Detail) > 6000 || utf8.RuneCountInString(e.TimeExpression) > 300 ||
@@ -106,21 +105,12 @@ func validateTimelineContext(s Snapshot) error {
 				(e.LocationID != nil && (!validID(*e.LocationID) || !components[*e.LocationID])) {
 				return ErrInvalid
 			}
-			events[e.ID] = e
 		}
 		if total > 20000 {
 			return ErrInvalid
 		}
-		for _, e := range timeline.Events {
-			visited := map[string]bool{e.ID: true}
-			for next := e.AfterEventID; next != nil; {
-				prior, exists := events[*next]
-				if !exists || visited[*next] {
-					return ErrInvalid
-				}
-				visited[*next] = true
-				next = prior.AfterEventID
-			}
+		if !validTimelineOrder(timeline.Events) {
+			return ErrInvalid
 		}
 	}
 	return nil

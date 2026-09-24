@@ -190,7 +190,6 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 		if !claim(c.ID) || !claim(c.BlockID) || !claim(c.TimelineID) || (c.AfterID != nil && !blocks[*c.AfterID]) || strings.TrimSpace(c.Title) == "" || utf8.RuneCountInString(c.Title) > 300 || utf8.RuneCountInString(c.Instruction) > 500 || len(c.Events) == 0 || len(c.Events) > 64 || !linked(TableSource{SourceID: c.SourceID, Anchor: TextAnchor{Quote: c.Instruction}}, c.BlockID, "instruction") {
 			return ErrInvalid
 		}
-		events := map[string]TimelineEvent{}
 		for _, e := range c.Events {
 			if !claim(e.ID) || strings.TrimSpace(e.Title) == "" || utf8.RuneCountInString(e.Title) > 300 || utf8.RuneCountInString(e.Detail) > 6000 || utf8.RuneCountInString(e.TimeExpression) > 300 || (e.Intent != "experience" && e.Intent != "plan") || len(e.Sources) == 0 || len(e.Sources) > 16 {
 				return ErrInvalid
@@ -235,18 +234,9 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 				}
 				seen[source] = true
 			}
-			events[e.ID] = e
 		}
-		for _, e := range c.Events {
-			visited := map[string]bool{e.ID: true}
-			for next := e.AfterEventID; next != nil; {
-				prior, exists := events[*next]
-				if !exists || visited[*next] {
-					return ErrInvalid
-				}
-				visited[*next] = true
-				next = prior.AfterEventID
-			}
+		if !validTimelineOrder(c.Events) {
+			return ErrInvalid
 		}
 	}
 	return nil
