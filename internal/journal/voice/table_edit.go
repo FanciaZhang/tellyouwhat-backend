@@ -45,6 +45,9 @@ func validateTableEdits(r Revision, s Snapshot) error {
 		for _, c := range t.Calculations {
 			used[c.ID] = true
 		}
+		for _, c := range t.Charts {
+			used[c.ID] = true
+		}
 	}
 	for _, c := range r.BlockEdits {
 		used[c.ID] = true
@@ -103,6 +106,9 @@ func validateTableEdits(r Revision, s Snapshot) error {
 			return ErrInvalid
 		}
 		for _, patch := range edit.Patches {
+			if patch.Kind == "addChart" && patch.Chart != nil && !claim(patch.Chart.ID) {
+				return ErrInvalid
+			}
 			if patch.Calculation != nil && !claim(patch.Calculation.ID) {
 				return ErrInvalid
 			}

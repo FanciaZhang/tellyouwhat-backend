@@ -87,6 +87,9 @@ func validateJourneyEdits(r Revision, s Snapshot) error {
 		for _, v := range c.Calculations {
 			reserve(v.ID)
 		}
+		for _, v := range c.Charts {
+			reserve(v.ID)
+		}
 	}
 	for _, c := range s.FormatContext {
 		reserve(c.ReceiptID)

@@ -17,6 +17,7 @@ type TableContext struct {
 	Columns      []TableColumn      `json:"columns"`
 	Rows         []TableRow         `json:"rows"`
 	Calculations []TableCalculation `json:"calculations"`
+	Charts       []TableChart       `json:"charts"`
 }
 
 func validateTableCellValue(cell TableCell) bool {
@@ -105,6 +106,15 @@ func validateTableContext(s Snapshot) error {
 				return ErrInvalid
 			}
 			total += utf8.RuneCountInString(calculation.Title)
+		}
+		if len(table.Charts) > 32 {
+			return ErrInvalid
+		}
+		for _, chart := range table.Charts {
+			if !claim(chart.ID) || !chart.validShape() {
+				return ErrInvalid
+			}
+			total += utf8.RuneCountInString(chart.Title)
 		}
 		if total > 20000 {
 			return ErrInvalid

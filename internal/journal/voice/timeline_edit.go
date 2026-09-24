@@ -83,6 +83,9 @@ func validateTimelineEdits(r Revision, s Snapshot) error {
 		for _, c := range t.Calculations {
 			used[c.ID] = true
 		}
+		for _, c := range t.Charts {
+			used[c.ID] = true
+		}
 	}
 	for _, c := range s.FormatContext {
 		used[c.ReceiptID] = true

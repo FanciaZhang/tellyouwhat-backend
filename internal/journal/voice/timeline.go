@@ -111,6 +111,9 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 		for _, calculation := range table.Calculations {
 			used[calculation.ID] = true
 		}
+		for _, chart := range table.Charts {
+			used[chart.ID] = true
+		}
 	}
 	for _, timeline := range s.TimelineContext {
 		used[timeline.TimelineID] = true

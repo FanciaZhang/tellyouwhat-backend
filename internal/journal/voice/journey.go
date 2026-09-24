@@ -92,6 +92,9 @@ func validateJourneyCreations(r Revision, s Snapshot) error {
 		for _, x := range t.Calculations {
 			used[x.ID] = true
 		}
+		for _, x := range t.Charts {
+			used[x.ID] = true
+		}
 	}
 	for _, c := range s.FormatContext {
 		used[c.ReceiptID] = true
