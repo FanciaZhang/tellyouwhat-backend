@@ -25,6 +25,7 @@ func TestJourneyProposalSourceRolesAndIdentity(t *testing.T) {
 		"fabricated place":       func(c *JourneyCreation) { c.Visits[0].Expression = "公园" },
 		"instruction as content": func(c *JourneyCreation) { c.Visits[0].Expression = "地图"; c.Visits[0].Anchor.Quote = instruction },
 		"duplicate identity":     func(c *JourneyCreation) { c.Visits[0].ID = c.MapID },
+		"case variant identity":  func(c *JourneyCreation) { c.Visits[0].ID = strings.ToUpper(c.MapID) },
 		"unknown source":         func(c *JourneyCreation) { c.Visits[0].SourceID = uuid.NewString() },
 		"missing instruction":    func(c *JourneyCreation) { c.Instruction = "" },
 		"unknown position":       func(c *JourneyCreation) { id := uuid.NewString(); c.AfterID = &id },
