@@ -76,6 +76,41 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 	}
 	for _, c := range r.TableEdits {
 		used[c.ID] = true
+		for _, patch := range c.Patches {
+			if patch.Row != nil {
+				used[patch.Row.ID] = true
+			}
+			if patch.Column != nil {
+				used[patch.Column.ID] = true
+			}
+			if patch.Calculation != nil {
+				used[patch.Calculation.ID] = true
+			}
+		}
+	}
+	for _, c := range s.FormatContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.MoveContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.ParagraphContext {
+		used[c.ReceiptID] = true
+	}
+	for _, c := range s.TableReceiptContext {
+		used[c.ReceiptID] = true
+	}
+	for _, table := range s.TableContext {
+		used[table.TableID] = true
+		for _, column := range table.Columns {
+			used[column.ID] = true
+		}
+		for _, row := range table.Rows {
+			used[row.ID] = true
+		}
+		for _, calculation := range table.Calculations {
+			used[calculation.ID] = true
+		}
 	}
 	for _, c := range r.TableCreations {
 		used[c.ID] = true

@@ -38,6 +38,27 @@ func TestTimelineProposalEvidenceTimeAndIdentity(t *testing.T) {
 	if err := restored.Validate(s); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("existing table row identity", func(t *testing.T) {
+		occupied := s
+		occupied.TableContext = []TableContext{{Rows: []TableRow{{ID: c.Events[0].ID}}}}
+		if err := validateTimelineCreations([]TimelineCreation{c}, r, occupied); err == nil {
+			t.Fatal("reused existing row ID")
+		}
+	})
+	t.Run("pending receipt identity", func(t *testing.T) {
+		occupied := s
+		occupied.TableReceiptContext = []TableReceiptContext{{ReceiptID: c.ID}}
+		if err := validateTimelineCreations([]TimelineCreation{c}, r, occupied); err == nil {
+			t.Fatal("reused receipt ID")
+		}
+	})
+	t.Run("same revision table calculation identity", func(t *testing.T) {
+		mixed := r
+		mixed.TableEdits = []TableEdit{{ID: uuid.NewString(), Patches: []TablePatch{{Calculation: &TableCalculation{ID: c.Events[0].ID}}}}}
+		if err := validateTimelineCreations([]TimelineCreation{c}, mixed, s); err == nil {
+			t.Fatal("reused new calculation ID")
+		}
+	})
 	for name, change := range map[string]func(*TimelineCreation){
 		"fabricated evidence":     func(v *TimelineCreation) { v.Events[0].Sources[0].Anchor.Quote = "跑步" },
 		"instruction as event":    func(v *TimelineCreation) { v.Events[0].Sources[0].Anchor.Quote = instruction },
