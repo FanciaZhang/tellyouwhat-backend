@@ -199,7 +199,7 @@ func validateJourneyCreations(r Revision, s Snapshot) error {
 			offset, joined := 0, ""
 			for _, seg := range p.Segments {
 				next := offset + len(seg.Text)
-				if seg.Role == role && slices.Equal(seg.BlockIDs, []string{block}) && start >= offset && end <= next && (role != "instruction" || start == offset && end == next) {
+				if seg.Role == role && slices.Contains(seg.BlockIDs, block) && start >= offset && end <= next && (role != "instruction" || start == offset && end == next) {
 					found = true
 				}
 				offset = next
