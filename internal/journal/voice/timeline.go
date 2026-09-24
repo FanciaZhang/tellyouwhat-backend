@@ -160,7 +160,7 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 			joined, offset := "", 0
 			for _, segment := range p.Segments {
 				next := offset + len(segment.Text)
-				if segment.Role == role && slices.Equal(segment.BlockIDs, []string{block}) && start >= offset && end <= next && (role != "instruction" || (start == offset && end == next)) {
+				if segment.Role == role && slices.Contains(segment.BlockIDs, block) && start >= offset && end <= next && (role != "instruction" || (start == offset && end == next)) {
 					found = true
 				}
 				joined += segment.Text
