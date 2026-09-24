@@ -1,6 +1,10 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v12`. This protocol is not deployed. The iOS client uses v12 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v13`. This protocol is not deployed. The iOS client uses v13 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+
+## Deterministic numeric sorting
+
+`sortNumbersAscending` and `sortNumbersDescending` patches address a numeric column with `targetID`. All other payload fields are empty or null, including `order`. The model identifies intent, not the resulting row permutation. Server validation uses exact rational decimal comparisons; the App uses Decimal and the same stable ordering rules. Equal values retain their original order. Pending and review-required cells remain at the end in their original order in both directions. Approximate values keep their flag. Confirmed text or mixed units are rejected; there is no implicit unit conversion or date parsing. Source-partition authorization, preview confirmation, persistence and undo use the existing edit pipeline. No-op proposals are rejected. This protocol change is Journal-scoped and has not been deployed to the shared service.
 
 `tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
 

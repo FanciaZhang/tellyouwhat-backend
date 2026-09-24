@@ -23,6 +23,26 @@ func tableEditFixture() (Snapshot, Revision) {
 	return s, r
 }
 
+func TestNumericSortRevisionRequiresInstructionAuthorization(t *testing.T) {
+	s, r := tableEditFixture()
+	table := &s.TableContext[0]
+	row := TableRow{ID: uuid.NewString(), Cells: append([]TableCell(nil), table.Rows[0].Cells...)}
+	row.Cells[1].Number = "2.00"
+	table.Rows = append(table.Rows, row)
+	instruction := "按价格从低到高排列"
+	s.PendingUtterances[0].Text = instruction
+	r.TableEdits[0].Instruction = instruction
+	r.TableEdits[0].Patches = []TablePatch{{Kind: "sortNumbersAscending", TargetID: table.Columns[1].ID}}
+	r.SourcePartitions[0].Segments[0].Text = instruction
+	if err := r.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	r.SourcePartitions[0].Segments[0].Role = "content"
+	if err := r.Validate(s); err == nil {
+		t.Fatal("unauthorized sort accepted")
+	}
+}
+
 func TestTableEditRevisionRequiresScopedInstructionAndEvidence(t *testing.T) {
 	s, r := tableEditFixture()
 	if err := r.Validate(s); err != nil {

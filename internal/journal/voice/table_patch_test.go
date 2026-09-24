@@ -73,3 +73,49 @@ func TestTablePatchesRejectInvalidBatchesWithoutChangingSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestNumericTableSortUsesExactValuesAndStableMissingTail(t *testing.T) {
+	before := tableContextFixture().TableContext[0]
+	column := before.Columns[1].ID
+	original := before.Rows[0]
+	makeRow := func(number string, review bool) TableRow {
+		row := TableRow{ID: uuid.NewString(), Cells: append([]TableCell(nil), original.Cells...)}
+		row.Cells[1].Number = number
+		row.Cells[1].NeedsReview = review
+		if number == "" {
+			row.Cells[1] = TableCell{ColumnID: column, Kind: "pending"}
+		}
+		return row
+	}
+	before.Rows = []TableRow{makeRow("10", false), makeRow("", false), makeRow("2", false), makeRow("2.00", false), makeRow("1", true)}
+	encoded, _ := json.Marshal(before)
+	for _, test := range []struct {
+		kind  string
+		order []int
+	}{
+		{"sortNumbersAscending", []int{2, 3, 0, 1, 4}},
+		{"sortNumbersDescending", []int{0, 2, 3, 1, 4}},
+	} {
+		after, err := applyTablePatches(before, []TablePatch{{Kind: test.kind, TargetID: column}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, originalIndex := range test.order {
+			if !reflect.DeepEqual(after.Rows[index], before.Rows[originalIndex]) {
+				t.Fatal("lost stable order or cell provenance")
+			}
+		}
+	}
+	unchanged, _ := json.Marshal(before)
+	if string(encoded) != string(unchanged) {
+		t.Fatal("mutated snapshot")
+	}
+	before.Rows[2].Cells[1].Unit = "美元"
+	if _, err := applyTablePatches(before, []TablePatch{{Kind: "sortNumbersAscending", TargetID: column}}); err == nil {
+		t.Fatal("mixed units accepted")
+	}
+	before.Rows[2].Cells[1] = TableCell{ColumnID: column, Kind: "text", Text: "两元"}
+	if _, err := applyTablePatches(before, []TablePatch{{Kind: "sortNumbersAscending", TargetID: column}}); err == nil {
+		t.Fatal("mixed types accepted")
+	}
+}
