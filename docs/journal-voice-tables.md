@@ -1,6 +1,6 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v12`. This protocol is not deployed. The iOS client currently uses v11 and adopts `tableEdits` through source-linked confirmation previews; v12 spoken resolutions still require client integration. Real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v12`. This protocol is not deployed. The iOS client uses v12 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
 
 `tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
 
@@ -46,4 +46,4 @@ Focused tests cover full revision validation, source partitions, instruction-emb
 
 Required output `tableResolutions` supports confirm, dismiss and undo with a fresh operation ID, exact current instruction, source ID and existing receipt ID. Reconfirmation of an undone item requires explicit user intent and current capability. Validation rejects unavailable capabilities, duplicate receipt/table targets, missing consumption/partitions, fabricated instructions, identity collisions and conflicting operations. Confirmation words are attributed as instructions to the affected block, not rewritten into prose. The prompt requires clarification for ambiguous confirmations rather than selecting an arbitrary preview.
 
-`go test ./internal/journal/voice ./internal/journal/service` passes, including receipt projection, lifecycle, proposed creation, stale dismissal, invalid state/capability/ownership, source evidence and schema tests. App receipt projection, persisted resolution history and application remain pending. No deployment occurred.
+`go test ./internal/journal/voice ./internal/journal/service` passes, including receipt projection, lifecycle, proposed creation, stale dismissal, invalid state/capability/ownership, source evidence and schema tests. App receipt projection, persisted resolution history, application, undo and redo are integrated and covered by focused local tests. Spoken UI journeys, real-provider and device acceptance remain pending. No deployment occurred.
