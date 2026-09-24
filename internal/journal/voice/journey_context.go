@@ -57,6 +57,9 @@ func validateJourneyContext(s Snapshot) error {
 		for _, v := range c.Calculations {
 			used[key(v.ID)] = true
 		}
+		for _, v := range c.Charts {
+			used[key(v.ID)] = true
+		}
 	}
 	total := 0
 	for _, c := range s.JourneyContext {
