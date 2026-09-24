@@ -1,6 +1,6 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v11`. This protocol is not deployed. The iOS client now uses v11 and adopts `tableEdits` through source-linked confirmation previews; real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v12`. This protocol is not deployed. The iOS client currently uses v11 and adopts `tableEdits` through source-linked confirmation previews; v12 spoken resolutions still require client integration. Real-provider and device acceptance remain pending.
 
 `tableCreations` is a required array in model revisions. Each creation carries independent operation, block and table UUIDs, an existing `afterID` or null, the instruction source and exact instruction, a title, stable column IDs and stable row IDs. Each cell addresses its column and carries a flat kind (`text`, `number`, `pending`), text, decimal string, unit, estimate flag, review flag and quoted source anchors. Unused strings are empty. The App attaches its local recording identity and repeats source and document validation.
 
@@ -39,3 +39,11 @@ Each edit contains a new operation `id`, existing `blockID`/`tableID`, pending `
 Every supplied populated cell has current quoted evidence. The quote must uniquely locate either inside that edit's instruction or in a content partition linked to the same owning block. Thus “把价格改成49.90元” can remain one instruction, with “49.90元” providing value evidence without duplicating the command into prose. Unrelated context, invented quotes and duplicate evidence are rejected. Schema and prompt define nullable unused payload objects and exact row/column targeting; semantic correctness still requires model evaluation and user review.
 
 Focused tests cover full revision validation, source partitions, instruction-embedded and separate content evidence, invalid ownership/identities/quotes/targets, missing consumption, no-ops and required schema fields. No provider integration or deployment has been performed.
+
+## Spoken table resolutions (v12)
+
+`tableReceiptContext` carries at most eight recent operation receipts, separate from table content: receipt, table and block IDs, creation/edit kind, proposed/applied/undone state, title, instruction summary and `canConfirm`/`canUndo` flags derived by the App from native plan feasibility. Proposed creations can reference a block not yet inserted. Stale proposed receipts remain dismissible; undoable applied items and confirmable edits require an existing correctly owned table.
+
+Required output `tableResolutions` supports confirm, dismiss and undo with a fresh operation ID, exact current instruction, source ID and existing receipt ID. Reconfirmation of an undone item requires explicit user intent and current capability. Validation rejects unavailable capabilities, duplicate receipt/table targets, missing consumption/partitions, fabricated instructions, identity collisions and conflicting operations. Confirmation words are attributed as instructions to the affected block, not rewritten into prose. The prompt requires clarification for ambiguous confirmations rather than selecting an arbitrary preview.
+
+`go test ./internal/journal/voice ./internal/journal/service` passes, including receipt projection, lifecycle, proposed creation, stale dismissal, invalid state/capability/ownership, source evidence and schema tests. App receipt projection, persisted resolution history and application remain pending. No deployment occurred.

@@ -85,6 +85,15 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.TableResolutions {
+			if c.SourceID == p.SourceID {
+				for _, item := range s.TableReceiptContext {
+					if item.ReceiptID == c.ReceiptID {
+						add(c.Instruction, item.BlockID)
+					}
+				}
+			}
+		}
 		for _, c := range r.TableCreations {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)

@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v11"
+const Version = "journal-voice-v12"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -66,24 +66,25 @@ type SourceUtterance struct {
 	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
-	TableContext      []TableContext      `json:"tableContext"`
-	BlockComponents   map[string][]string `json:"blockComponents"`
-	ParallelColumns   map[string]string   `json:"parallelColumns"`
-	Revision          int                 `json:"revision"`
-	Blocks            []Block             `json:"blocks"`
-	Transcript        string              `json:"transcript"`
-	EditedBlockIDs    []string            `json:"editedBlockIDs"`
-	MediaOnlyBlockIDs []string            `json:"mediaOnlyBlockIDs"`
-	ActiveBlockIDs    []string            `json:"activeBlockIDs"`
-	KnownSourceIDs    []string            `json:"knownSourceIDs"`
-	PendingUtterances []SourceUtterance   `json:"pendingUtterances"`
-	SemanticState     SemanticState       `json:"semanticState"`
-	Words             []string            `json:"words"`
-	WritingStyle      string              `json:"writingStyle"`
-	FormatContext     []FormatContext     `json:"formatContext"`
-	ParallelGroups    [][]string          `json:"parallelGroups"`
-	MoveContext       []MoveContext       `json:"moveContext"`
-	ParagraphContext  []ParagraphContext  `json:"paragraphContext"`
+	TableContext        []TableContext        `json:"tableContext"`
+	TableReceiptContext []TableReceiptContext `json:"tableReceiptContext"`
+	BlockComponents     map[string][]string   `json:"blockComponents"`
+	ParallelColumns     map[string]string     `json:"parallelColumns"`
+	Revision            int                   `json:"revision"`
+	Blocks              []Block               `json:"blocks"`
+	Transcript          string                `json:"transcript"`
+	EditedBlockIDs      []string              `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs   []string              `json:"mediaOnlyBlockIDs"`
+	ActiveBlockIDs      []string              `json:"activeBlockIDs"`
+	KnownSourceIDs      []string              `json:"knownSourceIDs"`
+	PendingUtterances   []SourceUtterance     `json:"pendingUtterances"`
+	SemanticState       SemanticState         `json:"semanticState"`
+	Words               []string              `json:"words"`
+	WritingStyle        string                `json:"writingStyle"`
+	FormatContext       []FormatContext       `json:"formatContext"`
+	ParallelGroups      [][]string            `json:"parallelGroups"`
+	MoveContext         []MoveContext         `json:"moveContext"`
+	ParagraphContext    []ParagraphContext    `json:"paragraphContext"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -102,6 +103,7 @@ type TextCorrection struct {
 type Revision struct {
 	TableCreations       []TableCreation       `json:"tableCreations"`
 	TableEdits           []TableEdit           `json:"tableEdits"`
+	TableResolutions     []TableResolution     `json:"tableResolutions"`
 	BaseRevision         int                   `json:"baseRevision"`
 	TranscriptRevision   int                   `json:"transcriptRevision"`
 	BlockEdits           []BlockEdit           `json:"blockEdits"`
@@ -304,6 +306,9 @@ func (s Snapshot) Validate() error {
 	if err := validateTableContext(s); err != nil {
 		return err
 	}
+	if err := validateTableReceiptContext(s); err != nil {
+		return err
+	}
 	return validateSemanticState(s.SemanticState, texts, allSources, locked)
 }
 
@@ -409,6 +414,9 @@ func (r Revision) Validate(s Snapshot) error {
 		return err
 	}
 	if err := validateTableEdits(r, s); err != nil {
+		return err
+	}
+	if err := validateTableResolutions(r, s); err != nil {
 		return err
 	}
 	if err := validateParagraphResolutions(r, s, touched); err != nil {
