@@ -21,6 +21,11 @@ func TestTimelineProposalEvidenceTimeAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.TimelineCreations = []TimelineCreation{c}
+	contextSnapshot := s
+	contextSnapshot.TimelineContext = []TimelineContext{{TimelineID: uuid.NewString(), Events: []TimelineEvent{{ID: c.Events[0].ID}}}}
+	if err := validateTimelineCreations([]TimelineCreation{c}, r, contextSnapshot); err == nil {
+		t.Fatal("creation reused an existing timeline event identity")
+	}
 	if err := r.Validate(s); err != nil {
 		t.Fatalf("full revision: %v", err)
 	}

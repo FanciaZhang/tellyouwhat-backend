@@ -66,6 +66,7 @@ type SourceUtterance struct {
 	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
+	TimelineContext     []TimelineContext     `json:"timelineContext"`
 	TableContext        []TableContext        `json:"tableContext"`
 	TableReceiptContext []TableReceiptContext `json:"tableReceiptContext"`
 	BlockComponents     map[string][]string   `json:"blockComponents"`
@@ -302,6 +303,9 @@ func (s Snapshot) Validate() error {
 		return err
 	}
 	if err := validateParagraphContext(s.ParagraphContext, seen); err != nil {
+		return err
+	}
+	if err := validateTimelineContext(s); err != nil {
 		return err
 	}
 	if err := validateTableContext(s); err != nil {
