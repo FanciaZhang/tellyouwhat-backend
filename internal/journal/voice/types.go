@@ -66,26 +66,27 @@ type SourceUtterance struct {
 	SpeechRate        float64 `json:"speechRate,omitempty"`
 }
 type Snapshot struct {
-	TimelineContext     []TimelineContext     `json:"timelineContext"`
-	TableContext        []TableContext        `json:"tableContext"`
-	TableReceiptContext []TableReceiptContext `json:"tableReceiptContext"`
-	BlockComponents     map[string][]string   `json:"blockComponents"`
-	ParallelColumns     map[string]string     `json:"parallelColumns"`
-	Revision            int                   `json:"revision"`
-	Blocks              []Block               `json:"blocks"`
-	Transcript          string                `json:"transcript"`
-	EditedBlockIDs      []string              `json:"editedBlockIDs"`
-	MediaOnlyBlockIDs   []string              `json:"mediaOnlyBlockIDs"`
-	ActiveBlockIDs      []string              `json:"activeBlockIDs"`
-	KnownSourceIDs      []string              `json:"knownSourceIDs"`
-	PendingUtterances   []SourceUtterance     `json:"pendingUtterances"`
-	SemanticState       SemanticState         `json:"semanticState"`
-	Words               []string              `json:"words"`
-	WritingStyle        string                `json:"writingStyle"`
-	FormatContext       []FormatContext       `json:"formatContext"`
-	ParallelGroups      [][]string            `json:"parallelGroups"`
-	MoveContext         []MoveContext         `json:"moveContext"`
-	ParagraphContext    []ParagraphContext    `json:"paragraphContext"`
+	JourneySourceContext []TableSource         `json:"journeySourceContext"`
+	TimelineContext      []TimelineContext     `json:"timelineContext"`
+	TableContext         []TableContext        `json:"tableContext"`
+	TableReceiptContext  []TableReceiptContext `json:"tableReceiptContext"`
+	BlockComponents      map[string][]string   `json:"blockComponents"`
+	ParallelColumns      map[string]string     `json:"parallelColumns"`
+	Revision             int                   `json:"revision"`
+	Blocks               []Block               `json:"blocks"`
+	Transcript           string                `json:"transcript"`
+	EditedBlockIDs       []string              `json:"editedBlockIDs"`
+	MediaOnlyBlockIDs    []string              `json:"mediaOnlyBlockIDs"`
+	ActiveBlockIDs       []string              `json:"activeBlockIDs"`
+	KnownSourceIDs       []string              `json:"knownSourceIDs"`
+	PendingUtterances    []SourceUtterance     `json:"pendingUtterances"`
+	SemanticState        SemanticState         `json:"semanticState"`
+	Words                []string              `json:"words"`
+	WritingStyle         string                `json:"writingStyle"`
+	FormatContext        []FormatContext       `json:"formatContext"`
+	ParallelGroups       [][]string            `json:"parallelGroups"`
+	MoveContext          []MoveContext         `json:"moveContext"`
+	ParagraphContext     []ParagraphContext    `json:"paragraphContext"`
 }
 type BlockEdit struct {
 	Kind    string `json:"kind"`
@@ -104,6 +105,7 @@ type TextCorrection struct {
 type Revision struct {
 	TimelineEdits        []TimelineEdit        `json:"timelineEdits"`
 	TimelineCreations    []TimelineCreation    `json:"timelineCreations"`
+	JourneyCreations     []JourneyCreation     `json:"journeyCreations"`
 	TableCreations       []TableCreation       `json:"tableCreations"`
 	TableEdits           []TableEdit           `json:"tableEdits"`
 	TableResolutions     []TableResolution     `json:"tableResolutions"`
@@ -309,6 +311,9 @@ func (s Snapshot) Validate() error {
 	if err := validateTimelineContext(s); err != nil {
 		return err
 	}
+	if err := validateJourneySourceContext(s); err != nil {
+		return err
+	}
 	if err := validateTableContext(s); err != nil {
 		return err
 	}
@@ -416,6 +421,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateJourneyCreations(r, s); err != nil {
+		return err
+	}
 	if err := validateTimelineEdits(r, s); err != nil {
 		return err
 	}
