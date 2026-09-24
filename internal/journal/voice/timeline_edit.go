@@ -28,16 +28,26 @@ type TimelineEventUpdate struct {
 	NeedsReview *bool             `json:"needsReview"`
 }
 
+type TimelineEventInsertion struct {
+	ID          string           `json:"id"`
+	Title       string           `json:"title"`
+	Detail      string           `json:"detail"`
+	Time        TimelineEditTime `json:"time"`
+	Intent      string           `json:"intent"`
+	NeedsReview bool             `json:"needsReview"`
+}
+
 type TimelineEdit struct {
-	ID              string                `json:"id"`
-	BlockID         string                `json:"blockID"`
-	TimelineID      string                `json:"timelineID"`
-	SourceID        string                `json:"sourceID"`
-	Instruction     string                `json:"instruction"`
-	Title           *string               `json:"title"`
-	Updates         []TimelineEventUpdate `json:"updates"`
-	RemovedEventIDs []string              `json:"removedEventIDs"`
-	EventOrder      []string              `json:"eventOrder"`
+	ID              string                   `json:"id"`
+	BlockID         string                   `json:"blockID"`
+	TimelineID      string                   `json:"timelineID"`
+	SourceID        string                   `json:"sourceID"`
+	Instruction     string                   `json:"instruction"`
+	Title           *string                  `json:"title"`
+	Updates         []TimelineEventUpdate    `json:"updates"`
+	Insertions      []TimelineEventInsertion `json:"insertions"`
+	RemovedEventIDs []string                 `json:"removedEventIDs"`
+	EventOrder      []string                 `json:"eventOrder"`
 }
 
 func validateTimelineEdits(r Revision, s Snapshot) error {
@@ -135,12 +145,18 @@ func validateTimelineEdits(r Revision, s Snapshot) error {
 		sources[u.ID] = u.Text
 	}
 	for _, c := range r.TimelineEdits {
-		if !validID(c.ID) || used[c.ID] || seen[c.TimelineID] || !slices.Contains(r.ConsumedSourceIDs, c.SourceID) ||
+		if c.Insertions == nil || !validID(c.ID) || used[c.ID] || seen[c.TimelineID] || !slices.Contains(r.ConsumedSourceIDs, c.SourceID) ||
 			strings.TrimSpace(c.Instruction) == "" || utf8.RuneCountInString(c.Instruction) > 500 ||
 			strings.Count(sources[c.SourceID], c.Instruction) != 1 {
 			return ErrInvalid
 		}
 		used[c.ID], seen[c.TimelineID] = true, true
+		for _, insertion := range c.Insertions {
+			if !validID(insertion.ID) || used[insertion.ID] {
+				return ErrInvalid
+			}
+			used[insertion.ID] = true
+		}
 		for _, edit := range r.BlockEdits {
 			if edit.ID == c.BlockID {
 				return ErrInvalid
@@ -199,7 +215,7 @@ func validateTimelineEdits(r Revision, s Snapshot) error {
 // ownership are separate validation gates before a proposal can be delivered.
 func applyTimelineEdit(before TimelineContext, command TimelineEdit) (TimelineContext, error) {
 	if command.BlockID != before.BlockID || command.TimelineID != before.TimelineID ||
-		len(command.Updates) > 64 || len(command.RemovedEventIDs) > 64 {
+		len(command.Updates) > 64 || len(command.Insertions) > 64 || len(command.RemovedEventIDs) > 64 {
 		return TimelineContext{}, ErrInvalid
 	}
 	result := before
@@ -240,6 +256,23 @@ func applyTimelineEdit(before TimelineContext, command TimelineEdit) (TimelineCo
 		if reflect.DeepEqual(old, *e) {
 			return TimelineContext{}, ErrInvalid
 		}
+	}
+	identities := map[string]bool{command.ID: true, before.BlockID: true, before.TimelineID: true}
+	for _, event := range before.Events {
+		identities[event.ID] = true
+	}
+	for _, insertion := range command.Insertions {
+		if !validID(insertion.ID) || identities[insertion.ID] {
+			return TimelineContext{}, ErrInvalid
+		}
+		identities[insertion.ID] = true
+		t := insertion.Time
+		result.Events = append(result.Events, TimelineEvent{
+			ID: insertion.ID, Title: insertion.Title, Detail: insertion.Detail,
+			TimeExpression: t.Expression, Day: t.Day, Precision: t.Precision, Period: t.Period,
+			Minute: t.Minute, Approximate: t.Approximate, AfterEventID: t.AfterEventID,
+			Intent: insertion.Intent, NeedsReview: insertion.NeedsReview,
+		})
 	}
 	if command.Title != nil {
 		result.Title = *command.Title

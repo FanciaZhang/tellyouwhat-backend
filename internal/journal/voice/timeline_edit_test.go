@@ -13,6 +13,74 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestTimelineEditInsertionPreservesIdentityAndOrder(t *testing.T) {
+	s, c := timelineEditFixture()
+	before := s.TimelineContext[0]
+	c.Updates = nil
+	c.Instruction = "再添加一个晚上买菜的事件"
+	c.Insertions = []TimelineEventInsertion{{ID: uuid.NewString(), Title: "买菜", Intent: "experience",
+		Time: TimelineEditTime{Expression: "晚上", Precision: "period", Period: "evening"}}}
+	s.PendingUtterances = []SourceUtterance{{ID: c.SourceID, Text: c.Instruction}}
+	r := Revision{BaseRevision: s.Revision, TimelineEdits: []TimelineEdit{c}, ConsumedSourceIDs: []string{c.SourceID},
+		SourcePartitions: []SourcePartition{{SourceID: c.SourceID, Segments: []SourceSegment{{
+			Text: c.Instruction, Role: "instruction", BlockIDs: []string{c.BlockID}}}}}}
+	if err := r.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Revision
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded.TimelineEdits, r.TimelineEdits) || decoded.Validate(s) != nil {
+		t.Fatal("insertion wire round trip changed")
+	}
+	for name, id := range map[string]string{"owner": c.BlockID, "timeline": c.TimelineID, "command": c.ID} {
+		t.Run(name, func(t *testing.T) {
+			bad := r
+			bad.TimelineEdits = slices.Clone(r.TimelineEdits)
+			bad.TimelineEdits[0].Insertions = slices.Clone(c.Insertions)
+			bad.TimelineEdits[0].Insertions[0].ID = id
+			if bad.Validate(s) == nil {
+				t.Fatal("accepted reserved identity")
+			}
+		})
+	}
+	after, err := applyTimelineEdit(before, c)
+	if err != nil || len(after.Events) != len(before.Events)+1 || !reflect.DeepEqual(after.Events[:len(before.Events)], before.Events) {
+		t.Fatal("insertion rewrote history", err)
+	}
+	if len(s.TimelineContext[0].Events) != len(before.Events) {
+		t.Fatal("mutated snapshot")
+	}
+	c.EventOrder = []string{c.Insertions[0].ID, before.Events[0].ID, before.Events[1].ID}
+	after, err = applyTimelineEdit(before, c)
+	if err != nil || after.Events[0].ID != c.Insertions[0].ID {
+		t.Fatal("lost narrated order", err)
+	}
+	for name, mutate := range map[string]func(*TimelineEdit){
+		"existing identity":    func(c *TimelineEdit) { c.Insertions[0].ID = before.Events[0].ID },
+		"command identity":     func(c *TimelineEdit) { c.Insertions[0].ID = c.ID },
+		"duplicate identity":   func(c *TimelineEdit) { c.Insertions = append(c.Insertions, c.Insertions[0]) },
+		"invalid time":         func(c *TimelineEdit) { c.Insertions[0].Time.Period = "yesterday" },
+		"dangling predecessor": func(c *TimelineEdit) { id := uuid.NewString(); c.Insertions[0].Time.AfterEventID = &id },
+		"new event update":     func(c *TimelineEdit) { c.Updates = []TimelineEventUpdate{{EventID: c.Insertions[0].ID}} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := c
+			bad.Insertions = slices.Clone(c.Insertions)
+			bad.EventOrder = nil
+			mutate(&bad)
+			if err := validateTimelineEditResult(bad, s); err == nil {
+				t.Fatal("accepted invalid insertion")
+			}
+		})
+	}
+}
+
 func TestTimelineEditModelResponseContract(t *testing.T) {
 	for _, missing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "valid", true: "missing edits"}[missing], func(t *testing.T) {
@@ -94,6 +162,7 @@ func TestTimelineEditRevisionAuthorizesSpeechAndRejectsConflicts(t *testing.T) {
 	}
 	for name, mutate := range map[string]func(*Revision){
 		"not consumed":           func(r *Revision) { r.ConsumedSourceIDs = nil },
+		"missing insertions":     func(r *Revision) { r.TimelineEdits[0].Insertions = nil },
 		"fabricated instruction": func(r *Revision) { r.TimelineEdits[0].Instruction = "没有说过" },
 		"wrong source role":      func(r *Revision) { r.SourcePartitions[0].Segments[0].Role = "content" },
 		"wrong source owner":     func(r *Revision) { r.SourcePartitions[0].Segments[0].BlockIDs = []string{uuid.NewString()} },
@@ -125,7 +194,7 @@ func timelineEditFixture() (Snapshot, TimelineEdit) {
 	s := timelineContextFixture()
 	t := s.TimelineContext[0]
 	c := TimelineEdit{ID: uuid.NewString(), BlockID: t.BlockID, TimelineID: t.TimelineID,
-		SourceID: uuid.NewString(), Instruction: "把散步改到下午", RemovedEventIDs: []string{},
+		SourceID: uuid.NewString(), Instruction: "把散步改到下午", RemovedEventIDs: []string{}, Insertions: []TimelineEventInsertion{},
 		Updates: []TimelineEventUpdate{{EventID: t.Events[0].ID,
 			Time: &TimelineEditTime{Expression: "下午", Day: "2026-09-24", Precision: "period", Period: "afternoon"}}}}
 	return s, c
