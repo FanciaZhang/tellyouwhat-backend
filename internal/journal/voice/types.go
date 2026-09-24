@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v16"
+const Version = "journal-voice-v17"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -569,7 +569,7 @@ func validID(value string) bool {
 
 func validBlockStyle(value string) bool {
 	switch value {
-	case "", "body", "heading1", "heading2", "heading3", "unorderedListItem", "orderedListItem":
+	case "", "body", "heading1", "heading2", "heading3", "unorderedListItem", "orderedListItem", "checklistItem", "completedChecklistItem":
 		return true
 	default:
 		return false

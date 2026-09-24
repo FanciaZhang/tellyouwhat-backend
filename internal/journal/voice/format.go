@@ -16,8 +16,7 @@ func validateFormatContext(items []FormatContext, blocks map[string]bool) error 
 			(item.State != "pending" && item.State != "proposed" && item.State != "applied") || len(item.Candidates) > 8 ||
 			utf8.RuneCountInString(item.Title) > 40 || utf8.RuneCountInString(item.Quote) > 120 ||
 			(item.State != "pending" && len(item.Candidates) != 0) ||
-			(item.CanConfirm && item.State != "proposed") ||
-			(item.State == "proposed" && len(item.AdditionalBlockIDs) == 0) {
+			(item.CanConfirm && item.State != "proposed") {
 			return ErrInvalid
 		}
 		seen[item.ReceiptID] = true
@@ -186,7 +185,7 @@ func validFormatMark(mark string) bool {
 
 func paragraphFormatMark(mark string) bool {
 	switch mark {
-	case "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem":
+	case "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem":
 		return true
 	default:
 		return false

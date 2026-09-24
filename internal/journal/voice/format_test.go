@@ -220,7 +220,7 @@ func TestParagraphFormatRequiresExactWholeBlock(t *testing.T) {
 	block, source := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "隐私保护", Style: "body"}},
 		EditedBlockIDs: []string{block}, PendingUtterances: []SourceUtterance{{ID: source, Text: "这段作为二级标题"}}}
-	for _, mark := range []string{"heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem"} {
+	for _, mark := range []string{"heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"} {
 		if !allowed[mark] {
 			t.Fatalf("paragraph style missing from model schema: %s", mark)
 		}

@@ -40,7 +40,8 @@ moveContext 是现有移动操作，包含 receiptID、状态、实际移动的 
 contextTargets 是检索证据，不是操作授权。blockID 是候选段落，ordinal 是它在文档里的序号，anchor 是口述引用的文字或序号，matchCount 是该依据在完整文档中匹配的段落数。documentBlockCount 是全文段落总数。contextBlocks 按原文顺序排列，可能跳过中间段落，且较长正文只提供局部摘录；不要按输入数组下标推断全文段落序号，也不要把摘录当作整段全文。matchCount 大于 1 时须结合明确限定才能定位，仅出现一个可见候选不代表匹配唯一；无法消歧时用 questions 询问。检索命中不会扩大 replaceableBlockIDs；用户明确编辑或移动历史段落仍使用相应受限命令，不能自动重写历史正文。
 semanticState 是跨批次的小型语义记忆。entities 只记录口述明确提供的实体；reference 只有在内容明确说明人物性别、动物或物体类别时才能从 unknown 更新。不得根据姓名、声音或刻板印象猜测。unresolvedMentions 记录正文中唯一出现、以后可能需要修正的“他、她、它”或其他歧义短语；若单字在块内重复，mention.text 应包含最少量上下文成为唯一短语，后续 correction 对整个短语做等义替换。outline 记录背景、主题、分点、总结和结论与正文块、来源的对应关系。返回完整的新 semanticState，不要只返回增量。
 新证据能够确定旧 mention 时，使用 correction 精准替换，不要重写旧段落。correction 必须引用已有 mention，expectedText 必须与 mention.text 相同，evidenceSourceIDs 只能引用本轮 pendingUtterances；修正后从 unresolvedMentions 移除该 mention。证据不足时保留原文与 mention，绝不猜测。
-正文使用 blockEdit。replace 只能修改 replaceableBlockIDs 中的活动块且 afterID 为空；insert 使用新 UUID，并将 afterID 指向已存在或同批刚新增的前一块，从而保持顺序。每个 blockEdit 只写一个块，禁止换行。style 只能是 body、heading1、heading2、heading3、unorderedListItem、orderedListItem。只有口述明确出现“第一、第二、还有几点”等结构，或内容确实形成清楚的背景、分点、总结时才使用标题或列表；普通日记仍写自然段，不能擅自改成会议纪要。
+正文使用 blockEdit。replace 只能修改 replaceableBlockIDs 中的活动块且 afterID 为空；insert 使用新 UUID，并将 afterID 指向已存在或同批刚新增的前一块，从而保持顺序。每个 blockEdit 只写一个块，禁止换行。style 只能是 body、heading1、heading2、heading3、unorderedListItem、orderedListItem、checklistItem、completedChecklistItem。只有口述明确出现“第一、第二、还有几点”等结构，或内容确实形成清楚的背景、分点、总结时才使用标题或列表；普通日记仍写自然段，不能擅自改成会议纪要。
+购物、出行准备及明确待办事项可生成 checklistItem，每个独立事项一个块。只有来源明确说明该事项已完成才生成 completedChecklistItem，不能把计划、愿望、条件或否定句猜成完成。修改已有清单使用 formatCommands：checklistItem 设为未完成，completedChecklistItem 标记完成，enabled 必须 true，精确引用目标整项文字并引用用户的操作指令。单项和批量清单指令均由 App 展示预览等待确认。普通叙述不是操作指令；目标重名或指代不清时用 questions 澄清，不猜测项序号。指令放入 instruction 来源分区，不抄进正文。确认或取消预览继续使用 formatResolutions，单项 proposed 上下文的 additionalBlockIDs 可以为空。
 每个 blockEdit 都必须返回一个 passage，sourceIDs 按顺序列出它使用的 pendingUtterances id。同一 source 可以同时支撑概括性的标题或总结与具体正文，但同一 passage 内不得重复。consumedSourceIDs 必须原样列出本轮全部 pendingUtterances id，即使某句只是编辑指令或应丢弃的口头语。存在多种解释时保留原话并在 questions 提简短疑问。
 formatCommands 承载明确口述的加粗、斜体、下划线、删除线、暖黄/浅蓝/绿色荧光笔及移除格式，mark 分别为 bold、italic、underline、strikethrough、yellow、blue、sage，enabled 表示应用或移除。每条命令使用新 UUID，sourceID 指向本轮口述，instruction 精确摘录该来源中唯一出现的编辑指令片段。指令片段不进入正文；同句中的正文内容仍照常整理。blockID 指向目标正文（也可以是同批新增的正文），anchor.quote 精确引用该正文中的目标文字，prefix/suffix 只使用确定的相邻上下文，无法确定时填空字符串。正文内多处相同引用交给 App 选择，不能凭空补充定位依据。用户明确请求可给手动编辑的正文设置格式；自动重写仍遵循 replaceableBlockIDs。单纯声音情绪或重读不产生格式命令。无指令时返回空数组。
 formatContext 是 App 提供的近期操作，按最近优先排列：pending 为文字定位待选择，proposed 为批量预览待确认，applied 为当前仍可安全撤销的已应用操作。用户说“选第二处”“讲晚上的那个”时，使用 formatResolutions 的 choose，receiptID 和 candidateID 必须逐字引用匹配的已有项；ordinal 是候选位置，excerpt 是候选上下文。用户明确说“应用这次调整”“这两段就按预览改”且唯一指向 canConfirm 为 true 的 proposed 时用 confirm；“保留原样”“算了，这次不改”可 dismiss 待确认操作。canConfirm 为 false 表示正文已变化，只能 dismiss 或询问新的修改意图。用户说“撤销刚才那次排版”用 undo。confirm/undo/dismiss 的 candidateID 为空字符串。每项使用新 UUID 并附本轮 sourceID 与精确 instruction。确认口述仅作为操作证据，不写进正文。同一批中每个 receipt 最多一次操作，禁止同时改写、纠错或重新格式化它的 blockID；其他正文继续整理。无法唯一确定用户意图时用 questions 简短询问，不猜 ID。多个预览待处理而用户只说“可以”“好的”时要询问具体预览；转述、讨论如何操作和普通叙事均不是确认指令。没有澄清、确认或撤销时 formatResolutions 返回空数组。
@@ -167,7 +168,7 @@ func voiceRevisionSchema() map[string]any {
 	entityKinds := []string{"person", "animal", "place", "object", "organization", "event", "unknown"}
 	entityReferences := []string{"unknown", "he", "she", "it", "they", "femaleThey", "nonhumanThey"}
 	outlineRoles := []string{"background", "topic", "point", "summary", "conclusion"}
-	blockStyles := []string{"body", "heading1", "heading2", "heading3", "unorderedListItem", "orderedListItem"}
+	blockStyles := []string{"body", "heading1", "heading2", "heading3", "unorderedListItem", "orderedListItem", "checklistItem", "completedChecklistItem"}
 	emotionKinds := []string{"calm", "happy", "excited", "relaxed", "moved", "hopeful", "surprised", "worried", "nervous", "sad", "angry", "tired"}
 	entity := object(
 		[]string{"id", "kind", "name", "reference", "aliases", "evidenceSourceIDs"},
@@ -228,7 +229,7 @@ func voiceRevisionSchema() map[string]any {
 		map[string]any{
 			"id": stringField, "blockID": stringField, "sourceID": stringField, "instruction": stringField,
 			"anchor":  object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
-			"mark":    map[string]any{"type": "string", "enum": []string{"bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage", "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem"}},
+			"mark":    map[string]any{"type": "string", "enum": []string{"bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage", "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}},
 			"enabled": map[string]string{"type": "boolean"},
 		},
 	)
