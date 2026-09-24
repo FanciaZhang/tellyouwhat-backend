@@ -3,6 +3,7 @@ package voice
 import (
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -19,6 +20,12 @@ type TableContext struct {
 
 func validateTableCellValue(cell TableCell) bool {
 	switch cell.Kind {
+	case "date":
+		date, err := time.Parse("2006-01-02", cell.Text)
+		// Match the native Gregorian date picker: the 1582 calendar reform gap
+		// is not silently normalized to a different day.
+		gap := cell.Text >= "1582-10-05" && cell.Text <= "1582-10-14"
+		return err == nil && !gap && date.Year() >= 1 && date.Year() <= 9999 && date.Format("2006-01-02") == cell.Text && cell.Number == "" && cell.Unit == "" && !cell.Approximate
 	case "text":
 		return utf8.RuneCountInString(cell.Text) <= 6000 && cell.Number == "" && cell.Unit == "" && !cell.Approximate
 	case "number":

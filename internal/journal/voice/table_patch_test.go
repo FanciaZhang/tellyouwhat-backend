@@ -74,6 +74,30 @@ func TestTablePatchesRejectInvalidBatchesWithoutChangingSnapshot(t *testing.T) {
 	}
 }
 
+func TestTableCalendarDateValuesRemainTypedAndRejectInvalidDays(t *testing.T) {
+	before := tableContextFixture().TableContext[0]
+	cell := before.Rows[0].Cells[1]
+	cell.Kind, cell.Text, cell.Number, cell.Unit = "date", "2024-02-29", "", ""
+	cell.Approximate = false
+	after, err := applyTablePatches(before, []TablePatch{{Kind: "setCell", TargetID: before.Rows[0].ID, Cell: &cell}})
+	if err != nil || after.Rows[0].Cells[1].Text != "2024-02-29" {
+		t.Fatal("date edit", err)
+	}
+	if _, err := applyTablePatches(after, []TablePatch{{Kind: "sortNumbersAscending", TargetID: cell.ColumnID}}); err == nil {
+		t.Fatal("date treated as number")
+	}
+	for _, invalid := range []string{"2023-02-29", "2026-04-31", "0000-01-01", "2026-1-01", "2026-01-01Z", "1500-02-29", "1582-10-10"} {
+		cell.Text = invalid
+		if validateTableCellValue(cell) {
+			t.Fatalf("invalid date accepted: %s", invalid)
+		}
+	}
+	cell.Text, cell.Unit = "2024-02-29", "天"
+	if validateTableCellValue(cell) {
+		t.Fatal("unused date payload accepted")
+	}
+}
+
 func TestNumericTableSortUsesExactValuesAndStableMissingTail(t *testing.T) {
 	before := tableContextFixture().TableContext[0]
 	column := before.Columns[1].ID

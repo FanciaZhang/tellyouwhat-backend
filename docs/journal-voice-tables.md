@@ -1,8 +1,14 @@
 # Journal voice table creation contract
 
-The local Journal voice protocol is `journal-voice-v13`. This protocol is not deployed. The iOS client uses v13 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+The local Journal voice protocol is `journal-voice-v14`. This protocol is not deployed. The iOS client uses v14 and adopts table edits and spoken resolutions through source-linked confirmation previews. Real-provider and device acceptance remain pending.
+
+## Calendar dates
+
+Cell kind `date` stores a complete Gregorian date in `text` as strict `YYYY-MM-DD`. Number and unit are empty; approximate is false. Calendar-invalid dates and unused payload are rejected. The same encoding applies to creation, sparse cell edits and source-free table context; creation/edit evidence authorization still applies. Incomplete and uncertain spoken dates remain text or require clarification instead of inventing a year or precision. Dates are never numeric inputs to sums or numeric sorting. Native date sorting is currently a client editing action; spoken date-sort operations remain pending.
 
 ## Deterministic numeric sorting
+
+The date validator matches the native picker boundary: Gregorian-invalid leap days and the 1582-10-05 through 1582-10-14 reform gap are rejected rather than normalized. Such historical expressions can remain text.
 
 `sortNumbersAscending` and `sortNumbersDescending` patches address a numeric column with `targetID`. All other payload fields are empty or null, including `order`. The model identifies intent, not the resulting row permutation. Server validation uses exact rational decimal comparisons; the App uses Decimal and the same stable ordering rules. Equal values retain their original order. Pending and review-required cells remain at the end in their original order in both directions. Approximate values keep their flag. Confirmed text or mixed units are rejected; there is no implicit unit conversion or date parsing. Source-partition authorization, preview confirmation, persistence and undo use the existing edit pipeline. No-op proposals are rejected. This protocol change is Journal-scoped and has not been deployed to the shared service.
 
