@@ -358,9 +358,10 @@ func voiceRevisionSchema() map[string]any {
 		"eventOrder": nullable(map[string]any{"type": "array", "items": stringField}),
 	})
 	return object(
-		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "diagramCreations", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
+		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "diagramCreations", "diagramEdits", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
 		map[string]any{
 			"diagramCreations": map[string]any{"type": "array", "maxItems": 4, "items": diagramCreationSchema()},
+			"diagramEdits":     map[string]any{"type": "array", "maxItems": 4, "items": diagramEditSchema()},
 			"journeyEdits": map[string]any{"type": "array", "maxItems": 4, "items": object(
 				[]string{"id", "blockID", "mapID", "sourceID", "instruction", "title", "updates", "insertions", "removedStopIDs", "stopOrder"}, map[string]any{
 					"id": stringField, "blockID": stringField, "mapID": stringField, "sourceID": stringField, "instruction": stringField,
@@ -467,7 +468,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return metered, ErrInvalid
 	}
-	if revision.DiagramCreations == nil {
+	if revision.DiagramCreations == nil || revision.DiagramEdits == nil {
 		return metered, ErrInvalid
 	}
 	if revision.JourneyEdits == nil || revision.JourneyCreations == nil || revision.TimelineEdits == nil || revision.TimelineCreations == nil || revision.TableResolutions == nil || revision.TableEdits == nil || revision.TableCreations == nil || revision.FormatCommands == nil || revision.MoveCommands == nil || revision.ParagraphCommands == nil || revision.ParagraphResolutions == nil || revision.MoveResolutions == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {
