@@ -1,10 +1,58 @@
 package voice
 
 import (
+	"encoding/json"
 	"github.com/google/uuid"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestDiagramHistoricalContextSnapshotAndModelWire(t *testing.T) {
+	s := journeyContextFixture()
+	id := uuid.NewString()
+	s.KnownSourceIDs = append(s.KnownSourceIDs, id)
+	s.DiagramSourceContext = []TableSource{{SourceID: id, Anchor: TextAnchor{Quote: "主题是周末散步。"}}}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Snapshot
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	data, err := rewriteModelInput(decoded, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var model rewriteModelDocument
+	if err := json.Unmarshal(data, &model); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(model.DiagramSourceContext, s.DiagramSourceContext) {
+		t.Fatal("diagram evidence lost during projection")
+	}
+	for name, mutate := range map[string]func(*Snapshot){
+		"unknown source": func(s *Snapshot) { s.DiagramSourceContext[0].SourceID = uuid.NewString() },
+		"adjacent text":  func(s *Snapshot) { s.DiagramSourceContext[0].Anchor.Suffix = "这段加粗" },
+		"duplicate":      func(s *Snapshot) { s.DiagramSourceContext = append(s.DiagramSourceContext, s.DiagramSourceContext[0]) },
+		"budget":         func(s *Snapshot) { s.DiagramSourceContext[0].Anchor.Quote = strings.Repeat("文", 6001) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var invalid Snapshot
+			if err := json.Unmarshal(wire, &invalid); err != nil {
+				t.Fatal(err)
+			}
+			mutate(&invalid)
+			if invalid.Validate() == nil {
+				t.Fatal("invalid diagram evidence accepted by request validation")
+			}
+		})
+	}
+}
 
 func TestDiagramSourceAuthorization(t *testing.T) {
 	id, block := uuid.NewString(), uuid.NewString()
