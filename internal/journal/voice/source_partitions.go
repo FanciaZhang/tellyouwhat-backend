@@ -108,6 +108,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.DiagramEdits {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
 		for _, c := range r.DiagramCreations {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)

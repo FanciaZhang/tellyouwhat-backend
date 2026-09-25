@@ -15,7 +15,7 @@ func TestDiagramModelResponseContract(t *testing.T) {
 	if !slices.Contains(voiceRevisionSchema()["required"].([]string), "diagramCreations") {
 		t.Fatal("missing required field")
 	}
-	for _, mode := range []string{"valid", "empty", "missing", "null", "local archive", "instruction evidence"} {
+	for _, mode := range []string{"valid", "empty", "missing", "null", "missing edits", "null edits", "local archive", "instruction evidence"} {
 		t.Run(mode, func(t *testing.T) {
 			r, s := diagramRevisionFixture()
 			r.TranscriptRevision = 3
@@ -30,10 +30,14 @@ func TestDiagramModelResponseContract(t *testing.T) {
 			if err := json.Unmarshal(encoded, &fields); err != nil {
 				t.Fatal(err)
 			}
-			for _, key := range []string{"journeyEdits", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
+			for _, key := range []string{"diagramEdits", "journeyEdits", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
 				fields[key] = []any{}
 			}
 			switch mode {
+			case "missing edits":
+				delete(fields, "diagramEdits")
+			case "null edits":
+				fields["diagramEdits"] = nil
 			case "missing":
 				delete(fields, "diagramCreations")
 			case "null":

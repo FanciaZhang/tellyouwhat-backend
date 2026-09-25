@@ -7,6 +7,28 @@ import (
 )
 
 // Stable encoder output is also exercised by the Swift decoder acceptance test.
+func TestDiagramEditClientWireFixture(t *testing.T) {
+	id := func(n int) string { return fmt.Sprintf("20000000-0000-4000-8000-%012d", n) }
+	title := "河岸漫步"
+	c := DiagramEdit{ID: id(1), BlockID: id(2), DiagramID: id(3), SourceID: id(4), Instruction: "把散步改名为河岸漫步",
+		Actions: []DiagramEditAction{{Update: &DiagramNodeUpdate{NodeID: id(6), Title: &title}}}}
+	s := Snapshot{Blocks: []Block{{ID: id(2)}}, BlockComponents: map[string][]string{id(2): {id(3)}},
+		PendingUtterances: []SourceUtterance{{ID: id(4), Text: c.Instruction}},
+		DiagramContext: []DiagramContext{{BlockID: id(2), DiagramID: id(3), Title: "周末", Kind: "mindMap",
+			Nodes: []DiagramContextNode{{ID: id(5), Title: "周末", BlockIDs: []string{}}, {ID: id(6), Title: "散步", BlockIDs: []string{}}},
+			Edges: []DiagramContextEdge{{ID: id(7), From: id(5), To: id(6)}}}}}
+	r := Revision{DiagramEdits: []DiagramEdit{c}, ConsumedSourceIDs: []string{id(4)},
+		SourcePartitions: []SourcePartition{{SourceID: id(4), Segments: []SourceSegment{{Text: c.Instruction, Role: "instruction", BlockIDs: []string{id(2)}}}}}}
+	if err := r.Validate(s); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("DIAGRAM_EDIT_CLIENT_WIRE=" + string(encoded))
+}
+
 func TestDiagramClientWireFixture(t *testing.T) {
 	id := func(n int) string { return fmt.Sprintf("10000000-0000-4000-8000-%012d", n) }
 	source := TableSource{SourceID: id(1), Anchor: TextAnchor{Quote: "周末去散步。"}}
