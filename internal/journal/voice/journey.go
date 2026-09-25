@@ -25,11 +25,15 @@ type JourneyCreation struct {
 }
 
 func validateJourneySourceContext(s Snapshot) error {
-	if len(s.JourneySourceContext) > 16 {
+	return validateStructuredSourceContext(s.JourneySourceContext, s)
+}
+
+func validateStructuredSourceContext(sources []TableSource, s Snapshot) error {
+	if len(sources) > 16 {
 		return ErrInvalid
 	}
 	size, seen := 0, map[string]bool{}
-	for _, source := range s.JourneySourceContext {
+	for _, source := range sources {
 		key := strings.ToLower(source.SourceID) + "/" + source.Anchor.Quote
 		known := slices.ContainsFunc(s.KnownSourceIDs, func(id string) bool { return strings.EqualFold(id, source.SourceID) })
 		if !validID(source.SourceID) || !known || seen[key] || strings.TrimSpace(source.Anchor.Quote) == "" || source.Anchor.Prefix != "" || source.Anchor.Suffix != "" {
