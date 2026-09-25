@@ -358,8 +358,9 @@ func voiceRevisionSchema() map[string]any {
 		"eventOrder": nullable(map[string]any{"type": "array", "items": stringField}),
 	})
 	return object(
-		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
+		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "diagramCreations", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
 		map[string]any{
+			"diagramCreations": map[string]any{"type": "array", "maxItems": 4, "items": diagramCreationSchema()},
 			"journeyEdits": map[string]any{"type": "array", "maxItems": 4, "items": object(
 				[]string{"id", "blockID", "mapID", "sourceID", "instruction", "title", "updates", "insertions", "removedStopIDs", "stopOrder"}, map[string]any{
 					"id": stringField, "blockID": stringField, "mapID": stringField, "sourceID": stringField, "instruction": stringField,
@@ -405,7 +406,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 		return RewriteResult{}, err
 	}
 	schema := voiceRevisionSchema()
-	payload, _ := json.Marshal(map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": rewriteInstructions, "input": string(input), "max_output_tokens": 5000, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision_v3", "strict": true, "schema": schema}}})
+	payload, _ := json.Marshal(map[string]any{"model": m.Model, "store": false, "thinking": map[string]string{"type": "disabled"}, "instructions": rewriteInstructions + diagramRewriteInstructions, "input": string(input), "max_output_tokens": 5000, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision_v3", "strict": true, "schema": schema}}})
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(m.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
 		return RewriteResult{}, err
@@ -464,6 +465,9 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteRe
 		return metered, ErrInvalid
 	}
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return metered, ErrInvalid
+	}
+	if revision.DiagramCreations == nil {
 		return metered, ErrInvalid
 	}
 	if revision.JourneyEdits == nil || revision.JourneyCreations == nil || revision.TimelineEdits == nil || revision.TimelineCreations == nil || revision.TableResolutions == nil || revision.TableEdits == nil || revision.TableCreations == nil || revision.FormatCommands == nil || revision.MoveCommands == nil || revision.ParagraphCommands == nil || revision.ParagraphResolutions == nil || revision.MoveResolutions == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {

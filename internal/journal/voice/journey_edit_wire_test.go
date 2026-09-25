@@ -82,7 +82,7 @@ func TestJourneyEditModelWireContract(t *testing.T) {
 			if err := json.Unmarshal(encoded, &fields); err != nil {
 				t.Fatal(err)
 			}
-			for _, key := range []string{"journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
+			for _, key := range []string{"diagramCreations", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableEdits", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
 				fields[key] = []any{}
 			}
 			switch mode {
