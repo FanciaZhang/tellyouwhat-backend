@@ -106,6 +106,7 @@ type TextCorrection struct {
 	EvidenceSourceIDs []string `json:"evidenceSourceIDs"`
 }
 type Revision struct {
+	DiagramCreations     []DiagramCreation     `json:"diagramCreations"`
 	TimelineEdits        []TimelineEdit        `json:"timelineEdits"`
 	TimelineCreations    []TimelineCreation    `json:"timelineCreations"`
 	JourneyCreations     []JourneyCreation     `json:"journeyCreations"`
@@ -434,6 +435,9 @@ func (r Revision) Validate(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateDiagramCreations(r, s); err != nil {
+		return err
+	}
 	if err := validateJourneyEdits(r, s); err != nil {
 		return err
 	}
