@@ -28,7 +28,7 @@ func TestChartModelTransportRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"journeyEdits", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
+	for _, key := range []string{"diagramCreations", "journeyEdits", "journeyCreations", "timelineEdits", "timelineCreations", "tableCreations", "tableResolutions", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "moveResolutions", "formatResolutions"} {
 		fields[key] = []any{}
 	}
 	response, err := json.Marshal(fields)
