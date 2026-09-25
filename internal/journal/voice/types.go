@@ -633,6 +633,9 @@ func (s Snapshot) validateIncremental() error {
 	if err := validateStructuredSourceContext(s.DiagramSourceContext, s); err != nil {
 		return err
 	}
+	if err := validateDiagramContext(s); err != nil {
+		return err
+	}
 	if err := validateJourneyContext(s); err != nil {
 		return err
 	}

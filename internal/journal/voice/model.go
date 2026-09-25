@@ -447,6 +447,7 @@ sourcePartitions 描述需要细分用途或段落归属的口述；单一用途
 只有 source 自带非空 acousticEmotion 时才可返回 emotion，不得单凭文字猜情绪。emotion.sourceID 必须属于同一 passage，anchorText 必须是该段中唯一出现、不超过 80 字的原文短句。kind 只能是 calm、happy、excited、relaxed、moved、hopeful、surprised、worried、nervous、sad、angry、tired。本轮证据不足时 emotions 返回空数组，overallEmotion 返回空字符串。只输出符合 schema 的 JSON。`
 
 type rewriteModelDocument struct {
+	DiagramContext       []DiagramContext      `json:"diagramContext"`
 	DiagramSourceContext []TableSource         `json:"diagramSourceContext"`
 	JourneySourceContext []TableSource         `json:"journeySourceContext"`
 	JourneyContext       []JourneyContext      `json:"journeyContext"`
