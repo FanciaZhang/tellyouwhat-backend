@@ -59,7 +59,7 @@ func TestVoiceProtocolMismatchIsNotMissingConsent(t *testing.T) {
 	store := entitlement.NewMemoryStore()
 	store.Upsert(context.Background(), entitlement.Record{KeyID: "key", TransactionID: "original", Environment: "sandbox", StartedAt: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)})
 	s := New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true}, Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{"managed_subscription"}, Voice: &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}, VoiceEntitlements: store})
-	for _, version := range []string{"journal-voice-v22", "journal-voice-v999", ""} {
+	for _, version := range []string{"journal-voice-v23", "journal-voice-v22", "journal-voice-v999", ""} {
 		body, _ := json.Marshal(map[string]string{"sessionID": uuid.NewString(), "consentVersion": version})
 		request := httptest.NewRequest(http.MethodPost, "/v1/journal/voice/sessions", strings.NewReader(string(body)))
 		request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
