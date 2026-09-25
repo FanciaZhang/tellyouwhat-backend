@@ -746,6 +746,9 @@ func (r Revision) validateIncremental(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateDiagramCreations(r, s); err != nil {
+		return err
+	}
 	if err := validateJourneyEdits(r, s); err != nil {
 		return err
 	}

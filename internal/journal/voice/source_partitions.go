@@ -24,6 +24,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			return ErrInvalid
 		}
 		passages, corrections, linked := map[string]bool{}, map[string]bool{}, map[string]bool{}
+		for _, c := range r.DiagramCreations {
+			for _, evidence := range c.Diagram.sources() {
+				if evidence.SourceID == p.SourceID {
+					passages[c.BlockID] = true
+				}
+			}
+		}
 		for _, edit := range r.TableEdits {
 			for _, patch := range edit.Patches {
 				cells := []TableCell{}
@@ -97,6 +104,11 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			instructions[text] = &instruction{start, start + len(text), map[string]bool{block: true}}
 		}
 		for _, c := range r.FormatCommands {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.DiagramCreations {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)
 			}
