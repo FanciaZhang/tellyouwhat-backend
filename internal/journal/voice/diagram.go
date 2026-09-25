@@ -42,6 +42,10 @@ type DiagramCreation struct {
 // Structural validity is only one gate. Callers must separately authorize every
 // source against current content partitions and reserve document-wide IDs.
 func validateDiagramGraph(g DiagramGraph) error {
+	return validateDiagramShape(g, true)
+}
+
+func validateDiagramShape(g DiagramGraph, requireEvidence bool) error {
 	if !validID(g.ID) || strings.TrimSpace(g.Title) == "" || utf8.RuneCountInString(g.Title) > 300 ||
 		len(g.Nodes) == 0 || len(g.Nodes) > 500 || len(g.Edges) > 2000 ||
 		(g.Kind != "mindMap" && g.Kind != "relationship" && g.Kind != "flow") {
@@ -57,7 +61,7 @@ func validateDiagramGraph(g DiagramGraph) error {
 		return true
 	}
 	sourcesValid := func(sources []TableSource) bool {
-		if len(sources) == 0 {
+		if requireEvidence && len(sources) == 0 {
 			return false
 		}
 		for _, s := range sources {
