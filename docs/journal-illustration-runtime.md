@@ -19,4 +19,8 @@ The image adapter reserves its maximum amount before calling the provider. A den
 
 The scheduler starts after router construction, recovers only queued requests, and stops before database closure. It never resubmits running or uncertain requests. Expiry releases only known-undispatched image allowances and removes private payloads; late success records usage without restoring delivery.
 
-Before deployment: complete image-specific consent transport and App confirmation, verify migrations and real provider behavior, review prices/limits and billing reconciliation, and validate the full user flow. Local runtime and adapter tests alone are not deployment or paid-provider acceptance.
+## Explicit consent
+
+The authenticated `POST /v1/privacy/consents` accepts scope `journal_illustration` with document version `2026-09-27` only for Journal. Granting `managed_subscription` alone does not authorize image generation. The image scope can be revoked with `granted: false` without revoking text consent, even when the image runtime is disabled. Health's allowlist and the privacy service both reject this Journal scope.
+
+Before deployment: complete App confirmation and reviewed image-consent disclosures, verify migrations and real provider behavior, review prices/limits and billing reconciliation, and validate the full user flow. Local runtime and adapter tests alone are not deployment or paid-provider acceptance.

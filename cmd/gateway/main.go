@@ -413,10 +413,10 @@ func buildAppHandler(
 		dependencies.Contracts = manifest
 		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
-		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		// Keep revocation available even while image dispatch is disabled.
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
 		if storage.illustrations != nil {
 			dependencies.JournalIllustrations = storage.illustrations
-			dependencies.AllowedConsentScopes = append(dependencies.AllowedConsentScopes, privacy.JournalIllustrationScope)
 		}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,

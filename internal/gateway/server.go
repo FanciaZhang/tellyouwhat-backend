@@ -219,7 +219,7 @@ func New(dependencies Dependencies) *Server {
 	}
 	if len(dependencies.AllowedConsentScopes) == 0 {
 		if dependencies.App.ID == appregistry.Journal {
-			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
 		} else {
 			dependencies.AllowedConsentScopes = []string{
 				privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
