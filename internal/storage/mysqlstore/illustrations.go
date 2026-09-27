@@ -40,7 +40,7 @@ func (r *IllustrationRepository) CreateOrGet(ctx context.Context, owner, model s
 		return illustration.Task{}, err
 	}
 	if r.allowance == nil {
-		return illustration.Task{}, ErrImageBudget
+		return illustration.Task{}, illustration.ErrImageBudget
 	}
 	account, limit, err := r.allowance.ImageAllowance(ctx, owner, now)
 	if err != nil {

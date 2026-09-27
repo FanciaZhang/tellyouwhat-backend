@@ -137,7 +137,13 @@ func captureRawRequestBody() gin.HandlerFunc {
 }
 
 func requestBodyLimit(method, path string) int64 {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if method == "POST" && len(parts) == 5 && parts[0] == "v1" && parts[1] == "journal" && parts[2] == "illustrations" && parts[4] == "cancel" {
+		return 1024
+	}
 	switch method + " " + path {
+	case "POST /v1/journal/illustrations":
+		return 34_000_000
 	case "POST /v1/journal/voice/sessions":
 		return 8 << 10
 	case "POST /v1/attest/challenges":

@@ -3,14 +3,11 @@ package mysqlstore
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 )
-
-var ErrImageBudget = errors.New("image allowance unavailable or exhausted")
 
 // ImageAllowancePolicy resolves the authenticated owner's stable billing account
 // and server-side monthly image limit. Neither value comes from client JSON.
@@ -21,7 +18,7 @@ type ImageAllowancePolicy interface {
 
 func (r *IllustrationRepository) reserveImage(ctx context.Context, tx *sql.Tx, task illustration.Task, limit int64) error {
 	if limit < 1 || strings.TrimSpace(task.BillingAccount) == "" || len(task.BillingAccount) > 255 {
-		return ErrImageBudget
+		return illustration.ErrImageBudget
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO journal_image_budgets(app_id,account_id,month) VALUES(?,?,?) ON DUPLICATE KEY UPDATE account_id=account_id`, r.appID, task.BillingAccount, task.BudgetMonth)
 	if err != nil {
@@ -32,7 +29,7 @@ func (r *IllustrationRepository) reserveImage(ctx context.Context, tx *sql.Tx, t
 		return err
 	}
 	if count != 1 {
-		return ErrImageBudget
+		return illustration.ErrImageBudget
 	}
 	return nil
 }
@@ -53,7 +50,7 @@ func (r *IllustrationRepository) settleImage(ctx context.Context, tx *sql.Tx, be
 		return err
 	}
 	if count != 1 {
-		return ErrImageBudget
+		return illustration.ErrImageBudget
 	}
 	return nil
 }

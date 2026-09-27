@@ -13,6 +13,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -25,6 +26,12 @@ import (
 )
 
 type Principal = attestation.Principal
+type JournalIllustrations interface {
+	Create(context.Context, Principal, illustration.Confirmation, []byte) (illustration.Task, error)
+	Status(context.Context, Principal, string) (illustration.Task, error)
+	Cancel(context.Context, Principal, string, uint64) (illustration.Task, error)
+	Result(context.Context, Principal, string) (illustration.Result, error)
+}
 type RequestProof = attestation.RequestProof
 
 type Authenticator interface {
@@ -155,6 +162,7 @@ type Dependencies struct {
 	RequiredConsentScopes      []string
 	AllowedConsentScopes       []string
 	JournalOrganizer           JournalOrganizer
+	JournalIllustrations       JournalIllustrations
 	JournalAnalysisVersion     string
 	ManagedProduct             ManagedProduct
 	HTTPMiddleware             []gin.HandlerFunc
@@ -190,6 +198,7 @@ type Server struct {
 	requiredConsentScopes      []string
 	allowedConsentScopes       map[string]struct{}
 	journalOrganizer           JournalOrganizer
+	journalIllustrations       JournalIllustrations
 	journalAnalysisVersion     string
 	managedProduct             ManagedProduct
 	httpMiddleware             []gin.HandlerFunc
@@ -251,6 +260,7 @@ func New(dependencies Dependencies) *Server {
 		requiredConsentScopes:      append([]string(nil), dependencies.RequiredConsentScopes...),
 		allowedConsentScopes:       allowedConsentScopes,
 		journalOrganizer:           dependencies.JournalOrganizer,
+		journalIllustrations:       dependencies.JournalIllustrations,
 		journalAnalysisVersion:     dependencies.JournalAnalysisVersion,
 		managedProduct:             dependencies.ManagedProduct,
 		httpMiddleware:             append([]gin.HandlerFunc(nil), dependencies.HTTPMiddleware...),

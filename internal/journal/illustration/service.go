@@ -2,12 +2,15 @@ package illustration
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
+
+var ErrImageBudget = errors.New("image allowance unavailable or exhausted")
 
 type ClientRepository interface {
 	CreateOrGet(context.Context, string, string, Confirmation, []byte, time.Time) (Task, error)
