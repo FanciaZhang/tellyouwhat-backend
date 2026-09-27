@@ -179,7 +179,7 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	if _, err := reopened.Result(ctx, "owner", successID, completed.ExpiresAt); err == nil {
 		t.Fatal("expired result exposed")
 	}
-	if err := repository.PurgeExpiredPayloads(ctx, completed.ExpiresAt); err != nil {
+	if err := repository.Expire(ctx, completed.ExpiresAt, 32); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := reopened.Result(ctx, "owner", successID, now); err == nil {
@@ -286,6 +286,59 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	}
 	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, "limited-account").Scan(&reserved, &used); err != nil || reserved != 1 || used != 1 {
 		t.Fatalf("double charge/release reserved=%d used=%d", reserved, used)
+	}
+
+	// Recover the queue through a newly constructed repository, then expire an
+	// undispatched and an in-flight task without forgiving ambiguous charges.
+	queueAccount := "queue-account"
+	queueRepo := mysqlstore.NewIllustrationRepository(db, cipher, app, illustrationTestAllowance(func(context.Context, string, time.Time) (string, int64, error) { return queueAccount, 10, nil }))
+	c.RequestID = uuid.NewString()
+	queued, err := queueRepo.CreateOrGet(ctx, "owner", "model", c, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.RequestID = uuid.NewString()
+	running, err := queueRepo.CreateOrGet(ctx, "owner", "model", c, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, _, err = queueRepo.Claim(ctx, "owner", running.ID, 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := reopened.Pending(ctx, now, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range pending {
+		if item.ID == running.ID {
+			t.Fatal("running task reclaimed")
+		}
+		if item.ID == queued.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("queued task not recovered")
+	}
+	for i := 0; i < 2; i++ {
+		if err := queueRepo.Expire(ctx, now.Add(25*time.Hour), 32); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, queueAccount).Scan(&reserved, &used); err != nil || reserved != 1 || used != 0 {
+		t.Fatalf("expiry settlement reserved=%d used=%d err=%v", reserved, used, err)
+	}
+	expiredOutcome, err := queueRepo.StoreOutcome(ctx, running, &result, nil, now.Add(25*time.Hour))
+	if err != nil || expiredOutcome.State != illustration.TaskCancelled || expiredOutcome.Charge != illustration.ChargeOneImage {
+		t.Fatalf("late expired result: %+v %v", expiredOutcome, err)
+	}
+	if _, err := queueRepo.Result(ctx, "owner", running.ID, now.Add(25*time.Hour)); err == nil {
+		t.Fatal("expired result delivered")
+	}
+	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, queueAccount).Scan(&reserved, &used); err != nil || reserved != 0 || used != 1 {
+		t.Fatalf("late settlement reserved=%d used=%d err=%v", reserved, used, err)
 	}
 
 	// Exercise the actual privacy repository against the real Journal scope,

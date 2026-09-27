@@ -113,11 +113,3 @@ func (r *IllustrationRepository) Result(ctx context.Context, owner, id string, n
 	}
 	return result, nil
 }
-
-// PurgeExpiredPayloads retains identity tombstones so an old request cannot be
-// regenerated simply because its sensitive content has expired. Scheduling and
-// accounting reconciliation must be wired before deployment.
-func (r *IllustrationRepository) PurgeExpiredPayloads(ctx context.Context, now time.Time) error {
-	_, err := r.database.ExecContext(ctx, `UPDATE journal_illustration_tasks SET request_ciphertext=NULL,request_nonce=NULL,result_ciphertext=NULL,result_nonce=NULL WHERE app_id=? AND expires_at<=? AND (request_ciphertext IS NOT NULL OR result_ciphertext IS NOT NULL)`, r.appID, now)
-	return err
-}
