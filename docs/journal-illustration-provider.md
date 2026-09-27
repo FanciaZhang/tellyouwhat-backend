@@ -93,9 +93,18 @@ existing Health consent scopes and default route configuration are unchanged.
 Tests exercise explicit grant/revocation, expiry, changed subscription identity,
 cross-app rejection, and absent reservations. No default paid allowance is set.
 
+Migration 0007 binds tasks to their scoped App Attest owner with cascading
+deletion. The Journal privacy transaction deletes image accounting for the same
+subscription/key deletion scope before removing registered keys. Encrypted task
+inputs/results disappear with those keys; stale admission cannot recreate an
+orphan task and late worker completion cannot restore a deleted row. A real
+MySQL test deletes two Journal installations on one subscription, verifies both
+tasks and image budget are absent, and verifies a matching Health key survives.
+This did not run on any production or pre-existing user database.
+
 Production still needs policy wiring, a reviewed user-facing consent document
 and App confirmation UI, consent endpoint contract updates, worker scheduling,
-account-deletion integration, reconciliation of unknown outcomes, scheduled expiry
+reconciliation of unknown outcomes, scheduled expiry
 maintenance, and HTTP delivery. The repository
 is not registered with the gateway. A durable claim
 alone is not a complete generation workflow; a crash after claim but before HTTP

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/migrations"
@@ -46,6 +47,15 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := "illustration-" + uuid.NewString()
+	if _, err := db.ExecContext(ctx, `INSERT INTO apps(app_id,display_name,bundle_id,managed_product_id) VALUES(?,?,?,?)`, app, "Illustration test", app, "test.subscription"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = db.Exec(`DELETE FROM apps WHERE app_id=?`, app) }()
+	for _, owner := range []string{"owner", strings.Repeat("k", 512)} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO app_attest_keys(app_id,key_id,device_id,transaction_id,public_key_der,environment,receipt) VALUES(?,?,?,?,?,?,?)`, app, owner, uuid.NewString(), "billing-account", []byte("test"), "production", []byte("test")); err != nil {
+			t.Fatal(err)
+		}
+	}
 	defer func() { _, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=?`, app) }()
 	allowance := illustrationTestAllowance(func(context.Context, string, time.Time) (string, int64, error) { return "billing-account", 100, nil })
 	repository := mysqlstore.NewIllustrationRepository(db, cipher, app, allowance)
@@ -276,6 +286,58 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	}
 	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, "limited-account").Scan(&reserved, &used); err != nil || reserved != 1 || used != 1 {
 		t.Fatalf("double charge/release reserved=%d used=%d", reserved, used)
+	}
+
+	// Exercise the actual privacy repository against the real Journal scope,
+	// including another installation on the same subscription and a Health key.
+	account := uuid.NewString()
+	firstOwner := uuid.NewString()
+	secondOwner := uuid.NewString()
+	defer func() {
+		_, _ = db.Exec(`DELETE FROM app_attest_keys WHERE app_id IN ('journal','health') AND key_id IN (?,?)`, firstOwner, secondOwner)
+		_, _ = db.Exec(`DELETE FROM journal_image_budgets WHERE app_id='journal' AND account_id=?`, account)
+	}()
+	for _, identity := range [][2]string{{"journal", firstOwner}, {"journal", secondOwner}, {"health", firstOwner}} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO app_attest_keys(app_id,key_id,device_id,transaction_id,public_key_der,environment,receipt) VALUES(?,?,?,?,?,?,?)`, identity[0], identity[1], uuid.NewString(), account, []byte("fixture"), "production", []byte("fixture")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	journal := mysqlstore.NewIllustrationRepository(db, cipher, "journal", illustrationTestAllowance(func(context.Context, string, time.Time) (string, int64, error) { return account, 10, nil }))
+	var deletingTask illustration.Task
+	var firstConfirmation illustration.Confirmation
+	for i, owner := range []string{firstOwner, secondOwner} {
+		confirmation := illustration.Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "deletion fixture", ConsentRevision: "v1"}
+		created, err := journal.CreateOrGet(ctx, owner, "model", confirmation, nil, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			firstConfirmation = confirmation
+			deletingTask, _, err = journal.Claim(ctx, owner, created.ID, 1, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	privacyRepository := mysqlstore.NewPrivacyRepository(db, "journal")
+	if err := privacyRepository.DeletePrincipal(ctx, attestation.Principal{AppID: "journal", KeyID: firstOwner, TransactionID: account}); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM journal_illustration_tasks WHERE app_id='journal' AND owner_id IN (?,?)`, firstOwner, secondOwner).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatal("private tasks survived deletion")
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM journal_image_budgets WHERE app_id='journal' AND account_id=?`, account).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatal("image usage survived deletion")
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_attest_keys WHERE app_id='health' AND key_id=?`, firstOwner).Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatal("Journal deletion affected Health")
+	}
+	if _, err := journal.StoreOutcome(ctx, deletingTask, &result, nil, now); err == nil {
+		t.Fatal("late outcome recreated deleted content")
+	}
+	if _, err := journal.CreateOrGet(ctx, firstOwner, "model", firstConfirmation, nil, now); err == nil {
+		t.Fatal("stale authorization recreated owner task")
 	}
 }
 

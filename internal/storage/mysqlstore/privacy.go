@@ -143,6 +143,18 @@ func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, princi
 	}
 	defer func() { _ = transaction.Rollback() }()
 	transactionID := principal.TransactionID
+	if repository.appID == "journal" {
+		// Remove image accounting for the same deletion scope before cascading
+		// key deletion removes the encrypted tasks. Health's existing path stays unchanged.
+		_, err := transaction.ExecContext(ctx, `DELETE FROM journal_image_budgets
+			WHERE app_id=? AND (account_id IN (
+				SELECT transaction_id FROM app_attest_keys WHERE app_id=? AND
+				(key_id=? OR (?<>'' AND transaction_id=?)) AND transaction_id<>''
+			) OR (?<>'' AND account_id=?))`, repository.appID, repository.appID, principal.KeyID, transactionID, transactionID, transactionID, transactionID)
+		if err != nil {
+			return err
+		}
+	}
 	if transactionID != "" {
 		if _, err := transaction.ExecContext(ctx,
 			`DELETE FROM app_store_notifications WHERE app_id = ? AND original_transaction_id = ?`, repository.appID, transactionID,
