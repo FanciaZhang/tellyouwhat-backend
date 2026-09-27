@@ -166,4 +166,28 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	if _, err := reopened.Result(ctx, "owner", successID, now); err == nil {
 		t.Fatal("purged result recovered by backdated clock")
 	}
+
+	// Registered App Attest keys use up to 512 ASCII bytes in the shared
+	// schema. Preserve that owner identity without truncation in this table.
+	c.RequestID = uuid.NewString()
+	c.VersionID = uuid.NewString()
+	longOwnerID := c.RequestID
+	defer func() {
+		_, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, longOwnerID)
+	}()
+	longOwner := strings.Repeat("k", 512)
+	if _, err := repository.CreateOrGet(ctx, longOwner, "model", c, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed nonce must fail closed, not panic inside AES-GCM.
+	if _, err := db.ExecContext(ctx, `UPDATE journal_illustration_tasks SET request_nonce=? WHERE app_id=? AND id=?`, []byte{1}, app, longOwnerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.Claim(ctx, longOwner, longOwnerID, 1, now); err == nil {
+		t.Fatal("corrupt encrypted request accepted")
+	}
+	preserved, err := repository.CreateOrGet(ctx, longOwner, "model", c, nil, now)
+	if err != nil || preserved.State != illustration.TaskQueued || preserved.Revision != 1 {
+		t.Fatal("failed decryption committed dispatch")
+	}
 }

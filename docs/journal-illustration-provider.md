@@ -44,10 +44,13 @@ An unknown commit result must be reconciled, not dispatched speculatively.
 
 Local compilation, encryption-isolation and embedded-migration tests pass.
 `TestIllustrationDurableClaimAndCancellation` covers eight concurrent claimers,
-repository reconstruction, private payload erasure and scoped identity, but was
-**skipped locally because MYSQL_TEST_DSN is not configured**. Run it against an
-isolated `_test` MySQL database before declaring persistence/concurrency verified.
-The test deletes only its own UUID row, not existing tables or user data.
+repository reconstruction, private payload erasure and scoped identity. On
+2026-09-27 it ran successfully on an isolated local MySQL 8.4.11 instance with
+networking disabled and a private Unix socket; no existing database was used.
+It additionally verifies a 512-byte App Attest owner key and that malformed
+encrypted input rolls back the dispatch fence. The test deletes only its own
+UUID rows, not existing tables or user data. This verifies local SQL transactions,
+not production deployment or process-crash recovery across network failures.
 
 The repository also stores outcomes and encrypted results atomically with task
 state, binds result ciphertext to the request and image digests, rejects expired
@@ -56,8 +59,8 @@ Identical successful completion callbacks do not advance the revision again.
 Expired payload purge retains identity tombstones to prevent re-generation under
 an old request ID. It is not yet scheduled. Result reads are serialized with
 cancellation; already returned bytes still require client-side revocation checks.
-The real-MySQL test now includes late completion, identical callback replay,
-encrypted result roundtrip and expiry purge, and remains skipped locally. Its
+The real-MySQL test also passed late completion, identical callback replay,
+encrypted result roundtrip and expiry purge. Its
 isolated app ID and request IDs prevent cleanup from touching other test data.
 
 Production still needs a worker, authorization checks at admission and dispatch,
