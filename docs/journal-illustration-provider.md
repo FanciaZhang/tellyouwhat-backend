@@ -63,8 +63,17 @@ The real-MySQL test also passed late completion, identical callback replay,
 encrypted result roundtrip and expiry purge. Its
 isolated app ID and request IDs prevent cleanup from touching other test data.
 
-Production still needs a worker, authorization checks at admission and dispatch,
-atomic image quota reservation/settlement, scheduled expiry maintenance,
+`illustration.Worker` now composes task lookup, a required dispatch guard, durable
+claim, a second authorization/current-state check, the frozen-model provider,
+and persisted outcome. Missing guards or model mismatches fail closed. A bounded
+independent cleanup context records outcomes after caller cancellation. A worker
+that has not invoked the provider may release its reservation decision through
+AbortDispatch; that path is forbidden after ambiguous generation outcomes.
+Tests use fixed image results and injected authorization, not live entitlement
+or paid provider calls.
+
+Production still needs the real consent/entitlement/reservation guard and worker
+scheduling, atomic image quota reservation/settlement, scheduled expiry maintenance,
 and HTTP delivery. Stored charge state is not a completed debit. The repository
 is not registered with the gateway. A durable claim
 alone is not a complete generation workflow; a crash after claim but before HTTP

@@ -47,6 +47,8 @@ type Provider struct {
 	http                 *http.Client
 }
 
+func (p *Provider) Model() string { return p.model }
+
 func NewProvider(endpoint, key, model string, transport http.RoundTripper) (*Provider, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.TrimSpace(key) == "" || strings.TrimSpace(model) == "" {

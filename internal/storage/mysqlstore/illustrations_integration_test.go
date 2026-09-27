@@ -190,4 +190,51 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	if err != nil || preserved.State != illustration.TaskQueued || preserved.Revision != 1 {
 		t.Fatal("failed decryption committed dispatch")
 	}
+
+	c.RequestID = uuid.NewString()
+	c.VersionID = uuid.NewString()
+	workerID := c.RequestID
+	defer func() {
+		_, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, workerID)
+	}()
+	if _, err := repository.CreateOrGet(ctx, "owner", "model", c, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	generated := &illustrationTestGenerator{result: result}
+	checks := 0
+	worker := illustration.Worker{Store: repository, Generator: generated, Now: func() time.Time { return now }, Guard: illustrationTestGuard(func(_ context.Context, task illustration.Task) error {
+		checks++
+		if task.ConsentRevision != "v1" {
+			return illustration.ErrInput
+		}
+		return nil
+	})}
+	finished, err := worker.Process(ctx, "owner", workerID)
+	if err != nil || finished.State != illustration.TaskSucceeded || checks != 2 {
+		t.Fatalf("worker pipeline: %v", err)
+	}
+	_, _ = worker.Process(ctx, "owner", workerID)
+	if generated.calls != 1 {
+		t.Fatal("worker redelivered upstream request")
+	}
+	if _, err := repository.Result(ctx, "owner", workerID, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type illustrationTestGuard func(context.Context, illustration.Task) error
+
+func (g illustrationTestGuard) Authorize(ctx context.Context, t illustration.Task) error {
+	return g(ctx, t)
+}
+
+type illustrationTestGenerator struct {
+	result illustration.Result
+	calls  int
+}
+
+func (g *illustrationTestGenerator) Model() string { return "model" }
+func (g *illustrationTestGenerator) Generate(context.Context, illustration.Input) (illustration.Result, error) {
+	g.calls++
+	return g.result, nil
 }

@@ -75,6 +75,7 @@ const (
 // calling the provider; an expired worker is never automatically dispatched again.
 type Task struct {
 	ID, AppID, OwnerID, VersionID, RequestDigest, Model string
+	ConsentRevision                                     string
 	State                                               TaskState
 	Charge                                              ChargeState
 	Revision                                            uint64
@@ -92,13 +93,24 @@ func NewTask(appID, ownerID, model string, c Confirmation, reference []byte, now
 	encoded, _ := json.Marshal(c)
 	hash := sha256.Sum256(encoded)
 	return Task{ID: c.RequestID, AppID: appID, OwnerID: ownerID, VersionID: c.VersionID,
-		RequestDigest: hex.EncodeToString(hash[:]), Model: model, State: TaskQueued,
+		RequestDigest: hex.EncodeToString(hash[:]), Model: model, ConsentRevision: c.ConsentRevision, State: TaskQueued,
 		Charge: ChargeReserved, Revision: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour)}, nil
 }
 
 func (t Task) SameRequest(other Task) bool {
 	return t.ID == other.ID && t.AppID == other.AppID && t.OwnerID == other.OwnerID &&
-		t.VersionID == other.VersionID && t.RequestDigest == other.RequestDigest
+		t.VersionID == other.VersionID && t.RequestDigest == other.RequestDigest && t.ConsentRevision == other.ConsentRevision
+}
+
+// AbortBeforeDispatch is only for the worker that owns the claim and has not
+// invoked the provider. It must never be used after an ambiguous HTTP outcome.
+func (t *Task) AbortBeforeDispatch() error {
+	if (t.State != TaskRunning && t.State != TaskCancelled) || t.Charge != ChargeUncertain {
+		return ErrTaskConflict
+	}
+	t.State, t.Charge, t.ResultDigest = TaskCancelled, ChargeRelease, ""
+	t.Revision++
+	return nil
 }
 
 func (t *Task) Start(expected uint64, now time.Time) error {
