@@ -34,10 +34,26 @@ cancelled or expired delivery. HTTP rejection alone does not establish billing.
 Tests cover both cancellation/completion orderings, stale transitions, material
 changes, app/owner separation, and reconciliation without redispatch.
 
-This is a transition core, not a durable queue: production still needs atomic
-storage/CAS, encrypted payloads, a worker, authorization checks at admission and
-dispatch, settlement and delivery. Merely calling `Start` in memory does not make
-a dispatch durable or concurrent-safe.
+The MySQL `IllustrationRepository` now implements encrypted CreateOrGet, a
+transactional row-locked Claim, and cancellation with payload erasure. Migration
+0005 adds only a dedicated Journal table and is not applied to any live database.
+App, owner and task identity are bound into AES-GCM associated data. Duplicate
+admission preserves the original model and input. Claim commits the dispatch
+fence before returning private input and never reclaims an already started task.
+An unknown commit result must be reconciled, not dispatched speculatively.
+
+Local compilation, encryption-isolation and embedded-migration tests pass.
+`TestIllustrationDurableClaimAndCancellation` covers eight concurrent claimers,
+repository reconstruction, private payload erasure and scoped identity, but was
+**skipped locally because MYSQL_TEST_DSN is not configured**. Run it against an
+isolated `_test` MySQL database before declaring persistence/concurrency verified.
+The test deletes only its own UUID row, not existing tables or user data.
+
+Production still needs a worker, authorization checks at admission and dispatch,
+atomic image quota reservation/settlement, encrypted results, expiry maintenance,
+and delivery. The repository is not registered with the gateway. A durable claim
+alone is not a complete generation workflow; a crash after claim but before HTTP
+dispatch is conservatively unresolved and must not auto-generate a second image.
 
 Wire a Journal-only authenticated task contract with explicit material consent,
 image-denominated reservation/settlement, durable request identity, ambiguous

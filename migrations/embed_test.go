@@ -13,7 +13,7 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []string{"0001_initial.sql", "0002_voice_subscription_anchor.sql", "0003_privacy_deletion_receipts.sql", "0004_ai_cost_control.sql"}
+	expected := []string{"0001_initial.sql", "0002_voice_subscription_anchor.sql", "0003_privacy_deletion_receipts.sql", "0004_ai_cost_control.sql", "0005_journal_illustrations.sql"}
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}
@@ -73,5 +73,23 @@ func TestMigrationFileFilterRejectsHiddenMetadata(t *testing.T) {
 	}
 	if !isMigrationFile("0001_initial.sql") {
 		t.Fatal("numbered SQL migration was rejected")
+	}
+}
+
+func TestIllustrationMigrationIsIsolatedAndEncrypted(t *testing.T) {
+	contents, err := migrationFiles.ReadFile("0005_journal_illustrations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := string(contents)
+	for _, required := range []string{"PRIMARY KEY (app_id, id)", "owner_id", "request_ciphertext LONGBLOB", "request_nonce VARBINARY(12)", "expires_at"} {
+		if !strings.Contains(schema, required) {
+			t.Fatalf("missing %s", required)
+		}
+	}
+	for _, forbidden := range []string{"ALTER TABLE", "DROP TABLE", "ai_jobs", "prompt TEXT", "reference_image"} {
+		if strings.Contains(schema, forbidden) {
+			t.Fatalf("unexpected schema mutation %s", forbidden)
+		}
 	}
 }
