@@ -25,6 +25,20 @@ boundary performs actual bounded preview decoding before document acceptance.
 
 ## Required before enabling
 
+`task.go` now defines frozen confirmation digests (including reference-image
+hash and consent revision), authenticated app/owner identity matching, revisioned
+state transitions, expiration, and separate delivery/charge states. Cancellation
+before dispatch releases the reservation; cancellation after dispatch retains
+uncertain charging until a result is reconciled. Late results never restore a
+cancelled or expired delivery. HTTP rejection alone does not establish billing.
+Tests cover both cancellation/completion orderings, stale transitions, material
+changes, app/owner separation, and reconciliation without redispatch.
+
+This is a transition core, not a durable queue: production still needs atomic
+storage/CAS, encrypted payloads, a worker, authorization checks at admission and
+dispatch, settlement and delivery. Merely calling `Start` in memory does not make
+a dispatch durable or concurrent-safe.
+
 Wire a Journal-only authenticated task contract with explicit material consent,
 image-denominated reservation/settlement, durable request identity, ambiguous
 outcome reconciliation, cancellation, and encrypted short-lived result delivery.
