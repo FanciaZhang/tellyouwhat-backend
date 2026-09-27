@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS journal_illustration_tasks (
     metadata JSON NOT NULL,
     request_ciphertext LONGBLOB NULL,
     request_nonce VARBINARY(12) NULL,
+    result_ciphertext LONGBLOB NULL,
+    result_nonce VARBINARY(12) NULL,
     expires_at DATETIME(6) NOT NULL,
     PRIMARY KEY (app_id, id),
     KEY illustration_expiry (expires_at)

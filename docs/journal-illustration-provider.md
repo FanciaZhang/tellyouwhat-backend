@@ -49,9 +49,21 @@ repository reconstruction, private payload erasure and scoped identity, but was
 isolated `_test` MySQL database before declaring persistence/concurrency verified.
 The test deletes only its own UUID row, not existing tables or user data.
 
+The repository also stores outcomes and encrypted results atomically with task
+state, binds result ciphertext to the request and image digests, rejects expired
+or cancelled result reads, and erases both input and output on cancellation.
+Identical successful completion callbacks do not advance the revision again.
+Expired payload purge retains identity tombstones to prevent re-generation under
+an old request ID. It is not yet scheduled. Result reads are serialized with
+cancellation; already returned bytes still require client-side revocation checks.
+The real-MySQL test now includes late completion, identical callback replay,
+encrypted result roundtrip and expiry purge, and remains skipped locally. Its
+isolated app ID and request IDs prevent cleanup from touching other test data.
+
 Production still needs a worker, authorization checks at admission and dispatch,
-atomic image quota reservation/settlement, encrypted results, expiry maintenance,
-and delivery. The repository is not registered with the gateway. A durable claim
+atomic image quota reservation/settlement, scheduled expiry maintenance,
+and HTTP delivery. Stored charge state is not a completed debit. The repository
+is not registered with the gateway. A durable claim
 alone is not a complete generation workflow; a crash after claim but before HTTP
 dispatch is conservatively unresolved and must not auto-generate a second image.
 

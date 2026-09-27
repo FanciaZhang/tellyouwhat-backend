@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"image"
+	"image/png"
 	"os"
 	"strings"
 	"sync"
@@ -43,11 +45,12 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := "illustration-test"
+	app := "illustration-" + uuid.NewString()
 	repository := mysqlstore.NewIllustrationRepository(db, cipher, app)
 	c := illustration.Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "private test scene", ConsentRevision: "v1"}
+	firstID := c.RequestID
 	defer func() {
-		_, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, c.RequestID)
+		_, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, firstID)
 	}()
 	now := time.Now().UTC()
 	task, err := repository.CreateOrGet(ctx, "owner", "model", c, nil, now)
@@ -107,5 +110,60 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	var purged bool
 	if err := db.QueryRowContext(ctx, `SELECT request_ciphertext IS NULL AND request_nonce IS NULL FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, c.RequestID).Scan(&purged); err != nil || !purged {
 		t.Fatal("private payload not purged")
+	}
+	var imageBytes bytes.Buffer
+	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 16, 12))); err != nil {
+		t.Fatal(err)
+	}
+	result := illustration.Result{Image: imageBytes.Bytes(), MIME: "image/png", Width: 16, Height: 12}
+	claimedTask := task
+	if err := claimedTask.Start(1, now); err != nil {
+		t.Fatal(err)
+	}
+	late, err := repository.StoreOutcome(ctx, claimedTask, &result, nil, now)
+	if err != nil || late.State != illustration.TaskCancelled || late.Charge != illustration.ChargeOneImage {
+		t.Fatal("late result accounting")
+	}
+	if _, err := repository.Result(ctx, "owner", task.ID, now); err == nil {
+		t.Fatal("cancelled result delivered")
+	}
+
+	c.RequestID = uuid.NewString()
+	c.VersionID = uuid.NewString()
+	successID := c.RequestID
+	defer func() {
+		_, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=? AND id=?`, app, successID)
+	}()
+	_, err = repository.CreateOrGet(ctx, "owner", "model", c, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimedTask, _, err = repository.Claim(ctx, "owner", successID, 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := repository.StoreOutcome(ctx, claimedTask, &result, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := reopened.StoreOutcome(ctx, claimedTask, &result, nil, now)
+	if err != nil || duplicate != completed {
+		t.Fatal("completion replay mutated task")
+	}
+	got, err := reopened.Result(ctx, "owner", successID, now)
+	if err != nil || !bytes.Equal(got.Image, result.Image) {
+		t.Fatal("encrypted result roundtrip")
+	}
+	if _, err := reopened.Result(ctx, "other", successID, now); err == nil {
+		t.Fatal("cross-owner result exposed")
+	}
+	if _, err := reopened.Result(ctx, "owner", successID, completed.ExpiresAt); err == nil {
+		t.Fatal("expired result exposed")
+	}
+	if err := repository.PurgeExpiredPayloads(ctx, completed.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.Result(ctx, "owner", successID, now); err == nil {
+		t.Fatal("purged result recovered by backdated clock")
 	}
 }

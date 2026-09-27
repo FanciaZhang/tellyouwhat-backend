@@ -153,7 +153,7 @@ func (r *IllustrationRepository) Cancel(ctx context.Context, owner, id string, r
 	if err != nil {
 		return illustration.Task{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE journal_illustration_tasks SET metadata=?,request_ciphertext=NULL,request_nonce=NULL WHERE app_id=? AND id=? AND owner_id=?`, metadata, r.appID, id, owner); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE journal_illustration_tasks SET metadata=?,request_ciphertext=NULL,request_nonce=NULL,result_ciphertext=NULL,result_nonce=NULL WHERE app_id=? AND id=? AND owner_id=?`, metadata, r.appID, id, owner); err != nil {
 		return illustration.Task{}, err
 	}
 	if err := tx.Commit(); err != nil {
