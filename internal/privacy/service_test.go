@@ -61,4 +61,25 @@ func TestRequiredConsentsMustAllBeExplicitlyGranted(t *testing.T) {
 
 type noopObjectCleaner struct{}
 
+func TestJournalImageConsentCannotBeGrantedByHealth(t *testing.T) {
+	repository := NewMemoryRepository()
+	service := NewService(repository, nil, nil, time.Now)
+	principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}
+	consent := Consent{Scope: JournalIllustrationScope, DocumentVersion: JournalIllustrationDocumentVersion, Granted: true}
+	if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != ErrInvalidConsent {
+		t.Fatal("health accepted journal consent")
+	}
+	principal.AppID = "journal"
+	if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := service.HasRequiredConsents(context.Background(), principal, []string{JournalIllustrationScope}); err != nil || !allowed {
+		t.Fatal("journal grant unreadable")
+	}
+	principal.AppID = "health"
+	if _, err := service.HasRequiredConsents(context.Background(), principal, []string{JournalIllustrationScope}); err != ErrInvalidConsent {
+		t.Fatal("cross-app consent query")
+	}
+}
+
 func (noopObjectCleaner) DeleteObject(context.Context, string) error { return nil }

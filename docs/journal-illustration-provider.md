@@ -84,8 +84,18 @@ Real MySQL tests repeat concurrent admission (ten requests for three slots),
 cancel replay and completion replay; they verify no over-reservation or double
 settlement. No token quota tables are modified.
 
-Production still needs the real consent/entitlement/allowance policy and dispatch
-guard, worker scheduling, reconciliation of unknown outcomes, scheduled expiry
+`AccessPolicy` now resolves current registered Journal keys, matched subscription
+transactions and expiry, explicit managed-AI plus `journal_illustration` consent,
+and a server-configured monthly allowance. Its dispatch guard additionally
+checks the frozen consent revision, billing account, expiry and persisted task
+reservation. The shared privacy service recognizes this scope only for Journal;
+existing Health consent scopes and default route configuration are unchanged.
+Tests exercise explicit grant/revocation, expiry, changed subscription identity,
+cross-app rejection, and absent reservations. No default paid allowance is set.
+
+Production still needs policy wiring, a reviewed user-facing consent document
+and App confirmation UI, consent endpoint contract updates, worker scheduling,
+account-deletion integration, reconciliation of unknown outcomes, scheduled expiry
 maintenance, and HTTP delivery. The repository
 is not registered with the gateway. A durable claim
 alone is not a complete generation workflow; a crash after claim but before HTTP

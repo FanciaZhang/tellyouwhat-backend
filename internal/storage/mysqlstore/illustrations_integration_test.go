@@ -61,6 +61,9 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A fresh repository instance must recover the same frozen model.
+	if reserved, err := repository.HasImageReservation(ctx, task); err != nil || !reserved {
+		t.Fatal("durable reservation not authorized")
+	}
 	reopened := mysqlstore.NewIllustrationRepository(db, cipher, app, allowance)
 	again, err := reopened.CreateOrGet(ctx, "owner", "new-model", c, nil, now)
 	if err != nil || again.Model != task.Model {
@@ -106,6 +109,9 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	cancelled, err := repository.Cancel(ctx, "owner", task.ID, 2)
 	if err != nil || cancelled.State != illustration.TaskCancelled || cancelled.Charge != illustration.ChargeUncertain {
 		t.Fatal("cancelled task incorrect")
+	}
+	if reserved, err := repository.HasImageReservation(ctx, cancelled); err != nil || reserved {
+		t.Fatal("cancelled reservation authorized")
 	}
 	if _, _, err := reopened.Claim(ctx, "owner", task.ID, cancelled.Revision, now); err == nil {
 		t.Fatal("cancelled task dispatched")
