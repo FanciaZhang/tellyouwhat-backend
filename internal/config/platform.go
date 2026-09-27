@@ -81,6 +81,7 @@ type IllustrationConfig struct {
 	Enabled                bool
 	BaseURL, APIKey, Model string
 	MonthlyImages          int
+	MaxCostNanos           int64
 }
 
 type ProductConfig struct {
@@ -254,6 +255,11 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 				return AppConfig{}, err
 			}
 			config.Illustration = IllustrationConfig{Enabled: true, BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MonthlyImages: limit}
+			price, err := parseOptionalCNYNanos("JOURNAL_IMAGE_MAX_CNY_PER_IMAGE", prefixedValue(prefix, "IMAGE_MAX_CNY_PER_IMAGE", ""))
+			if err != nil {
+				return AppConfig{}, err
+			}
+			config.Illustration.MaxCostNanos = price
 		}
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
 		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration"}
@@ -364,7 +370,7 @@ func (config AppConfig) Validate(environment string) error {
 			return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
 		}
 	case appregistry.Journal:
-		if config.Illustration.Enabled && (config.Illustration.BaseURL == "" || config.Illustration.APIKey == "" || config.Illustration.Model == "" || config.Illustration.MonthlyImages < 1) {
+		if config.Illustration.Enabled && (config.Illustration.BaseURL == "" || config.Illustration.APIKey == "" || config.Illustration.Model == "" || config.Illustration.MonthlyImages < 1 || config.Illustration.MaxCostNanos <= 0) {
 			return errors.New("Journal image generation requires endpoint, credentials, model and positive monthly image limit")
 		}
 		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {

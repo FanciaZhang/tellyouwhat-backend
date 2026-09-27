@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
@@ -16,8 +17,8 @@ func buildIllustrationRuntime(platform config.PlatformConfig, app config.AppConf
 	if app.Registry.ID != appregistry.Journal || !app.Illustration.Enabled {
 		return nil, nil, nil
 	}
-	if platform.Environment == "production" {
-		return nil, nil, errors.New("image production enablement requires project monetary cost control integration")
+	if shared.imageCostController == nil || app.Illustration.MaxCostNanos <= 0 {
+		return nil, nil, errors.New("image generation requires project monetary budget and a positive per-image cost bound")
 	}
 	if platform.StorageMode != "mysql" || shared.database == nil || shared.cipher == nil || storage.keys == nil || storage.entitlements == nil {
 		return nil, nil, errors.New("image generation requires durable encrypted Journal storage")
@@ -34,7 +35,7 @@ func buildIllustrationRuntime(platform config.PlatformConfig, app config.AppConf
 	repository := mysqlstore.NewIllustrationRepository(shared.database, shared.cipher, "journal", policy)
 	policy.Reservations = repository
 	service := &illustration.Service{Store: repository, Access: policy, Model: provider.Model()}
-	worker := illustration.Worker{Store: repository, Guard: policy, Generator: provider}
+	worker := illustration.Worker{Store: repository, Guard: policy, Generator: &illustration.BudgetedGenerator{Next: provider, Controller: shared.imageCostController, MaxCostNanos: app.Illustration.MaxCostNanos, SettlementFailed: func() { slog.Error("Journal image budget settlement deferred; reservation retained") }}}
 	scheduler := &illustration.Scheduler{Queue: repository, Processor: worker}
 	return service, scheduler, nil
 }

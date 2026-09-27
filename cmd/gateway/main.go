@@ -58,10 +58,11 @@ type entitlementRepository interface {
 }
 
 type sharedStorage struct {
-	database  *sql.DB
-	redis     *redis.Client
-	cipher    *mysqlstore.PayloadCipher
-	readiness gateway.Readiness
+	imageCostController *costcontrol.Controller
+	database            *sql.DB
+	redis               *redis.Client
+	cipher              *mysqlstore.PayloadCipher
+	readiness           gateway.Readiness
 }
 
 type appStorage struct {
@@ -125,6 +126,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	shared.imageCostController = costController
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
 	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))

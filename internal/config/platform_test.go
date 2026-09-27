@@ -124,8 +124,9 @@ func TestJournalImageConfigurationIsExplicit(t *testing.T) {
 	t.Setenv("JOURNAL_IMAGE_API_KEY", "synthetic")
 	t.Setenv("JOURNAL_IMAGE_MODEL_ID", "image-model")
 	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "7")
+	t.Setenv("JOURNAL_IMAGE_MAX_CNY_PER_IMAGE", "0.25")
 	app, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM")
-	if err != nil || !app.Illustration.Enabled || app.Illustration.MonthlyImages != 7 || app.Illustration.Model != "image-model" {
+	if err != nil || !app.Illustration.Enabled || app.Illustration.MonthlyImages != 7 || app.Illustration.Model != "image-model" || app.Illustration.MaxCostNanos != 250_000_000 {
 		t.Fatalf("image config lost: %v", err)
 	}
 	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "invalid")

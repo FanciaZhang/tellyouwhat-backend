@@ -86,6 +86,10 @@ func (w Worker) Process(ctx context.Context, owner, id string) (Task, error) {
 		return abort(err)
 	}
 	result, failure := w.Generator.Generate(ctx, input)
+	var notDispatched NotDispatched
+	if errors.As(failure, &notDispatched) {
+		return abort(failure)
+	}
 	var output *Result
 	if failure == nil {
 		output = &result
