@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
@@ -63,6 +65,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	illustrations              *illustration.Service
 	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
@@ -115,6 +118,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeStorage()
+	var imageWorkers sync.WaitGroup
+	defer func() { stop(); imageWorkers.Wait() }()
+	var imageSchedulers []*illustration.Scheduler
 	costController, err := newAICostController(platform, shared)
 	if err != nil {
 		return err
@@ -125,6 +131,14 @@ func run(logger *slog.Logger) error {
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
 		storage := storageForApp(platform, shared, appConfig)
+		imageService, scheduler, imageErr := buildIllustrationRuntime(platform, appConfig, shared, storage)
+		if imageErr != nil {
+			return imageErr
+		}
+		storage.illustrations = imageService
+		if scheduler != nil {
+			imageSchedulers = append(imageSchedulers, scheduler)
+		}
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -157,6 +171,13 @@ func run(logger *slog.Logger) error {
 		MaxHeaderBytes:    32 << 10,
 	}
 	errChannel := make(chan error, 1)
+	for _, scheduler := range imageSchedulers {
+		imageWorkers.Add(1)
+		go func(s *illustration.Scheduler) {
+			defer imageWorkers.Done()
+			_ = s.Run(ctx, 5*time.Second, func(error) { logger.Error("Journal image scheduler batch failed") })
+		}(scheduler)
+	}
 	go func() {
 		logger.Info("gateway listening", "port", platform.Port, "environment", platform.Environment, "apps", len(platform.Apps))
 		errChannel <- server.ListenAndServe()
@@ -391,6 +412,10 @@ func buildAppHandler(
 		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		if storage.illustrations != nil {
+			dependencies.JournalIllustrations = storage.illustrations
+			dependencies.AllowedConsentScopes = append(dependencies.AllowedConsentScopes, privacy.JournalIllustrationScope)
+		}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,

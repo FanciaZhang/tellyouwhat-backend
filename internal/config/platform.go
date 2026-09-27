@@ -58,6 +58,7 @@ type AppConfig struct {
 	SchemaManifestPath     string
 	Ark                    ark.Config
 	JournalAI              JournalAIConfig
+	Illustration           IllustrationConfig
 	VoiceEnabled           bool
 	VoiceASR               voice.ASRConfig
 	VoiceModel             string
@@ -74,6 +75,12 @@ type JournalAIConfig struct {
 	LiteModel      string
 	ProModel       string
 	TimeoutSeconds int
+}
+
+type IllustrationConfig struct {
+	Enabled                bool
+	BaseURL, APIKey, Model string
+	MonthlyImages          int
 }
 
 type ProductConfig struct {
@@ -236,6 +243,18 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		}
 	}
 	if defaults.ID == appregistry.Journal {
+		enabled := prefixedValue(prefix, "IMAGE_ENABLED", "false")
+		if enabled != "true" && enabled != "false" {
+			return AppConfig{}, errors.New("JOURNAL_IMAGE_ENABLED must be true or false")
+		}
+		config.Illustration.Enabled = enabled == "true"
+		if config.Illustration.Enabled {
+			limit, err := prefixedInt(prefix, "IMAGE_MONTHLY_LIMIT", 0)
+			if err != nil {
+				return AppConfig{}, err
+			}
+			config.Illustration = IllustrationConfig{Enabled: true, BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MonthlyImages: limit}
+		}
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
 		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration"}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
@@ -345,6 +364,9 @@ func (config AppConfig) Validate(environment string) error {
 			return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
 		}
 	case appregistry.Journal:
+		if config.Illustration.Enabled && (config.Illustration.BaseURL == "" || config.Illustration.APIKey == "" || config.Illustration.Model == "" || config.Illustration.MonthlyImages < 1) {
+			return errors.New("Journal image generation requires endpoint, credentials, model and positive monthly image limit")
+		}
 		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {
 			return errors.New("journal Ark Responses API configuration is incomplete")
 		}

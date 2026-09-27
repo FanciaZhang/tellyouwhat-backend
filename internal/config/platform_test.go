@@ -112,6 +112,32 @@ func TestJournalAIConfigRetainsConfiguredTimeout(t *testing.T) {
 	}
 }
 
+func TestJournalImageConfigurationIsExplicit(t *testing.T) {
+	defaults := appDefaults{ID: appregistry.Journal, DisplayName: "Journal", Host: "api.journal.test", BundleID: "journal.bundle", ProductID: "journal.ai.monthly", OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.test"}
+	t.Setenv("JOURNAL_IMAGE_ENABLED", "false")
+	app, err := loadPlatformApp("JOURNAL", defaults, "development", "TEAM")
+	if err != nil || app.Illustration.Enabled {
+		t.Fatal("image generation enabled by default")
+	}
+	t.Setenv("JOURNAL_IMAGE_ENABLED", "true")
+	t.Setenv("JOURNAL_IMAGE_BASE_URL", "https://images.test/api/v3")
+	t.Setenv("JOURNAL_IMAGE_API_KEY", "synthetic")
+	t.Setenv("JOURNAL_IMAGE_MODEL_ID", "image-model")
+	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "7")
+	app, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM")
+	if err != nil || !app.Illustration.Enabled || app.Illustration.MonthlyImages != 7 || app.Illustration.Model != "image-model" {
+		t.Fatalf("image config lost: %v", err)
+	}
+	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "invalid")
+	if _, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM"); err == nil {
+		t.Fatal("invalid allowance accepted")
+	}
+	t.Setenv("JOURNAL_IMAGE_ENABLED", "typo")
+	if _, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM"); err == nil {
+		t.Fatal("invalid toggle silently ignored")
+	}
+}
+
 func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {
 	app := AppConfig{
 		Registry: appregistry.App{
