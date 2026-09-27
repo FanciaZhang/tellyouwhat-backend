@@ -9,6 +9,7 @@ import (
 )
 
 var _ illustration.TaskRepository = (*IllustrationRepository)(nil)
+var _ illustration.ClientRepository = (*IllustrationRepository)(nil)
 
 func (r *IllustrationRepository) GetTask(ctx context.Context, owner, id string, now time.Time) (illustration.Task, error) {
 	tx, err := r.database.BeginTx(ctx, nil)

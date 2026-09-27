@@ -66,7 +66,26 @@ func (p *AccessPolicy) ImageAllowance(ctx context.Context, owner string, now tim
 }
 
 func (p *AccessPolicy) Authorize(ctx context.Context, task Task) error {
-	if p == nil || p.Reservations == nil || task.AppID != "journal" || task.ConsentRevision != privacy.JournalIllustrationDocumentVersion {
+	if p == nil || p.Reservations == nil {
+		return ErrAccessDenied
+	}
+	if err := p.AuthorizeRead(ctx, task); err != nil {
+		return err
+	}
+	reserved, err := p.Reservations.HasImageReservation(ctx, task)
+	if err != nil {
+		return err
+	}
+	if !reserved {
+		return ErrAccessDenied
+	}
+	return nil
+}
+
+// AuthorizeRead rechecks live consent and account binding without requiring a
+// reservation: successful tasks have already consumed their reservation.
+func (p *AccessPolicy) AuthorizeRead(ctx context.Context, task Task) error {
+	if p == nil || task.AppID != "journal" || task.ConsentRevision != privacy.JournalIllustrationDocumentVersion {
 		return ErrAccessDenied
 	}
 	now := time.Now()
@@ -78,13 +97,6 @@ func (p *AccessPolicy) Authorize(ctx context.Context, task Task) error {
 		return err
 	}
 	if account != task.BillingAccount || !now.Before(task.ExpiresAt) || now.Before(task.CreatedAt) {
-		return ErrAccessDenied
-	}
-	reserved, err := p.Reservations.HasImageReservation(ctx, task)
-	if err != nil {
-		return err
-	}
-	if !reserved {
 		return ErrAccessDenied
 	}
 	return nil

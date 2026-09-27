@@ -58,6 +58,15 @@ func TestAccessRequiresJournalSubscriptionAndExplicitImageConsent(t *testing.T) 
 	if policy.Authorize(ctx, task) == nil {
 		t.Fatal("unreserved dispatch")
 	}
+	task.State, task.Charge = TaskSucceeded, ChargeOneImage
+	if err := policy.AuthorizeRead(ctx, task); err != nil {
+		t.Fatal("settled result must not require a live reservation", err)
+	}
+	grant(privacy.JournalIllustrationScope, privacy.JournalIllustrationDocumentVersion, false)
+	if policy.AuthorizeRead(ctx, task) == nil {
+		t.Fatal("revoked completed result allowed")
+	}
+	grant(privacy.JournalIllustrationScope, privacy.JournalIllustrationDocumentVersion, true)
 	record.ExpiresAt = now
 	_ = subscriptions.Upsert(ctx, record)
 	if _, _, err := policy.ImageAllowance(ctx, "key", now); err == nil {
