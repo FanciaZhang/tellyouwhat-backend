@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"github.com/go-sql-driver/mysql"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
@@ -12,13 +14,14 @@ import (
 // IllustrationRepository is not wired into the shared gateway. Every caller
 // must supply its authenticated owner; no operation accepts arbitrary task edits.
 type IllustrationRepository struct {
-	database *sql.DB
-	cipher   *PayloadCipher
-	appID    string
+	database  *sql.DB
+	cipher    *PayloadCipher
+	appID     string
+	allowance ImageAllowancePolicy
 }
 
-func NewIllustrationRepository(db *sql.DB, cipher *PayloadCipher, appID string) *IllustrationRepository {
-	return &IllustrationRepository{database: db, cipher: cipher, appID: appID}
+func NewIllustrationRepository(db *sql.DB, cipher *PayloadCipher, appID string, allowance ImageAllowancePolicy) *IllustrationRepository {
+	return &IllustrationRepository{database: db, cipher: cipher, appID: appID, allowance: allowance}
 }
 
 type illustrationPayload struct {
@@ -36,6 +39,14 @@ func (r *IllustrationRepository) CreateOrGet(ctx context.Context, owner, model s
 	if err != nil {
 		return illustration.Task{}, err
 	}
+	if r.allowance == nil {
+		return illustration.Task{}, ErrImageBudget
+	}
+	account, limit, err := r.allowance.ImageAllowance(ctx, owner, now)
+	if err != nil {
+		return illustration.Task{}, err
+	}
+	task.BillingAccount, task.BudgetMonth = account, now.UTC().Format("2006-01")
 	payload, err := json.Marshal(illustrationPayload{confirmation, reference})
 	if err != nil {
 		return illustration.Task{}, err
@@ -56,16 +67,25 @@ func (r *IllustrationRepository) CreateOrGet(ctx context.Context, owner, model s
 	// The duplicate branch never changes the stored owner, payload or model.
 	_, err = tx.ExecContext(ctx, `INSERT INTO journal_illustration_tasks
 		(app_id,id,owner_id,metadata,request_ciphertext,request_nonce,expires_at)
-		VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id`,
+		VALUES (?,?,?,?,?,?,?)`,
 		r.appID, task.ID, owner, metadata, encrypted, nonce, task.ExpiresAt)
+	inserted := err == nil
 	if err != nil {
-		return illustration.Task{}, err
+		var duplicate *mysql.MySQLError
+		if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+			return illustration.Task{}, err
+		}
+	}
+	if inserted {
+		if err := r.reserveImage(ctx, tx, task, limit); err != nil {
+			return illustration.Task{}, err
+		}
 	}
 	stored, _, _, err := r.lock(ctx, tx, owner, task.ID)
 	if err != nil {
 		return illustration.Task{}, err
 	}
-	if !stored.SameRequest(task) || !now.Before(stored.ExpiresAt) {
+	if !stored.SameRequest(task) || stored.BillingAccount != account || !now.Before(stored.ExpiresAt) {
 		return illustration.Task{}, illustration.ErrTaskConflict
 	}
 	if err := tx.Commit(); err != nil {
@@ -146,7 +166,11 @@ func (r *IllustrationRepository) Cancel(ctx context.Context, owner, id string, r
 	if err != nil {
 		return illustration.Task{}, err
 	}
+	before := task
 	if err := task.Cancel(revision); err != nil {
+		return illustration.Task{}, err
+	}
+	if err := r.settleImage(ctx, tx, before, task); err != nil {
 		return illustration.Task{}, err
 	}
 	metadata, err := json.Marshal(task)

@@ -21,8 +21,8 @@ func resultMatches(task illustration.Task, result illustration.Result) bool {
 }
 
 // StoreOutcome is an internal worker operation, never a client-provided task.
-// Persisting Charge records the settlement decision, not a completed debit:
-// production admission/settlement must still be integrated before enabling routes.
+// Image allowance settlement and encrypted delivery are committed together.
+// Upstream monetary billing reconciliation is separate from this image counter.
 func (r *IllustrationRepository) StoreOutcome(ctx context.Context, claimed illustration.Task, result *illustration.Result, failure error, now time.Time) (illustration.Task, error) {
 	if claimed.AppID != r.appID || claimed.State != illustration.TaskRunning || claimed.Charge != illustration.ChargeUncertain {
 		return illustration.Task{}, illustration.ErrTaskConflict
@@ -43,8 +43,12 @@ func (r *IllustrationRepository) StoreOutcome(ctx context.Context, claimed illus
 		// Lost commit acknowledgements may repeat the identical callback.
 		return task, nil
 	}
+	before := task
 	deliver, err := task.RecordOutcome(task.Revision, result, failure, now)
 	if err != nil {
+		return illustration.Task{}, err
+	}
+	if err := r.settleImage(ctx, tx, before, task); err != nil {
 		return illustration.Task{}, err
 	}
 	var encrypted, nonce []byte

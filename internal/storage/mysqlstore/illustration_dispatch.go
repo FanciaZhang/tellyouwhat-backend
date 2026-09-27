@@ -45,7 +45,11 @@ func (r *IllustrationRepository) AbortDispatch(ctx context.Context, claimed illu
 	if !task.SameRequest(claimed) || task.Model != claimed.Model || task.Revision < claimed.Revision {
 		return illustration.Task{}, illustration.ErrTaskConflict
 	}
+	before := task
 	if err := task.AbortBeforeDispatch(); err != nil {
+		return illustration.Task{}, err
+	}
+	if err := r.settleImage(ctx, tx, before, task); err != nil {
 		return illustration.Task{}, err
 	}
 	metadata, err := json.Marshal(task)

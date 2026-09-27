@@ -46,7 +46,10 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := "illustration-" + uuid.NewString()
-	repository := mysqlstore.NewIllustrationRepository(db, cipher, app)
+	defer func() { _, _ = db.Exec(`DELETE FROM journal_illustration_tasks WHERE app_id=?`, app) }()
+	allowance := illustrationTestAllowance(func(context.Context, string, time.Time) (string, int64, error) { return "billing-account", 100, nil })
+	repository := mysqlstore.NewIllustrationRepository(db, cipher, app, allowance)
+	defer func() { _, _ = db.Exec(`DELETE FROM journal_image_budgets WHERE app_id=?`, app) }()
 	c := illustration.Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "private test scene", ConsentRevision: "v1"}
 	firstID := c.RequestID
 	defer func() {
@@ -58,7 +61,7 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A fresh repository instance must recover the same frozen model.
-	reopened := mysqlstore.NewIllustrationRepository(db, cipher, app)
+	reopened := mysqlstore.NewIllustrationRepository(db, cipher, app, allowance)
 	again, err := reopened.CreateOrGet(ctx, "owner", "new-model", c, nil, now)
 	if err != nil || again.Model != task.Model {
 		t.Fatal("request was not persisted")
@@ -220,9 +223,63 @@ func TestIllustrationDurableClaimAndCancellation(t *testing.T) {
 	if _, err := repository.Result(ctx, "owner", workerID, now); err != nil {
 		t.Fatal(err)
 	}
+	var reserved, used int
+	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, "billing-account").Scan(&reserved, &used); err != nil || reserved != 1 || used != 3 {
+		t.Fatalf("settlement reserved=%d used=%d err=%v", reserved, used, err)
+	}
+
+	limited := mysqlstore.NewIllustrationRepository(db, cipher, app, illustrationTestAllowance(func(context.Context, string, time.Time) (string, int64, error) { return "limited-account", 3, nil }))
+	var acceptedMu sync.Mutex
+	var accepted []illustration.Task
+	var contenders sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		contenders.Add(1)
+		go func() {
+			defer contenders.Done()
+			confirmation := illustration.Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "budget fixture", ConsentRevision: "v1"}
+			task, err := limited.CreateOrGet(ctx, "owner", "model", confirmation, nil, now)
+			if err == nil {
+				acceptedMu.Lock()
+				accepted = append(accepted, task)
+				acceptedMu.Unlock()
+			}
+		}()
+	}
+	contenders.Wait()
+	if len(accepted) != 3 {
+		t.Fatalf("quota race accepted %d requests", len(accepted))
+	}
+	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, "limited-account").Scan(&reserved, &used); err != nil || reserved != 3 || used != 0 {
+		t.Fatal("quota oversubscribed")
+	}
+	if _, err := limited.Cancel(ctx, "owner", accepted[0].ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := limited.Cancel(ctx, "owner", accepted[0].ID, 1); err != nil {
+		t.Fatal("idempotent cancel")
+	}
+	started, _, err := limited.Claim(ctx, "owner", accepted[1].ID, 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := limited.StoreOutcome(ctx, started, &result, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := limited.StoreOutcome(ctx, started, &result, nil, now); err != nil {
+		t.Fatal("idempotent settlement")
+	}
+	if err := db.QueryRowContext(ctx, `SELECT reserved,used FROM journal_image_budgets WHERE app_id=? AND account_id=?`, app, "limited-account").Scan(&reserved, &used); err != nil || reserved != 1 || used != 1 {
+		t.Fatalf("double charge/release reserved=%d used=%d", reserved, used)
+	}
 }
 
 type illustrationTestGuard func(context.Context, illustration.Task) error
+
+type illustrationTestAllowance func(context.Context, string, time.Time) (string, int64, error)
+
+func (f illustrationTestAllowance) ImageAllowance(ctx context.Context, owner string, now time.Time) (string, int64, error) {
+	return f(ctx, owner, now)
+}
 
 func (g illustrationTestGuard) Authorize(ctx context.Context, t illustration.Task) error {
 	return g(ctx, t)

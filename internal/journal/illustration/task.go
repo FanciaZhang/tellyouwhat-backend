@@ -75,6 +75,7 @@ const (
 // calling the provider; an expired worker is never automatically dispatched again.
 type Task struct {
 	ID, AppID, OwnerID, VersionID, RequestDigest, Model string
+	BillingAccount, BudgetMonth                         string
 	ConsentRevision                                     string
 	State                                               TaskState
 	Charge                                              ChargeState

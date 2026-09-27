@@ -72,9 +72,21 @@ AbortDispatch; that path is forbidden after ambiguous generation outcomes.
 Tests use fixed image results and injected authorization, not live entitlement
 or paid provider calls.
 
-Production still needs the real consent/entitlement/reservation guard and worker
-scheduling, atomic image quota reservation/settlement, scheduled expiry maintenance,
-and HTTP delivery. Stored charge state is not a completed debit. The repository
+Image allowance reservation and settlement now share the task transaction in a
+separate `journal_image_budgets` table. The server-injected allowance policy must
+resolve a stable billing account (not merely an installation key) and monthly
+image limit; no default allowance is provided. Windows are UTC calendar months
+and each task keeps its original window for late settlement. Duplicate admission
+does not reserve again. A successful image consumes one reservation once; proven
+pre-dispatch cancellation releases it. Uncertain outcomes retain their reservation
+pending reconciliation. This is image-unit quota, not upstream monetary billing.
+Real MySQL tests repeat concurrent admission (ten requests for three slots),
+cancel replay and completion replay; they verify no over-reservation or double
+settlement. No token quota tables are modified.
+
+Production still needs the real consent/entitlement/allowance policy and dispatch
+guard, worker scheduling, reconciliation of unknown outcomes, scheduled expiry
+maintenance, and HTTP delivery. The repository
 is not registered with the gateway. A durable claim
 alone is not a complete generation workflow; a crash after claim but before HTTP
 dispatch is conservatively unresolved and must not auto-generate a second image.
