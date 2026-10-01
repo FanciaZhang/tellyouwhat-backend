@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
+	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -89,6 +90,7 @@ func (server *Server) IssueAttestationChallenge(
 	request platformhttpapi.IssueAttestationChallengeRequestObject,
 ) (platformhttpapi.IssueAttestationChallengeResponseObject, error) {
 	if server.enrollment == nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.IssueAttestationChallenge503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -98,6 +100,7 @@ func (server *Server) IssueAttestationChallenge(
 	}
 	challenge, err := server.enrollment.IssueChallenge(ctx, request.Body.KeyID)
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 		if errors.Is(err, attestation.ErrUnavailable) {
 			failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 			return platformhttpapi.IssueAttestationChallenge503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
@@ -115,6 +118,7 @@ func (server *Server) RegisterAttestationKey(
 	request platformhttpapi.RegisterAttestationKeyRequestObject,
 ) (platformhttpapi.RegisterAttestationKeyResponseObject, error) {
 	if server.enrollment == nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.RegisterAttestationKey503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -128,6 +132,7 @@ func (server *Server) RegisterAttestationKey(
 		Build:       request.Body.Build, ActivationSecret: request.Body.ActivationSecret,
 	})
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 		switch {
 		case errors.Is(err, attestation.ErrUnavailable):
 			failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
@@ -150,6 +155,7 @@ func (server *Server) RegisterAttestationKey(
 	}
 	deviceID, err := uuid.Parse(principal.DeviceID)
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "registration_identity")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.RegisterAttestationKey503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}

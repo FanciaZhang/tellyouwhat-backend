@@ -1,6 +1,7 @@
 package attestation
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -66,13 +67,16 @@ func NewEnrollmentService(
 }
 
 func (service *EnrollmentService) IssueChallenge(ctx context.Context, keyID string) (Challenge, error) {
-	if service == nil || service.nonces == nil || keyID == "" || len(keyID) > 512 {
-		return Challenge{}, ErrEnrollmentDenied
+	if service == nil || service.nonces == nil {
+		return Challenge{}, diagnosticFailure(stageDependencies, ErrUnavailable)
+	}
+	if keyID == "" || len(keyID) > 512 {
+		return Challenge{}, diagnosticFailure(stageEnrollmentPolicy, ErrEnrollmentDenied)
 	}
 	now := service.now()
 	value, err := service.nonces.Issue(ctx, keyID, registrationChallengeTTL, now)
 	if err != nil {
-		return Challenge{}, fmt.Errorf("%w: issue enrollment challenge: %v", ErrUnavailable, err)
+		return Challenge{}, diagnosticFailure(stageNonceIssue, fmt.Errorf("%w: issue enrollment challenge: %v", ErrUnavailable, err))
 	}
 	return Challenge{Value: value, ExpiresAt: now.Add(registrationChallengeTTL)}, nil
 }
@@ -81,50 +85,56 @@ func (service *EnrollmentService) Register(
 	ctx context.Context,
 	request RegistrationRequest,
 ) (Principal, error) {
-	if service == nil || service.config.AppID == "" || service.nonces == nil || service.keys == nil || service.verifier == nil ||
-		request.KeyID == "" || request.Challenge == "" || request.Attestation == "" {
-		return Principal{}, ErrEnrollmentDenied
+	if service == nil || service.config.AppID == "" || service.nonces == nil || service.keys == nil || service.verifier == nil {
+		return Principal{}, diagnosticFailure(stageDependencies, ErrUnavailable)
+	}
+	if request.KeyID == "" || request.Challenge == "" || request.Attestation == "" {
+		return Principal{}, diagnosticFailure(stageProofHeaders, ErrEnrollmentDenied)
 	}
 	if len(service.config.AllowedBuilds) > 0 {
 		if _, ok := service.config.AllowedBuilds[request.Build]; !ok {
-			return Principal{}, ErrEnrollmentDenied
+			return Principal{}, diagnosticFailure(stageEnrollmentPolicy, ErrEnrollmentDenied)
 		}
 	}
 	if service.config.Environment == EnvironmentDevelopment {
 		expected := []byte(service.config.DevelopmentSecret)
 		provided := []byte(request.ActivationSecret)
 		if len(expected) == 0 || len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {
-			return Principal{}, ErrEnrollmentDenied
+			return Principal{}, diagnosticFailure(stageEnrollmentPolicy, ErrEnrollmentDenied)
 		}
 	}
-	if err := service.nonces.Consume(ctx, request.Challenge, request.KeyID, service.now()); err != nil {
-		if errors.Is(err, ErrReplay) {
-			principal, found, lookupErr := service.registeredPrincipal(ctx, request.KeyID)
-			if lookupErr != nil {
-				return Principal{}, lookupErr
-			}
-			if found {
-				return principal, nil
-			}
-			return Principal{}, ErrReplay
+	nonceErr := service.nonces.Consume(ctx, request.Challenge, request.KeyID, service.now())
+	if nonceErr != nil {
+		if !errors.Is(nonceErr, ErrReplay) && !errors.Is(nonceErr, ErrAuthentication) {
+			return Principal{}, diagnosticFailure(stageNonce, fmt.Errorf("%w: consume enrollment challenge: %v", ErrUnavailable, nonceErr))
 		}
-		if errors.Is(err, ErrAuthentication) {
+		key, found, err := service.registeredKey(ctx, request.KeyID)
+		if err != nil {
 			return Principal{}, err
 		}
-		return Principal{}, fmt.Errorf("%w: consume enrollment challenge: %v", ErrUnavailable, err)
+		if !found {
+			return Principal{}, diagnosticFailure(stageNonce, nonceErr)
+		}
+		// Recovery only returns an existing identity. Revalidate the original
+		// challenge-bound proof and pinned public key; never enroll an expired key.
+		verified, err := service.verifyRegistration(request)
+		if err != nil {
+			// An expired cached proof can also outlive its certificate. Keep the
+			// shipped client's bounded fresh-enrollment fallback in that case.
+			if errors.Is(nonceErr, ErrAuthentication) {
+				return Principal{}, diagnosticFailure(failureStageOf(err), ErrAuthentication)
+			}
+			return Principal{}, err
+		}
+		return service.existingPrincipal(key, verified.PublicKey)
 	}
-	attestationObject, err := decodeBase64(request.Attestation)
+	verified, err := service.verifyRegistration(request)
 	if err != nil {
-		return Principal{}, ErrEnrollmentDenied
-	}
-	clientDataHash := sha256.Sum256([]byte(request.Challenge))
-	verified, err := service.verifier.Verify(request.KeyID, attestationObject, clientDataHash[:])
-	if err != nil {
-		return Principal{}, ErrEnrollmentDenied
+		return Principal{}, err
 	}
 	deviceID, err := newDeviceID()
 	if err != nil {
-		return Principal{}, fmt.Errorf("%w: generate device ID: %v", ErrUnavailable, err)
+		return Principal{}, diagnosticFailure(stageRegistrationStorage, fmt.Errorf("%w: generate device ID: %v", ErrUnavailable, err))
 	}
 	key := RegisteredKey{
 		AppID:       service.config.AppID,
@@ -137,40 +147,53 @@ func (service *EnrollmentService) Register(
 	}
 	if err := service.keys.Register(ctx, key); err != nil {
 		if errors.Is(err, ErrKeyAlreadyRegistered) {
-			principal, found, lookupErr := service.registeredPrincipal(ctx, request.KeyID)
+			stored, found, lookupErr := service.registeredKey(ctx, request.KeyID)
 			if lookupErr != nil {
 				return Principal{}, lookupErr
 			}
 			if found {
-				return principal, nil
+				return service.existingPrincipal(stored, verified.PublicKey)
 			}
-			return Principal{}, fmt.Errorf("%w: registered app attest key could not be read", ErrUnavailable)
+			return Principal{}, diagnosticFailure(stageRegistrationStorage, fmt.Errorf("%w: registered app attest key could not be read", ErrUnavailable))
 		}
-		return Principal{}, fmt.Errorf("%w: register app attest key: %v", ErrUnavailable, err)
+		return Principal{}, diagnosticFailure(stageRegistrationStorage, fmt.Errorf("%w: register app attest key: %v", ErrUnavailable, err))
 	}
 	return Principal{AppID: key.AppID, KeyID: key.KeyID, DeviceID: deviceID}, nil
 }
 
-func (service *EnrollmentService) registeredPrincipal(
-	ctx context.Context,
-	keyID string,
-) (Principal, bool, error) {
+func (service *EnrollmentService) verifyRegistration(request RegistrationRequest) (VerifiedAttestation, error) {
+	object, err := decodeBase64(request.Attestation)
+	if err != nil {
+		return VerifiedAttestation{}, diagnosticFailure(stageAttestationEncoding, ErrEnrollmentDenied)
+	}
+	hash := sha256.Sum256([]byte(request.Challenge))
+	verified, err := service.verifier.Verify(request.KeyID, object, hash[:])
+	if err != nil {
+		return VerifiedAttestation{}, diagnosticFailure(stageAttestationVerification, ErrEnrollmentDenied)
+	}
+	return verified, nil
+}
+
+func (service *EnrollmentService) registeredKey(ctx context.Context, keyID string) (RegisteredKey, bool, error) {
 	key, err := service.keys.Get(ctx, keyID)
 	if errors.Is(err, ErrKeyNotFound) {
-		return Principal{}, false, nil
+		return RegisteredKey{}, false, nil
 	}
 	if err != nil {
-		return Principal{}, false, fmt.Errorf("%w: read registered app attest key: %v", ErrUnavailable, err)
+		return RegisteredKey{}, false, diagnosticFailure(stageKeyLookup, fmt.Errorf("%w: read registered app attest key: %v", ErrUnavailable, err))
 	}
 	if key.KeyID != keyID || key.DeviceID == "" {
-		return Principal{}, false, fmt.Errorf("%w: registered app attest key is invalid", ErrUnavailable)
+		return RegisteredKey{}, false, diagnosticFailure(stageRegistrationIdentity, fmt.Errorf("%w: registered app attest key is invalid", ErrUnavailable))
 	}
-	return Principal{
-		AppID:         key.AppID,
-		KeyID:         key.KeyID,
-		DeviceID:      key.DeviceID,
-		TransactionID: key.TransactionID,
-	}, true, nil
+	return key, true, nil
+}
+
+func (service *EnrollmentService) existingPrincipal(key RegisteredKey, publicKey []byte) (Principal, error) {
+	if key.AppID != service.config.AppID || key.Environment != string(service.config.Environment) ||
+		len(publicKey) == 0 || !bytes.Equal(key.PublicKey, publicKey) {
+		return Principal{}, diagnosticFailure(stageRegistrationIdentity, ErrEnrollmentDenied)
+	}
+	return Principal{AppID: key.AppID, KeyID: key.KeyID, DeviceID: key.DeviceID, TransactionID: key.TransactionID}, nil
 }
 
 func newDeviceID() (string, error) {

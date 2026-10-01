@@ -54,8 +54,8 @@ func TestDevelopmentEnrollmentConsumesChallengeAndPinsVerifiedKey(t *testing.T) 
 	if replayed != principal {
 		t.Fatalf("replayed registration returned another principal: got %+v want %+v", replayed, principal)
 	}
-	if verifier.calls != 1 {
-		t.Fatalf("replayed registration reverified a one-time attestation: %d", verifier.calls)
+	if verifier.calls != 2 {
+		t.Fatalf("replayed registration did not revalidate its proof: %d", verifier.calls)
 	}
 }
 
