@@ -27,33 +27,33 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 	clientDataHash []byte,
 ) (uint32, error) {
 	if verifier == nil || len(clientDataHash) != sha256.Size {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("dependencies", ErrAuthentication)
 	}
 	var value map[string]cbor.RawMessage
 	if err := cbor.Unmarshal(assertion, &value); err != nil || len(value) != 2 {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("assertion_cbor", ErrAuthentication)
 	}
 	var authenticatorData []byte
 	if err := cbor.Unmarshal(value["authenticatorData"], &authenticatorData); err != nil {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("authenticator_data", ErrAuthentication)
 	}
 	var signature []byte
 	if err := cbor.Unmarshal(value["signature"], &signature); err != nil {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("signature_encoding", ErrAuthentication)
 	}
 	if len(authenticatorData) < 37 || !bytes.Equal(authenticatorData[:32], verifier.rpIDHash[:]) {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("rp_id", ErrAuthentication)
 	}
 	if err := validateAssertionExtensions(authenticatorData); err != nil {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("extensions", ErrAuthentication)
 	}
 	parsedKey, err := x509.ParsePKIXPublicKey(publicKeyDER)
 	if err != nil {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("public_key", ErrAuthentication)
 	}
 	publicKey, ok := parsedKey.(*ecdsa.PublicKey)
 	if !ok || publicKey.Curve.Params().Name != "P-256" {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("public_key", ErrAuthentication)
 	}
 	nonceInput := make([]byte, 0, len(authenticatorData)+len(clientDataHash))
 	nonceInput = append(nonceInput, authenticatorData...)
@@ -64,7 +64,7 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 	// https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server
 	digest := sha256.Sum256(nonce[:])
 	if !ecdsa.VerifyASN1(publicKey, digest[:], signature) {
-		return 0, ErrAuthentication
+		return 0, diagnosticFailure("signature", ErrAuthentication)
 	}
 	return binary.BigEndian.Uint32(authenticatorData[33:37]), nil
 }

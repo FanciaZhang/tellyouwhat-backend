@@ -100,35 +100,35 @@ func NewService(
 
 func (service *Service) Authenticate(ctx context.Context, proof RequestProof) (Principal, error) {
 	if service == nil || service.nonces == nil || service.keys == nil || service.verifier == nil {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("dependencies", ErrAuthentication)
 	}
 	if proof.Method == "" || proof.Path == "" || proof.RequestID == "" || proof.KeyID == "" ||
 		proof.Assertion == "" || proof.Nonce == "" || proof.Timestamp == "" || proof.BodySHA256 == "" {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("proof_headers", ErrAuthentication)
 	}
 	timestamp, err := time.Parse(time.RFC3339, proof.Timestamp)
 	if err != nil || math.Abs(service.now().Sub(timestamp).Seconds()) > service.timestampWindow.Seconds() {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("timestamp", ErrAuthentication)
 	}
 	key, err := service.keys.Get(ctx, proof.KeyID)
 	if errors.Is(err, ErrKeyNotFound) {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("key_lookup", ErrAuthentication)
 	}
 	if err != nil {
-		return Principal{}, fmt.Errorf("%w: load registered key: %v", ErrUnavailable, err)
+		return Principal{}, diagnosticFailure("key_lookup", fmt.Errorf("%w: load registered key: %v", ErrUnavailable, err))
 	}
 	if service.expectedEnvironment != "" && key.Environment != service.expectedEnvironment {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("environment", ErrAuthentication)
 	}
 	if err := service.nonces.Consume(ctx, proof.Nonce, proof.KeyID, service.now()); err != nil {
 		if errors.Is(err, ErrAuthentication) || errors.Is(err, ErrReplay) {
-			return Principal{}, err
+			return Principal{}, diagnosticFailure("nonce", err)
 		}
-		return Principal{}, fmt.Errorf("%w: consume nonce: %v", ErrUnavailable, err)
+		return Principal{}, diagnosticFailure("nonce", fmt.Errorf("%w: consume nonce: %v", ErrUnavailable, err))
 	}
 	assertion, err := decodeBase64(proof.Assertion)
 	if err != nil {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("assertion_encoding", ErrAuthentication)
 	}
 	digestHex := contracts.RequestBindingDigest(contracts.RequestBinding{
 		Method:     proof.Method,
@@ -140,20 +140,23 @@ func (service *Service) Authenticate(ctx context.Context, proof RequestProof) (P
 	})
 	clientDataHash, err := hex.DecodeString(digestHex)
 	if err != nil {
-		return Principal{}, ErrAuthentication
+		return Principal{}, diagnosticFailure("request_digest", ErrAuthentication)
 	}
 	counter, err := service.verifier.VerifyAssertion(key.PublicKey, assertion, clientDataHash)
 	if err != nil {
-		return Principal{}, ErrAuthentication
+		if FailureStage(err) != "unknown" {
+			return Principal{}, diagnosticFailure(FailureStage(err), ErrAuthentication)
+		}
+		return Principal{}, diagnosticFailure("assertion", ErrAuthentication)
 	}
 	if counter <= key.Counter {
-		return Principal{}, ErrReplay
+		return Principal{}, diagnosticFailure("counter", ErrReplay)
 	}
 	if err := service.keys.AdvanceCounter(ctx, key.KeyID, key.Counter, counter); err != nil {
 		if errors.Is(err, ErrReplay) {
-			return Principal{}, ErrReplay
+			return Principal{}, diagnosticFailure("counter_update", ErrReplay)
 		}
-		return Principal{}, fmt.Errorf("%w: advance assertion counter: %v", ErrUnavailable, err)
+		return Principal{}, diagnosticFailure("counter_update", fmt.Errorf("%w: advance assertion counter: %v", ErrUnavailable, err))
 	}
 	return Principal{
 		AppID:         key.AppID,
