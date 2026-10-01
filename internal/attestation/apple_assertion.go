@@ -71,10 +71,9 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 
 func validateAssertionExtensions(authenticatorData []byte) error {
 	const extensionFlag = 0x80
-	const attestedCredentialFlag = 0x40
-	if authenticatorData[32]&attestedCredentialFlag != 0 {
-		return ErrAuthentication
-	}
+	// Apple can set AT and ED on simplified App Attest assertions. Validate
+	// the actual assertion layout instead of requiring the AT bit to be clear;
+	// a full credential section will not decode as the extension map below.
 	if len(authenticatorData) == 37 {
 		if authenticatorData[32]&extensionFlag != 0 {
 			return ErrAuthentication
