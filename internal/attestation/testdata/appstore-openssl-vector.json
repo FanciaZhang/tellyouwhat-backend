@@ -1,0 +1,16 @@
+{
+  "generator": "OpenSSL ECDSA-SHA256 signs SHA256(authenticatorData || clientDataHash); synthetic key discarded",
+  "binding": {
+    "method": "POST",
+    "path": "/v1/entitlements/transactions",
+    "requestID": "19be2f9e-bd92-4699-b561-e3816092114c",
+    "nonce": "synthetic-vector-nonce",
+    "timestamp": "2026-10-01T00:00:00Z",
+    "bodySHA256": "afcc1f5a7fefd6f2e737b079b1e8fcacd1561db471042f7a7d90a237ea8b45e9"
+  },
+  "publicKeyDER": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEadxT/xZCMF0cuI1LHmEuvMH0YVDiRTX1m/aO1tPvwtWJfX35/Hxw4MJ3FSeun6Ae7gWiQCdANmI5oH0mOjDbMA==",
+  "clientDataHashHex": "23454579d8aa14a3455b8041eb60c6c6c1e41d9e20116f344309c4b31656c619",
+  "assertion": "onFhdXRoZW50aWNhdG9yRGF0YVhmf0/Pv9yTR3r/DqLBaDhEDsC+yYVAbKlPtQ2csTzD/+rAAAAAEaJ4HGFwcGxlX3ZhbGlkYXRpb25fY2F0ZWdvcnlfMDFEBAAAAHdhcHBsZV9idW5kbGVfdmVyc2lvbl8wMWQxMDU3aXNpZ25hdHVyZVhHMEUCIQDxjZRQneU/Y8wi7ZJ+C9A57bVpg5eTq9QwB2fTpsQtngIgHKmten8F1YmUP3clIn3Qb0OQbacISzxpgGMGJKGfD2k=",
+  "counter": 17,
+  "requestIDHeader": "19BE2F9E-BD92-4699-B561-E3816092114C"
+}
