@@ -17,6 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
@@ -69,6 +70,7 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 		}
 		return principal, nil
 	}
+	strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 	switch {
 	case errors.Is(err, attestation.ErrReplay):
 		return Principal{}, newAPIFailure(http.StatusConflict, "replay_detected", "request nonce or assertion was already used", requestIDString)

@@ -10,6 +10,7 @@ import (
 )
 
 const OperationIDContextKey = "tellyouwhat.operation_id"
+const AuthenticationFailureStageContextKey = "tellyouwhat.authentication_failure_stage"
 
 // Recovery is Gin-native panic recovery for every HTTP runtime.
 func Recovery(logger *slog.Logger) gin.HandlerFunc {
@@ -73,7 +74,7 @@ func loggerMiddleware(logger *slog.Logger, appID string) gin.HandlerFunc {
 		startedAt := time.Now()
 		context.Next()
 		request := context.Request
-		logger.InfoContext(request.Context(), "http request",
+		attributes := []any{
 			"method", request.Method,
 			"path", request.URL.EscapedPath(),
 			"status", context.Writer.Status(),
@@ -81,7 +82,11 @@ func loggerMiddleware(logger *slog.Logger, appID string) gin.HandlerFunc {
 			"request_id", requestID(request),
 			"host", request.Host,
 			"operation_id", operationID(context),
-		)
+		}
+		if stage := context.GetString(AuthenticationFailureStageContextKey); stage != "" {
+			attributes = append(attributes, "authentication_failure_stage", stage)
+		}
+		logger.InfoContext(request.Context(), "http request", attributes...)
 	}
 }
 
