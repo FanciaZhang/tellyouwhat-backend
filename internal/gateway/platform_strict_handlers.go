@@ -138,6 +138,11 @@ func (server *Server) RegisterAttestationKey(
 		case errors.Is(err, attestation.ErrKeyAlreadyRegistered):
 			failure := newAPIFailure(http.StatusConflict, "key_already_registered", "App Attest key is already registered", "")
 			return platformhttpapi.RegisterAttestationKey409JSONResponse{ConflictJSONResponse: platformhttpapi.ConflictJSONResponse(failure.platformResponse())}, nil
+		case errors.Is(err, attestation.ErrAuthentication):
+			// Shipped clients replace a pending one-time attestation only for this
+			// code. An expired challenge cannot be completed by resending it.
+			failure := newAPIFailure(http.StatusUnauthorized, "authentication_failed", "registration challenge is invalid or expired", "")
+			return platformhttpapi.RegisterAttestationKey401JSONResponse{UnauthorizedJSONResponse: platformhttpapi.UnauthorizedJSONResponse(failure.platformResponse())}, nil
 		default:
 			failure := newAPIFailure(http.StatusUnauthorized, "enrollment_denied", "device enrollment denied", "")
 			return platformhttpapi.RegisterAttestationKey401JSONResponse{UnauthorizedJSONResponse: platformhttpapi.UnauthorizedJSONResponse(failure.platformResponse())}, nil
