@@ -346,15 +346,19 @@ func TestJournalStrictRouterRejectsPrincipalFromAnotherApp(t *testing.T) {
 	}
 }
 
-func TestRegistrationConflictsHaveDistinctErrorCodes(t *testing.T) {
+func TestRegistrationFailuresHaveDistinctRecoveryCodes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		err  error
-		code string
+		name   string
+		err    error
+		code   string
+		status int
 	}{
-		{name: "used challenge", err: attestation.ErrReplay, code: "replay_detected"},
-		{name: "registered key", err: attestation.ErrKeyAlreadyRegistered, code: "key_already_registered"},
+		{name: "used challenge", err: attestation.ErrReplay, code: "replay_detected", status: http.StatusConflict},
+		{name: "registered key", err: attestation.ErrKeyAlreadyRegistered, code: "key_already_registered", status: http.StatusConflict},
+		{name: "expired challenge", err: attestation.ErrAuthentication, code: "authentication_failed", status: http.StatusUnauthorized},
+		{name: "invalid attestation", err: attestation.ErrEnrollmentDenied, code: "enrollment_denied", status: http.StatusUnauthorized},
+		{name: "storage unavailable", err: attestation.ErrUnavailable, code: "attestation_unavailable", status: http.StatusServiceUnavailable},
 	}
 	for _, test := range tests {
 		test := test
@@ -367,8 +371,8 @@ func TestRegistrationConflictsHaveDistinctErrorCodes(t *testing.T) {
 				"/v1/attest/keys",
 				strings.NewReader(`{"keyID":"key","challenge":"challenge","attestation":"YQ==","build":"1","activationSecret":""}`),
 			))
-			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
-				t.Fatalf("unexpected registration conflict: %d %s", response.Code, response.Body.String())
+			if response.Code != test.status || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("unexpected registration failure: %d %s", response.Code, response.Body.String())
 			}
 		})
 	}

@@ -90,6 +90,50 @@ func TestEnrollmentReplayDoesNotSucceedWhenKeyWasNeverStored(t *testing.T) {
 	}
 }
 
+func TestExpiredPendingEnrollmentRequiresFreshKeyAndChallenge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	now := time.Date(2026, 10, 1, 1, 3, 0, 0, time.UTC)
+	nonces := NewMemoryNonceStore()
+	keys := NewMemoryKeyStore()
+	verifier := &fakeAttestationObjectVerifier{}
+	service := NewEnrollmentService(EnrollmentConfig{
+		AppID: "health", Environment: EnvironmentProduction,
+	}, nonces, keys, verifier, func() time.Time { return now })
+	challenge, err := service.IssueChallenge(ctx, "expired-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := RegistrationRequest{
+		KeyID: "expired-key", Challenge: challenge.Value,
+		Attestation: base64.StdEncoding.EncodeToString([]byte("attestation")),
+	}
+	now = now.Add(registrationChallengeTTL)
+	for range 2 {
+		if _, err := service.Register(ctx, pending); !errors.Is(err, ErrAuthentication) {
+			t.Fatalf("expired enrollment must trigger authentication recovery: %v", err)
+		}
+	}
+	if verifier.calls != 0 {
+		t.Fatal("expired challenge reached attestation verification")
+	}
+	if _, err := keys.Get(ctx, pending.KeyID); !errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("expired registration stored a key: %v", err)
+	}
+	challenge, err = service.IssueChallenge(ctx, "replacement-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending.KeyID, pending.Challenge = "replacement-key", challenge.Value
+	principal, err := service.Register(ctx, pending)
+	if err != nil || principal.KeyID != pending.KeyID || principal.AppID != "health" {
+		t.Fatalf("fresh registration failed: principal=%+v err=%v", principal, err)
+	}
+	if verifier.calls != 1 {
+		t.Fatalf("fresh registration did not verify attestation: %d calls", verifier.calls)
+	}
+}
+
 type fakeAttestationObjectVerifier struct {
 	clientDataHash []byte
 	calls          int
