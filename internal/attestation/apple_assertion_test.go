@@ -101,7 +101,7 @@ func TestAppleAssertionVerifierRejectsTamperedClientDataHash(t *testing.T) {
 func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.T) {
 	t.Parallel()
 	extension, err := cbor.Marshal(map[string]any{
-		"apple_validation_category_01": uint64(4),
+		"apple_validation_category_01": []byte{4, 0, 0, 0},
 		"apple_bundle_version_01":      "1200",
 	})
 	if err != nil {
@@ -155,8 +155,8 @@ func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.
 		name  string
 		value any
 	}{
-		{"invalid category", map[string]any{"apple_validation_category_01": 0}},
-		{"unknown category", map[string]any{"apple_validation_category_01": 10}},
+		{"invalid category", map[string]any{"apple_validation_category_01": []byte{0, 0, 0, 0}}},
+		{"unknown category", map[string]any{"apple_validation_category_01": []byte{10, 0, 0, 0}}},
 		{"category has wrong type", map[string]any{"apple_validation_category_01": "4"}},
 		{"empty bundle version", map[string]any{"apple_bundle_version_01": ""}},
 		{"bundle version has wrong type", map[string]any{"apple_bundle_version_01": 1200}},
@@ -177,10 +177,9 @@ func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.
 	}{"duplicate extension keys", append(append([]byte(nil), authData[:37]...), duplicateKey...)})
 	noFlag := append([]byte(nil), authData...)
 	noFlag[32] = 0x01
-	malformed = append(malformed, struct {
-		name string
-		data []byte
-	}{"extension without flag", noFlag})
+	if counter, err := verifier.VerifyAssertion(publicKey, sign(noFlag, requestHash), requestHash[:]); err != nil || counter != 8 {
+		t.Fatalf("signed Apple extension dictionary without the WebAuthn extension flag rejected: counter=%d err=%v", counter, err)
+	}
 	for _, test := range malformed {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := verifier.VerifyAssertion(publicKey, sign(test.data, requestHash), requestHash[:]); err == nil {

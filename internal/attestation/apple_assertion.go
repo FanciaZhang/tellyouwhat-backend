@@ -75,13 +75,13 @@ func validateAssertionExtensions(authenticatorData []byte) error {
 	if authenticatorData[32]&attestedCredentialFlag != 0 {
 		return ErrAuthentication
 	}
-	if authenticatorData[32]&extensionFlag == 0 {
-		if len(authenticatorData) != 37 {
+	if len(authenticatorData) == 37 {
+		if authenticatorData[32]&extensionFlag != 0 {
 			return ErrAuthentication
 		}
 		return nil
 	}
-	if len(authenticatorData) <= 37 || len(authenticatorData) > 16*1024 {
+	if len(authenticatorData) > 16*1024 {
 		return ErrAuthentication
 	}
 	decoder, err := (cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF}).DecMode()
@@ -93,8 +93,12 @@ func validateAssertionExtensions(authenticatorData []byte) error {
 		return ErrAuthentication
 	}
 	if raw, ok := extensions["apple_validation_category_01"]; ok {
-		var category uint64
-		if err := decoder.Unmarshal(raw, &category); err != nil || category < 2 || category > 5 {
+		var categoryBytes []byte
+		if err := decoder.Unmarshal(raw, &categoryBytes); err != nil || len(categoryBytes) != 4 {
+			return ErrAuthentication
+		}
+		category := binary.LittleEndian.Uint32(categoryBytes)
+		if category < 2 || category > 5 {
 			return ErrAuthentication
 		}
 	}
