@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
+	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -40,7 +41,10 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 	if err := cbor.Unmarshal(value["signature"], &signature); err != nil {
 		return 0, ErrAuthentication
 	}
-	if len(authenticatorData) != 37 || !bytes.Equal(authenticatorData[:32], verifier.rpIDHash[:]) {
+	if len(authenticatorData) < 37 || !bytes.Equal(authenticatorData[:32], verifier.rpIDHash[:]) {
+		return 0, ErrAuthentication
+	}
+	if err := validateAssertionExtensions(authenticatorData); err != nil {
 		return 0, ErrAuthentication
 	}
 	parsedKey, err := x509.ParsePKIXPublicKey(publicKeyDER)
@@ -63,6 +67,50 @@ func (verifier *AppleAssertionVerifier) VerifyAssertion(
 		return 0, ErrAuthentication
 	}
 	return binary.BigEndian.Uint32(authenticatorData[33:37]), nil
+}
+
+func validateAssertionExtensions(authenticatorData []byte) error {
+	const extensionFlag = 0x80
+	const attestedCredentialFlag = 0x40
+	if authenticatorData[32]&attestedCredentialFlag != 0 {
+		return ErrAuthentication
+	}
+	if len(authenticatorData) == 37 {
+		if authenticatorData[32]&extensionFlag != 0 {
+			return ErrAuthentication
+		}
+		return nil
+	}
+	if len(authenticatorData) > 16*1024 {
+		return ErrAuthentication
+	}
+	decoder, err := (cbor.DecOptions{DupMapKey: cbor.DupMapKeyEnforcedAPF}).DecMode()
+	if err != nil {
+		return ErrAuthentication
+	}
+	var extensions map[string]cbor.RawMessage
+	if err := decoder.Unmarshal(authenticatorData[37:], &extensions); err != nil || len(extensions) == 0 {
+		return ErrAuthentication
+	}
+	if raw, ok := extensions["apple_validation_category_01"]; ok {
+		var categoryBytes []byte
+		if err := decoder.Unmarshal(raw, &categoryBytes); err != nil || len(categoryBytes) != 4 {
+			return ErrAuthentication
+		}
+		category := binary.LittleEndian.Uint32(categoryBytes)
+		if category < 2 || category > 5 {
+			return ErrAuthentication
+		}
+	}
+	if raw, ok := extensions["apple_bundle_version_01"]; ok {
+		var version string
+		if err := decoder.Unmarshal(raw, &version); err != nil || strings.TrimSpace(version) == "" || len(version) > 128 {
+			return ErrAuthentication
+		}
+	}
+	// Keep the complete authenticator data in the signed nonce, including
+	// extensions. Parsing must never strip fields before signature verification.
+	return nil
 }
 
 var _ AssertionVerifier = (*AppleAssertionVerifier)(nil)

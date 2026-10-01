@@ -97,3 +97,105 @@ func TestAppleAssertionVerifierRejectsTamperedClientDataHash(t *testing.T) {
 		t.Fatal("tampered request hash must be rejected")
 	}
 }
+
+func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.T) {
+	t.Parallel()
+	extension, err := cbor.Marshal(map[string]any{
+		"apple_validation_category_01": []byte{4, 0, 0, 0},
+		"apple_bundle_version_01":      "1200",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	publicKey, _ := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	requestHash := sha256.Sum256([]byte("production request"))
+	authData := make([]byte, 37)
+	rp := sha256.Sum256([]byte("TEAMID.cn.tellyouwhat.healthapp"))
+	copy(authData, rp[:])
+	authData[32] = 0x81
+	binary.BigEndian.PutUint32(authData[33:37], 8)
+	authData = append(authData, extension...)
+	sign := func(data []byte, digestHash [32]byte) []byte {
+		nonce := sha256.Sum256(append(append([]byte(nil), data...), digestHash[:]...))
+		digest := sha256.Sum256(nonce[:])
+		signature, err := ecdsa.SignASN1(rand.Reader, privateKey, digest[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertion, err := cbor.Marshal(map[string]any{"authenticatorData": data, "signature": signature})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return assertion
+	}
+	verifier := NewAppleAssertionVerifier("TEAMID", "cn.tellyouwhat.healthapp")
+	assertion := sign(authData, requestHash)
+	if counter, err := verifier.VerifyAssertion(publicKey, assertion, requestHash[:]); err != nil || counter != 8 {
+		t.Fatalf("signed production extensions rejected: counter=%d err=%v", counter, err)
+	}
+	wrongHash := sha256.Sum256([]byte("another request"))
+	if _, err := verifier.VerifyAssertion(publicKey, assertion, wrongHash[:]); err == nil {
+		t.Fatal("extensions must not allow a signature for another request")
+	}
+	if _, err := NewAppleAssertionVerifier("TEAMID", "another.app").VerifyAssertion(publicKey, assertion, requestHash[:]); err == nil {
+		t.Fatal("extensions must not allow another App ID")
+	}
+	malformed := []struct {
+		name string
+		data []byte
+	}{
+		{"extension flag without data", append([]byte(nil), authData[:37]...)},
+		{"truncated CBOR", append([]byte(nil), authData[:len(authData)-1]...)},
+		{"trailing CBOR", append(append([]byte(nil), authData...), 0xa0)},
+		{"extension is not map", append(append([]byte(nil), authData[:37]...), 0x80)},
+	}
+
+	for _, item := range []struct {
+		name  string
+		value any
+	}{
+		{"invalid category", map[string]any{"apple_validation_category_01": []byte{0, 0, 0, 0}}},
+		{"unknown category", map[string]any{"apple_validation_category_01": []byte{10, 0, 0, 0}}},
+		{"category has wrong type", map[string]any{"apple_validation_category_01": "4"}},
+		{"empty bundle version", map[string]any{"apple_bundle_version_01": ""}},
+		{"bundle version has wrong type", map[string]any{"apple_bundle_version_01": 1200}},
+	} {
+		encoded, err := cbor.Marshal(item.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		malformed = append(malformed, struct {
+			name string
+			data []byte
+		}{item.name, append(append([]byte(nil), authData[:37]...), encoded...)})
+	}
+	duplicateKey := append([]byte{0xa2, 0x61, 'x', 0x01, 0x61, 'x', 0x02}, []byte{}...)
+	malformed = append(malformed, struct {
+		name string
+		data []byte
+	}{"duplicate extension keys", append(append([]byte(nil), authData[:37]...), duplicateKey...)})
+	noFlag := append([]byte(nil), authData...)
+	noFlag[32] = 0x01
+	if counter, err := verifier.VerifyAssertion(publicKey, sign(noFlag, requestHash), requestHash[:]); err != nil || counter != 8 {
+		t.Fatalf("signed Apple extension dictionary without the WebAuthn extension flag rejected: counter=%d err=%v", counter, err)
+	}
+	for _, test := range malformed {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := verifier.VerifyAssertion(publicKey, sign(test.data, requestHash), requestHash[:]); err == nil {
+				t.Fatal("malformed authenticator extensions accepted even with a valid signature")
+			}
+		})
+	}
+	var decoded map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(assertion, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	tampered := append([]byte(nil), authData...)
+	tampered[len(tampered)-1] ^= 1
+	decoded["authenticatorData"], _ = cbor.Marshal(tampered)
+	changed, _ := cbor.Marshal(decoded)
+	if _, err := verifier.VerifyAssertion(publicKey, changed, requestHash[:]); err == nil {
+		t.Fatal("modified extensions must invalidate the signature")
+	}
+}
