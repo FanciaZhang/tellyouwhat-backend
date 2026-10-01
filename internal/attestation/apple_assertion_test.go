@@ -113,7 +113,9 @@ func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.
 	authData := make([]byte, 37)
 	rp := sha256.Sum256([]byte("TEAMID.cn.tellyouwhat.healthapp"))
 	copy(authData, rp[:])
-	authData[32] = 0x81
+	// App Store assertions can set both AT and ED while containing only
+	// the 37-byte assertion header and the signed extension dictionary.
+	authData[32] = 0xc0
 	binary.BigEndian.PutUint32(authData[33:37], 8)
 	authData = append(authData, extension...)
 	sign := func(data []byte, digestHash [32]byte) []byte {
@@ -132,7 +134,7 @@ func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.
 	verifier := NewAppleAssertionVerifier("TEAMID", "cn.tellyouwhat.healthapp")
 	assertion := sign(authData, requestHash)
 	if counter, err := verifier.VerifyAssertion(publicKey, assertion, requestHash[:]); err != nil || counter != 8 {
-		t.Fatalf("signed production extensions rejected: counter=%d err=%v", counter, err)
+		t.Fatalf("signed App Store assertion with flags 0xc0 rejected: counter=%d err=%v", counter, err)
 	}
 	wrongHash := sha256.Sum256([]byte("another request"))
 	if _, err := verifier.VerifyAssertion(publicKey, assertion, wrongHash[:]); err == nil {
@@ -180,6 +182,22 @@ func TestAppleAssertionVerifierSupportsSignedAuthenticatorExtensions(t *testing.
 	if counter, err := verifier.VerifyAssertion(publicKey, sign(noFlag, requestHash), requestHash[:]); err != nil || counter != 8 {
 		t.Fatalf("signed Apple extension dictionary without the WebAuthn extension flag rejected: counter=%d err=%v", counter, err)
 	}
+	edOnly := append([]byte(nil), authData...)
+	edOnly[32] = 0x81
+	if counter, err := verifier.VerifyAssertion(publicKey, sign(edOnly, requestHash), requestHash[:]); err != nil || counter != 8 {
+		t.Fatalf("signed assertion with only the extension flag rejected: counter=%d err=%v", counter, err)
+	}
+	// A full WebAuthn credential section is not an assertion extension map,
+	// even when AT is set and the complete bytes have a valid signature.
+	credentialData := append(append([]byte(nil), authData[:37]...), []byte("appattest\x00\x00\x00\x00\x00\x00\x00")...)
+	credentialData = append(credentialData, 0, 32)
+	credentialData = append(credentialData, make([]byte, 32)...)
+	credentialData = append(credentialData, 0xa0)
+	credentialData = append(credentialData, extension...)
+	malformed = append(malformed, struct {
+		name string
+		data []byte
+	}{"credential section is not an assertion", credentialData})
 	for _, test := range malformed {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := verifier.VerifyAssertion(publicKey, sign(test.data, requestHash), requestHash[:]); err == nil {
