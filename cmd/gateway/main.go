@@ -448,7 +448,7 @@ func buildAppHandler(
 		dependencies.Dispatcher = dispatcher
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
-		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
+		dependencies.RequiredConsentScopes = []string{privacy.HealthEligibilityScope, privacy.SensitiveHealthScope}
 	case appregistry.Journal:
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{

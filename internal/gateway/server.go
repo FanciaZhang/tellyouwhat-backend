@@ -227,7 +227,7 @@ func New(dependencies Dependencies) *Server {
 			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
 		} else {
 			dependencies.AllowedConsentScopes = []string{
-				privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+				privacy.AdultScope, privacy.Age14PlusScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
 				privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
 			}
 		}
