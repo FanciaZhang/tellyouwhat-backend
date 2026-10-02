@@ -9,12 +9,15 @@ import (
 )
 
 const (
-	AdultScope           = "adult"
-	PrivacyTermsScope    = "privacy_and_terms"
-	LifetimeBYOKScope    = "lifetime_byok"
-	ManagedAIScope       = "managed_subscription"
-	FreeRecognitionScope = "free_managed_recognition"
-	SensitiveHealthScope = "sensitive_health_ai"
+	AdultScope                   = "adult"
+	Age14PlusScope               = "age_14_plus"
+	HealthEligibilityScope       = "health_eligibility"
+	HealthGeneralDocumentVersion = "2026-10-01"
+	PrivacyTermsScope            = "privacy_and_terms"
+	LifetimeBYOKScope            = "lifetime_byok"
+	ManagedAIScope               = "managed_subscription"
+	FreeRecognitionScope         = "free_managed_recognition"
+	SensitiveHealthScope         = "sensitive_health_ai"
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -78,13 +81,16 @@ func NewService(repository Repository, objects ObjectCleaner, cache CacheCleaner
 }
 
 func (service *Service) RecordConsents(ctx context.Context, principal attestation.Principal, values []Consent) (time.Time, error) {
-	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 6 {
+	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 7 {
 		return time.Time{}, ErrInvalidConsent
 	}
 	recordedAt := service.now().UTC().Truncate(time.Microsecond)
 	records := make([]Record, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
+		if (value.Scope == Age14PlusScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion == HealthGeneralDocumentVersion)) && principal.AppID != "health" {
+			return time.Time{}, ErrInvalidConsent
+		}
 		if !validConsent(value) {
 			return time.Time{}, ErrInvalidConsent
 		}
@@ -117,12 +123,20 @@ func (service *Service) HasRequiredConsents(
 		return false, ErrConsentUnavailable
 	}
 	requirements := make([]Consent, 0, len(scopes))
+	healthEligibility := false
 	seen := make(map[string]struct{}, len(scopes))
 	for _, scope := range scopes {
 		if _, exists := seen[scope]; exists {
 			continue
 		}
 		seen[scope] = struct{}{}
+		if scope == HealthEligibilityScope {
+			if principal.AppID != "health" {
+				return false, ErrInvalidConsent
+			}
+			healthEligibility = true
+			continue
+		}
 		requirement := Consent{Scope: scope, Granted: true}
 		switch scope {
 		case AdultScope, PrivacyTermsScope:
@@ -133,6 +147,28 @@ func (service *Service) HasRequiredConsents(
 			return false, ErrInvalidConsent
 		}
 		requirements = append(requirements, requirement)
+	}
+	if healthEligibility {
+		// Versions are checked as complete pairs, never mixed across generations.
+		current, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+			{Scope: Age14PlusScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
+			{Scope: PrivacyTermsScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
+		})
+		if err != nil {
+			return false, err
+		}
+		if !current {
+			legacy, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+				{Scope: AdultScope, DocumentVersion: GeneralDocumentVersion, Granted: true},
+				{Scope: PrivacyTermsScope, DocumentVersion: GeneralDocumentVersion, Granted: true},
+			})
+			if err != nil || !legacy {
+				return false, err
+			}
+		}
+	}
+	if len(requirements) == 0 {
+		return healthEligibility, nil
 	}
 	return reader.HasGrantedConsents(ctx, principal.KeyID, requirements)
 }
@@ -169,7 +205,11 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 
 func validConsent(value Consent) bool {
 	switch value.Scope {
-	case AdultScope, PrivacyTermsScope:
+	case Age14PlusScope:
+		return value.DocumentVersion == HealthGeneralDocumentVersion
+	case PrivacyTermsScope:
+		return value.DocumentVersion == GeneralDocumentVersion || value.DocumentVersion == HealthGeneralDocumentVersion
+	case AdultScope:
 		return value.DocumentVersion == GeneralDocumentVersion
 	case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
 		return value.DocumentVersion == AIDocumentVersion
