@@ -410,10 +410,7 @@ func buildAppHandler(
 	switch app.ID {
 	case appregistry.Health:
 		dependencies.ExecutionPolicies = storage.executionPolicies
-		dependencies.AllowedConsentScopes = []string{
-			privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
-			privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
-		}
+		configureHealthConsents(&dependencies)
 		manifest, err := contracts.LoadManifest(appConfig.SchemaManifestPath)
 		if err != nil {
 			return nil, err
@@ -448,7 +445,6 @@ func buildAppHandler(
 		dependencies.Dispatcher = dispatcher
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
-		dependencies.RequiredConsentScopes = []string{privacy.HealthEligibilityScope, privacy.SensitiveHealthScope}
 	case appregistry.Journal:
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
@@ -502,6 +498,14 @@ func buildAppHandler(
 		return nil, errors.New("unsupported app runtime")
 	}
 	return gateway.New(dependencies).Router(), nil
+}
+
+func configureHealthConsents(dependencies *gateway.Dependencies) {
+	dependencies.AllowedConsentScopes = []string{
+		privacy.AdultScope, privacy.Age14PlusScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+		privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
+	}
+	dependencies.RequiredConsentScopes = []string{privacy.HealthEligibilityScope, privacy.SensitiveHealthScope}
 }
 
 func commerceServices(
