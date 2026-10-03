@@ -33,7 +33,7 @@ func (s *Server) CreateJournalVoiceSession(ctx context.Context, request journalh
 		return fail(422, "voice_consent_required", "voice consent is required")
 	}
 	if request.Body.ConsentVersion != voice.Version {
-		return fail(409, "voice_protocol_mismatch", "voice protocol version does not match this service")
+		return fail(422, "voice_protocol_mismatch", "app and voice service protocol versions differ")
 	}
 	record, ok, err := s.voiceEntitlements.Get(ctx, principal.KeyID)
 	if err != nil || !ok || !record.ExpiresAt.After(s.now()) {

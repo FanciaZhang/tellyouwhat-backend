@@ -47,7 +47,7 @@ func TestVoiceAdmissionRequiresOwnSubscriptionAndExplicitConsent(t *testing.T) {
 				mismatch.Header = request.Header.Clone()
 				result := httptest.NewRecorder()
 				s.Router().ServeHTTP(result, mismatch)
-				if result.Code != 409 || !strings.Contains(result.Body.String(), "voice_protocol_mismatch") || strings.Contains(result.Body.String(), "voice_consent_required") {
+				if result.Code != 422 || !strings.Contains(result.Body.String(), "voice_protocol_mismatch") || strings.Contains(result.Body.String(), "voice_consent_required") {
 					t.Fatalf("protocol mismatch misreported: %d %s", result.Code, result.Body.String())
 				}
 			}

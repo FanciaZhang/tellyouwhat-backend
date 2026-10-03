@@ -51,7 +51,11 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	rewriteAcknowledged string // server-owned, never decoded from JSON
+	DiagramContext       []DiagramContext `json:"diagramContext"`
+	DiagramSourceContext []TableSource    `json:"diagramSourceContext"`
+	JourneySourceContext []TableSource    `json:"journeySourceContext"`
+	JourneyContext       []JourneyContext `json:"journeyContext"`
+	rewriteAcknowledged  string           // server-owned, never decoded from JSON
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`
@@ -98,6 +102,10 @@ type PassageSource struct {
 	SourceIDs      []string `json:"sourceIDs"`
 }
 type Revision struct {
+	DiagramCreations     []DiagramCreation     `json:"diagramCreations"`
+	DiagramEdits         []DiagramEdit         `json:"diagramEdits"`
+	JourneyCreations     []JourneyCreation     `json:"journeyCreations"`
+	JourneyEdits         []JourneyEdit         `json:"journeyEdits"`
 	BaseRevision         int                   `json:"baseRevision"`
 	TranscriptRevision   int                   `json:"transcriptRevision"`
 	Patches              []Patch               `json:"patches"`

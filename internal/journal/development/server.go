@@ -80,6 +80,7 @@ func New(c Config) (http.Handler, error) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Journal-Environment", "development")
 		w.Header().Set("X-Journal-Development-Protocol", ProtocolVersion)
+		w.Header().Set("X-Journal-Voice-Protocol", voice.Version)
 		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
 			g.Abort()
 			w.Header().Set("Content-Type", "application/json")

@@ -23,7 +23,7 @@ func TestDiagramModelResponseContract(t *testing.T) {
 				r.DiagramCreations = []DiagramCreation{}
 				r.ConsumedSourceIDs = []string{}
 				r.SourcePartitions = []SourcePartition{}
-				s = Snapshot{}
+				s = Snapshot{PendingUtterances: []SourceUtterance{}}
 			}
 			encoded, _ := json.Marshal(r)
 			fields := map[string]any{}
