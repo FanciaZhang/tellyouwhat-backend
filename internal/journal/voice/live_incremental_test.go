@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	"os"
 	"testing"
@@ -14,6 +15,12 @@ func TestLiveIncrementalSyntheticRevision(t *testing.T) {
 	}
 	bid, sid := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Blocks: []Block{{ID: bid, Style: "body"}}, WritingStyle: StyleNatural, ActiveBlockIDs: []string{bid}, KnownSourceIDs: []string{sid}, PendingUtterances: []SourceUtterance{{ID: sid, Text: "今天下午我去公园散步，看到一只小狗，心情很好。"}}}
+	if file := os.Getenv("JOURNAL_SYNTHETIC_SNAPSHOT_FILE"); file != "" {
+		raw, err := os.ReadFile(file)
+		if err != nil || json.Unmarshal(raw, &s) != nil {
+			t.Fatal("synthetic snapshot unavailable")
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	r, err := (ArkRewriter{BaseURL: os.Getenv("JOURNAL_ARK_BASE_URL"), APIKey: os.Getenv("JOURNAL_ARK_API_KEY"), Model: os.Getenv("JOURNAL_VOICE_MODEL")}).Rewrite(ctx, s, 0)

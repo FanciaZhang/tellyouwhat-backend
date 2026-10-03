@@ -376,7 +376,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 			return PreparedRewrite{}, err
 		}
 		body["input"] = string(input)
-		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + "\n本次写作风格：" + style.Prompt
+		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
 	}
 	settings.Voice.Parameters.Apply(body)
@@ -447,6 +447,12 @@ formatContext 中 additionalBlockIDs 列出同一批量操作除 blockID 外影�
 用户明确要求移动已有段落时使用 moveCommands，每项包含新 UUID id、现有目标 blockIDs、目的段落 afterID、当前口述 sourceID 和准确的 instruction。afterID 为 null 表示全文开头，其他情况为移到该段后面。目标只能引用上下文中可确定的已有段落；顺序按原文保持。parallelGroups 中每组是不可拆散的并排组合，选中其中一段会整组移动，目的地在组内则移到该组后面。App 会先展示预览等待触摸确认，不要用删除后重新生成正文代替移动。同批不要改写、纠错或格式化目标及目的组合；其他段落继续正常整理。sourcePartitions 的 instruction 应引用移动涉及的全部组成员；口述指令本身不写入正文。没有明确移动请求时 moveCommands 返回空数组；转述别人说的命令仍作为正文。目标、目的地或章节边界不能确定时用 questions 询问。
 sourcePartitions 描述需要细分用途或段落归属的口述；单一用途且各 passage 共用整句时可为空数组。同一句含组织提示、纠错说明或不同正文段落时必须提供该 sourceID 的完整 segments，按原话顺序逐字摘录，拼接后须与原始 text 完全相同，保留标点空格和完整字符。不要计算字符偏移。每段 role 为 content（正文内容）、organization（组织提示）、correction（纠错说明）、instruction（格式操作或确认）、context（未进入正文的上下文）。content/organization 的 blockIDs 必须引用本轮该来源关联的 passage；correction 只引用以该 source 为证据的 correction 目标；context 的 blockIDs 为空。instruction 必须与 formatCommands 或 formatResolutions 的 instruction 完全一致且引用其目标块。每个 passage 至少关联一段 content 或 organization，同一片段可支撑标题与概览等多个块。举例“第一个主题是隐私保护。数据由用户掌握。”可拆成“第一个主题是”(organization，标题块)、“隐私保护。”(content，标题块)、“数据由用户掌握。”(content，正文块)。纠错解释留作证据，其所说明的实际事实可单独作为正文片段。不得把相邻段落的原话全部分配给每个段落。
 只有 source 自带非空 acousticEmotion 时才可返回 emotion，不得单凭文字猜情绪。emotion.sourceID 必须属于同一 passage，anchorText 必须是该段中唯一出现、不超过 80 字的原文短句。kind 只能是 calm、happy、excited、relaxed、moved、hopeful、surprised、worried、nervous、sad、angry、tired。本轮证据不足时 emotions 返回空数组，overallEmotion 返回空字符串。只输出符合 schema 的 JSON。`
+
+// Distinguish a new utterance's self-correction from a correction to an
+// already tracked mention. Both use exact spoken evidence; only the latter
+// can authorize a corrections entry and a correction partition target.
+const incrementalSelfCorrectionInstructions = `
+本轮原话内部的自我纠正（例如“不是小明，是小林”）不是对旧正文 mention 的 correction 操作。新正文直接保留更正后的事实；没有旧 mentionID 时 corrections 必须为空，绝不能为此伪造 mention 或目标。sourcePartitions 必须逐字覆盖完整原话：没有写入正文的旧称呼、否定旧称呼及改口说明用 context，blockIDs 为 []；更正后进入正文的“小林”等实际内容用 content，blockIDs 引用相应 passage。correction 角色只能引用本轮 corrections 中真实存在的目标 blockID，不能配空 blockIDs。例：“我和小明去公园，不是小明，是小林。”可以分为“我和”(content)、“小明”(context)、“去公园，”(content)、“不是小明，是”(context)、“小林。”(content)，正文为“我和小林去公园。”。不得把更正后的事实一起丢进 context，不得将旧错误称呼作为新增事实。`
 
 type rewriteModelDocument struct {
 	DiagramContext       []DiagramContext      `json:"diagramContext"`
