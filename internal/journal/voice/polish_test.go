@@ -134,6 +134,59 @@ func TestNarrativeActorCorrectionAcknowledgesPriorInFlightResult(t *testing.T) {
 	}
 }
 
+func TestContinuousNarrativePreservesRetainedProseWithFillerOnlyNewSpeech(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Targets[0].RetainedText = "今天去了河边散步。"
+	p.Targets[0].SourceText = "嗯，啊，呃。"
+	p.Targets[0].Text = p.Targets[0].RetainedText + p.Targets[0].SourceText
+	if _, err := decodePolish(`{"paragraphs":[],"questions":[]}`, p); err == nil {
+		t.Fatal("filler removal deleted previously organized prose")
+	}
+	output := `{"paragraphs":[{"targetIDs":["` + p.Targets[0].ID + `"],"text":"今天去了河边散步。"}],"questions":[]}`
+	if _, err := decodePolish(output, p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContinuousNarrativeRetainsPrefixAndStableSourceKeysAcrossModelRoundTrip(t *testing.T) {
+	s := polishFixture()
+	target := &s.Polish.Targets[0]
+	target.RetainedText = "上午和妻子去了公园。"
+	target.Text = target.RetainedText + target.SourceText
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], Text: target.SourceText, Speaker: "segment:1"}}
+	target.SourceKeys = []string{uuid.NewString()}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Input string `json:"input"`
+	}
+	if err = json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	var input struct {
+		Targets []PolishTarget `json:"targets"`
+	}
+	if err = json.Unmarshal([]byte(body.Input), &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Targets[0].RetainedText != target.RetainedText || input.Targets[0].SourceKeys[0] != target.SourceKeys[0] {
+		t.Fatal("lost continuous paragraph prefix or client source identity")
+	}
+	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+target.ID+`"],"text":"上午和妻子去了公园，随后去河边。"}],"questions":[]}`, *s.Polish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Targets[0].SourceKeys[0] != target.SourceKeys[0] {
+		t.Fatal("response cannot match in-flight source")
+	}
+	s.Polish.Targets[0].SourceKeys = []string{uuid.NewString(), uuid.NewString()}
+	if err = s.Polish.Validate(); err == nil {
+		t.Fatal("accepted mismatched source keys")
+	}
+}
+
 type gatedPolishRewriter struct {
 	started chan Snapshot
 	release chan struct{}
