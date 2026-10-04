@@ -188,7 +188,7 @@ func validateTables(r Revision, s Snapshot) error {
 				}
 				evidence := map[TableSource]bool{}
 				for _, source := range cell.Sources {
-					if !consumed[source.SourceID] || evidence[source] || !tableSourceIsContent(r, source, sources[source.SourceID], c.BlockID) {
+					if evidence[source] || !structuredSourceAuthorized(source, "content", c.BlockID, r, s, s.TableSourceContext) {
 						return ErrInvalid
 					}
 					evidence[source] = true

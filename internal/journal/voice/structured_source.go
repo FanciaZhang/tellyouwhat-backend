@@ -4,9 +4,9 @@ import (
 	"strings"
 )
 
-// Historical content can explain a graph, but only current speech can authorize
+// Contextual content can explain a component, but only current speech can authorize
 // its creation. Exact partition coverage prevents instructions becoming facts.
-func diagramSourceAuthorized(source TableSource, role, blockID string, r Revision, s Snapshot, historical []TableSource) bool {
+func structuredSourceAuthorized(source TableSource, role, blockID string, r Revision, s Snapshot, historical []TableSource) bool {
 	if role != "content" && role != "instruction" {
 		return false
 	}

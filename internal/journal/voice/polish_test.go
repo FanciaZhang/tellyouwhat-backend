@@ -16,7 +16,7 @@ import (
 
 func polishFixture() Snapshot {
 	id := uuid.NewString()
-	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
+	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
 func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	s := polishFixture()
@@ -38,7 +38,7 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 func TestPolishBaselineIsServerOwnedAndUnknownParagraphsAreRejected(t *testing.T) {
 	s := polishFixture()
 	target := s.Polish.Targets[0]
-	output := `{"paragraphs":[{"targetIDs":["` + target.ID + `"],"text":"今天去了河边。"}],"questions":[]}`
+	output := `{"paragraphs":[{"targetIDs":["` + target.ID + `"],"style":"body","text":"今天去了河边。"}],"questions":[]}`
 	result, err := decodePolish(output, *s.Polish)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestNarrativeAcceptsMergedDialogueAndPreservesTrustedSpeakerEvidence(t *tes
 	s := polishFixture()
 	first := &s.Polish.Targets[0]
 	first.Turns = []SourceUtterance{{ID: first.SourceIDs[0], Text: first.SourceText, Speaker: "segment:1", Person: "我"}}
-	second := PolishTarget{ID: uuid.NewString(), Text: "啊，我更想先去图书馆还书。", SourceText: "啊，我更想先去图书馆还书。", SourceIDs: []string{uuid.NewString()}}
+	second := PolishTarget{Style: "body", ID: uuid.NewString(), Text: "啊，我更想先去图书馆还书。", SourceText: "啊，我更想先去图书馆还书。", SourceIDs: []string{uuid.NewString()}}
 	second.Turns = []SourceUtterance{{ID: second.SourceIDs[0], Text: second.SourceText, Speaker: "segment:2", Person: "妻子"}}
 	s.Polish.Targets = append(s.Polish.Targets, second)
 	if err := s.Polish.Validate(); err != nil {
@@ -83,7 +83,7 @@ func TestNarrativeAcceptsMergedDialogueAndPreservesTrustedSpeakerEvidence(t *tes
 	if input.Targets[1].Turns[0].Person != "妻子" || input.Targets[0].Turns[0].Speaker == input.Targets[1].Turns[0].Speaker {
 		t.Fatal("narrative lost trusted actors")
 	}
-	output := `{"paragraphs":[{"targetIDs":["` + s.Polish.Targets[0].ID + `","` + second.ID + `"],"text":"我想去河边，妻子更想先去图书馆还书。"}],"questions":[]}`
+	output := `{"paragraphs":[{"targetIDs":["` + s.Polish.Targets[0].ID + `","` + second.ID + `"],"style":"body","text":"我想去河边，妻子更想先去图书馆还书。"}],"questions":[]}`
 	result, err := decodePolish(output, *s.Polish)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestNarrativeRejectsMissingSubstantiveSourceButCanRemoveOnlyFillers(t *test
 	second := p.Targets[0]
 	second.ID = uuid.NewString()
 	p.Targets = append(p.Targets, second)
-	if _, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"text":"去了河边。"}],"questions":[]}`, p); err == nil {
+	if _, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"style":"body","text":"去了河边。"}],"questions":[]}`, p); err == nil {
 		t.Fatal("partial source coverage accepted")
 	}
 	for i := range p.Targets {
@@ -114,7 +114,7 @@ func TestNarrativeRejectsMissingSubstantiveSourceButCanRemoveOnlyFillers(t *test
 
 func TestNarrativeNormalizesRealParagraphBreaksWithSharedSources(t *testing.T) {
 	p := *polishFixture().Polish
-	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"text":"今天去了河边。\n\n在那里散步。"}],"questions":[]}`, p)
+	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"style":"body","text":"今天去了河边。\n\n在那里散步。"}],"questions":[]}`, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestContinuousNarrativePreservesRetainedProseWithFillerOnlyNewSpeech(t *tes
 	if _, err := decodePolish(`{"paragraphs":[],"questions":[]}`, p); err == nil {
 		t.Fatal("filler removal deleted previously organized prose")
 	}
-	output := `{"paragraphs":[{"targetIDs":["` + p.Targets[0].ID + `"],"text":"今天去了河边散步。"}],"questions":[]}`
+	output := `{"paragraphs":[{"targetIDs":["` + p.Targets[0].ID + `"],"style":"body","text":"今天去了河边散步。"}],"questions":[]}`
 	if _, err := decodePolish(output, p); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestContinuousNarrativeRetainsPrefixAndStableSourceKeysAcrossModelRoundTrip
 	if input.Targets[0].RetainedText != target.RetainedText || input.Targets[0].SourceKeys[0] != target.SourceKeys[0] {
 		t.Fatal("lost continuous paragraph prefix or client source identity")
 	}
-	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+target.ID+`"],"text":"上午和妻子去了公园，随后去河边。"}],"questions":[]}`, *s.Polish)
+	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+target.ID+`"],"style":"body","text":"上午和妻子去了公园，随后去河边。"}],"questions":[]}`, *s.Polish)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func (m *gatedPolishRewriter) Rewrite(ctx context.Context, s Snapshot, _ int) (R
 		return RewriteResult{}, errors.New("provider unavailable")
 	}
 	target := s.Polish.Targets[0]
-	return RewriteResult{Polish: &PolishRevision{Targets: s.Polish.Targets, Paragraphs: []PolishParagraph{{TargetIDs: []string{target.ID}, Text: "今天去了河边。"}}, Questions: []string{}}}, nil
+	return RewriteResult{Polish: &PolishRevision{Targets: s.Polish.Targets, Paragraphs: []PolishParagraph{{Style: "body", TargetIDs: []string{target.ID}, Text: "今天去了河边。"}}, Questions: []string{}}}, nil
 }
 func polishSocket(t *testing.T, model Rewriter, speech Speech) *websocket.Conn {
 	t.Helper()

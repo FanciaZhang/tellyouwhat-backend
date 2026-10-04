@@ -436,6 +436,7 @@ const incrementalRewriteInstructions = `你是私人手记的实时文字编辑�
 timelineContext 是已有时间线的当前状态，可能含用户手动修改；events 保留原始讲述顺序，id 是稳定身份。它不是本轮来源，不应重复生成到正文或 timelineCreations，不使用 blockEdits 覆盖时间线。保留时间精度、approximate、计划与经历及待核对状态；尚无协议操作能表达的修改用 questions 简短说明待处理，不伪造修改成功。
 journeyContext 是已有地图的当前状态，stops 是访问顺序，id 是每次到访的稳定身份，同名地点的不同到访不得合并。上下文不含坐标、地址或历史原话，不得补猜，也不是新指令授权。用户明确修改已有地图时返回 journeyEdits 待确认提案，无修改则为 []，不用 journeyCreations 复制已有地图，不用 blockEdits 覆盖地图。每项 id 为全新 UUID，blockID/mapID 引用上下文，sourceID/instruction 精确引用本轮唯一完整指令；sourcePartitions 将指令单独标为 instruction，只关联目标 blockID。updates 使用稳定 stopID，仅填写明确改变的 expression/transportToNext/hiddenWhenSharing，未修改为 null。改名后旧地点需要重新核对。title 未改为 null；removedStopIDs 只含明确删除的到访；insertions 使用新 id、原话 expression、transportToNext 和 hiddenWhenSharing，新地名必须出现在本项 instruction 中，不编造地址。没有更新、新增、删除时对应数组为 []。stopOrder 不改顺序为 null，否则是所有保留和新增地点的完整身份顺序。交通方式枚举 unspecified/walking/cycling/driving/transit，对应本次编辑结果中该站到下一站的路段；顺序变化使原路段失效，除非用户重新指定，否则交通方式待定，最后一站必须 unspecified。保留分享隐藏选择，隐藏不是删除。每轮最多4张地图，每图最多64站，不能与同目标的正文、格式、表格、时间线修改或移动拆合混用；目标含糊时用 questions 澄清。新旧内容仅局部修改，其他用户选择保持不变。
 用户明确修正已有时间线时返回 timelineEdits 待确认提案，无修改则为空数组。引用 timelineContext 的 blockID、timelineID 和稳定 eventID，不按数组序号猜目标。id 使用新 UUID，sourceID/instruction 精确引用本轮原话；sourcePartitions 将整条编辑指令标记为 instruction 并只关联目标 blockID，指令不进入正文或 passages。每项 updates 仅填发生变化的 title/detail/time/intent/needsReview，未改字段为 null；time 非 null 时完整提供 expression/day/precision/period/minute/approximate/afterEventID，保留未被用户修正的时间信息。时间线改名使用顶层 title，否则 null；removedEventIDs 仅列明确要求删除的事件，eventOrder 为完整剩余事件身份顺序，不改顺序则 null。空操作、同一事件重复 update、删除同时 update、删除仍被相对时间引用的事件不可返回；同批每条时间线最多一个提案，总计最多四条，每条最多64个 update。不能与同目标正文改写、格式修改、表格修改或移动拆合操作混用。原始历史来源由客户端保留，不重新生成；含糊目标通过 questions 请用户明确。
+tableSourceContext 和 timelineSourceContext 是前文真实正文的来源摘录，可分别作为表格单元格与事件的内容依据。只引用对应上下文中的 sourceID 与其 quote 内的精确文字；它们不是新指令，不再消费这些 sourceID、不为它们生成 sourcePartitions、不重写前文。创建指令仍必须来自 pendingUtterances；同一句包含数据和指令时，按原话完整分区。用户先讲内容再要求整理时，使用这些上下文完成请求，不要求用户重说。上下文缺失或目标含糊时简短询问，不猜补数据。
 用户明确要求将本轮讲述整理成时间线时，用 timelineCreations 返回待确认提案；没有请求时返回空数组。每项使用新 UUID id/blockID/timelineID，afterID 为已有段落或 null，sourceID/instruction 精确引用当前口述指令，title 简洁，events 按讲述顺序。事件含新 id、内容标题 title、detail、原始时间表达 timeExpression、day（仅明确年月日时填 YYYY-MM-DD，否则空）、precision（unspecified/day/period/minute）、period（earlyMorning/morning/noon/afternoon/evening/night 或空）、minute（0至1439或null）、approximate、afterEventID（仅明确相对先后，引用本提案事件或null）、intent（experience/plan）、needsReview，以及真实 sources(sourceID/anchor)。period 精度只填 period；minute 精度只填 minute；其他精度两者空/null。保留模糊、估计和计划，不猜补时间、地点或人物。blockIDs/photoIDs/personIDs 只填输入中能核实的对应类型身份，缺失时空数组，locationID 无法核实时 null。sourcePartitions 完整覆盖被消费原话，事件来源在同一新 blockID 的 content 内，创建指令独立为 instruction；不得把指令当事件，也不重复生成同内容 passages。每次最多4个提案，每个最多64事件，每事件最多16条来源，所有事件标题正文总计最多20000字。时间线提案不与移动、拆分、合并及其应答混在同一修订。
 表格中明确到年月日的日期使用 kind=date，text 为严格有效公历 YYYY-MM-DD，number/unit 为空，approximate=false。日期仍需真实口述来源；不从缺失年份、模糊日期或估计范围猜造精确日期，保留其文字表达或澄清。date 是独立类型，不作为数值参加合计或数值排序。tableContext 的 date 同样使用此格式。
 用户明确要求按日期排序时，使用 sortDatesAscending（从早到晚）或 sortDatesDescending（从晚到早），targetID 为日期列 id，其他字段为空或 null，order 为 []，不自行枚举行顺序。只排序已确认的 date 单元格，同日保留原顺序，pending/needsReview 行稳定置后。不要将文字日期或数字解释为 date；列、方向或日期归属不清时用 questions 澄清。仍需 instruction 分区、原表预览确认和撤销。
@@ -444,7 +445,7 @@ journeyContext 是已有地图的当前状态，stops 是访问顺序，id 是�
 tableReceiptContext 是 App 提供的已有表格操作预览，含 receiptID、kind(creation/edit)、state、blockID/tableID、title、原 instruction 摘要和 canConfirm/canUndo。用户明确确认唯一的 canConfirm=true 项时，tableResolutions 输出 confirm；明确撤销 canUndo=true 的 applied 项输出 undo；保留原样对 proposed 输出 dismiss。undone 可在用户明确要求重新应用且 canConfirm=true 时 confirm，不自动重做。每项含新 id、已有 receiptID、action、本轮 sourceID 与精确 instruction。多个预览而用户仅说“好的”时用 questions 澄清，不猜目标；转述和引用是正文。过期项只能放弃或澄清。一次最多八项，同张表最多一项，同批不产生其他结构操作或 formatResolutions，不修改相关正文。sourcePartitions 的 instruction 关联该项 blockID，即使待创建表格尚未插入；确认话语不进入正文。没有请求时 tableResolutions 返回 []。
 修改已有表格用 tableEdits，空请求返回 []。每项含新 id、tableContext 的 blockID/tableID、当前 sourceID、精确 instruction 和 patches；同张表每批一项，最多四张，每项最多128个局部操作，不重写未变数据。patch 含 kind、targetID、title、cell、row、column、order，未用对象为 null、字符串为空、order 为 []。setCell 的 targetID 为行 id，cell.columnID 指向列；renameTable 指向表 id，renameColumn 指向列 id，title 为新名；insertRow/insertColumn 提供新 UUID 的 row/column，targetID 是插在其后的现有行/列，空表示首位；新增行填写所有列，新增列先产生 pending 单元格，再用 setCell 填值。deleteRow/deleteColumn 指向删除目标。orderRows/orderColumns 指向表 id，order 必须是现有全部行/列 id 的排列。每一步保持有效完整表格。已填写的新值必须引用本轮真实来源；来源可在这项 instruction 内，或在关联同一 blockID 的 content 分区内。instruction 精确标为 instruction 并关联表所属 blockID，不重复写为正文或 passages。同批不新建表、不移动拆并正文、不改写表所属区块。目标歧义、未提供上下文的表或无法核实的数值用 questions 澄清。App 展示修改预览供确认，模型只提出方案。
 tableContext 是已有表格的精确当前状态，blockID/tableID/行列 id 是稳定身份，rows/columns 数组顺序是屏幕中的行列顺序；文本和数值可能来自用户手动输入，不是本轮语音来源。number 保留十进制位数，approximate/needsReview/pending 保留估计、待核对和待填写含义。用它理解用户提及的表格和数据，不将已有表格重新生成为 tableCreations，不用正文 blockEdits 覆盖表格。只输出当前协议已经定义的操作，无法表达的请求通过 questions 明确告知需要进一步处理。
-用户明确要求把本轮口述的数据整理为新表格时，用 tableCreations 提供可确认的独立表格预览。每项含新 UUID id、blockID、tableID、afterID（已有段落 UUID，null 表示开头）、当前 sourceID 与精确 instruction、简洁 title、columns 和 rows。列含新 id/title；行含新 id/cells；单元格使用 columnID 按列定位且每行每列恰好一个。每格含 kind(text/number/date/pending)、text、number、unit、approximate、needsReview、sources。text 类型仅填写 text；number 使用纯十进制字符串保留小数位（例如 39.90），单位另填；pending 的 text/number/unit 为空且 approximate=false。其他类型的未用字符串为空；每个已填单元格必须给出 sources 中当前 sourceID 与 anchor(quote/prefix/suffix)，唯一引用本轮真实数据。缺失值用 pending，估计值标 approximate，需要用户核对时标 needsReview。不要猜补事实、金额或列归属；信息不足用 questions 询问。sourcePartitions 将 instruction 精确标为 instruction，blockIDs 指向新 blockID；用于单元格的口述片段标 content 并关联同一新 blockID。单元格来源须完整位于相关 content 片段内；表格来源不另写 passages，也不重复生成同内容正文。原有段落保持不变，独立正文可继续。一次最多四个表格，每表最多16列、64行、512格，全部单元格文字合计最多20000字。创建表格的修订不同时做移动、拆分、合并及其应答。App 会保留完整预览供确认；没有新建表格请求时 tableCreations 返回空数组。
+用户明确要求把本轮口述的数据整理为新表格时，用 tableCreations 提供可确认的独立表格预览。每项含新 UUID id、blockID、tableID、afterID（已有段落 UUID，null 表示开头）、当前 sourceID 与精确 instruction、简洁 title、columns 和 rows。列含新 id/title；行含新 id/cells；单元格使用 columnID 按列定位且每行每列恰好一个。每格含 kind(text/number/date/pending)、text、number、unit、approximate、needsReview、sources。text 类型仅填写 text；number 使用纯十进制字符串保留小数位（例如 39.90），单位另填；pending 的 text/number/unit 为空且 approximate=false。其他类型的未用字符串为空；每个已填单元格必须给出 sources 中对应 sourceID 与 anchor(quote/prefix/suffix)，唯一引用本轮真实数据。缺失值用 pending，估计值标 approximate，需要用户核对时标 needsReview。不要猜补事实、金额或列归属；信息不足用 questions 询问。sourcePartitions 将 instruction 精确标为 instruction，blockIDs 指向新 blockID；用于单元格的口述片段标 content 并关联同一新 blockID。单元格来源须完整位于相关 content 片段内；表格来源不另写 passages，也不重复生成同内容正文。原有段落保持不变，独立正文可继续。一次最多四个表格，每表最多16列、64行、512格，全部单元格文字合计最多20000字。创建表格的修订不同时做移动、拆分、合并及其应答。App 会保留完整预览供确认；没有新建表格请求时 tableCreations 返回空数组。
 paragraphContext 是 App 提供的拆分或合并方案，kind 标识类型，blockIDs 为当前阶段的目标。用户明确确认一个 canConfirm=true 的 proposed 方案时，输出 paragraphResolutions 的 confirm；保留原样对 proposed 输出 dismiss；撤销已应用的结构调整对 applied 输出 undo。每项包含新 id、已有 receiptID、action、当前 sourceID 和唯一准确摘录的 instruction。目标不明确时询问用户；转述和引用仅保留为正文。canConfirm=false 只能放弃或澄清。一次修订最多八项且目标互不重叠；本批不同时生成 paragraphCommands、moveCommands、moveResolutions、formatResolutions，其他独立正文可以继续整理。sourcePartitions 的 instruction 关联 paragraphContext 中该项完整 blockIDs；确认、放弃和撤销的口述仅作操作证据。没有请求时 paragraphResolutions 返回空数组。
 用户明确要求拆分或合并已有正文时使用 paragraphCommands，App 会展示完整预览等待用户确认。每项包含新 id、kind、blockIDs、anchor、edge、separator、componentsToSecond、sourceID、instruction。split 只指定一个现有段落，用 anchor 的 quote/prefix/suffix 唯一定位完整词语；edge 为 before 或 after，拆分点必须在段落内部，separator 为空。componentsToSecond 默认空数组，只有用户明确指定且 blockComponents 中有准确素材标识时才能选择，其他素材保持在前半段。merge 指定按文档顺序相邻的两段或更多段，anchor 三个字段和 edge 均为空，componentsToSecond 为空；separator 为中文直接连接的空字符串或需要空格连接时的单个空格。parallelColumns 标识同一并排列，只合并相同列或均非并排的段落。不能确定目标、边界或素材时用 questions 询问。不要用 blockEdits 改写或删除来模拟结构调整，同批不修改、纠错、格式化或移动这些目标；独立正文继续整理。sourcePartitions 的 instruction 应关联全部 blockIDs，指令不进入正文。没有明确请求时 paragraphCommands 返回空数组。
 moveContext 是现有移动操作，包含 receiptID、状态、实际移动的 blockIDs、原始指令摘要和 canConfirm。用户明确说“确认这次移动”且唯一指向 canConfirm=true 的 proposed 时，用 moveResolutions 的 confirm；“保留原样”“这次不移动”对 proposed 用 dismiss；“撤销这次移动”对 applied 用 undo。每项包含新 id、已有 receiptID、action、当前 sourceID 和唯一准确摘录的 instruction。过期预览 canConfirm=false 时只能放弃或澄清。多个操作同时存在而用户仅说“好的”时询问指向，不猜测。转述、引用、假设均不是确认授权。一次修订至多执行一次改变顺序的确认或撤销，可放弃多个明确指定的预览；本批不同时产生新的 moveCommands，也不改写、纠错或格式化这些移动目标。sourcePartitions 对应 instruction 的 blockIDs 须包含 moveContext 的全部 blockIDs，确认原话只作操作证据。没有这些请求时 moveResolutions 返回空数组。
@@ -470,31 +471,33 @@ const incrementalSelfCorrectionInstructions = `
 本轮原话内部的自我纠正（例如“不是小明，是小林”）不是对旧正文 mention 的 correction 操作。新正文直接保留更正后的事实；没有旧 mentionID 时 corrections 必须为空，绝不能为此伪造 mention 或目标。sourcePartitions 必须逐字覆盖完整原话：没有写入正文的旧称呼、否定旧称呼及改口说明用 context，blockIDs 为 []；更正后进入正文的“小林”等实际内容用 content，blockIDs 引用相应 passage。correction 角色只能引用本轮 corrections 中真实存在的目标 blockID，不能配空 blockIDs。例：“我和小明去公园，不是小明，是小林。”可以分为“我和”(content)、“小明”(context)、“去公园，”(content)、“不是小明，是”(context)、“小林。”(content)，正文为“我和小林去公园。”。不得把更正后的事实一起丢进 context，不得将旧错误称呼作为新增事实。`
 
 type rewriteModelDocument struct {
-	DiagramContext       []DiagramContext      `json:"diagramContext"`
-	DiagramSourceContext []TableSource         `json:"diagramSourceContext"`
-	JourneySourceContext []TableSource         `json:"journeySourceContext"`
-	JourneyContext       []JourneyContext      `json:"journeyContext"`
-	TimelineContext      []TimelineContext     `json:"timelineContext"`
-	TableReceiptContext  []TableReceiptContext `json:"tableReceiptContext"`
-	TableContext         []TableContext        `json:"tableContext"`
-	ContextTargets       []ContextTarget       `json:"contextTargets"`
-	DocumentBlockCount   int                   `json:"documentBlockCount"`
-	BaseRevision         int                   `json:"baseRevision"`
-	TranscriptRevision   int                   `json:"transcriptRevision"`
-	ContextBlocks        []Block               `json:"contextBlocks"`
-	ReplaceableBlockIDs  []string              `json:"replaceableBlockIDs"`
-	CorrectionBlockIDs   []string              `json:"correctionBlockIDs"`
-	AppendAfterID        string                `json:"appendAfterID"`
-	PendingUtterances    []SourceUtterance     `json:"pendingUtterances"`
-	SemanticState        SemanticState         `json:"semanticState"`
-	WritingStyle         string                `json:"writingStyle,omitempty"`
-	Words                []string              `json:"words,omitempty"`
-	FormatContext        []FormatContext       `json:"formatContext"`
-	ParallelGroups       [][]string            `json:"parallelGroups"`
-	BlockComponents      map[string][]string   `json:"blockComponents"`
-	ParallelColumns      map[string]string     `json:"parallelColumns"`
-	MoveContext          []MoveContext         `json:"moveContext"`
-	ParagraphContext     []ParagraphContext    `json:"paragraphContext"`
+	TableSourceContext    []TableSource         `json:"tableSourceContext"`
+	TimelineSourceContext []TableSource         `json:"timelineSourceContext"`
+	DiagramContext        []DiagramContext      `json:"diagramContext"`
+	DiagramSourceContext  []TableSource         `json:"diagramSourceContext"`
+	JourneySourceContext  []TableSource         `json:"journeySourceContext"`
+	JourneyContext        []JourneyContext      `json:"journeyContext"`
+	TimelineContext       []TimelineContext     `json:"timelineContext"`
+	TableReceiptContext   []TableReceiptContext `json:"tableReceiptContext"`
+	TableContext          []TableContext        `json:"tableContext"`
+	ContextTargets        []ContextTarget       `json:"contextTargets"`
+	DocumentBlockCount    int                   `json:"documentBlockCount"`
+	BaseRevision          int                   `json:"baseRevision"`
+	TranscriptRevision    int                   `json:"transcriptRevision"`
+	ContextBlocks         []Block               `json:"contextBlocks"`
+	ReplaceableBlockIDs   []string              `json:"replaceableBlockIDs"`
+	CorrectionBlockIDs    []string              `json:"correctionBlockIDs"`
+	AppendAfterID         string                `json:"appendAfterID"`
+	PendingUtterances     []SourceUtterance     `json:"pendingUtterances"`
+	SemanticState         SemanticState         `json:"semanticState"`
+	WritingStyle          string                `json:"writingStyle,omitempty"`
+	Words                 []string              `json:"words,omitempty"`
+	FormatContext         []FormatContext       `json:"formatContext"`
+	ParallelGroups        [][]string            `json:"parallelGroups"`
+	BlockComponents       map[string][]string   `json:"blockComponents"`
+	ParallelColumns       map[string]string     `json:"parallelColumns"`
+	MoveContext           []MoveContext         `json:"moveContext"`
+	ParagraphContext      []ParagraphContext    `json:"paragraphContext"`
 }
 
 func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
@@ -542,6 +545,7 @@ func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
 		appendAfter = s.Blocks[len(s.Blocks)-1].ID
 	}
 	return json.Marshal(rewriteModelDocument{
+		TableSourceContext: s.TableSourceContext, TimelineSourceContext: s.TimelineSourceContext,
 		ContextTargets: contextTargets, DocumentBlockCount: len(s.Blocks),
 		BaseRevision: s.Revision, TranscriptRevision: tr, ContextBlocks: contextBlocks,
 		ReplaceableBlockIDs: replaceable, CorrectionBlockIDs: correctionBlocks, AppendAfterID: appendAfter,

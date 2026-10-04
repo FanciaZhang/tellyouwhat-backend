@@ -30,7 +30,8 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
 	}
 	session := uuid.NewString()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
+	closed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { defer close(closed); service.Serve(w, r, session) }))
 	defer server.Close()
 	ticket, err := service.Issue(context.Background(), Identity{Owner: "owner", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, session)
 	if err != nil {
@@ -59,9 +60,10 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 		t.Fatalf("error event=%+v err=%v", event, err)
 	}
 	_ = ws.Close()
-	deadline := time.Now().Add(time.Second)
-	for !strings.Contains(logs.String(), "journal voice stream closed") && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not finish logging")
 	}
 	output := logs.String()
 	for _, expected := range []string{"journal voice stream started", "journal voice rewrite started", "journal voice rewrite completed", "fixture_failure", `"document_revision":4`, `"transcript_revision":0`, `"finalizing":`, "voice_trace_id"} {

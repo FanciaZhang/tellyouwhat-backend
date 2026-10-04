@@ -159,7 +159,7 @@ func validateDiagramCreations(r Revision, s Snapshot) error {
 	for _, c := range r.DiagramCreations {
 		if !claim(c.ID) || !claim(c.BlockID) || !claim(c.Diagram.ID) || validateDiagramGraph(c.Diagram) != nil ||
 			c.AfterID != nil && !blocks[strings.ToLower(*c.AfterID)] || utf8.RuneCountInString(c.Instruction) > 500 ||
-			!diagramSourceAuthorized(TableSource{SourceID: c.SourceID, Anchor: TextAnchor{Quote: c.Instruction}}, "instruction", c.BlockID, r, s, nil) {
+			!structuredSourceAuthorized(TableSource{SourceID: c.SourceID, Anchor: TextAnchor{Quote: c.Instruction}}, "instruction", c.BlockID, r, s, nil) {
 			return ErrInvalid
 		}
 		for _, n := range c.Diagram.Nodes {
@@ -178,7 +178,7 @@ func validateDiagramCreations(r Revision, s Snapshot) error {
 			}
 		}
 		for _, source := range c.Diagram.sources() {
-			if !diagramSourceAuthorized(source, "content", c.BlockID, r, s, s.DiagramSourceContext) {
+			if !structuredSourceAuthorized(source, "content", c.BlockID, r, s, s.DiagramSourceContext) {
 				return ErrInvalid
 			}
 		}

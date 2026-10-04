@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v28"
+const Version = "journal-voice-v29"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -51,13 +51,15 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	Polish               *PolishRequest   `json:"polish,omitempty"`
-	DictationMode        bool             `json:"dictationMode,omitempty"`
-	DiagramContext       []DiagramContext `json:"diagramContext"`
-	DiagramSourceContext []TableSource    `json:"diagramSourceContext"`
-	JourneySourceContext []TableSource    `json:"journeySourceContext"`
-	JourneyContext       []JourneyContext `json:"journeyContext"`
-	rewriteAcknowledged  string           // server-owned, never decoded from JSON
+	TableSourceContext    []TableSource    `json:"tableSourceContext"`
+	TimelineSourceContext []TableSource    `json:"timelineSourceContext"`
+	Polish                *PolishRequest   `json:"polish,omitempty"`
+	DictationMode         bool             `json:"dictationMode,omitempty"`
+	DiagramContext        []DiagramContext `json:"diagramContext"`
+	DiagramSourceContext  []TableSource    `json:"diagramSourceContext"`
+	JourneySourceContext  []TableSource    `json:"journeySourceContext"`
+	JourneyContext        []JourneyContext `json:"journeyContext"`
+	rewriteAcknowledged   string           // server-owned, never decoded from JSON
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`
@@ -641,6 +643,12 @@ func (s Snapshot) validateIncremental() error {
 		return err
 	}
 	if err := validateTimelineContext(s); err != nil {
+		return err
+	}
+	if err := validateStructuredSourceContext(s.TableSourceContext, s); err != nil {
+		return err
+	}
+	if err := validateStructuredSourceContext(s.TimelineSourceContext, s); err != nil {
 		return err
 	}
 	if err := validateJourneySourceContext(s); err != nil {
