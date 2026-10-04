@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http/httptest"
@@ -15,14 +16,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
 type imageFixture struct {
-	calls  atomic.Int32
-	before func()
+	calls   atomic.Int32
+	before  func()
+	failure error
 }
 
 func (g *imageFixture) Model() string { return "fixture-image" }
@@ -31,9 +34,55 @@ func (g *imageFixture) Generate(context.Context, illustration.Input) (illustrati
 	if g.before != nil {
 		g.before()
 	}
+	if g.failure != nil {
+		return illustration.Result{}, g.failure
+	}
 	var data bytes.Buffer
 	_ = png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 4, 3)))
 	return illustration.Result{Image: data.Bytes(), MIME: "image/png", Width: 4, Height: 3}, nil
+}
+
+func TestIllustrationProviderFailureReportsUnavailableWithoutRedispatch(t *testing.T) {
+	for _, status := range []int{401, 403, 404, 429} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			now := time.Now()
+			g := &imageFixture{failure: illustration.Rejected{Status: status}}
+			runtime, err := NewIllustrationRuntime(t.TempDir(), strings.Repeat("i", 43), g, func() time.Time { return now })
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime.authorize = func(context.Context, string) bool { return true }
+			id := uuid.NewString()
+			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Prompt: "Synthetic tree", ConsentRevision: "2026-09-27"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime.process(context.Background(), runtime.path("owner", id))
+			runtime.process(context.Background(), runtime.path("owner", id))
+			if g.calls.Load() != 1 {
+				t.Fatal("rejection redispatched")
+			}
+			r := httptest.NewRequest("GET", illustrationPrefix+"/"+id, nil)
+			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, attestation.Principal{AppID: "journal", KeyID: "owner"}))
+			w := httptest.NewRecorder()
+			runtime.ServeHTTP(w, r)
+			var response imageTaskResponse
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil {
+				t.Fatal(w.Code, w.Body)
+			}
+			want := "unavailable"
+			if status == 429 {
+				want = "quota"
+			}
+			if response.State != illustration.TaskRejected || response.Problem != want {
+				t.Fatal(response)
+			}
+			job, err := runtime.load("owner", id)
+			if err != nil || job.Task.Charge != illustration.ChargeUncertain || job.Input != nil {
+				t.Fatal("failure lost privacy or billing fence", err)
+			}
+		})
+	}
 }
 
 func TestIllustrationHTTPConsentDurabilityIsolationAndExpiry(t *testing.T) {

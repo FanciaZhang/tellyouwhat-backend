@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
@@ -36,9 +38,10 @@ func illustrationRoute(r *http.Request) bool {
 }
 
 type imageJob struct {
-	Task   illustration.Task
-	Input  *illustration.Input  `json:",omitempty"`
-	Result *illustration.Result `json:",omitempty"`
+	Task    illustration.Task
+	Input   *illustration.Input  `json:",omitempty"`
+	Result  *illustration.Result `json:",omitempty"`
+	Problem string               `json:",omitempty"`
 }
 
 // One private developer process owns this encrypted temporary store. Task
@@ -335,6 +338,26 @@ func (h *IllustrationRuntime) process(ctx context.Context, path string) {
 		return
 	}
 	current.Input = nil
+	if failure != nil {
+		current.Problem = "network"
+		var rejection illustration.Rejected
+		if errors.As(failure, &rejection) {
+			slog.Warn("Journal image provider rejected request", "status", rejection.Status)
+			switch rejection.Status {
+			case 401, 403, 404:
+				current.Problem = "unavailable"
+			case 429:
+				current.Problem = "quota"
+			default:
+				current.Problem = "rejected"
+			}
+		} else if errors.Is(failure, illustration.ErrResult) {
+			current.Problem = "invalidImage"
+		}
+		if errors.Is(failure, costcontrol.ErrBudgetExceeded) || errors.Is(failure, costcontrol.ErrConcurrencyExceeded) {
+			current.Problem = "quota"
+		}
+	}
 	var notDispatched illustration.NotDispatched
 	if errors.As(failure, &notDispatched) {
 		_ = current.Task.AbortBeforeDispatch()
@@ -361,6 +384,7 @@ type imageTaskResponse struct {
 	State     illustration.TaskState `json:"state"`
 	Revision  uint64                 `json:"revision"`
 	ExpiresAt time.Time              `json:"expiresAt"`
+	Problem   string                 `json:"problem,omitempty"`
 }
 
 func imageJSON(w http.ResponseWriter, v any) {
@@ -393,6 +417,7 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var task illustration.Task
+	var problem string
 	if r.URL.Path == illustrationPrefix {
 		var body struct {
 			RequestID       string `json:"requestID"`
@@ -470,6 +495,7 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		task = job.Task
+		problem = job.Problem
 	}
-	imageJSON(w, imageTaskResponse{task.ID, task.VersionID, task.State, task.Revision, task.ExpiresAt})
+	imageJSON(w, imageTaskResponse{task.ID, task.VersionID, task.State, task.Revision, task.ExpiresAt, problem})
 }

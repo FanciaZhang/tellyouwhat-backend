@@ -167,7 +167,7 @@ func (t *Task) RecordOutcome(expected uint64, result *Result, failure error, now
 		// HTTP rejection is a user-visible failure, not authoritative billing
 		// evidence. Settlement remains pending until provider reconciliation.
 		var rejected Rejected
-		if errors.As(failure, &rejected) && (rejected.Status == 400 || rejected.Status == 401 || rejected.Status == 403 || rejected.Status == 413 || rejected.Status == 422 || rejected.Status == 429) {
+		if errors.As(failure, &rejected) && (rejected.Status == 400 || rejected.Status == 401 || rejected.Status == 403 || rejected.Status == 404 || rejected.Status == 413 || rejected.Status == 422 || rejected.Status == 429) {
 			if !cancelled {
 				t.State = TaskRejected
 			}
