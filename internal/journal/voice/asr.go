@@ -84,7 +84,7 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		hotwords = append(hotwords, map[string]string{"word": w})
 	}
 	corpus, _ := json.Marshal(map[string]any{"hotwords": hotwords})
-	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": false, "corpus": map[string]string{"context": string(corpus)}}
+	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": true, "enable_lid": true, "end_window_size": 800, "corpus": map[string]string{"context": string(corpus)}}
 	if a.Config.StreamInsights {
 		request["enable_speaker_info"] = true
 		request["ssd_version"] = "200"

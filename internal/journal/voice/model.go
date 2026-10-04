@@ -18,6 +18,7 @@ import (
 )
 
 type RewriteResult struct {
+	Polish                    *PolishRevision
 	OutputText                string `json:"-"`
 	Revision                  Revision
 	InputTokens, OutputTokens int
@@ -250,6 +251,16 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		}
 	}
 	result.OutputText = text
+	if s.Polish != nil {
+		polish, err := decodePolish(text, *s.Polish)
+		if err != nil {
+			return failedRewrite(result, "voice_rewrite_unavailable", "validate_polish", err, started)
+		}
+		result.Polish = polish
+		result.Diagnostics.Stage = "completed"
+		result.Diagnostics.Duration = time.Since(started)
+		return result, nil
+	}
 	var revision Revision
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
@@ -379,13 +390,17 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
 	}
-	settings.Voice.Parameters.Apply(body)
+	parameters := settings.Voice.Parameters
+	if s.Polish != nil {
+		body, parameters = preparePolish(*s.Polish, style, s.Words, parameters)
+	}
+	parameters.Apply(body)
 	payload, _ := json.Marshal(body)
-	timeout := settings.Voice.Parameters.TimeoutSeconds
+	timeout := parameters.TimeoutSeconds
 	if s.RecordingContext != nil {
 		timeout = max(timeout, 150)
 	}
-	return PreparedRewrite{Body: payload, Parameters: settings.Voice.Parameters, Version: version, TimeoutSeconds: timeout, DialogueMarker: dialogueMarker, Document: document}, nil
+	return PreparedRewrite{Body: payload, Parameters: parameters, Version: version, TimeoutSeconds: timeout, DialogueMarker: dialogueMarker, Document: document}, nil
 }
 
 func recordingRequiresEmotionPlacement(s Snapshot) bool {

@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "journal-voice-v25"
+const Version = "journal-voice-v26"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -51,6 +51,8 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	Polish               *PolishRequest   `json:"polish,omitempty"`
+	DictationMode        bool             `json:"dictationMode,omitempty"`
 	DiagramContext       []DiagramContext `json:"diagramContext"`
 	DiagramSourceContext []TableSource    `json:"diagramSourceContext"`
 	JourneySourceContext []TableSource    `json:"journeySourceContext"`
@@ -138,15 +140,16 @@ type Receipt struct {
 	Milliseconds int         `json:"milliseconds"`
 }
 type Event struct {
-	Utterances            []Utterance `json:"utterances,omitempty"`
-	Type                  string      `json:"type"`
-	SegmentID             string      `json:"segmentID,omitempty"`
-	Text                  string      `json:"text,omitempty"`
-	Stable                string      `json:"stable,omitempty"`
-	Receipt               *Receipt    `json:"receipt,omitempty"`
-	Revision              *Revision   `json:"revision,omitempty"`
-	RemainingMilliseconds int         `json:"remainingMilliseconds"`
-	Code                  string      `json:"code,omitempty"`
+	Polish                *PolishRevision `json:"polish,omitempty"`
+	Utterances            []Utterance     `json:"utterances,omitempty"`
+	Type                  string          `json:"type"`
+	SegmentID             string          `json:"segmentID,omitempty"`
+	Text                  string          `json:"text,omitempty"`
+	Stable                string          `json:"stable,omitempty"`
+	Receipt               *Receipt        `json:"receipt,omitempty"`
+	Revision              *Revision       `json:"revision,omitempty"`
+	RemainingMilliseconds int             `json:"remainingMilliseconds"`
+	Code                  string          `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`
@@ -157,10 +160,15 @@ type Frame struct {
 }
 
 func (s Snapshot) incremental() bool {
-	return s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
+	return s.Polish == nil && s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
 }
 
 func (s Snapshot) Validate() error {
+	if s.Polish != nil {
+		if err := s.Polish.Validate(); err != nil {
+			return err
+		}
+	}
 	if s.RecordingContext != nil {
 		if err := s.RecordingContext.Validate(s.Transcript); err != nil {
 			return err

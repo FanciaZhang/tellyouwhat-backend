@@ -61,12 +61,12 @@ func TestStreamInsightRequestUsesOptimizedTwoPassContract(t *testing.T) {
 	defer connection.Close()
 	select {
 	case request := <-requests:
-		for _, key := range []string{"enable_nonstream", "enable_speaker_info", "enable_emotion_detection", "show_utterances", "show_volume", "show_speech_rate"} {
+		for _, key := range []string{"enable_nonstream", "enable_speaker_info", "enable_emotion_detection", "show_utterances", "show_volume", "show_speech_rate", "enable_ddc", "enable_lid"} {
 			if request[key] != true {
 				t.Fatalf("%s missing", key)
 			}
 		}
-		if request["ssd_version"] != "200" || request["enable_ddc"] != false || request["result_type"] != "full" {
+		if request["ssd_version"] != "200" || request["enable_ddc"] != true || request["result_type"] != "full" || request["end_window_size"] != float64(800) {
 			t.Fatal("incorrect streaming contract")
 		}
 	case <-time.After(time.Second):
