@@ -1,5 +1,7 @@
 # Journal v26 独立开发服务交付 — 2026-10-04
 
+此文保留历史。v26 逐项润色不符合用户对正文整理的预期；当前配套实现、部署和真实内容验收见 [v27 叙事整理修复](journal-voice-v27-delivery.md)。
+
 用户授权部署后，使用 JournalApp 的 `scripts/journal-development.py start --backend <配套检出> --no-launch` 更新独立 `journal-private-development`，随后配置并启动手机上的新版 Debug App。
 
 - 部署源码：`2730f84c49c96af58e578f1e9d95859b4e63734e`。
