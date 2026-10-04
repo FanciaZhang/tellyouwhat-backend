@@ -807,8 +807,8 @@ func preservesPendingSources(prior, next []SourceUtterance) bool {
 // Keep catch-up work small enough to make visible progress within the provider
 // timeout. A single committed utterance is indivisible: preserve its identity
 // and exact evidence rather than truncating it to fit a batch.
-const rewriteBatchCharacters = 600
-const rewriteBatchSources = 8
+const rewriteBatchCharacters = 300
+const rewriteBatchSources = 4
 
 func pendingRewriteBatch(source []SourceUtterance) []SourceUtterance {
 	result := make([]SourceUtterance, 0, len(source))
