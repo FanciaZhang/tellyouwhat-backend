@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	AdultScope           = "adult"
-	PrivacyTermsScope    = "privacy_and_terms"
-	LifetimeBYOKScope    = "lifetime_byok"
-	ManagedAIScope       = "managed_subscription"
-	FreeRecognitionScope = "free_managed_recognition"
-	SensitiveHealthScope = "sensitive_health_ai"
+	AdultScope                         = "adult"
+	PrivacyTermsScope                  = "privacy_and_terms"
+	LifetimeBYOKScope                  = "lifetime_byok"
+	ManagedAIScope                     = "managed_subscription"
+	FreeRecognitionScope               = "free_managed_recognition"
+	SensitiveHealthScope               = "sensitive_health_ai"
+	JournalIllustrationScope           = "journal_illustration"
+	JournalIllustrationDocumentVersion = "2026-09-27"
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -85,7 +87,7 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 	records := make([]Record, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if !validConsent(value) {
+		if !validConsent(value) || (value.Scope == JournalIllustrationScope && principal.AppID != "journal") {
 			return time.Time{}, ErrInvalidConsent
 		}
 		key := value.Scope + "\x00" + value.DocumentVersion
@@ -125,6 +127,11 @@ func (service *Service) HasRequiredConsents(
 		seen[scope] = struct{}{}
 		requirement := Consent{Scope: scope, Granted: true}
 		switch scope {
+		case JournalIllustrationScope:
+			if principal.AppID != "journal" {
+				return false, ErrInvalidConsent
+			}
+			requirement.DocumentVersion = JournalIllustrationDocumentVersion
 		case AdultScope, PrivacyTermsScope:
 			requirement.DocumentVersion = GeneralDocumentVersion
 		case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
@@ -169,6 +176,8 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 
 func validConsent(value Consent) bool {
 	switch value.Scope {
+	case JournalIllustrationScope:
+		return value.DocumentVersion == JournalIllustrationDocumentVersion
 	case AdultScope, PrivacyTermsScope:
 		return value.DocumentVersion == GeneralDocumentVersion
 	case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:

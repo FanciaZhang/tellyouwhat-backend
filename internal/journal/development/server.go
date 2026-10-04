@@ -33,13 +33,14 @@ import (
 const ProtocolVersion = "subscription-v2"
 
 type Config struct {
-	Token     string
-	Organizer provider.Organizer
-	Speech    voice.Speech
-	Rewriter  voice.Rewriter
-	Recording *voice.RecordingExecutor
-	Now       func() time.Time
-	Logger    *slog.Logger
+	Token         string
+	Organizer     provider.Organizer
+	Speech        voice.Speech
+	Rewriter      voice.Rewriter
+	Recording     *voice.RecordingExecutor
+	Illustrations *IllustrationRuntime
+	Now           func() time.Time
+	Logger        *slog.Logger
 }
 
 type principalContextKey struct{}
@@ -68,7 +69,25 @@ func New(c Config) (http.Handler, error) {
 	digest := sha256.Sum256([]byte(c.Token))
 	store := entitlement.NewMemoryStore()
 	limiter := quota.NewMemoryLimiter(quota.Limits{DailyTokensPerTransaction: 100_000, MonthlyTokensPerTransaction: 100_000, RequestsPerMinutePerOperation: 10, MaxConcurrentPerDevice: 2})
-	consent := privacy.NewService(privacy.NewMemoryRepository(), nil, nil, c.Now)
+	var consentRepository privacy.Repository = privacy.NewMemoryRepository()
+	if c.Illustrations != nil {
+		var err error
+		consentRepository, err = newImageConsentRepository(c.Illustrations)
+		if err != nil {
+			return nil, err
+		}
+	}
+	consent := privacy.NewService(consentRepository, nil, nil, c.Now)
+	if c.Illustrations != nil {
+		c.Illustrations.authorize = func(ctx context.Context, owner string) bool {
+			record, found, err := store.Get(ctx, owner)
+			if err != nil || !found || !record.ExpiresAt.After(c.Now()) {
+				return false
+			}
+			granted, err := consent.HasRequiredConsents(ctx, attestation.Principal{AppID: "journal", KeyID: owner}, []string{privacy.JournalIllustrationScope})
+			return err == nil && granted
+		}
+	}
 	recordings := newRecordingHTTP(c.Recording, store, consent, c.Now)
 	recordings.rewriter = c.Rewriter
 	secret := make([]byte, 32)
@@ -91,7 +110,8 @@ func New(c Config) (http.Handler, error) {
 		// session route. Never substitute the developer credential for that ticket.
 		stream := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/journal/voice/sessions/") && strings.HasSuffix(r.URL.Path, "/stream")
 		recording := c.Recording != nil && recordingRoute(r)
-		allowed := stream || recording || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
+		image := illustrationRoute(r)
+		allowed := stream || recording || image || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
 			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/ai/operations/journal.organize/responses"))
 		if !allowed {
 			g.Abort()
@@ -123,6 +143,15 @@ func New(c Config) (http.Handler, error) {
 			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, p))
 		}
 		g.Request = r
+		if image {
+			g.Abort()
+			if c.Illustrations == nil {
+				deny(w, 503, "not_ready")
+			} else {
+				c.Illustrations.ServeHTTP(w, r)
+			}
+			return
+		}
 		if recording {
 			// Whole audio is streamed to a bounded private spool. It must not
 			// enter the shared gateway's JSON body-buffering middleware.
@@ -139,7 +168,7 @@ func New(c Config) (http.Handler, error) {
 		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
 		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
 		Privacy: consent, Consent: consent,
-		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope},
+		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
 		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: "journal-organize-2026-08-31"},
 		JournalAnalysisVersion: "journal-organize-2026-08-31",
 		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000, Logger: c.Logger}, VoiceEntitlements: store,
