@@ -38,12 +38,12 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 func TestPolishBaselineIsServerOwnedAndUnknownParagraphsAreRejected(t *testing.T) {
 	s := polishFixture()
 	target := s.Polish.Targets[0]
-	output := `{"edits":[{"id":"` + target.ID + `","text":"今天去了河边。"}],"questions":[]}`
+	output := `{"paragraphs":[{"targetIDs":["` + target.ID + `"],"text":"今天去了河边。"}],"questions":[]}`
 	result, err := decodePolish(output, *s.Polish)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Edits[0].ExpectedText != target.Text || result.Targets[0].SourceText != target.SourceText {
+	if result.Targets[0].Text != target.Text || result.Targets[0].SourceText != target.SourceText {
 		t.Fatal("lost immutable baseline")
 	}
 	if _, err = decodePolish(strings.Replace(output, target.ID, uuid.NewString(), 1), *s.Polish); err == nil {
@@ -51,6 +51,86 @@ func TestPolishBaselineIsServerOwnedAndUnknownParagraphsAreRejected(t *testing.T
 	}
 	if _, err = decodePolish(output+" {}", *s.Polish); err == nil {
 		t.Fatal("accepted multiple outputs")
+	}
+}
+
+func TestNarrativeAcceptsMergedDialogueAndPreservesTrustedSpeakerEvidence(t *testing.T) {
+	s := polishFixture()
+	first := &s.Polish.Targets[0]
+	first.Turns = []SourceUtterance{{ID: first.SourceIDs[0], Text: first.SourceText, Speaker: "segment:1", Person: "我"}}
+	second := PolishTarget{ID: uuid.NewString(), Text: "啊，我更想先去图书馆还书。", SourceText: "啊，我更想先去图书馆还书。", SourceIDs: []string{uuid.NewString()}}
+	second.Turns = []SourceUtterance{{ID: second.SourceIDs[0], Text: second.SourceText, Speaker: "segment:2", Person: "妻子"}}
+	s.Polish.Targets = append(s.Polish.Targets, second)
+	if err := s.Polish.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Input string `json:"input"`
+	}
+	if err = json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	var input struct {
+		Targets []PolishTarget `json:"targets"`
+	}
+	if err = json.Unmarshal([]byte(body.Input), &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Targets[1].Turns[0].Person != "妻子" || input.Targets[0].Turns[0].Speaker == input.Targets[1].Turns[0].Speaker {
+		t.Fatal("narrative lost trusted actors")
+	}
+	output := `{"paragraphs":[{"targetIDs":["` + s.Polish.Targets[0].ID + `","` + second.ID + `"],"text":"我想去河边，妻子更想先去图书馆还书。"}],"questions":[]}`
+	result, err := decodePolish(output, *s.Polish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Paragraphs) != 1 || len(result.Paragraphs[0].TargetIDs) != 2 || result.Targets[1].Turns[0].Person != "妻子" {
+		t.Fatal("failed to merge dialogue with immutable source evidence")
+	}
+}
+
+func TestNarrativeRejectsMissingSubstantiveSourceButCanRemoveOnlyFillers(t *testing.T) {
+	p := *polishFixture().Polish
+	if _, err := decodePolish(`{"paragraphs":[],"questions":[]}`, p); err == nil {
+		t.Fatal("substantive speech disappeared")
+	}
+	second := p.Targets[0]
+	second.ID = uuid.NewString()
+	p.Targets = append(p.Targets, second)
+	if _, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"text":"去了河边。"}],"questions":[]}`, p); err == nil {
+		t.Fatal("partial source coverage accepted")
+	}
+	for i := range p.Targets {
+		p.Targets[i].SourceText = "嗯，啊，呃。"
+	}
+	if result, err := decodePolish(`{"paragraphs":[],"questions":[]}`, p); err != nil || len(result.Paragraphs) != 0 {
+		t.Fatal("cannot remove a batch of pure fillers", err)
+	}
+}
+
+func TestNarrativeNormalizesRealParagraphBreaksWithSharedSources(t *testing.T) {
+	p := *polishFixture().Polish
+	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+p.Targets[0].ID+`"],"text":"今天去了河边。\n\n在那里散步。"}],"questions":[]}`, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Paragraphs) != 2 || result.Paragraphs[1].Text != "在那里散步。" || result.Paragraphs[1].TargetIDs[0] != p.Targets[0].ID {
+		t.Fatal("normalized paragraphs lost source coverage")
+	}
+}
+
+func TestNarrativeActorCorrectionAcknowledgesPriorInFlightResult(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Targets[0].Turns = []SourceUtterance{{ID: p.Targets[0].SourceIDs[0], Text: p.Targets[0].SourceText, Speaker: "segment:1"}}
+	prior := append([]PolishTarget(nil), p.Targets...)
+	p.Targets[0].Turns = append([]SourceUtterance(nil), p.Targets[0].Turns...)
+	p.Targets[0].Turns[0].Person = "妻子"
+	if !polishAcknowledged(&p, prior) {
+		t.Fatal("a corrected actor must allow a fresh narrative request")
 	}
 }
 
@@ -75,7 +155,7 @@ func (m *gatedPolishRewriter) Rewrite(ctx context.Context, s Snapshot, _ int) (R
 		return RewriteResult{}, errors.New("provider unavailable")
 	}
 	target := s.Polish.Targets[0]
-	return RewriteResult{Polish: &PolishRevision{Targets: s.Polish.Targets, Edits: []PolishEdit{{ID: target.ID, ExpectedText: target.Text, Text: "今天去了河边。"}}, Questions: []string{}}}, nil
+	return RewriteResult{Polish: &PolishRevision{Targets: s.Polish.Targets, Paragraphs: []PolishParagraph{{TargetIDs: []string{target.ID}, Text: "今天去了河边。"}}, Questions: []string{}}}, nil
 }
 func polishSocket(t *testing.T, model Rewriter, speech Speech) *websocket.Conn {
 	t.Helper()

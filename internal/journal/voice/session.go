@@ -654,6 +654,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					"input_token_count", result.value.InputTokens,
 					"output_token_count", result.value.OutputTokens,
 					"patch_count", len(result.value.Revision.Patches),
+					"narrative_paragraph_count", func() int {
+						if result.value.Polish != nil {
+							return len(result.value.Polish.Paragraphs)
+						}
+						return 0
+					}(),
 					"question_count", len(result.value.Revision.Questions),
 					"emotion_count", len(result.value.Revision.Emotions),
 					"has_overall_emotion", result.value.Revision.OverallEmotion != "",
