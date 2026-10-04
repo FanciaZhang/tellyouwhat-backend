@@ -410,11 +410,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if len(next.PendingUtterances) > 0 && (!hadSnapshot || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances)) {
 					dirty = true
 				}
-				// Repeated receipt acknowledgements do not invalidate a model
-				// call that already uses the same base. Real edits still do.
-				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
+				// Newly committed speech queues another batch. It must not
+				// invalidate work already running against the unchanged body.
+				// Changes to existing speech evidence or the manuscript still do.
+				if snapshot.Revision != next.Revision ||
 					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) ||
-					!slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances) ||
+					!slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !preservesPendingSources(snapshot.PendingUtterances, next.PendingUtterances) ||
 					!slices.Equal(snapshot.Words, next.Words) || snapshot.WritingStyle != next.WritingStyle {
 					generation++
 				}
@@ -653,9 +654,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.
 				} else {
-					// An intervening receipt/snapshot can invalidate an in-flight
-					// result without changing the text. Finalization still needs
-					// a revision that the client has actually applied.
+					// An actual document or source edit supersedes this result.
+					// Finalization still needs an applied revision of that base.
 					dirty = true
 				}
 			}
@@ -800,12 +800,22 @@ func removePendingUtterances(source []SourceUtterance, removed []string) []Sourc
 	return result
 }
 
+func preservesPendingSources(prior, next []SourceUtterance) bool {
+	return len(next) >= len(prior) && slices.Equal(prior, next[:len(prior)])
+}
+
+// Keep catch-up work small enough to make visible progress within the provider
+// timeout. A single committed utterance is indivisible: preserve its identity
+// and exact evidence rather than truncating it to fit a batch.
+const rewriteBatchCharacters = 600
+const rewriteBatchSources = 8
+
 func pendingRewriteBatch(source []SourceUtterance) []SourceUtterance {
 	result := make([]SourceUtterance, 0, len(source))
 	characters := 0
 	for _, utterance := range source {
 		length := len([]rune(utterance.Text))
-		if len(result) > 0 && characters+length > MaxRewriteSourceCharacters {
+		if len(result) > 0 && (characters+length > rewriteBatchCharacters || len(result) >= rewriteBatchSources) {
 			break
 		}
 		result = append(result, utterance)

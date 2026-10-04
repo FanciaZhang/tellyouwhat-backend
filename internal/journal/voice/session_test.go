@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -127,6 +128,186 @@ type delayedRewriter struct {
 	calls   atomic.Int32
 	started chan struct{}
 	release chan struct{}
+}
+
+type queuedSpeechRewriter struct {
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *queuedSpeechRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteResult, error) {
+	if r.calls.Add(1) == 1 && r.started != nil {
+		close(r.started)
+		select {
+		case <-r.release:
+		case <-ctx.Done():
+			return RewriteResult{}, ctx.Err()
+		}
+	}
+	revision := scriptedRevision(s, tr)
+	revision.BlockEdits[0].Text = s.Blocks[0].Text + revision.BlockEdits[0].Text
+	return RewriteResult{Revision: revision}, nil
+}
+
+func TestNewSpeechDoesNotDiscardInFlightRewrite(t *testing.T) {
+	model := &queuedSpeechRewriter{started: make(chan struct{}), release: make(chan struct{})}
+	s := &Service{Store: NewMemoryStore(), Model: model, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(context.Background(), Identity{Owner: "continuous-speech", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(5 * time.Second))
+	read := func() Event {
+		t.Helper()
+		var event Event
+		if err := websocket.JSON.Receive(ws, &event); err != nil {
+			t.Fatal(err)
+		}
+		return event
+	}
+	send := func(frame Frame) {
+		t.Helper()
+		if err := websocket.JSON.Send(ws, frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read()
+	first := SourceUtterance{ID: uuid.NewString(), Text: "第一段口述。"}
+	second := SourceUtterance{ID: uuid.NewString(), Text: "第二段口述。"}
+	snapshot := Snapshot{Blocks: []Block{{ID: uuid.NewString(), Text: "原来已有的文字。", Style: "body"}},
+		Transcript: first.Text, PendingUtterances: []SourceUtterance{first}}
+	send(Frame{Type: "snapshot", Snapshot: &snapshot})
+	select {
+	case <-model.started:
+	case <-time.After(time.Second):
+		t.Fatal("first batch did not start")
+	}
+	// Another receipt's client snapshot arrives while the first model call runs.
+	snapshot.Transcript += second.Text
+	snapshot.PendingUtterances = append(snapshot.PendingUtterances, second)
+	send(Frame{Type: "snapshot", Snapshot: &snapshot})
+	send(Frame{Type: "finish"})
+	send(Frame{Type: "ping"})
+	if event := read(); event.Type != "pong" {
+		t.Fatal(event)
+	}
+	close(model.release)
+	for _, source := range []SourceUtterance{first, second} {
+		event := read()
+		if event.Type != "revision" || !slices.Equal(event.Revision.ConsumedSourceIDs, []string{source.ID}) {
+			t.Fatalf("speech append discarded or duplicated the frozen batch: %+v", event)
+		}
+		snapshot.Revision++
+		snapshot.Blocks[0].Text = event.Revision.BlockEdits[0].Text
+		acknowledgeTestRevision(&snapshot, event.Revision)
+		send(Frame{Type: "snapshot", Snapshot: &snapshot})
+	}
+	if event := read(); event.Type != "finished" {
+		t.Fatal(event)
+	}
+	if snapshot.Blocks[0].Text != "原来已有的文字。第一段口述。第二段口述。" || model.calls.Load() != 2 {
+		t.Fatalf("body=%q calls=%d", snapshot.Blocks[0].Text, model.calls.Load())
+	}
+}
+
+func TestLongPendingSpeechDrainsInBoundedBatchesWithoutLosingExistingBody(t *testing.T) {
+	model := &queuedSpeechRewriter{}
+	s := &Service{Store: NewMemoryStore(), Model: model, Secret: make([]byte, 32)}
+	session := uuid.NewString()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
+	defer server.Close()
+	ticket, err := s.Issue(context.Background(), Identity{Owner: "catch-up", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetDeadline(time.Now().Add(5 * time.Second))
+	var event Event
+	if err := websocket.JSON.Receive(ws, &event); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := Snapshot{Blocks: []Block{{ID: uuid.NewString(), Text: "已有正文。", Style: "body"}}}
+	wanted := snapshot.Blocks[0].Text
+	for i := 0; i < 25; i++ {
+		text := strings.Repeat("完整保留口述细节。", 10)
+		snapshot.PendingUtterances = append(snapshot.PendingUtterances, SourceUtterance{ID: uuid.NewString(), Text: text})
+		snapshot.Transcript += text
+		wanted += text
+	}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	consumed := map[string]bool{}
+	for {
+		if err := websocket.JSON.Receive(ws, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Type == "finished" {
+			break
+		}
+		if event.Type != "revision" {
+			t.Fatal(event)
+		}
+		revision := event.Revision
+		if len(revision.ConsumedSourceIDs) > rewriteBatchSources {
+			t.Fatal("unbounded sources")
+		}
+		for _, id := range revision.ConsumedSourceIDs {
+			if consumed[id] {
+				t.Fatal("source consumed twice")
+			}
+			consumed[id] = true
+		}
+		snapshot.Revision++
+		snapshot.Blocks[0].Text = revision.BlockEdits[0].Text
+		acknowledgeTestRevision(&snapshot, revision)
+		if err := websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(consumed) != 25 || snapshot.Blocks[0].Text != wanted || model.calls.Load() < 4 {
+		t.Fatalf("consumed=%d calls=%d body_matches=%v", len(consumed), model.calls.Load(), snapshot.Blocks[0].Text == wanted)
+	}
+}
+
+func TestPendingSourceAppendKeepsOldEvidenceButEditsInvalidateIt(t *testing.T) {
+	first := SourceUtterance{ID: uuid.NewString(), Text: "已确认口述。"}
+	second := SourceUtterance{ID: uuid.NewString(), Text: "新增口述。"}
+	if !preservesPendingSources([]SourceUtterance{first}, []SourceUtterance{first, second}) {
+		t.Fatal("append invalidated committed source")
+	}
+	changed := first
+	changed.Person = "用户刚指定的人物"
+	if preservesPendingSources([]SourceUtterance{first}, []SourceUtterance{changed, second}) {
+		t.Fatal("identity edit reused stale source")
+	}
+	if preservesPendingSources([]SourceUtterance{first}, []SourceUtterance{second}) {
+		t.Fatal("removed source reused stale result")
+	}
+	if preservesPendingSources([]SourceUtterance{first, second}, []SourceUtterance{second, first}) {
+		t.Fatal("reordered source reused stale result")
+	}
+	long := first
+	long.Text = strings.Repeat("长", rewriteBatchCharacters+1)
+	if batch := pendingRewriteBatch([]SourceUtterance{long, second}); len(batch) != 1 || batch[0] != long {
+		t.Fatal("indivisible source was truncated")
+	}
 }
 
 func (r *delayedRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (RewriteResult, error) {
