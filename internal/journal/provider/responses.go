@@ -47,11 +47,12 @@ type aliasedBook struct {
 	ContainsEntry bool   `json:"containsEntry"`
 }
 type modelInput struct {
-	Title            string        `json:"title"`
-	Body             string        `json:"body"`
-	ExistingTags     []string      `json:"existingTags"`
-	RejectedTagNames []string      `json:"rejectedTagNames"`
-	Books            []aliasedBook `json:"books"`
+	IllustrationSuggestionsEnabled bool          `json:"illustrationSuggestionsEnabled"`
+	Title                          string        `json:"title"`
+	Body                           string        `json:"body"`
+	ExistingTags                   []string      `json:"existingTags"`
+	RejectedTagNames               []string      `json:"rejectedTagNames"`
+	Books                          []aliasedBook `json:"books"`
 }
 
 func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest, pro bool) (Result, error) {
@@ -151,6 +152,9 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 			}
 		}
 	}
+	if !request.IllustrationSuggestionsEnabled || !result.IllustrationSuggestion.Grounded([]string{request.Body}) {
+		result.IllustrationSuggestion = nil
+	}
 	metered.Value = result
 	return metered, nil
 }
@@ -180,7 +184,8 @@ func PrepareOrganize(ctx context.Context, request contracts.OrganizeRequest, pro
 		books = append(books, aliasedBook{alias, b.Name, b.Description, b.ContainsEntry})
 	}
 	input, err := json.Marshal(modelInput{
-		Title: request.Title, Body: request.Body,
+		IllustrationSuggestionsEnabled: request.IllustrationSuggestionsEnabled,
+		Title:                          request.Title, Body: request.Body,
 		ExistingTags: request.ExistingTags, RejectedTagNames: request.RejectedTagNames,
 		Books: books,
 	})
@@ -190,7 +195,7 @@ func PrepareOrganize(ctx context.Context, request contracts.OrganizeRequest, pro
 	payload := map[string]any{
 		"store":        false,
 		"thinking":     map[string]any{"type": "disabled"},
-		"instructions": settings.Prompt,
+		"instructions": settings.Prompt + contracts.IllustrationSuggestionInstructions,
 		"input":        string(input),
 		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},
 	}

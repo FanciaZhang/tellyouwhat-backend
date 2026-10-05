@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
 
 const Version = "journal-voice-v29"
@@ -51,15 +52,16 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	TableSourceContext    []TableSource    `json:"tableSourceContext"`
-	TimelineSourceContext []TableSource    `json:"timelineSourceContext"`
-	Polish                *PolishRequest   `json:"polish,omitempty"`
-	DictationMode         bool             `json:"dictationMode,omitempty"`
-	DiagramContext        []DiagramContext `json:"diagramContext"`
-	DiagramSourceContext  []TableSource    `json:"diagramSourceContext"`
-	JourneySourceContext  []TableSource    `json:"journeySourceContext"`
-	JourneyContext        []JourneyContext `json:"journeyContext"`
-	rewriteAcknowledged   string           // server-owned, never decoded from JSON
+	IllustrationSuggestionsEnabled bool             `json:"illustrationSuggestionsEnabled"`
+	TableSourceContext             []TableSource    `json:"tableSourceContext"`
+	TimelineSourceContext          []TableSource    `json:"timelineSourceContext"`
+	Polish                         *PolishRequest   `json:"polish,omitempty"`
+	DictationMode                  bool             `json:"dictationMode,omitempty"`
+	DiagramContext                 []DiagramContext `json:"diagramContext"`
+	DiagramSourceContext           []TableSource    `json:"diagramSourceContext"`
+	JourneySourceContext           []TableSource    `json:"journeySourceContext"`
+	JourneyContext                 []JourneyContext `json:"journeyContext"`
+	rewriteAcknowledged            string           // server-owned, never decoded from JSON
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`
@@ -106,33 +108,34 @@ type PassageSource struct {
 	SourceIDs      []string `json:"sourceIDs"`
 }
 type Revision struct {
-	DiagramCreations     []DiagramCreation     `json:"diagramCreations"`
-	DiagramEdits         []DiagramEdit         `json:"diagramEdits"`
-	JourneyCreations     []JourneyCreation     `json:"journeyCreations"`
-	JourneyEdits         []JourneyEdit         `json:"journeyEdits"`
-	BaseRevision         int                   `json:"baseRevision"`
-	TranscriptRevision   int                   `json:"transcriptRevision"`
-	Patches              []Patch               `json:"patches"`
-	Passages             []PassageSource       `json:"passages"`
-	Questions            []string              `json:"questions"`
-	Emotions             []EmotionPlacement    `json:"emotions"`
-	OverallEmotion       string                `json:"overallEmotion"`
-	TimelineEdits        []TimelineEdit        `json:"timelineEdits"`
-	TimelineCreations    []TimelineCreation    `json:"timelineCreations"`
-	TableCreations       []TableCreation       `json:"tableCreations"`
-	TableEdits           []TableEdit           `json:"tableEdits"`
-	TableResolutions     []TableResolution     `json:"tableResolutions"`
-	BlockEdits           []BlockEdit           `json:"blockEdits"`
-	Corrections          []TextCorrection      `json:"corrections"`
-	FormatCommands       []FormatCommand       `json:"formatCommands"`
-	MoveCommands         []MoveCommand         `json:"moveCommands"`
-	ParagraphCommands    []ParagraphCommand    `json:"paragraphCommands"`
-	ParagraphResolutions []ParagraphResolution `json:"paragraphResolutions"`
-	MoveResolutions      []MoveResolution      `json:"moveResolutions"`
-	FormatResolutions    []FormatResolution    `json:"formatResolutions"`
-	ConsumedSourceIDs    []string              `json:"consumedSourceIDs"`
-	SourcePartitions     []SourcePartition     `json:"sourcePartitions"`
-	SemanticState        SemanticState         `json:"semanticState"`
+	IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
+	DiagramCreations       []DiagramCreation                 `json:"diagramCreations"`
+	DiagramEdits           []DiagramEdit                     `json:"diagramEdits"`
+	JourneyCreations       []JourneyCreation                 `json:"journeyCreations"`
+	JourneyEdits           []JourneyEdit                     `json:"journeyEdits"`
+	BaseRevision           int                               `json:"baseRevision"`
+	TranscriptRevision     int                               `json:"transcriptRevision"`
+	Patches                []Patch                           `json:"patches"`
+	Passages               []PassageSource                   `json:"passages"`
+	Questions              []string                          `json:"questions"`
+	Emotions               []EmotionPlacement                `json:"emotions"`
+	OverallEmotion         string                            `json:"overallEmotion"`
+	TimelineEdits          []TimelineEdit                    `json:"timelineEdits"`
+	TimelineCreations      []TimelineCreation                `json:"timelineCreations"`
+	TableCreations         []TableCreation                   `json:"tableCreations"`
+	TableEdits             []TableEdit                       `json:"tableEdits"`
+	TableResolutions       []TableResolution                 `json:"tableResolutions"`
+	BlockEdits             []BlockEdit                       `json:"blockEdits"`
+	Corrections            []TextCorrection                  `json:"corrections"`
+	FormatCommands         []FormatCommand                   `json:"formatCommands"`
+	MoveCommands           []MoveCommand                     `json:"moveCommands"`
+	ParagraphCommands      []ParagraphCommand                `json:"paragraphCommands"`
+	ParagraphResolutions   []ParagraphResolution             `json:"paragraphResolutions"`
+	MoveResolutions        []MoveResolution                  `json:"moveResolutions"`
+	FormatResolutions      []FormatResolution                `json:"formatResolutions"`
+	ConsumedSourceIDs      []string                          `json:"consumedSourceIDs"`
+	SourcePartitions       []SourcePartition                 `json:"sourcePartitions"`
+	SemanticState          SemanticState                     `json:"semanticState"`
 }
 type Receipt struct {
 	Utterances   []Utterance `json:"utterances,omitempty"`

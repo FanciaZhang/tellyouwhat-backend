@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/journal/contracts"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
@@ -167,7 +168,7 @@ func rewriteInstructionText(s Snapshot, voice promptconfig.Voice, style promptco
 	if incrementalTranscriptStart(s) > 0 || (s.RecordingContext == nil && s.rewriteAcknowledged != "") {
 		instructions += incrementalWindowInstructions
 	}
-	return instructions + faithfulNarrativeInstructions + "\n本次写作风格（仅作用于需要整理的部分）：" + style.Prompt + faithfulNarrativeExamples
+	return instructions + contracts.IllustrationSuggestionInstructions + faithfulNarrativeInstructions + "\n本次写作风格（仅作用于需要整理的部分）：" + style.Prompt + faithfulNarrativeExamples
 }
 
 func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result RewriteResult, returnedErr error) {
@@ -309,6 +310,22 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	if err := ValidateRecordingDialogueRevision(s, revision); err != nil {
 		return failedRewrite(result, "voice_rewrite_unavailable", "validate_recording_dialogue", err, started)
 	}
+	material := make([]string, 0, len(s.Blocks)+len(s.PendingUtterances)+len(revision.BlockEdits))
+	for _, block := range s.Blocks {
+		material = append(material, block.Text)
+	}
+	for _, source := range s.PendingUtterances {
+		material = append(material, source.Text)
+	}
+	for _, edit := range revision.BlockEdits {
+		material = append(material, edit.Text)
+	}
+	for _, patch := range revision.Patches {
+		material = append(material, patch.Text)
+	}
+	if !s.IllustrationSuggestionsEnabled || !revision.IllustrationSuggestion.Grounded(material) {
+		revision.IllustrationSuggestion = nil
+	}
 	result.Revision = revision
 	result.Diagnostics.Stage = "completed"
 	result.Diagnostics.Duration = time.Since(started)
@@ -368,8 +385,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	if s.RecordingContext != nil {
 		passageArray["minItems"] = 1
 	}
-	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "passages", "questions", "emotions", "overallEmotion"}, "properties": map[string]any{
-		"baseRevision": map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"},
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"baseRevision", "transcriptRevision", "patches", "passages", "questions", "emotions", "overallEmotion", "illustrationSuggestion"}, "properties": map[string]any{
+		"illustrationSuggestion": contracts.IllustrationSuggestionSchema(),
+		"baseRevision":           map[string]string{"type": "integer"}, "transcriptRevision": map[string]string{"type": "integer"},
 		"patches": map[string]any{"type": "array", "items": patchFields}, "questions": map[string]any{"type": "array", "items": map[string]string{"type": "string"}},
 		"passages":       passageArray,
 		"emotions":       emotionArray,
@@ -387,7 +405,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 			return PreparedRewrite{}, err
 		}
 		body["input"] = string(input)
-		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + "\n本次写作风格：" + style.Prompt
+		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
 	}
 	parameters := settings.Voice.Parameters
@@ -471,33 +489,34 @@ const incrementalSelfCorrectionInstructions = `
 本轮原话内部的自我纠正（例如“不是小明，是小林”）不是对旧正文 mention 的 correction 操作。新正文直接保留更正后的事实；没有旧 mentionID 时 corrections 必须为空，绝不能为此伪造 mention 或目标。sourcePartitions 必须逐字覆盖完整原话：没有写入正文的旧称呼、否定旧称呼及改口说明用 context，blockIDs 为 []；更正后进入正文的“小林”等实际内容用 content，blockIDs 引用相应 passage。correction 角色只能引用本轮 corrections 中真实存在的目标 blockID，不能配空 blockIDs。例：“我和小明去公园，不是小明，是小林。”可以分为“我和”(content)、“小明”(context)、“去公园，”(content)、“不是小明，是”(context)、“小林。”(content)，正文为“我和小林去公园。”。不得把更正后的事实一起丢进 context，不得将旧错误称呼作为新增事实。`
 
 type rewriteModelDocument struct {
-	TableSourceContext    []TableSource         `json:"tableSourceContext"`
-	TimelineSourceContext []TableSource         `json:"timelineSourceContext"`
-	DiagramContext        []DiagramContext      `json:"diagramContext"`
-	DiagramSourceContext  []TableSource         `json:"diagramSourceContext"`
-	JourneySourceContext  []TableSource         `json:"journeySourceContext"`
-	JourneyContext        []JourneyContext      `json:"journeyContext"`
-	TimelineContext       []TimelineContext     `json:"timelineContext"`
-	TableReceiptContext   []TableReceiptContext `json:"tableReceiptContext"`
-	TableContext          []TableContext        `json:"tableContext"`
-	ContextTargets        []ContextTarget       `json:"contextTargets"`
-	DocumentBlockCount    int                   `json:"documentBlockCount"`
-	BaseRevision          int                   `json:"baseRevision"`
-	TranscriptRevision    int                   `json:"transcriptRevision"`
-	ContextBlocks         []Block               `json:"contextBlocks"`
-	ReplaceableBlockIDs   []string              `json:"replaceableBlockIDs"`
-	CorrectionBlockIDs    []string              `json:"correctionBlockIDs"`
-	AppendAfterID         string                `json:"appendAfterID"`
-	PendingUtterances     []SourceUtterance     `json:"pendingUtterances"`
-	SemanticState         SemanticState         `json:"semanticState"`
-	WritingStyle          string                `json:"writingStyle,omitempty"`
-	Words                 []string              `json:"words,omitempty"`
-	FormatContext         []FormatContext       `json:"formatContext"`
-	ParallelGroups        [][]string            `json:"parallelGroups"`
-	BlockComponents       map[string][]string   `json:"blockComponents"`
-	ParallelColumns       map[string]string     `json:"parallelColumns"`
-	MoveContext           []MoveContext         `json:"moveContext"`
-	ParagraphContext      []ParagraphContext    `json:"paragraphContext"`
+	IllustrationSuggestionsEnabled bool                  `json:"illustrationSuggestionsEnabled"`
+	TableSourceContext             []TableSource         `json:"tableSourceContext"`
+	TimelineSourceContext          []TableSource         `json:"timelineSourceContext"`
+	DiagramContext                 []DiagramContext      `json:"diagramContext"`
+	DiagramSourceContext           []TableSource         `json:"diagramSourceContext"`
+	JourneySourceContext           []TableSource         `json:"journeySourceContext"`
+	JourneyContext                 []JourneyContext      `json:"journeyContext"`
+	TimelineContext                []TimelineContext     `json:"timelineContext"`
+	TableReceiptContext            []TableReceiptContext `json:"tableReceiptContext"`
+	TableContext                   []TableContext        `json:"tableContext"`
+	ContextTargets                 []ContextTarget       `json:"contextTargets"`
+	DocumentBlockCount             int                   `json:"documentBlockCount"`
+	BaseRevision                   int                   `json:"baseRevision"`
+	TranscriptRevision             int                   `json:"transcriptRevision"`
+	ContextBlocks                  []Block               `json:"contextBlocks"`
+	ReplaceableBlockIDs            []string              `json:"replaceableBlockIDs"`
+	CorrectionBlockIDs             []string              `json:"correctionBlockIDs"`
+	AppendAfterID                  string                `json:"appendAfterID"`
+	PendingUtterances              []SourceUtterance     `json:"pendingUtterances"`
+	SemanticState                  SemanticState         `json:"semanticState"`
+	WritingStyle                   string                `json:"writingStyle,omitempty"`
+	Words                          []string              `json:"words,omitempty"`
+	FormatContext                  []FormatContext       `json:"formatContext"`
+	ParallelGroups                 [][]string            `json:"parallelGroups"`
+	BlockComponents                map[string][]string   `json:"blockComponents"`
+	ParallelColumns                map[string]string     `json:"parallelColumns"`
+	MoveContext                    []MoveContext         `json:"moveContext"`
+	ParagraphContext               []ParagraphContext    `json:"paragraphContext"`
 }
 
 func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
@@ -547,7 +566,8 @@ func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
 	return json.Marshal(rewriteModelDocument{
 		TableSourceContext: s.TableSourceContext, TimelineSourceContext: s.TimelineSourceContext,
 		ContextTargets: contextTargets, DocumentBlockCount: len(s.Blocks),
-		BaseRevision: s.Revision, TranscriptRevision: tr, ContextBlocks: contextBlocks,
+		IllustrationSuggestionsEnabled: s.IllustrationSuggestionsEnabled,
+		BaseRevision:                   s.Revision, TranscriptRevision: tr, ContextBlocks: contextBlocks,
 		ReplaceableBlockIDs: replaceable, CorrectionBlockIDs: correctionBlocks, AppendAfterID: appendAfter,
 		PendingUtterances: s.PendingUtterances, SemanticState: s.SemanticState,
 		WritingStyle: string(s.WritingStyle), Words: s.Words,
@@ -773,10 +793,11 @@ func voiceRevisionSchema() map[string]any {
 		"eventOrder": nullable(map[string]any{"type": "array", "items": stringField}),
 	})
 	return object(
-		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "diagramCreations", "diagramEdits", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion"},
+		[]string{"baseRevision", "transcriptRevision", "blockEdits", "corrections", "formatCommands", "moveCommands", "paragraphCommands", "paragraphResolutions", "timelineEdits", "timelineCreations", "journeyCreations", "journeyEdits", "diagramCreations", "diagramEdits", "tableCreations", "tableEdits", "tableResolutions", "moveResolutions", "formatResolutions", "passages", "consumedSourceIDs", "sourcePartitions", "semanticState", "questions", "emotions", "overallEmotion", "illustrationSuggestion"},
 		map[string]any{
-			"diagramCreations": map[string]any{"type": "array", "maxItems": 4, "items": diagramCreationSchema()},
-			"diagramEdits":     map[string]any{"type": "array", "maxItems": 4, "items": diagramEditSchema()},
+			"illustrationSuggestion": contracts.IllustrationSuggestionSchema(),
+			"diagramCreations":       map[string]any{"type": "array", "maxItems": 4, "items": diagramCreationSchema()},
+			"diagramEdits":           map[string]any{"type": "array", "maxItems": 4, "items": diagramEditSchema()},
 			"journeyEdits": map[string]any{"type": "array", "maxItems": 4, "items": object(
 				[]string{"id", "blockID", "mapID", "sourceID", "instruction", "title", "updates", "insertions", "removedStopIDs", "stopOrder"}, map[string]any{
 					"id": stringField, "blockID": stringField, "mapID": stringField, "sourceID": stringField, "instruction": stringField,

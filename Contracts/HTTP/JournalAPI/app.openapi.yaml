@@ -181,6 +181,23 @@ components:
         resetsAt:
           type: string
           format: date-time
+    IllustrationSuggestion:
+      type: object
+      additionalProperties: false
+      required: [summary, subject, setting, composition, style, sourceQuotes, reason]
+      properties:
+        summary: {type: string, minLength: 1, maxLength: 120}
+        subject: {type: string, minLength: 1, maxLength: 500}
+        setting: {type: string, maxLength: 500}
+        composition: {type: string, maxLength: 500}
+        style: {type: string, maxLength: 120}
+        reason: {type: string, minLength: 1, maxLength: 240}
+        sourceQuotes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 600}
     OrganizeRequest:
       type: object
       additionalProperties: false
@@ -193,7 +210,9 @@ components:
       - existingTags
       - rejectedTagNames
       - books
+      - illustrationSuggestionsEnabled
       properties:
+        illustrationSuggestionsEnabled: {type: boolean}
         requestID:
           type: string
           format: uuid
@@ -263,6 +282,8 @@ components:
       - newBookSuggestions
       - quota
       properties:
+        illustrationSuggestion:
+          "$ref": "#/components/schemas/IllustrationSuggestion"
         requestID:
           type: string
           format: uuid
