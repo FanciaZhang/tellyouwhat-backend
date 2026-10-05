@@ -29,6 +29,8 @@ func TestLiveSemanticLists(t *testing.T) {
 		{"reasons_then_decision", "首先价格低，其次离家近。最后，我还是决定选这里。", "", nil, 2, "决定", []string{"价格", "离家", "这里"}},
 		{"continued_draft", "其次离家近。最后，我还是决定选这里。", "价格低。", nil, 2, "决定", []string{"价格", "离家", "这里"}},
 		{"continued_context", "其次离家近。最后环境好。", "", []Block{{ID: uuid.NewString(), Text: "价格低。", Style: "orderedListItem"}}, 2, "", []string{"离家", "环境"}},
+		{"holdout_reasons", "我比较看重这几个方面。首先能步行到地铁站，其次楼下有菜市场。最后想来想去，还是暂时不搬家了。", "", nil, 2, "不搬", []string{"地铁", "菜市场", "不搬"}},
+		{"holdout_steps", "清洗滤网时首先拔掉插头，其次拆下滤网，最后用清水冲洗。", "", nil, 3, "", []string{"插头", "滤网", "清水"}},
 		{"single_emphasis", "选车时我首先考虑安全，其他方面还没有想好。", "", nil, 0, "", []string{"安全", "没有想好"}},
 		{"meaningful_last", "有两件事要记住：首先，赶上最后一班车。其次，带上第一天要用的证件。", "", nil, 2, "", []string{"最后一班车", "第一天", "证件"}},
 	} {
