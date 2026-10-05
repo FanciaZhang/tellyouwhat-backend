@@ -22,6 +22,7 @@ func TestLiveNumberedSpeech(t *testing.T) {
 	}{
 		{"three_points", "所以出行前的准备其实分三个点：第一，我要提前买车票。第二，我要收拾行李。第三，天气可能会变冷，但我还没有带外套，得先拿一件。最后，希望这次出行顺利。", nil, 3},
 		{"continuation", "第二点，我要收拾行李。第三点，天气可能会变冷，得先拿一件外套。最后，希望这次出行顺利。", []Block{{ID: uuid.NewString(), Text: "我要提前买车票。", Style: "orderedListItem"}}, 2},
+		{"continued_draft", "第二点，我要收拾行李。第三点，天气可能会变冷，得先拿一件外套。最后，希望这次出行顺利。", nil, 3},
 		{"ordinary_narrative", "第一天我坐火车去了杭州。第二天在湖边散步，第三天回家。", nil, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,6 +32,13 @@ func TestLiveNumberedSpeech(t *testing.T) {
 			s.Polish.Targets[0].Text = tc.text
 			s.Polish.Targets[0].SourceText = tc.text
 			s.Polish.Context = tc.context
+			if tc.name == "continued_draft" {
+				s.Polish.Targets[0].Style = "orderedListItem"
+				s.Polish.Targets[0].RetainedText = "我要提前买车票。"
+				s.Polish.Targets[0].Text = "我要提前买车票。" + tc.text
+				s.Blocks[0].Text = s.Polish.Targets[0].Text
+				s.Blocks[0].Style = "orderedListItem"
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 			defer cancel()
 			result, err := model.Rewrite(ctx, s, 0)
