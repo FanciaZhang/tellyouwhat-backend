@@ -95,6 +95,17 @@ func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot,
 				return RewriteResult{}, errors.New("no editorial result")
 			}
 			return result, nil
+		case "polish":
+			if seen || event.Polish == nil || snapshot.Polish == nil {
+				return RewriteResult{}, errors.New("invalid narrative result")
+			}
+			seen = true
+			result.Polish = event.Polish
+			snapshot.Polish = nil
+			snapshot.Revision++
+			if websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}) != nil {
+				return RewriteResult{}, errors.New("narrative acknowledgement failed")
+			}
 		case "revision":
 			if seen || event.Revision == nil || event.Revision.Validate(snapshot) != nil {
 				return RewriteResult{}, errors.New("invalid editorial result")
