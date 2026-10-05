@@ -42,8 +42,16 @@ func TestGenerateSingleImageAndConfirmedReference(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["model"] != "configured-image-model" || payload["sequential_image_generation"] != "disabled" || payload["watermark"] != true || payload["response_format"] != "b64_json" {
+		if payload["model"] != "configured-image-model" || payload["watermark"] != true || payload["response_format"] != "b64_json" || payload["size"] != "2K" {
 			t.Fatal("incorrect generation policy")
+		}
+		// Seedream 5.0 Flash generates one image and rejects the older group
+		// generation option. Omitting streaming also uses its single response.
+		if _, exists := payload["sequential_image_generation"]; exists {
+			t.Fatal("unsupported group generation configured")
+		}
+		if _, exists := payload["stream"]; exists {
+			t.Fatal("unsupported streaming configured")
 		}
 		if payload["image"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(data) {
 			t.Fatal("reference changed")

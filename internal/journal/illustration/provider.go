@@ -84,7 +84,7 @@ func (p *Provider) Generate(ctx context.Context, input Input) (Result, error) {
 		return Result{}, ErrInput
 	}
 	payload := map[string]any{"model": p.model, "prompt": input.Prompt, "size": "2K",
-		"response_format": "b64_json", "sequential_image_generation": "disabled", "watermark": true, "stream": false}
+		"response_format": "b64_json", "watermark": true}
 	if len(input.Reference) > 0 {
 		ref, err := inspectImage(input.Reference)
 		if err != nil {
