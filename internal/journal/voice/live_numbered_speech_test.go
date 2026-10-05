@@ -23,6 +23,7 @@ func TestLiveNumberedSpeech(t *testing.T) {
 		{"three_points", "所以出行前的准备其实分三个点：第一，我要提前买车票。第二，我要收拾行李。第三，天气可能会变冷，但我还没有带外套，得先拿一件。最后，希望这次出行顺利。", nil, 3},
 		{"continuation", "第二点，我要收拾行李。第三点，天气可能会变冷，得先拿一件外套。最后，希望这次出行顺利。", []Block{{ID: uuid.NewString(), Text: "我要提前买车票。", Style: "orderedListItem"}}, 2},
 		{"continued_draft", "第二点，我要收拾行李。第三点，天气可能会变冷，得先拿一件外套。最后，希望这次出行顺利。", nil, 3},
+		{"embedded_ordinal_subject", "出行有三点准备：第一，提前买车票。第二，收拾行李。第三点和天气有关，就是要带外套。最后，希望这次出行顺利。", nil, 3},
 		{"ordinary_narrative", "第一天我坐火车去了杭州。第二天在湖边散步，第三天回家。", nil, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,6 +54,12 @@ func TestLiveNumberedSpeech(t *testing.T) {
 			for _, p := range result.Polish.Paragraphs {
 				if p.Style == "orderedListItem" {
 					count++
+					if spokenListLead.MatchString(p.Text) || spokenPointSubject.MatchString(p.Text) || spokenPointCopula.MatchString(p.Text) {
+						t.Fatalf("duplicate spoken ordinal: %s", p.Text)
+					}
+					if strings.HasPrefix(p.Text, "和") || strings.HasPrefix(p.Text, "与") || strings.HasPrefix(p.Text, "跟") {
+						t.Fatalf("dangling clause after ordinal removal: %s", p.Text)
+					}
 					if len(spokenListMarker.FindAllStringIndex(p.Text, -1)) >= 2 {
 						t.Fatal("collapsed list")
 					}

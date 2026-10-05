@@ -55,3 +55,34 @@ func expandSpokenList(p PolishParagraph) []PolishParagraph {
 	}
 	return result
 }
+
+// Native list numbering owns the ordinal. Remove a spoken prefix even when the
+// provider already returned separate items. Keep semantic ordinals (第一天、
+// 第一名、第三代), quoted speech and ambiguous multi-point paragraphs intact.
+var spokenListLead = regexp.MustCompile(`^第(?:[一二三四五六七八九十]{1,3}|[1-9][0-9]?)点?[，、：:,][ \t]*`)
+var spokenPointSubject = regexp.MustCompile(`^第(?:[一二三四五六七八九十]{1,3}|[1-9][0-9]?)点(和|与|跟)`)
+var spokenPointCopula = regexp.MustCompile(`^第(?:[一二三四五六七八九十]{1,3}|[1-9][0-9]?)点(?:就是|是)[，、：:,]?[ \t]*`)
+
+func normalizeSpokenList(p PolishParagraph) []PolishParagraph {
+	parts := expandSpokenList(p)
+	for i := range parts {
+		part := &parts[i]
+		if part.Style != "orderedListItem" || len(spokenListMarker.FindAllStringIndex(part.Text, -1)) > 1 {
+			continue
+		}
+		original := strings.TrimSpace(part.Text)
+		cleaned := spokenListLead.ReplaceAllString(original, "")
+		if cleaned == original {
+			// An ordinal can be the grammatical subject, not a detachable label.
+			// “第三点与天气有关” becomes “这与天气有关”, never “与天气有关”.
+			cleaned = spokenPointSubject.ReplaceAllString(original, "这$1")
+			if cleaned == original {
+				cleaned = spokenPointCopula.ReplaceAllString(original, "")
+			}
+		}
+		if strings.Trim(cleaned, " \t。！？；，、：:,.!?;") != "" {
+			part.Text = cleaned
+		}
+	}
+	return parts
+}

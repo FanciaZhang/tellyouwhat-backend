@@ -62,3 +62,53 @@ func TestSpokenListRepairIsConservativeAndIdempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestPolishRemovesSpokenOrdinalsFromAlreadySeparateItems(t *testing.T) {
+	p := *polishFixture().Polish
+	items := []PolishParagraph{}
+	for _, text := range []string{"第一，提前买车票。", "第二点，收拾行李。", "第三点和天气有关，就是要带外套。"} {
+		items = append(items, PolishParagraph{Text: text, Style: "orderedListItem", TargetIDs: []string{p.Targets[0].ID}})
+	}
+	raw, _ := json.Marshal(map[string]any{"paragraphs": items, "questions": []string{}})
+	r, err := decodePolish(string(raw), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"提前买车票。", "收拾行李。", "这和天气有关，就是要带外套。"}
+	if len(r.Paragraphs) != len(want) {
+		t.Fatal("list item count changed")
+	}
+	for i, part := range r.Paragraphs {
+		if part.Text != want[i] || part.Style != "orderedListItem" || !reflect.DeepEqual(part.TargetIDs, items[i].TargetIDs) {
+			t.Fatalf("bad item: %#v", part)
+		}
+	}
+}
+
+func TestSpokenOrdinalCleanupPreservesMeaningAndGrammar(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"第一点是买车票。", "买车票。"},
+		{"第三点就是收拾行李。", "收拾行李。"},
+		{"第三点与天气有关。", "这与天气有关。"},
+		{"第三点跟行程有关。", "这跟行程有关。"},
+		{"第一天去了杭州。", "第一天去了杭州。"},
+		{"第二名是小王。", "第二名是小王。"},
+		{"第三代产品已经上市。", "第三代产品已经上市。"},
+		{"“第一，准备。第二，出发。”这是原话。", "“第一，准备。第二，出发。”这是原话。"},
+		{"第一，", "第一，"},
+		{"第三点是。", "第三点是。"},
+	} {
+		p := PolishParagraph{Text: tc.input, Style: "orderedListItem", TargetIDs: []string{"a"}}
+		got := normalizeSpokenList(p)
+		if len(got) != 1 || got[0].Text != tc.want {
+			t.Fatalf("%q => %#v, want %q", tc.input, got, tc.want)
+		}
+		if !reflect.DeepEqual(normalizeSpokenList(got[0]), got) {
+			t.Fatal("cleanup not idempotent")
+		}
+		p.Style = "body"
+		if got := normalizeSpokenList(p); !reflect.DeepEqual(got, []PolishParagraph{p}) {
+			t.Fatal("body changed")
+		}
+	}
+}
