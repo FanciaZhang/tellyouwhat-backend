@@ -253,7 +253,9 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	}
 	result.OutputText = text
 	if s.Polish != nil {
-		polish, err := decodePolish(text, *s.Polish)
+		request := *s.Polish
+		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
+		polish, err := decodePolish(text, request)
 		if err != nil {
 			return failedRewrite(result, "voice_rewrite_unavailable", "validate_polish", err, started)
 		}
@@ -410,7 +412,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	}
 	parameters := settings.Voice.Parameters
 	if s.Polish != nil {
-		body, parameters = preparePolish(*s.Polish, style, s.Words, parameters)
+		request := *s.Polish
+		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
+		body, parameters = preparePolish(request, style, s.Words, parameters)
 	}
 	parameters.Apply(body)
 	payload, _ := json.Marshal(body)

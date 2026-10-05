@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/journal/contracts"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"slices"
@@ -22,9 +23,10 @@ type PolishTarget struct {
 	SourceKeys   []string          `json:"sourceKeys"`
 }
 type PolishRequest struct {
-	Targets []PolishTarget `json:"targets"`
-	Context []Block        `json:"context"`
-	Paused  bool           `json:"paused"`
+	Targets                        []PolishTarget `json:"targets"`
+	Context                        []Block        `json:"context"`
+	Paused                         bool           `json:"paused"`
+	illustrationSuggestionsEnabled bool
 }
 type PolishParagraph struct {
 	Text      string   `json:"text"`
@@ -32,9 +34,10 @@ type PolishParagraph struct {
 	Style     string   `json:"style"`
 }
 type PolishRevision struct {
-	Targets    []PolishTarget    `json:"targets"`
-	Paragraphs []PolishParagraph `json:"paragraphs"`
-	Questions  []string          `json:"questions"`
+	Targets                []PolishTarget                    `json:"targets"`
+	Paragraphs             []PolishParagraph                 `json:"paragraphs"`
+	Questions              []string                          `json:"questions"`
+	IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
 }
 
 func (p PolishRequest) Validate() error {
@@ -97,14 +100,16 @@ const polishInstructions = `你负责把正在发生的口述和多人对话写�
 输出 paragraphs，每项包含 text、style（body、heading1、heading2、heading3、orderedListItem、unorderedListItem、checklistItem、completedChecklistItem），targetIDs 列出该自然段整理了哪些输入 targets。允许多个输入合并为一段、一段分为多段；所有输入 id 必须被覆盖，即使某项只是去掉的口水词，也归入相关段落的 targetIDs。若整批只有无意义语气词，可返回空 paragraphs。只有口述提供唯一依据时纠正错词，否则保留不确定性并在 questions 简短询问。只输出 JSON {"paragraphs":[{"text":"整理后的手记自然段","style":"body","targetIDs":["输入段落id"]}],"questions":[]}。`
 
 func preparePolish(p PolishRequest, style promptconfig.Style, words []string, parameters promptconfig.Parameters) (map[string]any, promptconfig.Parameters) {
-	input, _ := json.Marshal(map[string]any{"targets": p.Targets, "context": p.Context, "words": words})
+	input, _ := json.Marshal(map[string]any{"targets": p.Targets, "context": p.Context, "words": words, "illustrationSuggestionsEnabled": p.illustrationSuggestionsEnabled})
 	ids := []string{}
 	for _, target := range p.Targets {
 		ids = append(ids, target.ID)
 	}
 	item := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"targetIDs", "text", "style"}, "properties": map[string]any{"targetIDs": map[string]any{"type": "array", "minItems": 1, "maxItems": 8, "items": map[string]any{"type": "string", "enum": ids}}, "text": map[string]string{"type": "string"}, "style": map[string]any{"type": "string", "enum": []string{"body", "heading1", "heading2", "heading3", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}}}}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"paragraphs", "questions"}, "properties": map[string]any{"paragraphs": map[string]any{"type": "array", "maxItems": 16, "items": item}, "questions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]string{"type": "string"}}}}
-	body := map[string]any{"store": false, "instructions": polishInstructions + "\n本次写作风格：" + style.Prompt, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v29", "strict": true, "schema": schema}}}
+	schema["required"] = []string{"paragraphs", "questions", "illustrationSuggestion"}
+	schema["properties"].(map[string]any)["illustrationSuggestion"] = contracts.IllustrationSuggestionSchema()
+	body := map[string]any{"store": false, "instructions": polishInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v29", "strict": true, "schema": schema}}}
 	parameters.MaxOutputTokens = min(parameters.MaxOutputTokens, 2048)
 	parameters.TimeoutSeconds = min(parameters.TimeoutSeconds, 25)
 	parameters.ReasoningEffort = "disabled"
@@ -113,8 +118,9 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 
 func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	var output struct {
-		Paragraphs []PolishParagraph `json:"paragraphs"`
-		Questions  []string          `json:"questions"`
+		Paragraphs             []PolishParagraph                 `json:"paragraphs"`
+		Questions              []string                          `json:"questions"`
+		IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
@@ -166,6 +172,19 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 		if utf8.RuneCountInString(question) > 300 {
 			return nil, ErrInvalid
 		}
+	}
+	material := []string{}
+	for _, target := range request.Targets {
+		material = append(material, target.Text, target.SourceText, target.RetainedText)
+		for _, turn := range target.Turns {
+			material = append(material, turn.Text)
+		}
+	}
+	for _, block := range request.Context {
+		material = append(material, block.Text)
+	}
+	if request.illustrationSuggestionsEnabled && output.IllustrationSuggestion.Grounded(material) {
+		revision.IllustrationSuggestion = output.IllustrationSuggestion
 	}
 	return revision, nil
 }
