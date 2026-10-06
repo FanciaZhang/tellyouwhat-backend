@@ -35,3 +35,21 @@ func TestRollingStreamWindowAcceptsFullCorrectionAndBoundsEvidence(t *testing.T)
 		t.Fatal("unbounded evidence or lost text")
 	}
 }
+
+func TestSpeechEmptyFinalAfterPartialRequestsRetryWithoutInventingText(t *testing.T) {
+	var guard speechResultGuard
+	partial := Transcript{Text: "周末想带水杯", Utterances: []StreamUtterance{{Text: "周末想带水杯", Definite: false}}}
+	if _, err := guard.accept(partial); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := guard.accept(Transcript{}); err != nil || held.Text != partial.Text || held.Final || held.Utterances[0].Definite {
+		t.Fatal("lost or promoted partial", held, err)
+	}
+	if _, err := guard.accept(Transcript{Final: true}); err == nil {
+		t.Fatal("empty final committed over spoken content")
+	}
+	var silence speechResultGuard
+	if final, err := silence.accept(Transcript{Final: true}); err != nil || final.Text != "" {
+		t.Fatal("genuine silence rejected")
+	}
+}

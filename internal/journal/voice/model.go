@@ -264,6 +264,16 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		result.Diagnostics.Duration = time.Since(started)
 		return result, nil
 	}
+	if compactTableCommand(s) {
+		revision, err := expandCompactTable(text, s, tr)
+		if err != nil {
+			return failedRewrite(result, "voice_rewrite_unavailable", "validate_table_command", err, started)
+		}
+		result.Revision = revision
+		result.Diagnostics.Stage = "completed"
+		result.Diagnostics.Duration = time.Since(started)
+		return result, nil
+	}
 	var revision Revision
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
@@ -293,6 +303,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		if revision.Patches != nil || revision.DiagramEdits == nil || revision.DiagramCreations == nil || revision.JourneyEdits == nil || revision.JourneyCreations == nil || revision.TimelineEdits == nil || revision.TimelineCreations == nil || revision.TableResolutions == nil || revision.TableEdits == nil || revision.TableCreations == nil || revision.FormatCommands == nil || revision.MoveCommands == nil || revision.ParagraphCommands == nil || revision.ParagraphResolutions == nil || revision.MoveResolutions == nil || revision.FormatResolutions == nil || revision.SourcePartitions == nil {
 			return failedRewrite(result, "voice_rewrite_unavailable", "validate_incremental_contract", ErrInvalid, started)
 		}
+		revision = normalizeGeneratedStructures(revision, s)
 		revision = groundedIncrementalEmotions(revision, s)
 		if err = revision.Validate(s); err != nil {
 			return failedRewrite(result, "voice_rewrite_unavailable", "validate_incremental_revision", err, started)
@@ -407,8 +418,12 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 			return PreparedRewrite{}, err
 		}
 		body["input"] = string(input)
-		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
+		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
+	}
+	if compactTableCommand(s) {
+		body["instructions"] = compactTableInstructions
+		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_table_command_v1", "strict": true, "schema": compactTableSchema()}}
 	}
 	parameters := settings.Voice.Parameters
 	if s.Polish != nil {
@@ -711,10 +726,11 @@ func voiceRevisionSchema() map[string]any {
 		"id": stringField, "receiptID": stringField, "sourceID": stringField, "instruction": stringField,
 		"action": map[string]any{"type": "string", "enum": []string{"confirm", "dismiss", "undo"}},
 	})
-	paragraphCommand := object([]string{"id", "kind", "blockIDs", "anchor", "edge", "separator", "componentsToSecond", "sourceID", "instruction"}, map[string]any{
-		"id": stringField, "kind": map[string]any{"type": "string", "enum": []string{"split", "merge"}}, "blockIDs": stringArray(),
-		"anchor": object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
-		"edge":   map[string]any{"type": "string", "enum": []string{"", "before", "after"}}, "separator": map[string]any{"type": "string", "enum": []string{"", " "}},
+	paragraphCommand := object([]string{"id", "kind", "blockIDs", "anchor", "edge", "separator", "componentsToSecond", "sourceID", "instruction", "fragments"}, map[string]any{
+		"id": stringField, "kind": map[string]any{"type": "string", "enum": []string{"split", "merge", "reflow"}}, "blockIDs": stringArray(),
+		"fragments": map[string]any{"type": "array", "items": object([]string{"text", "style"}, map[string]any{"text": stringField, "style": map[string]any{"type": "string", "enum": blockStyles}})},
+		"anchor":    object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
+		"edge":      map[string]any{"type": "string", "enum": []string{"", "before", "after"}}, "separator": map[string]any{"type": "string", "enum": []string{"", " "}},
 		"componentsToSecond": stringArray(), "sourceID": stringField, "instruction": stringField,
 	})
 	tableSource := object([]string{"sourceID", "anchor"}, map[string]any{
@@ -837,3 +853,8 @@ func voiceRevisionSchema() map[string]any {
 		},
 	)
 }
+
+const structuralCommandInstructions = `
+已有正文包含多个事项，而用户要求整理为列表时，使用 paragraphCommands 的 reflow，一条命令对应一个已有块。不要用 blockEdits 或 passages 伪造新口述。blockIDs 为该块的单个 id，anchor 三个字段与 edge/separator 均为空，componentsToSecond 为 []。fragments 按原文顺序逐段给出 text/style；text 必须完整逐字切分目标块，所有 text 拼接必须恰等于原文，标点空格也保留。引导句用 body，每个独立事项分别用 unorderedListItem 或 orderedListItem；不能把所有事项放一个列表项。客户端负责去除列表项边缘的分隔顿号和逗号，并保留可撤销的原文。sourcePartitions 将指令关联原 blockID，passages 为 []。split/merge 的 fragments 为 []。单段改标题且不拆分时仍用 formatCommands。
+创建表格的行列以及新时间线事件的 id 只需在本次结果中唯一，可用短标签；服务端为新对象分配身份。所有现有 id/sourceID 逐字照抄，绝不改写。时间精度为 minute 时 period 必须为空字符串，minute 使用当天分钟数（下午三点为900）；period 精度时 minute=null。新时间线没有明确相对时间表达时 afterEventID=null，正常时间顺序不需要补这个字段。不需要更新语义人物或提纲时，原样保留输入 semanticState。
+`

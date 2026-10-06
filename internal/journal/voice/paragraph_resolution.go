@@ -28,7 +28,7 @@ func validateParagraphContext(items []ParagraphContext, known map[string]bool) e
 	}
 	seen := map[string]bool{}
 	for _, c := range items {
-		if !validID(c.ReceiptID) || seen[c.ReceiptID] || (c.Kind != "split" && c.Kind != "merge") ||
+		if !validID(c.ReceiptID) || seen[c.ReceiptID] || (c.Kind != "split" && c.Kind != "merge" && c.Kind != "reflow") ||
 			(c.State != "proposed" && c.State != "applied") || (c.CanConfirm && c.State != "proposed") ||
 			len(c.BlockIDs) == 0 || len(c.BlockIDs) > 64 || utf8.RuneCountInString(c.Instruction) > 160 {
 			return ErrInvalid
