@@ -23,6 +23,9 @@ func TestLiveSemanticLists(t *testing.T) {
 		conclusion           string
 		facts                []string
 	}{
+		{"inline_shopping", "今天买了苹果、牛奶和面包。", "", nil, 0, "", []string{"苹果", "牛奶", "面包"}},
+		{"inline_packing", "周末出门带上水杯、雨伞、充电宝就够了。", "", nil, 0, "", []string{"水杯", "雨伞", "充电宝"}},
+		{"inline_feelings", "今天觉得累、困、没精神，早点睡吧。", "", nil, 0, "", []string{"累", "困", "没精神", "睡"}},
 		{"parallel_reasons", "首先价格低，其次离家近，最后环境好。", "", nil, 3, "", []string{"价格", "离家", "环境"}},
 		{"steps", "做饭分三步，首先洗菜，其次切菜，最后下锅。", "", nil, 3, "", []string{"洗菜", "切菜", "下锅"}},
 		{"experience", "今天首先去了医院，随后回家，最后终于能休息了。", "", nil, 0, "", []string{"医院", "回家", "休息"}},
