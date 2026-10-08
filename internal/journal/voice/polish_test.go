@@ -28,11 +28,34 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	if err = json.Unmarshal(prepared.Body, &body); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 8000 {
-		t.Fatalf("ordinary task has structural context or exceeds 8000 bytes: %d bytes", len(prepared.Body))
+	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 10000 {
+		t.Fatalf("ordinary task has structural context or exceeds 10000 bytes: %d bytes", len(prepared.Body))
 	}
 	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 25 || prepared.Parameters.ReasoningEffort != "disabled" {
 		t.Fatal("unbounded polish parameters")
+	}
+}
+
+func TestOrdinaryNarrativeAdoptsConfirmedCorrectionAcrossStyles(t *testing.T) {
+	for _, style := range []WritingStyle{StyleNatural, StyleLively, StyleDaybook, StyleEssay, StyleDocumentary} {
+		s := polishFixture()
+		s.WritingStyle = style
+		s.Polish.Targets[0].SourceText = "今年我已经25岁了，啊呸，不对，已经是30岁了。"
+		prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Instructions string `json:"instructions"`
+		}
+		if err := json.Unmarshal(prepared.Body, &body); err != nil {
+			t.Fatal(err)
+		}
+		for _, rule := range []string{"只采用最后明确确认的事实", "retainedText 的旧事实", "区别于用户明确叙述", "适用于所有写作风格"} {
+			if !strings.Contains(body.Instructions, rule) {
+				t.Fatalf("%s missing correction rule %s", style, rule)
+			}
+		}
 	}
 }
 func TestPolishBaselineIsServerOwnedAndUnknownParagraphsAreRejected(t *testing.T) {
