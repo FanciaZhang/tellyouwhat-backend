@@ -9,11 +9,15 @@ import (
 )
 
 var errRecognitionContext = errors.New("speech_context_too_large")
+var errEmptyCompletedUtterance = errors.New("speech_empty_utterance_after_text")
 
 // A connection can return a rolling utterance window while result.text remains
 // cumulative. Keep earlier definitive evidence, never an earlier provisional
 // hypothesis. This state belongs to one ASR connection, not a person's identity.
-type streamUtteranceWindow struct{ stable []StreamUtterance }
+type streamUtteranceWindow struct {
+	stable  []StreamUtterance
+	pending []StreamUtterance
+}
 
 func (w *streamUtteranceWindow) merge(t Transcript) (Transcript, error) {
 	incoming := make([]StreamUtterance, 0, len(t.Utterances))
@@ -23,6 +27,18 @@ func (w *streamUtteranceWindow) merge(t Transcript) (Transcript, error) {
 			return Transcript{}, errRecognitionContext
 		}
 		previousStart = u.StartMilliseconds
+		if u.Definite && strings.TrimSpace(u.Text) == "" {
+			for _, previous := range w.pending {
+				if u.StartMilliseconds == previous.StartMilliseconds && strings.TrimSpace(previous.Text) != "" {
+					// A real second-pass response can return an empty completed
+					// placeholder for an audible provisional sentence. It is not
+					// permission to erase that sentence, nor proof that the old
+					// hypothesis is final. Preserve the App's last source and let
+					// bounded transport recovery recognize the original audio.
+					return Transcript{}, errEmptyCompletedUtterance
+				}
+			}
+		}
 		if strings.TrimSpace(u.Text) != "" {
 			incoming = append(incoming, u)
 		}
@@ -87,9 +103,12 @@ func (w *streamUtteranceWindow) merge(t Transcript) (Transcript, error) {
 		}
 	}
 	w.stable = nil
+	w.pending = nil
 	for _, u := range merged {
 		if u.Definite {
 			w.stable = append(w.stable, u)
+		} else {
+			w.pending = append(w.pending, u)
 		}
 	}
 	t.Utterances = merged

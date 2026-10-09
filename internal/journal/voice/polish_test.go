@@ -19,6 +19,25 @@ func polishFixture() Snapshot {
 	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
 
+func TestBlankPolishTargetNeedsActualSourceAndCannotBeSpacingOnlyTask(t *testing.T) {
+	s := polishFixture()
+	target := &s.Polish.Targets[0]
+	target.Text = ""
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], Text: target.SourceText}}
+	if err := s.Validate(); err != nil {
+		t.Fatal("an empty presentation must still allow grounded source recovery", err)
+	}
+	target.SourceText = " "
+	if err := s.Validate(); err == nil {
+		t.Fatal("a whitespace-only draft cannot become an ordinary editing task")
+	}
+	target.SourceText = target.Turns[0].Text
+	target.Turns = nil
+	if err := s.Validate(); err == nil {
+		t.Fatal("empty presentation without source evidence accepted")
+	}
+}
+
 func TestIdentityOperationSpansAreExcludedFromModelButRetainedInEvidence(t *testing.T) {
 	s := polishFixture()
 	target := &s.Polish.Targets[0]

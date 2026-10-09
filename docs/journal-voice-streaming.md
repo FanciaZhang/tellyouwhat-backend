@@ -1,8 +1,8 @@
 # Journal live voice protocol v32
 
 `journal-voice-v32` separates audio quota acknowledgements from continuous
-recognition. It is a breaking development protocol. The current v31 App must be
-updated before this backend can be deployed alongside it; there is no fallback
+recognition. It is a breaking development protocol. A matching v32 App must be
+released before this backend can be deployed alongside it; there is no fallback
 that closes ASR at each audio checkpoint.
 
 ## Audio and recognition have different identities
@@ -36,6 +36,14 @@ the recognition offset for playback and recording-wide source provenance.
 Provider completion status remains authoritative for each utterance; a
 recording stop is not permission to invent a completed sentence.
 
+The provider can send rolling windows, or an empty completed placeholder after
+having returned audible provisional text for the same start time. That latter
+case fails the current recognition with `speech_empty_utterance_after_text`
+instead of erasing the provisional sentence or promoting it to final. The
+client retains its last visible source and performs bounded replay from the
+original audio. Structure-only diagnostics record empty-completed counts,
+never transcript content, speaker IDs, audio or credentials.
+
 After microphone stop, the App first sends all captured chunks and receives
 all audio ACKs. It can send `capture_closed` to coalesce remaining editorial
 work, then sends `recognition_finish` with the active recognition ID. This is
@@ -49,6 +57,10 @@ closes, and a changed recognition ID or offset during a connection are rejected.
 Snapshot-only editorial work can finish without opening an ASR connection.
 Document, source, narrator and identity acknowledgement fences continue to
 apply independently of audio ACKs.
+
+An empty rendered prose target is accepted only when it retains nonempty source
+text and actual source turns. It can then recover from grounded speech. An
+empty spacer without source evidence is invalid and must not be submitted.
 
 An interrupted connection requires a fresh recognition ID and a retained
 recording offset. The App owns source reconciliation and must never equate

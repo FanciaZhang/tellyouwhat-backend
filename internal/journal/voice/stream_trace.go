@@ -13,6 +13,7 @@ type StreamTrace struct {
 	TextCharacters   int    `json:"textCharacters"`
 	RawCount         int    `json:"rawCount"`
 	RawDefinite      int    `json:"rawDefinite"`
+	RawEmptyDefinite int    `json:"rawEmptyDefinite"`
 	MissingTimes     int    `json:"missingTimes"`
 	OutsideTimes     int    `json:"outsideTimes"`
 	RawFirstStart    int    `json:"rawFirstStart"`
@@ -28,6 +29,9 @@ func makeStreamTrace(raw []providerStreamUtterance, parsed Transcript) StreamTra
 	for i, u := range raw {
 		if u.Definite {
 			v.RawDefinite++
+			if strings.TrimSpace(u.Text) == "" {
+				v.RawEmptyDefinite++
+			}
 		}
 		if len(u.Start) == 0 || u.End == nil {
 			v.MissingTimes++

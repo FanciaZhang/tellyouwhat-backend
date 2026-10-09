@@ -76,9 +76,40 @@ func TestEmptyFinalCannotPromoteOrRestoreUnconfirmedHypothesis(t *testing.T) {
 	u := StreamUtterance{Text: "尚未确认。", StartMilliseconds: 0, EndMilliseconds: 1000}
 	w.merge(Transcript{Text: u.Text, Utterances: []StreamUtterance{u}})
 	u.Text, u.Definite = "", true
-	got, err := w.merge(Transcript{Final: true, Utterances: []StreamUtterance{u}})
-	if err != nil || got.Text != "" || len(got.Utterances) != 0 {
-		t.Fatal("empty completion promoted a discarded hypothesis", got, err)
+	_, err := w.merge(Transcript{Final: true, Utterances: []StreamUtterance{u}})
+	if !errors.Is(err, errEmptyCompletedUtterance) {
+		t.Fatal("empty completion must request bounded recovery, not commit a discarded hypothesis", err)
+	}
+}
+
+func TestRealSecondPassEmptyMiddleTurnRequestsRecoveryWithoutDroppingSource(t *testing.T) {
+	// Structure and times from the 138-second synthetic App request. At 48.4s
+	// the provider showed the coffee sentence; at 49.4s it completed that same
+	// interval with empty text while retaining the preceding six sentences.
+	var w streamUtteranceWindow
+	first := StreamUtterance{Text: "那里的风有点凉。", StartMilliseconds: 36012, EndMilliseconds: 43021, Definite: true, Speaker: "1"}
+	coffee := StreamUtterance{Text: "后来我提议去附近的咖啡店，想尝一尝他们家的拿铁", StartMilliseconds: 43181, EndMilliseconds: 48201}
+	if _, err := w.merge(Transcript{Text: first.Text + coffee.Text, Utterances: []StreamUtterance{first, coffee}}); err != nil {
+		t.Fatal(err)
+	}
+	blank := coffee
+	blank.Text, blank.EndMilliseconds, blank.Definite = "", 48521, true
+	if _, err := w.merge(Transcript{Text: first.Text, Utterances: []StreamUtterance{first, blank}}); !errors.Is(err, errEmptyCompletedUtterance) {
+		t.Fatal("blank completion silently consumed audible provisional speech", err)
+	}
+	if len(w.stable) != 1 || w.stable[0].Text != first.Text || len(w.pending) != 1 || w.pending[0].Text != coffee.Text {
+		t.Fatal("failed update mutated prior evidence")
+	}
+	var retry streamUtteranceWindow
+	coffee.Text += "。"
+	coffee.Definite, coffee.Speaker = true, "0"
+	got, err := retry.merge(Transcript{Text: first.Text + coffee.Text, Final: true, Utterances: []StreamUtterance{first, coffee}})
+	if err != nil || len(got.Utterances) != 2 || got.Utterances[1].Text != coffee.Text {
+		t.Fatal("real nonempty recognition cannot replace the missing result", err)
+	}
+	var silence streamUtteranceWindow
+	if got, err := silence.merge(Transcript{Final: true, Utterances: []StreamUtterance{blank}}); err != nil || got.Text != "" {
+		t.Fatal("genuine empty recognition must remain valid", err)
 	}
 }
 

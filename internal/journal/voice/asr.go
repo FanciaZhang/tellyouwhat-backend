@@ -145,8 +145,19 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err != nil {
 		return Transcript{}, err
 	}
+	parsed := result
 	result, err = c.utterances.merge(result)
 	if err != nil {
+		if c.observeTrace != nil {
+			trace.merged(parsed)
+			if len(c.traces) < 128 {
+				c.traces = append(c.traces, trace)
+			} else {
+				c.traces[len(c.traces)-1] = trace
+			}
+			c.observeTrace(c.traces)
+			c.traces = nil
+		}
 		return Transcript{}, err
 	}
 	if c.observeTrace != nil {
