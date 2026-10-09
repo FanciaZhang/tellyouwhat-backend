@@ -3,8 +3,11 @@
 `journal-voice-v33` adds grounded source-level person assignments to the
 independent audio/recognition lifecycle introduced in v32. It is a breaking
 development protocol. The matching local App now consumes these scopes and
-source-selected narrators; eleven focused App checks pass. Complete three-person
-App capture/application acceptance remains in progress. This source has not
+source-selected narrators. Actual App attempt 8 with synthetic three-person
+audio passes capture, inferred people, spoken author correction, prose application,
+complete audio preservation, and controller reopening with real AI name correction.
+This does not prove disk reopening, restored paragraph labels or user acceptance.
+This source has not
 been deployed. No compatibility decoder or acoustic checkpoint fallback is provided.
 
 ## Person assignments have an explicit scope
@@ -25,6 +28,20 @@ A voice-wide assignment cannot erase an already mixed set of known people.
 not overwrite these or an explicit voice assignment. Existing person IDs can
 be quoted from speaker defaults or source turns, with no invented IDs or merge
 based solely on an equal name.
+
+`unreliableSpeakerKeys` carries acoustic collisions already detected by the App.
+Once one key merges different known people, defaults for the whole recognition
+are unreliable. New grounded claims use `scope: sources`; ordinary inference
+cannot reestablish a voice default from another numeric key in that connection.
+Existing source claims remain intact, and subsequent ambiguous speech stays unknown.
+
+App attempt 7 exposed a source mapping bug despite initially correct model
+`targetIDs`: atomic paragraph reordering assigned every output to every input
+source. The client now maps each output's actual target dependencies independently
+of atomic application order. A source split into several prose paragraphs remains
+evidence for all its paragraphs. Attempt 8 uses the exact same validated synthetic
+PCM and avoids the prior duplicate travel and unsupported pronouns. Earlier failed
+attempts and captured request chains remain in the acceptance artifact directory.
 
 A real configured-model replay of the failed synthetic App transcript now
 separates 小林's introduction and pastry-purchase experience from 老公宝's
@@ -130,12 +147,35 @@ subjects in later clauses. A bounded, incomplete source window still retains
 the previous prose so that facts outside the window cannot be discarded.
 
 Ordinary one-person prose keeps its 2,048-token/25-second bound. Confirmed
-multi-person prose uses low reasoning within 4,096 tokens and 45 seconds to
-resolve reciprocal references and omitted subjects; stopping capture and local
+multi-person prose uses 4,096 output tokens and at most 90 seconds. Person
+inference resolves grounded identities before prose; explicit `attributionKey`
+and `narrativeRole` let the prose pass follow those identities with reasoning
+disabled. Unknown turns have distinct unresolved keys, never a shared person
+inferred from their acoustic number. Stopping capture and local
 audio persistence do not wait for this pass. These are bounds, not a promise
 that every provider request completes within them. The explicitly enabled
 synthetic semantic corpus preserves all failed attempts separately from App
 capture acceptance.
+
+The fourth real three-person App attempt preserved three source identities
+within two actual acoustic keys, including an unresolved later packing remark.
+Its author correction request nevertheless timed out after 45,002 milliseconds,
+at the same instant as the App's former 45-second inactivity guard. The larger
+multi-person request bound is paired with a bounded App retry window; configured
+lower timeouts still take precedence. It does not slow local recording stop or
+save. The same synthetic capture is being rerun; this timing change alone is not
+complete App acceptance.
+
+The fifth capture completed prose but failed complete acceptance. Its synthetic
+name was misrecognized, and manual review found invented gender and an unknown
+speaker's action assigned to the narrator. Captured-request replays retained
+these failures. Low reasoning used roughly 54 seconds for one request and
+returned no prose after about 74 seconds for another; direct constrained prose
+then completed in roughly 11 seconds. Unknown first-person claims must remain
+subjectless or quoted, rather than silently becoming the narrator. A targeted
+single-actor self-reference normalization protects names without modifying
+mixed actors, source-supported pronouns or quotations. These replays are
+model evidence; the sixth full App attempt is still being verified.
 
 Identity output cannot assign two people to overlapping source turns or change
 the narrator without an exact command span. Provider voice collisions are preserved

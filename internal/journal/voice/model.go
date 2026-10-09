@@ -372,7 +372,7 @@ type PreparedRewrite struct {
 }
 
 func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (PreparedRewrite, error) {
-	settings := promptconfig.Defaults(model, model, model, 60)["journal"].Journal
+	settings := promptconfig.Defaults(model, model, model, 90)["journal"].Journal
 	version := "seed"
 	if r, ok := promptconfig.FromContext(ctx); ok {
 		settings = r.Policy.Journal

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -124,6 +126,22 @@ func TestConfirmedSelfReportDoesNotInventGenderThroughPunctuation(t *testing.T) 
 	if got := polishConfirmedSelfReferences(quote, []string{target.ID}, *s.Polish); got != quote {
 		t.Fatal("changed quoted speech")
 	}
+	for _, text := range []string{"我们见到了小林，他今天从杭州坐火车过来。", "小林做了自我介绍，说他昨天在医院值班。"} {
+		if got := polishConfirmedSelfReferences(text, []string{target.ID}, *s.Polish); strings.ContainsAny(got, "他她") {
+			t.Fatal("invented actor gender survived a sentence-internal clause", got)
+		}
+	}
+	neutral := "小林今天帮助他人。"
+	if got := polishConfirmedSelfReferences(neutral, []string{target.ID}, *s.Polish); got != neutral {
+		t.Fatal("changed a word containing a pronoun character")
+	}
+	mixed := *s.Polish
+	mixed.Targets = slices.Clone(mixed.Targets)
+	mixed.Targets[0].Turns = append(slices.Clone(target.Turns), SourceUtterance{ID: uuid.NewString(), PersonID: s.Polish.Narrator.PersonID, Person: "我", Text: "我今天也休息。"})
+	text := "小林今天休息，他今天还去了公园。"
+	if got := polishConfirmedSelfReferences(text, []string{target.ID}, mixed); got != text {
+		t.Fatal("mixed actors must not be replaced using a single-person rule")
+	}
 	target.Turns[0].Text = "他昨天在医院值班，很累，我今天休息。"
 	third := "小林说，他昨天在医院值班，很累。"
 	if got := polishConfirmedSelfReferences(third, []string{target.ID}, *s.Polish); got != third {
@@ -133,6 +151,30 @@ func TestConfirmedSelfReportDoesNotInventGenderThroughPunctuation(t *testing.T) 
 	target.CompleteSource = false
 	if got := polishConfirmedSelfReferences(third, []string{target.ID}, *s.Polish); got != third {
 		t.Fatal("incomplete evidence changed retained prose")
+	}
+}
+
+func TestConfirmedReciprocalAuthorReferenceUsesNarratorWithoutChangingQuotesOrOtherNames(t *testing.T) {
+	s := polishFixture()
+	s.Polish.Narrator = &Narrator{PersonID: uuid.NewString(), Name: "老公宝"}
+	target := &s.Polish.Targets[0]
+	target.CompleteSource = true
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], PersonID: uuid.NewString(), Person: "老婆宝", Text: "我和我老公宝出来很开心。"}}
+	for _, text := range []string{"老婆宝也说，和我老公宝一起出来很开心。", "老婆宝表示：跟我的老公宝出来很开心。"} {
+		got := polishConfirmedAuthorReferences(text, []string{target.ID}, *s.Polish)
+		if strings.Contains(got, "我老公宝") || strings.Contains(got, "我的老公宝") || !strings.Contains(got, "我") {
+			t.Fatal("reciprocal author perspective not corrected", got)
+		}
+	}
+	for _, text := range []string{"老婆宝说：“和我老公宝出来很开心。”", "小林说，和我老公宝出来很开心。", "我和我老公宝出来很开心。"} {
+		if got := polishConfirmedAuthorReferences(text, []string{target.ID}, *s.Polish); got != text {
+			t.Fatal("ungrounded/quoted subject was transformed", got)
+		}
+	}
+	target.CompleteSource = false
+	text := "老婆宝也说，和我老公宝一起出来很开心。"
+	if got := polishConfirmedAuthorReferences(text, []string{target.ID}, *s.Polish); got != text {
+		t.Fatal("incomplete source changed narrator reference")
 	}
 }
 
@@ -171,8 +213,14 @@ func TestOrdinaryContinuationUsesRawActorsInsteadOfOldGeneratedAttribution(t *te
 		t.Fatal("lost explicit other actor")
 	}
 	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
-	if err != nil || prepared.Parameters.ReasoningEffort != "low" || prepared.Parameters.MaxOutputTokens > 4096 || prepared.TimeoutSeconds > 45 {
+	if err != nil || prepared.Parameters.ReasoningEffort != "disabled" || prepared.Parameters.MaxOutputTokens > 4096 || prepared.TimeoutSeconds != 90 {
 		t.Fatal("multi-person perspective lacks bounded semantic reasoning", err)
+	}
+	policy := promptconfig.Defaults("fixture", "fixture", "fixture", 35)["journal"]
+	ctx := promptconfig.WithRevision(context.Background(), promptconfig.Revision{ID: "lower-bound", Scope: "journal", Policy: policy})
+	limited, err := PrepareRewrite(ctx, s, 1, "fixture")
+	if err != nil || limited.TimeoutSeconds != 35 {
+		t.Fatal("multi-person reasoning bypassed the configured timeout", err)
 	}
 	target.Turns[0].PersonID = s.Polish.Narrator.PersonID
 	if check()["turns"].([]any)[0].(map[string]any)["narrativeRole"] != "author" {

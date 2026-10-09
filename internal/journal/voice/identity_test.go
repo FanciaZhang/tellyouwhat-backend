@@ -47,6 +47,41 @@ func TestUnchangedNarratorEchoWithEvidenceDoesNotCreateAnOperation(t *testing.T)
 	}
 }
 
+func TestUnreliableAcousticKeysAllowGroundedSourcesButRejectVoiceDefaults(t *testing.T) {
+	r := identityFixture("我叫小林。", "今天去河边很开心。")
+	key := r.Speakers[0].Key
+	r.Speakers = []IdentitySpeaker{{Key: key}}
+	r.NarratorPersonID = ""
+	for i := range r.Turns {
+		r.Turns[i].Speaker = key
+		r.Turns[i].PersonID = ""
+		r.Turns[i].Person = ""
+	}
+	r.UnreliableSpeakerKeys = []string{key}
+	assignment := IdentityAssignment{SpeakerKey: key, Scope: "voice", SourceIDs: []string{r.Turns[0].ID, r.Turns[1].ID},
+		Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[0].ID}}
+	encode := func() string {
+		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{assignment}, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+		return string(b)
+	}
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("unreliable acoustic key acquired a future voice default")
+	}
+	assignment.Scope = "sources"
+	assignment.SourceIDs = []string{r.Turns[0].ID}
+	if out, err := decodeIdentity(encode(), r); err != nil || len(out.Assignments) != 1 {
+		t.Fatal("grounded introduction must still be usable", err)
+	}
+	r.UnreliableSpeakerKeys = []string{key, key}
+	if r.Validate() == nil {
+		t.Fatal("duplicate unreliable key accepted")
+	}
+	r.UnreliableSpeakerKeys = []string{"invented-key"}
+	if r.Validate() == nil {
+		t.Fatal("unknown unreliable key accepted")
+	}
+}
+
 func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.T) {
 	r := identityFixture("我和老婆宝沿着河边散步。", "我是老婆宝。", "我是小林，从杭州坐火车过来。", "这篇日记请用老婆宝的视角写。今天三个人一起散步。")
 	// This reproduces a real ASR collision without inventing another voice.

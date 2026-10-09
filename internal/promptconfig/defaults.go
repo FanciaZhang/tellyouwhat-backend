@@ -17,7 +17,7 @@ func Defaults(lite, pro, voice string, timeout int) map[string]Policy {
 		{ID: "daybook", Name: "日常流水", Description: "按已知时间顺序，细细记下生活琐事。", Example: "下班后去了河边，走了一会儿。买了一杯热茶。接着坐了一会儿，心情轻松了一些。", Prompt: "日常流水：保留生活琐事和细节，按已知时间顺序一件接一件写；时间不明就保留叙述顺序，不猜测。把散步、买茶、休息等独立小事拆成短句逐项记下，少用过渡修饰，不把它们揉成一个长句。不要挑选重点或提炼主题，不写项目符号式清单。风格示例（不是本篇事实）：口述“下班了，去河边走走，买了热茶，坐一会儿，轻松了点”→“下班后去了河边，走了一会儿。买了一杯热茶。接着坐了一会儿，心情轻松了一些。”", Order: 3, Enabled: true},
 		{ID: "essay", Name: "散文随笔", Description: "讲究句子节奏，让已有的细节与感受自然衔接。", Example: "下班后，我沿着河边走了走，买下一杯热茶。坐下来，待了一会儿，心情也一点点轻松了。", Prompt: "散文随笔：正文应读起来像随笔：把已有动作和感受组织成长短交错的句子，用停顿或分段体现叙述节奏。资料已有细节时，用这些具体细节承接感受；只能使用资料中已有的意象，不添加景物、心理活动、比喻所隐含的新事实或升华感悟。主动调整句式与停顿，避免照搬口述的逗号串句；不要过度文学化。风格示例（不是本篇事实）：口述“下班了，去河边走走，买了热茶，坐一会儿，轻松了点”→“下班后，我沿着河边走了走。一杯热茶，片刻闲坐，心情也慢慢轻松了一些。”", Order: 4, Enabled: true},
 	}}
-	j.Voice.Parameters.TimeoutSeconds = 60
+	j.Voice.Parameters.TimeoutSeconds = min(timeout, 90)
 	result := map[string]Policy{}
 	for _, s := range Scopes() {
 		result[s] = Policy{}
