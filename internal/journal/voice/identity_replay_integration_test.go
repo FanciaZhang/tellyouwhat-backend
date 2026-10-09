@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,5 +62,29 @@ func TestConfiguredIdentityReplayFromSyntheticApp(t *testing.T) {
 	}
 	if result.Identity == nil {
 		t.Fatal("missing identity result")
+	}
+	if name := config["ExpectedName"]; name != "" {
+		claimed := map[string]bool{}
+		for _, assignment := range result.Identity.Assignments {
+			if assignment.Name != name {
+				continue
+			}
+			if assignment.Scope != "sources" || assignment.PersonID != "" {
+				t.Error("a different person must not rename or reuse the prior voice identity")
+			}
+			for _, id := range assignment.SourceIDs {
+				claimed[id] = true
+			}
+		}
+		for _, id := range strings.Split(config["ExpectedSourceIDs"], ",") {
+			if !claimed[id] {
+				t.Error("self-introduction and grounded later experience must retain the third person", id)
+			}
+		}
+		for id := range claimed {
+			if slices.Contains(strings.Split(config["ExcludedSourceIDs"], ","), id) {
+				t.Error("third-person inference took another participant's source", id)
+			}
+		}
 	}
 }

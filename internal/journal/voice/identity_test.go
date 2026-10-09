@@ -51,9 +51,12 @@ func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.
 	r.Turns[2].Speaker = r.Speakers[0].Key
 	r.Speakers = r.Speakers[:2]
 	r.Turns[3].Speaker = r.Speakers[0].Key
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	assignments := []IdentityAssignment{
-		{SpeakerKey: r.Speakers[0].Key, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID}},
-		{SpeakerKey: r.Speakers[0].Key, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
+		{SpeakerKey: r.Speakers[0].Key, Scope: "voice", SourceIDs: []string{r.Turns[0].ID, r.Turns[2].ID, r.Turns[3].ID}, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID}},
+		{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[2].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
 	}
 	encode := func(assignments []IdentityAssignment, commands []IdentityCommand) string {
 		body, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSpeaker": r.Speakers[1].Key,
@@ -73,6 +76,43 @@ func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.
 }
 
 type identityThenPolishRewriter struct{ failIdentity bool }
+
+func TestSourceIdentitySeparatesPeopleSharingOneAcousticVoice(t *testing.T) {
+	r := identityFixture("我和我老婆宝今天沿河散步。", "对，我和我老公宝出来很开心。", "我是小林，从杭州坐火车过来。", "我买桂花糕排了二十分钟。")
+	r.Turns[2].Speaker = r.Speakers[0].Key
+	r.Turns[3].Speaker = r.Speakers[0].Key
+	r.Speakers = r.Speakers[:2]
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	assignments := []IdentityAssignment{
+		{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[0].ID}, Name: "老公宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID, r.Turns[1].ID}},
+		{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[2].ID, r.Turns[3].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
+	}
+	encode := func() string {
+		b, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSpeaker": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+		return string(b)
+	}
+	if got, err := decodeIdentity(encode(), r); err != nil || len(got.Assignments) != 2 {
+		t.Fatal("grounded source identities must coexist", got, err)
+	}
+	r.ExplicitSourceIDs = []string{r.Turns[3].ID}
+	r.Turns[3].Person = "老公宝"
+	r.Turns[3].PersonID = r.Speakers[0].PersonID
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("automatic source assignment overwrote a manual claim")
+	}
+	r.ExplicitSourceIDs = nil
+	assignments[1].Scope = "voice"
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("partial evidence renamed a whole merged voice")
+	}
+	assignments[1].Scope = "sources"
+	assignments[1].SourceIDs = append(assignments[1].SourceIDs, r.Turns[0].ID)
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("two people claimed the same source")
+	}
+}
 
 func (m identityThenPolishRewriter) Rewrite(_ context.Context, s Snapshot, _ int) (RewriteResult, error) {
 	if s.Identity != nil {
@@ -130,7 +170,7 @@ func TestIdentityPreservesExactNamesAndRejectsUnbackedReferences(t *testing.T) {
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	valid := IdentityAssignment{SpeakerKey: r.Speakers[1].Key, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID, r.Turns[1].ID}}
+	valid := IdentityAssignment{SpeakerKey: r.Speakers[1].Key, Scope: "voice", SourceIDs: []string{r.Turns[1].ID}, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID, r.Turns[1].ID}}
 	encode := func(a IdentityAssignment) string {
 		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{a}, "narratorSpeaker": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
 		return string(b)
@@ -144,6 +184,10 @@ func TestIdentityPreservesExactNamesAndRejectsUnbackedReferences(t *testing.T) {
 		func(a *IdentityAssignment) { a.SpeakerKey = "unknown" },
 		func(a *IdentityAssignment) { a.PersonID = uuid.NewString() },
 		func(a *IdentityAssignment) { a.EvidenceIDs = []string{uuid.NewString()} },
+		func(a *IdentityAssignment) { a.SourceIDs = nil },
+		func(a *IdentityAssignment) { a.SourceIDs = []string{r.Turns[0].ID} },
+		func(a *IdentityAssignment) { a.SourceIDs = []string{r.Turns[1].ID, r.Turns[1].ID} },
+		func(a *IdentityAssignment) { a.Scope = "unknown" },
 	} {
 		a := valid
 		change(&a)

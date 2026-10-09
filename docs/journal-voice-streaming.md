@@ -1,9 +1,37 @@
-# Journal live voice protocol v32
+# Journal live voice protocol v33
 
-`journal-voice-v32` separates audio quota acknowledgements from continuous
-recognition. It is a breaking development protocol. A matching v32 App must be
-released before this backend can be deployed alongside it; there is no fallback
-that closes ASR at each audio checkpoint.
+`journal-voice-v33` adds grounded source-level person assignments to the
+independent audio/recognition lifecycle introduced in v32. It is a breaking
+development protocol. The App currently under local continuous acceptance
+still uses v32 and its previously built backend. A matching v33 App is required
+before deploying this source. No compatibility decoder or acoustic checkpoint
+fallback is provided.
+
+## Person assignments have an explicit scope
+
+Every identity assignment contains `speakerKey`, `scope`, `sourceIDs`, `name`,
+`personID`, `kind`, and `evidenceIDs`. `scope: voice` establishes a voice default
+and must list every turn from that voice in the request. `scope: sources` only
+assigns the listed original turns. Multiple people can share one acoustic key
+when the provider merges their voices; their source assignments must be
+disjoint. A conflicting introduction does not rename the earlier participant.
+
+Grounded introduction and later connected experiences may be assigned together.
+Their evidence IDs and target source IDs have distinct roles: an introduction
+supports the person's name; each listed source identifies actual speech to
+attribute. Source IDs must belong to that acoustic key and may not appear twice.
+A voice-wide assignment cannot erase an already mixed set of known people.
+`explicitSourceIDs` identifies manually claimed turns; ordinary inference may
+not overwrite these or an explicit voice assignment. Existing person IDs can
+be quoted from speaker defaults or source turns, with no invented IDs or merge
+based solely on an equal name.
+
+A real configured-model replay of the failed synthetic App transcript now
+separates 小林's introduction and pastry-purchase experience from 老公宝's
+speech, without changing the captured text or inventing a third acoustic key.
+This proves model output and validation only. App application, clearing a
+conflicting voice default, future unknown turns, and source-specific narrator
+selection remain required before full multi-person acceptance.
 
 ## Audio and recognition have different identities
 
