@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
@@ -26,6 +27,9 @@ type ASRConfig struct {
 }
 type Transcript struct {
 	Text, Stable string
+	// Original full provider text remains available when canonical confirmed
+	// turns repair an omitted/empty later metadata window.
+	ProviderText string
 	Final        bool
 	Utterances   []StreamUtterance
 }
@@ -85,7 +89,9 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		hotwords = append(hotwords, map[string]string{"word": w})
 	}
 	corpus, _ := json.Marshal(map[string]any{"hotwords": hotwords})
-	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": true, "enable_lid": true, "end_window_size": 800, "corpus": map[string]string{"context": string(corpus)}}
+	// Raw transcription preserves spoken content. Editorial cleanup belongs to
+	// the separately grounded AI rewrite, where users can inspect and undo it.
+	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": false, "enable_lid": true, "end_window_size": 800, "corpus": map[string]string{"context": string(corpus)}}
 	if a.Config.StreamInsights {
 		request["enable_speaker_info"] = true
 		request["ssd_version"] = "200"
@@ -139,7 +145,10 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err != nil {
 		return Transcript{}, err
 	}
-	result = c.utterances.merge(result)
+	result, err = c.utterances.merge(result)
+	if err != nil {
+		return Transcript{}, err
+	}
 	if c.observeTrace != nil {
 		trace.merged(result)
 		if len(c.traces) < 128 {
@@ -209,10 +218,13 @@ func parseASRWithObserver(packet []byte, observe func([]StreamSchema), trace ...
 	if envelope.Code != 0 && envelope.Code != 20000000 {
 		return Transcript{}, errors.New("speech_provider_error")
 	}
+	if len(envelope.Result.Utterances) > maxRecognitionUtterances || utf8.RuneCountInString(envelope.Result.Text) > MaxContextCharacters {
+		return Transcript{}, errRecognitionContext
+	}
 	if observe != nil && flags&2 != 0 {
 		observe(streamSchema(payload))
 	}
-	result := Transcript{Text: envelope.Result.Text, Final: flags&2 != 0}
+	result := Transcript{Text: envelope.Result.Text, ProviderText: envelope.Result.Text, Final: flags&2 != 0}
 	result.Utterances = streamUtterances(envelope.Result.Utterances)
 	if len(trace) > 0 && trace[0] != nil {
 		trace[0](makeStreamTrace(envelope.Result.Utterances, result))

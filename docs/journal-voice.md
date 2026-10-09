@@ -83,6 +83,49 @@ connections are still coupled to the 15-second segment lifecycle. They must be
 decoupled and verified with long capture/reconnect cases before claiming the
 complete natural-transcription product goal. This protocol has not been deployed.
 
+### Continuous recognition foundation (2026-10-10)
+
+The provider adapter can now keep one acoustic connection across rolling
+15-second budget reservations, settling each completed window before reserving
+the next. The shared two-attempt limit still permits one simultaneous rewrite;
+budget or settlement rejection stops audio before uncovered bytes reach the
+provider. This does not yet change the WebSocket segment lifecycle above.
+
+Utterance timing is bounded to the 30-minute capture limit, independently of
+audio checkpoint size. Canonical metadata can retain up to 8,192 turns within
+the existing 60,000-character bound. Overflow is an explicit error retaining
+previous confirmed evidence, rather than a silent conversion to unlabelled
+text. A later empty or omitted window cannot erase an earlier definite turn;
+nonempty overlapping corrections are accepted. Provisional text is never
+promoted to rescue an empty completion. Original provider full text remains
+available separately when confirmed evidence repairs an omitted window.
+
+Full-text/utterance whitespace differences are aligned at matching content
+boundaries without losing speaker, word or time metadata. Empty provider
+placeholders do not flatten the other valid turns. ASR disfluency cleanup is
+disabled so raw speech is not edited before the separate reversible rewrite.
+This follows the provider's description of `enable_ddc`:
+<https://docs.volcengine.com/docs/DoubaoVoice/LargemodelstreamingautomaticspeechrecognitionAPI?lang=zh>.
+
+Explicit real-provider checks use 138.306 seconds of synthetic Reed/Tingting
+dialogue. The first run exposed whitespace flattening and an empty second-pass
+turn; that run failed before the model request. A subsequent complete real ASR
+and configured AI request retained 20 turns and automatically assigned the exact
+reciprocal appellations with the first speaker still the author. The empty-turn
+observation alone does not establish that disfluency cleanup caused it.
+The final fifth complete real request passed on the current implementation;
+the fourth had failed solely on an unchanged-author echo, now normalized to no
+operation unless an actual author instruction provides command evidence. The
+latest voice/development/journaldevserver race suites and vet also passed.
+Failures and repeats are retained at
+`/Users/harborzeng/Documents/JournalAppAcceptance/20261010-continuous-asr`.
+
+These are provider/budget/canonical-source checks, not whole App acceptance.
+The paired protocol and App must still separate durable audio receipts from
+recognition completion, persist independent recognition scopes and offsets,
+drain captured audio before closing recognition, and verify live App editing,
+reconnect, undo and reopen. Production and TestFlight remain unchanged.
+
 For complete confirmed first-person sources, the polish decoder also normalizes
 sentence-initial reporting clauses such as `小林说，他…` to `小林…` when the
 original turns provide no third-person pronoun. It preserves quoted statements,

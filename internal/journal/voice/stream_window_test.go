@@ -1,6 +1,10 @@
 package voice
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestRollingStreamWindowPreservesEarlierSpeakersAndReplacesHypotheses(t *testing.T) {
 	var w streamUtteranceWindow
@@ -8,16 +12,16 @@ func TestRollingStreamWindowPreservesEarlierSpeakersAndReplacesHypotheses(t *tes
 	wrong := StreamUtterance{Text: "十一点", StartMilliseconds: 1200, EndMilliseconds: 1800, Speaker: "1"}
 	w.merge(Transcript{Text: first.Text + wrong.Text, Utterances: []StreamUtterance{first, wrong}})
 	correction := StreamUtterance{Text: "十点半。", StartMilliseconds: 1200, EndMilliseconds: 2000, Definite: true, Speaker: "2", AcousticEmotion: "surprised"}
-	got := w.merge(Transcript{Text: first.Text + correction.Text, Utterances: []StreamUtterance{correction}})
-	if len(got.Utterances) != 2 || got.Utterances[0].Speaker != "1" || got.Utterances[1].Text != correction.Text || got.Utterances[1].Speaker != "2" {
+	got, err := w.merge(Transcript{Text: first.Text + correction.Text, Utterances: []StreamUtterance{correction}})
+	if err != nil || len(got.Utterances) != 2 || got.Utterances[0].Speaker != "1" || got.Utterances[1].Text != correction.Text || got.Utterances[1].Speaker != "2" {
 		t.Fatalf("lost or duplicated a turn: %+v", got)
 	}
-	final := w.merge(Transcript{Text: got.Text, Final: true})
-	if final.Text != got.Text || len(final.Utterances) != 2 {
+	final, err := w.merge(Transcript{Text: got.Text, Final: true})
+	if err != nil || final.Text != got.Text || len(final.Utterances) != 2 {
 		t.Fatal("empty final metadata erased evidence")
 	}
 	var next streamUtteranceWindow
-	if result := next.merge(Transcript{Text: "新的连接"}); len(result.Utterances) != 0 {
+	if result, err := next.merge(Transcript{Text: "新的连接"}); err != nil || len(result.Utterances) != 0 {
 		t.Fatal("speaker evidence crossed connections")
 	}
 }
@@ -25,14 +29,71 @@ func TestRollingStreamWindowPreservesEarlierSpeakersAndReplacesHypotheses(t *tes
 func TestRollingStreamWindowAcceptsFullCorrectionAndBoundsEvidence(t *testing.T) {
 	var w streamUtteranceWindow
 	w.merge(Transcript{Utterances: []StreamUtterance{{Text: "旧句", StartMilliseconds: 0, EndMilliseconds: 1000, Definite: true}}})
-	got := w.merge(Transcript{Text: "完整改句", Utterances: []StreamUtterance{{Text: "完整改句", StartMilliseconds: 0, EndMilliseconds: 1100, Definite: true, Speaker: "2"}}})
-	if len(got.Utterances) != 1 || got.Utterances[0].Text != got.Text {
+	got, err := w.merge(Transcript{Text: "完整改句", Utterances: []StreamUtterance{{Text: "完整改句", StartMilliseconds: 0, EndMilliseconds: 1100, Definite: true, Speaker: "2"}}})
+	if err != nil || len(got.Utterances) != 1 || got.Utterances[0].Text != got.Text {
 		t.Fatal("full correction duplicated older text")
 	}
-	oversized := make([]StreamUtterance, 257)
-	got = w.merge(Transcript{Text: "仍保留原文", Utterances: oversized})
-	if got.Text != "仍保留原文" || len(got.Utterances) != 0 {
-		t.Fatal("unbounded evidence or lost text")
+	oversized := make([]StreamUtterance, maxRecognitionUtterances+1)
+	for i := range oversized {
+		oversized[i].Text = "句"
+	}
+	if _, err = w.merge(Transcript{Text: "仍保留原文", Utterances: oversized}); !errors.Is(err, errRecognitionContext) {
+		t.Fatal("excess evidence must fail explicitly, not flatten source attribution")
+	}
+	got, err = w.merge(Transcript{Text: "完整改句", Final: true})
+	if err != nil || len(got.Utterances) != 1 || got.Utterances[0].Speaker != "2" {
+		t.Fatal("failed update erased previously confirmed evidence")
+	}
+}
+
+func TestConfirmedASRTurnSurvivesEmptyOrOmittedLaterWindow(t *testing.T) {
+	for _, emptyPlaceholder := range []bool{true, false} {
+		var w streamUtteranceWindow
+		first := StreamUtterance{Text: "第一句。", StartMilliseconds: 0, EndMilliseconds: 1000, Definite: true, Speaker: "0"}
+		middle := StreamUtterance{Text: "第二句。", StartMilliseconds: 2000, EndMilliseconds: 3000, Definite: true, Speaker: "1"}
+		last := StreamUtterance{Text: "第三句。", StartMilliseconds: 4000, EndMilliseconds: 5000, Definite: true, Speaker: "0"}
+		w.merge(Transcript{Text: first.Text + middle.Text + last.Text, Utterances: []StreamUtterance{first, middle, last}})
+		incoming := []StreamUtterance{first, last}
+		if emptyPlaceholder {
+			blank := middle
+			blank.Text = ""
+			incoming = []StreamUtterance{first, blank, last}
+		}
+		got, err := w.merge(Transcript{Text: first.Text + last.Text, Final: true, Utterances: incoming})
+		if err != nil || got.Text != "第一句。第二句。第三句。" || got.ProviderText != "第一句。第三句。" || len(got.Utterances) != 3 || got.Utterances[1].Speaker != "1" {
+			t.Fatal("a later empty window erased confirmed speech", got, err)
+		}
+		middle.Text = "修正的第二句。"
+		corrected, err := w.merge(Transcript{Text: first.Text + middle.Text + last.Text, Utterances: []StreamUtterance{first, middle, last}})
+		if err != nil || len(corrected.Utterances) != 3 || corrected.Utterances[1].Text != middle.Text {
+			t.Fatal("retention blocked a real nonempty correction", corrected, err)
+		}
+	}
+}
+
+func TestEmptyFinalCannotPromoteOrRestoreUnconfirmedHypothesis(t *testing.T) {
+	var w streamUtteranceWindow
+	u := StreamUtterance{Text: "尚未确认。", StartMilliseconds: 0, EndMilliseconds: 1000}
+	w.merge(Transcript{Text: u.Text, Utterances: []StreamUtterance{u}})
+	u.Text, u.Definite = "", true
+	got, err := w.merge(Transcript{Final: true, Utterances: []StreamUtterance{u}})
+	if err != nil || got.Text != "" || len(got.Utterances) != 0 {
+		t.Fatal("empty completion promoted a discarded hypothesis", got, err)
+	}
+}
+
+func TestContinuousStreamKeepsHundredsOfTurnsAndTheirSpeakerScopes(t *testing.T) {
+	var w streamUtteranceWindow
+	for i := 0; i < 600; i++ {
+		u := StreamUtterance{Text: "自然句段。", StartMilliseconds: i * 2000, EndMilliseconds: i*2000 + 1500, Definite: true, Speaker: []string{"0", "1"}[i%2]}
+		got, err := w.merge(Transcript{Text: strings.Repeat(u.Text, i+1), Utterances: []StreamUtterance{u}})
+		if err != nil || len(got.Utterances) != i+1 || got.Utterances[0].StartMilliseconds != 0 || got.Utterances[i].Speaker != u.Speaker {
+			t.Fatalf("turn %d lost canonical paragraphs: count=%d err=%v", i, len(got.Utterances), err)
+		}
+	}
+	got, err := w.merge(Transcript{Text: strings.Repeat("自然句段。", 600), Final: true})
+	if err != nil || len(got.Utterances) != 600 || got.Utterances[599].EndMilliseconds != 1199500 {
+		t.Fatal("long final erased earlier turns", err)
 	}
 }
 

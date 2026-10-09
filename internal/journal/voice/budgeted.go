@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -90,7 +91,8 @@ func (speech *BudgetedSpeech) Open(ctx context.Context, words []string) (SpeechC
 		settleCost(ctx, lease, 0, false, costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(ctx, providerErr)})
 		return nil, providerErr
 	}
-	return &budgetedSpeechConnection{next: connection, lease: lease, price: speech.price, parentContext: ctx}, nil
+	return &budgetedSpeechConnection{next: connection, lease: lease, price: speech.price,
+		controller: speech.controller, appID: speech.appID, parentContext: ctx}, nil
 }
 
 type budgetedSpeechConnection struct {
@@ -98,31 +100,91 @@ type budgetedSpeechConnection struct {
 	next          SpeechConnection
 	lease         *costcontrol.Lease
 	price         costcontrol.DurationPrice
+	controller    *costcontrol.Controller
+	appID         string
 	parentContext context.Context
-	bytesSent     int
+	windowBytes   int
+	totalBytes    int
 	uncertain     bool
 	closed        bool
+	inputFinal    bool
+	failure       error
 }
 
 func (connection *budgetedSpeechConnection) Send(pcm []byte, final bool) error {
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
-	if connection.closed || len(pcm) > MaxSegmentBytes-connection.bytesSent {
+	if connection.closed || connection.inputFinal || len(pcm)%2 != 0 || len(pcm) > SessionMilliseconds*32-connection.totalBytes {
 		return ErrInvalid
 	}
-	if err := connection.next.Send(pcm, final); err != nil {
-		connection.uncertain = true
+	if connection.failure != nil {
+		return connection.failure
+	}
+	// Billing checkpoints do not close the acoustic connection. Settle the
+	// preceding lease before reserving the next, so ASR + one rewrite still
+	// fit the shared two-attempt concurrency limit.
+	for offset := 0; offset < len(pcm) || (len(pcm) == 0 && offset == 0); {
+		if len(pcm) > offset && connection.windowBytes == MaxSegmentBytes {
+			if err := connection.finishWindow(true); err != nil {
+				connection.failure = err
+				return err
+			}
+			reserved, err := connection.price.Cost(MaxSegmentBytes / 32)
+			if err != nil {
+				connection.failure = err
+				return err
+			}
+			lease, err := connection.controller.Reserve(connection.parentContext, connection.appID, "journal.voice.speech", "speech", reserved)
+			if err != nil {
+				connection.failure = err
+				return err
+			}
+			connection.lease, connection.windowBytes = lease, 0
+		}
+		count := min(len(pcm)-offset, MaxSegmentBytes-connection.windowBytes)
+		last := offset+count == len(pcm)
+		if err := connection.next.Send(pcm[offset:offset+count], final && last); err != nil {
+			connection.uncertain = true
+			connection.failure = err
+			return err
+		}
+		connection.windowBytes += count
+		connection.totalBytes += count
+		offset += count
+		if last {
+			connection.inputFinal = final
+			break
+		}
+	}
+	return nil
+}
+
+// Caller holds mu. Failed settlement leaves the lease available to Close for
+// a bounded retry; no more provider audio is sent without budget coverage.
+func (connection *budgetedSpeechConnection) finishWindow(success bool) error {
+	if connection.lease == nil {
+		return nil
+	}
+	actual, err := connection.price.Cost((connection.windowBytes + 31) / 32)
+	if err != nil {
 		return err
 	}
-	connection.bytesSent += len(pcm)
-	return nil
+	err = settleCost(connection.parentContext, connection.lease, actual, !connection.uncertain,
+		costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(connection.parentContext, connection.failure), Success: success && !connection.uncertain})
+	if err == nil {
+		connection.lease = nil
+	}
+	return err
 }
 
 func (connection *budgetedSpeechConnection) Receive() (Transcript, error) {
 	value, err := connection.next.Receive()
 	if err != nil {
 		connection.mu.Lock()
-		connection.uncertain = true
+		if !connection.closed {
+			connection.uncertain = true
+			connection.failure = err
+		}
 		connection.mu.Unlock()
 	}
 	return value, err
@@ -135,22 +197,17 @@ func (connection *budgetedSpeechConnection) Close() error {
 		return nil
 	}
 	connection.closed = true
-	bytesSent, uncertain := connection.bytesSent, connection.uncertain
 	connection.mu.Unlock()
 	providerErr := connection.next.Close()
-	actual, costErr := connection.price.Cost((bytesSent + 31) / 32)
-	known := !uncertain && costErr == nil
-	if costErr != nil {
-		actual = 0
-	}
-	settleCost(connection.parentContext, connection.lease, actual, known, costcontrol.Outcome{Cancelled: costcontrol.IsCancellation(connection.parentContext, providerErr), Success: !uncertain && providerErr == nil})
-	return providerErr
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	return errors.Join(providerErr, connection.finishWindow(providerErr == nil && connection.failure == nil))
 }
 
-func settleCost(parent context.Context, lease *costcontrol.Lease, actual int64, known bool, outcome costcontrol.Outcome) {
+func settleCost(parent context.Context, lease *costcontrol.Lease, actual int64, known bool, outcome costcontrol.Outcome) error {
 	settlement, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer cancel()
-	_ = lease.Finish(settlement, actual, known, outcome)
+	return lease.Finish(settlement, actual, known, outcome)
 }
 
 var _ Rewriter = (*BudgetedRewriter)(nil)

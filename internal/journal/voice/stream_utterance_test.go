@@ -3,6 +3,8 @@ package voice
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"golang.org/x/net/websocket"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +13,7 @@ import (
 )
 
 func TestStreamMetadataPreservesSourceAndRejectsOutOfRange(t *testing.T) {
-	raw := []byte(`{"result":{"text":"我有点害怕。","utterances":[{"text":"我有点害怕。","start_time":100,"end_time":1200,"definite":true,"additions":{"speaker_id":"2","emotion":"happy","volume":"-14.5","speech_rate":"3.2"},"words":[{"text":"我","start_time":100,"end_time":200}]},{"text":"bad","start_time":-1,"end_time":20},{"text":"bad","start_time":0,"end_time":90000}]}}`)
+	raw := []byte(`{"result":{"text":"我有点害怕。","utterances":[{"text":"我有点害怕。","start_time":100,"end_time":1200,"definite":true,"additions":{"speaker_id":"2","emotion":"happy","volume":"-14.5","speech_rate":"3.2"},"words":[{"text":"我","start_time":100,"end_time":200}]},{"text":"bad","start_time":-1,"end_time":20},{"text":"bad","start_time":0,"end_time":1800200}]}}`)
 	packet := asrPacket(9, true, raw)
 	packet[2] = 0x10
 	result, err := parseASR(packet)
@@ -24,6 +26,29 @@ func TestStreamMetadataPreservesSourceAndRejectsOutOfRange(t *testing.T) {
 	}
 	if len(boundedStreamUtterances(result.Utterances, 1000)) != 0 {
 		t.Fatal("metadata beyond received audio accepted")
+	}
+}
+
+func TestContinuousASRMetadataRetainsTurnsAfterAudioCheckpointBoundaries(t *testing.T) {
+	raw := []byte(`{"result":{"text":"第一段。第二段。第三段。","utterances":[{"text":"第一段。","start_time":0,"end_time":1000,"definite":true,"speaker":"0"},{"text":"第二段。","start_time":16000,"end_time":19000,"definite":true,"speaker":"1"},{"text":"第三段。","start_time":65000,"end_time":68000,"definite":true,"speaker":"0"}]}}`)
+	packet := asrPacket(9, true, raw)
+	packet[2] = 0x10
+	got, err := parseASR(packet)
+	if err != nil || len(got.Utterances) != 3 || got.Utterances[1].Speaker != "1" || got.Utterances[2].EndMilliseconds != 68000 {
+		t.Fatal("15-second audio checkpoints erased continuous speaker metadata", got, err)
+	}
+	bounded := boundedStreamUtterances(got.Utterances, 70000)
+	if len(bounded) != 3 || len(boundedStreamUtterances(got.Utterances, 20000)) != 2 {
+		t.Fatal("canonical turns must remain bounded to actual transmitted audio")
+	}
+}
+
+func TestASRContextOverflowFailsInsteadOfFlatteningSpeakerEvidence(t *testing.T) {
+	raw := []byte(fmt.Sprintf(`{"result":{"text":"%s","utterances":[]}}`, strings.Repeat("长", MaxContextCharacters+1)))
+	packet := asrPacket(9, true, raw)
+	packet[2] = 0x10
+	if _, err := parseASR(packet); !errors.Is(err, errRecognitionContext) {
+		t.Fatal("oversized transcript must not silently become unlabelled prose", err)
 	}
 }
 func TestStreamMissingMetadataDoesNotInventNeutralOrZero(t *testing.T) {
@@ -61,12 +86,12 @@ func TestStreamInsightRequestUsesOptimizedTwoPassContract(t *testing.T) {
 	defer connection.Close()
 	select {
 	case request := <-requests:
-		for _, key := range []string{"enable_nonstream", "enable_speaker_info", "enable_emotion_detection", "show_utterances", "show_volume", "show_speech_rate", "enable_ddc", "enable_lid"} {
+		for _, key := range []string{"enable_nonstream", "enable_speaker_info", "enable_emotion_detection", "show_utterances", "show_volume", "show_speech_rate", "enable_lid"} {
 			if request[key] != true {
 				t.Fatalf("%s missing", key)
 			}
 		}
-		if request["ssd_version"] != "200" || request["enable_ddc"] != true || request["result_type"] != "full" || request["end_window_size"] != float64(800) {
+		if request["ssd_version"] != "200" || request["enable_ddc"] != false || request["result_type"] != "full" || request["end_window_size"] != float64(800) {
 			t.Fatal("incorrect streaming contract")
 		}
 	case <-time.After(time.Second):

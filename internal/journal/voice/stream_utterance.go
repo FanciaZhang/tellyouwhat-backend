@@ -8,8 +8,10 @@ import (
 	"unicode/utf8"
 )
 
-// Speaker is provider-local to ONE segment/connection. The enclosing segment
-// UUID must always accompany it; identical numbers in other segments are unrelated.
+// Speaker is provider-local to ONE recognition connection. Audio checkpoint
+// boundaries do not identify people; identical numbers in new connections are unrelated.
+const maxRecognitionUtterances = 8192
+
 type StreamUtterance struct {
 	Text                     string       `json:"text"`
 	StartMilliseconds        int          `json:"startMilliseconds"`
@@ -46,13 +48,13 @@ type providerStreamUtterance struct {
 }
 
 func streamUtterances(source []providerStreamUtterance) []StreamUtterance {
-	if len(source) > 256 {
+	if len(source) > maxRecognitionUtterances {
 		return nil
 	}
 	var result []StreamUtterance
 	for index, raw := range source {
 		start, unavailable, valid := streamUtteranceStart(raw.Start, index)
-		if !valid || raw.End == nil || start < 0 || *raw.End < start || *raw.End > 15100 || utf8.RuneCountInString(raw.Text) > 4096 {
+		if !valid || raw.End == nil || start < 0 || *raw.End < start || *raw.End > SessionMilliseconds+100 || utf8.RuneCountInString(raw.Text) > 4096 {
 			continue
 		}
 		u := StreamUtterance{Text: raw.Text, Definite: raw.Definite, StartMilliseconds: start, EndMilliseconds: *raw.End, ProviderStartUnavailable: unavailable}

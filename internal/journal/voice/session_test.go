@@ -493,6 +493,40 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestCanonicalTurnsKeepSpeakerAndTimingWhenFullASRTextAddsWhitespace(t *testing.T) {
+	scope := uuid.NewString()
+	provider := []Utterance{
+		{Text: "我在湖边喝水。", StartMilliseconds: 0, EndMilliseconds: 1000, Definite: true, Speaker: "0"},
+		{Text: "她去值班。", StartMilliseconds: 16000, EndMilliseconds: 19000, Definite: true, Speaker: "1"},
+		{Text: "今天回家。", StartMilliseconds: 65000, EndMilliseconds: 68000, Definite: true, Speaker: "0"},
+	}
+	text := "我在湖边喝水。\u3000\n她去值班。\t今天回家。"
+	got := identifiedUtterances(scope, text, provider, 70000)
+	joined := ""
+	for _, u := range got {
+		joined += u.Text
+	}
+	if len(got) != 3 || joined != text || got[0].Speaker != "0" || got[1].Speaker != "1" || got[2].Speaker != "0" || got[2].StartMilliseconds != 65000 {
+		t.Fatal("whitespace flattened actual ASR turns or lost authoritative text", got)
+	}
+	if provider[0].Text != "我在湖边喝水。" || provider[1].Text != "她去值班。" {
+		t.Fatal("alignment mutated original provider evidence")
+	}
+	withEmpty := append([]Utterance{provider[0], {Text: "", StartMilliseconds: 2000, EndMilliseconds: 3000, Definite: true}}, provider[1:]...)
+	if kept := identifiedUtterances(scope, text, withEmpty, 70000); len(kept) != 3 || kept[2].Speaker != "0" {
+		t.Fatal("empty provider turn flattened all other speaker evidence", kept)
+	}
+	for i, u := range got {
+		if _, err := uuid.Parse(u.ID); err != nil || (i > 0 && u.ID == got[i-1].ID) {
+			t.Fatal("canonical source identity missing", err)
+		}
+	}
+	changed := identifiedUtterances(scope, "我在湖边喝水，她去值班。今天回家。", provider, 70000)
+	if len(changed) != 1 || changed[0].Speaker != "" {
+		t.Fatal("substantive punctuation mismatch borrowed uncertain speaker evidence")
+	}
+}
+
 // Interim recognition is UI-only. A completed source segment triggers exactly
 // one bounded rewrite without waiting for the lease heartbeat.
 type streamingSpeech struct{ connection *scriptedConnection }

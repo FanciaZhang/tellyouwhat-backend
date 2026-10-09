@@ -28,6 +28,23 @@ func identityFixture(texts ...string) IdentityRequest {
 	return r
 }
 
+func TestUnchangedNarratorEchoWithEvidenceDoesNotCreateAnOperation(t *testing.T) {
+	r := identityFixture("我和我老婆宝在河边散步，很开心。", "我和我老公宝也觉得今天很好。")
+	body, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.NarratorSpeaker,
+		"narratorEvidenceIDs": []string{r.Turns[0].ID}, "commands": []IdentityCommand{}})
+	got, err := decodeIdentity(string(body), r)
+	if err != nil || got.NarratorSpeaker != "" || len(got.NarratorEvidenceIDs) != 0 {
+		t.Fatal("a default-author echo became a spoken operation", got, err)
+	}
+	r.Turns[0].Text = "这篇手记按我的视角写。今天去了河边。"
+	body, _ = json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.NarratorSpeaker,
+		"narratorEvidenceIDs": []string{r.Turns[0].ID}, "commands": []IdentityCommand{{SourceID: r.Turns[0].ID, Text: "这篇手记按我的视角写。"}}})
+	got, err = decodeIdentity(string(body), r)
+	if err != nil || got.NarratorSpeaker != r.NarratorSpeaker || len(got.Commands) != 1 {
+		t.Fatal("a real explicit author instruction was incorrectly removed", got, err)
+	}
+}
+
 type identityThenPolishRewriter struct{ failIdentity bool }
 
 func (m identityThenPolishRewriter) Rewrite(_ context.Context, s Snapshot, _ int) (RewriteResult, error) {

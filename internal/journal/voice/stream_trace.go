@@ -36,7 +36,7 @@ func makeStreamTrace(raw []providerStreamUtterance, parsed Transcript) StreamTra
 		if !valid || u.End == nil {
 			continue
 		}
-		if start < 0 || *u.End < start || *u.End > 15100 {
+		if start < 0 || *u.End < start || *u.End > SessionMilliseconds+100 {
 			v.OutsideTimes++
 		}
 		if i == 0 {

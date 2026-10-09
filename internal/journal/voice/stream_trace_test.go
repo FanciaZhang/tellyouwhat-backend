@@ -7,7 +7,7 @@ import (
 )
 
 func TestStreamTraceDistinguishesProviderOmissionFromParserLossWithoutText(t *testing.T) {
-	end, outside := 1000, 16000
+	end, outside := 1000, SessionMilliseconds+200
 	raw := []providerStreamUtterance{
 		{Text: "private words", Definite: true, Start: json.RawMessage(`0`), End: &end},
 		{Text: "sensitive details", Definite: true, Start: json.RawMessage(`0`), End: &outside},

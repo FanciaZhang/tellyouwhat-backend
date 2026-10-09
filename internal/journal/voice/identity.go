@@ -197,6 +197,12 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 	commandEvidence := func(ids []string) bool {
 		return slices.ContainsFunc(out.Commands, func(c IdentityCommand) bool { return slices.Contains(ids, c.SourceID) })
 	}
+	if out.NarratorSpeaker == request.NarratorSpeaker && !commandEvidence(out.NarratorEvidenceIDs) {
+		// Models may cite the first turn while echoing the existing default.
+		// Evidence alone does not make that echo an author-change operation.
+		out.NarratorSpeaker = ""
+		out.NarratorEvidenceIDs = []string{}
+	}
 	for _, a := range out.Assignments {
 		if a.Kind == "command" && !commandEvidence(a.EvidenceIDs) {
 			return nil, ErrInvalid

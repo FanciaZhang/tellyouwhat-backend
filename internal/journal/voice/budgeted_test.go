@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,11 +86,27 @@ func (stub *speechStub) Open(context.Context, []string) (SpeechConnection, error
 	return stub.conn, stub.err
 }
 
-type speechConnectionStub struct{ sends, closes int }
+type speechConnectionStub struct {
+	sends, closes, bytes, finals int
+	sendError                    error
+	receiveError                 error
+}
 
-func (stub *speechConnectionStub) Send([]byte, bool) error      { stub.sends++; return nil }
-func (stub *speechConnectionStub) Receive() (Transcript, error) { return Transcript{}, nil }
-func (stub *speechConnectionStub) Close() error                 { stub.closes++; return nil }
+func (stub *speechConnectionStub) Send(pcm []byte, final bool) error {
+	stub.sends++
+	if stub.sendError != nil {
+		return stub.sendError
+	}
+	stub.bytes += len(pcm)
+	if final {
+		stub.finals++
+	}
+	return nil
+}
+func (stub *speechConnectionStub) Receive() (Transcript, error) {
+	return Transcript{}, stub.receiveError
+}
+func (stub *speechConnectionStub) Close() error { stub.closes++; return nil }
 
 func TestBudgetedSpeechReservesSegmentAndSettlesSentDuration(t *testing.T) {
 	store := &voiceBudgetStore{}
@@ -124,6 +141,190 @@ func TestBudgetedSpeechReservesSegmentAndSettlesSentDuration(t *testing.T) {
 	}
 	if next.opens != 1 {
 		t.Fatal("speech provider was opened after budget rejection")
+	}
+}
+
+type continuousSpeechCostStore struct {
+	*costcontrol.MemoryStore
+	mu            sync.Mutex
+	operations    map[string]string
+	sequence      []string
+	speechActuals []int64
+	failSettle    bool
+}
+
+func (s *continuousSpeechCostStore) Reserve(ctx context.Context, attempt costcontrol.Attempt, limits costcontrol.Limits) error {
+	if err := s.MemoryStore.Reserve(ctx, attempt, limits); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.operations[attempt.ID] = attempt.Meter
+	s.sequence = append(s.sequence, "reserve:"+attempt.Meter)
+	return nil
+}
+
+func (s *continuousSpeechCostStore) Settle(ctx context.Context, id string, actual int64, known bool, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failSettle {
+		s.failSettle = false
+		return errors.New("test_settlement_unavailable")
+	}
+	if err := s.MemoryStore.Settle(ctx, id, actual, known, now); err != nil {
+		return err
+	}
+	meter := s.operations[id]
+	s.sequence = append(s.sequence, "settle:"+meter)
+	if meter == "speech" {
+		s.speechActuals = append(s.speechActuals, actual)
+	}
+	return nil
+}
+
+func continuousSpeechBudget(t *testing.T, limit int64) (*costcontrol.Controller, *continuousSpeechCostStore) {
+	t.Helper()
+	store := &continuousSpeechCostStore{MemoryStore: costcontrol.NewMemoryStore(), operations: map[string]string{}}
+	controller, err := costcontrol.New(store, costcontrol.Limits{MonthlyBudgetNanos: limit, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return controller, store
+}
+
+func TestContinuousSpeechRollsBudgetWhileKeepingOneProviderAndConcurrentRewrite(t *testing.T) {
+	controller, store := continuousSpeechBudget(t, 1_000_000_000)
+	ai, err := controller.Reserve(context.Background(), "journal", "rewrite", "ark", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ai.Settle(context.Background(), 1, true)
+	provider := &speechStub{conn: &speechConnectionStub{}}
+	c, err := NewBudgetedSpeech(provider, controller, "journal", costcontrol.DurationPrice{NanosPerHour: 3_600_000_000}).Open(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for i := 0; i < 305; i++ {
+		if err := c.Send(make([]byte, 6400), false); err != nil {
+			t.Fatalf("packet %d: rolling lease exceeded two live attempts: %v", i, err)
+		}
+	}
+	if err := c.Send(nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if provider.opens != 1 || provider.conn.closes != 1 || provider.conn.bytes != 61*32000 || provider.conn.finals != 1 {
+		t.Fatalf("provider was split or lost audio: %+v", provider.conn)
+	}
+	var total int64
+	for _, cost := range store.speechActuals {
+		total += cost
+	}
+	if len(store.speechActuals) != 5 || total != 61_000_000 {
+		t.Fatalf("rolling cost mismatch: %v total=%d", store.speechActuals, total)
+	}
+	for i, event := range store.sequence {
+		if event == "reserve:speech" && i > 1 && store.sequence[i-1] != "settle:speech" {
+			t.Fatal("reserved overlap while a rewrite already holds the second slot", store.sequence)
+		}
+	}
+	// The ASR lease is gone; the still-live rewrite leaves room for another job.
+	probe, err := controller.Reserve(context.Background(), "journal", "probe", "ark", 1)
+	if err != nil {
+		t.Fatal("close leaked a live ASR budget lease", err)
+	}
+	probe.Settle(context.Background(), 1, true)
+}
+
+func TestContinuousSpeechBudgetRejectionStopsBeforeUncoveredAudio(t *testing.T) {
+	controller, store := continuousSpeechBudget(t, 20_000_000)
+	provider := &speechStub{conn: &speechConnectionStub{}}
+	c, err := NewBudgetedSpeech(provider, controller, "journal", costcontrol.DurationPrice{NanosPerHour: 3_600_000_000}).Open(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, MaxSegmentBytes), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, 6400), false); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatal("uncovered next window was accepted", err)
+	}
+	if err := c.Send(nil, true); !errors.Is(err, costcontrol.ErrBudgetExceeded) {
+		t.Fatal("failed budget connection resumed", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if provider.conn.bytes != MaxSegmentBytes || provider.conn.sends != 1 || len(store.speechActuals) != 1 || store.speechActuals[0] != 15_000_000 {
+		t.Fatal("uncovered audio sent or completed window double charged")
+	}
+}
+
+func TestContinuousSpeechSettlementFailureDoesNotOpenAnotherLease(t *testing.T) {
+	controller, store := continuousSpeechBudget(t, 1_000_000_000)
+	provider := &speechStub{conn: &speechConnectionStub{}}
+	c, err := NewBudgetedSpeech(provider, controller, "journal", costcontrol.DurationPrice{NanosPerHour: 3_600_000_000}).Open(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, MaxSegmentBytes), false); err != nil {
+		t.Fatal(err)
+	}
+	store.failSettle = true
+	if err := c.Send(make([]byte, 6400), false); err == nil {
+		t.Fatal("sent audio after failed settlement")
+	}
+	if provider.conn.bytes != MaxSegmentBytes || len(store.sequence) != 1 {
+		t.Fatal("provider or lease advanced after a storage error")
+	}
+	if err := c.Close(); err != nil || len(store.speechActuals) != 1 {
+		t.Fatal("close did not retry settlement safely", err)
+	}
+}
+
+func TestContinuousSpeechFinalAtBudgetBoundaryDoesNotReserveAnEmptyWindow(t *testing.T) {
+	controller, store := continuousSpeechBudget(t, 15_000_000)
+	provider := &speechStub{conn: &speechConnectionStub{}}
+	c, err := NewBudgetedSpeech(provider, controller, "journal", costcontrol.DurationPrice{NanosPerHour: 3_600_000_000}).Open(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, MaxSegmentBytes), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(nil, true); err != nil {
+		t.Fatal("empty final required a needless extra reservation", err)
+	}
+	if err := c.Send([]byte{0, 0}, false); !errors.Is(err, ErrInvalid) {
+		t.Fatal("accepted input after final")
+	}
+	if err := c.Close(); err != nil || len(store.speechActuals) != 1 || provider.conn.finals != 1 {
+		t.Fatal(err)
+	}
+}
+
+func TestContinuousSpeechReceiveFailureStopsFurtherProviderInput(t *testing.T) {
+	store := &voiceBudgetStore{}
+	failure := errors.New("test_provider_receive_failed")
+	provider := &speechStub{conn: &speechConnectionStub{receiveError: failure}}
+	c, err := NewBudgetedSpeech(provider, voiceCostController(t, store), "journal", costcontrol.DurationPrice{NanosPerHour: 3_600_000_000}).Open(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, 6400), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Receive(); !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	if err := c.Send(make([]byte, 6400), false); !errors.Is(err, failure) {
+		t.Fatal("input continued after provider failed", err)
+	}
+	if err := c.Close(); err != nil || store.known || provider.conn.bytes != 6400 {
+		t.Fatal("failed provider audio was undercharged as known usage or continued", err)
 	}
 }
 

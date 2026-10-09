@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -831,13 +832,16 @@ func identifiedUtterances(segment, text string, provider []Utterance, millisecon
 	}
 	pieces := provider
 	if text != joined {
-		pieces = nil
-		if joined != "" && strings.HasSuffix(text, joined) && len(provider) > 0 && provider[0].StartMilliseconds > 0 {
+		if aligned, ok := alignUtteranceWhitespace(text, provider); ok {
+			pieces = aligned
+		} else if joined != "" && strings.HasSuffix(text, joined) && len(provider) > 0 && provider[0].StartMilliseconds > 0 {
 			prefixEnd := min(milliseconds, provider[0].StartMilliseconds)
-			pieces = append(pieces, Utterance{Text: strings.TrimSuffix(text, joined), StartMilliseconds: 0, EndMilliseconds: prefixEnd, Definite: true})
+			pieces = []Utterance{{Text: strings.TrimSuffix(text, joined), StartMilliseconds: 0, EndMilliseconds: prefixEnd, Definite: true}}
 			pieces = append(pieces, provider...)
 		} else if text != "" {
 			pieces = []Utterance{{Text: text, StartMilliseconds: 0, EndMilliseconds: max(0, milliseconds), Definite: true}}
+		} else {
+			pieces = nil
 		}
 	}
 	result := make([]Utterance, 0, len(pieces))
@@ -853,6 +857,67 @@ func identifiedUtterances(segment, text string, provider []Utterance, millisecon
 		result = append(result, utterance)
 	}
 	return result
+}
+
+// Full provider text can contain spaces absent from its utterances. Preserve
+// that authoritative text at the same non-whitespace boundaries, retaining
+// every turn's speaker/timing/words. Letters, digits and punctuation must match;
+// this is not permission to guess attribution after a substantive correction.
+func alignUtteranceWhitespace(text string, provider []Utterance) ([]Utterance, bool) {
+	nonempty := make([]Utterance, 0, len(provider))
+	for _, u := range provider {
+		if strings.TrimSpace(u.Text) != "" {
+			nonempty = append(nonempty, u)
+		}
+	}
+	provider = nonempty
+	if len(provider) == 0 {
+		return nil, false
+	}
+	characters := []rune(text)
+	content := make([]rune, 0, len(characters))
+	for _, c := range characters {
+		if !unicode.IsSpace(c) {
+			content = append(content, c)
+		}
+	}
+	counts := make([]int, len(provider))
+	position := 0
+	for i, u := range provider {
+		for _, c := range u.Text {
+			if unicode.IsSpace(c) {
+				continue
+			}
+			if position >= len(content) || content[position] != c {
+				return nil, false
+			}
+			position++
+			counts[i]++
+		}
+		if counts[i] == 0 {
+			return nil, false
+		}
+	}
+	if position != len(content) {
+		return nil, false
+	}
+	result := make([]Utterance, len(provider))
+	cursor := 0
+	for i, u := range provider {
+		start, consumed := cursor, 0
+		for cursor < len(characters) && consumed < counts[i] {
+			if !unicode.IsSpace(characters[cursor]) {
+				consumed++
+			}
+			cursor++
+		}
+		for cursor < len(characters) && unicode.IsSpace(characters[cursor]) {
+			cursor++
+		}
+		u.Text = string(characters[start:cursor])
+		result[i] = u
+	}
+	return result, true
 }
 
 func sourceUtterances(segment string, utterances []Utterance) []SourceUtterance {
