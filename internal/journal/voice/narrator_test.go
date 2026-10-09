@@ -205,11 +205,11 @@ func TestOrdinaryContinuationUsesRawActorsInsteadOfOldGeneratedAttribution(t *te
 		return input.Targets[0]
 	}
 	input := check()
-	if input["text"] != target.SourceText || input["retainedText"] != "" {
+	if input["text"] != "" || input["sourceText"] != "" || input["retainedText"] != "" {
 		t.Fatal("ordinary continuation reinforced a generated subject error")
 	}
 	turn := input["turns"].([]any)[0].(map[string]any)
-	if turn["narrativeRole"] != "other" || turn["person"] != "老婆宝" {
+	if turn["narrativeRole"] != "other" || turn["person"] != "老婆宝" || turn["text"] != target.SourceText {
 		t.Fatal("lost explicit other actor")
 	}
 	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")

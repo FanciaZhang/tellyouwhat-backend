@@ -127,6 +127,7 @@ func sameNarrator(a, b *Narrator) bool {
 const narratorInstructions = `
 narrator 为作者。turn.narrativeRole 的 author=作者，other=其他已认领人物，unknown=身份未定。逐句核对每个动作的执行者，other 的“我”、省略主语、经历和家人均属本人，用完整称呼作主语；不能继承上一段的主语。例如老婆宝说“我吃了两碗饭，还把剩菜装进饭盒”，两个动作都属老婆宝，不能写“老婆宝吃饭，我装剩菜”。关系换到作者视角：作者为老公宝，老婆宝说“和我老公宝出来开心”，写“老婆宝也觉得和我出来开心”。完整亲密叫法保留，不改成丈夫或妻子。
 每段经历以 proseSubject 作为主语：作者为“我”，其他人用完整称呼；空值用无主句或引语。不用他/她代替姓名，包括自我介绍。名字和声音不证明性别；原话确有第三人称或引语时忠实保留。自我介绍供认人，成文直接用姓名描述其中经历，不复述“某某介绍说他/她是某某”。别人名为“我”也不能用作者第一人称。narratorReferences 是指向作者的原话称呼，成文按 prose 用“我”指代，不沿用原发言者的“我老公宝”。
+转为另一人的经历时，在经历前写明称呼；禁止先省略主语、到句尾才补人物。
 attributionKey 才是已确认的行动归属。unknown 的每个 id 是独立未定来源；相同 speaker、相邻位置、共同话题不证明人物。unknown 逐段独立书写，用无主句（“我把饭装盒”→“饭装进了盒子”），不沿用前段主语，不用未加引号的“我”、他/她或猜测的人名。不便省去主语时完整引用原话，标明“一段原话提到”。两个 unknown 的“我”不能串为同一个人的连续动作。未定作者的单人可用第一人称，多人区分来源。turns 的人物、事实优先于 text、retainedText 中旧 AI 的主语和关系。speaker 可能混合多人，不跨连接认人，编号、人名不作正文标题。`
 
 const polishInstructions = `你负责把正在发生的口述和多人对话写成连贯的私人手记正文。
@@ -185,7 +186,13 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 		// that as a mandatory baseline would reinforce it in the next batch.
 		text, retained := target.Text, target.RetainedText
 		if target.CompleteSource && len(target.Turns) > 0 {
-			text, retained = sourceText, ""
+			// Flattening several people's raw speech into a primary text
+			// baseline erases the owner of omitted subjects. Complete evidence
+			// is the structured turns, each carrying its confirmed prose role.
+			text, retained = "", ""
+		}
+		if len(target.Turns) > 0 {
+			sourceText = ""
 		}
 		targets = append(targets, map[string]any{"identityCorrection": target.IdentityCorrection, "completeSource": target.CompleteSource, "id": target.ID, "text": text, "sourceText": sourceText, "retainedText": retained, "style": target.Style, "turns": turns})
 	}

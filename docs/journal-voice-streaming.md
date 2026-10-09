@@ -202,3 +202,11 @@ all events, verifies immutable audio hashes and quota, and requires speaker
 turns, identity and prose before capture completes. Its success is backend
 session evidence. It does not prove App paragraph projection, persistence,
 manual editing, undo, reconnect reconciliation or UI acceptance.
+
+## v33 完整原话使用逐段人物输入（2026-10-10）
+
+连续 App 第 14 次人工复核发现医院值班句省略主语；实际输入中人物已正确，但完整来源又被拼成普通文本基线，后续整理承接了共同经历的主语。preparePolish 对有完整 turns 的目标移除旧正文基线及无人物的拼接原话，只用逐段原话及其 personID/narrativeRole/proseSubject；不完整来源仍保留已有事实。换人描述个人经历时先写明称呼。
+
+两个确切失败请求重放通过；未知来源旧请求重放通过。两轮提示长度检查失败均保留，精简后回到 9500 字节小任务约束；一个语义检查误拒绝“老婆宝…她”的明确指代，修正后再请求真实模型通过，原先省略主语错误依然被拒绝。voice/development/server 竞态检查与 vet 通过。
+
+第 15 次完整 App 真实 ASR/AI 连续录音通过：138.307 秒，52 秒主动断线、92 秒录音中补记，2 条实际连接、20 个原话段落、零已显示事实消失、人物经历/音频/补记保持，停止调用约 26ms。单人实际录音复测亦通过，48.417 秒、4 个原话段落、无人物标签、4 段自然正文。语音功能组 324 通过、10 未启用联调跳过、0 失败。证据位于 JournalAppAcceptance/20261010-continuous-app 和 20261010-single-speaker-app；没有生产或 TestFlight 发布，用户验收待完成。
