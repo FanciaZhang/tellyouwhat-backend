@@ -424,11 +424,11 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 			return PreparedRewrite{}, err
 		}
 		body["input"] = string(input)
-		body["instructions"] = incrementalRewriteInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
+		body["instructions"] = incrementalRewriteInstructions + narratorInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
 	}
 	if compactTableCommand(s) {
-		body["instructions"] = compactTableInstructions
+		body["instructions"] = compactTableInstructions + narratorInstructions
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_table_command_v1", "strict": true, "schema": compactTableSchema()}}
 	}
 	parameters := settings.Voice.Parameters
@@ -514,6 +514,7 @@ const incrementalSelfCorrectionInstructions = `
 本轮原话内部的自我纠正（例如“不是小明，是小林”）不是对旧正文 mention 的 correction 操作。新正文直接保留更正后的事实；没有旧 mentionID 时 corrections 必须为空，绝不能为此伪造 mention 或目标。sourcePartitions 必须逐字覆盖完整原话：没有写入正文的旧称呼、否定旧称呼及改口说明用 context，blockIDs 为 []；更正后进入正文的“小林”等实际内容用 content，blockIDs 引用相应 passage。correction 角色只能引用本轮 corrections 中真实存在的目标 blockID，不能配空 blockIDs。例：“我和小明去公园，不是小明，是小林。”可以分为“我和”(content)、“小明”(context)、“去公园，”(content)、“不是小明，是”(context)、“小林。”(content)，正文为“我和小林去公园。”。不得把更正后的事实一起丢进 context，不得将旧错误称呼作为新增事实。`
 
 type rewriteModelDocument struct {
+	Narrator                       *Narrator             `json:"narrator,omitempty"`
 	IllustrationSuggestionsEnabled bool                  `json:"illustrationSuggestionsEnabled"`
 	TableSourceContext             []TableSource         `json:"tableSourceContext"`
 	TimelineSourceContext          []TableSource         `json:"timelineSourceContext"`
@@ -588,7 +589,7 @@ func rewriteModelInput(s Snapshot, tr int) ([]byte, error) {
 	if len(s.Blocks) > 0 {
 		appendAfter = s.Blocks[len(s.Blocks)-1].ID
 	}
-	return json.Marshal(rewriteModelDocument{
+	return json.Marshal(rewriteModelDocument{Narrator: s.Narrator,
 		TableSourceContext: s.TableSourceContext, TimelineSourceContext: s.TimelineSourceContext,
 		ContextTargets: contextTargets, DocumentBlockCount: len(s.Blocks),
 		IllustrationSuggestionsEnabled: s.IllustrationSuggestionsEnabled,

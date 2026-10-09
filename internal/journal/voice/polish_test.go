@@ -28,8 +28,8 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	if err = json.Unmarshal(prepared.Body, &body); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 8000 {
-		t.Fatalf("ordinary task has structural context or exceeds 8000 bytes: %d bytes", len(prepared.Body))
+	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 8500 {
+		t.Fatalf("ordinary task has structural context or exceeds 8500 bytes: %d bytes", len(prepared.Body))
 	}
 	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 25 || prepared.Parameters.ReasoningEffort != "disabled" {
 		t.Fatal("unbounded polish parameters")

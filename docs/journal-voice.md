@@ -7,7 +7,7 @@ Journal host; there is no client-side provider key or credential forwarding.
 
 `POST /v1/journal/voice/sessions` uses the existing App Attest headers and
 `X-Tellyouwhat-Request-ID`. JSON: `{sessionID: UUID, consentVersion:
-"journal-voice-v1"}`. An active Journal subscription, verified original purchase
+"journal-voice-v30"}`. An active Journal subscription, verified original purchase
 anchor, and managed-AI consent are required. An older transaction without its
 original purchase date must be restored/synchronized, never guessed.
 
@@ -33,6 +33,31 @@ Processing events are informational and carry no document changes or receipts.
 A paused ordinary `snapshot.polish` cancels only its in-flight model request;
 ASR and audio receipts continue. A canceled result does not count as a rewrite
 failure. Explicit structural commands keep their separate processing budget.
+
+In v30, both ordinary polish and structural snapshots carry an optional
+`narrator:{personID:UUID,name}` and confirmed `personID` on source turns. Provider
+speaker labels are scoped to the segment/connection; they are not a persistent
+person identity. The client explicitly chooses the journal author. The model
+uses that author's first-person perspective while keeping other people's
+experiences attributed to them, and must not infer gender from a name. Ordinary
+multi-speaker polish waits while the author remains unconfirmed; ASR continues.
+The server echoes the trusted narrator and target baselines on polish results.
+An acknowledgement that changes the author or identity-rewrite flags releases
+the old result so the corrected snapshot can run.
+
+Polish targets carry `identityCorrection` and `completeSource`. When both are
+true, the model input is rebuilt from original turns and confirmed identities,
+excluding old generated attribution. A bounded source window keeps retained
+facts when `completeSource` is false. Wire targets remain unchanged so the App
+can fence current text, current source identities, and author before applying
+the result. Identity edits do not reset the consumed transcript prefix.
+
+Local real-provider acceptance on 2026-10-09 used a 10.10-second synthetic
+two-voice recording, including an author who spoke second. The App persisted
+correct author/other-person attribution and the original PCM, then corrected
+the other person's name through a second real AI request. Race tests and vet
+passed for voice, development, and journaldevserver. This implementation has
+not been deployed by that acceptance; new App and backend must ship together.
 Ordinary polish uses a server-side omission guard: every substantive input turn
 must share a small lexical window with an output paragraph or the stable,
 read-only request context. Historical turns can span a stabilized paragraph

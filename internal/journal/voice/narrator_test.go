@@ -1,0 +1,113 @@
+package voice
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/google/uuid"
+	"strings"
+	"testing"
+)
+
+func TestAuthorAndConfirmedSpeakerIDsReachOrdinaryAndStructuredModels(t *testing.T) {
+	s := polishFixture()
+	author, wife := uuid.NewString(), uuid.NewString()
+	s.Narrator = &Narrator{PersonID: author, Name: "我"}
+	s.Polish.Narrator = s.Narrator
+	turn := SourceUtterance{ID: s.Polish.Targets[0].SourceIDs[0], Text: "我昨天在医院值班，很累。", PersonID: wife, Person: "妻子", Speaker: "segment:1"}
+	s.Polish.Targets[0].Turns = []SourceUtterance{turn}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err = json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	var input struct {
+		Narrator *Narrator `json:"narrator"`
+		Targets  []struct {
+			Turns []SourceUtterance `json:"turns"`
+		} `json:"targets"`
+	}
+	if err = json.Unmarshal([]byte(body["input"].(string)), &input); err != nil {
+		t.Fatal(err)
+	}
+	if !sameNarrator(input.Narrator, s.Narrator) || input.Targets[0].Turns[0].PersonID != wife {
+		t.Fatal("lost author or confirmed speaker identity")
+	}
+	if !strings.Contains(body["instructions"].(string), narratorInstructions) {
+		t.Fatal("author perspective rules omitted")
+	}
+	output := `{"paragraphs":[{"targetIDs":["` + s.Polish.Targets[0].ID + `"],"style":"body","text":"妻子昨天在医院值班，很累。"}],"questions":[]}`
+	revision, err := decodePolish(output, *s.Polish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameNarrator(revision.Narrator, s.Narrator) {
+		t.Fatal("server did not echo trusted author baseline")
+	}
+	prior := *s.Narrator
+	s.Polish.Narrator = &Narrator{PersonID: wife, Name: "妻子"}
+	if !polishAcknowledged(s.Polish, revision.Targets, &prior) {
+		t.Fatal("author correction stalls behind old response acknowledgement")
+	}
+	s.Polish = nil
+	s.PendingUtterances = []SourceUtterance{turn}
+	data, err := rewriteModelInput(s, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var structured rewriteModelDocument
+	if err = json.Unmarshal(data, &structured); err != nil {
+		t.Fatal(err)
+	}
+	if !sameNarrator(structured.Narrator, s.Narrator) || structured.PendingUtterances[0].PersonID != wife {
+		t.Fatal("structural command path loses identity")
+	}
+}
+
+func TestInvalidAuthorOrSpeakerIdentityIsRejected(t *testing.T) {
+	s := polishFixture()
+	for _, author := range []*Narrator{{PersonID: "provider:1", Name: "我"}, {PersonID: uuid.NewString(), Name: " "}} {
+		s.Polish.Narrator = author
+		if s.Polish.Validate() == nil {
+			t.Fatal("invalid author accepted")
+		}
+	}
+	s.Polish.Narrator = nil
+	s.Polish.Targets[0].Turns = []SourceUtterance{{ID: s.Polish.Targets[0].SourceIDs[0], PersonID: "1", Text: "原话"}}
+	if s.Polish.Validate() == nil {
+		t.Fatal("provider label mistaken for person identity")
+	}
+}
+
+func TestIdentityCorrectionUsesOriginalTurnsInsteadOfOldGeneratedSubject(t *testing.T) {
+	s := polishFixture()
+	target := &s.Polish.Targets[0]
+	target.IdentityCorrection, target.CompleteSource = true, true
+	target.Text, target.RetainedText = "妻子在医院值班。", "妻子在医院值班。"
+	target.SourceText = "我在医院值班。"
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], Text: target.SourceText, PersonID: uuid.NewString(), Person: "小林"}}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err = json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body["input"].(string), "妻子") || !strings.Contains(body["input"].(string), "小林") {
+		t.Fatal("old generated attribution contaminated identity correction evidence")
+	}
+	target.CompleteSource = false
+	prepared, err = PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body["input"].(string), target.RetainedText) {
+		t.Fatal("bounded source window dropped unsourced retained facts")
+	}
+}

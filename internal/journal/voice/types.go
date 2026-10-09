@@ -16,7 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
 
-const Version = "journal-voice-v29"
+const Version = "journal-voice-v30"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -52,6 +52,7 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	Narrator                       *Narrator        `json:"narrator,omitempty"`
 	IllustrationSuggestionsEnabled bool             `json:"illustrationSuggestionsEnabled"`
 	TableSourceContext             []TableSource    `json:"tableSourceContext"`
 	TimelineSourceContext          []TableSource    `json:"timelineSourceContext"`
@@ -170,6 +171,9 @@ func (s Snapshot) incremental() bool {
 }
 
 func (s Snapshot) Validate() error {
+	if err := validateNarrator(s.Narrator); err != nil {
+		return err
+	}
 	if s.Polish != nil {
 		if err := s.Polish.Validate(); err != nil {
 			return err
@@ -473,6 +477,7 @@ type Utterance struct {
 // incremental editor. Provider speaker labels remain evidence only; Person is
 // present solely after the user explicitly names or assigns the voice.
 type SourceUtterance struct {
+	PersonID          string  `json:"personID,omitempty"`
 	ID                string  `json:"id"`
 	Text              string  `json:"text"`
 	Speaker           string  `json:"speaker,omitempty"`
@@ -606,7 +611,7 @@ func (s Snapshot) validateIncremental() error {
 	pendingCharacters := 0
 	for _, u := range s.PendingUtterances {
 		if !validID(u.ID) || pending[u.ID] || strings.TrimSpace(u.Text) == "" ||
-			utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 ||
+			!validPersonID(u.PersonID) || utf8.RuneCountInString(u.Text) > 4096 || utf8.RuneCountInString(u.Speaker) > 160 || utf8.RuneCountInString(u.Person) > 80 ||
 			u.StartMilliseconds < 0 || u.EndMilliseconds < u.StartMilliseconds ||
 			utf8.RuneCountInString(u.AcousticEmotion) > 512 || math.IsNaN(u.Volume) || math.IsInf(u.Volume, 0) ||
 			math.IsNaN(u.SpeechRate) || math.IsInf(u.SpeechRate, 0) {

@@ -249,6 +249,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	awaitingRevision := -1
 	var awaitingSources []string
 	var awaitingPolish []PolishTarget
+	var awaitingNarrator *Narrator
 	waitingForPolishRetry := false
 	hasWork := func() bool {
 		return pendingPolish(snapshot.Polish) || (snapshot.Polish == nil && len(snapshot.PendingUtterances) > 0)
@@ -445,7 +446,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					!slices.Equal(snapshot.Words, next.Words) || snapshot.WritingStyle != next.WritingStyle {
 					generation++
 				}
-				if polishAcknowledged(next.Polish, awaitingPolish) {
+				if polishAcknowledged(next.Polish, awaitingPolish, awaitingNarrator) {
 					awaitingPolish = nil
 				}
 				if next.DictationMode {
@@ -732,6 +733,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				if result.value.Polish != nil {
 					awaitingPolish = slices.Clone(result.value.Polish.Targets)
+					awaitingNarrator = result.value.Polish.Narrator
 					emit(Event{Type: "polish", Polish: result.value.Polish})
 				} else if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
 					awaitingRevision = result.value.Revision.BaseRevision + 1
