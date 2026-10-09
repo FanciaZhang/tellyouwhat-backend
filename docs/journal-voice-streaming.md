@@ -2,10 +2,10 @@
 
 `journal-voice-v33` adds grounded source-level person assignments to the
 independent audio/recognition lifecycle introduced in v32. It is a breaking
-development protocol. The App currently under local continuous acceptance
-still uses v32 and its previously built backend. A matching v33 App is required
-before deploying this source. No compatibility decoder or acoustic checkpoint
-fallback is provided.
+development protocol. The matching local App now consumes these scopes and
+source-selected narrators; eleven focused App checks pass. Complete three-person
+App capture/application acceptance remains in progress. This source has not
+been deployed. No compatibility decoder or acoustic checkpoint fallback is provided.
 
 ## Person assignments have an explicit scope
 
@@ -29,9 +29,24 @@ based solely on an equal name.
 A real configured-model replay of the failed synthetic App transcript now
 separates 小林's introduction and pastry-purchase experience from 老公宝's
 speech, without changing the captured text or inventing a third acoustic key.
-This proves model output and validation only. App application, clearing a
-conflicting voice default, future unknown turns, and source-specific narrator
-selection remain required before full multi-person acceptance.
+This replay proves model output and validation only. The App now freezes existing
+paragraph identities before clearing a conflicting voice default, so future
+unresolved turns do not inherit either participant. Complete real capture still
+has to verify those application paths.
+
+Identity requests carry `narratorPersonID`, independently of acoustic keys.
+An explicit viewpoint operation returns `narratorSourceID`: a real original turn
+belonging to the selected person, including a person sharing a voice key with
+someone else. `narratorEvidenceIDs` and exact `commands` spans ground the operation;
+the operation issuer does not automatically become its target. An unchanged,
+known-person assignment echo is omitted after references and scope are validated;
+an actual name change still needs literal evidence.
+
+The first configured-AI corpus run passed six of seven cases; a redundant default
+"我" echo with no literal name blocked an independently correct introduction.
+After the no-op correction, all seven cases pass, including merged-voice narrator
+selection. Focused checks, race checks and vet pass. This is model/protocol
+evidence and is not full App or user acceptance.
 
 ## Audio and recognition have different identities
 
@@ -113,11 +128,11 @@ that every provider request completes within them. The explicitly enabled
 synthetic semantic corpus preserves all failed attempts separately from App
 capture acceptance.
 
-Identity output cannot assign two contradictory names to one acoustic key or
-change the narrator without an exact command span. Provider voice collisions
-remain a known integration limitation: acoustic grouping is not proof that all
-its turns belong to the same person. Further turn-specific identity application
-is required before claiming the three-participant App journey accepted.
+Identity output cannot assign two people to overlapping source turns or change
+the narrator without an exact command span. Provider voice collisions are preserved
+as actual acoustic keys; grouping is not proof that all turns belong to one person.
+Source-specific assignment provides the representation, but real App evidence is
+required before claiming the three-participant journey accepted.
 
 An interrupted connection requires a fresh recognition ID and a retained
 recording offset. The App owns source reconciliation and must never equate

@@ -27,7 +27,7 @@ type IdentityRequest struct {
 	Fingerprint       string            `json:"fingerprint"`
 	Turns             []SourceUtterance `json:"turns"`
 	Speakers          []IdentitySpeaker `json:"speakers"`
-	NarratorSpeaker   string            `json:"narratorSpeaker"`
+	NarratorPersonID  string            `json:"narratorPersonID"`
 	NarratorExplicit  bool              `json:"narratorExplicit"`
 	ExplicitSourceIDs []string          `json:"explicitSourceIDs"`
 }
@@ -47,7 +47,7 @@ type IdentityCommand struct {
 type IdentityRevision struct {
 	Request             IdentityRequest      `json:"request"`
 	Assignments         []IdentityAssignment `json:"assignments"`
-	NarratorSpeaker     string               `json:"narratorSpeaker"`
+	NarratorSourceID    string               `json:"narratorSourceID"`
 	NarratorEvidenceIDs []string             `json:"narratorEvidenceIDs"`
 	Commands            []IdentityCommand    `json:"commands"`
 }
@@ -79,8 +79,13 @@ func (r IdentityRequest) Validate() error {
 		ids[t.ID] = true
 		characters += utf8.RuneCountInString(t.Text)
 	}
-	if characters > 6000 || (r.NarratorSpeaker != "" && !keys[r.NarratorSpeaker]) {
+	if characters > 6000 {
 		return ErrInvalid
+	}
+	if r.NarratorPersonID != "" {
+		if _, err := uuid.Parse(r.NarratorPersonID); err != nil {
+			return ErrInvalid
+		}
 	}
 	seenExplicit := map[string]bool{}
 	for _, id := range r.ExplicitSourceIDs {
@@ -96,12 +101,12 @@ const identityInstructions = `你是私人手记的语音人物理解器。根�
 turns 按说话顺序给出原话，speaker 是一次识别连接内的声音键；speakers 是已有称呼及身份，explicit 表示用户明确认领。只引用输入的声音键、人物 ID 和原话 ID。不要按音色猜姓名、性别、关系，不跨连接猜声纹。
 人物归属必须落实到原话 sourceIDs，不把声音键等同于真实人物。每项 assignment 给出 speakerKey、scope 和 sourceIDs：scope=voice 只用于该声音全部原话属于同一人物且没有冲突的情况，sourceIDs 必须包含输入中这个声音的全部原话；scope=sources 仅认领列出的原话，不改变同声音的其他段落或未来发言。同一声音混入多个人时，可以返回多个 scope=sources 的 assignment，但 sourceIDs 不得重叠。依据自我介绍、回应和连续经历认领能明确归属的段落；其余保留未知。
 例如 A 已是老公宝，语音服务却把小林的“我是小林，从杭州坐火车过来”也标为 A：只将小林自我介绍及能确定属于小林的后续话分配为 scope=sources，不重命名 A，不把小林经历给作者。不同人物的 personID 必须为空以新建，不能沿用声音原有的 personID；只有确有同一人物依据才引用已有 ID。explicitSourceIDs 是用户明确认领的原话，普通推断不能覆盖；speakers.explicit 的声音整体认领也不能被普通推断覆盖。
-当前 narratorSpeaker 是 App 的默认作者：第一位实质讲述者；不能按说话多少或谁后来更活跃改变作者。仅当原话明确指定手记视角（如“这篇以老婆宝的视角写”“我是这篇手记的作者”）才返回新的 narratorSpeaker 和其 narratorEvidenceIDs，否则 narratorSpeaker 为空。不要把每个人自然说的“我”都认成作者。
+当前 narratorPersonID 是 App 已确定的作者：第一位实质讲述者；不能按说话多少或谁后来更活跃改变作者。仅当原话明确指定手记视角（如“这篇以老婆宝的视角写”“我是这篇手记的作者”）才返回 narratorSourceID 和 narratorEvidenceIDs：narratorSourceID 必须指向输入中属于目标作者的一段原话 ID，而不是声音键或命令发出者。目标作者可以与另一人物共享声音键，依照具体原话及 assignments 选择。不切换则 narratorSourceID 为空。不要把每个人自然说的“我”都认成作者。
 自动命名依据：1. 当前说话人明确自我介绍（我叫小林），kind=introduction；2. 明确身份/改名操作（把这个声音叫小林、把说话人二认作老婆宝），kind=command；3. 同一次经历中相互回应、夫妻称呼等上下文可以相互印证且指向唯一的人，kind=context。比如 A“我跟我老婆宝旅游非常开心”，B“对，我跟我老公宝确实很开心，我们两个人出去玩很合拍”：A 的称呼是老公宝，B 的称呼是老婆宝。仅 A 提到老婆或两个朋友各自提到老婆，不足以认定 B 是 A 的老婆。多人时没有唯一指向就不分配。
 name 必须完整保留原话称呼：老婆宝就叫老婆宝，老公宝就叫老公宝，不能简化为老婆/妻子/宝，不能把亲密叫法拆成关系和昵称。每个 name 必须是 evidenceIDs 原话中实际出现的完整字串。不为未知人编名字，不要求用户补资料。已有明确认领只能被明确更改操作覆盖，普通自我介绍和推断不覆盖。已有称呼没变化就不重复返回。personID 仅在确有同一人物依据且输入已有该 ID 时填写，否则空字符串，不能仅因同名就合并两个人。
 引用别人说“我叫小林”、读文章、故事人物自述，都不是当前说话人自我介绍。“接下来我老婆说两句”不是把当前声音命名为老婆，只能结合后续声音确认。
 commands 只返回应从手记正文去除的身份/视角操作原文，sourceID 指向该原话，text 必须是其中准确且唯一的一段连续文字。kind=command 的认领以及任何作者视角变更都必须在 commands 中提供支持该操作的原文片段，并在 evidenceIDs 中引用这个 sourceID。自我介绍或包含经历的内容不作为整段命令删除；混合发言只取操作片段，保留其他内容。无操作则空数组。
-输出作者切换之前，先确认 commands 内已包含对应 sourceID 和准确操作 text。不能只填写 narratorSpeaker 与 narratorEvidenceIDs 而遗漏 commands。若转写含糊到无法确认该操作，就保持 narratorSpeaker 为空，不切换作者。
+输出作者切换之前，先确认 commands 内已包含对应 sourceID 和准确操作 text。不能只填写 narratorSourceID 与 narratorEvidenceIDs 而遗漏 commands。若转写含糊到无法确认该操作，就保持 narratorSourceID 为空，不切换作者。
 每项 assignments 必须提供支持其身份的 evidenceIDs。无可靠依据时返回空 assignments，不提问题、不阻断录音。只输出 schema JSON。`
 
 func prepareIdentity(r IdentityRequest, parameters promptconfig.Parameters) (map[string]any, promptconfig.Parameters) {
@@ -111,8 +116,8 @@ func prepareIdentity(r IdentityRequest, parameters promptconfig.Parameters) (map
 		"speakerKey": stringField, "scope": map[string]any{"type": "string", "enum": []string{"voice", "sources"}}, "sourceIDs": ids, "name": stringField, "personID": stringField, "kind": map[string]any{"type": "string", "enum": []string{"introduction", "command", "context"}}, "evidenceIDs": ids,
 	}}
 	command := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"sourceID", "text"}, "properties": map[string]any{"sourceID": stringField, "text": stringField}}
-	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"assignments", "narratorSpeaker", "narratorEvidenceIDs", "commands"}, "properties": map[string]any{
-		"assignments": map[string]any{"type": "array", "maxItems": 32, "items": assignment}, "narratorSpeaker": stringField, "narratorEvidenceIDs": ids,
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"assignments", "narratorSourceID", "narratorEvidenceIDs", "commands"}, "properties": map[string]any{
+		"assignments": map[string]any{"type": "array", "maxItems": 32, "items": assignment}, "narratorSourceID": stringField, "narratorEvidenceIDs": ids,
 		"commands": map[string]any{"type": "array", "maxItems": 24, "items": command},
 	}}
 	input, _ := json.Marshal(r)
@@ -121,13 +126,13 @@ func prepareIdentity(r IdentityRequest, parameters promptconfig.Parameters) (map
 	// Keep identity acknowledgement responsive; the later multi-person prose
 	// pass separately reasons about perspective. Ambiguity stays unresolved.
 	parameters.ReasoningEffort = "disabled"
-	return map[string]any{"store": false, "instructions": identityInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_identity_v2", "strict": true, "schema": schema}}}, parameters
+	return map[string]any{"store": false, "instructions": identityInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_identity_v3", "strict": true, "schema": schema}}}, parameters
 }
 
 func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, error) {
 	var out struct {
 		Assignments         []IdentityAssignment `json:"assignments"`
-		NarratorSpeaker     string               `json:"narratorSpeaker"`
+		NarratorSourceID    string               `json:"narratorSourceID"`
 		NarratorEvidenceIDs []string             `json:"narratorEvidenceIDs"`
 		Commands            []IdentityCommand    `json:"commands"`
 	}
@@ -167,10 +172,17 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 		return text, true
 	}
 	seenSources, wholeVoices := map[string]bool{}, map[string]bool{}
+	changes := []IdentityAssignment{}
 	for _, a := range out.Assignments {
 		s, ok := speakers[a.SpeakerKey]
 		e, valid := evidence(a.EvidenceIDs)
-		if !ok || !valid || !slices.Contains([]string{"voice", "sources"}, a.Scope) || len(a.SourceIDs) == 0 || len(a.SourceIDs) > 24 || strings.TrimSpace(a.Name) != a.Name || a.Name == "" || strings.ContainsFunc(a.Name, unicode.IsControl) || utf8.RuneCountInString(a.Name) > 80 || !strings.Contains(e, a.Name) || !slices.Contains([]string{"introduction", "command", "context"}, a.Kind) {
+		unchanged := ok && a.Scope == "voice" && a.Kind != "command" && a.Name == s.Name && a.PersonID != "" && a.PersonID == s.PersonID
+		for _, t := range request.Turns {
+			if t.Speaker == a.SpeakerKey && (t.PersonID != a.PersonID || !slices.Contains(a.SourceIDs, t.ID)) {
+				unchanged = false
+			}
+		}
+		if !ok || !valid || !slices.Contains([]string{"voice", "sources"}, a.Scope) || len(a.SourceIDs) == 0 || len(a.SourceIDs) > 24 || strings.TrimSpace(a.Name) != a.Name || a.Name == "" || strings.ContainsFunc(a.Name, unicode.IsControl) || utf8.RuneCountInString(a.Name) > 80 || (!strings.Contains(e, a.Name) && !unchanged) || !slices.Contains([]string{"introduction", "command", "context"}, a.Kind) {
 			return nil, ErrInvalid
 		}
 		if s.Explicit && a.Kind != "command" && (s.Name != a.Name || (a.PersonID != "" && s.PersonID != a.PersonID)) {
@@ -206,18 +218,22 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 			}
 			wholeVoices[a.SpeakerKey] = true
 		}
+		// A fully unchanged known-person echo is not a naming operation.
+		// Validate every reference/scope above, then omit it rather than
+		// rejecting the independently grounded new participant.
+		if !unchanged {
+			changes = append(changes, a)
+		}
 	}
-	// An unchanged narrator echo carries no operation and needs no evidence.
-	// A different narrator must still cite actual source turns.
-	if out.NarratorSpeaker == request.NarratorSpeaker && len(out.NarratorEvidenceIDs) == 0 {
-		out.NarratorSpeaker = ""
-	}
-	if out.NarratorSpeaker != "" {
-		if _, ok := speakers[out.NarratorSpeaker]; !ok {
+	out.Assignments = changes
+	if out.NarratorSourceID != "" {
+		if _, ok := turns[out.NarratorSourceID]; !ok {
 			return nil, ErrInvalid
 		}
-		if _, ok := evidence(out.NarratorEvidenceIDs); !ok {
-			return nil, ErrInvalid
+		if len(out.NarratorEvidenceIDs) > 0 {
+			if _, ok := evidence(out.NarratorEvidenceIDs); !ok {
+				return nil, ErrInvalid
+			}
 		}
 	} else if len(out.NarratorEvidenceIDs) > 0 {
 		return nil, ErrInvalid
@@ -239,10 +255,18 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 	commandEvidence := func(ids []string) bool {
 		return slices.ContainsFunc(out.Commands, func(c IdentityCommand) bool { return slices.Contains(ids, c.SourceID) })
 	}
-	if out.NarratorSpeaker == request.NarratorSpeaker && !commandEvidence(out.NarratorEvidenceIDs) {
-		// Models may cite the first turn while echoing the existing default.
-		// Evidence alone does not make that echo an author-change operation.
-		out.NarratorSpeaker = ""
+	if out.NarratorSourceID != "" && !commandEvidence(out.NarratorEvidenceIDs) {
+		person := turns[out.NarratorSourceID].PersonID
+		for _, a := range out.Assignments {
+			if slices.Contains(a.SourceIDs, out.NarratorSourceID) {
+				person = a.PersonID
+			}
+		}
+		if person == "" || person != request.NarratorPersonID {
+			return nil, ErrInvalid
+		}
+		// Merely restating the stable author does not create a spoken operation.
+		out.NarratorSourceID = ""
 		out.NarratorEvidenceIDs = []string{}
 	}
 	for _, a := range out.Assignments {
@@ -250,8 +274,8 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 			return nil, ErrInvalid
 		}
 	}
-	if out.NarratorSpeaker != "" && out.NarratorSpeaker != request.NarratorSpeaker && !commandEvidence(out.NarratorEvidenceIDs) {
+	if out.NarratorSourceID != "" && !commandEvidence(out.NarratorEvidenceIDs) {
 		return nil, ErrInvalid
 	}
-	return &IdentityRevision{Request: request, Assignments: out.Assignments, NarratorSpeaker: out.NarratorSpeaker, NarratorEvidenceIDs: out.NarratorEvidenceIDs, Commands: out.Commands}, nil
+	return &IdentityRevision{Request: request, Assignments: out.Assignments, NarratorSourceID: out.NarratorSourceID, NarratorEvidenceIDs: out.NarratorEvidenceIDs, Commands: out.Commands}, nil
 }

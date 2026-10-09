@@ -200,7 +200,7 @@ func TestConfiguredContinuousVoiceProtocolAcrossAudioCheckpoints(t *testing.T) {
 							identityTurns[i].PersonID = author
 						}
 					}
-					snapshot.Identity = &IdentityRequest{Fingerprint: hash(recognition), Turns: identityTurns, Speakers: speakers, NarratorSpeaker: narratorSpeaker}
+					snapshot.Identity = &IdentityRequest{Fingerprint: hash(recognition), Turns: identityTurns, Speakers: speakers, NarratorPersonID: author}
 					send(Frame{Type: "snapshot", Snapshot: &snapshot})
 					identitySent = true
 				}
@@ -212,7 +212,7 @@ func TestConfiguredContinuousVoiceProtocolAcrossAudioCheckpoints(t *testing.T) {
 					completed = true
 				}
 			case "identity":
-				if event.Identity == nil || event.Identity.Request.Fingerprint != hash(recognition) || event.Identity.NarratorSpeaker != "" {
+				if event.Identity == nil || event.Identity.Request.Fingerprint != hash(recognition) || event.Identity.NarratorSourceID != "" {
 					t.Fatal("actual identity changed default author or lost request", event)
 				}
 				names := map[string]string{}

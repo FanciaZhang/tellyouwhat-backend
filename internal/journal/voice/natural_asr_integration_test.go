@@ -184,7 +184,7 @@ func testConfiguredNaturalASR(t *testing.T, minimumMilliseconds int) {
 			sources[i].PersonID = personID
 		}
 	}
-	request := &IdentityRequest{Fingerprint: hash(scope), Turns: sources[max(0, len(sources)-24):], Speakers: speakers, NarratorSpeaker: first}
+	request := &IdentityRequest{Fingerprint: hash(scope), Turns: sources[max(0, len(sources)-24):], Speakers: speakers, NarratorPersonID: personID}
 	if len(speakers) < 2 {
 		t.Fatal("canonical conversion erased the actual ASR speaker scopes")
 	}
@@ -207,7 +207,7 @@ func testConfiguredNaturalASR(t *testing.T, minimumMilliseconds int) {
 	for _, a := range identity.Identity.Assignments {
 		names[a.Name] = true
 	}
-	if !names["老婆宝"] || !names["老公宝"] || identity.Identity.NarratorSpeaker != "" {
+	if !names["老婆宝"] || !names["老公宝"] || identity.Identity.NarratorSourceID != "" {
 		t.Fatal("continuous ASR identity did not preserve reciprocal names and default author; trace preserved")
 	}
 }

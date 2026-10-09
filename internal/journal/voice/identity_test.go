@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +21,10 @@ func identityFixture(texts ...string) IdentityRequest {
 		r.Speakers = append(r.Speakers, IdentitySpeaker{Key: key})
 		r.Turns = append(r.Turns, SourceUtterance{ID: uuid.NewString(), Speaker: key, Text: text})
 		if i == 0 {
-			r.NarratorSpeaker = key
 			r.Speakers[0].PersonID = uuid.NewString()
 			r.Speakers[0].Name = "我"
+			r.NarratorPersonID = r.Speakers[0].PersonID
+			r.Turns[0].PersonID, r.Turns[0].Person = r.NarratorPersonID, "我"
 		}
 	}
 	return r
@@ -30,17 +32,17 @@ func identityFixture(texts ...string) IdentityRequest {
 
 func TestUnchangedNarratorEchoWithEvidenceDoesNotCreateAnOperation(t *testing.T) {
 	r := identityFixture("我和我老婆宝在河边散步，很开心。", "我和我老公宝也觉得今天很好。")
-	body, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.NarratorSpeaker,
+	body, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[0].ID,
 		"narratorEvidenceIDs": []string{r.Turns[0].ID}, "commands": []IdentityCommand{}})
 	got, err := decodeIdentity(string(body), r)
-	if err != nil || got.NarratorSpeaker != "" || len(got.NarratorEvidenceIDs) != 0 {
+	if err != nil || got.NarratorSourceID != "" || len(got.NarratorEvidenceIDs) != 0 {
 		t.Fatal("a default-author echo became a spoken operation", got, err)
 	}
 	r.Turns[0].Text = "这篇手记按我的视角写。今天去了河边。"
-	body, _ = json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.NarratorSpeaker,
+	body, _ = json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[0].ID,
 		"narratorEvidenceIDs": []string{r.Turns[0].ID}, "commands": []IdentityCommand{{SourceID: r.Turns[0].ID, Text: "这篇手记按我的视角写。"}}})
 	got, err = decodeIdentity(string(body), r)
-	if err != nil || got.NarratorSpeaker != r.NarratorSpeaker || len(got.Commands) != 1 {
+	if err != nil || got.NarratorSourceID != r.Turns[0].ID || len(got.Commands) != 1 {
 		t.Fatal("a real explicit author instruction was incorrectly removed", got, err)
 	}
 }
@@ -59,7 +61,7 @@ func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.
 		{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[2].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
 	}
 	encode := func(assignments []IdentityAssignment, commands []IdentityCommand) string {
-		body, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSpeaker": r.Speakers[1].Key,
+		body, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSourceID": r.Turns[1].ID,
 			"narratorEvidenceIDs": []string{r.Turns[3].ID}, "commands": commands})
 		return string(body)
 	}
@@ -70,7 +72,7 @@ func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.
 	if _, err := decodeIdentity(encode([]IdentityAssignment{}, []IdentityCommand{}), r); err == nil {
 		t.Fatal("author operation lost its exact removable source span")
 	}
-	if got, err := decodeIdentity(encode([]IdentityAssignment{}, []IdentityCommand{command}), r); err != nil || got.NarratorSpeaker != r.Speakers[1].Key {
+	if got, err := decodeIdentity(encode([]IdentityAssignment{}, []IdentityCommand{command}), r); err != nil || got.NarratorSourceID != r.Turns[1].ID {
 		t.Fatal("an independent grounded author operation should remain available", got, err)
 	}
 }
@@ -90,7 +92,7 @@ func TestSourceIdentitySeparatesPeopleSharingOneAcousticVoice(t *testing.T) {
 		{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[2].ID, r.Turns[3].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
 	}
 	encode := func() string {
-		b, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSpeaker": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+		b, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
 		return string(b)
 	}
 	if got, err := decodeIdentity(encode(), r); err != nil || len(got.Assignments) != 2 {
@@ -111,6 +113,57 @@ func TestSourceIdentitySeparatesPeopleSharingOneAcousticVoice(t *testing.T) {
 	assignments[1].SourceIDs = append(assignments[1].SourceIDs, r.Turns[0].ID)
 	if _, err := decodeIdentity(encode(), r); err == nil {
 		t.Fatal("two people claimed the same source")
+	}
+}
+
+func TestNarratorSourceSelectsDifferentPeopleWithTheSameAcousticKey(t *testing.T) {
+	r := identityFixture("今天和小林一起散步。", "我是小林，从杭州过来。", "这篇请以小林的视角写。")
+	r.Turns[1].Speaker, r.Turns[2].Speaker = r.Speakers[0].Key, r.Speakers[0].Key
+	r.Speakers = r.Speakers[:1]
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	assignment := IdentityAssignment{SpeakerKey: r.Speakers[0].Key, Scope: "sources", SourceIDs: []string{r.Turns[1].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[1].ID}}
+	command := IdentityCommand{SourceID: r.Turns[2].ID, Text: r.Turns[2].Text}
+	encode := func(sourceID string, commands []IdentityCommand) string {
+		body, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{assignment}, "narratorSourceID": sourceID,
+			"narratorEvidenceIDs": []string{r.Turns[2].ID}, "commands": commands})
+		return string(body)
+	}
+	if result, err := decodeIdentity(encode(r.Turns[1].ID, []IdentityCommand{command}), r); err != nil || result.NarratorSourceID != r.Turns[1].ID {
+		t.Fatal("source-selected author must not fall back to the first person of this voice", result, err)
+	}
+	for _, invalid := range []string{r.Speakers[0].Key, uuid.NewString()} {
+		if _, err := decodeIdentity(encode(invalid, []IdentityCommand{command}), r); err == nil {
+			t.Fatal("accepted an invented author source")
+		}
+	}
+	if _, err := decodeIdentity(encode(r.Turns[1].ID, []IdentityCommand{}), r); err == nil {
+		t.Fatal("author change lost its exact command")
+	}
+}
+
+func TestKnownIdentityEchoCannotBlockGroundedNewIntroduction(t *testing.T) {
+	r := identityFixture("今天在河边散步很舒服。", "我叫小林，天气很好。")
+	a := []IdentityAssignment{
+		{SpeakerKey: r.Speakers[0].Key, Scope: "voice", SourceIDs: []string{r.Turns[0].ID}, Name: "我", PersonID: r.NarratorPersonID, Kind: "context", EvidenceIDs: []string{r.Turns[0].ID}},
+		{SpeakerKey: r.Speakers[1].Key, Scope: "voice", SourceIDs: []string{r.Turns[1].ID}, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[1].ID}},
+	}
+	encode := func() string {
+		data, _ := json.Marshal(map[string]any{"assignments": a, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+		return string(data)
+	}
+	if result, err := decodeIdentity(encode(), r); err != nil || len(result.Assignments) != 1 || result.Assignments[0].Name != "小林" {
+		t.Fatal("known no-op blocked grounded introduction", result, err)
+	}
+	a[0].Name = "小周"
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("an actual rename still requires literal evidence")
+	}
+	a[0].Name = "我"
+	a[0].SourceIDs = []string{uuid.NewString()}
+	if _, err := decodeIdentity(encode(), r); err == nil {
+		t.Fatal("a no-op cannot carry fabricated scope")
 	}
 }
 
@@ -172,7 +225,7 @@ func TestIdentityPreservesExactNamesAndRejectsUnbackedReferences(t *testing.T) {
 	}
 	valid := IdentityAssignment{SpeakerKey: r.Speakers[1].Key, Scope: "voice", SourceIDs: []string{r.Turns[1].ID}, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID, r.Turns[1].ID}}
 	encode := func(a IdentityAssignment) string {
-		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{a}, "narratorSpeaker": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{a}, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
 		return string(b)
 	}
 	out, err := decodeIdentity(encode(valid), r)
@@ -207,22 +260,22 @@ func TestIdentityPreservesExactNamesAndRejectsUnbackedReferences(t *testing.T) {
 	r.Turns[1].Text = "把这个声音叫老婆宝。今天去公园。"
 	valid.EvidenceIDs = []string{r.Turns[1].ID}
 	operation := IdentityCommand{SourceID: r.Turns[1].ID, Text: "把这个声音叫老婆宝。"}
-	rename, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{valid}, "narratorSpeaker": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{operation}})
+	rename, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{valid}, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{operation}})
 	if _, err := decodeIdentity(string(rename), r); err != nil {
 		t.Fatal("actual explicit rename should be allowed", err)
 	}
-	echo, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.NarratorSpeaker, "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
-	if result, err := decodeIdentity(string(echo), r); err != nil || result.NarratorSpeaker != "" {
+	echo, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[0].ID, "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+	if result, err := decodeIdentity(string(echo), r); err != nil || result.NarratorSourceID != "" {
 		t.Fatal("unchanged echo must be a no-op", err)
 	}
-	changed, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.Speakers[1].Key, "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+	changed, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[1].ID, "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
 	if _, err := decodeIdentity(string(changed), r); err == nil {
 		t.Fatal("changed narrator requires source evidence")
 	}
 	r.Turns[1].Text = "这篇手记按我的视角写。今天去公园。"
 	operation.Text = "这篇手记按我的视角写。"
 	changeNarrator := func(commands []IdentityCommand) string {
-		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSpeaker": r.Speakers[1].Key, "narratorEvidenceIDs": []string{r.Turns[1].ID}, "commands": commands})
+		b, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[1].ID, "narratorEvidenceIDs": []string{r.Turns[1].ID}, "commands": commands})
 		return string(b)
 	}
 	if _, err := decodeIdentity(changeNarrator([]IdentityCommand{}), r); err == nil {
@@ -250,22 +303,30 @@ func TestIdentityWithConfiguredAI(t *testing.T) {
 	}
 	model := ArkRewriter{BaseURL: config.BaseURL, APIKey: config.APIKey, Model: config.Model}
 	cases := []struct {
-		name     string
-		texts    []string
-		expected map[int]string
-		empty    bool
-		narrator int
+		name        string
+		texts       []string
+		expected    map[int]string
+		empty       bool
+		narrator    int
+		sharedVoice bool
 	}{
-		{"reciprocal-affection", []string{"我跟我老婆宝在杭州旅游，非常非常开心。", "对，我跟我老公宝确实很开心，我们两个人出去玩就很合拍。"}, map[int]string{0: "老公宝", 1: "老婆宝"}, false, -1},
-		{"self-introduction", []string{"今天在河边散步很舒服。", "我叫小林，我也觉得今天的天气很好。"}, map[int]string{1: "小林"}, false, -1},
-		{"two-friends", []string{"我昨天跟我老婆去了杭州旅游，很开心。", "我上个月也和我老婆去了苏州，玩得不错。"}, nil, true, -1},
-		{"quoted-introduction", []string{"我今天读到一段故事，里面的人说：我叫小林，明天去北京。"}, nil, true, -1},
-		{"third-person-unknown", []string{"我和我老婆宝在杭州旅游，很开心。", "我跟我老公宝确实玩得很合拍。", "我是路过的游客，今天来这里看风景。"}, map[int]string{0: "老公宝", 1: "老婆宝"}, false, -1},
-		{"explicit-narrator", []string{"老婆宝也来补充今天的事。", "我是老婆宝，这篇手记按我的视角写。今天我在医院值班很累。"}, map[int]string{1: "老婆宝"}, false, 1},
+		{"reciprocal-affection", []string{"我跟我老婆宝在杭州旅游，非常非常开心。", "对，我跟我老公宝确实很开心，我们两个人出去玩就很合拍。"}, map[int]string{0: "老公宝", 1: "老婆宝"}, false, -1, false},
+		{"self-introduction", []string{"今天在河边散步很舒服。", "我叫小林，我也觉得今天的天气很好。"}, map[int]string{1: "小林"}, false, -1, false},
+		{"two-friends", []string{"我昨天跟我老婆去了杭州旅游，很开心。", "我上个月也和我老婆去了苏州，玩得不错。"}, nil, true, -1, false},
+		{"quoted-introduction", []string{"我今天读到一段故事，里面的人说：我叫小林，明天去北京。"}, nil, true, -1, false},
+		{"third-person-unknown", []string{"我和我老婆宝在杭州旅游，很开心。", "我跟我老公宝确实玩得很合拍。", "我是路过的游客，今天来这里看风景。"}, map[int]string{0: "老公宝", 1: "老婆宝"}, false, -1, false},
+		{"explicit-narrator", []string{"老婆宝也来补充今天的事。", "我是老婆宝，这篇手记按我的视角写。今天我在医院值班很累。"}, map[int]string{1: "老婆宝"}, false, 1, false},
+		{"merged-voice-narrator", []string{"今天和小林一起在河边散步。", "我是小林，这篇手记按我的视角写。我从杭州坐火车过来。"}, map[int]string{1: "小林"}, false, 1, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := identityFixture(c.texts...)
+			if c.sharedVoice {
+				r.Turns[1].Speaker = r.Turns[0].Speaker
+				r.Turns[1].PersonID = r.NarratorPersonID
+				r.Turns[1].Person = "我"
+				r.Speakers = r.Speakers[:1]
+			}
 			s := Snapshot{Identity: &r, DictationMode: true, Blocks: []Block{{ID: uuid.NewString(), Text: "原话", Style: "body"}}, WritingStyle: "natural"}
 			out, err := model.Rewrite(context.Background(), s, 1)
 			record := map[string]any{"request": r, "response": out.Identity, "raw": out.OutputText, "model": out.Model, "stage": out.Diagnostics.Stage, "inputTokens": out.InputTokens, "outputTokens": out.OutputTokens}
@@ -291,7 +352,7 @@ func TestIdentityWithConfiguredAI(t *testing.T) {
 			for index, name := range c.expected {
 				found := false
 				for _, a := range out.Identity.Assignments {
-					if a.SpeakerKey == r.Speakers[index].Key && a.Name == name {
+					if a.SpeakerKey == r.Turns[index].Speaker && a.Name == name && slices.Contains(a.SourceIDs, r.Turns[index].ID) {
 						found = true
 					}
 				}
@@ -299,10 +360,10 @@ func TestIdentityWithConfiguredAI(t *testing.T) {
 					t.Errorf("expected exact name %s for voice %d; got %+v", name, index, out.Identity.Assignments)
 				}
 			}
-			if c.narrator < 0 && out.Identity.NarratorSpeaker != "" {
+			if c.narrator < 0 && out.Identity.NarratorSourceID != "" {
 				t.Fatal("changed default narrator")
 			}
-			if c.narrator >= 0 && out.Identity.NarratorSpeaker != r.Speakers[c.narrator].Key {
+			if c.narrator >= 0 && out.Identity.NarratorSourceID != r.Turns[c.narrator].ID {
 				t.Fatal("explicit narrator instruction was not applied")
 			}
 		})
