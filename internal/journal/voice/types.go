@@ -145,6 +145,7 @@ type Receipt struct {
 	Milliseconds int         `json:"milliseconds"`
 }
 type Event struct {
+	Stage                 string          `json:"stage,omitempty"`
 	Polish                *PolishRevision `json:"polish,omitempty"`
 	Utterances            []Utterance     `json:"utterances,omitempty"`
 	Type                  string          `json:"type"`
@@ -831,6 +832,13 @@ func (r Revision) validateIncremental(s Snapshot) error {
 		}
 		if paragraphFormatMark(command.Mark) && (!command.Enabled || command.Anchor.Quote != texts[command.BlockID] ||
 			command.Anchor.Prefix != "" || command.Anchor.Suffix != "") {
+			return ErrInvalid
+		}
+		if (command.Mark == "orderedListItem" || command.Mark == "unorderedListItem") &&
+			strings.Contains(command.Anchor.Quote, "、") && strings.Contains(command.Instruction, "整理") &&
+			strings.Contains(command.Instruction, "列表") && !strings.Contains(command.Instruction, "列表项") {
+			// An explicit multi-item reflow cannot be satisfied by marking the
+			// whole enumeration as a single item. Require a paragraph proposal.
 			return ErrInvalid
 		}
 		foundEvidence := false

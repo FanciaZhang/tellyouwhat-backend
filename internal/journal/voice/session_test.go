@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +42,7 @@ func TestBusySubscriptionDeliversAnActionableSocketError(t *testing.T) {
 	defer ws.Close()
 	ws.SetDeadline(time.Now().Add(3 * time.Second))
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil {
+	if err := receiveVoiceResult(ws, &event); err != nil {
 		t.Fatal(err)
 	}
 	if event.Type != "error" || event.Code != "voice_session_busy" {
@@ -171,7 +172,7 @@ func TestNewSpeechDoesNotDiscardInFlightRewrite(t *testing.T) {
 	read := func() Event {
 		t.Helper()
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		return event
@@ -240,7 +241,7 @@ func TestLongPendingSpeechDrainsInBoundedBatchesWithoutLosingExistingBody(t *tes
 	defer ws.Close()
 	ws.SetDeadline(time.Now().Add(5 * time.Second))
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil {
+	if err := receiveVoiceResult(ws, &event); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := Snapshot{Blocks: []Block{{ID: uuid.NewString(), Text: "已有正文。", Style: "body"}}}
@@ -255,7 +256,7 @@ func TestLongPendingSpeechDrainsInBoundedBatchesWithoutLosingExistingBody(t *tes
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	consumed := map[string]bool{}
 	for {
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		if event.Type == "finished" {
@@ -341,7 +342,7 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	defer ws.Close()
 	ws.SetDeadline(time.Now().Add(10 * time.Second))
 	var event Event
-	if err = websocket.JSON.Receive(ws, &event); err != nil {
+	if err = receiveVoiceResult(ws, &event); err != nil {
 		t.Fatal(err)
 	}
 	sourceID := uuid.NewString()
@@ -359,18 +360,18 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	snapshot.Blocks[0].Text = "用户刚刚修改了正文"
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "ping"})
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "pong" {
 		t.Fatalf("%+v %v", event, err)
 	}
 	close(model.release)
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "revision" {
 		t.Fatalf("finished before applying: %+v %v", event, err)
 	}
 	snapshot.Revision++
 	snapshot.Blocks[0].Text = event.Revision.BlockEdits[0].Text
 	acknowledgeTestRevision(&snapshot, event.Revision)
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "finished" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
 		t.Fatalf("%+v %v", event, err)
 	}
 	if model.calls.Load() != 2 {
@@ -401,7 +402,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 		}
 		ws.SetDeadline(time.Now().Add(10 * time.Second))
 		var ready Event
-		if err = websocket.JSON.Receive(ws, &ready); err != nil || ready.Type != "ready" {
+		if err = receiveVoiceResult(ws, &ready); err != nil || ready.Type != "ready" {
 			t.Fatalf("%+v %v", ready, err)
 		}
 		return ws
@@ -413,7 +414,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	var receipt *Receipt
 	for receipt == nil {
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		if event.Type == "receipt" {
@@ -428,7 +429,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	for {
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		if event.Type == "revision" {
@@ -467,7 +468,7 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400), Final: true})
 	var event Event
 	for event.Type != "receipt" {
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		if event.Type == "error" {
@@ -519,7 +520,7 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	defer ws.Close()
 	ws.SetDeadline(time.Now().Add(4 * time.Second))
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil {
+	if err := receiveVoiceResult(ws, &event); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
@@ -527,7 +528,7 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	segment := uuid.NewString()
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
 	conn.result <- Transcript{Text: "今天去了公园。", Stable: "今天去了公园。"}
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "transcript" {
 		t.Fatalf("%+v %v", event, err)
 	}
 	select {
@@ -536,16 +537,16 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	case <-time.After(400 * time.Millisecond):
 	}
 	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。"}
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "transcript" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "transcript" {
 		t.Fatalf("interim transcript missing: %+v %v", event, err)
 	}
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
 	time.Sleep(20 * time.Millisecond)
 	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。后来去了湖边。", Final: true}
-	if event = func() Event { var value Event; _ = websocket.JSON.Receive(ws, &value); return value }(); event.Type != "transcript" {
+	if event = func() Event { var value Event; _ = receiveVoiceResult(ws, &value); return value }(); event.Type != "transcript" {
 		t.Fatalf("final transcript missing: %+v", event)
 	}
-	if event = func() Event { var value Event; _ = websocket.JSON.Receive(ws, &value); return value }(); event.Type != "receipt" {
+	if event = func() Event { var value Event; _ = receiveVoiceResult(ws, &value); return value }(); event.Type != "receipt" {
 		t.Fatalf("receipt missing: %+v", event)
 	}
 	select {
@@ -554,11 +555,11 @@ func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 		t.Fatal("final source did not schedule rewrite")
 	}
 	websocket.JSON.Send(ws, Frame{Type: "ping"})
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "pong" {
 		t.Fatalf("slow rewrite blocked transport: %+v %v", event, err)
 	}
 	close(model.release)
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "revision" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "revision" {
 		t.Fatalf("%+v %v", event, err)
 	}
 	if got := event.Revision.BlockEdits[0].Text; got != "今天去了公园。后来去了湖边。" {
@@ -590,7 +591,7 @@ func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
 	read := func() Event {
 		t.Helper()
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		return event
@@ -668,7 +669,7 @@ func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
 	read := func() Event {
 		t.Helper()
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal(err)
 		}
 		return event
@@ -723,7 +724,7 @@ func TestManualEditAtExpectedAcknowledgementRevisionRewritesLatestBody(t *testin
 	read := func() Event {
 		t.Helper()
 		var e Event
-		if err := websocket.JSON.Receive(ws, &e); err != nil {
+		if err := receiveVoiceResult(ws, &e); err != nil {
 			t.Fatal(err)
 		}
 		return e
@@ -761,5 +762,25 @@ func TestManualEditAtExpectedAcknowledgementRevisionRewritesLatestBody(t *testin
 	}
 	if model.calls.Load() != 2 {
 		t.Fatal(model.calls.Load())
+	}
+}
+
+// Receive the next result while allowing independent processing notifications.
+func receiveVoiceResult(ws *websocket.Conn, destination any) error {
+	for {
+		var data []byte
+		if err := websocket.Message.Receive(ws, &data); err != nil {
+			return err
+		}
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			return err
+		}
+		if envelope.Type == "processing" {
+			continue
+		}
+		return json.Unmarshal(data, destination)
 	}
 }

@@ -92,7 +92,7 @@ func TestWritingStyleChangesFenceInflightResultsAndSupersedeOlderAcknowledgement
 	_ = ws.SetDeadline(time.Now().Add(10 * time.Second))
 	receive := func(kind string) Event {
 		var event Event
-		if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != kind {
+		if err := receiveVoiceResult(ws, &event); err != nil || event.Type != kind {
 			t.Fatalf("want %s: %+v %v", kind, event, err)
 		}
 		return event

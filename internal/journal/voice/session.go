@@ -243,7 +243,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var inputFinal bool
 	var transcriptBase, segmentText string
 	var generation, tr, lastSubmitted int
-	var dirty, running, finishing, failed bool
+	var dirty, running, finishing, failed, captureClosed bool
+	var cancelRewrite context.CancelFunc
+	var rewritePaused, runningPolish bool
 	awaitingRevision := -1
 	var awaitingSources []string
 	var awaitingPolish []PolishTarget
@@ -289,6 +291,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		attempt := rewriteAttempts
 		startedAt := time.Now()
 		finalizing := finishing
+		rewritePaused = false
+		runningPolish = current.Polish != nil
+		stage := "organizing"
+		if current.Polish == nil {
+			stage = "structuring"
+		}
+		emit(Event{Type: "processing", Stage: stage})
+		work, stop := context.WithTimeout(ctx, 840*time.Second)
+		cancelRewrite = stop
 		if s.Logger != nil {
 			bodyCharacters := 0
 			for _, block := range current.Blocks {
@@ -319,7 +330,6 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		complete := lifecycle.Track(ctx)
 		go func() {
 			defer complete()
-			work, stop := context.WithTimeout(ctx, 840*time.Second)
 			defer stop()
 			work = withRewriteTrace(work, voiceTraceID, attempt)
 			result, err := s.Model.Rewrite(work, current, targetTR)
@@ -332,6 +342,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	// Interim ASR is revisable source text, not a committed receipt. Coalesce
 	// updates and keep one model call in flight; finalization bypasses pacing.
 	schedule := func(immediate bool) {
+		// Once capture ends, keep ASR moving and group all remaining speech into
+		// the final snapshot rather than organizing each transport receipt.
+		if captureClosed && !finishing {
+			return
+		}
 		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
 		}
@@ -386,6 +401,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					return
 				}
 				next := *f.Snapshot
+				if running && runningPolish && next.Polish != nil && next.Polish.Paused && cancelRewrite != nil {
+					rewritePaused = true
+					cancelRewrite()
+				}
 				hadSnapshot := hasSnapshot
 				// A document ACK may have been sent before the latest receipt
 				// reached the client. It cannot roll back server-confirmed speech.
@@ -546,8 +565,18 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					failWithCause("voice_speech_unavailable", "send_speech_audio", err)
 					return
 				}
+			case "capture_closed":
+				captureClosed = true
+				rewriteTimer.Stop()
+				rewriteC = nil
+				if s.Logger != nil {
+					s.Logger.InfoContext(ctx, "journal voice capture closed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
+				}
 			case "finish":
 				finishing = true
+				if s.Logger != nil {
+					s.Logger.InfoContext(ctx, "journal voice tail transcription completed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
+				}
 				if segment == "" {
 					launch()
 					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
@@ -629,6 +658,23 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 		case result := <-rewrites:
 			running = false
+			cancelRewrite = nil
+			emit(Event{Type: "processing", Stage: "idle"})
+			if rewritePaused {
+				waitingForPolishRetry = false
+				dirty = hasWork()
+				if finishing && segment == "" && !dirty {
+					_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
+					emit(Event{Type: "finished"})
+					return
+				}
+				if finishing {
+					launch()
+				} else {
+					schedule(true)
+				}
+				continue
+			}
 			diagnostics := rewriteDiagnostics(result.value, result.err)
 			if result.err != nil {
 				failedRewrites++

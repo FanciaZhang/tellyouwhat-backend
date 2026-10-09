@@ -171,8 +171,8 @@ func TestContinuousNarrativeRetainsPrefixAndStableSourceKeysAcrossModelRoundTrip
 	if err = json.Unmarshal([]byte(body.Input), &input); err != nil {
 		t.Fatal(err)
 	}
-	if input.Targets[0].RetainedText != target.RetainedText || input.Targets[0].SourceKeys[0] != target.SourceKeys[0] {
-		t.Fatal("lost continuous paragraph prefix or client source identity")
+	if input.Targets[0].RetainedText != target.RetainedText || len(input.Targets[0].SourceKeys) != 0 {
+		t.Fatal("lost paragraph prefix or sent bookkeeping IDs to the model")
 	}
 	result, err := decodePolish(`{"paragraphs":[{"targetIDs":["`+target.ID+`"],"style":"body","text":"上午和妻子去了公园，随后去河边。"}],"questions":[]}`, *s.Polish)
 	if err != nil {
@@ -229,7 +229,7 @@ func polishSocket(t *testing.T, model Rewriter, speech Speech) *websocket.Conn {
 	t.Cleanup(func() { ws.Close() })
 	ws.SetDeadline(time.Now().Add(8 * time.Second))
 	var ready Event
-	if err := websocket.JSON.Receive(ws, &ready); err != nil || ready.Type != "ready" {
+	if err := receiveVoiceResult(ws, &ready); err != nil || ready.Type != "ready" {
 		t.Fatalf("ready: %+v %v", ready, err)
 	}
 	return ws
@@ -248,7 +248,7 @@ func TestNewDictationBodyDoesNotDiscardInFlightPolish(t *testing.T) {
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	close(model.release)
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil {
+	if err := receiveVoiceResult(ws, &event); err != nil {
 		t.Fatal(err)
 	}
 	if event.Type != "polish" || len(event.Polish.Targets) != 1 {
@@ -274,14 +274,14 @@ func TestPolishFailureKeepsAudioReceiptsAndAllowsFinishingAfterPause(t *testing.
 	snapshot := polishFixture()
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	var event Event
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "rewrite_error" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "rewrite_error" {
 		t.Fatalf("polish failure: %+v %v", event, err)
 	}
 	snapshot.Polish.Paused = true
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400), Final: true})
 	for event.Type != "receipt" {
-		if err := websocket.JSON.Receive(ws, &event); err != nil {
+		if err := receiveVoiceResult(ws, &event); err != nil {
 			t.Fatal("polish failure killed ASR", err)
 		}
 	}
@@ -289,7 +289,135 @@ func TestPolishFailureKeepsAudioReceiptsAndAllowsFinishingAfterPause(t *testing.
 		t.Fatal("missing durable speech receipt")
 	}
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
-	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "finished" {
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
 		t.Fatalf("paused finalization: %+v %v", event, err)
+	}
+}
+
+func TestCaptureClosedCoalescesRemainingSnapshotsUntilTranscriptionFinishes(t *testing.T) {
+	model := &gatedPolishRewriter{started: make(chan Snapshot, 2), release: make(chan struct{})}
+	ws := polishSocket(t, model, nil)
+	snapshot := polishFixture()
+	websocket.JSON.Send(ws, Frame{Type: "capture_closed"})
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	snapshot.Polish.Targets[0].SourceText += "晚上开始读书。"
+	snapshot.Polish.Targets[0].Text = snapshot.Polish.Targets[0].SourceText
+	snapshot.Blocks[0].Text = snapshot.Polish.Targets[0].Text
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "ping"})
+	var event Event
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "pong" {
+		t.Fatalf("tail barrier: %+v %v", event, err)
+	}
+	select {
+	case <-model.started:
+		t.Fatal("started a fragmented tail before transcription finished")
+	default:
+	}
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != "processing" || event.Stage != "organizing" {
+		t.Fatalf("processing: %+v %v", event, err)
+	}
+	selected := <-model.started
+	if selected.Polish.Targets[0].SourceText != snapshot.Polish.Targets[0].SourceText {
+		t.Fatal("latest tail was not included")
+	}
+	close(model.release)
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "polish" {
+		t.Fatalf("polish: %+v %v", event, err)
+	}
+	snapshot.Polish.Targets = nil
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
+		t.Fatalf("finish: %+v %v", event, err)
+	}
+	select {
+	case <-model.started:
+		t.Fatal("duplicate final rewrite")
+	default:
+	}
+}
+
+func TestPausingOrdinaryPolishCancelsModelWithoutFailingTheVoiceSession(t *testing.T) {
+	model := &gatedPolishRewriter{started: make(chan Snapshot, 2), release: make(chan struct{})}
+	ws := polishSocket(t, model, nil)
+	snapshot := polishFixture()
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	var event Event
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Stage != "organizing" {
+		t.Fatalf("start: %+v %v", event, err)
+	}
+	<-model.started
+	snapshot.Polish.Paused = true
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	if err := websocket.JSON.Receive(ws, &event); err != nil || event.Stage != "idle" {
+		t.Fatalf("cancel: %+v %v", event, err)
+	}
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
+		t.Fatalf("finish: %+v %v", event, err)
+	}
+}
+
+func TestPolishRejectsAnEntireMissingTurnEvenWhenTargetIDIsCovered(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Targets[0].Turns = []SourceUtterance{{ID: uuid.NewString(), Text: "今天商量周末去公园散步。"}, {ID: uuid.NewString(), Text: "晚上读朋友推荐的新书，喜欢勇敢面对困难的故事。"}}
+	body := func(text string) string {
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: text, Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+		return string(raw)
+	}
+	if _, err := decodePolish(body("今天商量周末去公园散步。"), p); !errors.Is(err, errPolishMissingSource) {
+		t.Fatal("missing second topic accepted", err)
+	}
+	if _, err := decodePolish(body("今天商量周末去公园散步。晚上读了一本朋友推荐的新书，很喜欢这个勇敢面对困难的故事。"), p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPolishAnchorsAllowDeduplicationParaphraseAndShortTurns(t *testing.T) {
+	for _, test := range []struct {
+		sources []string
+		output  string
+	}{
+		{[]string{"嗯，我们商量周末去公园散步。", "我们商量周末去公园散步。"}, "周末我们一起去公园散步。"},
+		{[]string{"好。"}, "好。"},
+		{[]string{"去东湖。"}, "在东湖散步。"},
+		{[]string{"我想10点去公园散步，妻子先到图书馆还书。", "我想十点去公园散步，妻子先到图书馆还书。"}, "我想十点去公园散步，妻子先到图书馆还书。"},
+	} {
+		sources := []SourceUtterance{}
+		for _, text := range test.sources {
+			sources = append(sources, SourceUtterance{ID: uuid.NewString(), Text: text})
+		}
+		if !polishRetainsSourceAnchors(sources, []PolishParagraph{{Text: test.output}}) {
+			t.Fatal("faithful rewrite or deduplication rejected", test)
+		}
+	}
+	if polishRetainsSourceAnchors([]SourceUtterance{{Text: "好。"}}, []PolishParagraph{{Text: "。"}}) {
+		t.Fatal("punctuation accepted as substantive grounding")
+	}
+}
+
+func TestPolishSourceAnchorsIncludeStableReadOnlyContextWithoutRepeatingIt(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Context = []Block{{ID: uuid.NewString(), Style: "body", Text: "今天商量周末去公园散步。"}}
+	p.Targets[0].Turns = []SourceUtterance{{ID: uuid.NewString(), Text: "今天商量周末去公园散步。"}, {ID: uuid.NewString(), Text: "晚上读朋友推荐的新书，喜欢勇敢面对困难的故事。"}}
+	body := func(text string) string {
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: text, Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+		return string(raw)
+	}
+	if _, err := decodePolish(body("晚上读朋友推荐的新书，很喜欢勇敢面对困难的故事。"), p); err != nil {
+		t.Fatal("stable topic outside the rewrite targets was mistaken for an omission", err)
+	}
+	if _, err := decodePolish(body("今天商量周末去公园散步。"), p); !errors.Is(err, ErrInvalid) {
+		t.Fatal("new topic missing from both output and context accepted", err)
+	}
+}
+
+func TestPolishRejectsRepeatedReadOnlyContextEvenIfNewTopicIsPresent(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Context = []Block{{ID: uuid.NewString(), Style: "body", Text: "今天商量周末去公园散步。"}}
+	raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: "今天商量周末去公园散步。", Style: "body", TargetIDs: []string{p.Targets[0].ID}}, {Text: "晚上读朋友推荐的新书。", Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+	if _, err := decodePolish(string(raw), p); !errors.Is(err, errPolishRepeatsContext) {
+		t.Fatal("model repeated stable context", err)
 	}
 }

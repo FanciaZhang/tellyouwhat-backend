@@ -46,7 +46,7 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 	defer ws.Close()
 	_ = ws.SetDeadline(time.Now().Add(5 * time.Second))
 	var event Event
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "ready" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "ready" {
 		t.Fatalf("ready=%+v err=%v", event, err)
 	}
 	snapshot := Snapshot{Revision: 4, Blocks: []Block{{ID: uuid.NewString(), Text: privateBody}}, Transcript: privateTranscript, PendingUtterances: []SourceUtterance{{ID: uuid.NewString(), Text: privateTranscript}}}
@@ -56,7 +56,7 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 	if err = websocket.JSON.Send(ws, Frame{Type: "finish"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "error" || event.Code != "voice_rewrite_unavailable" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "error" || event.Code != "voice_rewrite_unavailable" {
 		t.Fatalf("error event=%+v err=%v", event, err)
 	}
 	_ = ws.Close()

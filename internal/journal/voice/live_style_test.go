@@ -82,14 +82,14 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 				}
 			}
 			var event Event
-			if websocket.JSON.Receive(ws, &event) != nil || event.Type != "ready" {
+			if receiveVoiceResult(ws, &event) != nil || event.Type != "ready" {
 				t.Fatal("development stream not ready")
 			}
 			send(Frame{Type: "snapshot", Snapshot: &snapshot})
 			send(Frame{Type: "finish"})
 			revisions := 0
 			for {
-				if websocket.JSON.Receive(ws, &event) != nil {
+				if receiveVoiceResult(ws, &event) != nil {
 					t.Fatal("development result unavailable")
 				}
 				if event.Type == "error" {
