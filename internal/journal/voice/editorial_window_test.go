@@ -202,7 +202,7 @@ func TestSocketAdvancesWindowOnlyAfterAppliedRevision(t *testing.T) {
 			var event Event
 			receive := func(kind string) {
 				t.Helper()
-				if err := websocket.JSON.Receive(ws, &event); err != nil || event.Type != kind {
+				if err := receiveVoiceResult(ws, &event); err != nil || event.Type != kind {
 					t.Fatalf("expected %s: %+v %v", kind, event, err)
 				}
 			}

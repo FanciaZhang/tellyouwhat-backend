@@ -30,7 +30,8 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
 	}
 	session := uuid.NewString()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
+	closed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { defer close(closed); service.Serve(w, r, session) }))
 	defer server.Close()
 	ticket, err := service.Issue(context.Background(), Identity{Owner: "owner", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, session)
 	if err != nil {
@@ -45,7 +46,7 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 	defer ws.Close()
 	_ = ws.SetDeadline(time.Now().Add(5 * time.Second))
 	var event Event
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "ready" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "ready" {
 		t.Fatalf("ready=%+v err=%v", event, err)
 	}
 	snapshot := Snapshot{Revision: 4, Blocks: []Block{{ID: uuid.NewString(), Text: privateBody}}, Transcript: privateTranscript, PendingUtterances: []SourceUtterance{{ID: uuid.NewString(), Text: privateTranscript}}}
@@ -55,13 +56,14 @@ func TestVoiceSessionLogsCorrelatedRewriteMetadataWithoutContent(t *testing.T) {
 	if err = websocket.JSON.Send(ws, Frame{Type: "finish"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = websocket.JSON.Receive(ws, &event); err != nil || event.Type != "error" || event.Code != "voice_rewrite_unavailable" {
+	if err = receiveVoiceResult(ws, &event); err != nil || event.Type != "error" || event.Code != "voice_rewrite_unavailable" {
 		t.Fatalf("error event=%+v err=%v", event, err)
 	}
 	_ = ws.Close()
-	deadline := time.Now().Add(time.Second)
-	for !strings.Contains(logs.String(), "journal voice stream closed") && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not finish logging")
 	}
 	output := logs.String()
 	for _, expected := range []string{"journal voice stream started", "journal voice rewrite started", "journal voice rewrite completed", "fixture_failure", `"document_revision":4`, `"transcript_revision":0`, `"finalizing":`, "voice_trace_id"} {

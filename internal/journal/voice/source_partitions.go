@@ -24,6 +24,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 			return ErrInvalid
 		}
 		passages, corrections, linked := map[string]bool{}, map[string]bool{}, map[string]bool{}
+		for _, c := range r.DiagramCreations {
+			for _, evidence := range c.Diagram.sources() {
+				if evidence.SourceID == p.SourceID {
+					passages[c.BlockID] = true
+				}
+			}
+		}
 		for _, edit := range r.TableEdits {
 			for _, patch := range edit.Patches {
 				cells := []TableCell{}
@@ -62,6 +69,13 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				}
 			}
 		}
+		for _, journey := range r.JourneyCreations {
+			for _, visit := range journey.Visits {
+				if visit.SourceID == p.SourceID {
+					passages[journey.BlockID] = true
+				}
+			}
+		}
 		for _, passage := range r.Passages {
 			for _, id := range passage.SourceIDs {
 				if id == p.SourceID {
@@ -94,6 +108,16 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.DiagramEdits {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.DiagramCreations {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
 		for _, c := range r.TableResolutions {
 			if c.SourceID == p.SourceID {
 				for _, item := range s.TableReceiptContext {
@@ -113,7 +137,17 @@ func validateSourcePartitions(r Revision, s Snapshot) error {
 				add(c.Instruction, c.BlockID)
 			}
 		}
+		for _, c := range r.JourneyCreations {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
 		for _, c := range r.TimelineEdits {
+			if c.SourceID == p.SourceID {
+				add(c.Instruction, c.BlockID)
+			}
+		}
+		for _, c := range r.JourneyEdits {
 			if c.SourceID == p.SourceID {
 				add(c.Instruction, c.BlockID)
 			}

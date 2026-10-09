@@ -22,12 +22,33 @@ WebSocket messages are JSON. Client messages:
   Blocks are stable UUIDs. Client archives and recovery text are not model inputs.
 - `audio`: `{segmentID,pcm:base64 PCM16 little-endian mono 16000Hz,final:bool}`.
   Frames are at most 6400 bytes (200ms); segments at most 480000 bytes (15s).
-- `finish`: flush the final rewrite. Send the last audio frame with final=true first.
+- `capture_closed`: the microphone has stopped and local audio is saved. Continue accepting audio and ASR; keep the current model call, but coalesce new ordinary rewrite work until transcription is complete.
+- `finish`: audio receipts are complete; flush the remaining final rewrite. Send the last audio frame with final=true first.
 - `ping`: application heartbeat, receives `pong`.
 
 Server messages: `ready`, `transcript` (segmentID/text/stable), `receipt`
 (segmentID/sha256/text/milliseconds and remainingMilliseconds), `revision`
-(baseRevision/transcriptRevision/patches/questions), `finished`, and `error`.
+(baseRevision/transcriptRevision/patches/questions), `processing` (stage `organizing`, `structuring`, or `idle`), `finished`, and `error`.
+Processing events are informational and carry no document changes or receipts.
+A paused ordinary `snapshot.polish` cancels only its in-flight model request;
+ASR and audio receipts continue. A canceled result does not count as a rewrite
+failure. Explicit structural commands keep their separate processing budget.
+Ordinary polish uses a server-side omission guard: every substantive input turn
+must share a small lexical window with an output paragraph or the stable,
+read-only request context. Historical turns can span a stabilized paragraph
+and the active paragraph; they must not force the model to repeat that context.
+The guard ignores case,
+punctuation, and whitespace, and permits repeated speech to share an anchor.
+Long turns require three content characters; short turns require up to two.
+This coarse check does not prove all facts survived and does not replace real
+semantic acceptance. The model does not copy source UUIDs or validation quotes.
+An output body paragraph identical to stable body context (ignoring case,
+spacing, and punctuation) is rejected, rather than duplicating that paragraph.
+Rejection diagnostics expose only a fixed reason code, never journal content.
+Explicit requests to turn an enumeration into a list use a paragraph reflow
+proposal. A list-style command cannot satisfy a request to split multiple
+enumerated items into separate entries; a single existing item may still use
+a style command.
 Patches contain id/text/afterID. Empty afterID replaces an existing text block;
 otherwise insert a new UUID immediately after an existing block. Blocks and media
 are not deleted or reordered. Only `mediaOnlyBlockIDs` are excluded from text

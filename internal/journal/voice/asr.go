@@ -42,6 +42,7 @@ type ASR struct {
 	Prompts *promptconfig.Cache
 }
 type asrConnection struct {
+	resultGuard   speechResultGuard
 	ws            *websocket.Conn
 	observeSchema func([]StreamSchema)
 	utterances    streamUtteranceWindow
@@ -84,7 +85,7 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		hotwords = append(hotwords, map[string]string{"word": w})
 	}
 	corpus, _ := json.Marshal(map[string]any{"hotwords": hotwords})
-	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": false, "corpus": map[string]string{"context": string(corpus)}}
+	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": true, "enable_lid": true, "end_window_size": 800, "corpus": map[string]string{"context": string(corpus)}}
 	if a.Config.StreamInsights {
 		request["enable_speaker_info"] = true
 		request["ssd_version"] = "200"
@@ -151,7 +152,7 @@ func (c *asrConnection) Receive() (Transcript, error) {
 			c.traces = nil
 		}
 	}
-	return result, nil
+	return c.resultGuard.accept(result)
 }
 func parseASR(packet []byte) (Transcript, error) { return parseASRWithObserver(packet, nil) }
 func parseASRWithObserver(packet []byte, observe func([]StreamSchema), trace ...func(StreamTrace)) (Transcript, error) {
@@ -225,4 +226,26 @@ func parseASRWithObserver(packet []byte, observe func([]StreamSchema), trace ...
 		result.Stable = result.Text
 	}
 	return result, nil
+}
+
+// An empty final after recognized speech is an upstream failure, not a silence
+// receipt. Retrying leaves the original PCM uncommitted and available to resend.
+// Never promote a provisional hypothesis into a definitive transcript.
+type speechResultGuard struct{ lastNonempty *Transcript }
+
+func (g *speechResultGuard) accept(t Transcript) (Transcript, error) {
+	if t.Text != "" {
+		copy := t
+		g.lastNonempty = &copy
+		return t, nil
+	}
+	if g.lastNonempty == nil {
+		return t, nil
+	}
+	if t.Final {
+		return Transcript{}, errors.New("speech_empty_final_after_text")
+	}
+	previous := *g.lastNonempty
+	previous.Final = false
+	return previous, nil
 }

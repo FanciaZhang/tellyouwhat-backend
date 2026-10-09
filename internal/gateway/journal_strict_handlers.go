@@ -124,6 +124,7 @@ func (server *Server) OrganizeJournal(
 		Tags:                        result.Value.Tags,
 		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
 		NewBookSuggestions:          result.Value.NewBookSuggestions,
+		IllustrationSuggestion:      result.Value.IllustrationSuggestion,
 		Quota: journalcontracts.Quota{
 			DailyTokensRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
 			MonthlyTokensRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
@@ -156,9 +157,10 @@ func journalOrganizeRequest(body *journalhttpapi.OrganizeRequest, requestID uuid
 	input := journalcontracts.OrganizeRequest{
 		RequestID: body.RequestID.String(), ContractVersion: string(body.ContractVersion),
 		ContentHash: body.ContentHash, Title: body.Title, Body: body.Body,
-		ExistingTags:     append([]string(nil), body.ExistingTags...),
-		RejectedTagNames: append([]string(nil), body.RejectedTagNames...),
-		Books:            make([]journalcontracts.BookContext, 0, len(body.Books)),
+		IllustrationSuggestionsEnabled: body.IllustrationSuggestionsEnabled,
+		ExistingTags:                   append([]string(nil), body.ExistingTags...),
+		RejectedTagNames:               append([]string(nil), body.RejectedTagNames...),
+		Books:                          make([]journalcontracts.BookContext, 0, len(body.Books)),
 	}
 	for _, book := range body.Books {
 		input.Books = append(input.Books, journalcontracts.BookContext{
@@ -200,6 +202,9 @@ func journalOrganizeResponse(response journalcontracts.OrganizeResponse, request
 			Name: suggestion.Name, Description: suggestion.Description, Reason: suggestion.Reason,
 			RelatedTags: append([]string(nil), suggestion.RelatedTags...),
 		})
+	}
+	if scene := response.IllustrationSuggestion; scene.Valid() {
+		output.IllustrationSuggestion = &journalhttpapi.IllustrationSuggestion{Summary: scene.Summary, Subject: scene.Subject, Setting: scene.Setting, Composition: scene.Composition, Style: scene.Style, SourceQuotes: scene.SourceQuotes, Reason: scene.Reason}
 	}
 	return output, nil
 }

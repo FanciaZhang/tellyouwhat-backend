@@ -99,6 +99,32 @@ func TestNewHealthConsentDoesNotAuthorizeJournal(t *testing.T) {
 	}
 }
 
+func TestJournalIllustrationConsentRemainsAppScopedAfterHealthIntegration(t *testing.T) {
+	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
+	journal := attestation.Principal{AppID: "journal", KeyID: "journal-key", DeviceID: "journal-device"}
+	health := attestation.Principal{AppID: "health", KeyID: "health-key", DeviceID: "health-device"}
+	consent := Consent{JournalIllustrationScope, JournalIllustrationDocumentVersion, true}
+	if _, err := service.RecordConsents(context.Background(), health, []Consent{consent}); err != ErrInvalidConsent {
+		t.Fatalf("Health accepted Journal illustration consent: %v", err)
+	}
+	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+		t.Fatal(err)
+	}
+	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || !granted {
+		t.Fatalf("Journal illustration authorization missing: granted=%v err=%v", granted, err)
+	}
+	if _, err := service.HasRequiredConsents(context.Background(), health, []string{JournalIllustrationScope}); err != ErrInvalidConsent {
+		t.Fatalf("Health checked Journal illustration authorization: %v", err)
+	}
+	consent.Granted = false
+	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+		t.Fatal(err)
+	}
+	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || granted {
+		t.Fatalf("revoked illustration authorization accepted: granted=%v err=%v", granted, err)
+	}
+}
+
 func TestHealthUpgradeRevocationCannotFallBackToAdult(t *testing.T) {
 	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
 	principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}

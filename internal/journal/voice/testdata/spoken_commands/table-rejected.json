@@ -1,0 +1,260 @@
+{
+  "baseRevision": 0,
+  "transcriptRevision": 0,
+  "blockEdits": [],
+  "corrections": [],
+  "formatCommands": [],
+  "formatResolutions": [],
+  "moveCommands": [],
+  "moveResolutions": [],
+  "paragraphCommands": [],
+  "paragraphResolutions": [],
+  "timelineEdits": [],
+  "timelineCreations": [],
+  "journeyCreations": [],
+  "journeyEdits": [],
+  "diagramCreations": [],
+  "diagramEdits": [],
+  "tableCreations": [
+    {
+      "id": "c76d5a6a-3123-459a-80d5-e57b3d39f112",
+      "blockID": "d715d8c7-ded1-48cb-8f54-6a2f5f53c98e",
+      "tableID": "c187ac17-c73d-47c1-9d00-12965c2b3118",
+      "afterID": "b2788cd1-aa5f-4f42-a6ac-853dfeb12564",
+      "sourceID": "f9746625-56e3-5bdc-eb5b-55daa5cb3b1c",
+      "instruction": "请整理成表格列出商品数量和金额金额单位是元",
+      "title": "今日购物明细",
+      "columns": [
+        {
+          "id": "col-商品",
+          "title": "商品"
+        },
+        {
+          "id": "col-数量",
+          "title": "数量"
+        },
+        {
+          "id": "col-金额",
+          "title": "金额（元）"
+        }
+      ],
+      "rows": [
+        {
+          "id": "row-苹果",
+          "cells": [
+            {
+              "columnID": "col-商品",
+              "kind": "text",
+              "text": "苹果",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "苹果",
+                    "prefix": "今天买了",
+                    "suffix": "三斤，花了18元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-数量",
+              "kind": "text",
+              "text": "三斤",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "三斤",
+                    "prefix": "今天买了苹果",
+                    "suffix": "，花了18元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-金额",
+              "kind": "number",
+              "text": "",
+              "number": "18",
+              "unit": "元",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "18元",
+                    "prefix": "今天买了苹果三斤，花了",
+                    "suffix": "。牛奶两盒，花了12元。面包一个，花了8元。"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "row-牛奶",
+          "cells": [
+            {
+              "columnID": "col-商品",
+              "kind": "text",
+              "text": "牛奶",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "牛奶",
+                    "prefix": "今天买了苹果三斤，花了18元。",
+                    "suffix": "两盒，花了12元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-数量",
+              "kind": "text",
+              "text": "两盒",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "两盒",
+                    "prefix": "今天买了苹果三斤，花了18元。牛奶",
+                    "suffix": "，花了12元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-金额",
+              "kind": "number",
+              "text": "",
+              "number": "12",
+              "unit": "元",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "12元",
+                    "prefix": "今天买了苹果三斤，花了18元。牛奶两盒，花了",
+                    "suffix": "。面包一个，花了8元。"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "row-面包",
+          "cells": [
+            {
+              "columnID": "col-商品",
+              "kind": "text",
+              "text": "面包",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "面包",
+                    "prefix": "今天买了苹果三斤，花了18元。牛奶两盒，花了12元。",
+                    "suffix": "一个，花了8元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-数量",
+              "kind": "text",
+              "text": "一个",
+              "number": "",
+              "unit": "",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "一个",
+                    "prefix": "今天买了苹果三斤，花了18元。牛奶两盒，花了12元。面包",
+                    "suffix": "，花了8元。"
+                  }
+                }
+              ]
+            },
+            {
+              "columnID": "col-金额",
+              "kind": "number",
+              "text": "",
+              "number": "8",
+              "unit": "元",
+              "approximate": false,
+              "needsReview": false,
+              "sources": [
+                {
+                  "sourceID": "C7069883-5114-95F6-8DD1-AEE1E9E95579",
+                  "anchor": {
+                    "quote": "8元",
+                    "prefix": "今天买了苹果三斤，花了18元。牛奶两盒，花了12元。面包一个，花了",
+                    "suffix": "。"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tableEdits": [],
+  "tableResolutions": [],
+  "passages": [],
+  "consumedSourceIDs": [
+    "f9746625-56e3-5bdc-eb5b-55daa5cb3b1c"
+  ],
+  "sourcePartitions": [
+    {
+      "sourceID": "f9746625-56e3-5bdc-eb5b-55daa5cb3b1c",
+      "segments": [
+        {
+          "text": "请整理成表格列出商品数量和金额金额单位是元",
+          "role": "instruction",
+          "blockIDs": [
+            "d715d8c7-ded1-48cb-8f54-6a2f5f53c98e"
+          ]
+        }
+      ]
+    }
+  ],
+  "semanticState": {
+    "entities": [],
+    "unresolvedMentions": [],
+    "outline": []
+  },
+  "questions": [],
+  "emotions": [],
+  "overallEmotion": "",
+  "illustrationSuggestion": null
+}

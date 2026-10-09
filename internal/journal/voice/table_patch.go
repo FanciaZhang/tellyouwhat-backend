@@ -19,6 +19,7 @@ type TablePatch struct {
 	Column      *TableColumn      `json:"column"`
 	Order       []string          `json:"order"`
 	Calculation *TableCalculation `json:"calculation"`
+	Chart       *TableChart       `json:"chart"`
 }
 
 func applyTablePatches(before TableContext, patches []TablePatch) (TableContext, error) {
@@ -29,6 +30,7 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 	result.Columns = slices.Clone(before.Columns)
 	result.Rows = slices.Clone(before.Rows)
 	result.Calculations = slices.Clone(before.Calculations)
+	result.Charts = slices.Clone(before.Charts)
 	for i := range result.Rows {
 		result.Rows[i].Cells = slices.Clone(result.Rows[i].Cells)
 	}
@@ -49,6 +51,9 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 		claimed[id] = true
 		return true
 	}
+	for _, chart := range before.Charts {
+		claimed[chart.ID] = true
+	}
 	for _, p := range patches {
 		row := slices.IndexFunc(result.Rows, func(r TableRow) bool { return r.ID == p.TargetID })
 		column := slices.IndexFunc(result.Columns, func(c TableColumn) bool { return c.ID == p.TargetID })
@@ -56,11 +61,36 @@ func applyTablePatches(before TableContext, patches []TablePatch) (TableContext,
 		if (p.Cell != nil) != (p.Kind == "setCell") || (p.Row != nil) != (p.Kind == "insertRow") ||
 			(p.Column != nil) != (p.Kind == "insertColumn") ||
 			(p.Calculation != nil) != (p.Kind == "addCalculation") ||
+			(p.Chart != nil) != (p.Kind == "addChart" || p.Kind == "replaceChart") ||
 			(len(p.Order) > 0 && p.Kind != "orderRows" && p.Kind != "orderColumns") ||
 			(p.Title != "" && p.Kind != "renameTable" && p.Kind != "renameColumn") {
 			return TableContext{}, ErrInvalid
 		}
 		switch p.Kind {
+		case "addChart", "replaceChart":
+			if !p.Chart.canResolve(result) {
+				return TableContext{}, ErrInvalid
+			}
+			chart := *p.Chart
+			chart.ValueColumnIDs = slices.Clone(chart.ValueColumnIDs)
+			if p.Kind == "addChart" {
+				if p.TargetID != before.TableID || !claim(chart.ID) {
+					return TableContext{}, ErrInvalid
+				}
+				result.Charts = append(result.Charts, chart)
+			} else {
+				index := slices.IndexFunc(result.Charts, func(c TableChart) bool { return c.ID == p.TargetID })
+				if index < 0 || chart.ID != p.TargetID {
+					return TableContext{}, ErrInvalid
+				}
+				result.Charts[index] = chart
+			}
+		case "removeChart":
+			index := slices.IndexFunc(result.Charts, func(c TableChart) bool { return c.ID == p.TargetID })
+			if index < 0 {
+				return TableContext{}, ErrInvalid
+			}
+			result.Charts = slices.Delete(result.Charts, index, index+1)
 		case "addCalculation":
 			if p.TargetID != before.TableID || !claim(p.Calculation.ID) || !p.Calculation.canEvaluate(result) {
 				return TableContext{}, ErrInvalid

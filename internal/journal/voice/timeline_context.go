@@ -42,6 +42,9 @@ func validateTimelineContext(s Snapshot) error {
 		for _, c := range table.Calculations {
 			used[c.ID] = true
 		}
+		for _, c := range table.Charts {
+			used[c.ID] = true
+		}
 	}
 	seenTimelines := map[string]bool{}
 	refs := func(ids []string, available map[string]bool) bool {

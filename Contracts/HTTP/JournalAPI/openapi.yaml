@@ -482,6 +482,114 @@ paths:
           "$ref": "#/components/responses/ServiceUnavailable"
         default:
           "$ref": "#/components/responses/Error"
+  "/v1/journal/illustrations":
+    post:
+      operationId: createJournalIllustration
+      tags: [Journal]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/IllustrationRequest"
+      responses:
+        '200':
+          description: Authenticated illustration operation result.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IllustrationTask"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/illustrations/{taskID}":
+    get:
+      operationId: getJournalIllustration
+      tags: [Journal]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: taskID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authenticated illustration operation result.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IllustrationTask"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/illustrations/{taskID}/cancel":
+    post:
+      operationId: cancelJournalIllustration
+      tags: [Journal]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: taskID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/IllustrationCancellation"
+      responses:
+        '200':
+          description: Authenticated illustration operation result.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IllustrationTask"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/illustrations/{taskID}/result":
+    get:
+      operationId: getJournalIllustrationResult
+      tags: [Journal]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: taskID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Authenticated illustration operation result.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IllustrationResult"
+        default:
+          "$ref": "#/components/responses/Error"
 components:
   securitySchemes:
     AppAttestKeyID:
@@ -763,6 +871,7 @@ components:
             - managed_subscription
             - free_managed_recognition
             - sensitive_health_ai
+            - journal_illustration
         documentVersion:
           type: string
           minLength: 1
@@ -903,6 +1012,23 @@ components:
         resetsAt:
           type: string
           format: date-time
+    IllustrationSuggestion:
+      type: object
+      additionalProperties: false
+      required: [summary, subject, setting, composition, style, sourceQuotes, reason]
+      properties:
+        summary: {type: string, minLength: 1, maxLength: 120}
+        subject: {type: string, minLength: 1, maxLength: 500}
+        setting: {type: string, maxLength: 500}
+        composition: {type: string, maxLength: 500}
+        style: {type: string, maxLength: 120}
+        reason: {type: string, minLength: 1, maxLength: 240}
+        sourceQuotes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 600}
     OrganizeRequest:
       type: object
       additionalProperties: false
@@ -915,7 +1041,9 @@ components:
         - existingTags
         - rejectedTagNames
         - books
+        - illustrationSuggestionsEnabled
       properties:
+        illustrationSuggestionsEnabled: {type: boolean}
         requestID:
           type: string
           format: uuid
@@ -985,6 +1113,8 @@ components:
         - newBookSuggestions
         - quota
       properties:
+        illustrationSuggestion:
+          "$ref": "#/components/schemas/IllustrationSuggestion"
         requestID:
           type: string
           format: uuid
@@ -1091,6 +1221,47 @@ components:
           minimum: 0
         available:
           type: boolean
+    IllustrationRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, versionID, prompt, consentRevision]
+      properties:
+        requestID: {type: string, format: uuid}
+        versionID: {type: string, format: uuid}
+        prompt: {type: string, minLength: 1, maxLength: 20000}
+        consentRevision: {type: string, minLength: 1, maxLength: 128}
+        referenceSHA256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        reference: {type: string, format: byte, maxLength: 33333336}
+    IllustrationCancellation:
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+    IllustrationTask:
+      type: object
+      additionalProperties: false
+      required: [id, versionID, state, revision, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        versionID: {type: string, format: uuid}
+        state:
+          type: string
+          enum: [queued, running, succeeded, rejected, uncertain, cancelled]
+        revision: {type: integer, format: int64, minimum: 1}
+        expiresAt: {type: string, format: date-time}
+        problem:
+          type: string
+          enum: [network, unavailable, quota, rejected, invalidImage]
+    IllustrationResult:
+      type: object
+      additionalProperties: false
+      required: [image, mime, width, height]
+      properties:
+        image: {type: string, format: byte, maxLength: 33333336}
+        mime: {type: string, enum: [image/png, image/jpeg]}
+        width: {type: integer, minimum: 1, maximum: 16000}
+        height: {type: integer, minimum: 1, maximum: 16000}
   parameters:
     DevelopmentActivationHeader:
       in: header

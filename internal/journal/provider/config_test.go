@@ -32,7 +32,7 @@ func TestConfiguredOrganizeMatchesPreviewAndRecordsActualModel(t *testing.T) {
 		if !reflect.DeepEqual(want, got) {
 			t.Error("production and preview requests differ")
 		}
-		if got["instructions"] != policy.Journal.Organize.Prompt || got["model"] != "selected-lite" || got["temperature"] != temperature || got["max_output_tokens"] != float64(2048) {
+		if got["instructions"] != policy.Journal.Organize.Prompt+contracts.IllustrationSuggestionInstructions || got["model"] != "selected-lite" || got["temperature"] != temperature || got["max_output_tokens"] != float64(2048) {
 			t.Error("parameters not applied")
 		}
 		_, _ = w.Write([]byte(`{"status":"completed","model":"actual-model","usage":{"input_tokens":20,"output_tokens":10},"output":[{"content":[{"type":"output_text","text":"{\"tags\":[],\"existingBookRecommendations\":[],\"newBookSuggestions\":[]}"}]}]}`))

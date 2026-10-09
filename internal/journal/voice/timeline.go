@@ -111,11 +111,20 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 		for _, calculation := range table.Calculations {
 			used[calculation.ID] = true
 		}
+		for _, chart := range table.Charts {
+			used[chart.ID] = true
+		}
 	}
 	for _, timeline := range s.TimelineContext {
 		used[timeline.TimelineID] = true
 		for _, event := range timeline.Events {
 			used[event.ID] = true
+		}
+	}
+	for _, c := range s.JourneyContext {
+		used[c.MapID] = true
+		for _, stop := range c.Stops {
+			used[stop.ID] = true
 		}
 	}
 	for _, c := range r.TableCreations {
@@ -143,6 +152,9 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 		}
 	}
 	linked := func(source TableSource, block, role string) bool {
+		if role == "content" && !slices.Contains(r.ConsumedSourceIDs, source.SourceID) {
+			return structuredSourceAuthorized(source, role, block, r, s, s.TimelineSourceContext)
+		}
 		text, exists := sources[source.SourceID]
 		if !exists {
 			return false
@@ -160,7 +172,7 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 			joined, offset := "", 0
 			for _, segment := range p.Segments {
 				next := offset + len(segment.Text)
-				if segment.Role == role && slices.Equal(segment.BlockIDs, []string{block}) && start >= offset && end <= next && (role != "instruction" || (start == offset && end == next)) {
+				if segment.Role == role && slices.Contains(segment.BlockIDs, block) && start >= offset && end <= next && (role != "instruction" || (start == offset && end == next)) {
 					found = true
 				}
 				joined += segment.Text

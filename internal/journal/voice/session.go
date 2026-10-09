@@ -243,9 +243,16 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	var inputFinal bool
 	var transcriptBase, segmentText string
 	var generation, tr, lastSubmitted int
-	var dirty, running, finishing, failed bool
+	var dirty, running, finishing, failed, captureClosed bool
+	var cancelRewrite context.CancelFunc
+	var rewritePaused, runningPolish bool
 	awaitingRevision := -1
 	var awaitingSources []string
+	var awaitingPolish []PolishTarget
+	waitingForPolishRetry := false
+	hasWork := func() bool {
+		return pendingPolish(snapshot.Polish) || (snapshot.Polish == nil && len(snapshot.PendingUtterances) > 0)
+	}
 	var segmentPeriod string
 	var remaining int
 	rewriteTimer := time.NewTimer(time.Hour)
@@ -258,11 +265,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	}
 	maxEnd := minTime(time.Now().Add(31*time.Minute), claim.Identity.ExpiresAt)
 	launch := func() {
-		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 || len(snapshot.PendingUtterances) == 0 {
+		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
 		}
 		current := snapshot
-		current.Transcript = transcriptBase + segmentText
+		if current.Polish == nil {
+			current.Transcript = transcriptBase + segmentText
+		}
 		current.PendingUtterances = pendingRewriteBatch(current.PendingUtterances)
 		if current.Validate() != nil {
 			fail("voice_context_too_large")
@@ -282,6 +291,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		attempt := rewriteAttempts
 		startedAt := time.Now()
 		finalizing := finishing
+		rewritePaused = false
+		runningPolish = current.Polish != nil
+		stage := "organizing"
+		if current.Polish == nil {
+			stage = "structuring"
+		}
+		emit(Event{Type: "processing", Stage: stage})
+		work, stop := context.WithTimeout(ctx, 840*time.Second)
+		cancelRewrite = stop
 		if s.Logger != nil {
 			bodyCharacters := 0
 			for _, block := range current.Blocks {
@@ -312,7 +330,6 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		complete := lifecycle.Track(ctx)
 		go func() {
 			defer complete()
-			work, stop := context.WithTimeout(ctx, 840*time.Second)
 			defer stop()
 			work = withRewriteTrace(work, voiceTraceID, attempt)
 			result, err := s.Model.Rewrite(work, current, targetTR)
@@ -325,7 +342,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	// Interim ASR is revisable source text, not a committed receipt. Coalesce
 	// updates and keep one model call in flight; finalization bypasses pacing.
 	schedule := func(immediate bool) {
-		if running || awaitingRevision >= 0 || !dirty || len(snapshot.Blocks) == 0 || len(snapshot.PendingUtterances) == 0 {
+		// Once capture ends, keep ASR moving and group all remaining speech into
+		// the final snapshot rather than organizing each transport receipt.
+		if captureClosed && !finishing {
+			return
+		}
+		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
 		}
 		due := time.Now()
@@ -379,11 +401,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					return
 				}
 				next := *f.Snapshot
+				if running && runningPolish && next.Polish != nil && next.Polish.Paused && cancelRewrite != nil {
+					rewritePaused = true
+					cancelRewrite()
+				}
 				hadSnapshot := hasSnapshot
 				// A document ACK may have been sent before the latest receipt
 				// reached the client. It cannot roll back server-confirmed speech.
 				// Only the initial snapshot seeds prior-session transcript text.
-				if hasSnapshot {
+				if hasSnapshot && !next.DictationMode {
 					next.Transcript = transcriptBase
 				}
 				hasSnapshot = true
@@ -397,7 +423,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						removePendingUtterances(next.PendingUtterances, awaitingSources),
 					)
 					awaitingSources = nil
-				} else if hadSnapshot {
+				} else if hadSnapshot && !next.DictationMode {
 					// A snapshot sent before the latest receipt cannot erase source
 					// utterances that the server has already committed.
 					next.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, next.PendingUtterances)
@@ -410,19 +436,27 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if len(next.PendingUtterances) > 0 && (!hadSnapshot || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances)) {
 					dirty = true
 				}
-				// Repeated receipt acknowledgements do not invalidate a model
-				// call that already uses the same base. Real edits still do.
-				if snapshot.Revision != next.Revision || snapshot.Transcript != next.Transcript ||
-					!slices.Equal(snapshot.Blocks, next.Blocks) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) ||
-					!slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances) ||
+				// Newly committed speech queues another batch. It must not
+				// invalidate work already running against the unchanged body.
+				// Changes to existing speech evidence or the manuscript still do.
+				if snapshot.Revision != next.Revision ||
+					((!next.DictationMode && !slices.Equal(snapshot.Blocks, next.Blocks)) || (next.DictationMode && !preservesDictationBlocks(snapshot.Blocks, next.Blocks))) || !slices.Equal(snapshot.EditedBlockIDs, next.EditedBlockIDs) ||
+					!slices.Equal(snapshot.MediaOnlyBlockIDs, next.MediaOnlyBlockIDs) || !preservesPendingSources(snapshot.PendingUtterances, next.PendingUtterances) ||
 					!slices.Equal(snapshot.Words, next.Words) || snapshot.WritingStyle != next.WritingStyle {
 					generation++
+				}
+				if polishAcknowledged(next.Polish, awaitingPolish) {
+					awaitingPolish = nil
+				}
+				if next.DictationMode {
+					waitingForPolishRetry = false
+					dirty = pendingPolish(next.Polish) || (next.Polish == nil && len(next.PendingUtterances) > 0)
 				}
 				snapshot = next
 				transcriptBase = snapshot.Transcript
 				if finishing && segment == "" && !running {
 					launch()
-					if !failed && !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -516,9 +550,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 							committedSegments[segment] = true
 							transcriptBase += duplicate.Text
 							snapshot.Transcript = transcriptBase
-							snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(duplicate.SegmentID, duplicate.Utterances))
+							if !snapshot.DictationMode {
+								snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(duplicate.SegmentID, duplicate.Utterances))
+							}
 							tr++
-							dirty = len(snapshot.PendingUtterances) > 0
+							dirty = hasWork()
 						}
 						emit(Event{Type: "receipt", Receipt: duplicate, RemainingMilliseconds: remaining})
 						segment = ""
@@ -529,11 +565,21 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					failWithCause("voice_speech_unavailable", "send_speech_audio", err)
 					return
 				}
+			case "capture_closed":
+				captureClosed = true
+				rewriteTimer.Stop()
+				rewriteC = nil
+				if s.Logger != nil {
+					s.Logger.InfoContext(ctx, "journal voice capture closed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
+				}
 			case "finish":
 				finishing = true
+				if s.Logger != nil {
+					s.Logger.InfoContext(ctx, "journal voice tail transcription completed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
+				}
 				if segment == "" {
 					launch()
-					if !failed && !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -555,6 +601,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 			v := result.value
 			wireUtterances := identifiedUtterances(segment, v.Text, incrementalUtterances(v.Utterances, (len(pcm)+31)/32), (len(pcm)+31)/32)
+			if !v.Final && len(v.Utterances) == 0 {
+				for i := range wireUtterances {
+					wireUtterances[i].Definite = false
+				}
+			}
 			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: wireUtterances})
 			if v.Text != segmentText {
 				segmentText = v.Text
@@ -581,8 +632,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				transcriptBase += v.Text
 				segmentText = ""
 				snapshot.Transcript = transcriptBase
-				snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(segment, wireUtterances))
-				dirty = len(snapshot.PendingUtterances) > 0
+				if !snapshot.DictationMode {
+					snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(segment, wireUtterances))
+				}
+				dirty = hasWork()
 				emit(Event{Type: "receipt", Receipt: &receipt, RemainingMilliseconds: remaining})
 				asr.Close()
 				asr = nil
@@ -591,7 +644,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if finishing {
 					dirty = dirty || (lastSubmitted != tr && len(snapshot.PendingUtterances) > 0)
 					launch()
-					if !failed && !running && awaitingRevision < 0 {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -605,6 +658,23 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 		case result := <-rewrites:
 			running = false
+			cancelRewrite = nil
+			emit(Event{Type: "processing", Stage: "idle"})
+			if rewritePaused {
+				waitingForPolishRetry = false
+				dirty = hasWork()
+				if finishing && segment == "" && !dirty {
+					_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
+					emit(Event{Type: "finished"})
+					return
+				}
+				if finishing {
+					launch()
+				} else {
+					schedule(true)
+				}
+				continue
+			}
 			diagnostics := rewriteDiagnostics(result.value, result.err)
 			if result.err != nil {
 				failedRewrites++
@@ -630,6 +700,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					"input_token_count", result.value.InputTokens,
 					"output_token_count", result.value.OutputTokens,
 					"patch_count", len(result.value.Revision.Patches),
+					"narrative_paragraph_count", func() int {
+						if result.value.Polish != nil {
+							return len(result.value.Polish.Paragraphs)
+						}
+						return 0
+					}(),
 					"question_count", len(result.value.Revision.Questions),
 					"emotion_count", len(result.value.Revision.Emotions),
 					"has_overall_emotion", result.value.Revision.OverallEmotion != "",
@@ -637,32 +713,42 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				)
 			}
 			if result.err != nil {
-				failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
-				dirty = true
-				if finishing {
-					return
+				if snapshot.DictationMode {
+					emit(Event{Type: "rewrite_error", Code: "voice_rewrite_unavailable"})
+					waitingForPolishRetry = true
+					// Keep ASR and audio receipts alive. The client owns the independent
+					// bounded polish retry/pause state, persisted with the visible body.
+					dirty = false
+				} else {
+					failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
+					dirty = true
+					if finishing {
+						return
+					}
 				}
 			} else {
 				if s.Usage != nil {
 					s.Usage(ctx, claim.Identity, result.value.InputTokens, result.value.OutputTokens)
 				}
-				if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
+				if result.value.Polish != nil {
+					awaitingPolish = slices.Clone(result.value.Polish.Targets)
+					emit(Event{Type: "polish", Polish: result.value.Polish})
+				} else if result.generation == generation && result.value.Revision.BaseRevision == snapshot.Revision {
 					awaitingRevision = result.value.Revision.BaseRevision + 1
 					awaitingSources = append([]string(nil), result.value.Revision.ConsumedSourceIDs...)
 					emit(Event{Type: "revision", Revision: &result.value.Revision})
 					// Do not start another round until the client acknowledges the new base
 					// with a snapshot. This avoids repeatedly proposing the same insertion.
 				} else {
-					// An intervening receipt/snapshot can invalidate an in-flight
-					// result without changing the text. Finalization still needs
-					// a revision that the client has actually applied.
+					// An actual document or source edit supersedes this result.
+					// Finalization still needs an applied revision of that base.
 					dirty = true
 				}
 			}
 			if !finishing {
 				schedule(true)
 			}
-			if finishing && segment == "" && awaitingRevision < 0 {
+			if finishing && segment == "" && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
 				if dirty {
 					launch()
 				} else {
@@ -800,16 +886,37 @@ func removePendingUtterances(source []SourceUtterance, removed []string) []Sourc
 	return result
 }
 
+func preservesPendingSources(prior, next []SourceUtterance) bool {
+	return len(next) >= len(prior) && slices.Equal(prior, next[:len(prior)])
+}
+
+// Keep catch-up work small enough to make visible progress within the provider
+// timeout. A single committed utterance is indivisible: preserve its identity
+// and exact evidence rather than truncating it to fit a batch.
+const rewriteBatchCharacters = 300
+const rewriteBatchSources = 4
+
 func pendingRewriteBatch(source []SourceUtterance) []SourceUtterance {
 	result := make([]SourceUtterance, 0, len(source))
 	characters := 0
 	for _, utterance := range source {
 		length := len([]rune(utterance.Text))
-		if len(result) > 0 && characters+length > MaxRewriteSourceCharacters {
+		if len(result) > 0 && (characters+length > rewriteBatchCharacters || len(result) >= rewriteBatchSources) {
 			break
 		}
 		result = append(result, utterance)
 		characters += length
 	}
 	return result
+}
+
+// Newly projected speech may add body paragraphs while a structural command
+// runs. Existing paragraphs are the only manuscript baseline for that task.
+func preservesDictationBlocks(prior, next []Block) bool {
+	for _, block := range prior {
+		if !slices.Contains(next, block) {
+			return false
+		}
+	}
+	return true
 }

@@ -75,7 +75,7 @@ func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot,
 	defer ws.Close()
 	_ = ws.SetDeadline(time.Now().Add(60 * time.Second))
 	var event Event
-	if websocket.JSON.Receive(ws, &event) != nil || event.Type != "ready" {
+	if receiveVoiceResult(ws, &event) != nil || event.Type != "ready" {
 		return RewriteResult{}, errors.New("development stream not ready")
 	}
 	if websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}) != nil || websocket.JSON.Send(ws, Frame{Type: "finish"}) != nil {
@@ -84,7 +84,7 @@ func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot,
 	var result RewriteResult
 	seen := false
 	for {
-		if websocket.JSON.Receive(ws, &event) != nil {
+		if receiveVoiceResult(ws, &event) != nil {
 			return RewriteResult{}, errors.New("development result unavailable")
 		}
 		switch event.Type {
@@ -95,6 +95,17 @@ func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot,
 				return RewriteResult{}, errors.New("no editorial result")
 			}
 			return result, nil
+		case "polish":
+			if seen || event.Polish == nil || snapshot.Polish == nil {
+				return RewriteResult{}, errors.New("invalid narrative result")
+			}
+			seen = true
+			result.Polish = event.Polish
+			snapshot.Polish = nil
+			snapshot.Revision++
+			if websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}) != nil {
+				return RewriteResult{}, errors.New("narrative acknowledgement failed")
+			}
 		case "revision":
 			if seen || event.Revision == nil || event.Revision.Validate(snapshot) != nil {
 				return RewriteResult{}, errors.New("invalid editorial result")

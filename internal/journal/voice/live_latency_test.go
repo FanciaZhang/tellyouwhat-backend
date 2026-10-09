@@ -186,7 +186,7 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 	go func() {
 		for {
 			var e Event
-			err := websocket.JSON.Receive(ws, &e)
+			err := receiveVoiceResult(ws, &e)
 			select {
 			case events <- message{e, err}:
 			case <-ctx.Done():

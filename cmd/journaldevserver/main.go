@@ -19,6 +19,7 @@ import (
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/development"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 )
@@ -50,7 +51,7 @@ func run() error {
 	if err != nil || monthlyCNY < 1 || monthlyCNY > 1000 {
 		return errors.New("invalid development monthly budget")
 	}
-	store, err := development.NewFileCostStore(filepath.Join(stateDir, "cost-events.json"))
+	store, err := development.NewFileCostStore(filepath.Join(stateDir, "cost-events.json"), monthlyCNY*costcontrol.NanosPerCNY, time.Now())
 	if err != nil {
 		return err
 	}
@@ -68,19 +69,42 @@ func run() error {
 	recordingASR.URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel"
 	recordingASR.ResourceID = "volc.seedasr.auc"
 	recording := &voice.RecordingExecutor{Store: recordingStore, Provider: voice.RecordingASR{Config: recordingASR}, Budget: budget, AppID: "journal-development", Price: costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}}
+	var images *development.IllustrationRuntime
+	if os.Getenv("JOURNAL_IMAGE_ENABLED") == "true" {
+		imageProvider, err := illustration.NewProvider(os.Getenv("JOURNAL_IMAGE_BASE_URL"), os.Getenv("JOURNAL_IMAGE_API_KEY"), os.Getenv("JOURNAL_IMAGE_MODEL_ID"), nil)
+		if err != nil {
+			return errors.New("invalid Journal image provider configuration")
+		}
+		max, err := strconv.ParseInt(os.Getenv("JOURNAL_IMAGE_MAX_COST_NANOS"), 10, 64)
+		if err != nil || max <= 0 || max > costcontrol.NanosPerCNY {
+			return errors.New("invalid Journal image price ceiling")
+		}
+		images, err = development.NewIllustrationRuntime(filepath.Join(stateDir, "illustrations"), os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"), &illustration.BudgetedGenerator{Next: imageProvider, Controller: budget, MaxCostNanos: max}, time.Now)
+		if err != nil {
+			return err
+		}
+	} else if value := os.Getenv("JOURNAL_IMAGE_ENABLED"); value != "" && value != "false" {
+		return errors.New("invalid Journal image enablement")
+	}
 	handler, err := development.New(development.Config{
-		Token:     os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
-		Organizer: provider.NewBudgetedClient(model, budget, "journal-development", price),
-		Speech:    voice.NewBudgetedSpeech(voice.ASR{Config: asr}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
-		Rewriter:  voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price),
-		Recording: recording,
-		Logger:    logger,
+		Token:         os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
+		Organizer:     provider.NewBudgetedClient(model, budget, "journal-development", price),
+		Speech:        voice.NewBudgetedSpeech(voice.ASR{Config: asr}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
+		Rewriter:      voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price),
+		Recording:     recording,
+		Illustrations: images,
+		Logger:        logger,
 	})
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if images != nil {
+		done := make(chan struct{})
+		go func() { defer close(done); images.Run(ctx) }()
+		defer func() { stop(); <-done }()
+	}
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()

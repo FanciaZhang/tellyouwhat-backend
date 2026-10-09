@@ -45,14 +45,15 @@ func ReservationTokens(input OrganizeRequest) int {
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type OrganizeRequest struct {
-	RequestID        string        `json:"requestID"`
-	ContractVersion  string        `json:"contractVersion"`
-	ContentHash      string        `json:"contentHash"`
-	Title            string        `json:"title"`
-	Body             string        `json:"body"`
-	ExistingTags     []string      `json:"existingTags"`
-	RejectedTagNames []string      `json:"rejectedTagNames"`
-	Books            []BookContext `json:"books"`
+	IllustrationSuggestionsEnabled bool          `json:"illustrationSuggestionsEnabled"`
+	RequestID                      string        `json:"requestID"`
+	ContractVersion                string        `json:"contractVersion"`
+	ContentHash                    string        `json:"contentHash"`
+	Title                          string        `json:"title"`
+	Body                           string        `json:"body"`
+	ExistingTags                   []string      `json:"existingTags"`
+	RejectedTagNames               []string      `json:"rejectedTagNames"`
+	Books                          []BookContext `json:"books"`
 }
 
 type BookContext struct {
@@ -86,6 +87,7 @@ type Quota struct {
 }
 
 type OrganizeResponse struct {
+	IllustrationSuggestion      *IllustrationSuggestion      `json:"illustrationSuggestion"`
 	RequestID                   string                       `json:"requestID"`
 	ContentHash                 string                       `json:"contentHash"`
 	AnalysisVersion             string                       `json:"analysisVersion"`
@@ -224,6 +226,7 @@ func validExplanation(value string) bool {
 }
 
 type ModelResult struct {
+	IllustrationSuggestion      *IllustrationSuggestion      `json:"illustrationSuggestion"`
 	Tags                        []Tag                        `json:"tags"`
 	ExistingBookRecommendations []ExistingBookRecommendation `json:"existingBookRecommendations"`
 	NewBookSuggestions          []NewBookSuggestion          `json:"newBookSuggestions"`
@@ -261,8 +264,9 @@ func ResponseSchema() map[string]any {
 	}
 	return map[string]any{
 		"type": "object", "additionalProperties": false,
-		"required": []string{"tags", "existingBookRecommendations", "newBookSuggestions"},
+		"required": []string{"tags", "existingBookRecommendations", "newBookSuggestions", "illustrationSuggestion"},
 		"properties": map[string]any{
+			"illustrationSuggestion":      IllustrationSuggestionSchema(),
 			"tags":                        map[string]any{"type": "array", "maxItems": 8, "items": tagItem},
 			"existingBookRecommendations": map[string]any{"type": "array", "maxItems": 3, "items": bookItem},
 			"newBookSuggestions":          map[string]any{"type": "array", "maxItems": 2, "items": newBookItem},

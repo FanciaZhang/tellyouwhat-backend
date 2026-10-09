@@ -1113,6 +1113,7 @@ components:
             - managed_subscription
             - free_managed_recognition
             - sensitive_health_ai
+            - journal_illustration
         documentVersion:
           type: string
           minLength: 1

@@ -13,9 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
 
-const Version = "journal-voice-v20"
+const Version = "journal-voice-v29"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -51,7 +52,16 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
-	rewriteAcknowledged string // server-owned, never decoded from JSON
+	IllustrationSuggestionsEnabled bool             `json:"illustrationSuggestionsEnabled"`
+	TableSourceContext             []TableSource    `json:"tableSourceContext"`
+	TimelineSourceContext          []TableSource    `json:"timelineSourceContext"`
+	Polish                         *PolishRequest   `json:"polish,omitempty"`
+	DictationMode                  bool             `json:"dictationMode,omitempty"`
+	DiagramContext                 []DiagramContext `json:"diagramContext"`
+	DiagramSourceContext           []TableSource    `json:"diagramSourceContext"`
+	JourneySourceContext           []TableSource    `json:"journeySourceContext"`
+	JourneyContext                 []JourneyContext `json:"journeyContext"`
+	rewriteAcknowledged            string           // server-owned, never decoded from JSON
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`
@@ -98,29 +108,34 @@ type PassageSource struct {
 	SourceIDs      []string `json:"sourceIDs"`
 }
 type Revision struct {
-	BaseRevision         int                   `json:"baseRevision"`
-	TranscriptRevision   int                   `json:"transcriptRevision"`
-	Patches              []Patch               `json:"patches"`
-	Passages             []PassageSource       `json:"passages"`
-	Questions            []string              `json:"questions"`
-	Emotions             []EmotionPlacement    `json:"emotions"`
-	OverallEmotion       string                `json:"overallEmotion"`
-	TimelineEdits        []TimelineEdit        `json:"timelineEdits"`
-	TimelineCreations    []TimelineCreation    `json:"timelineCreations"`
-	TableCreations       []TableCreation       `json:"tableCreations"`
-	TableEdits           []TableEdit           `json:"tableEdits"`
-	TableResolutions     []TableResolution     `json:"tableResolutions"`
-	BlockEdits           []BlockEdit           `json:"blockEdits"`
-	Corrections          []TextCorrection      `json:"corrections"`
-	FormatCommands       []FormatCommand       `json:"formatCommands"`
-	MoveCommands         []MoveCommand         `json:"moveCommands"`
-	ParagraphCommands    []ParagraphCommand    `json:"paragraphCommands"`
-	ParagraphResolutions []ParagraphResolution `json:"paragraphResolutions"`
-	MoveResolutions      []MoveResolution      `json:"moveResolutions"`
-	FormatResolutions    []FormatResolution    `json:"formatResolutions"`
-	ConsumedSourceIDs    []string              `json:"consumedSourceIDs"`
-	SourcePartitions     []SourcePartition     `json:"sourcePartitions"`
-	SemanticState        SemanticState         `json:"semanticState"`
+	IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
+	DiagramCreations       []DiagramCreation                 `json:"diagramCreations"`
+	DiagramEdits           []DiagramEdit                     `json:"diagramEdits"`
+	JourneyCreations       []JourneyCreation                 `json:"journeyCreations"`
+	JourneyEdits           []JourneyEdit                     `json:"journeyEdits"`
+	BaseRevision           int                               `json:"baseRevision"`
+	TranscriptRevision     int                               `json:"transcriptRevision"`
+	Patches                []Patch                           `json:"patches"`
+	Passages               []PassageSource                   `json:"passages"`
+	Questions              []string                          `json:"questions"`
+	Emotions               []EmotionPlacement                `json:"emotions"`
+	OverallEmotion         string                            `json:"overallEmotion"`
+	TimelineEdits          []TimelineEdit                    `json:"timelineEdits"`
+	TimelineCreations      []TimelineCreation                `json:"timelineCreations"`
+	TableCreations         []TableCreation                   `json:"tableCreations"`
+	TableEdits             []TableEdit                       `json:"tableEdits"`
+	TableResolutions       []TableResolution                 `json:"tableResolutions"`
+	BlockEdits             []BlockEdit                       `json:"blockEdits"`
+	Corrections            []TextCorrection                  `json:"corrections"`
+	FormatCommands         []FormatCommand                   `json:"formatCommands"`
+	MoveCommands           []MoveCommand                     `json:"moveCommands"`
+	ParagraphCommands      []ParagraphCommand                `json:"paragraphCommands"`
+	ParagraphResolutions   []ParagraphResolution             `json:"paragraphResolutions"`
+	MoveResolutions        []MoveResolution                  `json:"moveResolutions"`
+	FormatResolutions      []FormatResolution                `json:"formatResolutions"`
+	ConsumedSourceIDs      []string                          `json:"consumedSourceIDs"`
+	SourcePartitions       []SourcePartition                 `json:"sourcePartitions"`
+	SemanticState          SemanticState                     `json:"semanticState"`
 }
 type Receipt struct {
 	Utterances   []Utterance `json:"utterances,omitempty"`
@@ -130,15 +145,17 @@ type Receipt struct {
 	Milliseconds int         `json:"milliseconds"`
 }
 type Event struct {
-	Utterances            []Utterance `json:"utterances,omitempty"`
-	Type                  string      `json:"type"`
-	SegmentID             string      `json:"segmentID,omitempty"`
-	Text                  string      `json:"text,omitempty"`
-	Stable                string      `json:"stable,omitempty"`
-	Receipt               *Receipt    `json:"receipt,omitempty"`
-	Revision              *Revision   `json:"revision,omitempty"`
-	RemainingMilliseconds int         `json:"remainingMilliseconds"`
-	Code                  string      `json:"code,omitempty"`
+	Stage                 string          `json:"stage,omitempty"`
+	Polish                *PolishRevision `json:"polish,omitempty"`
+	Utterances            []Utterance     `json:"utterances,omitempty"`
+	Type                  string          `json:"type"`
+	SegmentID             string          `json:"segmentID,omitempty"`
+	Text                  string          `json:"text,omitempty"`
+	Stable                string          `json:"stable,omitempty"`
+	Receipt               *Receipt        `json:"receipt,omitempty"`
+	Revision              *Revision       `json:"revision,omitempty"`
+	RemainingMilliseconds int             `json:"remainingMilliseconds"`
+	Code                  string          `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`
@@ -149,10 +166,15 @@ type Frame struct {
 }
 
 func (s Snapshot) incremental() bool {
-	return s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
+	return s.Polish == nil && s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
 }
 
 func (s Snapshot) Validate() error {
+	if s.Polish != nil {
+		if err := s.Polish.Validate(); err != nil {
+			return err
+		}
+	}
 	if s.RecordingContext != nil {
 		if err := s.RecordingContext.Validate(s.Transcript); err != nil {
 			return err
@@ -627,6 +649,24 @@ func (s Snapshot) validateIncremental() error {
 	if err := validateTimelineContext(s); err != nil {
 		return err
 	}
+	if err := validateStructuredSourceContext(s.TableSourceContext, s); err != nil {
+		return err
+	}
+	if err := validateStructuredSourceContext(s.TimelineSourceContext, s); err != nil {
+		return err
+	}
+	if err := validateJourneySourceContext(s); err != nil {
+		return err
+	}
+	if err := validateStructuredSourceContext(s.DiagramSourceContext, s); err != nil {
+		return err
+	}
+	if err := validateDiagramContext(s); err != nil {
+		return err
+	}
+	if err := validateJourneyContext(s); err != nil {
+		return err
+	}
 	if err := validateTableContext(s); err != nil {
 		return err
 	}
@@ -734,6 +774,18 @@ func (r Revision) validateIncremental(s Snapshot) error {
 		correctedMentions[correction.MentionID] = true
 	}
 	usedSources := map[string]bool{}
+	if err := validateDiagramEdits(r, s); err != nil {
+		return err
+	}
+	if err := validateDiagramCreations(r, s); err != nil {
+		return err
+	}
+	if err := validateJourneyEdits(r, s); err != nil {
+		return err
+	}
+	if err := validateJourneyCreations(r, s); err != nil {
+		return err
+	}
 	if err := validateTimelineEdits(r, s); err != nil {
 		return err
 	}
@@ -780,6 +832,13 @@ func (r Revision) validateIncremental(s Snapshot) error {
 		}
 		if paragraphFormatMark(command.Mark) && (!command.Enabled || command.Anchor.Quote != texts[command.BlockID] ||
 			command.Anchor.Prefix != "" || command.Anchor.Suffix != "") {
+			return ErrInvalid
+		}
+		if (command.Mark == "orderedListItem" || command.Mark == "unorderedListItem") &&
+			strings.Contains(command.Anchor.Quote, "、") && strings.Contains(command.Instruction, "整理") &&
+			strings.Contains(command.Instruction, "列表") && !strings.Contains(command.Instruction, "列表项") {
+			// An explicit multi-item reflow cannot be satisfied by marking the
+			// whole enumeration as a single item. Require a paragraph proposal.
 			return ErrInvalid
 		}
 		foundEvidence := false

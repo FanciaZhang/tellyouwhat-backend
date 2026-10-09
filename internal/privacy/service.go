@@ -9,15 +9,17 @@ import (
 )
 
 const (
-	AdultScope                   = "adult"
-	Age14PlusScope               = "age_14_plus"
-	HealthEligibilityScope       = "health_eligibility"
-	HealthGeneralDocumentVersion = "2026-10-01"
-	PrivacyTermsScope            = "privacy_and_terms"
-	LifetimeBYOKScope            = "lifetime_byok"
-	ManagedAIScope               = "managed_subscription"
-	FreeRecognitionScope         = "free_managed_recognition"
-	SensitiveHealthScope         = "sensitive_health_ai"
+	AdultScope                         = "adult"
+	Age14PlusScope                     = "age_14_plus"
+	HealthEligibilityScope             = "health_eligibility"
+	HealthGeneralDocumentVersion       = "2026-10-01"
+	PrivacyTermsScope                  = "privacy_and_terms"
+	LifetimeBYOKScope                  = "lifetime_byok"
+	ManagedAIScope                     = "managed_subscription"
+	FreeRecognitionScope               = "free_managed_recognition"
+	SensitiveHealthScope               = "sensitive_health_ai"
+	JournalIllustrationScope           = "journal_illustration"
+	JournalIllustrationDocumentVersion = "2026-09-27"
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -91,7 +93,7 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 		if (value.Scope == Age14PlusScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion == HealthGeneralDocumentVersion)) && principal.AppID != "health" {
 			return time.Time{}, ErrInvalidConsent
 		}
-		if !validConsent(value) {
+		if !validConsent(value) || (value.Scope == JournalIllustrationScope && principal.AppID != "journal") {
 			return time.Time{}, ErrInvalidConsent
 		}
 		key := value.Scope + "\x00" + value.DocumentVersion
@@ -139,6 +141,11 @@ func (service *Service) HasRequiredConsents(
 		}
 		requirement := Consent{Scope: scope, Granted: true}
 		switch scope {
+		case JournalIllustrationScope:
+			if principal.AppID != "journal" {
+				return false, ErrInvalidConsent
+			}
+			requirement.DocumentVersion = JournalIllustrationDocumentVersion
 		case AdultScope, PrivacyTermsScope:
 			requirement.DocumentVersion = GeneralDocumentVersion
 		case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
@@ -205,6 +212,8 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 
 func validConsent(value Consent) bool {
 	switch value.Scope {
+	case JournalIllustrationScope:
+		return value.DocumentVersion == JournalIllustrationDocumentVersion
 	case Age14PlusScope:
 		return value.DocumentVersion == HealthGeneralDocumentVersion
 	case PrivacyTermsScope:

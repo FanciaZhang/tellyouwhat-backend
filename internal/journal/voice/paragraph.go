@@ -6,16 +6,22 @@ import (
 	"unicode/utf8"
 )
 
+type ParagraphFragment struct {
+	Text  string `json:"text"`
+	Style string `json:"style"`
+}
+
 type ParagraphCommand struct {
-	ID                 string     `json:"id"`
-	Kind               string     `json:"kind"`
-	BlockIDs           []string   `json:"blockIDs"`
-	Anchor             TextAnchor `json:"anchor"`
-	Edge               string     `json:"edge"`
-	Separator          string     `json:"separator"`
-	ComponentsToSecond []string   `json:"componentsToSecond"`
-	SourceID           string     `json:"sourceID"`
-	Instruction        string     `json:"instruction"`
+	Fragments          []ParagraphFragment `json:"fragments,omitempty"`
+	ID                 string              `json:"id"`
+	Kind               string              `json:"kind"`
+	BlockIDs           []string            `json:"blockIDs"`
+	Anchor             TextAnchor          `json:"anchor"`
+	Edge               string              `json:"edge"`
+	Separator          string              `json:"separator"`
+	ComponentsToSecond []string            `json:"componentsToSecond"`
+	SourceID           string              `json:"sourceID"`
+	Instruction        string              `json:"instruction"`
 }
 
 // Resolve against the complete snapshot, not the model's bounded excerpts.
@@ -129,7 +135,24 @@ func validateParagraphs(r Revision, s Snapshot, touched map[string]bool) error {
 			seen[id] = true
 		}
 		switch c.Kind {
+		case "reflow":
+			if len(c.BlockIDs) != 1 || c.Anchor != (TextAnchor{}) || c.Edge != "" || c.Separator != "" || len(c.ComponentsToSecond) != 0 || len(c.Fragments) < 2 || len(c.Fragments) > 64 {
+				return ErrInvalid
+			}
+			joined := ""
+			for _, part := range c.Fragments {
+				if strings.TrimSpace(part.Text) == "" || strings.ContainsAny(part.Text, "\r\n") || !validBlockStyle(part.Style) || part.Style == "" {
+					return ErrInvalid
+				}
+				joined += part.Text
+			}
+			if joined != blocks[c.BlockIDs[0]].Text {
+				return ErrInvalid
+			}
 		case "split":
+			if len(c.Fragments) != 0 {
+				return ErrInvalid
+			}
 			if len(c.BlockIDs) != 1 || c.Separator != "" {
 				return ErrInvalid
 			}
@@ -145,6 +168,9 @@ func validateParagraphs(r Revision, s Snapshot, touched map[string]bool) error {
 				components[id] = true
 			}
 		case "merge":
+			if len(c.Fragments) != 0 {
+				return ErrInvalid
+			}
 			if len(c.BlockIDs) < 2 || c.Anchor != (TextAnchor{}) || c.Edge != "" ||
 				(c.Separator != "" && c.Separator != " ") || len(c.ComponentsToSecond) != 0 {
 				return ErrInvalid
