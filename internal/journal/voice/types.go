@@ -16,7 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
 
-const Version = "journal-voice-v31"
+const Version = "journal-voice-v32"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -140,13 +140,14 @@ type Revision struct {
 	SemanticState          SemanticState                     `json:"semanticState"`
 }
 type Receipt struct {
-	Utterances   []Utterance `json:"utterances,omitempty"`
-	SegmentID    string      `json:"segmentID"`
-	SHA256       string      `json:"sha256"`
-	Text         string      `json:"text"`
-	Milliseconds int         `json:"milliseconds"`
+	SegmentID    string `json:"segmentID"`
+	SHA256       string `json:"sha256"`
+	Milliseconds int    `json:"milliseconds"`
 }
 type Event struct {
+	RecognitionID         string            `json:"recognitionID,omitempty"`
+	StartMilliseconds     int               `json:"startMilliseconds,omitempty"`
+	Milliseconds          int               `json:"milliseconds,omitempty"`
 	Identity              *IdentityRevision `json:"identity,omitempty"`
 	Stage                 string            `json:"stage,omitempty"`
 	Polish                *PolishRevision   `json:"polish,omitempty"`
@@ -161,11 +162,13 @@ type Event struct {
 	Code                  string            `json:"code,omitempty"`
 }
 type Frame struct {
-	Type      string    `json:"type"`
-	SegmentID string    `json:"segmentID,omitempty"`
-	PCM       []byte    `json:"pcm,omitempty"`
-	Final     bool      `json:"final,omitempty"`
-	Snapshot  *Snapshot `json:"snapshot,omitempty"`
+	RecognitionID     string    `json:"recognitionID,omitempty"`
+	StartMilliseconds int       `json:"startMilliseconds,omitempty"`
+	Type              string    `json:"type"`
+	SegmentID         string    `json:"segmentID,omitempty"`
+	PCM               []byte    `json:"pcm,omitempty"`
+	Final             bool      `json:"final,omitempty"`
+	Snapshot          *Snapshot `json:"snapshot,omitempty"`
 }
 
 func (s Snapshot) incremental() bool {

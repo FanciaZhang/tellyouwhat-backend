@@ -236,14 +236,15 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	}()
 	var snapshot Snapshot
 	hasSnapshot := false
-	committedSegments := map[string]bool{}
 	var segment string
 	var pcm []byte
-	var duplicate *Receipt
 	var billedHash string
-	var inputFinal bool
+	var recognitionID string
+	var recognitionStart, recognitionBytes int
+	var recognitionClosing bool
+	fedSegments := map[string]bool{}
 	var transcriptBase, segmentText string
-	var generation, tr, lastSubmitted int
+	var generation, tr int
 	var dirty, running, finishing, failed, captureClosed bool
 	var cancelRewrite context.CancelFunc
 	var rewritePaused, runningPolish bool
@@ -288,7 +289,6 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		nextRewrite = time.Now().Add(2 * time.Second)
 		dirty = false
 		running = true
-		lastSubmitted = tr
 		g := generation
 		targetTR := tr
 		rewriteAttempts++
@@ -465,7 +465,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				snapshot = next
 				transcriptBase = snapshot.Transcript
-				if finishing && segment == "" && !running {
+				if finishing && segment == "" && asr == nil && !running {
 					launch()
 					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
@@ -477,7 +477,19 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					schedule(true)
 				}
 			case "audio":
-				if finishing || f.SegmentID == "" || len(f.PCM) > 6400 || len(f.PCM)%2 != 0 {
+				if finishing || recognitionClosing || f.SegmentID == "" || f.RecognitionID == "" || len(f.PCM) > 6400 || len(f.PCM)%2 != 0 || f.StartMilliseconds < 0 {
+					fail("voice_invalid_request")
+					return
+				}
+				if recognitionID == "" {
+					if _, err := uuid.Parse(f.RecognitionID); err != nil || f.StartMilliseconds >= SessionMilliseconds {
+						fail("voice_invalid_request")
+						return
+					}
+					recognitionID, recognitionStart = f.RecognitionID, f.StartMilliseconds
+					segmentText = ""
+				}
+				if f.RecognitionID != recognitionID || f.StartMilliseconds != recognitionStart {
 					fail("voice_invalid_request")
 					return
 				}
@@ -486,16 +498,8 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						fail("voice_invalid_request")
 						return
 					}
-					segment = f.SegmentID
-					inputFinal = false
-					pcm = nil
-					segmentText = ""
+					segment, pcm = f.SegmentID, nil
 					var err error
-					duplicate, err = s.Store.Receipt(ctx, claim.Identity.Owner, claim.SessionID, segment)
-					if err != nil {
-						failWithCause("voice_storage_unavailable", "read_segment_receipt", err)
-						return
-					}
 					billedHash, err = s.Store.BilledHash(ctx, claim.Identity.Owner, claim.SessionID, segment)
 					if err != nil {
 						failWithCause("voice_storage_unavailable", "read_billed_segment", err)
@@ -508,17 +512,50 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						failWithCause("voice_storage_unavailable", "read_voice_allowance", err)
 						return
 					}
-					if duplicate == nil {
-						if remaining <= 0 && billedHash == "" {
-							quotaFailure()
-							return
-						}
+					if remaining <= 0 && billedHash == "" {
+						quotaFailure()
+						return
+					}
+				}
+				if segment != f.SegmentID || len(pcm)+len(f.PCM) > MaxSegmentBytes {
+					fail("voice_invalid_request")
+					return
+				}
+				pcm = append(pcm, f.PCM...)
+				projectedBytes := recognitionBytes + len(f.PCM)
+				if billedHash != "" {
+					projectedBytes = recognitionBytes + len(pcm)
+				}
+				if !fedSegments[segment] && (projectedBytes+31)/32+recognitionStart > SessionMilliseconds {
+					fail("voice_invalid_request")
+					return
+				}
+				if billedHash == "" && (len(pcm)+31)/32 > remaining {
+					quotaFailure()
+					return
+				}
+				if f.Final && (len(pcm) == 0 || (billedHash != "" && billedHash != hash(string(pcm)))) {
+					fail("voice_revision_conflict")
+					return
+				}
+				// New audio streams immediately. Billed replay is buffered until
+				// its whole hash is verified, so an old ACK cannot authorize new bytes.
+				forward := f.PCM
+				if billedHash != "" {
+					forward = nil
+					if f.Final && !fedSegments[segment] {
+						forward = pcm
+					}
+				}
+				if len(forward) > 0 {
+					if asr == nil {
+						var err error
 						asr, err = s.Speech.Open(ctx, snapshot.Words)
 						if err != nil {
 							failWithCause("voice_speech_unavailable", "open_speech_provider", err)
 							return
 						}
-						conn, id := asr, segment
+						conn, id := asr, recognitionID
 						go func() {
 							for {
 								result, err := conn.Receive()
@@ -533,47 +570,40 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 							}
 						}()
 					}
+					for len(forward) > 0 {
+						n := min(6400, len(forward))
+						if err := asr.Send(forward[:n], false); err != nil {
+							failWithCause("voice_speech_unavailable", "send_speech_audio", err)
+							return
+						}
+						recognitionBytes += n
+						forward = forward[n:]
+					}
 				}
-				if segment != f.SegmentID || inputFinal || len(pcm)+len(f.PCM) > MaxSegmentBytes {
+				if f.Final {
+					receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Milliseconds: (len(pcm) + 31) / 32}
+					var err error
+					remaining, err = s.Store.Commit(ctx, claim.Identity.Owner, claim.SessionID, segmentPeriod, fence, receipt, s.limit())
+					if err != nil {
+						if errors.Is(err, ErrQuota) {
+							quotaFailure()
+						} else {
+							failWithCause("voice_storage_unavailable", "commit_audio_receipt", err)
+						}
+						return
+					}
+					fedSegments[segment] = true
+					emit(Event{Type: "receipt", Receipt: &receipt, RemainingMilliseconds: remaining})
+					segment, pcm, billedHash = "", nil, ""
+				}
+			case "recognition_finish":
+				if asr == nil || segment != "" || recognitionClosing || f.RecognitionID != recognitionID {
 					fail("voice_invalid_request")
 					return
 				}
-				pcm = append(pcm, f.PCM...)
-				if duplicate == nil && billedHash == "" && (len(pcm)+31)/32 > remaining {
-					quotaFailure()
-					return
-				}
-				inputFinal = f.Final
-				if f.Final && billedHash != "" && billedHash != hash(string(pcm)) {
-					fail("voice_revision_conflict")
-					return
-				}
-				if duplicate != nil {
-					if f.Final {
-						if duplicate.SHA256 != hash(string(pcm)) {
-							fail("voice_revision_conflict")
-							return
-						}
-						if len(duplicate.Utterances) == 0 && duplicate.Text != "" {
-							duplicate.Utterances = identifiedUtterances(duplicate.SegmentID, duplicate.Text, nil, duplicate.Milliseconds)
-						}
-						if !committedSegments[segment] {
-							committedSegments[segment] = true
-							transcriptBase += duplicate.Text
-							snapshot.Transcript = transcriptBase
-							if !snapshot.DictationMode {
-								snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(duplicate.SegmentID, duplicate.Utterances))
-							}
-							tr++
-							dirty = hasWork()
-						}
-						emit(Event{Type: "receipt", Receipt: duplicate, RemainingMilliseconds: remaining})
-						segment = ""
-						pcm = nil
-						duplicate = nil
-					}
-				} else if err := asr.Send(f.PCM, f.Final); err != nil {
-					failWithCause("voice_speech_unavailable", "send_speech_audio", err)
+				recognitionClosing = true
+				if err := asr.Send(nil, true); err != nil {
+					failWithCause("voice_speech_unavailable", "finish_speech_input", err)
 					return
 				}
 			case "capture_closed":
@@ -584,6 +614,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					s.Logger.InfoContext(ctx, "journal voice capture closed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
 				}
 			case "finish":
+				if segment != "" || asr != nil {
+					fail("voice_invalid_request")
+					return
+				}
 				finishing = true
 				if s.Logger != nil {
 					s.Logger.InfoContext(ctx, "journal voice tail transcription completed", "voice_trace_id", voiceTraceID, "elapsed_ms", time.Since(streamStartedAt).Milliseconds())
@@ -603,7 +637,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				return
 			}
 		case result := <-speech:
-			if result.segment != segment {
+			if result.segment != recognitionID {
 				continue
 			}
 			if result.err != nil {
@@ -611,60 +645,39 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				return
 			}
 			v := result.value
-			wireUtterances := identifiedUtterances(segment, v.Text, incrementalUtterances(v.Utterances, (len(pcm)+31)/32), (len(pcm)+31)/32)
+			milliseconds := (recognitionBytes + 31) / 32
+			wireUtterances := identifiedUtterances(recognitionID, v.Text, incrementalUtterances(v.Utterances, milliseconds), milliseconds)
 			if !v.Final && len(v.Utterances) == 0 {
 				for i := range wireUtterances {
 					wireUtterances[i].Definite = false
 				}
 			}
-			emit(Event{Type: "transcript", SegmentID: segment, Text: v.Text, Stable: v.Stable, Utterances: wireUtterances})
+			kind := "transcript"
+			if v.Final {
+				if !recognitionClosing || segment != "" || recognitionBytes == 0 {
+					fail("voice_invalid_request")
+					return
+				}
+				kind = "recognition_completed"
+			}
+			emit(Event{Type: kind, RecognitionID: recognitionID, StartMilliseconds: recognitionStart, Milliseconds: milliseconds,
+				Text: v.Text, Stable: v.Stable, Utterances: wireUtterances})
 			if v.Text != segmentText {
 				segmentText = v.Text
 				tr++
 			}
 			if v.Final {
-				if !inputFinal || len(pcm) == 0 {
-					fail("voice_invalid_request")
-					return
-				}
-				receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: v.Text,
-					Milliseconds: (len(pcm) + 31) / 32, Utterances: wireUtterances}
-				var err error
-				remaining, err = s.Store.Commit(ctx, claim.Identity.Owner, claim.SessionID, segmentPeriod, fence, receipt, s.limit())
-				if err != nil {
-					if errors.Is(err, ErrQuota) {
-						fail("voice_quota_exhausted")
-					} else {
-						failWithCause("voice_storage_unavailable", "commit_speech_receipt", err)
-					}
-					return
-				}
-				committedSegments[segment] = true
 				transcriptBase += v.Text
 				segmentText = ""
 				snapshot.Transcript = transcriptBase
 				if !snapshot.DictationMode {
-					snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(segment, wireUtterances))
+					snapshot.PendingUtterances = mergePendingUtterances(snapshot.PendingUtterances, sourceUtterances(recognitionID, wireUtterances))
 				}
 				dirty = hasWork()
-				emit(Event{Type: "receipt", Receipt: &receipt, RemainingMilliseconds: remaining})
 				asr.Close()
 				asr = nil
-				segment = ""
-				pcm = nil
-				if finishing {
-					dirty = dirty || (lastSubmitted != tr && len(snapshot.PendingUtterances) > 0)
-					launch()
-					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
-						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
-						emit(Event{Type: "finished"})
-						return
-					}
-				}
-			}
-			if !finishing && v.Final {
-				// The client can attach a live person assignment in the receipt ACK
-				// before this short coalescing window closes.
+				recognitionID, recognitionBytes, recognitionClosing = "", 0, false
+				fedSegments = map[string]bool{}
 				schedule(false)
 			}
 		case result := <-rewrites:
@@ -674,7 +687,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			if rewritePaused {
 				waitingForPolishRetry = false
 				dirty = hasWork()
-				if finishing && segment == "" && !dirty {
+				if finishing && segment == "" && asr == nil && !dirty {
 					_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 					emit(Event{Type: "finished"})
 					return
@@ -768,7 +781,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			if !finishing {
 				schedule(true)
 			}
-			if finishing && segment == "" && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
+			if finishing && segment == "" && asr == nil && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 				if dirty {
 					launch()
 				} else {

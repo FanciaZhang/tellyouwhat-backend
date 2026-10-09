@@ -322,14 +322,9 @@ func TestPolishFailureKeepsAudioReceiptsAndAllowsFinishingAfterPause(t *testing.
 	}
 	snapshot.Polish.Paused = true
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400), Final: true})
-	for event.Type != "receipt" {
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal("polish failure killed ASR", err)
-		}
-	}
-	if event.Receipt.Text == "" || speech.opens.Load() != 1 {
-		t.Fatal("missing durable speech receipt")
+	receipt, completed := voiceLifecycleShort(t, ws, uuid.NewString(), uuid.NewString(), make([]byte, 6400))
+	if receipt.Milliseconds != 200 || completed.Text == "" || speech.opens.Load() != 1 {
+		t.Fatal("audio/ASR acknowledgement lost")
 	}
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {

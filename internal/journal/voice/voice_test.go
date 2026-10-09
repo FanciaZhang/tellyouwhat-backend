@@ -33,7 +33,7 @@ func TestReceiptsAreIdempotentAndSubscriptionScoped(t *testing.T) {
 	if err := s.Lock(ctx, "subscription", "other-device"); !errors.Is(err, ErrBusy) {
 		t.Fatal(err)
 	}
-	receipt := Receipt{SegmentID: uuid.NewString(), SHA256: "a", Text: "你好", Milliseconds: 1000}
+	receipt := Receipt{SegmentID: uuid.NewString(), SHA256: "a", Milliseconds: 1000}
 	for range 2 {
 		remaining, err := s.Commit(ctx, "subscription", "session", "month", "lease", receipt, 1200)
 		if err != nil || remaining != 200 {
@@ -65,7 +65,7 @@ func TestFailedSegmentDoesNotChargeAndQuotaResetsByPeriod(t *testing.T) {
 	if n != 1000 {
 		t.Fatal(n)
 	}
-	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Text: "text", Milliseconds: 1000}, 1000)
+	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Milliseconds: 1000}, 1000)
 	n, _ = s.Remaining(ctx, "owner", "new", 1000)
 	if n != 1000 {
 		t.Fatal(n)
@@ -75,7 +75,7 @@ func TestExpiredTranscriptDoesNotRechargeInNextMonth(t *testing.T) {
 	s := NewMemoryStore()
 	ctx := context.Background()
 	s.Lock(ctx, "owner", "lease")
-	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Text: "原始转写", Milliseconds: 1000}
+	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Milliseconds: 1000}
 	if _, err := s.Commit(ctx, "owner", "session", "old", "lease", r, 1200); err != nil {
 		t.Fatal(err)
 	}

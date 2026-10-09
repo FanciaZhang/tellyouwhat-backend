@@ -211,20 +211,20 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 	deadline := time.NewTimer(110 * time.Second)
 	defer deadline.Stop()
 	offset, segmentBytes, revisions := 0, 0, 0
-	segment := uuid.NewString()
-	waiting, finished := false, false
+	segment, recognition := uuid.NewString(), uuid.NewString()
+	waiting, finished, recognitionClosing := false, false, false
 	var firstText, firstBody int64
 	for {
 		select {
 		case <-deadline.C:
 			t.Fatal("streaming diary timed out")
 		case <-ticker.C:
-			if waiting || finished {
+			if waiting || finished || recognitionClosing {
 				continue
 			}
 			if offset == len(pcm) {
-				send(Frame{Type: "finish"})
-				finished = true
+				send(Frame{Type: "recognition_finish", RecognitionID: recognition})
+				recognitionClosing = true
 				continue
 			}
 			end := min(offset+6400, len(pcm))
@@ -233,7 +233,7 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 			}
 			segmentBytes += end - offset
 			final := segmentBytes >= MaxSegmentBytes || end == len(pcm)
-			send(Frame{Type: "audio", SegmentID: segment, PCM: pcm[offset:end], Final: final})
+			send(Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, PCM: pcm[offset:end], Final: final})
 			offset = end
 			waiting = final
 		case message := <-events:
@@ -249,11 +249,14 @@ func TestLiveStreamingDiaryLatency(t *testing.T) {
 					firstText = time.Since(started).Milliseconds()
 				}
 			case "receipt":
-				snapshot.Transcript += e.Receipt.Text
-				send(Frame{Type: "snapshot", Snapshot: &snapshot})
 				waiting = false
 				segmentBytes = 0
 				segment = uuid.NewString()
+			case "recognition_completed":
+				snapshot.Transcript = e.Text
+				send(Frame{Type: "snapshot", Snapshot: &snapshot})
+				send(Frame{Type: "finish"})
+				finished = true
 			case "revision":
 				for _, p := range e.Revision.BlockEdits {
 					found := false

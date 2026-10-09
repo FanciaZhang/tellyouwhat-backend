@@ -379,59 +379,22 @@ func TestInterveningSnapshotCannotFinishWithoutAnAppliedRevision(t *testing.T) {
 	}
 }
 func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
-	speech := &scriptedSpeech{}
-	model := &scriptedRewriter{}
-	s := &Service{Store: NewMemoryStore(), Speech: speech, Model: model, Secret: make([]byte, 32), Limit: 200}
-	session := uuid.NewString()
-	segment := uuid.NewString()
-	block := uuid.NewString()
-	identity := Identity{Owner: "subscription", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
-	defer server.Close()
-	dial := func() *websocket.Conn {
-		t.Helper()
-		ticket, err := s.Issue(context.Background(), identity, session)
-		if err != nil {
-			t.Fatal(err)
-		}
-		config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
-		config.Header.Set("Authorization", "Bearer "+ticket.Token)
-		ws, err := websocket.DialConfig(config)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ws.SetDeadline(time.Now().Add(10 * time.Second))
-		var ready Event
-		if err = receiveVoiceResult(ws, &ready); err != nil || ready.Type != "ready" {
-			t.Fatalf("%+v %v", ready, err)
-		}
-		return ws
-	}
-	ws := dial()
-	snapshot := Snapshot{Blocks: []Block{{block, "", ""}}, Words: []string{}}
+	speech, model := &scriptedSpeech{}, &scriptedRewriter{}
+	service := &Service{Store: NewMemoryStore(), Speech: speech, Model: model, Secret: make([]byte, 32), Limit: 200}
+	session, segment := uuid.NewString(), uuid.NewString()
+	identity := Identity{Owner: "receipt-resume", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}
+	ws := voiceLifecycleSocket(t, service, identity, session)
+	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400), Final: true})
-	var receipt *Receipt
-	for receipt == nil {
-		var event Event
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal(err)
-		}
-		if event.Type == "receipt" {
-			receipt = event.Receipt
-		}
+	receipt, completed := voiceLifecycleShort(t, ws, segment, uuid.NewString(), make([]byte, 6400))
+	if receipt.Milliseconds != 200 || completed.Text == "" {
+		t.Fatal(receipt, completed)
 	}
-	if receipt.Milliseconds != 200 {
-		t.Fatal(receipt)
-	}
-	snapshot.Transcript = receipt.Text
+	snapshot.Transcript = completed.Text
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	for {
-		var event Event
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal(err)
-		}
+		event := voiceLifecycleRead(t, ws)
 		if event.Type == "revision" {
 			snapshot.Blocks[0].Text = event.Revision.BlockEdits[0].Text
 			acknowledgeTestRevision(&snapshot, event.Revision)
@@ -443,15 +406,14 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 		}
 	}
 	if model.calls.Load() != 1 {
-		t.Fatal("unchanged acknowledgement restarted rewriting", model.calls.Load())
+		t.Fatal("unchanged ACK repeated rewrite", model.calls.Load())
 	}
 	ws.Close()
-	// The preceding handler has released its fenced lease when it closes.
 	deadline := time.Now().Add(time.Second)
 	for {
-		err := s.Store.Lock(context.Background(), identity.Owner, "probe")
+		err := service.Store.Lock(context.Background(), identity.Owner, "probe")
 		if err == nil {
-			s.Store.Unlock(context.Background(), identity.Owner, "probe")
+			service.Store.Unlock(context.Background(), identity.Owner, "probe")
 			break
 		}
 		if time.Now().After(deadline) {
@@ -459,37 +421,17 @@ func TestSocketReceiptsResumeAndFinalRevisionAcknowledgement(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	ws = dial()
-	defer ws.Close()
-	// A second device can have the audio but not yet the final transcript.
-	// Cleared receipts must regenerate real text even with no allowance left.
+	ws = voiceLifecycleSocket(t, service, identity, session)
 	snapshot.Transcript = ""
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400), Final: true})
-	var event Event
-	for event.Type != "receipt" {
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal(err)
-		}
-		if event.Type == "error" {
-			t.Fatalf("retry failed: %+v", event)
-		}
-	}
-	if event.Receipt.SHA256 != receipt.SHA256 || event.Receipt.Text != receipt.Text {
-		t.Fatalf("%+v", event)
-	}
-	if speech.opens.Load() != 2 {
-		t.Fatal("forgotten transcript must be recognized again")
+	retry, recognized := voiceLifecycleShort(t, ws, segment, uuid.NewString(), make([]byte, 6400))
+	if retry.SHA256 != receipt.SHA256 || recognized.Text != completed.Text || speech.opens.Load() != 2 {
+		t.Fatal("billed audio must regenerate transcript without double billing", retry, recognized, speech.opens.Load())
 	}
 	start, _ := Period(identity.Anchor, time.Now())
-	remaining, _ := s.Store.Remaining(context.Background(), identity.Owner, start.Format(time.RFC3339), s.limit())
+	remaining, _ := service.Store.Remaining(context.Background(), identity.Owner, start.Format(time.RFC3339), service.limit())
 	if remaining != 0 {
 		t.Fatal(remaining)
-	}
-	// The new recognition may already start its immediate rewrite. It must
-	// not create more than one call for that newly recognized source.
-	if model.calls.Load() > 2 {
-		t.Fatal("duplicate rewrite", model.calls.Load())
 	}
 }
 
@@ -537,202 +479,123 @@ func (s streamingSpeech) Open(context.Context, []string) (SpeechConnection, erro
 func TestOnlyFinalSpeechTriggersOneIncrementalRewrite(t *testing.T) {
 	conn := &scriptedConnection{result: make(chan Transcript, 4), closed: make(chan struct{})}
 	model := &delayedRewriter{started: make(chan struct{}), release: make(chan struct{})}
-	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: model, Secret: make([]byte, 32)}
-	session := uuid.NewString()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
-	defer server.Close()
-	ticket, err := s.Issue(context.Background(), Identity{Owner: "streaming", Anchor: time.Now().AddDate(0, -1, 0), ExpiresAt: time.Now().Add(time.Hour)}, session)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
-	config.Header.Set("Authorization", "Bearer "+ticket.Token)
-	ws, err := websocket.DialConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.Close()
-	ws.SetDeadline(time.Now().Add(4 * time.Second))
-	var event Event
-	if err := receiveVoiceResult(ws, &event); err != nil {
-		t.Fatal(err)
-	}
+	service := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: model, Secret: make([]byte, 32)}
+	ws := voiceLifecycleSocket(t, service, Identity{Owner: "streaming", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, uuid.NewString())
 	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	segment := uuid.NewString()
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
+	segment, recognition := uuid.NewString(), uuid.NewString()
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, PCM: make([]byte, 6400)})
 	conn.result <- Transcript{Text: "今天去了公园。", Stable: "今天去了公园。"}
-	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "transcript" {
-		t.Fatalf("%+v %v", event, err)
+	if event := voiceLifecycleRead(t, ws); event.Type != "transcript" {
+		t.Fatal(event)
 	}
 	select {
 	case <-model.started:
-		t.Fatal("interim speech spent rewrite tokens")
+		t.Fatal("interim source spent rewrite tokens")
 	case <-time.After(400 * time.Millisecond):
 	}
 	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。"}
-	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "transcript" {
-		t.Fatalf("interim transcript missing: %+v %v", event, err)
+	if event := voiceLifecycleRead(t, ws); event.Type != "transcript" {
+		t.Fatal(event)
 	}
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, Final: true})
+	if event := voiceLifecycleRead(t, ws); event.Type != "receipt" {
+		t.Fatal("audio ACK should not await final ASR", event)
+	}
+	select {
+	case <-model.started:
+		t.Fatal("audio checkpoint closed semantic source")
+	case <-time.After(30 * time.Millisecond):
+	}
+	websocket.JSON.Send(ws, Frame{Type: "recognition_finish", RecognitionID: recognition})
 	time.Sleep(20 * time.Millisecond)
 	conn.result <- Transcript{Text: "今天去了公园。后来去了湖边。", Stable: "今天去了公园。后来去了湖边。", Final: true}
-	if event = func() Event { var value Event; _ = receiveVoiceResult(ws, &value); return value }(); event.Type != "transcript" {
-		t.Fatalf("final transcript missing: %+v", event)
-	}
-	if event = func() Event { var value Event; _ = receiveVoiceResult(ws, &value); return value }(); event.Type != "receipt" {
-		t.Fatalf("receipt missing: %+v", event)
+	if event := voiceLifecycleRead(t, ws); event.Type != "recognition_completed" {
+		t.Fatal(event)
 	}
 	select {
 	case <-model.started:
 	case <-time.After(time.Second):
-		t.Fatal("final source did not schedule rewrite")
+		t.Fatal("completed ASR did not schedule rewrite")
 	}
 	websocket.JSON.Send(ws, Frame{Type: "ping"})
-	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "pong" {
-		t.Fatalf("slow rewrite blocked transport: %+v %v", event, err)
+	if event := voiceLifecycleRead(t, ws); event.Type != "pong" {
+		t.Fatal("slow model blocked transport", event)
 	}
 	close(model.release)
-	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "revision" {
-		t.Fatalf("%+v %v", event, err)
-	}
-	if got := event.Revision.BlockEdits[0].Text; got != "今天去了公园。后来去了湖边。" {
-		t.Fatal("final source was not organized", got)
-	}
-	if model.calls.Load() != 1 {
-		t.Fatal(model.calls.Load())
+	event := voiceLifecycleRead(t, ws)
+	if event.Type != "revision" || event.Revision.BlockEdits[0].Text != "今天去了公园。后来去了湖边。" || model.calls.Load() != 1 {
+		t.Fatal(event, model.calls.Load())
 	}
 }
 
 func TestLateRevisionAcknowledgementCannotEraseCommittedSpeech(t *testing.T) {
-	conn := &scriptedConnection{result: make(chan Transcript, 4), closed: make(chan struct{})}
-	s := &Service{Store: NewMemoryStore(), Speech: streamingSpeech{conn}, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
-	session, segment := uuid.NewString(), uuid.NewString()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Serve(w, r, session) }))
-	defer server.Close()
-	ticket, err := s.Issue(context.Background(), Identity{Owner: "receipt-race", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, session)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
-	config.Header.Set("Authorization", "Bearer "+ticket.Token)
-	ws, err := websocket.DialConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.Close()
-	ws.SetDeadline(time.Now().Add(5 * time.Second))
-	read := func() Event {
-		t.Helper()
-		var event Event
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal(err)
-		}
-		return event
-	}
-	read()
+	service := &Service{Store: NewMemoryStore(), Speech: &scriptedSpeech{}, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
+	ws := voiceLifecycleSocket(t, service, Identity{Owner: "receipt-race", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, uuid.NewString())
 	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: make([]byte, 6400)})
-	conn.result <- Transcript{Text: "今天见到一个朋友。", Stable: "今天见到一个朋友。"}
-	if e := read(); e.Type != "transcript" {
-		t.Fatal(e)
-	}
-	// A snapshot already queued by the client legitimately has no knowledge of
-	// the receipt that is about to be committed.
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, Final: true})
-	time.Sleep(20 * time.Millisecond)
-	conn.result <- Transcript{Text: "今天见到一个朋友。", Stable: "今天见到一个朋友。", Final: true}
-	var receipt *Receipt
-	for receipt == nil {
-		e := read()
-		if e.Type == "error" {
-			t.Fatal(e)
-		}
-		receipt = e.Receipt
-	}
+	_, completed := voiceLifecycleShort(t, ws, uuid.NewString(), uuid.NewString(), make([]byte, 6400))
+	// This pre-completion snapshot cannot replace server-confirmed raw text.
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
-	final := read()
-	if final.Type != "revision" {
-		t.Fatal(final)
-	}
-	if got := final.Revision.BlockEdits[0].Text; got != receipt.Text {
-		t.Fatalf("old ACK erased final ASR: got %q want %q", got, receipt.Text)
+	final := voiceLifecycleRead(t, ws)
+	if final.Type != "revision" || final.Revision.BlockEdits[0].Text != completed.Text {
+		t.Fatal("late ACK erased recognized speech", final)
 	}
 	snapshot.Revision++
-	snapshot.Transcript = receipt.Text
+	snapshot.Transcript = completed.Text
 	snapshot.Blocks[0].Text = final.Revision.BlockEdits[0].Text
 	acknowledgeTestRevision(&snapshot, final.Revision)
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	if e := read(); e.Type != "finished" {
-		t.Fatal(e)
+	if event := voiceLifecycleRead(t, ws); event.Type != "finished" {
+		t.Fatal(event)
 	}
 }
 
-func TestReplayedReceiptSeedsCanonicalTranscriptOnce(t *testing.T) {
+func TestReplayedAudioReceiptRecognizesOncePerConnectionWithoutDoubleBilling(t *testing.T) {
 	store := NewMemoryStore()
 	owner, session, segment := "receipt-replay", uuid.NewString(), uuid.NewString()
 	now := time.Now()
 	period, _ := Period(now, now)
 	pcm := make([]byte, 6400)
-	receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Text: "已经确认的原始转写。", Milliseconds: 200}
-	if err := store.Lock(context.Background(), owner, "seed"); err != nil {
-		t.Fatal(err)
-	}
+	receipt := Receipt{SegmentID: segment, SHA256: hash(string(pcm)), Milliseconds: 200}
+	store.Lock(context.Background(), owner, "seed")
 	if _, err := store.Commit(context.Background(), owner, session, period.Format(time.RFC3339), "seed", receipt, MonthlyMilliseconds); err != nil {
 		t.Fatal(err)
 	}
 	store.Unlock(context.Background(), owner, "seed")
 	speech := &scriptedSpeech{}
 	service := &Service{Store: store, Speech: speech, Model: &scriptedRewriter{}, Secret: make([]byte, 32)}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
-	defer server.Close()
-	ticket, err := service.Issue(context.Background(), Identity{Owner: owner, Anchor: now, ExpiresAt: now.Add(time.Hour)}, session)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
-	config.Header.Set("Authorization", "Bearer "+ticket.Token)
-	ws, err := websocket.DialConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.Close()
-	ws.SetDeadline(now.Add(3 * time.Second))
-	read := func() Event {
-		t.Helper()
-		var event Event
-		if err := receiveVoiceResult(ws, &event); err != nil {
-			t.Fatal(err)
-		}
-		return event
-	}
-	read()
+	ws := voiceLifecycleSocket(t, service, Identity{Owner: owner, Anchor: now, ExpiresAt: now.Add(time.Hour)}, session)
 	snapshot := Snapshot{Blocks: []Block{{uuid.NewString(), "", ""}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	// Repeat a lost receipt twice; neither a second provider call nor duplicated
-	// source text may result, even before a receipt snapshot gets back to the server.
-	for i := 0; i < 2; i++ {
-		websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, PCM: pcm, Final: true})
-		if event := read(); event.Type != "receipt" {
+	recognition := uuid.NewString()
+	for range 2 {
+		websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, PCM: pcm, Final: true})
+		if event := voiceLifecycleRead(t, ws); event.Type != "receipt" {
 			t.Fatal(event)
 		}
 	}
-	websocket.JSON.Send(ws, Frame{Type: "finish"})
-	event := read()
-	if event.Type != "revision" || event.Revision.BlockEdits[0].Text != receipt.Text {
-		t.Fatalf("replayed speech lost or duplicated: %+v", event)
+	websocket.JSON.Send(ws, Frame{Type: "recognition_finish", RecognitionID: recognition})
+	completed := voiceLifecycleUntil(t, ws, "recognition_completed")
+	if speech.opens.Load() != 1 || completed.Milliseconds != 200 {
+		t.Fatal("lost ACK duplicated provider input", speech.opens.Load(), completed)
 	}
-	if speech.opens.Load() != 0 {
-		t.Fatal("duplicate receipt reopened speech provider")
+	remaining, _ := store.Remaining(context.Background(), owner, period.Format(time.RFC3339), MonthlyMilliseconds)
+	if remaining != MonthlyMilliseconds-200 {
+		t.Fatal("audio replay charged twice", remaining)
+	}
+	websocket.JSON.Send(ws, Frame{Type: "finish"})
+	event := voiceLifecycleRead(t, ws)
+	if event.Type != "revision" || event.Revision.BlockEdits[0].Text != completed.Text {
+		t.Fatal(event)
 	}
 	snapshot.Revision++
-	snapshot.Transcript = receipt.Text
-	snapshot.Blocks[0].Text = receipt.Text
+	snapshot.Transcript = completed.Text
+	snapshot.Blocks[0].Text = completed.Text
 	acknowledgeTestRevision(&snapshot, event.Revision)
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	if event := read(); event.Type != "finished" {
+	if event := voiceLifecycleRead(t, ws); event.Type != "finished" {
 		t.Fatal(event)
 	}
 }
@@ -766,13 +629,8 @@ func TestManualEditAtExpectedAcknowledgementRevisionRewritesLatestBody(t *testin
 	read()
 	snapshot := Snapshot{Blocks: []Block{{ID: uuid.NewString(), Text: "已有正文"}}}
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
-	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: uuid.NewString(), PCM: make([]byte, 6400), Final: true})
-	for {
-		if e := read(); e.Type == "receipt" {
-			snapshot.Transcript = e.Receipt.Text
-			break
-		}
-	}
+	_, completed := voiceLifecycleShort(t, ws, uuid.NewString(), uuid.NewString(), make([]byte, 6400))
+	snapshot.Transcript = completed.Text
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	first := read()
@@ -817,4 +675,57 @@ func receiveVoiceResult(ws *websocket.Conn, destination any) error {
 		}
 		return json.Unmarshal(data, destination)
 	}
+}
+
+func voiceLifecycleSocket(t *testing.T, service *Service, identity Identity, session string) *websocket.Conn {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { service.Serve(w, r, session) }))
+	t.Cleanup(server.Close)
+	ticket, err := service.Issue(context.Background(), identity, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := websocket.NewConfig("ws"+strings.TrimPrefix(server.URL, "http"), "http://localhost")
+	config.Header.Set("Authorization", "Bearer "+ticket.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ws.Close() })
+	ws.SetDeadline(time.Now().Add(10 * time.Second))
+	if event := voiceLifecycleRead(t, ws); event.Type != "ready" {
+		t.Fatal(event)
+	}
+	return ws
+}
+func voiceLifecycleRead(t *testing.T, ws *websocket.Conn) Event {
+	t.Helper()
+	var event Event
+	if err := receiveVoiceResult(ws, &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type == "error" {
+		t.Fatalf("voice failure: %+v", event)
+	}
+	return event
+}
+func voiceLifecycleUntil(t *testing.T, ws *websocket.Conn, kind string) Event {
+	t.Helper()
+	for {
+		event := voiceLifecycleRead(t, ws)
+		if event.Type == kind {
+			return event
+		}
+	}
+}
+func voiceLifecycleShort(t *testing.T, ws *websocket.Conn, segment, recognition string, pcm []byte) (Receipt, Event) {
+	t.Helper()
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, PCM: pcm, Final: true})
+	receipt := voiceLifecycleUntil(t, ws, "receipt")
+	websocket.JSON.Send(ws, Frame{Type: "recognition_finish", RecognitionID: recognition})
+	completed := voiceLifecycleUntil(t, ws, "recognition_completed")
+	if completed.RecognitionID != recognition || completed.Milliseconds != (len(pcm)+31)/32 {
+		t.Fatalf("invalid ASR completion: %+v", completed)
+	}
+	return *receipt.Receipt, completed
 }
