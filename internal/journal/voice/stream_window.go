@@ -29,7 +29,12 @@ func (w *streamUtteranceWindow) merge(t Transcript) (Transcript, error) {
 		previousStart = u.StartMilliseconds
 		if u.Definite && strings.TrimSpace(u.Text) == "" {
 			for _, previous := range w.pending {
-				if u.StartMilliseconds == previous.StartMilliseconds && strings.TrimSpace(previous.Text) != "" {
+				// Second-pass alignment may revise both ends of the sentence.
+				// Match substantially shared audio, not only the old start.
+				overlap := min(u.EndMilliseconds, previous.EndMilliseconds) - max(u.StartMilliseconds, previous.StartMilliseconds)
+				shorter := min(u.EndMilliseconds-u.StartMilliseconds, previous.EndMilliseconds-previous.StartMilliseconds)
+				sameAudio := u.StartMilliseconds == previous.StartMilliseconds || (shorter > 0 && overlap*100 >= shorter*65)
+				if sameAudio && strings.TrimSpace(previous.Text) != "" {
 					// A real second-pass response can return an empty completed
 					// placeholder for an audible provisional sentence. It is not
 					// permission to erase that sentence, nor proof that the old

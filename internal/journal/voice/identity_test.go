@@ -82,6 +82,30 @@ func TestUnreliableAcousticKeysAllowGroundedSourcesButRejectVoiceDefaults(t *tes
 	}
 }
 
+func TestManualSourceEchoCannotDiscardAnIndependentSpokenNarratorCommand(t *testing.T) {
+	wife, author := uuid.NewString(), uuid.NewString()
+	intro, packing, command := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	request := IdentityRequest{NarratorPersonID: author, Speakers: []IdentitySpeaker{{Key: "wife", Name: "老婆宝", PersonID: wife}, {Key: "author", Name: "老公宝", PersonID: author}},
+		Turns: []SourceUtterance{{ID: intro, Speaker: "wife", Text: "我是老婆宝。", Person: "老婆宝", PersonID: wife},
+			{ID: packing, Speaker: "wife", Text: "我把桂花糕装进蓝色袋子。", Person: "老婆宝", PersonID: wife},
+			{ID: command, Speaker: "author", Text: "这篇日记请用老婆宝的视角来写。", Person: "老公宝", PersonID: author}}, ExplicitSourceIDs: []string{packing}}
+	// A real model repeated the existing manual claim as kind=command, even
+	// though it only had a UI assignment and no spoken identity command.
+	raw, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{{SpeakerKey: "wife", Scope: "sources", SourceIDs: []string{packing}, Name: "老婆宝", PersonID: wife, Kind: "command", EvidenceIDs: []string{packing}}},
+		"narratorSourceID": intro, "narratorEvidenceIDs": []string{command}, "commands": []IdentityCommand{{SourceID: command, Text: request.Turns[2].Text}}})
+	result, err := decodeIdentity(string(raw), request)
+	if err != nil {
+		t.Fatal("an unchanged manual source echo blocked the independently grounded narrator operation", err)
+	}
+	if len(result.Assignments) != 0 || result.NarratorSourceID != intro || len(result.Commands) != 1 {
+		t.Fatal("echo must have no identity effect; the real spoken operation remains", result)
+	}
+	request.Turns[1].PersonID = author
+	if _, err := decodeIdentity(string(raw), request); err == nil {
+		t.Fatal("a conflicting identity is not an unchanged echo")
+	}
+}
+
 func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.T) {
 	r := identityFixture("我和老婆宝沿着河边散步。", "我是老婆宝。", "我是小林，从杭州坐火车过来。", "这篇日记请用老婆宝的视角写。今天三个人一起散步。")
 	// This reproduces a real ASR collision without inventing another voice.

@@ -113,6 +113,37 @@ func TestRealSecondPassEmptyMiddleTurnRequestsRecoveryWithoutDroppingSource(t *t
 	}
 }
 
+func TestRealEmptyMiddleTurnWithRevisedStartRequestsRecovery(t *testing.T) {
+	// The same 60-second synthetic conversation was returned at 17.2 seconds
+	// with a nonempty second turn beginning at 6982ms. The next response moved
+	// its start back to 6702ms and completed it with empty text. Start equality
+	// alone misses the lost sentence and publishes a shorter transcript.
+	var w streamUtteranceWindow
+	first := StreamUtterance{Text: "我和我老婆宝出来玩。", StartMilliseconds: 0, EndMilliseconds: 6192, Definite: true, Speaker: "0"}
+	wife := StreamUtterance{Text: "对，我和我老公宝一起出来很开心，我昨天在医院值班，很累，今天终于能休息。我是", StartMilliseconds: 6982, EndMilliseconds: 16802}
+	if _, err := w.merge(Transcript{Text: first.Text + wife.Text, Utterances: []StreamUtterance{first, wife}}); err != nil {
+		t.Fatal(err)
+	}
+	blank := StreamUtterance{StartMilliseconds: 6702, EndMilliseconds: 16082, Definite: true, Speaker: "1"}
+	third := StreamUtterance{Text: "我是小林", StartMilliseconds: 16222, EndMilliseconds: 17202}
+	if _, err := w.merge(Transcript{Text: first.Text + third.Text, Utterances: []StreamUtterance{first, blank, third}}); !errors.Is(err, errEmptyCompletedUtterance) {
+		t.Fatal("revised empty completion erased the second speaker", err)
+	}
+	if len(w.stable) != 1 || len(w.pending) != 1 || w.pending[0].Text != wife.Text || w.pending[0].Definite {
+		t.Fatal("failed result changed or confirmed earlier provisional evidence")
+	}
+	// A nearby empty interval is not evidence that this provisional speech
+	// was erased. A real completion with revised timing remains valid.
+	unrelated := StreamUtterance{StartMilliseconds: 6200, EndMilliseconds: 6900, Definite: true}
+	completed := wife
+	completed.StartMilliseconds, completed.EndMilliseconds = 6702, 16082
+	completed.Text, completed.Definite, completed.Speaker = "对，我昨天在医院值班，今天终于能休息。", true, "1"
+	got, err := w.merge(Transcript{Text: first.Text + completed.Text + third.Text, Utterances: []StreamUtterance{first, unrelated, completed, third}})
+	if err != nil || len(got.Utterances) != 3 || got.Utterances[1].Text != completed.Text {
+		t.Fatal("recovery guard rejected a real nonempty correction", err)
+	}
+}
+
 func TestContinuousStreamKeepsHundredsOfTurnsAndTheirSpeakerScopes(t *testing.T) {
 	var w streamUtteranceWindow
 	for i := 0; i < 600; i++ {

@@ -182,6 +182,18 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 		return text, true
 	}
 	seenSources, wholeVoices := map[string]bool{}, map[string]bool{}
+	knownSourceEcho := func(a IdentityAssignment) bool {
+		if a.PersonID == "" || len(a.SourceIDs) == 0 {
+			return false
+		}
+		for _, id := range a.SourceIDs {
+			t, ok := turns[id]
+			if !ok || t.PersonID != a.PersonID || t.Person != a.Name {
+				return false
+			}
+		}
+		return true
+	}
 	changes := []IdentityAssignment{}
 	for _, a := range out.Assignments {
 		s, ok := speakers[a.SpeakerKey]
@@ -192,7 +204,7 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 				unchanged = false
 			}
 		}
-		if !ok || !valid || !slices.Contains([]string{"voice", "sources"}, a.Scope) || len(a.SourceIDs) == 0 || len(a.SourceIDs) > 24 || strings.TrimSpace(a.Name) != a.Name || a.Name == "" || strings.ContainsFunc(a.Name, unicode.IsControl) || utf8.RuneCountInString(a.Name) > 80 || (!strings.Contains(e, a.Name) && !unchanged) || !slices.Contains([]string{"introduction", "command", "context"}, a.Kind) {
+		if !ok || !valid || !slices.Contains([]string{"voice", "sources"}, a.Scope) || len(a.SourceIDs) == 0 || len(a.SourceIDs) > 24 || strings.TrimSpace(a.Name) != a.Name || a.Name == "" || strings.ContainsFunc(a.Name, unicode.IsControl) || utf8.RuneCountInString(a.Name) > 80 || (!strings.Contains(e, a.Name) && !unchanged && !knownSourceEcho(a)) || !slices.Contains([]string{"introduction", "command", "context"}, a.Kind) {
 			return nil, ErrInvalid
 		}
 		if s.Explicit && a.Kind != "command" && (s.Name != a.Name || (a.PersonID != "" && s.PersonID != a.PersonID)) {
@@ -282,11 +294,23 @@ func decodeIdentity(text string, request IdentityRequest) (*IdentityRevision, er
 		out.NarratorSourceID = ""
 		out.NarratorEvidenceIDs = []string{}
 	}
+	assignments := out.Assignments[:0]
 	for _, a := range out.Assignments {
 		if a.Kind == "command" && !commandEvidence(a.EvidenceIDs) {
+			// Models can echo a UI claim as kind=command. It changes no
+			// identity and has no spoken span to remove. Discard only this
+			// exact known-person echo, preserving independent valid operations.
+			if knownSourceEcho(a) {
+				continue
+			}
 			return nil, ErrInvalid
 		}
+		if a.Kind != "command" && knownSourceEcho(a) {
+			continue
+		}
+		assignments = append(assignments, a)
 	}
+	out.Assignments = assignments
 	if out.NarratorSourceID != "" && !commandEvidence(out.NarratorEvidenceIDs) {
 		return nil, ErrInvalid
 	}
