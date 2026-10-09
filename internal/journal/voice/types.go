@@ -16,7 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/contracts"
 )
 
-const Version = "journal-voice-v30"
+const Version = "journal-voice-v31"
 const MonthlyMilliseconds = 120 * 60 * 1000
 const SessionMilliseconds = 30 * 60 * 1000
 const MaxSegmentBytes = 15 * 32000 // PCM16, mono, 16 kHz
@@ -52,6 +52,7 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	Identity                       *IdentityRequest `json:"identity,omitempty"`
 	Narrator                       *Narrator        `json:"narrator,omitempty"`
 	IllustrationSuggestionsEnabled bool             `json:"illustrationSuggestionsEnabled"`
 	TableSourceContext             []TableSource    `json:"tableSourceContext"`
@@ -146,17 +147,18 @@ type Receipt struct {
 	Milliseconds int         `json:"milliseconds"`
 }
 type Event struct {
-	Stage                 string          `json:"stage,omitempty"`
-	Polish                *PolishRevision `json:"polish,omitempty"`
-	Utterances            []Utterance     `json:"utterances,omitempty"`
-	Type                  string          `json:"type"`
-	SegmentID             string          `json:"segmentID,omitempty"`
-	Text                  string          `json:"text,omitempty"`
-	Stable                string          `json:"stable,omitempty"`
-	Receipt               *Receipt        `json:"receipt,omitempty"`
-	Revision              *Revision       `json:"revision,omitempty"`
-	RemainingMilliseconds int             `json:"remainingMilliseconds"`
-	Code                  string          `json:"code,omitempty"`
+	Identity              *IdentityRevision `json:"identity,omitempty"`
+	Stage                 string            `json:"stage,omitempty"`
+	Polish                *PolishRevision   `json:"polish,omitempty"`
+	Utterances            []Utterance       `json:"utterances,omitempty"`
+	Type                  string            `json:"type"`
+	SegmentID             string            `json:"segmentID,omitempty"`
+	Text                  string            `json:"text,omitempty"`
+	Stable                string            `json:"stable,omitempty"`
+	Receipt               *Receipt          `json:"receipt,omitempty"`
+	Revision              *Revision         `json:"revision,omitempty"`
+	RemainingMilliseconds int               `json:"remainingMilliseconds"`
+	Code                  string            `json:"code,omitempty"`
 }
 type Frame struct {
 	Type      string    `json:"type"`
@@ -167,10 +169,18 @@ type Frame struct {
 }
 
 func (s Snapshot) incremental() bool {
-	return s.Polish == nil && s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
+	return s.Identity == nil && s.Polish == nil && s.RecordingContext == nil && (s.PendingUtterances != nil || s.BlockComponents != nil || s.ParallelColumns != nil || s.TableContext != nil || s.TimelineContext != nil)
 }
 
 func (s Snapshot) Validate() error {
+	if s.Identity != nil {
+		if s.Polish != nil || s.RecordingContext != nil {
+			return ErrInvalid
+		}
+		if err := s.Identity.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := validateNarrator(s.Narrator); err != nil {
 		return err
 	}
@@ -477,17 +487,51 @@ type Utterance struct {
 // incremental editor. Provider speaker labels remain evidence only; Person is
 // present solely after the user explicitly names or assigns the voice.
 type SourceUtterance struct {
-	PersonID          string  `json:"personID,omitempty"`
-	ID                string  `json:"id"`
-	Text              string  `json:"text"`
-	Speaker           string  `json:"speaker,omitempty"`
-	Person            string  `json:"person,omitempty"`
-	StartMilliseconds int     `json:"startMilliseconds"`
-	EndMilliseconds   int     `json:"endMilliseconds"`
-	AcousticEmotion   string  `json:"acousticEmotion,omitempty"`
-	Volume            float64 `json:"volume,omitempty"`
-	SpeechRate        float64 `json:"speechRate,omitempty"`
+	ExcludedText      []string `json:"excludedText,omitempty"`
+	PersonID          string   `json:"personID,omitempty"`
+	ID                string   `json:"id"`
+	Text              string   `json:"text"`
+	Speaker           string   `json:"speaker,omitempty"`
+	Person            string   `json:"person,omitempty"`
+	StartMilliseconds int      `json:"startMilliseconds"`
+	EndMilliseconds   int      `json:"endMilliseconds"`
+	AcousticEmotion   string   `json:"acousticEmotion,omitempty"`
+	Volume            float64  `json:"volume,omitempty"`
+	SpeechRate        float64  `json:"speechRate,omitempty"`
 }
+
+func (a SourceUtterance) Equal(b SourceUtterance) bool {
+	return a.ID == b.ID && a.Text == b.Text && a.Speaker == b.Speaker && a.Person == b.Person && a.PersonID == b.PersonID &&
+		a.StartMilliseconds == b.StartMilliseconds && a.EndMilliseconds == b.EndMilliseconds && a.AcousticEmotion == b.AcousticEmotion &&
+		a.Volume == b.Volume && a.SpeechRate == b.SpeechRate && slices.Equal(a.ExcludedText, b.ExcludedText)
+}
+
+// Commands remain in immutable evidence and acknowledgement comparisons,
+// while the model sees only the story portions of a mixed utterance.
+func (a SourceUtterance) content() string {
+	text := a.Text
+	for _, command := range a.ExcludedText {
+		if command != "" && strings.Count(text, command) == 1 {
+			text = strings.Replace(text, command, "", 1)
+		}
+	}
+	return strings.TrimSpace(text)
+}
+
+func (a SourceUtterance) validExclusions() bool {
+	if len(a.ExcludedText) > 24 {
+		return false
+	}
+	remaining := a.Text
+	for _, command := range a.ExcludedText {
+		if strings.TrimSpace(command) == "" || strings.Count(remaining, command) != 1 {
+			return false
+		}
+		remaining = strings.Replace(remaining, command, "", 1)
+	}
+	return true
+}
+
 type BlockEdit struct {
 	Kind    string `json:"kind"`
 	ID      string `json:"id"`

@@ -18,6 +18,49 @@ func polishFixture() Snapshot {
 	id := uuid.NewString()
 	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
+
+func TestIdentityOperationSpansAreExcludedFromModelButRetainedInEvidence(t *testing.T) {
+	s := polishFixture()
+	target := &s.Polish.Targets[0]
+	command, story := "把我标成小林。", "今天在河边散步很舒服。"
+	target.Text = story
+	target.SourceText = command + story
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], Text: target.SourceText, ExcludedText: []string{command}}}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Input string `json:"input"`
+	}
+	if err := json.Unmarshal(prepared.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body.Input, command) || !strings.Contains(body.Input, story) {
+		t.Fatal("operation leaked into prose input")
+	}
+	output := `{"paragraphs":[{"targetIDs":["` + target.ID + `"],"style":"body","text":"今天在河边散步很舒服。"}],"questions":[]}`
+	result, err := decodePolish(output, *s.Polish)
+	if err != nil {
+		t.Fatal("story without command rejected", err)
+	}
+	if !result.Targets[0].Turns[0].Equal(target.Turns[0]) {
+		t.Fatal("raw evidence was altered")
+	}
+	changed := target.Turns[0]
+	changed.ExcludedText = nil
+	if changed.Equal(target.Turns[0]) {
+		t.Fatal("command edit must invalidate stale acknowledgement")
+	}
+	target.Turns[0].ExcludedText = []string{"未说过的操作"}
+	if s.Polish.Validate() == nil {
+		t.Fatal("unbacked exclusion accepted")
+	}
+	target.Turns[0].ExcludedText = []string{command, command}
+	if s.Polish.Validate() == nil {
+		t.Fatal("duplicate operation accepted")
+	}
+}
 func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	s := polishFixture()
 	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")

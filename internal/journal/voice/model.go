@@ -19,6 +19,7 @@ import (
 )
 
 type RewriteResult struct {
+	Identity                  *IdentityRevision
 	Polish                    *PolishRevision
 	OutputText                string `json:"-"`
 	Revision                  Revision
@@ -252,6 +253,16 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		}
 	}
 	result.OutputText = text
+	if s.Identity != nil {
+		identity, err := decodeIdentity(text, *s.Identity)
+		if err != nil {
+			return failedRewrite(result, "voice_rewrite_unavailable", "validate_identity", err, started)
+		}
+		result.Identity = identity
+		result.Diagnostics.Stage = "completed"
+		result.Diagnostics.Duration = time.Since(started)
+		return result, nil
+	}
 	if s.Polish != nil {
 		request := *s.Polish
 		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
@@ -432,6 +443,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_table_command_v1", "strict": true, "schema": compactTableSchema()}}
 	}
 	parameters := settings.Voice.Parameters
+	if s.Identity != nil {
+		body, parameters = prepareIdentity(*s.Identity, parameters)
+	}
 	if s.Polish != nil {
 		request := *s.Polish
 		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled

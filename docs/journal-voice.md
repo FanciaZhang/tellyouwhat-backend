@@ -7,7 +7,7 @@ Journal host; there is no client-side provider key or credential forwarding.
 
 `POST /v1/journal/voice/sessions` uses the existing App Attest headers and
 `X-Tellyouwhat-Request-ID`. JSON: `{sessionID: UUID, consentVersion:
-"journal-voice-v30"}`. An active Journal subscription, verified original purchase
+"journal-voice-v31"}`. An active Journal subscription, verified original purchase
 anchor, and managed-AI consent are required. An older transaction without its
 original purchase date must be restored/synchronized, never guessed.
 
@@ -34,13 +34,28 @@ A paused ordinary `snapshot.polish` cancels only its in-flight model request;
 ASR and audio receipts continue. A canceled result does not count as a rewrite
 failure. Explicit structural commands keep their separate processing budget.
 
+In v31, `snapshot.identity` resolves people before ordinary prose. It carries a
+SHA-256 fingerprint, bounded original turns, known speaker/person names and
+explicit-claim flags, and the current narrator. The model returns `identity`
+with grounded assignments, narrator operations, and exact removable command
+spans. A client snapshot acknowledging that fingerprint advances to prose.
+`identity_error` returns the failed request separately from rewrite errors;
+the client may proceed with prose and retry identity on new evidence. Identity
+failure must not stop ASR or discard audio. Names retain the complete original
+appellation. Quoted introductions, mentions, or matching names alone do not
+establish identity. A command assignment or narrator change requires a valid
+original command span in the cited evidence. Source turns retain that evidence
+while `excludedText` removes only the exact spans from prose-model input.
+
 In v30, both ordinary polish and structural snapshots carry an optional
 `narrator:{personID:UUID,name}` and confirmed `personID` on source turns. Provider
 speaker labels are scoped to the segment/connection; they are not a persistent
-person identity. The client explicitly chooses the journal author. The model
+person identity. The client defaults the first substantive speaker as the author
+and retains that viewpoint; explicit user/spoken corrections take precedence. The model
 uses that author's first-person perspective while keeping other people's
 experiences attributed to them, and must not infer gender from a name. Ordinary
-multi-speaker polish waits while the author remains unconfirmed; ASR continues.
+multi-speaker polish continues with numbered unknown people; identity inference
+does not force the user to fill in names before writing.
 The server echoes the trusted narrator and target baselines on polish results.
 An acknowledgement that changes the author or identity-rewrite flags releases
 the old result so the corrected snapshot can run.
@@ -57,6 +72,16 @@ boundaries are reading aids; the model merges related targets or splits topics
 into natural paragraphs. The last organized voice paragraph can absorb related
 new speech, while older paragraphs stay read-only context. App projection keeps
 unconsumed speech in separate raw blocks during in-flight revisions.
+
+The v31 foundation has local real-model identity evidence for six synthetic
+contexts and real two-voice App evidence for automatic appellations, author
+attribution and persistence. Whole App live-paragraph acceptance still fails
+when the provider emits no completed turns before capture ends. A separate real
+continuous-connection probe with natural phrase pauses succeeds before final
+input. This does not prove long App capture: audio checkpoints and recognition
+connections are still coupled to the 15-second segment lifecycle. They must be
+decoupled and verified with long capture/reconnect cases before claiming the
+complete natural-transcription product goal. This protocol has not been deployed.
 
 For complete confirmed first-person sources, the polish decoder also normalizes
 sentence-initial reporting clauses such as `小林说，他…` to `小林…` when the

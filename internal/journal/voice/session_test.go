@@ -306,7 +306,7 @@ func TestPendingSourceAppendKeepsOldEvidenceButEditsInvalidateIt(t *testing.T) {
 	}
 	long := first
 	long.Text = strings.Repeat("长", rewriteBatchCharacters+1)
-	if batch := pendingRewriteBatch([]SourceUtterance{long, second}); len(batch) != 1 || batch[0] != long {
+	if batch := pendingRewriteBatch([]SourceUtterance{long, second}); len(batch) != 1 || !batch[0].Equal(long) {
 		t.Fatal("indivisible source was truncated")
 	}
 }

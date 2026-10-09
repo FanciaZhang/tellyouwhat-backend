@@ -81,7 +81,7 @@ func (p PolishRequest) Validate() error {
 			}
 		}
 		for _, turn := range target.Turns {
-			if _, err := uuid.Parse(turn.ID); err != nil || !validPersonID(turn.PersonID) || !slices.Contains(target.SourceIDs, turn.ID) || utf8.RuneCountInString(turn.Text) > 4096 || len(turn.Person) > 240 || len(turn.Speaker) > 200 {
+			if _, err := uuid.Parse(turn.ID); err != nil || !turn.validExclusions() || !validPersonID(turn.PersonID) || !slices.Contains(target.SourceIDs, turn.ID) || utf8.RuneCountInString(turn.Text) > 4096 || len(turn.Person) > 240 || len(turn.Speaker) > 200 {
 				return ErrInvalid
 			}
 			count += utf8.RuneCountInString(turn.Text)
@@ -139,16 +139,24 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 	targets := make([]map[string]any, 0, len(p.Targets))
 	for _, target := range p.Targets {
 		turns := []map[string]any{}
+		sourceText := ""
 		for _, turn := range target.Turns {
-			turns = append(turns, map[string]any{"text": turn.Text, "speaker": turn.Speaker, "person": turn.Person, "personID": turn.PersonID, "startMilliseconds": turn.StartMilliseconds, "endMilliseconds": turn.EndMilliseconds})
+			content := turn.content()
+			sourceText += content
+			if content != "" {
+				turns = append(turns, map[string]any{"text": content, "speaker": turn.Speaker, "person": turn.Person, "personID": turn.PersonID, "startMilliseconds": turn.StartMilliseconds, "endMilliseconds": turn.EndMilliseconds})
+			}
+		}
+		if len(target.Turns) == 0 {
+			sourceText = target.SourceText
 		}
 		// For a fully sourced identity correction, the old generated prose is
 		// not evidence: it can contain precisely the attribution being fixed.
 		text, retained := target.Text, target.RetainedText
 		if target.IdentityCorrection && target.CompleteSource {
-			text, retained = target.SourceText, ""
+			text, retained = sourceText, ""
 		}
-		targets = append(targets, map[string]any{"identityCorrection": target.IdentityCorrection, "id": target.ID, "text": text, "sourceText": target.SourceText, "retainedText": retained, "style": target.Style, "turns": turns})
+		targets = append(targets, map[string]any{"identityCorrection": target.IdentityCorrection, "id": target.ID, "text": text, "sourceText": sourceText, "retainedText": retained, "style": target.Style, "turns": turns})
 	}
 	input, _ := json.Marshal(map[string]any{"targets": targets, "context": p.Context, "narrator": p.Narrator, "words": words, "illustrationSuggestionsEnabled": p.illustrationSuggestionsEnabled})
 	ids := []string{}
@@ -242,6 +250,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	for _, target := range request.Targets {
 		material = append(material, target.Text, target.SourceText, target.RetainedText)
 		for _, turn := range target.Turns {
+			turn.Text = turn.content()
 			material = append(material, turn.Text)
 		}
 	}
@@ -292,6 +301,7 @@ func polishSources(request PolishRequest) []SourceUtterance {
 	seen := map[string]bool{}
 	for _, target := range request.Targets {
 		for _, turn := range target.Turns {
+			turn.Text = turn.content()
 			if !onlySpeechFillers(turn.Text) && !seen[turn.ID] {
 				sources = append(sources, turn)
 				seen[turn.ID] = true
@@ -363,7 +373,7 @@ func polishAcknowledged(next *PolishRequest, awaiting []PolishTarget, narrator .
 	}
 	for _, target := range awaiting {
 		if slices.ContainsFunc(next.Targets, func(t PolishTarget) bool {
-			return t.IdentityCorrection == target.IdentityCorrection && t.CompleteSource == target.CompleteSource && t.ID == target.ID && t.Text == target.Text && t.SourceText == target.SourceText && t.RetainedText == target.RetainedText && slices.Equal(t.Turns, target.Turns)
+			return t.IdentityCorrection == target.IdentityCorrection && t.CompleteSource == target.CompleteSource && t.ID == target.ID && t.Text == target.Text && t.SourceText == target.SourceText && t.RetainedText == target.RetainedText && slices.EqualFunc(t.Turns, target.Turns, SourceUtterance.Equal)
 		}) {
 			return false
 		}

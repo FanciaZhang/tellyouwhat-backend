@@ -249,10 +249,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	awaitingRevision := -1
 	var awaitingSources []string
 	var awaitingPolish []PolishTarget
+	var awaitingIdentity string
+	var runningIdentity *IdentityRequest
 	var awaitingNarrator *Narrator
 	waitingForPolishRetry := false
 	hasWork := func() bool {
-		return pendingPolish(snapshot.Polish) || (snapshot.Polish == nil && len(snapshot.PendingUtterances) > 0)
+		return snapshot.Identity != nil || pendingPolish(snapshot.Polish) || (snapshot.Identity == nil && snapshot.Polish == nil && len(snapshot.PendingUtterances) > 0)
 	}
 	var segmentPeriod string
 	var remaining int
@@ -266,7 +268,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	}
 	maxEnd := minTime(time.Now().Add(31*time.Minute), claim.Identity.ExpiresAt)
 	launch := func() {
-		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
+		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || awaitingIdentity != "" || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
 		}
 		current := snapshot
@@ -293,10 +295,14 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		startedAt := time.Now()
 		finalizing := finishing
 		rewritePaused = false
-		runningPolish = current.Polish != nil
+		runningPolish = current.Polish != nil || current.Identity != nil
+		runningIdentity = current.Identity
 		stage := "organizing"
 		if current.Polish == nil {
 			stage = "structuring"
+		}
+		if current.Identity != nil {
+			stage = "identifying"
 		}
 		emit(Event{Type: "processing", Stage: stage})
 		work, stop := context.WithTimeout(ctx, 840*time.Second)
@@ -348,7 +354,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		if captureClosed && !finishing {
 			return
 		}
-		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
+		if running || awaitingRevision >= 0 || len(awaitingPolish) > 0 || awaitingIdentity != "" || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
 		}
 		due := time.Now()
@@ -434,7 +440,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						dirty = true
 					}
 				}
-				if len(next.PendingUtterances) > 0 && (!hadSnapshot || !slices.Equal(snapshot.PendingUtterances, next.PendingUtterances)) {
+				if len(next.PendingUtterances) > 0 && (!hadSnapshot || !slices.EqualFunc(snapshot.PendingUtterances, next.PendingUtterances, SourceUtterance.Equal)) {
 					dirty = true
 				}
 				// Newly committed speech queues another batch. It must not
@@ -446,18 +452,21 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					!slices.Equal(snapshot.Words, next.Words) || snapshot.WritingStyle != next.WritingStyle {
 					generation++
 				}
+				if awaitingIdentity != "" && (next.Identity == nil || next.Identity.Fingerprint != awaitingIdentity) {
+					awaitingIdentity = ""
+				}
 				if polishAcknowledged(next.Polish, awaitingPolish, awaitingNarrator) {
 					awaitingPolish = nil
 				}
 				if next.DictationMode {
 					waitingForPolishRetry = false
-					dirty = pendingPolish(next.Polish) || (next.Polish == nil && len(next.PendingUtterances) > 0)
+					dirty = next.Identity != nil || pendingPolish(next.Polish) || (next.Identity == nil && next.Polish == nil && len(next.PendingUtterances) > 0)
 				}
 				snapshot = next
 				transcriptBase = snapshot.Transcript
 				if finishing && segment == "" && !running {
 					launch()
-					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -580,7 +589,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				}
 				if segment == "" {
 					launch()
-					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -645,7 +654,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if finishing {
 					dirty = dirty || (lastSubmitted != tr && len(snapshot.PendingUtterances) > 0)
 					launch()
-					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
+					if !failed && !running && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 						_ = s.Store.Forget(ctx, claim.Identity.Owner, claim.SessionID)
 						emit(Event{Type: "finished"})
 						return
@@ -715,7 +724,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			}
 			if result.err != nil {
 				if snapshot.DictationMode {
-					emit(Event{Type: "rewrite_error", Code: "voice_rewrite_unavailable"})
+					if runningIdentity != nil {
+						emit(Event{Type: "identity_error", Code: "voice_identity_unavailable", Identity: &IdentityRevision{Request: *runningIdentity,
+							Assignments: []IdentityAssignment{}, NarratorEvidenceIDs: []string{}, Commands: []IdentityCommand{}}})
+					} else {
+						emit(Event{Type: "rewrite_error", Code: "voice_rewrite_unavailable"})
+					}
 					waitingForPolishRetry = true
 					// Keep ASR and audio receipts alive. The client owns the independent
 					// bounded polish retry/pause state, persisted with the visible body.
@@ -731,7 +745,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				if s.Usage != nil {
 					s.Usage(ctx, claim.Identity, result.value.InputTokens, result.value.OutputTokens)
 				}
-				if result.value.Polish != nil {
+				if result.value.Identity != nil {
+					awaitingIdentity = result.value.Identity.Request.Fingerprint
+					emit(Event{Type: "identity", Identity: result.value.Identity})
+				} else if result.value.Polish != nil {
 					awaitingPolish = slices.Clone(result.value.Polish.Targets)
 					awaitingNarrator = result.value.Polish.Narrator
 					emit(Event{Type: "polish", Polish: result.value.Polish})
@@ -750,7 +767,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 			if !finishing {
 				schedule(true)
 			}
-			if finishing && segment == "" && awaitingRevision < 0 && len(awaitingPolish) == 0 && !waitingForPolishRetry {
+			if finishing && segment == "" && awaitingRevision < 0 && len(awaitingPolish) == 0 && awaitingIdentity == "" && !waitingForPolishRetry {
 				if dirty {
 					launch()
 				} else {
@@ -889,7 +906,7 @@ func removePendingUtterances(source []SourceUtterance, removed []string) []Sourc
 }
 
 func preservesPendingSources(prior, next []SourceUtterance) bool {
-	return len(next) >= len(prior) && slices.Equal(prior, next[:len(prior)])
+	return len(next) >= len(prior) && slices.EqualFunc(prior, next[:len(prior)], SourceUtterance.Equal)
 }
 
 // Keep catch-up work small enough to make visible progress within the provider
