@@ -20,6 +20,43 @@ func polishFixture() Snapshot {
 	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
 
+func TestIdentityRewriteAcceptsAllSixteenParagraphsOfOneSource(t *testing.T) {
+	source := SourceUtterance{ID: uuid.NewString(), Text: "今天去河边散步，晚上回家读书。", Person: "小林", PersonID: uuid.NewString()}
+	p := PolishRequest{}
+	ids := []string{}
+	for i := 0; i < 16; i++ {
+		id := uuid.NewString()
+		ids = append(ids, id)
+		p.Targets = append(p.Targets, PolishTarget{ID: id, Style: "body", Text: "原来的正文", SourceText: source.Text, SourceIDs: []string{source.ID}, Turns: []SourceUtterance{source}, CompleteSource: true, IdentityCorrection: true})
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatal("an allowed sixteen-paragraph output cannot be corrected as a whole", err)
+	}
+	output, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: "小林今天去河边散步，晚上回家读书。", Style: "body", TargetIDs: ids}}, "questions": []string{}})
+	if revision, err := decodePolish(string(output), p); err != nil || len(revision.Targets) != 16 || len(revision.Paragraphs[0].TargetIDs) != 16 {
+		t.Fatal("merged correction lost some of the sixteen input paragraphs", err)
+	}
+	p.Targets = append(p.Targets, PolishTarget{ID: uuid.NewString(), Style: "body", Text: "下一组"})
+	if err := p.Validate(); err == nil {
+		t.Fatal("request larger than the atomic paragraph limit was accepted")
+	}
+}
+
+func TestCompleteSharedSourceBudgetCountsEvidenceOnceAndRejectsConflicts(t *testing.T) {
+	source := SourceUtterance{ID: uuid.NewString(), Text: strings.Repeat("今天我和朋友在河边散步。", 60)}
+	p := PolishRequest{}
+	for i := 0; i < 8; i++ {
+		p.Targets = append(p.Targets, PolishTarget{ID: uuid.NewString(), Style: "body", Text: source.Text, RetainedText: source.Text, SourceText: source.Text, SourceIDs: []string{source.ID}, Turns: []SourceUtterance{source}, CompleteSource: true, IdentityCorrection: true})
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatal("duplicated presentation of one complete source exhausted the evidence budget", err)
+	}
+	p.Targets[7].Turns[0].Text = "同一来源却变成了完全不同的经历。"
+	if err := p.Validate(); err == nil {
+		t.Fatal("conflicting evidence under one source ID was accepted")
+	}
+}
+
 func TestBlankPolishTargetNeedsActualSourceAndCannotBeSpacingOnlyTask(t *testing.T) {
 	s := polishFixture()
 	target := &s.Polish.Targets[0]

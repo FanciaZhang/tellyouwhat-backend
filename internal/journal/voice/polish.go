@@ -47,14 +47,17 @@ type PolishRevision struct {
 	IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
 }
 
+const maxPolishParagraphs = 16
+
 func (p PolishRequest) Validate() error {
 	if err := validateNarrator(p.Narrator); err != nil {
 		return err
 	}
-	if len(p.Targets) > 8 || len(p.Context) > 2 {
+	if len(p.Targets) > maxPolishParagraphs || len(p.Context) > 2 {
 		return ErrInvalid
 	}
 	ids := map[string]bool{}
+	evidence := map[string]SourceUtterance{}
 	count := 0
 	for _, target := range p.Targets {
 		if !validPolishStyle(target.Style) {
@@ -65,8 +68,20 @@ func (p PolishRequest) Validate() error {
 			return ErrInvalid
 		}
 		ids[target.ID] = true
-		count += utf8.RuneCountInString(target.Text) + utf8.RuneCountInString(target.SourceText)
-		count += utf8.RuneCountInString(target.RetainedText)
+		for _, text := range []string{target.Text, target.SourceText, target.RetainedText} {
+			if utf8.RuneCountInString(text) > 8000 {
+				return ErrInvalid
+			}
+		}
+		// Complete evidence replaces the old AI baseline in preparePolish.
+		// Budget those actual facts once, rather than charging each paragraph
+		// for repeated copies of the same raw turn and discarded old prose.
+		if !target.CompleteSource || len(target.Turns) == 0 {
+			count += utf8.RuneCountInString(target.Text) + utf8.RuneCountInString(target.RetainedText)
+		}
+		if len(target.Turns) == 0 {
+			count += utf8.RuneCountInString(target.SourceText)
+		}
 		if len(target.SourceKeys) != 0 && len(target.SourceKeys) != len(target.Turns) {
 			return ErrInvalid
 		}
@@ -86,7 +101,14 @@ func (p PolishRequest) Validate() error {
 			if _, err := uuid.Parse(turn.ID); err != nil || !turn.validExclusions() || !validPersonID(turn.PersonID) || !slices.Contains(target.SourceIDs, turn.ID) || utf8.RuneCountInString(turn.Text) > 4096 || len(turn.Person) > 240 || len(turn.Speaker) > 200 {
 				return ErrInvalid
 			}
-			count += utf8.RuneCountInString(turn.Text)
+			if prior, found := evidence[turn.ID]; found {
+				if !prior.Equal(turn) {
+					return ErrInvalid
+				}
+			} else {
+				evidence[turn.ID] = turn
+				count += utf8.RuneCountInString(turn.Text)
+			}
 		}
 	}
 	for _, block := range p.Context {
@@ -201,8 +223,8 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 	for _, target := range p.Targets {
 		ids = append(ids, target.ID)
 	}
-	item := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"targetIDs", "text", "style"}, "properties": map[string]any{"targetIDs": map[string]any{"type": "array", "minItems": 1, "maxItems": 8, "items": map[string]any{"type": "string", "enum": ids}}, "text": map[string]string{"type": "string"}, "style": map[string]any{"type": "string", "enum": []string{"body", "heading1", "heading2", "heading3", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}}}}
-	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"paragraphs", "questions"}, "properties": map[string]any{"paragraphs": map[string]any{"type": "array", "maxItems": 16, "items": item}, "questions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]string{"type": "string"}}}}
+	item := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"targetIDs", "text", "style"}, "properties": map[string]any{"targetIDs": map[string]any{"type": "array", "minItems": 1, "maxItems": maxPolishParagraphs, "items": map[string]any{"type": "string", "enum": ids}}, "text": map[string]string{"type": "string"}, "style": map[string]any{"type": "string", "enum": []string{"body", "heading1", "heading2", "heading3", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}}}}
+	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"paragraphs", "questions"}, "properties": map[string]any{"paragraphs": map[string]any{"type": "array", "maxItems": maxPolishParagraphs, "items": item}, "questions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]string{"type": "string"}}}}
 	schema["required"] = []string{"paragraphs", "questions", "illustrationSuggestion"}
 	schema["properties"].(map[string]any)["illustrationSuggestion"] = contracts.IllustrationSuggestionSchema()
 	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v32", "strict": true, "schema": schema}}}
@@ -238,14 +260,14 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, ErrInvalid
 	}
-	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > 16 || len(output.Questions) > 8 {
+	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 {
 		return nil, ErrInvalid
 	}
 	revision := &PolishRevision{Narrator: request.Narrator, Targets: slices.Clone(request.Targets), Paragraphs: []PolishParagraph{}, Questions: output.Questions}
 	seen := map[string]bool{}
 	characters := 0
 	for _, paragraph := range output.Paragraphs {
-		if !validPolishStyle(paragraph.Style) || len(paragraph.TargetIDs) == 0 || len(paragraph.TargetIDs) > 8 || strings.TrimSpace(paragraph.Text) == "" {
+		if !validPolishStyle(paragraph.Style) || len(paragraph.TargetIDs) == 0 || len(paragraph.TargetIDs) > maxPolishParagraphs || strings.TrimSpace(paragraph.Text) == "" {
 			return nil, ErrInvalid
 		}
 		local := map[string]bool{}
@@ -270,7 +292,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 			}
 		}
 	}
-	if len(revision.Paragraphs) > 16 {
+	if len(revision.Paragraphs) > maxPolishParagraphs {
 		return nil, ErrInvalid
 	}
 	for _, target := range request.Targets {
