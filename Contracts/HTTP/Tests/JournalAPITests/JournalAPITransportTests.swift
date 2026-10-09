@@ -22,7 +22,7 @@ struct JournalAPITransportTests {
         )
         let input = try JSONDecoder().decode(
             Components.Schemas.OrganizeRequest.self,
-            from: Data(#"{"requestID":"\#(requestID.uuidString.lowercased())","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"今天","body":"记录正文","existingTags":[],"rejectedTagNames":[],"books":[]}"#.utf8)
+            from: Data(#"{"requestID":"\#(requestID.uuidString.lowercased())","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"今天","body":"记录正文","illustrationSuggestionsEnabled":false,"existingTags":[],"rejectedTagNames":[],"books":[]}"#.utf8)
         )
 
         _ = try await client.organizeJournal(
@@ -36,6 +36,8 @@ struct JournalAPITransportTests {
         #expect(request.path == "/v1/ai/operations/journal.organize/responses")
         #expect(request.header(named: "X-Tellyouwhat-Request-ID") == requestID.uuidString.lowercased())
         #expect(!request.body.isEmpty)
+        let payload = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
+        #expect(payload["illustrationSuggestionsEnabled"] as? Bool == false)
     }
 
     @Test("generated activation request has no compatibility body")
