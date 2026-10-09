@@ -48,6 +48,15 @@ After the no-op correction, all seven cases pass, including merged-voice narrato
 selection. Focused checks, race checks and vet pass. This is model/protocol
 evidence and is not full App or user acceptance.
 
+The next real App attempt reached source identity and spoken narrator selection,
+but repeated introduction confirmation created a duplicate person, and identity
+progress did not extend the finishing inactivity clock. Its full attempt remains
+failed. Replaying that exact synthetic App request with the configured model also
+showed that a later anonymous packing remark shared only a pastry topic/acoustic
+key with the third person. The tightened inference leaves this turn unknown while
+retaining the third person's introduction and purchase; the real replay and
+backend race checks pass. It does not claim that ASR separated three acoustic voices.
+
 ## Audio and recognition have different identities
 
 - `segmentID` identifies one immutable PCM audio chunk, at most 480,000 bytes

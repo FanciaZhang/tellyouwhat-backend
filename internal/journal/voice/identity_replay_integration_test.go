@@ -63,6 +63,15 @@ func TestConfiguredIdentityReplayFromSyntheticApp(t *testing.T) {
 	if result.Identity == nil {
 		t.Fatal("missing identity result")
 	}
+	if unknown := config["ExpectedUnknownSourceIDs"]; unknown != "" {
+		for _, assignment := range result.Identity.Assignments {
+			for _, id := range strings.Split(unknown, ",") {
+				if slices.Contains(assignment.SourceIDs, id) {
+					t.Error("shared acoustic key/topic cannot resolve the ambiguous later speaker", id)
+				}
+			}
+		}
+	}
 	if name := config["ExpectedName"]; name != "" {
 		claimed := map[string]bool{}
 		for _, assignment := range result.Identity.Assignments {
