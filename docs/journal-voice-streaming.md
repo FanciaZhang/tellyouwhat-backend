@@ -58,9 +58,38 @@ Snapshot-only editorial work can finish without opening an ASR connection.
 Document, source, narrator and identity acknowledgement fences continue to
 apply independently of audio ACKs.
 
+Every emitted `polish` revision carries a server-generated UUID `id`. After
+handling that result, the App persists its ID and returns it as the next
+snapshot's `acknowledgedPolishID`, whether the text changed, the result was
+already current, or a user edit caused the result to be skipped. Only that
+exact ID advances the server queue. Pending source evidence is retained for a
+fresh attempt. Paragraph equality is not an acknowledgement: an unchanged
+context paragraph must not deadlock the remainder of a recording.
+
 An empty rendered prose target is accepted only when it retains nonempty source
 text and actual source turns. It can then recover from grounded speech. An
 empty spacer without source evidence is invalid and must not be submitted.
+
+For fully sourced targets, the model receives the original turns rather than
+old generated prose as its mandatory baseline. Each turn's `narrativeRole` is
+derived from the confirmed person and narrator (`author`, `other`, `unknown`).
+All actions in one speaker's self-report retain that actor, including omitted
+subjects in later clauses. A bounded, incomplete source window still retains
+the previous prose so that facts outside the window cannot be discarded.
+
+Ordinary one-person prose keeps its 2,048-token/25-second bound. Confirmed
+multi-person prose uses low reasoning within 4,096 tokens and 45 seconds to
+resolve reciprocal references and omitted subjects; stopping capture and local
+audio persistence do not wait for this pass. These are bounds, not a promise
+that every provider request completes within them. The explicitly enabled
+synthetic semantic corpus preserves all failed attempts separately from App
+capture acceptance.
+
+Identity output cannot assign two contradictory names to one acoustic key or
+change the narrator without an exact command span. Provider voice collisions
+remain a known integration limitation: acoustic grouping is not proof that all
+its turns belong to the same person. Further turn-specific identity application
+is required before claiming the three-participant App journey accepted.
 
 An interrupted connection requires a fresh recognition ID and a retained
 recording offset. The App owns source reconciliation and must never equate

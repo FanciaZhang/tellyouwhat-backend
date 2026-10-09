@@ -46,11 +46,7 @@ func TestAuthorAndConfirmedSpeakerIDsReachOrdinaryAndStructuredModels(t *testing
 	if !sameNarrator(revision.Narrator, s.Narrator) {
 		t.Fatal("server did not echo trusted author baseline")
 	}
-	prior := *s.Narrator
 	s.Polish.Narrator = &Narrator{PersonID: wife, Name: "妻子"}
-	if !polishAcknowledged(s.Polish, revision.Targets, &prior) {
-		t.Fatal("author correction stalls behind old response acknowledgement")
-	}
 	s.Polish = nil
 	s.PendingUtterances = []SourceUtterance{turn}
 	data, err := rewriteModelInput(s, 1)
@@ -137,5 +133,57 @@ func TestConfirmedSelfReportDoesNotInventGenderThroughPunctuation(t *testing.T) 
 	target.CompleteSource = false
 	if got := polishConfirmedSelfReferences(third, []string{target.ID}, *s.Polish); got != third {
 		t.Fatal("incomplete evidence changed retained prose")
+	}
+}
+
+func TestOrdinaryContinuationUsesRawActorsInsteadOfOldGeneratedAttribution(t *testing.T) {
+	s := polishFixture()
+	s.Polish.Narrator = &Narrator{PersonID: uuid.NewString(), Name: "老公宝"}
+	target := &s.Polish.Targets[0]
+	target.CompleteSource = true
+	target.Text, target.RetainedText = "老婆宝吃了两碗饭，我把剩菜装进饭盒。", "老婆宝吃了两碗饭，我把剩菜装进饭盒。"
+	target.SourceText = "我吃了两碗饭，还把剩菜装进饭盒。"
+	target.Turns = []SourceUtterance{{ID: target.SourceIDs[0], Text: target.SourceText, PersonID: uuid.NewString(), Person: "老婆宝"}}
+	check := func() map[string]any {
+		t.Helper()
+		prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err = json.Unmarshal(prepared.Body, &body); err != nil {
+			t.Fatal(err)
+		}
+		var input struct {
+			Targets []map[string]any `json:"targets"`
+		}
+		if err = json.Unmarshal([]byte(body["input"].(string)), &input); err != nil {
+			t.Fatal(err)
+		}
+		return input.Targets[0]
+	}
+	input := check()
+	if input["text"] != target.SourceText || input["retainedText"] != "" {
+		t.Fatal("ordinary continuation reinforced a generated subject error")
+	}
+	turn := input["turns"].([]any)[0].(map[string]any)
+	if turn["narrativeRole"] != "other" || turn["person"] != "老婆宝" {
+		t.Fatal("lost explicit other actor")
+	}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil || prepared.Parameters.ReasoningEffort != "low" || prepared.Parameters.MaxOutputTokens > 4096 || prepared.TimeoutSeconds > 45 {
+		t.Fatal("multi-person perspective lacks bounded semantic reasoning", err)
+	}
+	target.Turns[0].PersonID = s.Polish.Narrator.PersonID
+	if check()["turns"].([]any)[0].(map[string]any)["narrativeRole"] != "author" {
+		t.Fatal("author actor not derived from confirmed identity")
+	}
+	target.Turns[0].PersonID = ""
+	if check()["turns"].([]any)[0].(map[string]any)["narrativeRole"] != "unknown" {
+		t.Fatal("unknown actor guessed")
+	}
+	target.CompleteSource = false
+	if check()["retainedText"] != target.RetainedText {
+		t.Fatal("incomplete evidence removed retained facts")
 	}
 }

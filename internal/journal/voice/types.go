@@ -52,6 +52,7 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	AcknowledgedPolishID           string           `json:"acknowledgedPolishID,omitempty"`
 	Identity                       *IdentityRequest `json:"identity,omitempty"`
 	Narrator                       *Narrator        `json:"narrator,omitempty"`
 	IllustrationSuggestionsEnabled bool             `json:"illustrationSuggestionsEnabled"`
@@ -176,6 +177,9 @@ func (s Snapshot) incremental() bool {
 }
 
 func (s Snapshot) Validate() error {
+	if s.AcknowledgedPolishID != "" && uuid.Validate(s.AcknowledgedPolishID) != nil {
+		return ErrInvalid
+	}
 	if s.Identity != nil {
 		if s.Polish != nil || s.RecordingContext != nil {
 			return ErrInvalid

@@ -45,6 +45,33 @@ func TestUnchangedNarratorEchoWithEvidenceDoesNotCreateAnOperation(t *testing.T)
 	}
 }
 
+func TestIdentityRejectsConflictingVoiceAndIncompleteAuthorOperation(t *testing.T) {
+	r := identityFixture("我和老婆宝沿着河边散步。", "我是老婆宝。", "我是小林，从杭州坐火车过来。", "这篇日记请用老婆宝的视角写。今天三个人一起散步。")
+	// This reproduces a real ASR collision without inventing another voice.
+	r.Turns[2].Speaker = r.Speakers[0].Key
+	r.Speakers = r.Speakers[:2]
+	r.Turns[3].Speaker = r.Speakers[0].Key
+	assignments := []IdentityAssignment{
+		{SpeakerKey: r.Speakers[0].Key, Name: "老婆宝", Kind: "context", EvidenceIDs: []string{r.Turns[0].ID}},
+		{SpeakerKey: r.Speakers[0].Key, Name: "小林", Kind: "introduction", EvidenceIDs: []string{r.Turns[2].ID}},
+	}
+	encode := func(assignments []IdentityAssignment, commands []IdentityCommand) string {
+		body, _ := json.Marshal(map[string]any{"assignments": assignments, "narratorSpeaker": r.Speakers[1].Key,
+			"narratorEvidenceIDs": []string{r.Turns[3].ID}, "commands": commands})
+		return string(body)
+	}
+	command := IdentityCommand{SourceID: r.Turns[3].ID, Text: "这篇日记请用老婆宝的视角写。"}
+	if _, err := decodeIdentity(encode(assignments, []IdentityCommand{command}), r); err == nil {
+		t.Fatal("one voice was assigned two contradictory people")
+	}
+	if _, err := decodeIdentity(encode([]IdentityAssignment{}, []IdentityCommand{}), r); err == nil {
+		t.Fatal("author operation lost its exact removable source span")
+	}
+	if got, err := decodeIdentity(encode([]IdentityAssignment{}, []IdentityCommand{command}), r); err != nil || got.NarratorSpeaker != r.Speakers[1].Key {
+		t.Fatal("an independent grounded author operation should remain available", got, err)
+	}
+}
+
 type identityThenPolishRewriter struct{ failIdentity bool }
 
 func (m identityThenPolishRewriter) Rewrite(_ context.Context, s Snapshot, _ int) (RewriteResult, error) {
@@ -86,6 +113,7 @@ func TestIdentityAcknowledgementAdvancesToProseAndFinishes(t *testing.T) {
 			if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "polish" {
 				t.Fatalf("prose after identity: %+v %v", event, err)
 			}
+			snapshot.AcknowledgedPolishID = event.Polish.ID
 			snapshot.Polish.Targets = nil
 			websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 			websocket.JSON.Send(ws, Frame{Type: "finish"})

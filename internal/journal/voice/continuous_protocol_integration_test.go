@@ -264,6 +264,7 @@ func TestConfiguredContinuousVoiceProtocolAcrossAudioCheckpoints(t *testing.T) {
 				result["polish"] = event.Polish
 				result["body"] = body
 				snapshot.Blocks[0].Text = body
+				snapshot.AcknowledgedPolishID = event.Polish.ID
 				snapshot.Polish.Targets = []PolishTarget{}
 				send(Frame{Type: "snapshot", Snapshot: &snapshot})
 			case "finished":

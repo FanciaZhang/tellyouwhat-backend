@@ -101,6 +101,7 @@ func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot,
 			}
 			seen = true
 			result.Polish = event.Polish
+			snapshot.AcknowledgedPolishID = event.Polish.ID
 			snapshot.Polish = nil
 			snapshot.Revision++
 			if websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}) != nil {

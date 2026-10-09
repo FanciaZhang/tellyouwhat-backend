@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -185,14 +186,13 @@ func TestNarrativeNormalizesRealParagraphBreaksWithSharedSources(t *testing.T) {
 	}
 }
 
-func TestNarrativeActorCorrectionAcknowledgesPriorInFlightResult(t *testing.T) {
-	p := *polishFixture().Polish
-	p.Targets[0].Turns = []SourceUtterance{{ID: p.Targets[0].SourceIDs[0], Text: p.Targets[0].SourceText, Speaker: "segment:1"}}
-	prior := append([]PolishTarget(nil), p.Targets...)
-	p.Targets[0].Turns = append([]SourceUtterance(nil), p.Targets[0].Turns...)
-	p.Targets[0].Turns[0].Person = "妻子"
-	if !polishAcknowledged(&p, prior) {
-		t.Fatal("a corrected actor must allow a fresh narrative request")
+func TestNarrativeAcknowledgementRequiresTheExactServerResult(t *testing.T) {
+	id := uuid.NewString()
+	if polishAcknowledged("", id) || polishAcknowledged(uuid.NewString(), id) || polishAcknowledged("", "") {
+		t.Fatal("unhandled or different results were acknowledged")
+	}
+	if !polishAcknowledged(id, id) {
+		t.Fatal("unchanged prose must still acknowledge a handled result")
 	}
 }
 
@@ -317,6 +317,7 @@ func TestNewDictationBodyDoesNotDiscardInFlightPolish(t *testing.T) {
 		t.Fatalf("lost completed prose: %+v", event)
 	}
 	// Remove just the processed baseline. The next sentence becomes its own job.
+	snapshot.AcknowledgedPolishID = event.Polish.ID
 	snapshot.Polish.Targets = snapshot.Polish.Targets[1:]
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	select {
@@ -348,6 +349,35 @@ func TestPolishFailureKeepsAudioReceiptsAndAllowsFinishingAfterPause(t *testing.
 	websocket.JSON.Send(ws, Frame{Type: "finish"})
 	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
 		t.Fatalf("paused finalization: %+v %v", event, err)
+	}
+}
+
+func TestHandledPolishCanAdvanceWithUnchangedPendingTargets(t *testing.T) {
+	model := &gatedPolishRewriter{started: make(chan Snapshot, 2), release: make(chan struct{})}
+	close(model.release)
+	ws := polishSocket(t, model, nil)
+	snapshot := polishFixture()
+	if err := websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}); err != nil {
+		t.Fatal(err)
+	}
+	<-model.started
+	var event Event
+	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "polish" || event.Polish == nil || uuid.Validate(event.Polish.ID) != nil {
+		t.Fatalf("identified polish result: %+v %v", event, err)
+	}
+	// The App can handle a response without changing text, or skip a stale
+	// atomic group while retaining an unchanged source for a fresh attempt.
+	snapshot.AcknowledgedPolishID = event.Polish.ID
+	if err := websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case started := <-model.started:
+		if !slices.Equal(started.Blocks, snapshot.Blocks) || started.Polish.Targets[0].ID != snapshot.Polish.Targets[0].ID {
+			t.Fatal("acknowledgement required a synthetic body mutation")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("handled unchanged result blocked remaining prose work")
 	}
 }
 
@@ -383,6 +413,7 @@ func TestCaptureClosedCoalescesRemainingSnapshotsUntilTranscriptionFinishes(t *t
 	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "polish" {
 		t.Fatalf("polish: %+v %v", event, err)
 	}
+	snapshot.AcknowledgedPolishID = event.Polish.ID
 	snapshot.Polish.Targets = nil
 	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
 	if err := receiveVoiceResult(ws, &event); err != nil || event.Type != "finished" {
