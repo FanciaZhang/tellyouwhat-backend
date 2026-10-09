@@ -52,6 +52,18 @@ facts when `completeSource` is false. Wire targets remain unchanged so the App
 can fence current text, current source identities, and author before applying
 the result. Identity edits do not reset the consumed transcript prefix.
 
+Raw ASR utterances/turns now have separate temporary body blocks. Their input
+boundaries are reading aids; the model merges related targets or splits topics
+into natural paragraphs. The last organized voice paragraph can absorb related
+new speech, while older paragraphs stay read-only context. App projection keeps
+unconsumed speech in separate raw blocks during in-flight revisions.
+
+For complete confirmed first-person sources, the polish decoder also normalizes
+sentence-initial reporting clauses such as `小林说，他…` to `小林…` when the
+original turns provide no third-person pronoun. It preserves quoted statements,
+source-supported third-person references, and incompletely sourced retained
+prose. A name alone is not evidence for a gendered pronoun.
+
 Local real-provider acceptance on 2026-10-09 used a 10.10-second synthetic
 two-voice recording, including an author who spoke second. The App persisted
 correct author/other-person attribution and the original PCM, then corrected
