@@ -1,0 +1,6 @@
+package: albumhttpapi
+output: generated.go
+generate:
+  models: true
+  gin-server: true
+  embedded-spec: true

@@ -1,0 +1,147 @@
+openapi: 3.0.3
+info:
+  title: Album Upload API
+  version: 0.1.0
+  description: Account-owned durable upload staging. originals_verified does not mean previews or local replacement are ready.
+security:
+  - AlbumAccount: []
+paths:
+  /v1/albums/uploads:
+    post:
+      operationId: createAlbumUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestID, manifest]
+              properties:
+                requestID: {type: string, format: uuid}
+                manifest: {$ref: '#/components/schemas/Manifest'}
+      responses:
+        '201':
+          description: Reserved or idempotently replayed upload
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Upload'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+    get:
+      operationId: getAlbumUpload
+      responses:
+        '200':
+          description: Upload belonging to the authenticated account
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Upload'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}/grants:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+    post:
+      operationId: authorizeAlbumUploadResources
+      description: Empty body. Grants cover only the manifest's exact staging objects, never archived originals.
+      responses:
+        '200':
+          description: Short-lived staging write grants
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [grants]
+                properties:
+                  grants:
+                    type: array
+                    items: {$ref: '#/components/schemas/Grant'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}/submit:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+    post:
+      operationId: submitAlbumUpload
+      description: Empty body. Queues verification; client receipts and hashes are not verification evidence.
+      responses:
+        '202':
+          description: Durable verification job queued or previously submitted state returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Upload'}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    AlbumAccount:
+      type: http
+      scheme: bearer
+      description: Verified stable account authentication scoped to the albums application. App Attest alone is insufficient.
+  parameters:
+    UploadID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    Error:
+      description: Authentication, scope, quota, state or service error. Internal provider details are not returned.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [code]
+            properties:
+              code: {type: string}
+  schemas:
+    Resource:
+      type: object
+      additionalProperties: false
+      required: [id, role, sizeBytes, sha256]
+      properties:
+        id: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        role:
+          type: string
+          enum: [original_photo, original_video, paired_video, current_photo, current_video, adjustment, alternate]
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        sha256: {type: string, pattern: '^[A-Fa-f0-9]{64}$'}
+    Manifest:
+      type: object
+      additionalProperties: false
+      required: [assetID, sourceRevision, kind, edited, resources]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        sourceRevision: {type: string, minLength: 1, maxLength: 256}
+        kind: {type: string, enum: [photo, video, live_photo]}
+        edited: {type: boolean}
+        resources:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: {$ref: '#/components/schemas/Resource'}
+    Upload:
+      type: object
+      additionalProperties: false
+      required: [id, requestID, manifest, manifestDigest, state, originalBytes, derivedBudget, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        requestID: {type: string, format: uuid}
+        manifest: {$ref: '#/components/schemas/Manifest'}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        state: {type: string, enum: [uploading, queued, verifying, originals_verified]}
+        originalBytes: {type: integer, format: int64, minimum: 1}
+        derivedBudget: {type: integer, format: int64, minimum: 1}
+        expiresAt: {type: string, format: date-time}
+    Grant:
+      type: object
+      additionalProperties: false
+      required: [resourceID, url, headers, expiresAt]
+      properties:
+        resourceID: {type: string}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}

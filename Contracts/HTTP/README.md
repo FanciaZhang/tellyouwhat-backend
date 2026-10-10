@@ -60,3 +60,14 @@ Repeat the command with `JournalAPI/openapi.yaml` and a `JournalAPI` output
 directory for Journal Web surfaces. Generated TypeScript belongs to the future
 Web target and should be regenerated in CI. Do not introduce a second
 hand-maintained Web schema.
+
+## Album storage client
+
+`AlbumAPI/openapi.yaml` is the canonical album account-storage contract. The
+`AlbumAPI` Swift product is generated from it by the same pinned build plugin.
+`AlbumAPITransport` supplies the exact serialized control request to an
+app-owned sender; the sender must supply verified account authentication and
+bounded responses. It must not substitute an App Attest device ID for an account.
+Media bytes are uploaded separately through file-backed transfer tasks using
+server-issued object grants. No production album endpoint is embedded in this
+package.
