@@ -54,6 +54,7 @@ func (r *multipartRepositoryStub) GetMultipart(_ context.Context, owner, id, res
 }
 
 type multipartProviderStub struct {
+	verify   func(context.Context, string, Resource) (string, error)
 	complete func(context.Context, string, string, int64) (string, error)
 	init     func(context.Context, string) (string, error)
 	part     func(context.Context, string, string, Resource, int, time.Time) (MultipartPartGrant, error)
@@ -228,4 +229,8 @@ func (r *multipartRepositoryStub) GetMultipartCompletion(_ context.Context, owne
 }
 func (p *multipartProviderStub) CompleteStagingMultipart(ctx context.Context, key, id string, size int64) (string, error) {
 	return p.complete(ctx, key, id, size)
+}
+
+func (p *multipartProviderStub) VerifyStagingResource(ctx context.Context, key string, r Resource) (string, error) {
+	return p.verify(ctx, key, r)
 }
