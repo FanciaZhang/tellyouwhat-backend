@@ -183,3 +183,73 @@ func TestCOSCopyEmbeddedErrorAndDisabledVersioningAreRejected(t *testing.T) {
 		t.Fatalf("HTTP 200 copy error accepted: %v", err)
 	}
 }
+
+func TestCOSMultipartFailureAbortsWithIndependentContext(t *testing.T) {
+	for _, mode := range []string{"part", "cancel", "complete", "abort"} {
+		t.Run(mode, func(t *testing.T) {
+			from := "albums/staging/" + uuid.NewString() + "/" + uuid.NewString() + "/video"
+			to := strings.Replace(from, "/staging/", "/originals/", 1)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var aborts atomic.Int64
+			var completes atomic.Int64
+			failure := func(r *http.Request) *http.Response {
+				result := cosResponse(r, `<Error><Code>InvalidRequest</Code><Message>test rejection</Message></Error>`, "")
+				result.StatusCode = http.StatusBadRequest
+				return result
+			}
+			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+				switch r.Method {
+				case http.MethodHead:
+					result := cosResponse(r, "", "source-version")
+					result.ContentLength = 6 << 30
+					return result, nil
+				case http.MethodPost:
+					if r.URL.Query().Has("uploads") {
+						return cosResponse(r, `<InitiateMultipartUploadResult><UploadId>abort-this-upload</UploadId></InitiateMultipartUploadResult>`, ""), nil
+					}
+					completes.Add(1)
+					return failure(r), nil
+				case http.MethodPut:
+					if mode == "cancel" {
+						cancel()
+						return nil, context.Canceled
+					}
+					if mode != "complete" {
+						return failure(r), nil
+					}
+					return cosResponse(r, `<CopyPartResult><ETag>etag</ETag></CopyPartResult>`, ""), nil
+				case http.MethodDelete:
+					aborts.Add(1)
+					if r.Context().Err() != nil {
+						t.Error("abort inherited cancelled context")
+					}
+					if _, ok := r.Context().Deadline(); !ok {
+						t.Error("unbounded cleanup")
+					}
+					if r.URL.Path != "/"+to || r.URL.Query().Get("uploadId") != "abort-this-upload" {
+						t.Error("aborting unrelated upload")
+					}
+					if mode == "abort" {
+						return failure(r), nil
+					}
+					result := cosResponse(r, "", "")
+					result.StatusCode = http.StatusNoContent
+					return result, nil
+				default:
+					return nil, errors.New("unexpected request")
+				}
+			})
+			version, err := s.Seal(ctx, from, to)
+			if err == nil || version != "" || aborts.Load() != 1 {
+				t.Fatalf("failure version=%q err=%v aborts=%d", version, err, aborts.Load())
+			}
+			if mode != "complete" && completes.Load() != 0 {
+				t.Error("completed failed parts")
+			}
+			if errors.Is(err, ErrCOSCleanup) != (mode == "abort") {
+				t.Fatalf("cleanup outcome lost: %v", err)
+			}
+		})
+	}
+}

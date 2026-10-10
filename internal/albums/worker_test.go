@@ -93,3 +93,27 @@ func TestVerificationWorkerCancellationStopsPolling(t *testing.T) {
 		t.Fatalf("cancelled batch: %+v %v", result, err)
 	}
 }
+
+type cleanupFailureObjects struct{ AlbumObjects }
+
+func (o cleanupFailureObjects) Seal(context.Context, string, string) (string, error) {
+	return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
+}
+
+func TestVerificationWorkerReportsUnfinishedCleanupWithoutBackup(t *testing.T) {
+	s, repo, objects, owner, manifest := uploadFixture(t)
+	s.objects = cleanupFailureObjects{objects}
+	ctx := context.Background()
+	upload, err := s.Create(ctx, owner, uuid.NewString(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Submit(ctx, owner, upload.ID); err != nil {
+		t.Fatal(err)
+	}
+	worker, _ := NewVerificationWorker(repo, s, 1, time.Second)
+	result, err := worker.RunOnce(ctx)
+	if err != nil || result.Failed != 1 || result.CleanupRequired != 1 || result.Verified != 0 || repo.completed != 0 {
+		t.Fatalf("cleanup failed but worker reported %+v %v", result, err)
+	}
+}

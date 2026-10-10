@@ -13,9 +13,10 @@ type PendingUploads interface {
 }
 
 type VerificationBatch struct {
-	Verified  int
-	Failed    int
-	Contended int
+	Verified        int
+	Failed          int
+	Contended       int
+	CleanupRequired int
 }
 
 // VerificationWorker uses the database queue, not a lossy in-memory notification.
@@ -53,10 +54,16 @@ func (w *VerificationWorker) RunOnce(ctx context.Context) (VerificationBatch, er
 			return result, err
 		}
 		_, err := w.service.Verify(ctx, job.OwnerID, job.ID)
+		if errors.Is(err, ErrCOSCleanup) {
+			result.CleanupRequired++
+		}
 		switch {
 		case err == nil:
 			result.Verified++
 		case ctx.Err() != nil:
+			if errors.Is(err, ErrCOSCleanup) {
+				result.Failed++
+			}
 			return result, ctx.Err()
 		case errors.Is(err, ErrLease), errors.Is(err, ErrExpired):
 			result.Contended++
@@ -76,6 +83,9 @@ func (w *VerificationWorker) Run(ctx context.Context, observe func(VerificationB
 	for {
 		result, err := w.RunOnce(ctx)
 		if ctx.Err() != nil {
+			if observe != nil && result.CleanupRequired > 0 {
+				observe(result, false)
+			}
 			return ctx.Err()
 		}
 		if observe != nil {

@@ -112,10 +112,12 @@ func (s *COSObjects) Seal(ctx context.Context, from, to string) (string, error) 
 	if !concreteCOSVersion(version) {
 		return "", ErrIncompleteBackup
 	}
-	// MultiCopy fixes the source version for both its HEAD and every copied part.
-	// Objects larger than 5 GB use bounded parallel multipart server-side copies.
-	_, response, err := s.client.Object.MultiCopy(ctx, to, s.host+"/"+from, &cos.MultiCopyOptions{PartSize: 64, ThreadPoolSize: 2}, version)
+	// Every copy part reads the exact source version observed above.
+	response, err := s.copyVersion(ctx, from, to, version, source.ContentLength)
 	if err != nil {
+		if errors.Is(err, ErrCOSCleanup) {
+			return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
+		}
 		return "", ErrCOSOperation
 	}
 	if response == nil {
