@@ -75,3 +75,13 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 此模块只返回已验证的 Apple subject，不签发 App 会话。持久一次性挑战、authorization code 换取/核验、稳定账户映射、会话撤销/轮换及 App 登录界面仍待接通；在这些步骤完成前不能把断言校验器直接当作可上线登录接口。
 
 依据：[Apple 验证用户](https://developer.apple.com/documentation/signinwithapple/verifying-a-user)、[Apple 登录认证流程](https://developer.apple.com/documentation/signinwithapple/authenticating-users-with-sign-in-with-apple)。
+
+## Apple 原生授权码交换
+
+`AppleCodeExchanger` 使用部署提供的 Team ID、Key ID 和 P-256 私钥生成 5 分钟 ES256 client secret。client_id 固定为相册 Bundle ID，端点固定为 Apple `/auth/token`；不接受客户端覆盖地址、受众或 redirect_uri。请求限时 10 秒、禁止重定向、响应限 64 KiB。
+
+交换前先验证客户端身份断言，避免无效断言消耗授权码；交换后再次验证 Apple 返回的 id_token，要求 subject 和本次 nonce 与先前身份一致。服务商错误和未知结果均不自动重试一次性授权码。返回的刷新令牌不会被 JSON 序列化，格式化及结构化日志均脱敏；后续账户存储必须加密保管它，用于校验和撤销，不能直接作为 App 会话。
+
+测试使用真实 ES256 客户端签名与 RSA 身份签名，核对请求表单和 client secret 的 issuer/audience/subject/kid/有效期，拒绝错用户、错 nonce、过期返回、错误曲线、重定向、超大响应及服务商错误。无效客户端断言不会请求 token 端点；网络错误只发一次。尚未使用真实 Apple 授权码联调。
+
+此组件仍需接到持久一次性挑战、账户事务和会话模块，不能单独视为登录完成。协议依据：[Apple Token validation](https://developer.apple.com/documentation/signinwithapplerestapi/generate-and-validate-tokens)。
