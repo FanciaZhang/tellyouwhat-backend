@@ -57,6 +57,14 @@ func TestConfiguredNarrativePreservesActorsAndReciprocalPerspective(t *testing.T
 			target(other, "老婆宝", "最后的味道挺好，我吃了两碗米饭，还把剩下的菜装进饭盒。", "老婆宝吃了两碗米饭，我把剩菜装进饭盒。"),
 			target(author, "老公宝", "吃完饭以后，我们一起收拾桌子。", "吃完饭以后，我们一起收拾桌子。")},
 			[]string{"老婆宝", "两碗", "饭盒", "收拾桌子"}, []string{"我吃了两碗", "我把剩", "我还把剩"}},
+		{"one-speaker-many-action-subjects", []PolishTarget{
+			target(other, "小林", "我叫小林。我昨天帮小王打了报告。小王有紧急任务，今天还要加班。", "小林昨天帮小王打了报告。小王有紧急任务，他今天还要加班。")},
+			[]string{"小林", "小王", "报告", "加班"}, []string{"小林今天还要加班", "我今天还要加班"}},
+		{"relevant-lighting-and-author-topic-change", []PolishTarget{
+			target(author, "老公宝", "我和老婆宝挑选台灯。我们打开灯试了亮度，发现太暗，决定换一盏。", ""),
+			target(other, "老婆宝", "对，我也觉得这盏灯太暗，要换一盏。", ""),
+			target(author, "老公宝", "另外，我今天还想去河边散步，晚点喝杯拿铁。", "")},
+			[]string{"亮度", "太暗", "换", "河边", "拿铁"}, []string{}},
 	}
 	records := []map[string]any{}
 	defer func() {
@@ -71,6 +79,9 @@ func TestConfiguredNarrativePreservesActorsAndReciprocalPerspective(t *testing.T
 	for _, c := range cases {
 		for repetition := 0; repetition < 3; repetition++ {
 			p := &PolishRequest{Narrator: &Narrator{PersonID: author, Name: "老公宝"}, Targets: c.targets, Context: []Block{}}
+			if c.name == "relevant-lighting-and-author-topic-change" {
+				p.SelectionContext = &PolishSelectionContext{Opening: "我和老婆宝之前商量买洗碗机。", Omissions: []PolishOmission{{SourceID: uuid.NewString(), Text: "老张，把三楼办公室的灯关掉。", Reason: "backgroundConversation"}}}
+			}
 			blocks := []Block{}
 			for _, v := range c.targets {
 				blocks = append(blocks, Block{ID: v.ID, Text: v.Text, Style: v.Style})
@@ -98,6 +109,9 @@ func TestConfiguredNarrativePreservesActorsAndReciprocalPerspective(t *testing.T
 				if !present {
 					t.Errorf("%s-%d lost %s; response preserved", c.name, repetition, fact)
 				}
+			}
+			if c.name == "one-speaker-many-action-subjects" && !regexp.MustCompile(`小王[^。！？]*加班`).MatchString(text) {
+				t.Errorf("%s-%d third-party action attribution lost; response preserved", c.name, repetition)
 			}
 			for _, phrase := range c.forbidden {
 				if strings.Contains(text, phrase) {
