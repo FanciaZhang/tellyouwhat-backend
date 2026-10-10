@@ -11,6 +11,8 @@ import (
 
 type multipartRepositoryStub struct {
 	*uploadTestRepository
+	completion           MultipartCompletion
+	completionErr        error
 	intent               MultipartIntent
 	beginErr, resolveErr error
 	resolvedAfterCancel  bool
@@ -52,9 +54,10 @@ func (r *multipartRepositoryStub) GetMultipart(_ context.Context, owner, id, res
 }
 
 type multipartProviderStub struct {
-	init func(context.Context, string) (string, error)
-	part func(context.Context, string, string, Resource, int, time.Time) (MultipartPartGrant, error)
-	list func(context.Context, string, string, int64) ([]MultipartUploadedPart, error)
+	complete func(context.Context, string, string, int64) (string, error)
+	init     func(context.Context, string) (string, error)
+	part     func(context.Context, string, string, Resource, int, time.Time) (MultipartPartGrant, error)
+	list     func(context.Context, string, string, int64) ([]MultipartUploadedPart, error)
 }
 
 func (p *multipartProviderStub) InitiateStagingMultipart(ctx context.Context, key string) (string, error) {
@@ -195,4 +198,34 @@ func TestMultipartServicePartsUseStoredOwnershipAndManifest(t *testing.T) {
 	if parts != 1 || lists != 1 {
 		t.Fatal("invalid request reached provider")
 	}
+}
+
+func (r *multipartRepositoryStub) ClaimMultipartCompletion(_ context.Context, owner, id, resource string, _ time.Time) (MultipartCompletion, bool, error) {
+	if r.completion.OperationID != "" && r.completion.State != "retryable" {
+		return r.completion, false, nil
+	}
+	r.completion = MultipartCompletion{UploadID: id, ResourceID: resource, OperationID: uuid.NewString(), State: "completing"}
+	return r.completion, true, nil
+}
+func (r *multipartRepositoryStub) ResolveMultipartCompletion(ctx context.Context, owner, id, resource, operation, state, version string, _ time.Time) (MultipartCompletion, error) {
+	if ctx.Err() != nil {
+		return MultipartCompletion{}, ctx.Err()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		return MultipartCompletion{}, errors.New("unbounded persistence")
+	}
+	if r.completionErr != nil {
+		return MultipartCompletion{}, r.completionErr
+	}
+	r.completion.State, r.completion.ObjectVersion = state, version
+	return r.completion, nil
+}
+func (r *multipartRepositoryStub) GetMultipartCompletion(_ context.Context, owner, id, resource string) (MultipartCompletion, error) {
+	if r.completion.OperationID == "" {
+		return MultipartCompletion{}, ErrNotFound
+	}
+	return r.completion, nil
+}
+func (p *multipartProviderStub) CompleteStagingMultipart(ctx context.Context, key, id string, size int64) (string, error) {
+	return p.complete(ctx, key, id, size)
 }

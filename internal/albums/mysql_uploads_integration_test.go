@@ -47,6 +47,7 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	r := NewMySQLUploads(db)
 	_, _, objects, owner, manifest := uploadFixture(t)
 	defer func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_completions WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_intents WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_uploads WHERE owner_id=?`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_storage_accounts WHERE owner_id=?`, owner)
@@ -114,6 +115,7 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 		t.Fatalf("cross account: %v", err)
 	}
 	checkMySQLMultipartIntent(t, ctx, db, u, now)
+	checkMySQLMultipartCompletion(t, ctx, db, u, now)
 	if _, err := r.Submit(ctx, owner, u.ID, now); err != nil {
 		t.Fatal(err)
 	}

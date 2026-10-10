@@ -9,6 +9,9 @@ import (
 var ErrMultipartPending = errors.New("album multipart initialization requires reconciliation")
 
 type MultipartRepository interface {
+	ClaimMultipartCompletion(context.Context, string, string, string, time.Time) (MultipartCompletion, bool, error)
+	ResolveMultipartCompletion(context.Context, string, string, string, string, string, string, time.Time) (MultipartCompletion, error)
+	GetMultipartCompletion(context.Context, string, string, string) (MultipartCompletion, error)
 	Get(context.Context, string, string) (Upload, error)
 	BeginMultipart(context.Context, string, string, string, time.Time) (MultipartIntent, bool, error)
 	ResolveMultipart(context.Context, string, string, string, string, string, time.Time) (MultipartIntent, error)
@@ -16,6 +19,7 @@ type MultipartRepository interface {
 }
 
 type MultipartProvider interface {
+	CompleteStagingMultipart(context.Context, string, string, int64) (string, error)
 	InitiateStagingMultipart(context.Context, string) (string, error)
 	AuthorizePart(context.Context, string, string, Resource, int, time.Time) (MultipartPartGrant, error)
 	ListStagingMultipartParts(context.Context, string, string, int64) ([]MultipartUploadedPart, error)
@@ -140,6 +144,13 @@ func (s *MultipartService) Part(ctx context.Context, owner, uploadID, resourceID
 	}
 	if _, _, err := layout.Part(number); err != nil {
 		return MultipartPartGrant{}, err
+	}
+	completion, completionErr := s.repository.GetMultipartCompletion(ctx, owner, uploadID, resourceID)
+	if completionErr != nil && !errors.Is(completionErr, ErrNotFound) {
+		return MultipartPartGrant{}, completionErr
+	}
+	if completionErr == nil && completion.State != "retryable" {
+		return MultipartPartGrant{}, ErrConflict
 	}
 	intent, err := s.repository.GetMultipart(ctx, owner, uploadID, resourceID)
 	if err != nil {
