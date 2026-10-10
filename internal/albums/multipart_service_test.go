@@ -54,6 +54,7 @@ func (r *multipartRepositoryStub) GetMultipart(_ context.Context, owner, id, res
 }
 
 type multipartProviderStub struct {
+	find     func(context.Context, string) (string, error)
 	verify   func(context.Context, string, Resource) (string, error)
 	complete func(context.Context, string, string, int64) (string, error)
 	init     func(context.Context, string) (string, error)
@@ -233,4 +234,8 @@ func (p *multipartProviderStub) CompleteStagingMultipart(ctx context.Context, ke
 
 func (p *multipartProviderStub) VerifyStagingResource(ctx context.Context, key string, r Resource) (string, error) {
 	return p.verify(ctx, key, r)
+}
+
+func (p *multipartProviderStub) FindStagingMultipart(ctx context.Context, key string) (string, error) {
+	return p.find(ctx, key)
 }

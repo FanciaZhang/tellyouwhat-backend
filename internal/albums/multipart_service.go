@@ -19,6 +19,7 @@ type MultipartRepository interface {
 }
 
 type MultipartProvider interface {
+	FindStagingMultipart(context.Context, string) (string, error)
 	VerifyStagingResource(context.Context, string, Resource) (string, error)
 	CompleteStagingMultipart(context.Context, string, string, int64) (string, error)
 	InitiateStagingMultipart(context.Context, string) (string, error)
