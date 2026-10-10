@@ -50,6 +50,7 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	captureTime := int64(-1)
 	manifest.Metadata = &AssetMetadata{CreationTimeMilliseconds: &captureTime, PixelWidth: 4000, PixelHeight: 3000, Favorite: true, Location: &AssetLocation{Latitude: 31.2, Longitude: 121.5}}
 	defer func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_photo_jobs WHERE owner_id=?`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_completions WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_intents WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
@@ -172,6 +173,10 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	page, err = r.AssetVersions(ctx, owner, 0, 10)
 	if err != nil || len(page.Versions) != 0 {
 		t.Fatal("index insertion did not roll back")
+	}
+	var pendingPhotos int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_photo_jobs WHERE owner_id=?`, owner).Scan(&pendingPhotos); err != nil || pendingPhotos != 0 {
+		t.Fatal("photo jobs escaped failed publication transaction", pendingPhotos, err)
 	}
 	var failedUsed, failedReserved int64
 	if err := db.QueryRowContext(ctx, `SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, owner).Scan(&failedUsed, &failedReserved); err != nil {

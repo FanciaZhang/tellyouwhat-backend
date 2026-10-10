@@ -47,6 +47,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := repository.CheckLibrarySchema(startup); err != nil {
 		return errors.New("album library schema")
 	}
+	if err := repository.CheckPhotoSchema(startup); err != nil {
+		return errors.New("album photo processing schema")
+	}
 	objects, err := albums.NewCOSObjects(config.COS)
 	if err != nil {
 		return errors.New("object storage configuration")
@@ -72,7 +75,27 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	defer stopWorkers()
-	finished := make(chan error, 2)
+	workerCount := 2
+	if config.PhotoProcessing {
+		workerCount++
+	}
+	finished := make(chan error, workerCount)
+	if config.PhotoProcessing {
+		photoWorker, err := albums.NewPhotoWorker(repository, service, config.BatchSize)
+		if err != nil {
+			return errors.New("photo worker configuration")
+		}
+		go func() {
+			finished <- photoWorker.Run(runCtx, config.PollInterval, func(batch albums.PhotoJobBatch, available bool) {
+				if !available {
+					logger.Error("album photo queue unavailable")
+				}
+				if batch.Stored+batch.Failed+batch.Contended > 0 {
+					logger.Info("album photo batch", "stored", batch.Stored, "failed", batch.Failed, "contended", batch.Contended)
+				}
+			})
+		}()
+	}
 	go func() {
 		finished <- reconciler.Run(runCtx, config.PollInterval, func(batch albums.ReconciliationBatch, available bool) {
 			if !available {
@@ -83,7 +106,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			}
 		})
 	}()
-	logger.Info("album verification and reconciliation workers started")
+	logger.Info("album workers started", "photo_processing", config.PhotoProcessing)
 	available := true
 	go func() {
 		finished <- worker.Run(runCtx, func(batch albums.VerificationBatch, queueAvailable bool) {
@@ -101,6 +124,8 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}()
 	first := <-finished
 	stopWorkers()
-	<-finished
+	for remaining := 1; remaining < workerCount; remaining++ {
+		<-finished
+	}
 	return first
 }

@@ -22,7 +22,7 @@ func TestAlbumWorkerConfigurationNeedsNoAISettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
+	if config.PhotoProcessing || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
 		t.Fatal("invalid worker settings")
 	}
 }
@@ -34,6 +34,7 @@ func TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets(t *test
 		{"ALBUM_COS_REGION", "https://private-token.invalid"},
 		{"ALBUM_MAX_ORIGINAL_BYTES", "9223372036854775807"},
 		{"ALBUM_MAX_DERIVED_BYTES", "0"},
+		{"ALBUM_PHOTO_PROCESSING_ENABLED", "yes"},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			values := workerEnvironment()
@@ -48,5 +49,14 @@ func TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets(t *test
 				}
 			}
 		})
+	}
+}
+
+func TestPhotoProcessingExplicitEnable(t *testing.T) {
+	values := workerEnvironment()
+	values["ALBUM_PHOTO_PROCESSING_ENABLED"] = "true"
+	config, err := LoadWorkerConfig(func(key string) string { return values[key] })
+	if err != nil || !config.PhotoProcessing {
+		t.Fatal("photo processing not enabled", err)
 	}
 }

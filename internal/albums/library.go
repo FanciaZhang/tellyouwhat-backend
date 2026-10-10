@@ -120,7 +120,7 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 				return ErrConflict
 			}
 		}
-		return nil
+		return enqueuePhotoJobs(ctx, tx, u, now)
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return err
@@ -135,7 +135,10 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO album_asset_versions(owner_id,asset_id,version_id,manifest_digest,manifest_json,sealed_objects,original_bytes,published_at) VALUES(?,?,?,?,?,?,?,?)`,
 		u.OwnerID, u.Manifest.AssetID, u.ID, u.Digest, manifest, sealed, u.OriginalBytes, now)
-	return err
+	if err != nil {
+		return err
+	}
+	return enqueuePhotoJobs(ctx, tx, u, now)
 }
 func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
 	rows, err := r.db.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions LIMIT 0`)

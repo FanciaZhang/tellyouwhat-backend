@@ -152,6 +152,7 @@ func checkMySQLLibraryPageByteBudget(t *testing.T, ctx context.Context, r *MySQL
 	t.Helper()
 	owner := uuid.NewString()
 	defer func() {
+		r.db.ExecContext(context.Background(), `DELETE FROM album_photo_jobs WHERE owner_id=?`, owner)
 		r.db.ExecContext(context.Background(), `DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
 		r.db.ExecContext(context.Background(), `DELETE FROM album_uploads WHERE owner_id=?`, owner)
 		r.db.ExecContext(context.Background(), `DELETE FROM album_storage_accounts WHERE owner_id=?`, owner)

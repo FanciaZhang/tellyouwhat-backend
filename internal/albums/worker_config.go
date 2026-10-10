@@ -11,11 +11,12 @@ import (
 // WorkerConfig is deliberately separate from the managed-AI worker settings.
 // No AI product, provider key, or device identity is required for album storage.
 type WorkerConfig struct {
-	DatabaseDSN  string
-	COS          COSConfig
-	Policy       UploadPolicy
-	BatchSize    int
-	PollInterval time.Duration
+	DatabaseDSN     string
+	COS             COSConfig
+	Policy          UploadPolicy
+	BatchSize       int
+	PollInterval    time.Duration
+	PhotoProcessing bool
 }
 
 func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
@@ -60,6 +61,14 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 			return WorkerConfig{}, errors.New("invalid " + field.key)
 		}
 		*field.target = value
+	}
+	switch strings.TrimSpace(getenv("ALBUM_PHOTO_PROCESSING_ENABLED")) {
+	case "", "false":
+		c.PhotoProcessing = false
+	case "true":
+		c.PhotoProcessing = true
+	default:
+		return WorkerConfig{}, errors.New("invalid ALBUM_PHOTO_PROCESSING_ENABLED")
 	}
 	c.Policy.UploadTTL = 24 * time.Hour
 	c.Policy.VerificationLease = 30 * time.Minute

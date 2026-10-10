@@ -56,6 +56,7 @@ func photoJournalUpload(t *testing.T, db *sql.DB) (Upload, PhotoCandidate) {
 	}
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM album_photo_writes WHERE owner_id=?`, owner)
+		db.Exec(`DELETE FROM album_photo_jobs WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_uploads WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_storage_accounts WHERE owner_id=?`, owner)
