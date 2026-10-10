@@ -32,43 +32,20 @@ func (s *UploadService) OriginalReadGrant(ctx context.Context, owner, versionID,
 	if !validOwner(owner) || !validOwner(versionID) || !resourceIDPattern.MatchString(resourceID) {
 		return OriginalReadGrant{}, ErrInvalidManifest
 	}
-	repository, ok := s.repository.(LibraryRepository)
 	signer, supported := s.objects.(OriginalReadAuthorizer)
-	if !ok || !supported {
+	if !supported {
 		return OriginalReadGrant{}, ErrReadUnavailable
 	}
-	version, err := repository.AssetVersion(ctx, owner, versionID)
+	version, err := s.verifiedAssetVersion(ctx, owner, versionID)
 	if err != nil {
 		return OriginalReadGrant{}, err
 	}
-	if version.VersionID != versionID || version.Sequence <= 0 || version.AssetID != version.Manifest.AssetID {
-		return OriginalReadGrant{}, ErrIncompleteBackup
-	}
-	if err := validateVersionOwner(version, owner); err != nil {
-		return OriginalReadGrant{}, err
-	}
-	observations := make([]Observation, 0, len(version.Objects))
 	var selected *SealedObject
 	for _, object := range version.Objects {
-		if !concreteCOSVersion(object.VersionID) {
-			return OriginalReadGrant{}, ErrIncompleteBackup
-		}
-		observations = append(observations, Observation{object.ResourceID, object.SizeBytes, object.SHA256})
 		if object.ResourceID == resourceID {
 			copy := object
 			selected = &copy
 		}
-	}
-	digest, err := VerifyBackup(version.Manifest, observations)
-	if err != nil || digest != version.ManifestDigest {
-		return OriginalReadGrant{}, ErrIncompleteBackup
-	}
-	var total int64
-	for _, resource := range version.Manifest.Resources {
-		total += resource.SizeBytes
-	}
-	if total != version.OriginalBytes {
-		return OriginalReadGrant{}, ErrIncompleteBackup
 	}
 	if selected == nil {
 		return OriginalReadGrant{}, ErrNotFound
@@ -78,7 +55,48 @@ func (s *UploadService) OriginalReadGrant(ctx context.Context, owner, versionID,
 	if err != nil {
 		return OriginalReadGrant{}, err
 	}
-	return OriginalReadGrant{AssetID: version.AssetID, VersionID: versionID, ManifestDigest: digest,
+	return OriginalReadGrant{AssetID: version.AssetID, VersionID: versionID, ManifestDigest: version.ManifestDigest,
 		ResourceID: resourceID, ObjectVersionID: selected.VersionID, SizeBytes: selected.SizeBytes,
 		SHA256: strings.ToLower(selected.SHA256), URL: signed, Headers: map[string]string{}, ExpiresAt: expiresAt}, nil
+}
+
+// verifiedAssetVersion is shared by reads and processing. A catalogue record
+// alone cannot authorize consumption of a partial or cross-account resource set.
+func (s *UploadService) verifiedAssetVersion(ctx context.Context, owner, versionID string) (AssetVersion, error) {
+	if !validOwner(owner) || !validOwner(versionID) {
+		return AssetVersion{}, ErrInvalidManifest
+	}
+	repository, ok := s.repository.(LibraryRepository)
+	if !ok {
+		return AssetVersion{}, ErrReadUnavailable
+	}
+	version, err := repository.AssetVersion(ctx, owner, versionID)
+	if err != nil {
+		return AssetVersion{}, err
+	}
+	if version.VersionID != versionID || version.Sequence <= 0 || version.AssetID != version.Manifest.AssetID {
+		return AssetVersion{}, ErrIncompleteBackup
+	}
+	if err := validateVersionOwner(version, owner); err != nil {
+		return AssetVersion{}, err
+	}
+	observations := make([]Observation, 0, len(version.Objects))
+	for _, object := range version.Objects {
+		if !concreteCOSVersion(object.VersionID) {
+			return AssetVersion{}, ErrIncompleteBackup
+		}
+		observations = append(observations, Observation{object.ResourceID, object.SizeBytes, object.SHA256})
+	}
+	digest, err := VerifyBackup(version.Manifest, observations)
+	if err != nil || digest != version.ManifestDigest {
+		return AssetVersion{}, ErrIncompleteBackup
+	}
+	var total int64
+	for _, resource := range version.Manifest.Resources {
+		total += resource.SizeBytes
+	}
+	if total != version.OriginalBytes {
+		return AssetVersion{}, ErrIncompleteBackup
+	}
+	return version, nil
 }
