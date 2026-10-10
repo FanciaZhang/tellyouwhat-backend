@@ -147,4 +147,28 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	if err != nil || stored.State != OriginalsVerified || len(stored.Objects) != 1 {
 		t.Fatalf("durable proof: %+v %v", stored, err)
 	}
+	// Poll the actual SQL queue and run the same object-reading verifier used
+	// by the service. Creating a new worker must not lose queued work.
+	for _, queued := range uploads[1:] {
+		objects.staging[stagingKey(queued, "photo")] = []byte("original-resource-bytes")
+		if _, err := r.Submit(ctx, owner, queued.ID, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		worker, err := NewVerificationWorker(r, s, 1, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := worker.RunOnce(ctx)
+		if err != nil || result.Verified != 1 || result.Failed != 0 {
+			t.Fatalf("durable worker: %+v %v", result, err)
+		}
+	}
+	if err := db.QueryRowContext(ctx, `SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, owner).Scan(&used, &reserved); err != nil {
+		t.Fatal(err)
+	}
+	if used != 3*bytes || reserved != 3*bytes {
+		t.Fatalf("worker ledger used=%d reserved=%d", used, reserved)
+	}
 }
