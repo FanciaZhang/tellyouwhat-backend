@@ -10,6 +10,9 @@ import (
 // It also records late success for expired parents, without renewing quota or
 // granting more writes. Failed observations leave the uncertain record intact.
 func (s *MultipartService) ReconcileCompletion(ctx context.Context, owner, uploadID, resourceID string) (MultipartAssembly, error) {
+	return s.reconcileCompletion(ctx, owner, uploadID, resourceID, "")
+}
+func (s *MultipartService) reconcileCompletion(ctx context.Context, owner, uploadID, resourceID, operationID string) (MultipartAssembly, error) {
 	if !validOwner(owner) {
 		return MultipartAssembly{}, ErrOwner
 	}
@@ -46,6 +49,9 @@ func (s *MultipartService) ReconcileCompletion(ctx context.Context, owner, uploa
 	}
 	if record.UploadID != uploadID || record.ResourceID != resourceID || !validOwner(record.OperationID) {
 		return MultipartAssembly{}, ErrConflict
+	}
+	if operationID != "" && record.OperationID != operationID {
+		return MultipartAssembly{}, ErrLease
 	}
 	if record.State == "assembled" && validMultipartVersion(record.ObjectVersion) {
 		return MultipartAssembly{resourceID, "assembled"}, nil

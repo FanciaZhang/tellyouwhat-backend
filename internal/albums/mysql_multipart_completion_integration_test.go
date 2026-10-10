@@ -85,6 +85,7 @@ func checkMySQLMultipartCompletion(t *testing.T, ctx context.Context, db *sql.DB
 	if _, err := r.ResolveMultipartCompletion(ctx, u.OwnerID, u.ID, resource, second.OperationID, "retryable", "", now); !errors.Is(err, ErrConflict) {
 		t.Fatal("unknown reset to retryable", err)
 	}
+	checkMySQLReconciliationQueue(t, ctx, db, u, unknown, now)
 	assembled, err := r.ResolveMultipartCompletion(ctx, u.OwnerID, u.ID, resource, second.OperationID, "assembled", "version-one", u.ExpiresAt.Add(time.Minute))
 	if err != nil || assembled.ObjectVersion != "version-one" {
 		t.Fatal("late confirmed version lost", err)

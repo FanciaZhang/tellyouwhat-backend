@@ -10,7 +10,7 @@ import (
 )
 
 func TestMultipartReconciliationOnlyCommitsVerifiedVersion(t *testing.T) {
-	for _, scenario := range []string{"unknown", "completing", "expired", "mismatch", "database", "already-assembled", "retryable", "wrong-owner"} {
+	for _, scenario := range []string{"unknown", "completing", "expired", "mismatch", "database", "already-assembled", "retryable", "wrong-owner", "stale-operation"} {
 		t.Run(scenario, func(t *testing.T) {
 			uploads, repository, _, owner, manifest := uploadFixture(t)
 			u, err := uploads.Create(context.Background(), owner, uuid.NewString(), manifest)
@@ -49,7 +49,12 @@ func TestMultipartReconciliationOnlyCommitsVerifiedVersion(t *testing.T) {
 			if scenario == "wrong-owner" {
 				caller = uuid.NewString()
 			}
-			result, err := service.ReconcileCompletion(context.Background(), caller, u.ID, "photo")
+			var result MultipartAssembly
+			if scenario == "stale-operation" {
+				result, err = service.reconcileCompletion(context.Background(), caller, u.ID, "photo", uuid.NewString())
+			} else {
+				result, err = service.ReconcileCompletion(context.Background(), caller, u.ID, "photo")
+			}
 			switch scenario {
 			case "unknown", "completing", "expired":
 				if err != nil || result.State != "assembled" || r.completion.ObjectVersion != "checked-version" || calls != 1 {
@@ -66,7 +71,7 @@ func TestMultipartReconciliationOnlyCommitsVerifiedVersion(t *testing.T) {
 				if err == nil || r.completion != original {
 					t.Fatal("failed observation changed durable state", err)
 				}
-				if (scenario == "retryable" || scenario == "wrong-owner") && calls != 0 {
+				if (scenario == "retryable" || scenario == "wrong-owner" || scenario == "stale-operation") && calls != 0 {
 					t.Fatal("unauthorized reconciliation read bytes")
 				}
 			}
