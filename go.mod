@@ -16,6 +16,7 @@ require (
 	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.8
 	github.com/volcengine/volcengine-go-sdk v1.2.47
 	golang.org/x/net v0.57.0
+	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -66,7 +67,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
