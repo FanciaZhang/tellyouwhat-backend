@@ -86,3 +86,13 @@ location/altitude. It participates in the immutable digest; absent metadata
 keeps legacy identities unchanged. These snapshots do not yet implement an
 editable cloud index, album membership, or a restore endpoint. Deploy this accepting backend before
 clients start sending descriptors; older strict decoders reject the new field.
+
+Verified immutable album versions are available at
+`GET /v1/albums/library/versions?after=<sequence>&limit=<1...100>` and
+`GET /v1/albums/library/versions/{versionID}`. The authenticated account supplies
+ownership; query/body owner injection is rejected. Pages use publication order,
+not capture-date gallery order, and may be shorter than the requested count to
+keep JSON below 1 MiB. Advance only to `nextSequence`; `hasMore` covers both
+count and byte truncation. Provider locations are omitted. Versions require
+subsequent logical-asset grouping, deletion/change handling and scoped media
+read authorization before they form the complete cloud gallery experience.

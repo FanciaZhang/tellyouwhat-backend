@@ -50,6 +50,7 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	captureTime := int64(-1)
 	manifest.Metadata = &AssetMetadata{CreationTimeMilliseconds: &captureTime, PixelWidth: 4000, PixelHeight: 3000, Favorite: true, Location: &AssetLocation{Latitude: 31.2, Longitude: 121.5}}
 	defer func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_completions WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_intents WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_uploads WHERE owner_id=?`, owner)
@@ -147,6 +148,32 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	if _, err := r.Complete(ctx, owner, u.ID, first, proof, now.Add(3*time.Second)); !errors.Is(err, ErrLease) {
 		t.Fatalf("stale worker committed: %v", err)
 	}
+	page, err := r.AssetVersions(ctx, owner, 0, 10)
+	if err != nil || len(page.Versions) != 0 {
+		t.Fatal("unverified original became visible")
+	}
+	// Reject the quota update after index insertion: the entire transaction
+	// must roll back rather than expose a version without a committed ledger.
+	trigger := "album_index_fail_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE UPDATE ON album_storage_accounts FOR EACH ROW BEGIN IF NEW.owner_id = '%s' AND NEW.used_bytes > OLD.used_bytes THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test quota failure'; END IF; END`, trigger, owner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+trigger)
+	if _, err := r.Complete(ctx, owner, u.ID, second, proof, now.Add(3*time.Second)); err == nil {
+		t.Fatal("injected transaction failure ignored")
+	}
+	rolledBack, err := r.Get(ctx, owner, u.ID)
+	if err != nil || rolledBack.State != Verifying {
+		t.Fatal("verification committed despite failure")
+	}
+	page, err = r.AssetVersions(ctx, owner, 0, 10)
+	if err != nil || len(page.Versions) != 0 {
+		t.Fatal("index insertion did not roll back")
+	}
+	if _, err := db.ExecContext(ctx, "DROP TRIGGER "+trigger); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := r.Complete(ctx, owner, u.ID, second, proof, now.Add(3*time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -188,4 +215,6 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	if used != 3*bytes || reserved != 3*bytes {
 		t.Fatalf("worker ledger used=%d reserved=%d", used, reserved)
 	}
+	checkMySQLAssetVersions(t, ctx, r, owner, uploads, now)
+
 }

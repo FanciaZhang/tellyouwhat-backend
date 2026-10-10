@@ -4,6 +4,42 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("verified version catalogue keeps owner authority out of queries and preserves cursors")
+    func libraryVersions() async throws {
+        let recorder = AlbumRequestRecorder()
+        let version: [String: Any] = ["sequence": 13, "assetID": "asset-1", "versionID": Self.uploadID,
+            "manifestDigest": String(repeating: "a", count: 64),
+            "manifest": try JSONSerialization.jsonObject(with: Self.manifestJSON),
+            "originalBytes": 23, "publishedAt": "2026-10-11T02:00:00Z"]
+        let page = try JSONSerialization.data(withJSONObject: ["versions": [version], "nextSequence": 13, "hasMore": false])
+        let single = try JSONSerialization.data(withJSONObject: version)
+        let transport = AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(request.operationID == "listAlbumAssetVersions" ? page : single))
+        }
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
+        let response = try await client.listAlbumAssetVersions(query: .init(after: 12, limit: 1))
+        switch response {
+        case .ok(let value):
+            switch value.body {
+            case .json(let page):
+                #expect(page.nextSequence == 13); #expect(page.hasMore == false)
+                #expect(page.versions.first?.versionID == Self.uploadID)
+            }
+        default: Issue.record("Unexpected catalogue response")
+        }
+        var request = try #require(await recorder.last)
+        let url = try #require(URLComponents(string: request.path))
+        #expect(url.path == "/v1/albums/library/versions")
+        #expect(Dictionary(uniqueKeysWithValues: (url.queryItems ?? []).map { ($0.name, $0.value ?? "") }) == ["after":"12", "limit":"1"])
+        #expect(request.method == "GET"); #expect(request.body.isEmpty)
+        _ = try await client.getAlbumAssetVersion(path: .init(versionID: Self.uploadID))
+        request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID)
+        #expect(request.body.isEmpty)
+    }
+
     @Test("submit is bodyless and never manufactures backup evidence")
     func submitUpload() async throws {
         let recorder = AlbumRequestRecorder()

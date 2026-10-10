@@ -62,6 +62,38 @@ paths:
                 properties:
                   accountID: {type: string, format: uuid}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions:
+    get:
+      operationId: listAlbumAssetVersions
+      parameters:
+        - in: query
+          name: after
+          schema: {type: integer, format: int64, minimum: 0}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        '200':
+          description: Immutable verified versions in owner-serialized publication order, not current gallery items
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetVersionPage'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}:
+    get:
+      operationId: getAlbumAssetVersion
+      parameters:
+        - in: path
+          name: versionID
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Account-scoped verified version without provider object locations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetVersion'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -278,6 +310,29 @@ components:
           minItems: 1
           maxItems: 32
           items: {$ref: '#/components/schemas/Resource'}
+    AssetVersion:
+      type: object
+      additionalProperties: false
+      required: [sequence, assetID, versionID, manifestDigest, manifest, originalBytes, publishedAt]
+      properties:
+        sequence: {type: integer, format: int64, minimum: 1}
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        manifest: {$ref: '#/components/schemas/Manifest'}
+        originalBytes: {type: integer, format: int64, minimum: 1}
+        publishedAt: {type: string, format: date-time}
+    AssetVersionPage:
+      type: object
+      additionalProperties: false
+      required: [versions, nextSequence, hasMore]
+      properties:
+        versions:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/AssetVersion'}
+        nextSequence: {type: integer, format: int64, minimum: 0}
+        hasMore: {type: boolean}
     Upload:
       type: object
       additionalProperties: false

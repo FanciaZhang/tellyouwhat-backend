@@ -159,6 +159,24 @@ type AssetMetadata struct {
 	PixelWidth               int            `json:"pixelWidth"`
 }
 
+// AssetVersion defines model for AssetVersion.
+type AssetVersion struct {
+	AssetID        string             `json:"assetID"`
+	Manifest       Manifest           `json:"manifest"`
+	ManifestDigest string             `json:"manifestDigest"`
+	OriginalBytes  int64              `json:"originalBytes"`
+	PublishedAt    time.Time          `json:"publishedAt"`
+	Sequence       int64              `json:"sequence"`
+	VersionID      openapi_types.UUID `json:"versionID"`
+}
+
+// AssetVersionPage defines model for AssetVersionPage.
+type AssetVersionPage struct {
+	HasMore      bool           `json:"hasMore"`
+	NextSequence int64          `json:"nextSequence"`
+	Versions     []AssetVersion `json:"versions"`
+}
+
 // Grant defines model for Grant.
 type Grant struct {
 	ExpiresAt  time.Time         `json:"expiresAt"`
@@ -285,6 +303,12 @@ type LoginAlbumWithAppleJSONBody struct {
 	Proof             string             `json:"proof"`
 }
 
+// ListAlbumAssetVersionsParams defines parameters for ListAlbumAssetVersions.
+type ListAlbumAssetVersionsParams struct {
+	After *int64 `form:"after,omitempty" json:"after,omitempty"`
+	Limit *int   `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // CreateAlbumUploadJSONBody defines parameters for CreateAlbumUpload.
 type CreateAlbumUploadJSONBody struct {
 	Manifest  Manifest           `json:"manifest"`
@@ -311,6 +335,12 @@ type ServerInterface interface {
 
 	// (POST /v1/albums/auth/logout)
 	LogoutAlbumSession(c *gin.Context)
+
+	// (GET /v1/albums/library/versions)
+	ListAlbumAssetVersions(c *gin.Context, params ListAlbumAssetVersionsParams)
+
+	// (GET /v1/albums/library/versions/{versionID})
+	GetAlbumAssetVersion(c *gin.Context, versionID openapi_types.UUID)
 
 	// (POST /v1/albums/uploads)
 	CreateAlbumUpload(c *gin.Context)
@@ -396,6 +426,66 @@ func (siw *ServerInterfaceWrapper) LogoutAlbumSession(c *gin.Context) {
 	}
 
 	siw.Handler.LogoutAlbumSession(c)
+}
+
+// ListAlbumAssetVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListAlbumAssetVersions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAlbumAssetVersionsParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", c.Request.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter after: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAlbumAssetVersions(c, params)
+}
+
+// GetAlbumAssetVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetAlbumAssetVersion(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "versionID" -------------
+	var versionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionID", c.Param("versionID"), &versionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter versionID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAlbumAssetVersion(c, versionID)
 }
 
 // CreateAlbumUpload operation middleware
@@ -662,6 +752,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/v1/albums/auth/apple", wrapper.LoginAlbumWithApple)
 	router.POST(options.BaseURL+"/v1/albums/auth/logout", wrapper.LogoutAlbumSession)
 	router.GET(options.BaseURL+"/v1/albums/account", wrapper.GetAlbumAccount)
+	router.GET(options.BaseURL+"/v1/albums/library/versions", wrapper.ListAlbumAssetVersions)
+	router.GET(options.BaseURL+"/v1/albums/library/versions/:versionID", wrapper.GetAlbumAssetVersion)
 	router.POST(options.BaseURL+"/v1/albums/uploads", wrapper.CreateAlbumUpload)
 	router.GET(options.BaseURL+"/v1/albums/uploads/:id", wrapper.GetAlbumUpload)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/grants", wrapper.AuthorizeAlbumUploadResources)
@@ -677,44 +769,48 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"Eg99MZZDqF7uPdLGzRP3+kj67n51v/pfAAAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

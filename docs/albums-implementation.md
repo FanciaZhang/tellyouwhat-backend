@@ -219,3 +219,13 @@ GET 状态明确为 pending/uploading/assembled，始终有 parts 数组；已�
 HTTP 测试实际经过生成路由、认证和服务，覆盖初始化/合并重试不重复外部操作，响应逐个校验 OpenAPI schema，签名分片范围、重启所需状态、body/query 注入、账户/App 隔离、未登录、无效编号、合并后拒绝新授权、未知结果和旧构造器禁用。Go 全仓测试、相册/worker/迁移 race、全仓 vet 通过；初次新增测试因未使用 import 编译失败，移除后通过。生产 gateway 接线、真实 COS 和 iOS 上传仍未接通。
 
 Swift 合约包在独立 XcodeMaintenance 运行 albums-multipart-contract.EFROyg 中重新生成、编译并测试通过：相册 7、健康 6、日记 2，共 15 项。新增测试覆盖四项分片控制操作的路径/空 body、第二片 offset/size、pending 与 assembled 响应解码。已核对构建日志并标记 success。这是生成客户端的合约验证，尚未接入 App 的实际上传 UI 或媒体发送。
+
+## 已验证版本目录与事务发布
+
+迁移 `0022_album_asset_versions.sql` 保存不可变资产版本：逻辑 asset ID、version ID（上传 UUID）、完整清单及摘要、服务端封存对象证据、字节数和发布时间。该表不以任务到期时间控制可见性。原件验证 Complete 在同一账户锁/数据库事务中发布版本、更新容量账本和确认上传；任何一步失败一起回滚。重复 Complete 使用已持久封存证据重放，不能替换对象版本或新增重复目录项。worker 启动检查目录 schema，需先部署迁移。
+
+目录按账户串行分配发布序列，查询采用 after/limit（默认 50，最大 100）游标，并将单页编码限制在 1 MiB 以下；截断时游标只推进到实际返回的最后一项。`GET /v1/albums/library/versions` 与 `GET /v1/albums/library/versions/{versionID}` 使用现有账户认证，不接受 owner 参数。响应隐藏 COS key、provider version 和封存证明，只返回清单信息；下载需后续专门授权接口。
+
+这里列出的是版本，不是直接用于网格的当前资产列表。后续需按逻辑资产管理当前版本、处理删除标记/相册变更、接入 App 索引与原件读取。旧 verified 任务可通过受信任的 Complete 重放补登记，但当前没有自动批量回填，不得据此宣称旧库迁移完成。
+
+真实 MySQL 8.4 测试验证：quota 更新被触发器拒绝时目录插入回滚；未验证项目不可见；20 个并发完成重放只有一条版本；账户隔离、分页末尾、schema、body/query 注入拒绝、约 900 KiB 单项清单按字节预算续页。全仓 Go 测试/vet、相册/worker/迁移 race 与 17 项 Swift 合约通过。测试库只使用隔离 Unix socket，已停止。未部署生产、未实际调用 COS、未接 iOS 云端列表。

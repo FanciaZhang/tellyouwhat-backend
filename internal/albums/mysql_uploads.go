@@ -189,7 +189,7 @@ func (r *MySQLUploads) Claim(ctx context.Context, owner, id, token string, now, 
 func (r *MySQLUploads) Complete(ctx context.Context, owner, id, token string, objects []SealedObject, now time.Time) (Upload, error) {
 	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
 		if u.State == OriginalsVerified {
-			return u, nil
+			return u, publishAssetVersion(ctx, tx, u, u.Objects, now)
 		}
 		if u.State != Verifying || u.LeaseToken != token || !now.Before(u.LeaseUntil) {
 			return Upload{}, ErrLease
@@ -203,6 +203,9 @@ func (r *MySQLUploads) Complete(ctx context.Context, owner, id, token string, ob
 		}
 		if digest, err := VerifyBackup(u.Manifest, observations); err != nil || digest != u.Digest {
 			return Upload{}, ErrIncompleteBackup
+		}
+		if err := publishAssetVersion(ctx, tx, u, objects, now); err != nil {
+			return Upload{}, err
 		}
 		encoded, err := json.Marshal(objects)
 		if err != nil {

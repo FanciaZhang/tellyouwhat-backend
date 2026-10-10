@@ -44,6 +44,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if _, err := repository.PendingReconciliations(startup, time.Now().UTC(), 1); err != nil {
 		return errors.New("album reconciliation schema")
 	}
+	if err := repository.CheckLibrarySchema(startup); err != nil {
+		return errors.New("album library schema")
+	}
 	objects, err := albums.NewCOSObjects(config.COS)
 	if err != nil {
 		return errors.New("object storage configuration")
