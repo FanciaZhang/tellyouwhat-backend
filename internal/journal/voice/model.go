@@ -268,6 +268,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
 		polish, err := decodePolish(text, request)
 		if err != nil {
+			result.Diagnostics.ValidationCode = polishValidationCode(err)
 			if errors.Is(err, errPolishRepeatsContext) {
 				return failedRewrite(result, "voice_rewrite_unavailable", "validate_polish_repeated_context", err, started)
 			}

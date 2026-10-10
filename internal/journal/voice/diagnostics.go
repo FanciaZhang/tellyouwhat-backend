@@ -20,6 +20,7 @@ import (
 // contain a prompt, transcript, journal body, vocabulary item, credential, or
 // provider response text.
 type RewriteDiagnostics struct {
+	ValidationCode      string
 	Stage               string
 	RequestedModel      string
 	HTTPStatus          int
@@ -179,6 +180,7 @@ func logRewriteProviderResult(logger *slog.Logger, ctx context.Context, callID s
 		"input_token_count", result.InputTokens,
 		"output_token_count", result.OutputTokens,
 		"error_class", errorClass(err),
+		"validation_code", diagnostics.ValidationCode,
 	}
 	if err != nil {
 		attributes = append(attributes, "client_error_code", rewriteClientCode(err))

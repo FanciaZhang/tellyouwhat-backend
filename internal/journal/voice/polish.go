@@ -189,7 +189,7 @@ const narrativeSelectionInstructions = `
 先通读全部 turns，按发言用途而非身份取舍，再润色。sentences 是原话分句，逐句取舍。作者、熟人也会无关现场插话。先看保留条件：事件是主线、影响主线、被后文接入回忆或作者主动想记录，保留事件与关联，不只写后文而删缘起。短、负面、口语、身份未知不证明无关；零散想法、意愿/计划、相关补充、不同意见、不确定内容保留，不能只因跳题筛掉。
 无以上关联时，临场反应后接回原话题，可排除反应，不补过渡把它编入叙事。混合例：“报告周五交。哎哟，脚崴了，好疼。接着说报告，明天下午发草稿。”→“报告周五交，明天下午发草稿。”；但后文若说“这让我想起上次受伤，同事帮我写报告”，必须写明脚崴了、疼及所引出的回忆。相关试灯亮度保留。
 selectionContext 只读取舍：opening 是已有主线，omissions 是此前排除的原话，不抄入正文/配图，不因同声音或换话题筛掉新讲述。
-sourceID=turn.id，text 必须是 turn.text 中逐字且只出现一次的原话。整条无关则引用整条；混合句仅引用无关片段，不能删其余内容；reason 为 situationalInterruption（任意人的现场插话）、backgroundConversation（旁人背景交谈）、recognitionNoise（未知身份的明显误识别）。混合句在 omissions 标明无关片段，paragraphs 仍覆盖其 target 并只写主线。无明确现场反应/指令不作现场排除。“我要去大东海”是计划，接回工作也保留。`
+sourceID=turn.id，text 必须是 turn.text 中逐字且只出现一次的原话。整条无关则引用整条；混合句仅引用无关片段，不能删其余内容；reason 为 situationalInterruption（任意人的现场插话）、backgroundConversation（旁人背景交谈）、recognitionNoise（未知身份的明显误识别）、speechDisfluency（任意人的纯口头停顿、无独立含义的卡顿/重复残句）。混合句在 omissions 标明无关片段，paragraphs 仍覆盖其 target 并只写主线。纯语气词/卡顿残句（“嗯，对”“这么一个广泛的一个”）用 speechDisfluency，不用 recognitionNoise；含事实、不确定或未完实质句保留，speechDisfluency 只标整条无独立内容；句内嗯啊直接润色，不返回局部引用。未排除的 target 全须覆盖。无明确现场反应/指令不作现场排除。“我要去大东海”是计划，接回工作也保留。“我有个朋友叫小林”是事实，不是现场反应；“我还没想清楚”是不确定，不是卡顿。`
 
 // Provider turns can contain an entire monologue. Sentence cues make local
 // reactions visible without changing source identity or selecting content by
@@ -285,7 +285,7 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 	schema["required"] = []string{"paragraphs", "questions", "illustrationSuggestion"}
 	schema["properties"].(map[string]any)["illustrationSuggestion"] = contracts.IllustrationSuggestionSchema()
 	schema["required"] = []string{"omissions", "paragraphs", "questions", "illustrationSuggestion"}
-	schema["properties"].(map[string]any)["omissions"] = map[string]any{"type": "array", "maxItems": 192, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"sourceID", "text", "reason"}, "properties": map[string]any{"sourceID": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "reason": map[string]any{"type": "string", "enum": []string{"backgroundConversation", "recognitionNoise", "situationalInterruption"}}}}}
+	schema["properties"].(map[string]any)["omissions"] = map[string]any{"type": "array", "maxItems": 192, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"sourceID", "text", "reason"}, "properties": map[string]any{"sourceID": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "reason": map[string]any{"type": "string", "enum": []string{"backgroundConversation", "recognitionNoise", "situationalInterruption", "speechDisfluency"}}}}}
 	// Historical selection informs relevance but may never be copied as a new
 	// disposition. Only source IDs in this actual request are output-eligible.
 	currentSourceIDs := []string{}
@@ -297,7 +297,7 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 	if len(currentSourceIDs) > 0 {
 		omissionSchema["items"].(map[string]any)["properties"].(map[string]any)["sourceID"] = map[string]any{"type": "string", "enum": currentSourceIDs}
 	}
-	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v35", "strict": true, "schema": schema}}}
+	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v36", "strict": true, "schema": schema}}}
 	tokenLimit, timeout, effort := 2048, 25, "disabled"
 	if p.Narrator != nil && slices.ContainsFunc(p.Targets, func(target PolishTarget) bool {
 		return slices.ContainsFunc(target.Turns, func(turn SourceUtterance) bool {
@@ -331,9 +331,22 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, ErrInvalid
 	}
-	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 {
+	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 || len(output.Omissions) > 192 {
 		return nil, ErrInvalid
 	}
+	// Disfluency dispositions only remove whole meaningless sources. Local
+	// editing notes are not deletion instructions, even if the model joins
+	// several "嗯" occurrences into a nonliteral quote. Keep their source
+	// linked to covered prose and run the ordinary substantive-source guard.
+	// Unknown IDs and all relevance/recognition exclusions stay strict.
+	sourcesByID := map[string]string{}
+	for _, source := range polishSources(request) {
+		sourcesByID[source.ID] = source.Text
+	}
+	output.Omissions = slices.DeleteFunc(output.Omissions, func(item PolishOmission) bool {
+		source, exists := sourcesByID[item.SourceID]
+		return exists && item.Reason == "speechDisfluency" && item.Text != source
+	})
 	omitted, err := validatePolishOmissions(output.Omissions, request)
 	if err != nil {
 		return nil, err
@@ -375,7 +388,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	}
 	for _, target := range request.Targets {
 		if !seen[target.ID] && !polishTargetOmitted(target, omitted) && (len(output.Paragraphs) > 0 || !onlySpeechFillers(target.SourceText) || strings.TrimSpace(target.RetainedText) != "") {
-			return nil, ErrInvalid
+			return nil, polishInvalid("target_coverage")
 		}
 	}
 	for _, paragraph := range revision.Paragraphs {
@@ -389,7 +402,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	for _, block := range request.Context {
 		retained = append(retained, PolishParagraph{Text: block.Text})
 	}
-	sources := slices.DeleteFunc(polishSources(request), func(source SourceUtterance) bool { return omitted[source.ID] })
+	sources := slices.DeleteFunc(polishSources(request), func(source SourceUtterance) bool { return omitted[source.ID] || !polishNeedsLexicalAnchor(source.Text) })
 	for i := range sources {
 		sources[i].Text = retainedPolishSourceText(sources[i], output.Omissions)
 	}
@@ -452,7 +465,7 @@ func polishConfirmedAuthorReferences(text string, ids []string, request PolishRe
 // A turn is an acoustic source, not a unique action subject. Do not rewrite
 // pronouns by speaker count: even a single speaker can discuss many people.
 func validPolishOmissionReason(reason string) bool {
-	return reason == "backgroundConversation" || reason == "recognitionNoise" || reason == "situationalInterruption"
+	return reason == "backgroundConversation" || reason == "recognitionNoise" || reason == "situationalInterruption" || reason == "speechDisfluency"
 }
 
 func validatePolishOmissions(omissions []PolishOmission, request PolishRequest) (map[string]bool, error) {
@@ -464,16 +477,24 @@ func validatePolishOmissions(omissions []PolishOmission, request PolishRequest) 
 	sources := polishSources(request)
 	for _, item := range omissions {
 		index := slices.IndexFunc(sources, func(source SourceUtterance) bool { return source.ID == item.SourceID })
-		if index < 0 || seen[item.SourceID] || strings.TrimSpace(item.Text) == "" || strings.Count(sources[index].Text, item.Text) != 1 ||
-			!validPolishOmissionReason(item.Reason) {
-			return nil, ErrInvalid
+		if index < 0 {
+			return nil, polishInvalid("omission_source")
+		}
+		if seen[item.SourceID] {
+			return nil, polishInvalid("omission_duplicate")
+		}
+		if strings.TrimSpace(item.Text) == "" || strings.Count(sources[index].Text, item.Text) != 1 {
+			return nil, polishInvalid("omission_quote")
+		}
+		if !validPolishOmissionReason(item.Reason) {
+			return nil, polishInvalid("omission_reason")
 		}
 		source := sources[index]
-		if request.Narrator != nil && source.PersonID == request.Narrator.PersonID && item.Reason != "situationalInterruption" {
-			return nil, ErrInvalid
+		if request.Narrator != nil && source.PersonID == request.Narrator.PersonID && item.Reason != "situationalInterruption" && item.Reason != "speechDisfluency" {
+			return nil, polishInvalid("omission_author_role")
 		}
 		if item.Reason == "recognitionNoise" && source.PersonID != "" {
-			return nil, ErrInvalid
+			return nil, polishInvalid("omission_known_role")
 		}
 		seen[item.SourceID] = true
 		omitted[item.SourceID] = item.Text == source.Text
@@ -502,13 +523,27 @@ func polishSources(request PolishRequest) []SourceUtterance {
 	for _, target := range request.Targets {
 		for _, turn := range target.Turns {
 			turn.Text = turn.content()
-			if !onlySpeechFillers(turn.Text) && !seen[turn.ID] {
+			if strings.TrimSpace(turn.Text) != "" && !seen[turn.ID] {
 				sources = append(sources, turn)
 				seen[turn.ID] = true
 			}
 		}
 	}
 	return sources
+}
+
+// Closed diagnostic codes contain no speech, document text or provider payload.
+type polishValidationError struct{ code string }
+
+func (e *polishValidationError) Error() string { return e.code }
+func (e *polishValidationError) Unwrap() error { return ErrInvalid }
+func polishInvalid(code string) error          { return &polishValidationError{code: code} }
+func polishValidationCode(err error) string {
+	var e *polishValidationError
+	if errors.As(err, &e) {
+		return e.code
+	}
+	return ""
 }
 
 var errPolishRepeatsContext = errors.Join(ErrInvalid, errors.New("repeated stable context"))
@@ -576,6 +611,20 @@ func polishCanonical(text string) []rune {
 		}
 		return -1
 	}, text))
+}
+
+// A short acknowledgment may contribute as "我也赞同" without its original
+// syllables. Target coverage still applies; this never authorizes a deletion.
+func polishNeedsLexicalAnchor(text string) bool {
+	if onlySpeechFillers(text) {
+		return false
+	}
+	compact := strings.Trim(string(polishCanonical(text)), "嗯啊呃唔额哦喔")
+	switch compact {
+	case "对", "是的", "好的", "没错":
+		return false
+	}
+	return true
 }
 
 func onlySpeechFillers(text string) bool {

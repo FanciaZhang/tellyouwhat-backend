@@ -733,6 +733,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					"emotion_count", len(result.value.Revision.Emotions),
 					"has_overall_emotion", result.value.Revision.OverallEmotion != "",
 					"error_class", errorClass(result.err),
+					"validation_code", diagnostics.ValidationCode,
 				)
 			}
 			if result.err != nil {
