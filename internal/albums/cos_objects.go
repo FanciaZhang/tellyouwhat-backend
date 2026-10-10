@@ -25,7 +25,7 @@ type COSConfig struct {
 	SecretID     string
 	SecretKey    string
 	SessionToken string
-	// Upload signer must have only PutObject on albums/staging/*, without
+	// Upload signer must have only PutObject/UploadPart on albums/staging/*, without
 	// GetObject, ACL changes, bucket administration or archive access.
 	UploadSecretID     string
 	UploadSecretKey    string
@@ -59,6 +59,10 @@ func newCOSObjects(config COSConfig, transport http.RoundTripper) (*COSObjects, 
 		Transport:     &cos.AuthorizationTransport{SecretID: config.UploadSecretID, SecretKey: config.UploadSecretKey, SessionToken: config.UploadSessionToken, Transport: transport},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	})
+	// A lost initiation/completion response is an unknown outcome. Do not let
+	// the SDK silently repeat mutations; durable workers decide recovery.
+	client.Conf.RetryOpt.Count = 1
+	uploadClient.Conf.RetryOpt.Count = 1
 	return &COSObjects{client: client, uploadClient: uploadClient, host: host, now: time.Now}, nil
 }
 

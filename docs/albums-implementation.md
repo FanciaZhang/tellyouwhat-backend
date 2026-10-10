@@ -30,7 +30,7 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 
 ## COS 存储适配
 
-`COSObjects` 使用腾讯官方 Go SDK v0.7.75。构造时只接受桶名和地域组成的 HTTPS 官方端点，拒绝重定向；`Check` 只读取版本控制设置，不替用户修改桶。上传地址绑定 staging 路径、Content-Length、Content-Type 和有效期。签名角色与归档角色使用独立凭据，部署必须验证上传角色只有 staging PutObject 权限，无读取原件、修改 ACL 或桶管理权限。
+`COSObjects` 使用腾讯官方 Go SDK v0.7.75。构造时只接受桶名和地域组成的 HTTPS 官方端点，拒绝重定向；`Check` 只读取版本控制设置，不替用户修改桶。上传地址绑定 staging 路径、Content-Length、Content-Type 和有效期。签名角色与归档角色使用独立凭据，部署必须验证上传角色只有 staging PutObject/UploadPart 权限（分片需另行验证 UploadPart 授权），无读取原件、修改 ACL 或桶管理权限。
 
 封存先读取源版本，再固定该版本进行服务端复制；大于 5 GB 使用分块复制。归档必须返回非 null 的具体版本，后续校验只能读取该版本，响应版本不匹配则失败。元数据和 ETag 不作为完整备份证据。
 
@@ -141,3 +141,17 @@ HTTP 测试覆盖未登录挑战/登录、账户字段注入、重复登录、�
 此前 `86a4c4f` 的 CI `38074465739` 已完整成功，日志明确显示 `TestMySQLAppleAccountStableAcrossConcurrentLogins` 与 `TestMySQLLoginChallengeConsumedOnceAcrossServiceInstances` 通过。该结果不覆盖此后会话、限流和登录 API 的改动，需新 CI。
 
 Swift 合约包使用独立 XcodeMaintenance 目录重新生成/构建并执行 14 项测试通过（相册 6、健康 6、日记 2）。新增验证登录 body 只含四个证明字段、会话响应解码，以及退出请求空 body/204 空响应；生成 Go 文件重复生成 SHA-256 一致。运行 `albums-login-contract.ZyZnTz` 已检查结果并标记 success。仅为客户端合约测试，未接入 iOS 实际网络登录。
+
+## COS 客户端分片适配
+
+新增按服务端资源大小推导的分片布局，通常 8 MiB，超大资源提高片长以保持不超过 10,000 片；片长上限 5 GiB，末片按剩余实际字节计算。范围/编号越界、零长度和极端溢出拒绝。依据：[COS Upload Part](https://cloud.tencent.com/document/product/436/7750)；分片可以乱序上传，但服务端完成列表须按编号连续完整。
+
+`InitiateStagingMultipart`、`AuthorizePart`、`CompleteStagingMultipart`、`AbortStagingMultipart` 仅操作合法 staging 键。单片签名使用独立上传角色，绑定 uploadId、partNumber、Content-Length 和 Content-Type，最长 10 分钟；不接受任意客户端范围。完成时从 COS 分页查询，检查 uploadId/key、连续编号、片长、数量、ETag 和分页推进，使用该列表合并并要求返回明确版本号，不信任客户端 ETag。
+
+适配器显式把 SDK 自动重试次数设置为 1，包含既有 COS 路径；瞬时读取失败也交由上层重试。初始化/合并请求失败或结果缺少必要确认时带 ErrCOSMultipartUnknown，需持久对账，不应盲目重建或标记失败后放任用户重复初始化。合并所得只是一份 staging 对象，仍须完整版本读取、大小/SHA-256 校验和归档才能形成备份证据。
+
+测试覆盖精确字节布局、签名查询/长度约束、错误作用域、分片缺失/尺寸错误/会话错误/坏游标、1,001 片分页、初始化/取消目标，以及初始化和合并未知结果不自动重试。HTTP 使用协议替身，尚无真实 COS 调用。真实 IAM 必须允许上传角色仅对 staging 执行 PutObject/UploadPart，初始化/查询/合并/取消留在服务端。
+
+当前仅适配器，尚未新增持久分片会话或开放 API。服务层必须先持久绑定账户、上传任务、资源和 provider uploadId，持久记录初始化意图并处理未知结果，才可向客户端发授权。孤立会话回收、iOS 分片缓冲和端到端续传仍待实现。首轮测试修复 Go 正则重复次数上限导致的初始化失败，分页测试补齐符合 SDK 校验的 ETag 响应后通过。
+
+续传查询 `ListStagingMultipartParts` 复用完成阶段的分页校验，允许尚未传齐的稀疏编号，但拒绝重复、倒退、越界和长度不符的分片。对外仅返回编号与字节数；完成阶段额外要求全部分片齐全，提交 XML 仅含编号和 ETag。新增测试覆盖跨页缺片、空会话和异常观察；相册 race 与全仓 vet 通过。持久会话及 HTTP 入口仍待实现，该查询尚不能由 App 调用。
