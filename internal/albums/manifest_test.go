@@ -158,3 +158,54 @@ func TestDescriptorRejectsInvalidTypeSizeAndEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAssetMetadataIsDigestBoundAndValidatesDomain(t *testing.T) {
+	m := liveManifest()
+	legacy, _ := m.Digest()
+	timestamp := int64(-1)
+	m.Metadata = &AssetMetadata{CreationTimeMilliseconds: &timestamp, PixelWidth: 4000, PixelHeight: 3000, Favorite: true, Location: &AssetLocation{Latitude: 0, Longitude: 0}}
+	digest, err := m.Digest()
+	if err != nil || digest == legacy {
+		t.Fatal("metadata not bound")
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored Manifest
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	got, err := restored.Digest()
+	if err != nil || got != digest || restored.Metadata.Location.Latitude != 0 || *restored.Metadata.CreationTimeMilliseconds != -1 {
+		t.Fatal("metadata lost")
+	}
+	m.Metadata.Favorite = false
+	changed, _ := m.Digest()
+	if changed == digest {
+		t.Fatal("favorite not bound")
+	}
+	for _, coordinate := range []float64{91, -91, math.NaN(), math.Inf(1)} {
+		m.Metadata.Location.Latitude = coordinate
+		if !errors.Is(m.Validate(), ErrInvalidManifest) {
+			t.Fatal("invalid latitude")
+		}
+	}
+	m.Metadata.Location = nil
+	for _, date := range []int64{-62135596800001, 253402300800000} {
+		m.Metadata.CreationTimeMilliseconds = &date
+		if !errors.Is(m.Validate(), ErrInvalidManifest) {
+			t.Fatal("invalid capture date")
+		}
+	}
+	m.Metadata.CreationTimeMilliseconds = nil
+	m.Metadata.DurationMilliseconds = -1
+	if !errors.Is(m.Validate(), ErrInvalidManifest) {
+		t.Fatal("negative duration")
+	}
+	m.Metadata.DurationMilliseconds = 0
+	m.Metadata.PixelWidth = 0
+	if !errors.Is(m.Validate(), ErrInvalidManifest) {
+		t.Fatal("missing dimensions")
+	}
+}

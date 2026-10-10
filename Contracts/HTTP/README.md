@@ -80,6 +80,9 @@ part of the immutable manifest digest and persisted JSON. Filenames remain
 untrusted descriptive metadata, never object keys or filesystem destinations.
 Descriptor-less legacy manifests retain their exact digest/serialization for
 idempotent recovery. They must not be treated as proof of full PhotoKit restore
-capability. This resource metadata does not yet include asset capture/location
-metadata or implement a restore endpoint. Deploy this accepting backend before
+capability. Optional manifest `metadata` additionally preserves capture time (UTC integer
+milliseconds), dimensions, duration, media subtype flags, favorite, and valid
+location/altitude. It participates in the immutable digest; absent metadata
+keeps legacy identities unchanged. These snapshots do not yet implement an
+editable cloud index, album membership, or a restore endpoint. Deploy this accepting backend before
 clients start sending descriptors; older strict decoders reject the new field.

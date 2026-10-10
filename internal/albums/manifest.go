@@ -83,17 +83,59 @@ type Resource struct {
 	Descriptor *ResourceDescriptor `json:"descriptor,omitempty"`
 }
 
+// AssetMetadata is the capture/display snapshot, not an authorization claim.
+// Times use integer UTC milliseconds, independent of client date encoders.
+type AssetLocation struct {
+	Latitude  float64  `json:"latitude"`
+	Longitude float64  `json:"longitude"`
+	Altitude  *float64 `json:"altitude,omitempty"`
+}
+type AssetMetadata struct {
+	CreationTimeMilliseconds *int64         `json:"creationTimeMilliseconds,omitempty"`
+	PixelWidth               int            `json:"pixelWidth"`
+	PixelHeight              int            `json:"pixelHeight"`
+	DurationMilliseconds     int64          `json:"durationMilliseconds"`
+	MediaSubtypes            int64          `json:"mediaSubtypes"`
+	Favorite                 bool           `json:"favorite"`
+	Location                 *AssetLocation `json:"location,omitempty"`
+}
+
+func (m AssetMetadata) validate() error {
+	if m.PixelWidth <= 0 || m.PixelWidth > math.MaxInt32 || m.PixelHeight <= 0 || m.PixelHeight > math.MaxInt32 || m.DurationMilliseconds < 0 || m.MediaSubtypes < 0 {
+		return ErrInvalidManifest
+	}
+	if m.CreationTimeMilliseconds != nil && (*m.CreationTimeMilliseconds < -62135596800000 || *m.CreationTimeMilliseconds > 253402300799999) {
+		return ErrInvalidManifest
+	}
+	if m.Location != nil {
+		l := m.Location
+		if math.IsNaN(l.Latitude) || math.IsInf(l.Latitude, 0) || l.Latitude < -90 || l.Latitude > 90 || math.IsNaN(l.Longitude) || math.IsInf(l.Longitude, 0) || l.Longitude < -180 || l.Longitude > 180 {
+			return ErrInvalidManifest
+		}
+		if l.Altitude != nil && (math.IsNaN(*l.Altitude) || math.IsInf(*l.Altitude, 0)) {
+			return ErrInvalidManifest
+		}
+	}
+	return nil
+}
+
 type Manifest struct {
-	AssetID        string     `json:"assetID"`
-	SourceRevision string     `json:"sourceRevision"`
-	Kind           AssetKind  `json:"kind"`
-	Edited         bool       `json:"edited"`
-	Resources      []Resource `json:"resources"`
+	AssetID        string         `json:"assetID"`
+	SourceRevision string         `json:"sourceRevision"`
+	Kind           AssetKind      `json:"kind"`
+	Edited         bool           `json:"edited"`
+	Resources      []Resource     `json:"resources"`
+	Metadata       *AssetMetadata `json:"metadata,omitempty"`
 }
 
 var resourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)
 
 func (m Manifest) Validate() error {
+	if m.Metadata != nil {
+		if err := m.Metadata.validate(); err != nil {
+			return err
+		}
+	}
 	if !resourceIDPattern.MatchString(m.AssetID) || len(m.SourceRevision) == 0 || len(m.SourceRevision) > 256 || len(m.Resources) == 0 || len(m.Resources) > 32 {
 		return ErrInvalidManifest
 	}

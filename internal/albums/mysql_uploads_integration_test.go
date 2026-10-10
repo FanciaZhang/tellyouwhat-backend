@@ -47,6 +47,8 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	r := NewMySQLUploads(db)
 	_, _, objects, owner, manifest := uploadFixture(t)
 	manifest.Resources[0].Descriptor = &ResourceDescriptor{PhotoKitType: 1, Filename: "原图.heic", UniformTypeIdentifier: "public.heic"}
+	captureTime := int64(-1)
+	manifest.Metadata = &AssetMetadata{CreationTimeMilliseconds: &captureTime, PixelWidth: 4000, PixelHeight: 3000, Favorite: true, Location: &AssetLocation{Latitude: 31.2, Longitude: 121.5}}
 	defer func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_completions WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_intents WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
@@ -102,6 +104,9 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	persisted, err := r.Get(ctx, owner, u.ID)
 	if err != nil || persisted.Manifest.Resources[0].Descriptor == nil || *persisted.Manifest.Resources[0].Descriptor != *manifest.Resources[0].Descriptor {
 		t.Fatalf("reconstruction metadata lost in MySQL: %v", err)
+	}
+	if persisted.Manifest.Metadata == nil || *persisted.Manifest.Metadata.CreationTimeMilliseconds != captureTime || !persisted.Manifest.Metadata.Favorite || persisted.Manifest.Metadata.Location.Longitude != 121.5 {
+		t.Fatal("asset metadata lost in MySQL")
 	}
 	if digest, err := persisted.Manifest.Digest(); err != nil || digest != persisted.Digest {
 		t.Fatal("persisted descriptor digest mismatch")

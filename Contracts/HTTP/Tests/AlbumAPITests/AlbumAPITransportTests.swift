@@ -48,11 +48,16 @@ struct AlbumAPITransportTests {
         var resources = try #require(object["resources"] as? [[String: Any]])
         resources[0]["descriptor"] = ["photoKitType": 1, "filename": "原图.heic", "uniformTypeIdentifier": "public.heic"]
         object["resources"] = resources
+        object["metadata"] = ["creationTimeMilliseconds": -1, "pixelWidth": 4000, "pixelHeight": 3000, "durationMilliseconds": 0, "mediaSubtypes": 0, "favorite": true, "location": ["latitude": 0, "longitude": 0]]
         let manifest = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: JSONSerialization.data(withJSONObject: object))
         #expect(manifest.resources[0].descriptor?.photoKitType == 1)
         #expect(manifest.resources[0].descriptor?.filename == "原图.heic")
         let decoded = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: JSONEncoder().encode(manifest))
         #expect(decoded.resources[0].descriptor?.uniformTypeIdentifier == "public.heic")
+        #expect(decoded.metadata?.creationTimeMilliseconds == -1)
+        #expect(decoded.metadata?.favorite == true)
+        #expect(decoded.metadata?.location?.longitude == 0)
+        #expect(decoded.metadata?.location?.altitude == nil)
         let legacy = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: Self.manifestJSON)
         #expect(legacy.resources[0].descriptor == nil)
     }
