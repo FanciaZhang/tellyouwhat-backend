@@ -11,6 +11,7 @@ let package = Package(
     products: [
         .library(name: "HealthAPI", targets: ["HealthAPI"]),
         .library(name: "JournalAPI", targets: ["JournalAPI"]),
+        .library(name: "AlbumAPI", targets: ["AlbumAPI"]),
     ],
     dependencies: [
         .package(
@@ -27,6 +28,16 @@ let package = Package(
         ),
     ],
     targets: [
+        .target(
+            name: "AlbumAPI",
+            dependencies: [
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            path: "AlbumAPI",
+            plugins: [.plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")]
+        ),
+        .testTarget(name: "AlbumAPITests", dependencies: ["AlbumAPI"]),
         .target(
             name: "HealthAPI",
             dependencies: [

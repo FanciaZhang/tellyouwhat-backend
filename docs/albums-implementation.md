@@ -16,7 +16,7 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 
 这些路由尚未挂载公共 gateway；没有生产账户认证器、已配置并验证的 COS 连接或运行中的相册 worker，不能作为已上线备份服务。`originals_verified` 也不表示派生版本已生成或系统压缩副本已验证，不能单独作为删除本地原件的依据。
 
-待完成：稳定账户登录、从合约生成 Swift 客户端并接入公共路由、App 注册、COS 私有直传与封存、worker 部署装配、失败任务取消和过期对象清理、派生预算结算、CI 派生处理、同步游标与删除标记、恢复、授权分享、回收站及长期索引备份。当前预占不自动过期释放，必须在对象清理与任务状态可证明一致后实现释放流程。
+待完成：稳定账户登录、Swift 客户端接入 App 上传流程和公共路由、App 注册、COS 私有直传与封存、worker 部署装配、失败任务取消和过期对象清理、派生预算结算、CI 派生处理、同步游标与删除标记、恢复、授权分享、回收站及长期索引备份。当前预占不自动过期释放，必须在对象清理与任务状态可证明一致后实现释放流程。
 
 现有 App 注册器包含 Managed AI 特定假设，相册接入时要拆开存储权益与 AI 操作要求，不能伪造 AI 产品 ID 绕过校验。
 
@@ -55,3 +55,11 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 可选的临时凭据 token 分别为 `ALBUM_COS_ARCHIVE_SESSION_TOKEN`、`ALBUM_COS_UPLOAD_SESSION_TOKEN`。当前静态配置不会自动刷新临时凭据，不能将短期 token 当作长期运行配置。任务有效期 24 小时、校验租约 30 分钟、每批最多 10 项、轮询间隔 5 秒；超大资源需通过真实吞吐验证租约预算。
 
 程序可构建，但未加入生产 Compose/发布矩阵，尚无真实云端配置和运行验收；部署生命周期及健康检查集成仍待完成。
+
+## Swift 控制客户端
+
+合约包新增 `AlbumAPI` 产品，由既有 Swift OpenAPI 构建插件生成 Client 和类型。桥接层向 App 传递生成后的 method/path/headers/body，账户认证由 App 发送层提供；没有硬编码真实 API 域名或伪造登录。控制 JSON 与媒体文件传输分离。
+
+本地 `swift test --package-path Contracts/HTTP` 的 12 项测试全部通过（相册 4、健康 6、日记 2）。新增测试验证创建请求只有 requestID/manifest、edited 必须存在且 false 会被保留、申请写入地址/提交校验无 body，以及 queued 响应不会被转成原件已验证。客户端尚未接入 iOS 上传界面或真实登录。
+
+已读取 CI `38071817152` 的完整成功结果和日志：`418eb15` 的真实 MySQL 事务测试、队列执行器与 COS 分块复制协议测试通过；verify 和六个容器构建全绿，deploy/verify-public 按 PR 条件跳过。这不覆盖后续本地提交，需由新的 CI 验证。
