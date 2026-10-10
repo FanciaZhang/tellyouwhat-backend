@@ -54,20 +54,20 @@ func TestCOSAdapterFixesCopyAndReadVersions(t *testing.T) {
 			if r.URL.Path != "/"+to || !strings.HasSuffix(r.Header.Get("x-cos-copy-source"), "?versionId=source-v1") {
 				t.Errorf("unfixed copy: %s", r.Header.Get("x-cos-copy-source"))
 			}
-			return cosResponse(r, `<CopyObjectResult><ETag>etag</ETag></CopyObjectResult>`, "archive-v2"), nil
+			return cosResponse(r, `<CopyObjectResult><ETag>etag</ETag></CopyObjectResult>`, "archive+v2&reserved=#?"), nil
 		case http.MethodGet:
 			reads++
-			if r.URL.Path != "/"+to || r.URL.Query().Get("versionId") != "archive-v2" {
+			if r.URL.Path != "/"+to || r.URL.Query().Get("versionId") != "archive+v2&reserved=#?" {
 				t.Error("read latest instead of sealed version")
 			}
-			return cosResponse(r, "original-resource-bytes", "archive-v2"), nil
+			return cosResponse(r, "original-resource-bytes", "archive+v2&reserved=#?"), nil
 		default:
 			t.Fatalf("unexpected method %s", r.Method)
 			return nil, nil
 		}
 	})
 	version, err := s.Seal(context.Background(), from, to)
-	if err != nil || version != "archive-v2" {
+	if err != nil || version != "archive+v2&reserved=#?" {
 		t.Fatalf("seal %q %v", version, err)
 	}
 	body, err := s.OpenVersion(context.Background(), to, version)
@@ -144,7 +144,7 @@ func TestCOSLargeCopyPinsEveryPartToSourceVersion(t *testing.T) {
 				t.Error("unexpected complete upload ID")
 			}
 			completed.Store(true)
-			return cosResponse(r, `<CompleteMultipartUploadResult><ETag>final-etag</ETag></CompleteMultipartUploadResult>`, "large-archive-v2"), nil
+			return cosResponse(r, `<CompleteMultipartUploadResult><ETag>final-etag</ETag></CompleteMultipartUploadResult>`, "large-archive+v2&reserved=#?"), nil
 		case http.MethodPut:
 			if r.URL.Query().Get("uploadId") != "copy-upload" || !strings.HasSuffix(r.Header.Get("x-cos-copy-source"), "?versionId=large-source-v1") || r.Header.Get("x-cos-copy-source-range") == "" {
 				t.Error("multipart source was not pinned or range missing")
@@ -157,7 +157,7 @@ func TestCOSLargeCopyPinsEveryPartToSourceVersion(t *testing.T) {
 		}
 	})
 	version, err := s.Seal(context.Background(), from, to)
-	if err != nil || version != "large-archive-v2" || parts.Load() != 96 || !completed.Load() {
+	if err != nil || version != "large-archive+v2&reserved=#?" || parts.Load() != 96 || !completed.Load() {
 		t.Fatalf("large copy version=%q parts=%d completed=%v err=%v", version, parts.Load(), completed.Load(), err)
 	}
 }

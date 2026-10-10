@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -36,7 +37,7 @@ func (s *COSObjects) VerifyStagingResource(ctx context.Context, key string, reso
 	if !validMultipartVersion(version) {
 		return "", ErrIncompleteBackup
 	}
-	response, err := s.client.Object.Get(ctx, key, nil, version)
+	response, err := s.client.Object.Get(ctx, key, nil, url.QueryEscape(version))
 	if err != nil {
 		return "", ErrCOSOperation
 	}

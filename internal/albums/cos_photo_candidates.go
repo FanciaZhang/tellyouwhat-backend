@@ -58,7 +58,7 @@ func photoPresetRule(preset PhotoPreset) (rule, format string, edge int, limit i
 // invoking processing on each gallery view. The caller must authorize the
 // published source and select the current edited resource when appropriate.
 func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObject, preset PhotoPreset) (PhotoCandidate, error) {
-	rule, format, edge, limit := photoPresetRule(preset)
+	rule, _, _, limit := photoPresetRule(preset)
 	if rule == "" || !albumObjectKey(source.Key, "originals") || !strings.HasSuffix(source.Key, "/"+source.ResourceID) || !concreteCOSVersion(source.VersionID) || source.SizeBytes <= 0 {
 		return PhotoCandidate{}, ErrInvalidManifest
 	}
@@ -85,6 +85,18 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 	if err != nil || len(data) == 0 || int64(len(data)) > limit || (response.ContentLength >= 0 && response.ContentLength != int64(len(data))) || ctx.Err() != nil {
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
+	candidate, err := inspectPhotoCandidate(data, preset)
+	if ctx.Err() != nil {
+		return PhotoCandidate{}, ErrPhotoCandidate
+	}
+	return candidate, err
+}
+
+func inspectPhotoCandidate(data []byte, preset PhotoPreset) (PhotoCandidate, error) {
+	_, format, edge, limit := photoPresetRule(preset)
+	if format == "" || len(data) == 0 || int64(len(data)) > limit {
+		return PhotoCandidate{}, ErrPhotoCandidate
+	}
 	config, actual, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || actual != format || config.Width <= 0 || config.Height <= 0 || config.Width > edge || config.Height > edge {
 		return PhotoCandidate{}, ErrPhotoCandidate
@@ -92,7 +104,7 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 	// Decode the whole payload: a valid header alone does not prove that the
 	// image body can be read. Dimensions above bound decompression allocations.
 	decoded, actual, err := image.Decode(bytes.NewReader(data))
-	if err != nil || actual != format || decoded.Bounds().Dx() != config.Width || decoded.Bounds().Dy() != config.Height || ctx.Err() != nil {
+	if err != nil || actual != format || decoded.Bounds().Dx() != config.Width || decoded.Bounds().Dy() != config.Height {
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
 	digest := sha256.Sum256(data)

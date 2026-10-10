@@ -41,7 +41,7 @@ func TestCOSReconcilePinsVersionAndChecksFullBytes(t *testing.T) {
 					if scenario == "head-error" {
 						return nil, errors.New("connection lost")
 					}
-					response := cosResponse(r, "", "version-one")
+					response := cosResponse(r, "", "version+one&reserved=#?")
 					response.ContentLength = resource.SizeBytes
 					if scenario == "head-size" {
 						response.ContentLength++
@@ -55,10 +55,10 @@ func TestCOSReconcilePinsVersionAndChecksFullBytes(t *testing.T) {
 					t.Fatal("reconciliation mutated provider")
 				}
 				reads++
-				if r.URL.Query().Get("versionId") != "version-one" {
+				if r.URL.Query().Get("versionId") != "version+one&reserved=#?" || len(r.URL.Query()) != 1 {
 					t.Fatal("read latest instead of observed version")
 				}
-				response := cosResponse(r, data, "version-one")
+				response := cosResponse(r, data, "version+one&reserved=#?")
 				var reader io.Reader = strings.NewReader(data)
 				switch scenario {
 				case "version-race":
@@ -79,7 +79,7 @@ func TestCOSReconcilePinsVersionAndChecksFullBytes(t *testing.T) {
 			})
 			version, err := s.VerifyStagingResource(context.Background(), key, resource)
 			if scenario == "valid" {
-				if err != nil || version != "version-one" {
+				if err != nil || version != "version+one&reserved=#?" {
 					t.Fatal("valid original rejected", err)
 				}
 			} else if err == nil || version != "" {

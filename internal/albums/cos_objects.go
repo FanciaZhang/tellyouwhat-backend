@@ -138,7 +138,7 @@ func (s *COSObjects) OpenVersion(ctx context.Context, key, version string) (io.R
 	if !albumObjectKey(key, "originals") || !concreteCOSVersion(version) {
 		return nil, ErrIncompleteBackup
 	}
-	response, err := s.client.Object.Get(ctx, key, nil, version)
+	response, err := s.client.Object.Get(ctx, key, nil, url.QueryEscape(version))
 	if err != nil {
 		return nil, ErrCOSOperation
 	}

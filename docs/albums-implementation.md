@@ -252,3 +252,15 @@ COS 适配器通过 CI.Get 的 versionId 获取固定版本的缩放结果。SDK
 官方 [Go 图片处理接口](https://cloud.tencent.cn/document/product/436/118271) 明确支持下载处理的 VersionId，而 [图片异步提交](https://cloud.tencent.com/document/product/460/84793) 公开 Input 只描述 Object，不能因共享 SDK 结构含 Url 就认定图片异步任务支持固定版本 URL。当前候选路线由 CI 编码，小结果经过受限 worker；原始照片不下载到后端。后续需要一次性持久化结果，客户端直接读 COS，不能每次浏览都调用此方法重复计费。处理 worker 需限制并发和账户预算；本轮未上线 worker 或实时预览代理。
 
 验证：全仓 Go 测试、相册 race 及相册 vet 通过；新增测试包含固定版本及预设、透明 PNG 字节、错误版本/206/Range/编码/超大流/长度/格式/损坏图/尺寸/取消拒绝、body 关闭、已编辑资源选择、跨账户与不完整备份拦截。未启动 MySQL，依赖 DSN 的集成测试跳过；本轮不改数据库、HTTP 契约或 Swift 代码。真实 COS 响应头/格式能力、费用、画质、特殊格式、派生持久化/额度核销、视频/实况处理及系统写回仍待验收。
+
+## 图片候选写入与结果核验
+
+增加 COS `StorePhotoCandidateOnce` / `ReconcilePhotoCandidate` 存储原语。PhotoWriteSpec 描述账户、独占 PUT attempt UUID、预设、大小、SHA-256 和尺寸，调用方必须在 PUT 前持久记录并标记该 attempt 已消费；当前尚未接数据库任务。路径限定为 albums/derivatives/<owner>/<attempt>/<preset>，不允许写 staging 或 originals。候选字节重新解码/核对描述后，以私有 ACL、Content-MD5 写入，保留 SDK CRC64 校验；PUT 只尝试一次。
+
+成功响应不直接作为发布证据：必须取得具体 COS version，再 GET 同一版本，核对完整字节数、SHA-256、格式/尺寸与完整解码。该返回值仍只是派生候选存储证据，未完成来源绑定、质量检查、容量核销或系统副本写回，不授权删除原件。
+
+响应丢失、上传校验错误、缺少具体版本或读回失败均保留 uncertain。恢复只 HEAD 已记录路径，然后固定观察到的版本 GET 完整核验，不重传、不重编码、不删除。404 不证明早先的请求永远不会成功，不能因此释放预留预算或重用 attempt。[COS 文档](https://intl.cloud.tencent.com/zh/document/product/436/43256) 明确版本控制开启时 forbid-overwrite 无效，因此不能用该头部替代持久任务的单次写入约束。任务数据库、消费原子性、定期恢复和孤儿版本回收仍待接入，存储方法本身不宣称跨进程幂等。
+
+回归测试发现 SDK v0.7.75 的 Object.Get 与 CI.Get 一样直接拼接 versionId。已为派生读取、OpenVersion 原件读取、VerifyStagingResource 分片完成核验统一补上 query escaping；特殊字符版本测试覆盖正确查询值、不产生额外参数。最初 PUT fixture 未提供 SDK 所需 CRC64，修正模拟响应而非关闭生产 CRC。
+
+验证：全仓 Go 测试、相册 race、相册 vet 通过。覆盖私有写入/传输校验、固定版本读回、丢失响应后多次恢复仅一次 PUT、404/版本/大小/哈希/尺寸/截断/Range/编码/溢出拒绝及关闭响应，非法记录/候选不触达网络。无数据库变更，MySQL 集成仍未运行；无真实 COS、无部署、无 iOS 变更。上一提交 CI 38091526050 查询时仍在运行。
