@@ -129,3 +129,81 @@ func TestExcludedSpeechCannotGroundIllustrationSuggestion(t *testing.T) {
 		t.Fatal("excluded background contaminated image advice", result, err)
 	}
 }
+
+func TestSituationalInterruptionCanBelongToAuthorOrKnownPerson(t *testing.T) {
+	author, wife := uuid.NewString(), uuid.NewString()
+	for _, person := range []string{author, wife, ""} {
+		turn := SourceUtterance{ID: uuid.NewString(), Text: "哎哟，我脚崴了，好疼。", PersonID: person}
+		target := PolishTarget{ID: uuid.NewString(), Text: turn.Text, SourceText: turn.Text, SourceIDs: []string{turn.ID}, Turns: []SourceUtterance{turn}, Style: "body", CompleteSource: true}
+		request := PolishRequest{Narrator: &Narrator{PersonID: author, Name: "我"}, Targets: []PolishTarget{target}}
+		omission := PolishOmission{SourceID: turn.ID, Text: turn.Text, Reason: "situationalInterruption"}
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{}, "questions": []string{}, "omissions": []PolishOmission{omission}})
+		revision, err := decodePolish(string(raw), request)
+		if err != nil || len(revision.Omissions) != 1 || len(revision.Targets) != 1 {
+			t.Fatal("identity must not immunize an incidental reaction", person, err)
+		}
+		request.SelectionContext = &PolishSelectionContext{Opening: "正在讲述工作报告的交付安排。", Omissions: []PolishOmission{omission}}
+		if err := request.Validate(); err != nil {
+			t.Fatal("continuation lost its previous situational disposition", err)
+		}
+		omission.Text = "好疼。"
+		partial, err := validatePolishOmissions([]PolishOmission{omission}, request)
+		if err != nil || partial[turn.ID] {
+			t.Fatal("a quoted local phrase must not authorize whole-source removal", err)
+		}
+		raw, _ = json.Marshal(map[string]any{"paragraphs": []PolishParagraph{}, "questions": []string{}, "omissions": []PolishOmission{omission}})
+		if _, err := decodePolish(string(raw), request); err == nil {
+			t.Fatal("partial disposition erased the remaining source")
+		}
+	}
+}
+
+func TestSourceGuardAcceptsActualParticleInsertionWithoutSilentlyLosingSources(t *testing.T) {
+	first := SourceUtterance{ID: uuid.NewString(), Text: "我在说本周工作。哎哟，我脚崴了，好疼。"}
+	second := SourceUtterance{ID: uuid.NewString(), Text: "这让我想起上次受伤的时候，同事帮我做完了报告。我一直很感激，这段也想记下来。"}
+	actual := []PolishParagraph{{Text: "我正说着本周的工作，脚突然崴了，疼得厉害。这让我想起上次受伤的时候，同事帮我做完了报告，我一直很感激，这段也想记下来。"}}
+	if !polishRetainsSourceAnchors([]SourceUtterance{first, second}, actual) {
+		t.Fatal("actual faithful rewrite rejected for inserting 的 and 突然")
+	}
+	missing := SourceUtterance{ID: uuid.NewString(), Text: "我准备买洗碗机，橱柜要能装十二套餐具。"}
+	if polishRetainsSourceAnchors([]SourceUtterance{first, second, missing}, actual) {
+		t.Fatal("unrepresented source bypassed the omission disposition")
+	}
+	if polishRetainsSourceAnchors([]SourceUtterance{first}, []PolishParagraph{{Text: "本周我买了水果。"}}) {
+		t.Fatal("one generic partial anchor is insufficient")
+	}
+}
+
+func TestLocalSituationalOmissionKeepsMainlineAndCannotRemoveAppSource(t *testing.T) {
+	author := uuid.NewString()
+	turn := SourceUtterance{ID: uuid.NewString(), PersonID: author, Text: "报告周五交。哎哟，我脚崴了，好疼。接着说报告，明天下午发草稿。"}
+	target := PolishTarget{ID: uuid.NewString(), Text: turn.Text, SourceText: turn.Text, SourceIDs: []string{turn.ID}, Turns: []SourceUtterance{turn}, Style: "body", CompleteSource: true}
+	p := PolishRequest{Narrator: &Narrator{PersonID: author, Name: "我"}, Targets: []PolishTarget{target}}
+	local := PolishOmission{SourceID: turn.ID, Text: "哎哟，我脚崴了，好疼。", Reason: "situationalInterruption"}
+	output := func(omissions []PolishOmission, paragraphs []PolishParagraph) string {
+		b, _ := json.Marshal(map[string]any{"paragraphs": paragraphs, "questions": []string{}, "omissions": omissions})
+		return string(b)
+	}
+	prose := []PolishParagraph{{TargetIDs: []string{target.ID}, Style: "body", Text: "报告周五交，明天下午发草稿。"}}
+	result, err := decodePolish(output([]PolishOmission{local}, prose), p)
+	if err != nil || len(result.Omissions) != 0 || !result.Targets[0].Turns[0].Equal(turn) {
+		t.Fatal("local selection must retain the App source and immutable evidence", err)
+	}
+	if _, err := decodePolish(output([]PolishOmission{local}, nil), p); err == nil {
+		t.Fatal("local omission erased the rest of the source")
+	}
+	if _, err := decodePolish(output([]PolishOmission{local, local}, prose), p); err == nil {
+		t.Fatal("duplicate local exclusion accepted")
+	}
+	local.Text = "没说过的插话"
+	if _, err := decodePolish(output([]PolishOmission{local}, prose), p); err == nil {
+		t.Fatal("ungrounded local exclusion accepted")
+	}
+	turn.Text = "好疼。报告周五交。好疼。"
+	target.Turns[0] = turn
+	p.Targets[0] = target
+	local.Text = "好疼。"
+	if _, err := decodePolish(output([]PolishOmission{local}, prose), p); err == nil {
+		t.Fatal("ambiguous repeated excerpt accepted")
+	}
+}
