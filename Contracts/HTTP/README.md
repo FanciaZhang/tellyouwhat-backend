@@ -96,3 +96,13 @@ keep JSON below 1 MiB. Advance only to `nextSequence`; `hasMore` covers both
 count and byte truncation. Provider locations are omitted. Versions require
 subsequent logical-asset grouping, deletion/change handling and scoped media
 read authorization before they form the complete cloud gallery experience.
+
+
+`POST /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant`
+is bodyless and accepts no query. It authorizes the authenticated account's
+published immutable resource for five minutes. The response binds asset,
+manifest digest, version, resource, provider object version, byte count and
+SHA-256 to a signed COS GET. The app must validate those bindings, its configured
+storage host allowlist, the version query/response and downloaded bytes before
+restoring. Do not log or persist the signed URL. It is not a public share link,
+a download-count limit, immediate revocation mechanism, or deletion proof.

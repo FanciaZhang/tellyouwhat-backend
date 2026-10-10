@@ -19,6 +19,10 @@ func (h *uploadHTTP) library(c *gin.Context) LibraryRepository {
 	return repository
 }
 func writeLibraryError(c *gin.Context, err error) {
+	if errors.Is(err, ErrReadUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "library_unavailable"})
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"code": "asset_version_not_found"})
 		return
@@ -80,4 +84,20 @@ func (h *uploadHTTP) GetAlbumAssetVersion(c *gin.Context, versionID uuid.UUID) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *uploadHTTP) AuthorizeAlbumOriginalRead(c *gin.Context, versionID uuid.UUID, resourceID albumhttpapi.ResourceID) {
+	if !emptyAlbumBody(c) {
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		writeAlbumError(c, ErrInvalidManifest)
+		return
+	}
+	grant, err := h.service.OriginalReadGrant(c.Request.Context(), c.GetString("album.owner"), versionID.String(), resourceID)
+	if err != nil {
+		writeLibraryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, grant)
 }

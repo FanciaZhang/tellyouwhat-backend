@@ -4,6 +4,36 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("original read authorization uses an account-owned version and no caller object path")
+    func originalReadGrant() async throws {
+        let recorder = AlbumRequestRecorder()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "assetID": "asset-1", "versionID": Self.uploadID, "manifestDigest": String(repeating: "a", count: 64),
+            "resourceID": "photo", "objectVersionID": "immutable-v1", "sizeBytes": 23,
+            "sha256": String(repeating: "b", count: 64), "url": "https://storage.example/signed",
+            "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"
+        ])
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(body))
+        })
+        let response = try await client.authorizeAlbumOriginalRead(path: .init(versionID: Self.uploadID, resourceID: "photo"))
+        switch response {
+        case .ok(let value):
+            switch value.body {
+            case .json(let grant):
+                #expect(grant.versionID == Self.uploadID)
+                #expect(grant.objectVersionID == "immutable-v1")
+                #expect(grant.sizeBytes == 23)
+            }
+        default: Issue.record("Unexpected original authorization response")
+        }
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID + "/resources/photo/read-grant")
+        #expect(request.method == "POST")
+        #expect(request.body.isEmpty)
+    }
+
     @Test("verified version catalogue keeps owner authority out of queries and preserves cursors")
     func libraryVersions() async throws {
         let recorder = AlbumRequestRecorder()

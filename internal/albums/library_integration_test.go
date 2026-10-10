@@ -90,8 +90,10 @@ func checkMySQLAssetVersions(t *testing.T, ctx context.Context, r *MySQLUploads,
 
 func checkMySQLLibraryHTTP(t *testing.T, r *MySQLUploads, owner, versionID string) {
 	t.Helper()
-	service, _, _, _, _ := uploadFixture(t)
+	service, _, objects, _, _ := uploadFixture(t)
 	service.repository = r
+	signer := &readSigner{objectTestStore: objects}
+	service.objects = signer
 	router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", owner}}, service)
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +118,15 @@ func checkMySQLLibraryHTTP(t *testing.T, r *MySQLUploads, owner, versionID strin
 		if err := doc.Components.Schemas[entry.schema].Value.VisitJSON(value); err != nil {
 			t.Fatal(err)
 		}
+	}
+	grantResponse := httptest.NewRecorder()
+	router.ServeHTTP(grantResponse, httptest.NewRequest("POST", "https://albums.example/v1/albums/library/versions/"+versionID+"/resources/photo/read-grant", nil))
+	var grant OriginalReadGrant
+	if grantResponse.Code != 200 || json.Unmarshal(grantResponse.Body.Bytes(), &grant) != nil || grant.VersionID != versionID || grant.ObjectVersionID != "immutable-v1" || signer.calls != 1 {
+		t.Fatal("persisted original proof did not authorize the exact version", grantResponse.Code)
+	}
+	if signer.selected.Key != sealedKey(Upload{ID: versionID, OwnerID: owner}, "photo") {
+		t.Fatal("wrong persisted object signed")
 	}
 	for _, path := range []string{"?owner=other", "?after=-1", "?limit=101", "?limit=0", "?after=0&after=1", "?limit=", "/" + versionID + "?owner=other"} {
 		response := httptest.NewRecorder()

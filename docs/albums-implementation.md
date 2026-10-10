@@ -224,8 +224,19 @@ Swift 合约包在独立 XcodeMaintenance 运行 albums-multipart-contract.EFROy
 
 迁移 `0022_album_asset_versions.sql` 保存不可变资产版本：逻辑 asset ID、version ID（上传 UUID）、完整清单及摘要、服务端封存对象证据、字节数和发布时间。该表不以任务到期时间控制可见性。原件验证 Complete 在同一账户锁/数据库事务中发布版本、更新容量账本和确认上传；任何一步失败一起回滚。重复 Complete 使用已持久封存证据重放，不能替换对象版本或新增重复目录项。worker 启动检查目录 schema，需先部署迁移。
 
-目录按账户串行分配发布序列，查询采用 after/limit（默认 50，最大 100）游标，并将单页编码限制在 1 MiB 以下；截断时游标只推进到实际返回的最后一项。`GET /v1/albums/library/versions` 与 `GET /v1/albums/library/versions/{versionID}` 使用现有账户认证，不接受 owner 参数。响应隐藏 COS key、provider version 和封存证明，只返回清单信息；下载需后续专门授权接口。
+目录按账户串行分配发布序列，查询采用 after/limit（默认 50，最大 100）游标，并将单页编码限制在 1 MiB 以下；截断时游标只推进到实际返回的最后一项。`GET /v1/albums/library/versions` 与 `GET /v1/albums/library/versions/{versionID}` 使用现有账户认证，不接受 owner 参数。响应隐藏 COS key、provider version 和封存证明，只返回清单信息；下载使用下述独立、短期、按资源授权接口。
 
 这里列出的是版本，不是直接用于网格的当前资产列表。后续需按逻辑资产管理当前版本、处理删除标记/相册变更、接入 App 索引与原件读取。旧 verified 任务可通过受信任的 Complete 重放补登记，但当前没有自动批量回填，不得据此宣称旧库迁移完成。
 
-真实 MySQL 8.4 测试验证：quota 更新被触发器拒绝时目录插入回滚；未验证项目不可见；20 个并发完成重放只有一条版本；账户隔离、分页末尾、schema、body/query 注入拒绝、约 900 KiB 单项清单按字节预算续页。全仓 Go 测试/vet、相册/worker/迁移 race 与 17 项 Swift 合约通过。测试库只使用隔离 Unix socket，已停止。未部署生产、未实际调用 COS、未接 iOS 云端列表。
+真实 MySQL 8.4 测试验证：预留额度不足导致 quota 更新拒绝时目录插入回滚；未验证项目不可见；20 个并发完成重放只有一条版本；账户隔离、分页末尾、schema、body/query 注入拒绝、约 900 KiB 单项清单按字节预算续页。全仓 Go 测试/vet、相册/worker/迁移 race 与 17 项 Swift 合约通过。测试库只使用隔离 Unix socket，已停止。未部署生产、未实际调用 COS、未接 iOS 云端列表。
+
+
+## 账户原件下载授权
+
+新增 bodyless POST `/v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant`。只读取 authenticated owner 的已发布版本；再次检查完整资源证据、清单摘要、总大小和每个归档 key 的 owner/version 绑定，缺失或未发布记录不触达签名器。拒绝任意 query 和请求体，沿用 no-store 与账户认证。
+
+返回 assetID/versionID/manifestDigest/resourceID/objectVersionID/sizeBytes/sha256、空 headers、URL 与五分钟到期时间。COS 使用归档读取权限签发固定对象与 versionId 的 GET，签名时间明确与返回有效期一致；不开放 staging 读取，也不授予写入。已有 staging 写签名仍使用独立上传角色。签名 URL 不进入目录表或日志；客户端必须验证 host/version/大小/完整 SHA-256 后再恢复。
+
+测试覆盖完整证据和所有权拒绝、未知/未发布版本、错位 key/空版本/哈希/大小、生成路由的 body/query/method 拒绝、OpenAPI response schema、COS 实际 SDK 签名重算（修改动词、对象或版本不能复用签名）、固定有效期及特殊字符版本。真实 MySQL 集成从已持久的封存记录经过 HTTP 授权准确对象。全仓 Go 测试/vet、相册 race、MySQL race 与 18 项 Swift 契约测试通过；初次到期断言使用 time.Time == 比较时区对象，改为 Equal 比较同一时刻后通过。
+
+未实际访问 COS，未部署接口，尚未接 App 下载、续传、恢复与系统写回。签名在短期有效期内可重复使用，不能冒充密码/次数限制的公开分享，也不会随账户退出立即失效。授权生成成功不证明文件仍可读或已经恢复，不授权删除系统原件。

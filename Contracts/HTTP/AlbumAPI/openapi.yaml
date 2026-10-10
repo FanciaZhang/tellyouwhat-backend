@@ -94,6 +94,19 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AssetVersion'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant:
+    post:
+      operationId: authorizeAlbumOriginalRead
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/ResourceID'}
+      responses:
+        '200':
+          description: Five-minute account-owned GET grant pinned to an immutable verified object version; not a public share link
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OriginalReadGrant'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -352,6 +365,24 @@ components:
       required: [resourceID, url, headers, expiresAt]
       properties:
         resourceID: {type: string}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+
+    OriginalReadGrant:
+      type: object
+      additionalProperties: false
+      required: [assetID, versionID, manifestDigest, resourceID, objectVersionID, sizeBytes, sha256, url, headers, expiresAt]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        resourceID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        objectVersionID: {type: string, minLength: 1, maxLength: 1024}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
         url: {type: string, format: uri}
         headers:
           type: object

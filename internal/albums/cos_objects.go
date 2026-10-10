@@ -18,7 +18,7 @@ var ErrCOSOperation = errors.New("album object storage operation failed")
 
 // COSConfig credentials are supplied by the server environment, never by clients.
 // The bucket must be private with versioning enabled. Clients receive only signed
-// staging PUTs; the server role alone can write/read original archive versions.
+// staging PUTs and scoped immutable GETs; the server role alone writes archives.
 type COSConfig struct {
 	Bucket       string
 	Region       string
@@ -101,7 +101,7 @@ func (s *COSObjects) AuthorizePut(ctx context.Context, key string, resource Reso
 }
 
 func concreteCOSVersion(value string) bool {
-	return value != "" && value != "null" && !strings.ContainsAny(value, "\r\n")
+	return value != "" && value != "null" && len(value) <= 1024 && !strings.ContainsFunc(value, func(r rune) bool { return r < 32 || r == 127 })
 }
 
 func (s *COSObjects) Seal(ctx context.Context, from, to string) (string, error) {
@@ -150,4 +150,21 @@ func (s *COSObjects) OpenVersion(ctx context.Context, key, version string) (io.R
 		return nil, ErrIncompleteBackup
 	}
 	return response.Body, nil
+}
+
+// The signed GET includes versionId in its authenticated query; changing the
+// object, verb, or provider version invalidates the COS signature.
+func (s *COSObjects) AuthorizeOriginalRead(ctx context.Context, object SealedObject, expiry time.Time) (string, error) {
+	now := s.now()
+	duration := expiry.Sub(now)
+	if !albumObjectKey(object.Key, "originals") || !strings.HasSuffix(object.Key, "/"+object.ResourceID) ||
+		!concreteCOSVersion(object.VersionID) || object.SizeBytes <= 0 || duration <= 0 || duration > 5*time.Minute {
+		return "", ErrInvalidManifest
+	}
+	query := url.Values{"versionId": []string{object.VersionID}}
+	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, object.Key, duration, &cos.PresignedURLOptions{Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
+	if err != nil {
+		return "", ErrCOSOperation
+	}
+	return signed.String(), nil
 }
