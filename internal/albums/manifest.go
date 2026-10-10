@@ -11,6 +11,8 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
+	"unicode/utf8"
 )
 
 var ErrInvalidManifest = errors.New("invalid album resource manifest")
@@ -36,11 +38,49 @@ const (
 	Alternate     ResourceRole = "alternate"
 )
 
+// ResourceDescriptor preserves PhotoKit reconstruction metadata. Filename is
+// descriptive, untrusted metadata, never an object key or filesystem path.
+// Nil descriptors identify legacy manifests; those do not establish full
+// system-library restoration capability.
+type ResourceDescriptor struct {
+	PhotoKitType          int    `json:"photoKitType"`
+	Filename              string `json:"filename"`
+	UniformTypeIdentifier string `json:"uniformTypeIdentifier"`
+}
+
+func (d ResourceDescriptor) validate(role ResourceRole) error {
+	if d.PhotoKitType <= 0 || d.PhotoKitType > math.MaxInt32 || len(d.Filename) > 4096 || !utf8.ValidString(d.Filename) ||
+		strings.ContainsRune(d.Filename, 0) || len(d.UniformTypeIdentifier) == 0 || len(d.UniformTypeIdentifier) > 512 ||
+		!utf8.ValidString(d.UniformTypeIdentifier) || strings.ContainsRune(d.UniformTypeIdentifier, 0) {
+		return ErrInvalidManifest
+	}
+	expected := Alternate
+	switch d.PhotoKitType {
+	case 1:
+		expected = OriginalPhoto
+	case 2:
+		expected = OriginalVideo
+	case 5:
+		expected = CurrentPhoto
+	case 6, 10:
+		expected = CurrentVideo
+	case 7:
+		expected = Adjustment
+	case 9:
+		expected = PairedVideo
+	}
+	if role != expected {
+		return ErrInvalidManifest
+	}
+	return nil
+}
+
 type Resource struct {
-	ID        string       `json:"id"`
-	Role      ResourceRole `json:"role"`
-	SizeBytes int64        `json:"sizeBytes"`
-	SHA256    string       `json:"sha256"`
+	ID         string              `json:"id"`
+	Role       ResourceRole        `json:"role"`
+	SizeBytes  int64               `json:"sizeBytes"`
+	SHA256     string              `json:"sha256"`
+	Descriptor *ResourceDescriptor `json:"descriptor,omitempty"`
 }
 
 type Manifest struct {
@@ -60,6 +100,7 @@ func (m Manifest) Validate() error {
 	roles := make(map[ResourceRole]int)
 	ids := make(map[string]struct{})
 	var total int64
+	described := 0
 	for _, resource := range m.Resources {
 		if !resourceIDPattern.MatchString(resource.ID) || resource.SizeBytes <= 0 || resource.SizeBytes > math.MaxInt64-total {
 			return fmt.Errorf("%w: invalid resource size or identity", ErrInvalidManifest)
@@ -76,9 +117,18 @@ func (m Manifest) Validate() error {
 		default:
 			return fmt.Errorf("%w: unknown resource role", ErrInvalidManifest)
 		}
+		if resource.Descriptor != nil {
+			if err := resource.Descriptor.validate(resource.Role); err != nil {
+				return err
+			}
+			described++
+		}
 		ids[resource.ID] = struct{}{}
 		roles[resource.Role]++
 		total += resource.SizeBytes
+	}
+	if described != 0 && described != len(m.Resources) {
+		return ErrInvalidManifest
 	}
 	for role, count := range roles {
 		if role != Alternate && count > 1 {

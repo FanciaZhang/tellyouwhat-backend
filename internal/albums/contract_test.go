@@ -1,6 +1,7 @@
 package albums
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -74,5 +75,51 @@ func TestGeneratedAlbumPathErrorsUsePublicErrorShape(t *testing.T) {
 	}
 	if len(value) != 1 || value["code"] != "invalid_upload_request" {
 		t.Fatalf("internal parser error leaked: %v", value)
+	}
+}
+
+func TestCreateAndGetPreserveReconstructionDescriptors(t *testing.T) {
+	service, _, _, owner, manifest := uploadFixture(t)
+	manifest.Resources[0].Descriptor = &ResourceDescriptor{PhotoKitType: 1, Filename: "原图.heic", UniformTypeIdentifier: "public.heic"}
+	router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", owner}}, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"requestID": uuid.NewString(), "manifest": manifest})
+	created := httptest.NewRecorder()
+	router.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "https://albums.example/v1/albums/uploads", bytes.NewReader(payload)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	var upload Upload
+	if err := json.Unmarshal(created.Body.Bytes(), &upload); err != nil {
+		t.Fatal(err)
+	}
+	fetched := httptest.NewRecorder()
+	router.ServeHTTP(fetched, httptest.NewRequest(http.MethodGet, "https://albums.example/v1/albums/uploads/"+upload.ID, nil))
+	if fetched.Code != http.StatusOK {
+		t.Fatalf("get: %d", fetched.Code)
+	}
+	var restored Upload
+	if err := json.Unmarshal(fetched.Body.Bytes(), &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Manifest.Resources[0].Descriptor == nil || *restored.Manifest.Resources[0].Descriptor != *manifest.Resources[0].Descriptor {
+		t.Fatal("descriptor lost at API boundary")
+	}
+	doc, err := openapi3.NewLoader().LoadFromFile("../../Contracts/HTTP/AlbumAPI/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value any
+	if err := json.Unmarshal(fetched.Body.Bytes(), &value); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Components.Schemas["Upload"].Value.VisitJSON(value); err != nil {
+		t.Fatal(err)
+	}
+	expected, _ := manifest.Digest()
+	if restored.Digest != expected {
+		t.Fatal("descriptor not bound to saved digest")
 	}
 }

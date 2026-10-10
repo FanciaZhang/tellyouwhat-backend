@@ -223,6 +223,14 @@ components:
         token: {type: string}
         expiresAt: {type: string, format: date-time}
         accountID: {type: string, format: uuid}
+    ResourceDescriptor:
+      type: object
+      additionalProperties: false
+      required: [photoKitType, filename, uniformTypeIdentifier]
+      properties:
+        photoKitType: {type: integer, minimum: 1, maximum: 2147483647}
+        filename: {type: string, maxLength: 4096}
+        uniformTypeIdentifier: {type: string, minLength: 1, maxLength: 512}
     Resource:
       type: object
       additionalProperties: false
@@ -234,6 +242,7 @@ components:
           enum: [original_photo, original_video, paired_video, current_photo, current_video, adjustment, alternate]
         sizeBytes: {type: integer, format: int64, minimum: 1}
         sha256: {type: string, pattern: '^[A-Fa-f0-9]{64}$'}
+        descriptor: {$ref: '#/components/schemas/ResourceDescriptor'}
     Manifest:
       type: object
       additionalProperties: false

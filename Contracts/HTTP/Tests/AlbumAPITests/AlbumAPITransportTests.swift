@@ -42,6 +42,21 @@ struct AlbumAPITransportTests {
         }
     }
 
+    @Test("resource descriptors survive generated client roundtrip; legacy remains absent")
+    func reconstructionDescriptors() throws {
+        var object = try #require(JSONSerialization.jsonObject(with: Self.manifestJSON) as? [String: Any])
+        var resources = try #require(object["resources"] as? [[String: Any]])
+        resources[0]["descriptor"] = ["photoKitType": 1, "filename": "原图.heic", "uniformTypeIdentifier": "public.heic"]
+        object["resources"] = resources
+        let manifest = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(manifest.resources[0].descriptor?.photoKitType == 1)
+        #expect(manifest.resources[0].descriptor?.filename == "原图.heic")
+        let decoded = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: JSONEncoder().encode(manifest))
+        #expect(decoded.resources[0].descriptor?.uniformTypeIdentifier == "public.heic")
+        let legacy = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: Self.manifestJSON)
+        #expect(legacy.resources[0].descriptor == nil)
+    }
+
     @Test("generated grant path carries no owner or client proof")
     func uploadGrant() async throws {
         let recorder = AlbumRequestRecorder()

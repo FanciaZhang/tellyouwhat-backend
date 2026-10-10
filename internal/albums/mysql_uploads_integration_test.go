@@ -46,6 +46,7 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	}
 	r := NewMySQLUploads(db)
 	_, _, objects, owner, manifest := uploadFixture(t)
+	manifest.Resources[0].Descriptor = &ResourceDescriptor{PhotoKitType: 1, Filename: "原图.heic", UniformTypeIdentifier: "public.heic"}
 	defer func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_completions WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_multipart_intents WHERE upload_id IN (SELECT upload_id FROM album_uploads WHERE owner_id=?)`, owner)
@@ -98,6 +99,13 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 		}
 	}
 	u := uploads[0]
+	persisted, err := r.Get(ctx, owner, u.ID)
+	if err != nil || persisted.Manifest.Resources[0].Descriptor == nil || *persisted.Manifest.Resources[0].Descriptor != *manifest.Resources[0].Descriptor {
+		t.Fatalf("reconstruction metadata lost in MySQL: %v", err)
+	}
+	if digest, err := persisted.Manifest.Digest(); err != nil || digest != persisted.Digest {
+		t.Fatal("persisted descriptor digest mismatch")
+	}
 	replay, err := s.Create(ctx, owner, u.RequestID, u.Manifest)
 	if err != nil || replay.ID != u.ID {
 		t.Fatalf("idempotency: %+v %v", replay, err)

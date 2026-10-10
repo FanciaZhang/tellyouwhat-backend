@@ -71,3 +71,15 @@ bounded responses. It must not substitute an App Attest device ID for an account
 Media bytes are uploaded separately through file-backed transfer tasks using
 server-issued object grants. No production album endpoint is embedded in this
 package.
+
+Album resource manifests optionally carry `descriptor` with the original
+PhotoKit resource type, filename, and uniform type identifier. New iOS uploads
+send descriptors for every resource, including opaque companions. The server
+validates type/role agreement and requires all-or-none descriptors; they are
+part of the immutable manifest digest and persisted JSON. Filenames remain
+untrusted descriptive metadata, never object keys or filesystem destinations.
+Descriptor-less legacy manifests retain their exact digest/serialization for
+idempotent recovery. They must not be treated as proof of full PhotoKit restore
+capability. This resource metadata does not yet include asset capture/location
+metadata or implement a restore endpoint. Deploy this accepting backend before
+clients start sending descriptors; older strict decoders reject the new field.
