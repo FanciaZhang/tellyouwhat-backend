@@ -101,3 +101,23 @@ func (h *uploadHTTP) AuthorizeAlbumOriginalRead(c *gin.Context, versionID uuid.U
 	}
 	c.JSON(http.StatusOK, grant)
 }
+
+func (h *uploadHTTP) AuthorizeAlbumPhotoPreviewRead(c *gin.Context, versionID uuid.UUID, preset albumhttpapi.PhotoPreset) {
+	if !emptyAlbumBody(c) {
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		writeAlbumError(c, ErrInvalidManifest)
+		return
+	}
+	grant, err := h.service.PhotoPreviewReadGrant(c.Request.Context(), c.GetString("album.owner"), versionID.String(), PhotoPreset(preset))
+	if errors.Is(err, ErrPhotoWriteUncertain) {
+		c.JSON(http.StatusConflict, gin.H{"code": "photo_preview_not_ready"})
+		return
+	}
+	if err != nil {
+		writeLibraryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, grant)
+}

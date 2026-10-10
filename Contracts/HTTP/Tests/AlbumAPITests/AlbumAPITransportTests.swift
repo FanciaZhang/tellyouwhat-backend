@@ -4,6 +4,40 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("stored still preview grant preserves verification metadata without replacement authority")
+    func photoPreviewReadGrant() async throws {
+        let recorder = AlbumRequestRecorder()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "assetID": "asset-1", "versionID": Self.uploadID, "manifestDigest": String(repeating: "a", count: 64),
+            "preset": "daily_jpeg_v1", "objectVersionID": "preview+/=v1", "sizeBytes": 123,
+            "sha256": String(repeating: "b", count: 64), "width": 800, "height": 600,
+            "contentType": "image/jpeg", "replacementEligible": false,
+            "url": "https://storage.example/signed", "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"
+        ])
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(body))
+        })
+        let response = try await client.authorizeAlbumPhotoPreviewRead(path: .init(versionID: Self.uploadID, preset: .dailyJpegV1))
+        switch response {
+        case .ok(let value):
+            switch value.body {
+            case .json(let grant):
+                #expect(grant.objectVersionID == "preview+/=v1")
+                #expect(grant.manifestDigest == String(repeating: "a", count: 64))
+                #expect(grant.sha256 == String(repeating: "b", count: 64))
+                #expect(grant.sizeBytes == 123)
+                #expect(grant.width == 800 && grant.height == 600)
+                #expect(grant.replacementEligible == false)
+            }
+        default: Issue.record("Unexpected preview authorization response")
+        }
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID + "/photo-previews/daily_jpeg_v1/read-grant")
+        #expect(request.method == "POST")
+        #expect(request.body.isEmpty)
+    }
+
     @Test("original read authorization uses an account-owned version and no caller object path")
     func originalReadGrant() async throws {
         let recorder = AlbumRequestRecorder()

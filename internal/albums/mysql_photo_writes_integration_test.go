@@ -264,3 +264,48 @@ func TestMySQLPhotoDerivativeResumesAcrossServiceAndDatabaseReopen(t *testing.T)
 		t.Fatal("recovery quota", used, reserved)
 	}
 }
+
+func TestMySQLPhotoPreviewGrantOnlyAfterReceiptAndQuotaCommit(t *testing.T) {
+	db := photoJournalDB(t)
+	u, c := photoJournalUpload(t, db)
+	ctx := context.Background()
+	repo := NewMySQLUploads(db)
+	_, _, objects, _, _ := uploadFixture(t)
+	signer := &previewReadSigner{readSigner: &readSigner{objectTestStore: objects}}
+	service, err := NewUploadService(repo, signer, UploadPolicy{1 << 30, 1 << 28, time.Hour, time.Minute}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PhotoPreviewReadGrant(ctx, u.OwnerID, u.ID, PhotoGridPNG); !errors.Is(err, ErrNotFound) {
+		t.Fatal("missing preview granted", err)
+	}
+	record, _, err := repo.BeginPhotoWrite(ctx, u.ID, u.Digest, photoJournalSpec(u, c, PhotoGridPNG), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PhotoPreviewReadGrant(ctx, u.OwnerID, u.ID, PhotoGridPNG); !errors.Is(err, ErrPhotoWriteUncertain) || signer.calls != 0 {
+		t.Fatal("pending write granted", err)
+	}
+	if _, err := repo.CompletePhotoWrite(ctx, record, photoJournalReceipt(record.Spec), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	reopened := photoJournalDB(t)
+	service, err = NewUploadService(NewMySQLUploads(reopened), signer, UploadPolicy{1 << 30, 1 << 28, time.Hour, time.Minute}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeUsed, beforeReserved := photoJournalBalance(t, db, u.OwnerID)
+	for range 3 {
+		grant, err := service.PhotoPreviewReadGrant(ctx, u.OwnerID, u.ID, PhotoGridPNG)
+		if err != nil || grant.ObjectVersionID != "derived-version" || grant.ContentType != "image/png" || grant.ReplacementEligible || grant.SizeBytes != record.Spec.SizeBytes {
+			t.Fatal("persisted preview grant failed", err)
+		}
+	}
+	afterUsed, afterReserved := photoJournalBalance(t, db, u.OwnerID)
+	if beforeUsed != afterUsed || beforeReserved != afterReserved {
+		t.Fatal("read changed quota")
+	}
+	if _, err := service.PhotoPreviewReadGrant(ctx, uuid.NewString(), u.ID, PhotoGridPNG); !errors.Is(err, ErrNotFound) || signer.calls != 3 {
+		t.Fatal("cross account read granted", err)
+	}
+}

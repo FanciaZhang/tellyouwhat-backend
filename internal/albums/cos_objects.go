@@ -155,14 +155,24 @@ func (s *COSObjects) OpenVersion(ctx context.Context, key, version string) (io.R
 // The signed GET includes versionId in its authenticated query; changing the
 // object, verb, or provider version invalidates the COS signature.
 func (s *COSObjects) AuthorizeOriginalRead(ctx context.Context, object SealedObject, expiry time.Time) (string, error) {
-	now := s.now()
-	duration := expiry.Sub(now)
-	if !albumObjectKey(object.Key, "originals") || !strings.HasSuffix(object.Key, "/"+object.ResourceID) ||
-		!concreteCOSVersion(object.VersionID) || object.SizeBytes <= 0 || duration <= 0 || duration > 5*time.Minute {
+	if !albumObjectKey(object.Key, "originals") || !strings.HasSuffix(object.Key, "/"+object.ResourceID) || object.SizeBytes <= 0 {
 		return "", ErrInvalidManifest
 	}
-	query := url.Values{"versionId": []string{object.VersionID}}
-	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, object.Key, duration, &cos.PresignedURLOptions{Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
+	return s.signImmutableRead(ctx, object.Key, object.VersionID, expiry)
+}
+
+// Callers validate the key against their own original or derivative namespace.
+func (s *COSObjects) signImmutableRead(ctx context.Context, key, version string, expiry time.Time) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	now := s.now()
+	duration := expiry.Sub(now)
+	if !concreteCOSVersion(version) || duration <= 0 || duration > 5*time.Minute {
+		return "", ErrInvalidManifest
+	}
+	query := url.Values{"versionId": []string{version}}
+	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, key, duration, &cos.PresignedURLOptions{Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
 	if err != nil {
 		return "", ErrCOSOperation
 	}
