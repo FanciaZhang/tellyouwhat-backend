@@ -21,15 +21,30 @@ type AccountAuthenticator interface {
 // NewHTTPRouter requires a verified account authenticator. There is no header,
 // device-ID, or debug-owner fallback. Deployment wiring remains opt-in.
 func NewHTTPRouter(host string, auth AccountAuthenticator, service *UploadService) (*gin.Engine, error) {
+	return newHTTPRouter(host, auth, service, nil)
+}
+
+func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadService, login *LoginHTTPOptions) (*gin.Engine, error) {
 	if canonicalHost(host) == "" || auth == nil || service == nil {
 		return nil, errors.New("album account authentication, host and service are required")
 	}
 	router := gin.New()
 	router.RedirectTrailingSlash = false
+	var proxies []string
+	if login != nil {
+		proxies = login.TrustedProxies
+	}
+	if err := router.SetTrustedProxies(proxies); err != nil {
+		return nil, err
+	}
 	router.Use(func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		if canonicalHost(c.Request.Host) != canonicalHost(host) {
 			c.AbortWithStatusJSON(http.StatusMisdirectedRequest, gin.H{"code": "unknown_app_host"})
+			return
+		}
+		if login != nil && c.Request.Method == http.MethodPost && (c.Request.URL.Path == "/v1/albums/auth/challenges" || c.Request.URL.Path == "/v1/albums/auth/apple") {
+			c.Next()
 			return
 		}
 		principal, err := auth.Authenticate(c.Request.Context(), c.Request)
@@ -44,7 +59,7 @@ func NewHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 		c.Set("album.owner", principal.AccountID)
 		c.Next()
 	})
-	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service}, albumhttpapi.GinServerOptions{
+	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service, login: login}, albumhttpapi.GinServerOptions{
 		ErrorHandler: func(c *gin.Context, _ error, status int) {
 			c.JSON(status, gin.H{"code": "invalid_upload_request"})
 		},
@@ -52,7 +67,10 @@ func NewHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 	return router, nil
 }
 
-type uploadHTTP struct{ service *UploadService }
+type uploadHTTP struct {
+	service *UploadService
+	login   *LoginHTTPOptions
+}
 
 func (h *uploadHTTP) CreateAlbumUpload(c *gin.Context) {
 	var request struct {

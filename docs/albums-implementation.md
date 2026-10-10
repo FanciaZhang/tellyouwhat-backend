@@ -129,3 +129,15 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 Redis key 使用独立 32 字节部署密钥对地址及操作做 HMAC，不存原始 IP；IPv4-mapped 地址归一化，IPv6 按 /64 聚合。调用方必须从可信连接/明确配置的代理获取客户端地址，不能直接采用任意 X-Forwarded-For。当前尚未挂到 HTTP 登录入口。
 
 已用本机一次性 Redis（仅 Unix socket、无 TCP、无持久化）执行真实集成测试：30 个实例并发仅 7 个获准，验证 TTL、窗口到期重置、缺失 TTL 拒绝；相册/迁移 race 与全仓 go vet 通过。临时 Redis 已停止。第一轮单测的 IPv6 测试地址写成超长字段而失败，修正为合法地址后上述测试通过。普通地址解析、操作隔离和 Redis 不可用时拒绝测试也通过。
+
+## 登录 HTTP 与合约
+
+OpenAPI 新增 `POST /v1/albums/auth/challenges`、`POST /v1/albums/auth/apple`、`POST /v1/albums/auth/logout`、`GET /v1/albums/account`。`NewHTTPRouterWithLogin` 要求登录服务、限流器和会话撤销器完整配置。仅前两个精确 POST 路径允许未登录访问，上传、账户与退出仍通过现有账户/App/Host 验证。旧构造器继续要求认证，不会意外开放登录。
+
+所有响应 `Cache-Control: no-store`。挑战与登录先限流，429 返回向上取整的 Retry-After；Redis 不可用返回 503。登录仅接受 JSON，body 限 80 KiB，拒绝未知字段及尾随 JSON；挑战和退出要求空 body。退出只撤销本次 Bearer 凭据，返回 204。默认不信任任何代理，只有配置的 TrustedProxies 才能影响客户端 IP；Host 不采用 X-Forwarded-Host。
+
+HTTP 测试覆盖未登录挑战/登录、账户字段注入、重复登录、超大/尾随 JSON、限流/Redis 故障时不触发 Apple、伪造转发地址及错误 Host、配置代理、保护上传/账户/退出、当前令牌撤销。相册/迁移 race、全仓 go vet 和全仓 Go 测试通过。此路由构造器尚未接到生产 gateway 或部署环境，iOS 也未实际登录。
+
+此前 `86a4c4f` 的 CI `38074465739` 已完整成功，日志明确显示 `TestMySQLAppleAccountStableAcrossConcurrentLogins` 与 `TestMySQLLoginChallengeConsumedOnceAcrossServiceInstances` 通过。该结果不覆盖此后会话、限流和登录 API 的改动，需新 CI。
+
+Swift 合约包使用独立 XcodeMaintenance 目录重新生成/构建并执行 14 项测试通过（相册 6、健康 6、日记 2）。新增验证登录 body 只含四个证明字段、会话响应解码，以及退出请求空 body/204 空响应；生成 Go 文件重复生成 SHA-256 一致。运行 `albums-login-contract.ZyZnTz` 已检查结果并标记 success。仅为客户端合约测试，未接入 iOS 实际网络登录。

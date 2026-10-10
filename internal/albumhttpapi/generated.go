@@ -98,12 +98,27 @@ func (e UploadState) Valid() bool {
 	}
 }
 
+// AlbumSession defines model for AlbumSession.
+type AlbumSession struct {
+	AccountID openapi_types.UUID `json:"accountID"`
+	ExpiresAt time.Time          `json:"expiresAt"`
+	Token     string             `json:"token"`
+}
+
 // Grant defines model for Grant.
 type Grant struct {
 	ExpiresAt  time.Time         `json:"expiresAt"`
 	Headers    map[string]string `json:"headers"`
 	ResourceID string            `json:"resourceID"`
 	Url        string            `json:"url"`
+}
+
+// LoginChallenge defines model for LoginChallenge.
+type LoginChallenge struct {
+	ExpiresAt time.Time          `json:"expiresAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Nonce     string             `json:"nonce"`
+	Proof     string             `json:"proof"`
 }
 
 // Manifest defines model for Manifest.
@@ -152,17 +167,40 @@ type Error struct {
 	Code string `json:"code"`
 }
 
+// LoginAlbumWithAppleJSONBody defines parameters for LoginAlbumWithApple.
+type LoginAlbumWithAppleJSONBody struct {
+	AuthorizationCode string             `json:"authorizationCode"`
+	ChallengeID       openapi_types.UUID `json:"challengeID"`
+	IdentityToken     string             `json:"identityToken"`
+	Proof             string             `json:"proof"`
+}
+
 // CreateAlbumUploadJSONBody defines parameters for CreateAlbumUpload.
 type CreateAlbumUploadJSONBody struct {
 	Manifest  Manifest           `json:"manifest"`
 	RequestID openapi_types.UUID `json:"requestID"`
 }
 
+// LoginAlbumWithAppleJSONRequestBody defines body for LoginAlbumWithApple for application/json ContentType.
+type LoginAlbumWithAppleJSONRequestBody LoginAlbumWithAppleJSONBody
+
 // CreateAlbumUploadJSONRequestBody defines body for CreateAlbumUpload for application/json ContentType.
 type CreateAlbumUploadJSONRequestBody CreateAlbumUploadJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /v1/albums/account)
+	GetAlbumAccount(c *gin.Context)
+
+	// (POST /v1/albums/auth/apple)
+	LoginAlbumWithApple(c *gin.Context)
+
+	// (POST /v1/albums/auth/challenges)
+	CreateAlbumLoginChallenge(c *gin.Context)
+
+	// (POST /v1/albums/auth/logout)
+	LogoutAlbumSession(c *gin.Context)
 
 	// (POST /v1/albums/uploads)
 	CreateAlbumUpload(c *gin.Context)
@@ -185,6 +223,58 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetAlbumAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetAlbumAccount(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAlbumAccount(c)
+}
+
+// LoginAlbumWithApple operation middleware
+func (siw *ServerInterfaceWrapper) LoginAlbumWithApple(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LoginAlbumWithApple(c)
+}
+
+// CreateAlbumLoginChallenge operation middleware
+func (siw *ServerInterfaceWrapper) CreateAlbumLoginChallenge(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAlbumLoginChallenge(c)
+}
+
+// LogoutAlbumSession operation middleware
+func (siw *ServerInterfaceWrapper) LogoutAlbumSession(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LogoutAlbumSession(c)
+}
 
 // CreateAlbumUpload operation middleware
 func (siw *ServerInterfaceWrapper) CreateAlbumUpload(c *gin.Context) {
@@ -301,6 +391,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/v1/albums/auth/challenges", wrapper.CreateAlbumLoginChallenge)
+	router.POST(options.BaseURL+"/v1/albums/auth/apple", wrapper.LoginAlbumWithApple)
+	router.POST(options.BaseURL+"/v1/albums/auth/logout", wrapper.LogoutAlbumSession)
+	router.GET(options.BaseURL+"/v1/albums/account", wrapper.GetAlbumAccount)
 	router.POST(options.BaseURL+"/v1/albums/uploads", wrapper.CreateAlbumUpload)
 	router.GET(options.BaseURL+"/v1/albums/uploads/:id", wrapper.GetAlbumUpload)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/grants", wrapper.AuthorizeAlbumUploadResources)
@@ -312,28 +406,34 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"/w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

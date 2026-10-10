@@ -79,6 +79,53 @@ struct AlbumAPITransportTests {
         #expect(wireManifest["edited"] as? Bool == false)
     }
 
+    @Test("login serializes proof without client account authority")
+    func appleLogin() async throws {
+        let recorder = AlbumRequestRecorder()
+        let transport = AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200,
+                headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(#"{"token":"opaque-test-token","expiresAt":"2026-11-11T02:00:00Z","accountID":"324aa069-b7da-4d23-88e7-4c8d54bd4749"}"#.utf8)))
+        }
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
+        let response = try await client.loginAlbumWithApple(body: .json(.init(
+            challengeID: Self.uploadID, proof: String(repeating: "a", count: 43),
+            authorizationCode: "test-code", identityToken: "test-assertion")))
+        switch response {
+        case .ok(let value):
+            switch value.body {
+            case .json(let session):
+                #expect(session.accountID == Self.uploadID)
+                #expect(session.token == "opaque-test-token")
+            }
+        default: Issue.record("Unexpected login response")
+        }
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/auth/apple")
+        #expect(request.method == "POST")
+        let body = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
+        #expect(Set(body.keys) == Set(["challengeID", "proof", "authorizationCode", "identityToken"]))
+    }
+
+    @Test("logout is bodyless and accepts an empty response")
+    func logout() async throws {
+        let recorder = AlbumRequestRecorder()
+        let transport = AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 204, headers: [], body: .data(Data()))
+        }
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
+        let response = try await client.logoutAlbumSession()
+        switch response {
+        case .noContent: break
+        default: Issue.record("Unexpected logout response")
+        }
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/auth/logout")
+        #expect(request.body.isEmpty)
+    }
+
     static let uploadID = "324aa069-b7da-4d23-88e7-4c8d54bd4749"
     static let manifestJSON = Data(#"{"assetID":"asset","sourceRevision":"revision-1","kind":"photo","edited":false,"resources":[{"id":"photo","role":"original_photo","sizeBytes":23,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#.utf8)
     static let uploadJSON = Data(#"{"id":"324aa069-b7da-4d23-88e7-4c8d54bd4749","requestID":"9987195d-bcd7-41f2-baa6-6a426cffea59","manifest":\#(String(decoding: manifestJSON, as: UTF8.self)),"manifestDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","state":"queued","originalBytes":23,"derivedBudget":23,"expiresAt":"2026-10-11T02:00:00Z"}"#.utf8)

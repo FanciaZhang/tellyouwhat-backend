@@ -1,11 +1,67 @@
 openapi: 3.0.3
 info:
-  title: Album Upload API
+  title: Album Account and Upload API
   version: 0.1.0
   description: Account-owned durable upload staging. originals_verified does not mean previews or local replacement are ready.
 security:
   - AlbumAccount: []
 paths:
+  /v1/albums/auth/challenges:
+    post:
+      operationId: createAlbumLoginChallenge
+      security: []
+      responses:
+        '201':
+          description: Single-use Apple login challenge; nonce is already hashed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LoginChallenge'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/auth/apple:
+    post:
+      operationId: loginAlbumWithApple
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challengeID, proof, authorizationCode, identityToken]
+              properties:
+                challengeID: {type: string, format: uuid}
+                proof: {type: string, minLength: 43, maxLength: 43}
+                authorizationCode: {type: string, minLength: 1, maxLength: 4096}
+                identityToken: {type: string, minLength: 1, maxLength: 65536}
+      responses:
+        '200':
+          description: Account session; store token in Keychain
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumSession'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/auth/logout:
+    post:
+      operationId: logoutAlbumSession
+      responses:
+        '204': {description: Current session revoked}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/account:
+    get:
+      operationId: getAlbumAccount
+      responses:
+        '200':
+          description: Authenticated stable account
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accountID]
+                properties:
+                  accountID: {type: string, format: uuid}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -96,6 +152,23 @@ components:
             properties:
               code: {type: string}
   schemas:
+    LoginChallenge:
+      type: object
+      additionalProperties: false
+      required: [id, nonce, proof, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        nonce: {type: string, minLength: 64, maxLength: 64}
+        proof: {type: string, minLength: 43, maxLength: 43}
+        expiresAt: {type: string, format: date-time}
+    AlbumSession:
+      type: object
+      additionalProperties: false
+      required: [token, expiresAt, accountID]
+      properties:
+        token: {type: string}
+        expiresAt: {type: string, format: date-time}
+        accountID: {type: string, format: uuid}
     Resource:
       type: object
       additionalProperties: false
