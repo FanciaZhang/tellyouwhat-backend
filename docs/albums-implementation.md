@@ -63,3 +63,15 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 本地 `swift test --package-path Contracts/HTTP` 的 12 项测试全部通过（相册 4、健康 6、日记 2）。新增测试验证创建请求只有 requestID/manifest、edited 必须存在且 false 会被保留、申请写入地址/提交校验无 body，以及 queued 响应不会被转成原件已验证。客户端尚未接入 iOS 上传界面或真实登录。
 
 已读取 CI `38071817152` 的完整成功结果和日志：`418eb15` 的真实 MySQL 事务测试、队列执行器与 COS 分块复制协议测试通过；verify 和六个容器构建全绿，deploy/verify-public 按 PR 条件跳过。这不覆盖后续本地提交，需由新的 CI 验证。
+
+## Apple 身份断言校验
+
+`AppleIdentityVerifier` 校验 RS256 签名、固定 Apple issuer、唯一 audience `cn.tellyouwhat.albums`、有效期/签发时间、非空 subject 和服务端预期的 SHA-256 nonce。断言签发需在 10 分钟内，时间检查允许 30 秒时钟偏差；不接受客户端自报的账户 UUID，也不依据邮箱或姓名建立账户归属。
+
+公钥只从 `https://appleid.apple.com/auth/keys` 读取，不信任 JWT 内的 jku/x5u。HTTPS 请求禁止重定向、限时 10 秒、响应限 64 KiB；公钥缓存 1 小时，未知 kid 的刷新至少间隔 30 秒，过期缓存刷新失败时不继续验证。密钥限制 RSA/签名用途/RS256，拒绝重复 kid 和无效 modulus/exponent。
+
+密码学测试使用本地生成的 RSA 密钥真实签发/验签，覆盖受众、签发方、时间、nonce、伪造签名、算法替换、轮换、并发未知 kid、重定向、超大响应和过期缓存。不包含真实用户 Apple 登录。
+
+此模块只返回已验证的 Apple subject，不签发 App 会话。持久一次性挑战、authorization code 换取/核验、稳定账户映射、会话撤销/轮换及 App 登录界面仍待接通；在这些步骤完成前不能把断言校验器直接当作可上线登录接口。
+
+依据：[Apple 验证用户](https://developer.apple.com/documentation/signinwithapple/verifying-a-user)、[Apple 登录认证流程](https://developer.apple.com/documentation/signinwithapple/authenticating-users-with-sign-in-with-apple)。
