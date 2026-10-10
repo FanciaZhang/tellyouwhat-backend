@@ -264,3 +264,15 @@ COS 适配器通过 CI.Get 的 versionId 获取固定版本的缩放结果。SDK
 回归测试发现 SDK v0.7.75 的 Object.Get 与 CI.Get 一样直接拼接 versionId。已为派生读取、OpenVersion 原件读取、VerifyStagingResource 分片完成核验统一补上 query escaping；特殊字符版本测试覆盖正确查询值、不产生额外参数。最初 PUT fixture 未提供 SDK 所需 CRC64，修正模拟响应而非关闭生产 CRC。
 
 验证：全仓 Go 测试、相册 race、相册 vet 通过。覆盖私有写入/传输校验、固定版本读回、丢失响应后多次恢复仅一次 PUT、404/版本/大小/哈希/尺寸/截断/Range/编码/溢出拒绝及关闭响应，非法记录/候选不触达网络。无数据库变更，MySQL 集成仍未运行；无真实 COS、无部署、无 iOS 变更。上一提交 CI 38091526050 查询时仍在运行。
+
+## 派生写入持久记录与容量转账
+
+迁移 `0023_album_photo_writes.sql` 以 owner/version/preset 唯一绑定一次 PUT attempt，保存来源清单摘要、候选尺寸/大小/哈希及最终 provider version。BeginPhotoWrite 在现有账户锁和事务下核对原件已验证、摘要一致，以及该源版本所有派生 attempt 的总大小不超过已有 DerivedBudget；只有新记录成功提交的调用获得 fresh=true。已有记录返回原 attempt，不能再发 PUT。数据库提交结果不明时也不返回写许可。
+
+内部 GeneratePhotoDerivative 串联现有原件所有权/完整性校验、已编辑输入选择、候选生成、持久消费、单次写入/只读恢复和事务完成。重试先读持久记录：已记录的未完成 attempt 不重新编码；已完成记录直接返回存储证据。未知写入保持记录，不能因进程重开、租约变化或 HEAD 404 自动开始新写入。并发首次调用仍可能重复生成候选；消费记录防止重复 PUT，后续调度层需在生成前限制并发及处理费用。
+
+CompletePhotoWrite 将实际派生字节从 reserved 转入 used，并在同一事务写入 provider version；重复完成不重复计费，换版本/错配记录拒绝。未使用的 DerivedBudget 暂不释放，避免同组其他派生或未决写入失去预算；整组完成/跳过、孤儿回收和预算终结策略仍待实现。该证据只说明候选存储完成，不表示系统日常副本已验证或可删除原件。
+
+真实隔离 MySQL 8.4 / race 验证：20 个并发 Begin 只有一个取得 PUT 许可；20 个完成重放只转账一次；跨账户读取拒绝、源版本派生总预算约束、额度不足不发布 receipt；重新打开连接池及重建服务后，从丢失响应状态恢复，provider 共一次生成、一次 PUT、一次只读核验，后续重放不增加媒体请求。全仓 Go 测试/vet、带真实数据库的相册与迁移 race 通过。最初迁移清单测试因固定期望列表缺新增文件失败，补入 0023 后通过。
+
+当前没有新增公开 HTTP 接口、自动图片处理队列或启动 worker；应先部署迁移再接入调用。没有实际 COS 联调；CI 仍使用受控 provider，真实画质与方向、格式选择、实况动态配对、派生下载授权、iOS 写回和完整空间优化仍未验收。无需改变现有 Swift HTTP 契约子模块。
