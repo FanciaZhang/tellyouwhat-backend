@@ -142,3 +142,46 @@ func TestAppleCodeConfigurationRejectsWrongCurveAndMissingVerifier(t *testing.T)
 		t.Fatal("missing identity verifier accepted")
 	}
 }
+
+func TestLoginChallengeRemainsConsumedAfterUncertainAppleExchange(t *testing.T) {
+	signing, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, _ := x509.MarshalPKCS8PrivateKey(signing)
+	key := testAppleKey(t)
+	now := time.Unix(1791660000, 0)
+	store := &challengeTestStore{rows: map[string]StoredLoginChallenge{}, used: map[string]bool{}}
+	service, _ := NewLoginChallengeService(store, func() time.Time { return now })
+	challenge, err := service.Issue(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := appleClaims(now)
+	claims["nonce"] = challenge.Nonce
+	assertion := appleSigned(t, key, "key", claims)
+	requests := 0
+	transport := appleTestTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/auth/keys" {
+			return appleResponse(testAppleJWKS(key, "key")), nil
+		}
+		requests++
+		return nil, errors.New("connection lost after authorization code sent")
+	})
+	verifier := NewAppleIdentityVerifier(transport)
+	verifier.now = func() time.Time { return now }
+	exchanger, err := NewAppleCodeExchanger(AppleCodeConfig{TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, verifier, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanger.now = func() time.Time { return now }
+	if _, err := service.VerifyAppleLogin(context.Background(), exchanger, challenge.ID, challenge.Proof, "code", assertion); !errors.Is(err, ErrAppleCode) {
+		t.Fatal("unknown exchange did not fail closed")
+	}
+	if _, err := service.VerifyAppleLogin(context.Background(), exchanger, challenge.ID, challenge.Proof, "code", assertion); !errors.Is(err, ErrLoginChallenge) {
+		t.Fatal("used challenge retried")
+	}
+	if requests != 1 {
+		t.Fatalf("single-use authorization code sent %d times", requests)
+	}
+}

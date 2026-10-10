@@ -85,3 +85,13 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 测试使用真实 ES256 客户端签名与 RSA 身份签名，核对请求表单和 client secret 的 issuer/audience/subject/kid/有效期，拒绝错用户、错 nonce、过期返回、错误曲线、重定向、超大响应及服务商错误。无效客户端断言不会请求 token 端点；网络错误只发一次。尚未使用真实 Apple 授权码联调。
 
 此组件仍需接到持久一次性挑战、账户事务和会话模块，不能单独视为登录完成。协议依据：[Apple Token validation](https://developer.apple.com/documentation/signinwithapplerestapi/generate-and-validate-tokens)。
+
+## 持久一次性登录挑战
+
+迁移 `0016` 增加独立的 `album_login_challenges`。挑战包含随机 UUID、独立的 256 位客户端 proof、Apple nonce 和 5 分钟有效期；只存 proof 的 SHA-256，不存原始 proof。返回的 nonce 已是 SHA-256 十六进制值，iOS 应直接赋给 Apple request.nonce，不能再次哈希。日志格式化对挑战整体脱敏。
+
+`Consume` 用数据库条件更新及事务保证未使用、未过期且 proof 哈希匹配时才消费；错误 proof 不会烧掉合法挑战。`VerifyAppleLogin` 先消费挑战再交换 Apple 授权码。交换失败或网络结果未知时要求重新发起登录，不重试可能已消费的授权码；当前没有透明恢复这一登录尝试的承诺。
+
+服务测试覆盖哈希存储、错误 proof、重放和过期边界，以及网络结果未知时不会重复兑换。新增真实 MySQL 测试使用 20 个独立服务实例竞争同一挑战，要求仅一者成功，并验证新实例仍拒绝已消费挑战。此 SQL 测试本地无数据库时跳过，必须等新 CI 执行。
+
+挑战尚未公开为 HTTP 接口；公开前需接入发行频率限制、过期记录清理和账户/会话事务。该模块不创建账户，不下发 App 登录令牌。
