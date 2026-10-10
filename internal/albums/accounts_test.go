@@ -76,6 +76,7 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 	defer func() {
 		var account string
 		if db.QueryRowContext(context.Background(), `SELECT account_id FROM album_accounts WHERE apple_subject_sha256=?`, appleSubjectHash(subject)).Scan(&account) == nil {
+			db.ExecContext(context.Background(), `DELETE FROM album_sessions WHERE account_id=?`, account)
 			db.ExecContext(context.Background(), `DELETE FROM album_apple_grants WHERE account_id=?`, account)
 			db.ExecContext(context.Background(), `DELETE FROM album_storage_accounts WHERE owner_id=?`, account)
 			db.ExecContext(context.Background(), `DELETE FROM album_accounts WHERE account_id=?`, account)
@@ -135,6 +136,7 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 	if login, err := restarted.RegisterAppleLogin(ctx, verified); err != nil || login != second {
 		t.Fatal("restart changed account or grant", err)
 	}
+	checkMySQLSessionLifecycle(t, ctx, db, first, second)
 	if _, err := db.ExecContext(ctx, `UPDATE album_apple_grants SET revoked_at=UTC_TIMESTAMP(6) WHERE grant_id=?`, second.GrantID); err != nil {
 		t.Fatal(err)
 	}
