@@ -152,16 +152,18 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	if err != nil || len(page.Versions) != 0 {
 		t.Fatal("unverified original became visible")
 	}
-	// Reject the quota update after index insertion: the entire transaction
-	// must roll back rather than expose a version without a committed ledger.
-	trigger := "album_index_fail_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = db.ExecContext(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE UPDATE ON album_storage_accounts FOR EACH ROW BEGIN IF NEW.owner_id = '%s' AND NEW.used_bytes > OLD.used_bytes THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test quota failure'; END IF; END`, trigger, owner))
-	if err != nil {
+	// Remove this test account's reservation so the guarded ledger update
+	// fails after index insertion. This exercises the real rollback path with
+	// ordinary database permissions, including MySQL with binary logging.
+	var reservedBeforeFailure int64
+	if err := db.QueryRowContext(ctx, `SELECT reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, owner).Scan(&reservedBeforeFailure); err != nil {
 		t.Fatal(err)
 	}
-	defer db.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+trigger)
-	if _, err := r.Complete(ctx, owner, u.ID, second, proof, now.Add(3*time.Second)); err == nil {
-		t.Fatal("injected transaction failure ignored")
+	if _, err := db.ExecContext(ctx, `UPDATE album_storage_accounts SET reserved_bytes=0 WHERE owner_id=?`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Complete(ctx, owner, u.ID, second, proof, now.Add(3*time.Second)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("missing reservation must reject completion: %v", err)
 	}
 	rolledBack, err := r.Get(ctx, owner, u.ID)
 	if err != nil || rolledBack.State != Verifying {
@@ -171,7 +173,14 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	if err != nil || len(page.Versions) != 0 {
 		t.Fatal("index insertion did not roll back")
 	}
-	if _, err := db.ExecContext(ctx, "DROP TRIGGER "+trigger); err != nil {
+	var failedUsed, failedReserved int64
+	if err := db.QueryRowContext(ctx, `SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, owner).Scan(&failedUsed, &failedReserved); err != nil {
+		t.Fatal(err)
+	}
+	if failedUsed != 0 || failedReserved != 0 {
+		t.Fatalf("failed completion changed ledger: %d %d", failedUsed, failedReserved)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE album_storage_accounts SET reserved_bytes=? WHERE owner_id=?`, reservedBeforeFailure, owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.Complete(ctx, owner, u.ID, second, proof, now.Add(3*time.Second)); err != nil {
