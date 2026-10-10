@@ -56,6 +56,16 @@ func checkMySQLMultipartIntent(t *testing.T, ctx context.Context, db *sql.DB, u 
 	if _, _, err := r.BeginMultipart(ctx, u.OwnerID, u.ID, "missing", now); !errors.Is(err, ErrNotFound) {
 		t.Fatal("unknown resource accepted", err)
 	}
+	stored, err := NewMySQLUploads(db).GetMultipart(ctx, u.OwnerID, u.ID, resourceID)
+	if err != nil || stored != first {
+		t.Fatal("durable read lost intent", err)
+	}
+	if _, err := r.GetMultipart(ctx, uuid.NewString(), u.ID, resourceID); !errors.Is(err, ErrNotFound) {
+		t.Fatal("cross account read exposed intent", err)
+	}
+	if _, err := r.GetMultipart(ctx, u.OwnerID, u.ID, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("missing resource read", err)
+	}
 	other := uuid.NewString()
 	if err := r.ProvisionAccount(ctx, other, 0); err != nil {
 		t.Fatal(err)

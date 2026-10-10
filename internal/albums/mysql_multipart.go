@@ -127,3 +127,16 @@ func (r *MySQLUploads) ResolveMultipart(ctx context.Context, owner, uploadID, re
 	}
 	return result, nil
 }
+
+// Read-only lookup cannot accidentally acquire initialization permission.
+func (r *MySQLUploads) GetMultipart(ctx context.Context, owner, uploadID, resourceID string) (MultipartIntent, error) {
+	if !validOwner(owner) {
+		return MultipartIntent{}, ErrOwner
+	}
+	if !validOwner(uploadID) || !resourceIDPattern.MatchString(resourceID) {
+		return MultipartIntent{}, ErrNotFound
+	}
+	return scanMultipart(r.db.QueryRowContext(ctx, `SELECT m.upload_id,m.resource_id,m.intent_id,m.state,m.provider_upload_id
+ FROM album_multipart_intents m JOIN album_uploads u ON u.upload_id=m.upload_id
+ WHERE u.owner_id=? AND m.upload_id=? AND m.resource_id=?`, owner, uploadID, resourceID))
+}
