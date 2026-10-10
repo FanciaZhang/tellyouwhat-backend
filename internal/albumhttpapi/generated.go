@@ -41,6 +41,42 @@ func (e ManifestKind) Valid() bool {
 	}
 }
 
+// Defines values for MultipartAssemblyState.
+const (
+	MultipartAssemblyStateAssembled MultipartAssemblyState = "assembled"
+)
+
+// Valid indicates whether the value is a known member of the MultipartAssemblyState enum.
+func (e MultipartAssemblyState) Valid() bool {
+	switch e {
+	case MultipartAssemblyStateAssembled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MultipartStatusState.
+const (
+	MultipartStatusStateAssembled MultipartStatusState = "assembled"
+	MultipartStatusStatePending   MultipartStatusState = "pending"
+	MultipartStatusStateUploading MultipartStatusState = "uploading"
+)
+
+// Valid indicates whether the value is a known member of the MultipartStatusState enum.
+func (e MultipartStatusState) Valid() bool {
+	switch e {
+	case MultipartStatusStateAssembled:
+		return true
+	case MultipartStatusStatePending:
+		return true
+	case MultipartStatusStateUploading:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResourceRole.
 const (
 	Adjustment    ResourceRole = "adjustment"
@@ -76,22 +112,22 @@ func (e ResourceRole) Valid() bool {
 
 // Defines values for UploadState.
 const (
-	OriginalsVerified UploadState = "originals_verified"
-	Queued            UploadState = "queued"
-	Uploading         UploadState = "uploading"
-	Verifying         UploadState = "verifying"
+	UploadStateOriginalsVerified UploadState = "originals_verified"
+	UploadStateQueued            UploadState = "queued"
+	UploadStateUploading         UploadState = "uploading"
+	UploadStateVerifying         UploadState = "verifying"
 )
 
 // Valid indicates whether the value is a known member of the UploadState enum.
 func (e UploadState) Valid() bool {
 	switch e {
-	case OriginalsVerified:
+	case UploadStateOriginalsVerified:
 		return true
-	case Queued:
+	case UploadStateQueued:
 		return true
-	case Uploading:
+	case UploadStateUploading:
 		return true
-	case Verifying:
+	case UploadStateVerifying:
 		return true
 	default:
 		return false
@@ -133,6 +169,50 @@ type Manifest struct {
 // ManifestKind defines model for Manifest.Kind.
 type ManifestKind string
 
+// MultipartAssembly defines model for MultipartAssembly.
+type MultipartAssembly struct {
+	ResourceID string                 `json:"resourceID"`
+	State      MultipartAssemblyState `json:"state"`
+}
+
+// MultipartAssemblyState defines model for MultipartAssembly.State.
+type MultipartAssemblyState string
+
+// MultipartPartGrant defines model for MultipartPartGrant.
+type MultipartPartGrant struct {
+	ExpiresAt  time.Time         `json:"expiresAt"`
+	Headers    map[string]string `json:"headers"`
+	Offset     int64             `json:"offset"`
+	PartNumber int               `json:"partNumber"`
+	ResourceID string            `json:"resourceID"`
+	SizeBytes  int64             `json:"sizeBytes"`
+	Url        string            `json:"url"`
+}
+
+// MultipartSession defines model for MultipartSession.
+type MultipartSession struct {
+	PartCount  int    `json:"partCount"`
+	PartSize   int64  `json:"partSize"`
+	ResourceID string `json:"resourceID"`
+	SizeBytes  int64  `json:"sizeBytes"`
+}
+
+// MultipartStatus defines model for MultipartStatus.
+type MultipartStatus struct {
+	Parts      []MultipartUploadedPart `json:"parts"`
+	ResourceID string                  `json:"resourceID"`
+	State      MultipartStatusState    `json:"state"`
+}
+
+// MultipartStatusState defines model for MultipartStatus.State.
+type MultipartStatusState string
+
+// MultipartUploadedPart defines model for MultipartUploadedPart.
+type MultipartUploadedPart struct {
+	PartNumber int   `json:"partNumber"`
+	SizeBytes  int64 `json:"sizeBytes"`
+}
+
 // Resource defines model for Resource.
 type Resource struct {
 	Id        string       `json:"id"`
@@ -158,6 +238,9 @@ type Upload struct {
 
 // UploadState defines model for Upload.State.
 type UploadState string
+
+// ResourceID defines model for ResourceID.
+type ResourceID = string
 
 // UploadID defines model for UploadID.
 type UploadID = openapi_types.UUID
@@ -210,6 +293,18 @@ type ServerInterface interface {
 
 	// (POST /v1/albums/uploads/{id}/grants)
 	AuthorizeAlbumUploadResources(c *gin.Context, id UploadID)
+
+	// (GET /v1/albums/uploads/{id}/resources/{resourceID}/multipart)
+	GetAlbumMultipart(c *gin.Context, id UploadID, resourceID ResourceID)
+
+	// (POST /v1/albums/uploads/{id}/resources/{resourceID}/multipart)
+	InitializeAlbumMultipart(c *gin.Context, id UploadID, resourceID ResourceID)
+
+	// (POST /v1/albums/uploads/{id}/resources/{resourceID}/multipart/complete)
+	CompleteAlbumMultipart(c *gin.Context, id UploadID, resourceID ResourceID)
+
+	// (POST /v1/albums/uploads/{id}/resources/{resourceID}/multipart/parts/{partNumber}/grant)
+	AuthorizeAlbumMultipartPart(c *gin.Context, id UploadID, resourceID ResourceID, partNumber int)
 
 	// (POST /v1/albums/uploads/{id}/submit)
 	SubmitAlbumUpload(c *gin.Context, id UploadID)
@@ -339,6 +434,151 @@ func (siw *ServerInterfaceWrapper) AuthorizeAlbumUploadResources(c *gin.Context)
 	siw.Handler.AuthorizeAlbumUploadResources(c, id)
 }
 
+// GetAlbumMultipart operation middleware
+func (siw *ServerInterfaceWrapper) GetAlbumMultipart(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UploadID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "resourceID" -------------
+	var resourceID ResourceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "resourceID", c.Param("resourceID"), &resourceID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter resourceID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAlbumMultipart(c, id, resourceID)
+}
+
+// InitializeAlbumMultipart operation middleware
+func (siw *ServerInterfaceWrapper) InitializeAlbumMultipart(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UploadID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "resourceID" -------------
+	var resourceID ResourceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "resourceID", c.Param("resourceID"), &resourceID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter resourceID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.InitializeAlbumMultipart(c, id, resourceID)
+}
+
+// CompleteAlbumMultipart operation middleware
+func (siw *ServerInterfaceWrapper) CompleteAlbumMultipart(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UploadID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "resourceID" -------------
+	var resourceID ResourceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "resourceID", c.Param("resourceID"), &resourceID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter resourceID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompleteAlbumMultipart(c, id, resourceID)
+}
+
+// AuthorizeAlbumMultipartPart operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAlbumMultipartPart(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UploadID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "resourceID" -------------
+	var resourceID ResourceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "resourceID", c.Param("resourceID"), &resourceID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter resourceID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "partNumber" -------------
+	var partNumber int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "partNumber", c.Param("partNumber"), &partNumber, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter partNumber: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeAlbumMultipartPart(c, id, resourceID, partNumber)
+}
+
 // SubmitAlbumUpload operation middleware
 func (siw *ServerInterfaceWrapper) SubmitAlbumUpload(c *gin.Context) {
 
@@ -399,6 +639,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/v1/albums/uploads/:id", wrapper.GetAlbumUpload)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/grants", wrapper.AuthorizeAlbumUploadResources)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/submit", wrapper.SubmitAlbumUpload)
+	router.GET(options.BaseURL+"/v1/albums/uploads/:id/resources/:resourceID/multipart", wrapper.GetAlbumMultipart)
+	router.POST(options.BaseURL+"/v1/albums/uploads/:id/resources/:resourceID/multipart", wrapper.InitializeAlbumMultipart)
+	router.POST(options.BaseURL+"/v1/albums/uploads/:id/resources/:resourceID/multipart/parts/:partNumber/grant", wrapper.AuthorizeAlbumMultipartPart)
+	router.POST(options.BaseURL+"/v1/albums/uploads/:id/resources/:resourceID/multipart/complete", wrapper.CompleteAlbumMultipart)
 }
 
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
@@ -406,34 +650,39 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"/w==",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

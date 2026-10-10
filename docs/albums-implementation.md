@@ -209,3 +209,13 @@ ReconcileInitialization 仅对受信控制流程开放，检查账户、资源�
 协议和服务测试覆盖唯一/无/多匹配、同前缀邻居、跨页、循环/错误分页、请求预算、跨账户、持久失败、取消、过期及查询期间提交。新增状态变化测试首轮未实际注入提交事件而失败，补齐事件后通过；相册/worker/迁移 race、全仓 vet、diff 检查通过。本方法尚未加入初始化专用退避队列；此前自动队列只处理合并未知结果。孤立会话取消回收、HTTP/App 接入和真实 COS IAM/列表一致性验证仍未完成。
 
 此前远端 CI 38079085040（34dcedf）已成功，后续内容核对/后台队列/初始化恢复需本批新 CI 验证。
+
+## 分片控制 HTTP 合约
+
+OpenAPI/生成 Go 路由新增资源级 multipart 初始化、状态查询、单片授权及合并四项操作，路径均位于账户拥有的 upload/resource 下。不接受 body、query、自选对象 key 或 provider ID；上传账号来自现有认证中间件。NewHTTPRouterWithMultipart 可显式启用，登录路由构造器也可注入 Multipart 服务；旧构造器未配置时返回 unavailable，不假装具备云端能力。
+
+GET 状态明确为 pending/uploading/assembled，始终有 parts 数组；已合并状态由持久记录返回，不再查询已消失的 COS 分片会话。pending 初始化/合并 POST 返回 503 multipart_pending 与 Retry-After: 30，不透出数据库/provider 错误。assembled 不提交父上传，更不产生原件删除证据。
+
+HTTP 测试实际经过生成路由、认证和服务，覆盖初始化/合并重试不重复外部操作，响应逐个校验 OpenAPI schema，签名分片范围、重启所需状态、body/query 注入、账户/App 隔离、未登录、无效编号、合并后拒绝新授权、未知结果和旧构造器禁用。Go 全仓测试、相册/worker/迁移 race、全仓 vet 通过；初次新增测试因未使用 import 编译失败，移除后通过。生产 gateway 接线、真实 COS 和 iOS 上传仍未接通。
+
+Swift 合约包在独立 XcodeMaintenance 运行 albums-multipart-contract.EFROyg 中重新生成、编译并测试通过：相册 7、健康 6、日记 2，共 15 项。新增测试覆盖四项分片控制操作的路径/空 body、第二片 offset/size、pending 与 assembled 响应解码。已核对构建日志并标记 success。这是生成客户端的合约验证，尚未接入 App 的实际上传 UI 或媒体发送。

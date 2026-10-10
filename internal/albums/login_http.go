@@ -17,9 +17,10 @@ type SessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 type LoginHTTPOptions struct {
-	Service  *LoginService
-	Limiter  LoginRateLimiter
-	Sessions SessionRevoker
+	Multipart *MultipartService
+	Service   *LoginService
+	Limiter   LoginRateLimiter
+	Sessions  SessionRevoker
 	// Empty means direct peer only. Set only actual deployment proxy networks.
 	TrustedProxies []string
 }
@@ -29,7 +30,7 @@ func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *Upl
 		return nil, errors.New("album login, limiter and revoker are required")
 	}
 	options.TrustedProxies = append([]string(nil), options.TrustedProxies...)
-	return newHTTPRouter(host, auth, uploads, &options)
+	return newHTTPRouter(host, auth, uploads, &options, options.Multipart)
 }
 func (h *uploadHTTP) allowLogin(c *gin.Context, operation string) bool {
 	if h.login == nil {

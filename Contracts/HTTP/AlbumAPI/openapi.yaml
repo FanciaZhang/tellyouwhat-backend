@@ -128,6 +128,55 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Upload'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}/resources/{resourceID}/multipart:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+      - {$ref: '#/components/parameters/ResourceID'}
+    post:
+      operationId: initializeAlbumMultipart
+      responses:
+        '200':
+          description: Account-owned multipart state; assembled is not verified backup
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartSession'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: getAlbumMultipart
+      responses:
+        '200':
+          description: Account-owned multipart state; assembled is not verified backup
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartStatus'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}/resources/{resourceID}/multipart/parts/{partNumber}/grant:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+      - {$ref: '#/components/parameters/ResourceID'}
+      - {name: partNumber, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+    post:
+      operationId: authorizeAlbumMultipartPart
+      responses:
+        '200':
+          description: Account-owned multipart state; assembled is not verified backup
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartPartGrant'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/uploads/{id}/resources/{resourceID}/multipart/complete:
+    parameters:
+      - {$ref: '#/components/parameters/UploadID'}
+      - {$ref: '#/components/parameters/ResourceID'}
+    post:
+      operationId: completeAlbumMultipart
+      responses:
+        '200':
+          description: Account-owned multipart state; assembled is not verified backup
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartAssembly'}
+        default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     AlbumAccount:
@@ -135,6 +184,11 @@ components:
       scheme: bearer
       description: Verified stable account authentication scoped to the albums application. App Attest alone is insufficient.
   parameters:
+    ResourceID:
+      name: resourceID
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
     UploadID:
       name: id
       in: path
@@ -218,3 +272,52 @@ components:
           type: object
           additionalProperties: {type: string}
         expiresAt: {type: string, format: date-time}
+
+    MultipartSession:
+      type: object
+      additionalProperties: false
+      required: [resourceID, sizeBytes, partSize, partCount]
+      properties:
+        resourceID: {type: string}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        partSize: {type: integer, format: int64, minimum: 1}
+        partCount: {type: integer, minimum: 1, maximum: 10000}
+    MultipartPartGrant:
+      type: object
+      additionalProperties: false
+      required: [resourceID, url, headers, expiresAt, partNumber, offset, sizeBytes]
+      properties:
+        resourceID: {type: string}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        offset: {type: integer, format: int64, minimum: 0}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+    MultipartUploadedPart:
+      type: object
+      additionalProperties: false
+      required: [partNumber, sizeBytes]
+      properties:
+        partNumber: {type: integer, minimum: 1, maximum: 10000}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+    MultipartStatus:
+      type: object
+      additionalProperties: false
+      required: [resourceID, state, parts]
+      properties:
+        resourceID: {type: string}
+        state: {type: string, enum: [pending, uploading, assembled]}
+        parts:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/MultipartUploadedPart'}
+    MultipartAssembly:
+      type: object
+      additionalProperties: false
+      required: [resourceID, state]
+      properties:
+        resourceID: {type: string}
+        state: {type: string, enum: [assembled]}

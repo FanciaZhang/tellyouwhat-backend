@@ -21,10 +21,10 @@ type AccountAuthenticator interface {
 // NewHTTPRouter requires a verified account authenticator. There is no header,
 // device-ID, or debug-owner fallback. Deployment wiring remains opt-in.
 func NewHTTPRouter(host string, auth AccountAuthenticator, service *UploadService) (*gin.Engine, error) {
-	return newHTTPRouter(host, auth, service, nil)
+	return newHTTPRouter(host, auth, service, nil, nil)
 }
 
-func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadService, login *LoginHTTPOptions) (*gin.Engine, error) {
+func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadService, login *LoginHTTPOptions, multipart *MultipartService) (*gin.Engine, error) {
 	if canonicalHost(host) == "" || auth == nil || service == nil {
 		return nil, errors.New("album account authentication, host and service are required")
 	}
@@ -59,7 +59,7 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 		c.Set("album.owner", principal.AccountID)
 		c.Next()
 	})
-	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service, login: login}, albumhttpapi.GinServerOptions{
+	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service, login: login, multipart: multipart}, albumhttpapi.GinServerOptions{
 		ErrorHandler: func(c *gin.Context, _ error, status int) {
 			c.JSON(status, gin.H{"code": "invalid_upload_request"})
 		},
@@ -68,8 +68,9 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 }
 
 type uploadHTTP struct {
-	service *UploadService
-	login   *LoginHTTPOptions
+	multipart *MultipartService
+	service   *UploadService
+	login     *LoginHTTPOptions
 }
 
 func (h *uploadHTTP) CreateAlbumUpload(c *gin.Context) {
@@ -155,6 +156,11 @@ func canonicalHost(value string) string {
 func writeAlbumError(c *gin.Context, err error) {
 	status, code := http.StatusServiceUnavailable, "album_service_unavailable"
 	switch {
+	case errors.Is(err, ErrMultipartPending):
+		status, code = http.StatusServiceUnavailable, "multipart_pending"
+		c.Header("Retry-After", "30")
+	case errors.Is(err, ErrIncompleteBackup):
+		status, code = http.StatusConflict, "multipart_incomplete"
 	case errors.Is(err, ErrOwner):
 		status, code = http.StatusForbidden, "account_unavailable"
 	case errors.Is(err, ErrInvalidManifest):

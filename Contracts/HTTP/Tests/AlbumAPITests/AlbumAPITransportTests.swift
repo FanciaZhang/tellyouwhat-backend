@@ -126,6 +126,55 @@ struct AlbumAPITransportTests {
         #expect(request.body.isEmpty)
     }
 
+    @Test("multipart control preserves byte ranges and bodyless authority")
+    func multipartControl() async throws {
+        let recorder = AlbumRequestRecorder()
+        let transport = AlbumAPITransport { request in
+            await recorder.record(request)
+            let json: String
+            switch request.operationID {
+            case "initializeAlbumMultipart":
+                json = #"{"resourceID":"video","sizeBytes":8388625,"partSize":8388608,"partCount":2}"#
+            case "authorizeAlbumMultipartPart":
+                json = #"{"resourceID":"video","url":"https://storage.example/part","headers":{"Content-Length":"17"},"expiresAt":"2026-10-11T02:00:00Z","partNumber":2,"offset":8388608,"sizeBytes":17}"#
+            case "getAlbumMultipart":
+                json = #"{"resourceID":"video","state":"pending","parts":[]}"#
+            case "completeAlbumMultipart":
+                json = #"{"resourceID":"video","state":"assembled"}"#
+            default: throw URLError(.badURL)
+            }
+            return AlbumAPIHTTPResponse(statusCode: 200,
+                headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(json.utf8)))
+        }
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
+        let initialized = try await client.initializeAlbumMultipart(path: .init(id: Self.uploadID, resourceID: "video"))
+        if case .ok(let value) = initialized, case .json(let session) = value.body {
+            #expect(session.partCount == 2)
+        } else { Issue.record("Missing multipart session") }
+        var request = try #require(await recorder.last)
+        #expect(request.method == "POST" && request.body.isEmpty)
+        #expect(request.path == "/v1/albums/uploads/\(Self.uploadID)/resources/video/multipart")
+        let grant = try await client.authorizeAlbumMultipartPart(path: .init(id: Self.uploadID, resourceID: "video", partNumber: 2))
+        if case .ok(let value) = grant, case .json(let part) = value.body {
+            #expect(part.offset == 8388608 && part.sizeBytes == 17)
+        } else { Issue.record("Missing exact part range") }
+        request = try #require(await recorder.last)
+        #expect(request.path.hasSuffix("/parts/2/grant") && request.body.isEmpty)
+        let status = try await client.getAlbumMultipart(path: .init(id: Self.uploadID, resourceID: "video"))
+        if case .ok(let value) = status, case .json(let progress) = value.body {
+            #expect(progress.state == .pending && progress.parts.isEmpty)
+        } else { Issue.record("Missing persisted pending state") }
+        request = try #require(await recorder.last)
+        #expect(request.method == "GET" && request.body.isEmpty)
+        let completed = try await client.completeAlbumMultipart(path: .init(id: Self.uploadID, resourceID: "video"))
+        if case .ok(let value) = completed, case .json(let result) = value.body {
+            #expect(result.state == .assembled)
+        } else { Issue.record("Missing assembly result") }
+        request = try #require(await recorder.last)
+        #expect(request.path.hasSuffix("/complete") && request.method == "POST" && request.body.isEmpty)
+    }
+
     static let uploadID = "324aa069-b7da-4d23-88e7-4c8d54bd4749"
     static let manifestJSON = Data(#"{"assetID":"asset","sourceRevision":"revision-1","kind":"photo","edited":false,"resources":[{"id":"photo","role":"original_photo","sizeBytes":23,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#.utf8)
     static let uploadJSON = Data(#"{"id":"324aa069-b7da-4d23-88e7-4c8d54bd4749","requestID":"9987195d-bcd7-41f2-baa6-6a426cffea59","manifest":\#(String(decoding: manifestJSON, as: UTF8.self)),"manifestDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","state":"queued","originalBytes":23,"derivedBudget":23,"expiresAt":"2026-10-11T02:00:00Z"}"#.utf8)
