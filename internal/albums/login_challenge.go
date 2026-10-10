@@ -126,17 +126,3 @@ func (r *MySQLLoginChallenges) Consume(ctx context.Context, id, proofHash string
 	}
 	return nonce, nil
 }
-
-// VerifyAppleLogin consumes proof before contacting Apple. A failed or unknown
-// exchange requires a new login, never reuse of a potentially consumed code.
-// It returns an internal grant only; account/session issuance remains separate.
-func (s *LoginChallengeService) VerifyAppleLogin(ctx context.Context, exchanger *AppleCodeExchanger, id, proof, code, identityToken string) (AppleGrant, error) {
-	if exchanger == nil {
-		return AppleGrant{}, ErrLoginChallenge
-	}
-	nonce, err := s.Consume(ctx, id, proof)
-	if err != nil {
-		return AppleGrant{}, ErrLoginChallenge
-	}
-	return exchanger.Exchange(ctx, code, identityToken, nonce)
-}

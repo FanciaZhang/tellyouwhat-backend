@@ -175,13 +175,19 @@ func TestLoginChallengeRemainsConsumedAfterUncertainAppleExchange(t *testing.T) 
 		t.Fatal(err)
 	}
 	exchanger.now = func() time.Time { return now }
-	if _, err := service.VerifyAppleLogin(context.Background(), exchanger, challenge.ID, challenge.Proof, "code", assertion); !errors.Is(err, ErrAppleCode) {
+	downstream := &loginPipelineFixture{}
+	login, err := NewLoginService(service, exchanger, downstream, downstream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := AppleLoginRequest{challenge.ID, challenge.Proof, "code", assertion}
+	if _, err := login.Login(context.Background(), request); !errors.Is(err, ErrLogin) {
 		t.Fatal("unknown exchange did not fail closed")
 	}
-	if _, err := service.VerifyAppleLogin(context.Background(), exchanger, challenge.ID, challenge.Proof, "code", assertion); !errors.Is(err, ErrLoginChallenge) {
+	if _, err := login.Login(context.Background(), request); !errors.Is(err, ErrLogin) {
 		t.Fatal("used challenge retried")
 	}
-	if requests != 1 {
-		t.Fatalf("single-use authorization code sent %d times", requests)
+	if requests != 1 || len(downstream.steps) != 0 {
+		t.Fatalf("single-use code requests=%d downstream=%v", requests, downstream.steps)
 	}
 }
