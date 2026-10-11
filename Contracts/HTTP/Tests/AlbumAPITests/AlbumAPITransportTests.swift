@@ -4,6 +4,41 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("stored video grant preserves exact media metadata and does not authorize system deletion")
+    func videoPreviewReadGrant() async throws {
+        let recorder = AlbumRequestRecorder()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "assetID": "asset-1", "versionID": Self.uploadID, "manifestDigest": String(repeating: "a", count: 64),
+            "preset": "daily_mp4_1080_v1", "objectVersionID": "video+/=v1", "sizeBytes": 123456,
+            "sha256": String(repeating: "b", count: 64),
+            "profile": ["width": 1080, "height": 1920, "durationMilliseconds": 1234, "frameRate": 60, "audioChannels": 2],
+            "contentType": "video/mp4", "replacementEligible": false,
+            "url": "https://storage.example/signed", "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"
+        ])
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(body))
+        })
+        let preset = try #require(Components.Schemas.VideoPreset(rawValue: "daily_mp4_1080_v1"))
+        let response = try await client.authorizeAlbumVideoPreviewRead(path: .init(versionID: Self.uploadID, preset: preset))
+        switch response {
+        case .ok(let value):
+            switch value.body {
+            case .json(let grant):
+                #expect(grant.objectVersionID == "video+/=v1")
+                #expect(grant.sha256 == String(repeating: "b", count: 64))
+                #expect(grant.profile.width == 1080 && grant.profile.height == 1920)
+                #expect(grant.profile.durationMilliseconds == 1234)
+                #expect(grant.profile.frameRate == 60 && grant.profile.audioChannels == 2)
+                #expect(grant.replacementEligible == false)
+            }
+        default: Issue.record("Unexpected video authorization response")
+        }
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID + "/video-previews/daily_mp4_1080_v1/read-grant")
+        #expect(request.method == "POST" && request.body.isEmpty)
+    }
+
     @Test("stored still preview grant preserves verification metadata without replacement authority")
     func photoPreviewReadGrant() async throws {
         let recorder = AlbumRequestRecorder()

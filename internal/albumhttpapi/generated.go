@@ -121,13 +121,13 @@ func (e PhotoPreviewReadGrantContentType) Valid() bool {
 
 // Defines values for PhotoPreviewReadGrantReplacementEligible.
 const (
-	False PhotoPreviewReadGrantReplacementEligible = false
+	PhotoPreviewReadGrantReplacementEligibleFalse PhotoPreviewReadGrantReplacementEligible = false
 )
 
 // Valid indicates whether the value is a known member of the PhotoPreviewReadGrantReplacementEligible enum.
 func (e PhotoPreviewReadGrantReplacementEligible) Valid() bool {
 	switch e {
-	case False:
+	case PhotoPreviewReadGrantReplacementEligibleFalse:
 		return true
 	default:
 		return false
@@ -185,6 +185,51 @@ func (e UploadState) Valid() bool {
 	case UploadStateUploading:
 		return true
 	case UploadStateVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VideoPreset.
+const (
+	DailyMp41080V1 VideoPreset = "daily_mp4_1080_v1"
+)
+
+// Valid indicates whether the value is a known member of the VideoPreset enum.
+func (e VideoPreset) Valid() bool {
+	switch e {
+	case DailyMp41080V1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VideoPreviewReadGrantContentType.
+const (
+	Videomp4 VideoPreviewReadGrantContentType = "video/mp4"
+)
+
+// Valid indicates whether the value is a known member of the VideoPreviewReadGrantContentType enum.
+func (e VideoPreviewReadGrantContentType) Valid() bool {
+	switch e {
+	case Videomp4:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VideoPreviewReadGrantReplacementEligible.
+const (
+	VideoPreviewReadGrantReplacementEligibleFalse VideoPreviewReadGrantReplacementEligible = false
+)
+
+// Valid indicates whether the value is a known member of the VideoPreviewReadGrantReplacementEligible enum.
+func (e VideoPreviewReadGrantReplacementEligible) Valid() bool {
+	switch e {
+	case VideoPreviewReadGrantReplacementEligibleFalse:
 		return true
 	default:
 		return false
@@ -382,6 +427,41 @@ type Upload struct {
 // UploadState defines model for Upload.State.
 type UploadState string
 
+// VideoPreset defines model for VideoPreset.
+type VideoPreset string
+
+// VideoPreviewReadGrant defines model for VideoPreviewReadGrant.
+type VideoPreviewReadGrant struct {
+	AssetID             string                                   `json:"assetID"`
+	ContentType         VideoPreviewReadGrantContentType         `json:"contentType"`
+	ExpiresAt           time.Time                                `json:"expiresAt"`
+	Headers             map[string]string                        `json:"headers"`
+	ManifestDigest      string                                   `json:"manifestDigest"`
+	ObjectVersionID     string                                   `json:"objectVersionID"`
+	Preset              VideoPreset                              `json:"preset"`
+	Profile             VideoProfile                             `json:"profile"`
+	ReplacementEligible VideoPreviewReadGrantReplacementEligible `json:"replacementEligible"`
+	Sha256              string                                   `json:"sha256"`
+	SizeBytes           int64                                    `json:"sizeBytes"`
+	Url                 string                                   `json:"url"`
+	VersionID           openapi_types.UUID                       `json:"versionID"`
+}
+
+// VideoPreviewReadGrantContentType defines model for VideoPreviewReadGrant.ContentType.
+type VideoPreviewReadGrantContentType string
+
+// VideoPreviewReadGrantReplacementEligible defines model for VideoPreviewReadGrant.ReplacementEligible.
+type VideoPreviewReadGrantReplacementEligible bool
+
+// VideoProfile defines model for VideoProfile.
+type VideoProfile struct {
+	AudioChannels        int     `json:"audioChannels"`
+	DurationMilliseconds int64   `json:"durationMilliseconds"`
+	FrameRate            float64 `json:"frameRate"`
+	Height               int     `json:"height"`
+	Width                int     `json:"width"`
+}
+
 // ResourceID defines model for ResourceID.
 type ResourceID = string
 
@@ -445,6 +525,9 @@ type ServerInterface interface {
 
 	// (POST /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant)
 	AuthorizeAlbumOriginalRead(c *gin.Context, versionID openapi_types.UUID, resourceID ResourceID)
+
+	// (POST /v1/albums/library/versions/{versionID}/video-previews/{preset}/read-grant)
+	AuthorizeAlbumVideoPreviewRead(c *gin.Context, versionID openapi_types.UUID, preset VideoPreset)
 
 	// (POST /v1/albums/uploads)
 	CreateAlbumUpload(c *gin.Context)
@@ -658,6 +741,40 @@ func (siw *ServerInterfaceWrapper) AuthorizeAlbumOriginalRead(c *gin.Context) {
 	}
 
 	siw.Handler.AuthorizeAlbumOriginalRead(c, versionID, resourceID)
+}
+
+// AuthorizeAlbumVideoPreviewRead operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAlbumVideoPreviewRead(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "versionID" -------------
+	var versionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionID", c.Param("versionID"), &versionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter versionID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "preset" -------------
+	var preset VideoPreset
+
+	err = runtime.BindStyledParameterWithOptions("simple", "preset", c.Param("preset"), &preset, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter preset: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeAlbumVideoPreviewRead(c, versionID, preset)
 }
 
 // CreateAlbumUpload operation middleware
@@ -928,6 +1045,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/v1/albums/library/versions/:versionID", wrapper.GetAlbumAssetVersion)
 	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/resources/:resourceID/read-grant", wrapper.AuthorizeAlbumOriginalRead)
 	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/photo-previews/:preset/read-grant", wrapper.AuthorizeAlbumPhotoPreviewRead)
+	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/video-previews/:preset/read-grant", wrapper.AuthorizeAlbumVideoPreviewRead)
 	router.POST(options.BaseURL+"/v1/albums/uploads", wrapper.CreateAlbumUpload)
 	router.GET(options.BaseURL+"/v1/albums/uploads/:id", wrapper.GetAlbumUpload)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/grants", wrapper.AuthorizeAlbumUploadResources)
@@ -943,55 +1061,59 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"v9ffU8b1G4Hmlfmnu9Xd6r8BAAD//w==",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

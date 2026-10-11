@@ -120,7 +120,7 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 				return ErrConflict
 			}
 		}
-		return enqueuePhotoJobs(ctx, tx, u, now)
+		return enqueuePreviewJobs(ctx, tx, u, now)
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return err
@@ -138,7 +138,7 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 	if err != nil {
 		return err
 	}
-	return enqueuePhotoJobs(ctx, tx, u, now)
+	return enqueuePreviewJobs(ctx, tx, u, now)
 }
 func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
 	rows, err := r.db.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions LIMIT 0`)

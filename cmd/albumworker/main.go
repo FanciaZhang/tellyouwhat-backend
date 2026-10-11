@@ -50,6 +50,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := repository.CheckPhotoSchema(startup); err != nil {
 		return errors.New("album photo processing schema")
 	}
+	if err := repository.CheckVideoSchema(startup); err != nil {
+		return errors.New("album video processing schema")
+	}
 	objects, err := albums.NewCOSObjects(config.COS)
 	if err != nil {
 		return errors.New("object storage configuration")
@@ -79,7 +82,26 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if config.PhotoProcessing {
 		workerCount++
 	}
+	if config.VideoProcessing {
+		workerCount++
+	}
 	finished := make(chan error, workerCount)
+	if config.VideoProcessing {
+		videoWorker, err := albums.NewVideoWorker(repository, service, config.VideoQueueID, config.BatchSize)
+		if err != nil {
+			return errors.New("video worker configuration")
+		}
+		go func() {
+			finished <- videoWorker.Run(runCtx, config.PollInterval, func(batch albums.VideoJobBatch, available bool) {
+				if !available {
+					logger.Error("album video queue unavailable")
+				}
+				if batch.Stored+batch.Failed+batch.Contended > 0 {
+					logger.Info("album video batch", "stored", batch.Stored, "waiting", batch.Waiting, "failed", batch.Failed, "contended", batch.Contended)
+				}
+			})
+		}()
+	}
 	if config.PhotoProcessing {
 		photoWorker, err := albums.NewPhotoWorker(repository, service, config.BatchSize)
 		if err != nil {
@@ -106,7 +128,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			}
 		})
 	}()
-	logger.Info("album workers started", "photo_processing", config.PhotoProcessing)
+	logger.Info("album workers started", "photo_processing", config.PhotoProcessing, "video_processing", config.VideoProcessing)
 	available := true
 	go func() {
 		finished <- worker.Run(runCtx, func(batch albums.VerificationBatch, queueAvailable bool) {

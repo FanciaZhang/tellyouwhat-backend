@@ -120,6 +120,19 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PhotoPreviewReadGrant'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/video-previews/{preset}/read-grant:
+    post:
+      operationId: authorizeAlbumVideoPreviewRead
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: preset, in: path, required: true, schema: {$ref: '#/components/schemas/VideoPreset'}}
+      responses:
+        '200':
+          description: Five-minute owned immutable MP4 GET after asynchronous completion and quota commit; native decoding and system import are still required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VideoPreviewReadGrant'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -378,6 +391,40 @@ components:
       required: [resourceID, url, headers, expiresAt]
       properties:
         resourceID: {type: string}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+
+    VideoPreset:
+      type: string
+      enum: [daily_mp4_1080_v1]
+    VideoProfile:
+      type: object
+      additionalProperties: false
+      required: [width, height, durationMilliseconds, frameRate, audioChannels]
+      properties:
+        width: {type: integer, minimum: 128, maximum: 1920}
+        height: {type: integer, minimum: 128, maximum: 1920}
+        durationMilliseconds: {type: integer, format: int64, minimum: 1, maximum: 3600000}
+        frameRate: {type: number, format: double, minimum: 0, exclusiveMinimum: true, maximum: 60}
+        audioChannels: {type: integer, minimum: 0, maximum: 2}
+    VideoPreviewReadGrant:
+      type: object
+      additionalProperties: false
+      required: [assetID, versionID, manifestDigest, preset, objectVersionID, sizeBytes, sha256, profile, contentType, replacementEligible, url, headers, expiresAt]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        preset: {$ref: '#/components/schemas/VideoPreset'}
+        objectVersionID: {type: string, minLength: 1, maxLength: 1024}
+        sizeBytes: {type: integer, format: int64, minimum: 1, maximum: 4294967296}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        profile: {$ref: '#/components/schemas/VideoProfile'}
+        contentType: {type: string, enum: [video/mp4]}
+        replacementEligible: {type: boolean, enum: [false]}
         url: {type: string, format: uri}
         headers:
           type: object

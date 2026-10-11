@@ -22,8 +22,27 @@ func TestAlbumWorkerConfigurationNeedsNoAISettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.PhotoProcessing || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
+	if config.PhotoProcessing || config.VideoProcessing || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
 		t.Fatal("invalid worker settings")
+	}
+}
+
+func TestVideoProcessingRequiresExplicitEnableAndQueue(t *testing.T) {
+	values := workerEnvironment()
+	values["ALBUM_VIDEO_PROCESSING_ENABLED"] = "true"
+	if _, err := LoadWorkerConfig(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("enabled without a private CI queue")
+	}
+	values["ALBUM_CI_VIDEO_QUEUE_ID"] = "p" + strings.Repeat("a", 32)
+	config, err := LoadWorkerConfig(func(key string) string { return values[key] })
+	if err != nil || !config.VideoProcessing || config.VideoQueueID != values["ALBUM_CI_VIDEO_QUEUE_ID"] {
+		t.Fatal("video processing not enabled", err)
+	}
+	for _, value := range []string{"yes", "1", "True"} {
+		values["ALBUM_VIDEO_PROCESSING_ENABLED"] = value
+		if _, err := LoadWorkerConfig(func(key string) string { return values[key] }); err == nil {
+			t.Fatal("unrecognized toggle accepted")
+		}
 	}
 }
 

@@ -17,6 +17,8 @@ type WorkerConfig struct {
 	BatchSize       int
 	PollInterval    time.Duration
 	PhotoProcessing bool
+	VideoProcessing bool
+	VideoQueueID    string
 }
 
 func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
@@ -69,6 +71,17 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 		c.PhotoProcessing = true
 	default:
 		return WorkerConfig{}, errors.New("invalid ALBUM_PHOTO_PROCESSING_ENABLED")
+	}
+	switch strings.TrimSpace(getenv("ALBUM_VIDEO_PROCESSING_ENABLED")) {
+	case "", "false":
+	case "true":
+		c.VideoProcessing = true
+		c.VideoQueueID = strings.TrimSpace(getenv("ALBUM_CI_VIDEO_QUEUE_ID"))
+		if !ciQueuePattern.MatchString(c.VideoQueueID) {
+			return WorkerConfig{}, errors.New("invalid ALBUM_CI_VIDEO_QUEUE_ID")
+		}
+	default:
+		return WorkerConfig{}, errors.New("invalid ALBUM_VIDEO_PROCESSING_ENABLED")
 	}
 	c.Policy.UploadTTL = 24 * time.Hour
 	c.Policy.VerificationLease = 30 * time.Minute

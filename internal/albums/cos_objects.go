@@ -51,7 +51,7 @@ func newCOSObjects(config COSConfig, transport http.RoundTripper) (*COSObjects, 
 		return nil, errors.New("invalid album COS configuration")
 	}
 	host := config.Bucket + ".cos." + config.Region + ".myqcloud.com"
-	client := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}}, &http.Client{
+	client := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}, CIURL: &url.URL{Scheme: "https", Host: config.Bucket + ".ci." + config.Region + ".myqcloud.com"}}, &http.Client{
 		Transport:     &cos.AuthorizationTransport{SecretID: config.SecretID, SecretKey: config.SecretKey, SessionToken: config.SessionToken, Transport: transport},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	})

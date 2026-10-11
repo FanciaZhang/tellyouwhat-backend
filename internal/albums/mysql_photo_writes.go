@@ -76,7 +76,7 @@ func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest st
 			return u, err
 		}
 		var allocated int64
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes),0) FROM album_photo_writes WHERE owner_id=? AND version_id=?`, spec.OwnerID, versionID).Scan(&allocated); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(size_bytes),0) FROM album_photo_writes WHERE owner_id=? AND version_id=?)+(SELECT COALESCE(SUM(reserve_size),0) FROM album_video_jobs WHERE owner_id=? AND version_id=?)`, spec.OwnerID, versionID, spec.OwnerID, versionID).Scan(&allocated); err != nil {
 			return u, err
 		}
 		if allocated < 0 || allocated > u.DerivedBudget || spec.SizeBytes > u.DerivedBudget-allocated {
