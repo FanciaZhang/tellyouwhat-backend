@@ -20,14 +20,18 @@ func livePairContentType(part string) string {
 func (s *COSObjects) AuthorizeLivePairPut(ctx context.Context, u LivePairUpload, part string, expiry time.Time) (PutGrant, error) {
 	key, err := u.key(part, true)
 	resource, resourceErr := u.resource(part)
-	ttl := expiry.Sub(s.now())
+	now := s.now()
+	ttl := expiry.Sub(now)
 	if err != nil || resourceErr != nil || u.Descriptor.validate() != nil || u.State != "uploading" || ttl <= 0 || ttl > 10*time.Minute || expiry.After(u.ExpiresAt) {
 		return PutGrant{}, ErrInvalidManifest
 	}
 	headers := http.Header{}
 	headers.Set("Content-Type", livePairContentType(part))
 	headers.Set("Content-Length", strconv.FormatInt(resource.SizeBytes, 10))
-	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, ttl, &cos.PresignedURLOptions{Header: &headers})
+	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, ttl, &cos.PresignedURLOptions{
+		Header:   &headers,
+		AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry},
+	})
 	if err != nil {
 		return PutGrant{}, ErrCOSOperation
 	}

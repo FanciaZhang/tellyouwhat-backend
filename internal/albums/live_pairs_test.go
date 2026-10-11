@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,7 +56,7 @@ func TestLivePairDeclarationsRejectInvalidTimelineAndUnboundedOrMismatchedProfil
 }
 func TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead(t *testing.T) {
 	u := pairUploadFixture(t)
-	now := time.Now()
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 123456000, time.UTC)
 	u.ExpiresAt = now.Add(time.Hour)
 	copies, heads, reads := 0, 0, 0
 	s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
@@ -87,6 +89,16 @@ func TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead(t *testing
 	key, _ := u.key("photo", true)
 	if err != nil || !strings.Contains(g.URL, key) || g.Headers["Content-Type"] != "image/jpeg" || !strings.Contains(g.URL, "upload-test-id") {
 		t.Fatal("bad staging grant", err)
+	}
+	signedURL, err := url.Parse(g.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := signedURL.Query()
+	deadline := strconv.FormatInt(now.Unix(), 10) + ";" + strconv.FormatInt(g.ExpiresAt.Unix(), 10)
+	if query.Get("q-sign-time") != deadline || query.Get("q-key-time") != deadline ||
+		query.Get("q-header-list") != "content-length;content-type;host" || query.Get("q-url-param-list") != "" {
+		t.Fatal("grant deadline or signed media headers differ from native contract")
 	}
 	if _, err := s.AuthorizePut(context.Background(), key, Resource{ID: "photo", SizeBytes: 10}, now.Add(time.Minute)); err == nil {
 		t.Fatal("original signer widened")

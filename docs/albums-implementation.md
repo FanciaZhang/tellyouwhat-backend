@@ -343,3 +343,9 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 本次新增验证覆盖：隔离 MySQL 的 20 并发创建/认领/消费、预算关闭后独立预留、重开连接与旧租约拒绝、COPY 响应丢失只读恢复、大小相同但 SHA 不符不发布、容量结算重放和跨设备 verified 重用。COS 为 HTTP 协议替身，完整字节测试不代表真实云端或实况画质验收。
 
 尚未启用生产 API、worker 或相关凭据。原生成组件目前继续保留；完整文件对额外计入 used。客户端持久化上传任务、成功后 staging 历史版本清理、失效/attention 意图的终止证明与回收，以及用真实媒体完成 COS 与系统图库闭环均需继续实现/验收；不能以本次接口通过称自动回存已经交付，也不能启用原件删除。
+
+### 2026-10-11：实况上传授权截止时间
+
+实况 staging PUT 显式向 COS SDK 传入 AuthTime，签名和 JSON 使用相同的开始/截止时间。避免 SDK 自行读取系统时间后跨越秒边界，导致严格客户端拒绝仍有效的授权。真实 SDK 的受控测试使用固定历史时间，验证 q-sign-time、q-key-time、Content-Length/Content-Type/Host 的签名列表和 JSON 截止时间一致；原件及归档命名空间继续分离。
+
+相册与 albumworker 的 Go race 共 323 passed / 0 failed；未启动 MySQL/Redis，相关 34 项集成用例 skipped。本次不更改数据库或 HTTP schema；相册、albumworker、gateway 的 vet 通过。证据与源码 SHA：[albums-live-pair-grant-deadline-2026-10-11.json](evidence/albums-live-pair-grant-deadline-2026-10-11.json)。没有真实 COS 请求或生产开通动作。
