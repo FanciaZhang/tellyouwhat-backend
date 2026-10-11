@@ -156,6 +156,8 @@ func canonicalHost(value string) string {
 func writeAlbumError(c *gin.Context, err error) {
 	status, code := http.StatusServiceUnavailable, "album_service_unavailable"
 	switch {
+	case errors.Is(err, ErrSubscriptionRequired):
+		status, code = http.StatusForbidden, "cloud_subscription_required"
 	case errors.Is(err, ErrMultipartPending):
 		status, code = http.StatusServiceUnavailable, "multipart_pending"
 		c.Header("Retry-After", "30")

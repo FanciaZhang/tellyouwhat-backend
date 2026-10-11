@@ -156,7 +156,10 @@ func (s *UploadService) Grants(ctx context.Context, owner, id string) ([]PutGran
 	if upload.State != Uploading {
 		return nil, ErrConflict
 	}
-	expiry := minTime(upload.ExpiresAt, s.now().Add(10*time.Minute))
+	expiry, err := cloudMediaGrantExpiry(ctx, s.repository, owner, s.now(), minTime(upload.ExpiresAt, s.now().Add(10*time.Minute)))
+	if err != nil {
+		return nil, err
+	}
 	grants := make([]PutGrant, 0, len(upload.Manifest.Resources))
 	for _, resource := range upload.Manifest.Resources {
 		grant, err := s.objects.AuthorizePut(ctx, stagingKey(upload, resource.ID), resource, expiry)

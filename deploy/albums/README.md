@@ -20,6 +20,16 @@
 
 ## 构建与接入
 
+### 相册订阅与容量
+
+`ALBUM_SUBSCRIPTIONS_ENABLED` 默认关闭。打开前配置相册专属 App Store API issuer、key ID、P8 私有文件、Apple 官方信任根 PEM；生产还要求相册数字 App Apple ID。私有文件与已有登录密钥一起挂载到 API 的 `/album-secrets`，不传给派生 Worker。测试部署只认 Sandbox，生产只认 Production，不使用其他 App 的权益或环境回退。
+
+年度 SKU 草案为 `albums.cloud.50gb.annual`、`albums.cloud.500gb.annual`，容量分别为十进制 50/500 GB；这些标识尚未代表 App Store 中已经开售的商品，价格由 StoreKit 返回。购买时 `appAccountToken` 必须为相册稳定账户 UUID。`POST /v1/albums/subscription/transactions` 只接收交易 JWS；后端验证签名、App、环境和账户，再查询 Apple 当前全部订阅状态，不信任客户端声明的 SKU、容量或到期日。原始订阅链只能属于一个账户；多个有效链取最大容量，不叠加。账户修订号和签名时间拒绝过期并发结果。
+
+`GET /v1/albums/subscription` 返回有效容量、已用与预留字节、有效期及六个自然月的保留截止日。没有已验证订阅的新账户无法新增上传，即使数据库旧投影残留容量也不放行。时钟到期或降档立即限制新增预留及 PUT/分片/实况上传授权；已预留且已上传的数据仍能完成校验，已用容量与原件保留。授权链接最长不超过该容量档位的有效期。
+
+本实现是权益验证和写入准入基础。Apple 服务端通知、定时刷新退款状态、到期提醒、六个月后所有历史版本的永久清理仍需接入和验收；这里只计算截止日期，自动清理继续关闭。真实 Sandbox 购买、升降档、退款及账号恢复也需要单独验收，受控 Apple 响应的本地测试不证明真实商品已经可购买。
+
 使用已评审提交的干净源码 checkout，将完整 Git SHA 写入 `ALBUM_TEST_IMAGE_TAG`。PR 容器构建只验证、不发布镜像；在独立测试目录按这个提交构建三份镜像，不能把移动的 `main` 标签当成相册 PR 的产物。
 
 ```sh

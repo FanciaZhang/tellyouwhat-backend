@@ -17,10 +17,11 @@ type SessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 type LoginHTTPOptions struct {
-	Multipart *MultipartService
-	Service   *LoginService
-	Limiter   LoginRateLimiter
-	Sessions  SessionRevoker
+	Multipart     *MultipartService
+	Service       *LoginService
+	Limiter       LoginRateLimiter
+	Sessions      SessionRevoker
+	Subscriptions *AlbumSubscriptionService
 	// Empty means direct peer only. Set only actual deployment proxy networks.
 	TrustedProxies []string
 }

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-11T11:32:38.775182+00:00",
+  "baselineCommit": "85f34f0e8e42827d2f01227d68724b0578a6a383",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "23efa1930ff8004a947e43e6897de9eac1908c8182e74846259b0c87275ad11e",
+    "internal/albumhttpapi/generated.go": "9ba57ae36ca6b9a4bd20faae9642ab5e29b2fa707d78b59aa07052b3b2e3dc46",
+    "internal/albums/derived_cleanup_mutations.go": "7e8937b6bfbd73883a01ec3a813ac48cbe3322b846ea021d94eb1ada0e6492a5",
+    "internal/albums/derived_finalizations.go": "ee8fff30499b13580944f65b1211587c82e30e0e46aed3c7544b20fff7f04771",
+    "internal/albums/gateway.go": "3b5931c5a4e3c37c89ebe01c83004f45db4c783cf171fb0dd84ccf60251f945c",
+    "internal/albums/gateway_config.go": "a03fac401119fb658d1269fbb5ee4e453af226b3bdced2ac5bbb3e5bef5b26a6",
+    "internal/albums/gateway_integration_test.go": "96f463f69e69364c7e65b5b4994a9b77f31d2b47284da24c215a1c39ecfddda6",
+    "internal/albums/http.go": "b21a6349fcb0ffb23b4c035e47d2a5a38af99a877dc0e210c30e4899e77e4051",
+    "internal/albums/live_pairs.go": "6de06ae3da6a87ea2217ab2d798e2b2d8416f616f2dd1acbda061b2683783292",
+    "internal/albums/login_http.go": "2abb264e458a7d0c12a206703c072d11a40217145357555c0bad1c1be6b4a638",
+    "internal/albums/login_limit.go": "9d7b7af4e35c852345a64c202f32fa718181401fd7a2b725ae73db3a68f2330c",
+    "internal/albums/multipart_service.go": "837781ece1fce6c5018cea36c7c7716c5fae54b5737681cb0ea1c12da2ad84d8",
+    "internal/albums/mysql_live_pairs.go": "a85b4f02394fe23b7e417a11559ae1fe6c4045df170a82a74d2bd95fced16ec3",
+    "internal/albums/mysql_photo_writes.go": "7b28c33d105d90a4155678f84bce015298b0c9d721800266d510966a3ad966f3",
+    "internal/albums/mysql_subscriptions.go": "704d750700395b5de054cb03b03a23d4e13806ff9432d76fcad482881954d507",
+    "internal/albums/mysql_subscriptions_integration_test.go": "7f88f9b7c95ce92ab58c63065210be8333c4b7fd9ec305d0007abf91827c2e43",
+    "internal/albums/mysql_uploads.go": "c53461c4e6d50c9590bc9c55a2b963ac5eeb25c52d9714a22f8a090fc520aacc",
+    "internal/albums/subscription_config.go": "d0b193c6765373013a2e955a8b4df45bbff42859788249d9a9e17a28426471d4",
+    "internal/albums/subscription_config_test.go": "a77b56253ff7294d464ce6827e6ec4ed6e17bf639b2b1651771fd4f659b07d41",
+    "internal/albums/subscription_fixture_test.go": "03beab6df60098c2e7f276d8ea690047ca4f4bae131f13996acbaaabac269651",
+    "internal/albums/subscription_grants_test.go": "7fd83294949401876cf05eb9d0d40f197ec0ba1dd85583cf7d8e9a6debd8631a",
+    "internal/albums/subscription_http.go": "57e9828d071a49f9f329b419e2a1712c68579372e3e5aa69e2f120820be1b267",
+    "internal/albums/subscriptions.go": "977247ce01cbc5ba84e217e6d57409494620f412f66b45d167bdb3fa17c11a1f",
+    "internal/albums/subscriptions_test.go": "ae2d7ca10cf84f463f9ae1ad52cf4d831c565df7c541f34bd194689dce3af5e7",
+    "internal/albums/uploads.go": "371d06929fa5ba522a9057aadb2be715234c381264d038dd0bbad7cb24b1a578",
+    "internal/appstore/album_claims_test.go": "ac49baab6e7323f31290aff116b0f72ac1a09baafe2821151756c25c44950165",
+    "internal/appstore/client.go": "c99a249bfd33b111827da20b47b187580364e92dddebedbb99b49824d6f15452",
+    "internal/appstore/verifier.go": "9f42fe3d00434631e3b1689563049097b8051aa2cd9e71f169b35edd0d55a90f",
+    "migrations/0028_album_cloud_subscriptions.sql": "91a1bc255a2844d5b0aee4a7f1b28d1e819a3557d99de125ed8da91a7fb33a43",
+    "migrations/embed_test.go": "a6424f8177818c141f99cc2cd17b7ad6ae2cfd32c8fff4879dee1125723347db"
+  },
+  "scope": "album-only capacity verification, upload admission and retention deadline projection",
+  "environment": "isolated local MySQL 8.4 and Redis over private Unix sockets; generated restricted database user",
+  "validation": [
+    {
+      "name": "subscription-integration",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-qn8ne5_1/subscription-integration.log",
+      "testCounts": {
+        "pass": 3
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "related-regression",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-qn8ne5_1/related-regression.log",
+      "testCounts": {
+        "pass": 488
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-qn8ne5_1/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-qn8ne5_1/build.log"
+    },
+    {
+      "name": "subscription-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-as5gq43d/subscription-race.log",
+      "testCounts": {
+        "pass": 43
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-as5gq43d/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-as5gq43d/build.log"
+    }
+  ],
+  "servicesStopped": true,
+  "verified": [
+    "real ES256 and certificate chain validation with test authority",
+    "account-token and immutable original-chain binding",
+    "all five current Apple status categories through fixed HTTPS adapter",
+    "real MySQL/Redis/session/HTTP assembly",
+    "50/500 decimal GB max-tier admission",
+    "clock expiry and 500-to-50 downgrade without data deletion",
+    "capacity-bound PUT, multipart and Live Photo grants",
+    "CAS and stale signed-status rejection",
+    "six clamped UTC calendar months",
+    "disabled billing does not contact Apple or advertise purchases"
+  ],
+  "unverified": [
+    "real Apple Sandbox purchases, prices, upgrades, refund and restore",
+    "server notification and periodic refund reconciliation",
+    "deadline reminders and permanent all-version purge",
+    "real COS credential and media role boundary",
+    "shared test/production deployment"
+  ],
+  "liveStoreKitProductsCreated": false,
+  "automaticPurgeEnabled": false,
+  "productionDeployed": false
+}

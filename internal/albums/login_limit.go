@@ -47,7 +47,7 @@ return 0
 `)
 
 func (l *RedisLoginLimiter) addressKey(operation, address string) (string, error) {
-	if operation != "challenge" && operation != "login" {
+	if operation != "challenge" && operation != "login" && operation != "subscription" {
 		return "", ErrLoginLimitUnavailable
 	}
 	ip, err := netip.ParseAddr(address)

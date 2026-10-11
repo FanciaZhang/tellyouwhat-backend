@@ -74,7 +74,7 @@ func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, no
 		return LivePairUpload{}, err
 	}
 	defer tx.Rollback()
-	account, err := lockAccount(ctx, tx, u.OwnerID)
+	account, err := r.lockAccount(ctx, tx, u.OwnerID)
 	if err != nil {
 		return LivePairUpload{}, err
 	}
@@ -119,6 +119,9 @@ func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, no
 		return LivePairUpload{}, err
 	}
 	size := u.Descriptor.Photo.SizeBytes + u.Descriptor.Movie.SizeBytes
+	if r.billingEnvironment != "" && account.limit == 0 {
+		return LivePairUpload{}, ErrSubscriptionRequired
+	}
 	if account.limit < 0 || account.used < 0 || account.reserved < 0 || account.used > account.limit || account.reserved > account.limit-account.used || size > account.limit-account.used-account.reserved {
 		return LivePairUpload{}, ErrQuota
 	}
@@ -146,7 +149,7 @@ func (r *MySQLUploads) mutateLivePair(ctx context.Context, owner, id string, fn 
 		return LivePairUpload{}, err
 	}
 	defer tx.Rollback()
-	if _, err := lockAccount(ctx, tx, owner); err != nil {
+	if _, err := r.lockAccount(ctx, tx, owner); err != nil {
 		return LivePairUpload{}, err
 	}
 	u, err := scanLivePair(tx.QueryRowContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs WHERE owner_id=? AND pair_upload_id=? FOR UPDATE`, owner, id))

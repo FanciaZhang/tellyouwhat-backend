@@ -98,6 +98,9 @@ func (s *MultipartService) Initialize(ctx context.Context, owner, uploadID, reso
 	if err != nil {
 		return MultipartSession{}, err
 	}
+	if _, err := cloudMediaGrantExpiry(ctx, s.repository, owner, s.now().UTC(), u.ExpiresAt); err != nil {
+		return MultipartSession{}, err
+	}
 	layout, err := NewMultipartLayout(resource.SizeBytes)
 	if err != nil {
 		return MultipartSession{}, err
@@ -161,7 +164,10 @@ func (s *MultipartService) Part(ctx context.Context, owner, uploadID, resourceID
 	if err := readyMultipart(intent, uploadID, resourceID); err != nil {
 		return MultipartPartGrant{}, err
 	}
-	expiry := minTime(u.ExpiresAt, s.now().Add(10*time.Minute))
+	expiry, err := cloudMediaGrantExpiry(ctx, s.repository, owner, s.now(), minTime(u.ExpiresAt, s.now().Add(10*time.Minute)))
+	if err != nil {
+		return MultipartPartGrant{}, err
+	}
 	return s.provider.AuthorizePart(ctx, stagingKey(u, resourceID), intent.ProviderUploadID, resource, number, expiry)
 }
 

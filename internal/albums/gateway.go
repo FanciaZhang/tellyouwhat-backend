@@ -85,7 +85,11 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album login rate limit configuration")
 	}
-	repository := NewMySQLUploads(db)
+	repository := NewMySQLUploads(db).WithSubscriptionEnvironment(albumStoreEnvironment(config.Environment))
+	subscriptions, err := newConfiguredAlbumSubscriptions(repository, config.Subscriptions, transport)
+	if err != nil {
+		return nil, errors.New("album subscription configuration")
+	}
 	uploads, err := NewUploadService(repository, objects, config.Worker.Policy, time.Now)
 	if err != nil {
 		return nil, errors.New("album upload configuration")
@@ -96,6 +100,7 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	}
 	g.router, err = NewHTTPRouterWithLogin(config.APIHost, sessions, uploads, LoginHTTPOptions{
 		Service: login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
+		Subscriptions: subscriptions,
 	})
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")
@@ -133,7 +138,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 	}
 	r := NewMySQLUploads(g.db)
 	for _, check := range []func(context.Context) error{r.CheckLibrarySchema, r.CheckPhotoSchema, r.CheckVideoSchema,
-		r.CheckDerivedSchema, r.CheckLivePairSchema} {
+		r.CheckDerivedSchema, r.CheckLivePairSchema, r.CheckSubscriptionSchema} {
 		if err := check(ctx); err != nil {
 			return err
 		}

@@ -96,7 +96,7 @@ func (r *MySQLUploads) FinalizeDerivedBudget(ctx context.Context, ref DerivedVer
 		return DerivedFinalization{}, err
 	}
 	defer tx.Rollback()
-	account, err := lockAccount(ctx, tx, ref.OwnerID)
+	account, err := r.lockAccount(ctx, tx, ref.OwnerID)
 	if err != nil {
 		return DerivedFinalization{}, err
 	}

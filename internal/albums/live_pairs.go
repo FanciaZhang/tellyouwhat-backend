@@ -259,6 +259,10 @@ func (s *UploadService) LivePairGrants(ctx context.Context, owner, id string) ([
 	if u.ExpiresAt.Before(expiry) {
 		expiry = u.ExpiresAt
 	}
+	expiry, err = cloudMediaGrantExpiry(ctx, s.repository, owner, now, expiry)
+	if err != nil {
+		return nil, err
+	}
 	grants := make([]PutGrant, 0, 2)
 	for _, id := range []string{"photo", "motion"} {
 		g, err := storage.AuthorizeLivePairPut(ctx, u, id, expiry)

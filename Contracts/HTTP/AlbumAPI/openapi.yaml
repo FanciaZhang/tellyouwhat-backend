@@ -62,6 +62,36 @@ paths:
                 properties:
                   accountID: {type: string, format: uuid}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/subscription:
+    get:
+      operationId: getAlbumSubscription
+      responses:
+        '200':
+          description: Current account capacity and six-calendar-month retention deadline; prices are supplied by StoreKit
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumCloudAccount'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/subscription/transactions:
+    post:
+      operationId: syncAlbumSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [signedTransaction]
+              properties:
+                signedTransaction: {type: string, minLength: 1, maxLength: 1048576}
+      responses:
+        '200':
+          description: Verified Apple current status bound to this stable account; no client quota or expiry fields
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlbumCloudAccount'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/library/versions:
     get:
       operationId: listAlbumAssetVersions
@@ -364,6 +394,22 @@ components:
             properties:
               code: {type: string}
   schemas:
+    AlbumCloudAccount:
+      type: object
+      additionalProperties: false
+      required: [accountID, state, quotaBytes, usedBytes, reservedBytes, availableBytes, revision, purchasesEnabled]
+      properties:
+        accountID: {type: string, format: uuid}
+        state: {type: string, enum: [none, active, expired, retention_due]}
+        productID: {type: string, enum: [albums.cloud.50gb.annual, albums.cloud.500gb.annual]}
+        quotaBytes: {type: integer, format: int64, minimum: 0}
+        usedBytes: {type: integer, format: int64, minimum: 0}
+        reservedBytes: {type: integer, format: int64, minimum: 0}
+        availableBytes: {type: integer, format: int64, minimum: 0}
+        revision: {type: integer, format: int64, minimum: 0}
+        expiresAt: {type: string, format: date-time}
+        retentionDeadline: {type: string, format: date-time}
+        purchasesEnabled: {type: boolean}
     LoginChallenge:
       type: object
       additionalProperties: false

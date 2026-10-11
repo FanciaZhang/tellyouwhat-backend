@@ -9,9 +9,24 @@ import (
 	"time"
 )
 
-type MySQLUploads struct{ db *sql.DB }
+type MySQLUploads struct {
+	db                 *sql.DB
+	billingEnvironment string
+	billingNow         func() time.Time
+}
 
 func NewMySQLUploads(db *sql.DB) *MySQLUploads { return &MySQLUploads{db: db} }
+
+// Gateway always enables this, including its isolated Sandbox environment.
+// Internal protocol fixtures can still provision a capacity without StoreKit.
+func (r *MySQLUploads) WithSubscriptionEnvironment(environment string, clock ...func() time.Time) *MySQLUploads {
+	r.billingEnvironment = environment
+	r.billingNow = time.Now
+	if len(clock) > 0 && clock[0] != nil {
+		r.billingNow = clock[0]
+	}
+	return r
+}
 
 // ProvisionAccount is an internal account/billing operation, never a client quota setter.
 // An existing account's quota is not replaced by a replay of signup provisioning.
@@ -33,6 +48,26 @@ func lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, e
 		return b, ErrOwner
 	}
 	return b, err
+}
+
+func (r *MySQLUploads) lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, error) {
+	b, err := lockAccount(ctx, tx, owner)
+	if err != nil || r.billingEnvironment == "" {
+		return b, err
+	}
+	if r.billingEnvironment != "Sandbox" && r.billingEnvironment != "Production" {
+		return quotaBalance{}, ErrSubscriptionRequired
+	}
+	clock := r.billingNow
+	if clock == nil {
+		clock = time.Now
+	}
+	account, err := r.cloudAccountInTransaction(ctx, tx, owner, clock().UTC())
+	if err != nil {
+		return b, err
+	}
+	b.limit = account.QuotaBytes
+	return b, nil
 }
 
 const uploadColumns = `upload_id, owner_id, request_id, manifest_json, manifest_digest, state, original_bytes, derived_budget, expires_at, lease_token, lease_until, sealed_objects`
@@ -82,7 +117,7 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 		return Upload{}, err
 	}
 	defer tx.Rollback()
-	account, err := lockAccount(ctx, tx, u.OwnerID)
+	account, err := r.lockAccount(ctx, tx, u.OwnerID)
 	if err != nil {
 		return Upload{}, err
 	}
@@ -104,6 +139,9 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 		return Upload{}, err
 	}
 	reserve := u.OriginalBytes + u.DerivedBudget
+	if r.billingEnvironment != "" && account.limit == 0 {
+		return Upload{}, ErrSubscriptionRequired
+	}
 	if account.used > account.limit || account.reserved > account.limit-account.used || reserve > account.limit-account.used-account.reserved {
 		return Upload{}, ErrQuota
 	}
@@ -133,7 +171,7 @@ func (r *MySQLUploads) mutate(ctx context.Context, owner, id string, action func
 		return Upload{}, err
 	}
 	defer tx.Rollback()
-	if _, err := lockAccount(ctx, tx, owner); err != nil {
+	if _, err := r.lockAccount(ctx, tx, owner); err != nil {
 		return Upload{}, err
 	}
 	upload, err := scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND upload_id=? FOR UPDATE`, owner, id))

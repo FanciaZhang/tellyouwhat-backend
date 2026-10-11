@@ -29,6 +29,7 @@ type GatewayConfig struct {
 	AppleCode      AppleCodeConfig
 	CredentialKey  string
 	LoginLimitKey  []byte
+	Subscriptions  *AlbumSubscriptionConfig
 }
 
 func (GatewayConfig) String() string   { return "[redacted album gateway configuration]" }
@@ -110,6 +111,10 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	}
 	c.CredentialKey = base64.StdEncoding.EncodeToString(keys[0])
 	c.LoginLimitKey = keys[1]
+	c.Subscriptions, err = loadAlbumSubscriptionConfig(getenv, c.Environment)
+	if err != nil {
+		return GatewayConfig{}, err
+	}
 	return c, nil
 }
 

@@ -20,7 +20,7 @@ func (r *MySQLUploads) lockDerivedCleanup(ctx context.Context, tx *sql.Tx, expec
 	if !validOwner(expected.OwnerID) || !validOwner(expected.ID) || now.IsZero() {
 		return DerivedCleanup{}, ErrInvalidManifest
 	}
-	if _, err := lockAccount(ctx, tx, expected.OwnerID); err != nil {
+	if _, err := r.lockAccount(ctx, tx, expected.OwnerID); err != nil {
 		return DerivedCleanup{}, err
 	}
 	c, err := scanCleanup(tx.QueryRowContext(ctx, `SELECT `+cleanupColumns+` FROM album_derived_cleanups WHERE owner_id=? AND cleanup_id=? FOR UPDATE`, expected.OwnerID, expected.ID))

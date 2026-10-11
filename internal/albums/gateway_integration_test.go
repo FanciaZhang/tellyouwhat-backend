@@ -108,6 +108,10 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	refresh := "gateway-refresh-fixture-" + uuid.NewString()
 	var nonce string
 	var codeCalls, cosCalls atomic.Int32
+	receipt := newAlbumReceiptFixture(t, time.Now().UTC().Truncate(time.Millisecond))
+	config.Subscriptions = &AlbumSubscriptionConfig{Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: receipt.roots}
+	var currentSubscription atomic.Value
+	var subscriptionCalls atomic.Int32
 	clientSigningKey, err := jwt.ParseECPrivateKeyFromPEM(config.AppleCode.PrivateKeyPEM)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +129,27 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		}
 		if r.URL.String() == appleIssuer+"/auth/keys" {
 			return appleResponse(testAppleJWKS(appleKey, "gateway-fixture-key")), nil
+		}
+		if r.URL.Host == "api.storekit-sandbox.itunes.apple.com" && r.URL.Path == "/inApps/v1/subscriptions/1000000000000002" && r.Method == "GET" {
+			subscriptionCalls.Add(1)
+			if r.URL.RawQuery != "" {
+				t.Error("inactive Apple status was excluded")
+			}
+			claims := jwt.MapClaims{}
+			token, err := jwt.ParseWithClaims(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), claims, func(token *jwt.Token) (any, error) {
+				if token.Header["kid"] != config.Subscriptions.KeyID {
+					t.Error("wrong album StoreKit signing key")
+				}
+				return &config.Subscriptions.SigningKey.PublicKey, nil
+			}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.Subscriptions.IssuerID), jwt.WithAudience("appstoreconnect-v1"), jwt.WithExpirationRequired())
+			if err != nil || !token.Valid || claims["bid"] != albumAppleAudience {
+				t.Error("album App Store request lacked verified app identity", err)
+			}
+			body, _ := currentSubscription.Load().(string)
+			if body == "" {
+				t.Error("subscription API called before fixture was ready")
+			}
+			return appleResponse(body), nil
 		}
 		if r.URL.String() != appleIssuer+"/auth/token" || r.Method != "POST" {
 			t.Error("unexpected provider operation")
@@ -246,8 +271,77 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	}
 	_, _, _, _, manifest := uploadFixture(t)
 	uploadRequest, _ := json.Marshal(map[string]any{"requestID": uuid.NewString(), "manifest": manifest})
-	if status, data, _ := request("POST", "/v1/albums/uploads", uploadRequest, session.Token, config.APIHost, ""); status != 403 || !bytes.Contains(data, []byte("storage_quota_exceeded")) {
+	if status, data, _ := request("POST", "/v1/albums/uploads", uploadRequest, session.Token, config.APIHost, ""); status != 403 || !bytes.Contains(data, []byte("cloud_subscription_required")) {
 		t.Fatal("zero-quota account could upload", status)
+	}
+	if status, _, _ := request("GET", "/v1/albums/subscription", nil, "", config.APIHost, ""); status != 401 {
+		t.Fatal("capacity metadata lacked authentication")
+	}
+	if status, data, _ := request("GET", "/v1/albums/subscription", nil, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"purchasesEnabled":true`)) || !bytes.Contains(data, []byte(`"quotaBytes":0`)) {
+		t.Fatal("new account subscription state", status)
+	}
+	disabledConfig := config
+	disabledConfig.Subscriptions = nil
+	disabledGateway, err := NewGateway(ctx, disabledConfig, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer disabledGateway.Close()
+	for _, method := range []string{"GET", "POST"} {
+		path := "/v1/albums/subscription"
+		if method == "POST" {
+			path += "/transactions"
+		}
+		r := httptest.NewRequest(method, "https://"+config.APIHost+path, strings.NewReader(`{"signedTransaction":"unused"}`))
+		if method == "GET" {
+			r.Body = http.NoBody
+			r.ContentLength = 0
+		}
+		r.Header.Set("Authorization", "Bearer "+session.Token)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		disabledGateway.ServeHTTP(w, r)
+		if method == "GET" && (w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"purchasesEnabled":false`))) {
+			t.Fatal("disabled purchases were advertised", w.Code)
+		}
+		if method == "POST" && (w.Code != 503 || subscriptionCalls.Load() != 0) {
+			t.Fatal("disabled billing reached Apple", w.Code)
+		}
+	}
+	if status, _, _ := request("POST", "/v1/albums/subscription/transactions", []byte(`{"signedTransaction":"x","quotaBytes":500000000000}`), session.Token, config.APIHost, ""); status != 400 || subscriptionCalls.Load() != 0 {
+		t.Fatal("client-selected capacity was accepted", status)
+	}
+	setSubscription := func(payload map[string]any, state int) {
+		response, _ := json.Marshal(map[string]any{"environment": "Sandbox", "bundleId": albumAppleAudience, "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": state, "signedTransactionInfo": receipt.sign(t, payload)}}}}})
+		currentSubscription.Store(string(response))
+	}
+	payload := receipt.payload(session.AccountID)
+	setSubscription(payload, 1)
+	wrong := receipt.payload(uuid.NewString())
+	signedBody, _ := json.Marshal(map[string]string{"signedTransaction": receipt.sign(t, wrong)})
+	if status, _, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 403 || subscriptionCalls.Load() != 0 {
+		t.Fatal("foreign signed appAccountToken was accepted", status)
+	}
+	signedBody, _ = json.Marshal(map[string]string{"signedTransaction": receipt.sign(t, payload)})
+	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"quotaBytes":50000000000`)) || subscriptionCalls.Load() != 1 {
+		t.Fatal("assembled subscription verification failed", status)
+	}
+	if status, _, _ := request("POST", "/v1/albums/uploads", uploadRequest, session.Token, config.APIHost, ""); status != 201 {
+		t.Fatal("verified paid account could not reserve", status)
+	}
+	// An old submitted active JWS must still resolve the current expired status.
+	payload["expiresDate"] = receipt.now.Add(-time.Hour).UnixMilli()
+	payload["purchaseDate"] = receipt.now.Add(-24 * time.Hour).UnixMilli()
+	payload["originalPurchaseDate"] = receipt.now.Add(-48 * time.Hour).UnixMilli()
+	payload["signedDate"] = receipt.now.Add(time.Second).UnixMilli()
+	setSubscription(payload, 2)
+	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"state":"expired"`)) || !bytes.Contains(data, []byte(`"quotaBytes":0`)) || !bytes.Contains(data, []byte(`"retentionDeadline":`)) {
+		t.Fatal("current expired Apple status was ignored", status)
+	}
+	manifest.SourceRevision = "new-revision-after-expiry"
+	uploadRequest, _ = json.Marshal(map[string]any{"requestID": uuid.NewString(), "manifest": manifest})
+	if status, _, _ := request("POST", "/v1/albums/uploads", uploadRequest, session.Token, config.APIHost, ""); status != 403 {
+		t.Fatal("expired account admitted a new upload")
 	}
 	restarted, err := NewGateway(ctx, config, transport)
 	if err != nil {

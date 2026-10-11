@@ -116,7 +116,7 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 		return PhotoWriteRecord{}, err
 	}
 	defer tx.Rollback()
-	if _, err = lockAccount(ctx, tx, expected.Spec.OwnerID); err != nil {
+	if _, err = r.lockAccount(ctx, tx, expected.Spec.OwnerID); err != nil {
 		return PhotoWriteRecord{}, err
 	}
 	old, err := scanPhotoWrite(tx.QueryRowContext(ctx, `SELECT `+photoWriteColumns+` FROM album_photo_writes WHERE owner_id=? AND version_id=? AND preset=? FOR UPDATE`, expected.Spec.OwnerID, expected.VersionID, expected.Spec.Preset))
