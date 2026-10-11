@@ -363,3 +363,5 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 相关 vet/build 退出码为 0；完整源码/结果摘要见 [albums-gateway-assembly-2026-10-11.json](evidence/albums-gateway-assembly-2026-10-11.json)。CI 增加相册 API/worker 两份容器以及隔离 Compose/Caddy 静态配置验证，生产部署条件未更改。本机未安装 Docker/Caddy，完整容器验证交给本提交 CI；不把 Compose 静态校验说成栈已部署。
 
 现网 `https://api.albums.tellyouwhat.cn/readyz` 本次 TLS 握手失败（curl 35），还不能配置成客户端真实 API。浏览器确认媒体默认/倍速转码两队列使用中，仅默认队列进入测试示例；处理、回收保持关闭。真实 COS/CI、Apple Sign in Key/App ID、测试权益、服务器/TLS、画质/费用、暂存与完整实况回收、原件安全释放和真机完整旅程继续验收。
+
+本次权限复核补充 `deploy/albums/cam-media-role.policy.json` 草案：腾讯官方异步媒体任务文档要求子账号具有 PassRole；控制台已核实 CI_QCSRole 的确切 ARN。该角色现有跨桶 COS 数据权限，所以直接 COS 的桶内限制不能代表 CI 间接访问也已隔离。第三份策略只传递这一个角色，不授予直接扮演或管理角色；需用户一并确认后才可绑定。处理开关保持关闭，使用合成媒体核实间接访问边界后再决定正式环境的隔离方式。没有修改现有服务角色、创建子用户或获取密钥。
