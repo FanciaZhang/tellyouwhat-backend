@@ -57,6 +57,16 @@ func TestMySQLAlbumSubscriptionsAdmissionDowngradeAndRetention(t *testing.T) {
 	// Already uploaded content can finish after expiry; only new writes stop.
 	objects.staging[stagingKey(u, "photo")] = []byte("original-resource-bytes")
 	now = decision.ExpiresAt.Add(-10 * time.Second)
+	a, err = r.CloudAccount(ctx, owner, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Current verified status refreshes the write authorization window; a
+	// one-hour-old cached entitlement alone is deliberately insufficient.
+	a, err = r.ApplySubscription(ctx, owner, a.Revision, decision, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	grants, err = s.Grants(ctx, owner, u.ID)
 	if err != nil || len(grants) != 1 || !grants[0].ExpiresAt.Equal(decision.ExpiresAt) {
 		t.Fatal("PUT outlived subscription", grants, err)

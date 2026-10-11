@@ -39,7 +39,10 @@ func (r *MySQLUploads) ProvisionAccount(ctx context.Context, owner string, quota
 	return err
 }
 
-type quotaBalance struct{ limit, used, reserved int64 }
+type quotaBalance struct {
+	limit, used, reserved int64
+	verifiedUntil         time.Time
+}
 
 func lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, error) {
 	var b quotaBalance
@@ -67,6 +70,9 @@ func (r *MySQLUploads) lockAccount(ctx context.Context, tx *sql.Tx, owner string
 		return b, err
 	}
 	b.limit = account.QuotaBytes
+	if account.VerificationExpiresAt != nil {
+		b.verifiedUntil = *account.VerificationExpiresAt
+	}
 	return b, nil
 }
 
@@ -141,6 +147,9 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 	reserve := u.OriginalBytes + u.DerivedBudget
 	if r.billingEnvironment != "" && account.limit == 0 {
 		return Upload{}, ErrSubscriptionRequired
+	}
+	if r.billingEnvironment != "" && !r.billingNow().Before(account.verifiedUntil) {
+		return Upload{}, ErrSubscriptionStale
 	}
 	if account.used > account.limit || account.reserved > account.limit-account.used || reserve > account.limit-account.used-account.reserved {
 		return Upload{}, ErrQuota

@@ -122,6 +122,9 @@ func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, no
 	if r.billingEnvironment != "" && account.limit == 0 {
 		return LivePairUpload{}, ErrSubscriptionRequired
 	}
+	if r.billingEnvironment != "" && !r.billingNow().Before(account.verifiedUntil) {
+		return LivePairUpload{}, ErrSubscriptionStale
+	}
 	if account.limit < 0 || account.used < 0 || account.reserved < 0 || account.used > account.limit || account.reserved > account.limit-account.used || size > account.limit-account.used-account.reserved {
 		return LivePairUpload{}, ErrQuota
 	}

@@ -1,0 +1,63 @@
+package albums
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+func (s *AlbumSubscriptionService) refreshOne(ctx context.Context, repository *MySQLUploads) (bool, error) {
+	if s == nil || s.resolver == nil || repository == nil || repository.billingEnvironment != s.resolver.environment {
+		return false, ErrSubscriptionUnavailable
+	}
+	claim, found, err := repository.claimSubscriptionRefresh(ctx, s.now().UTC())
+	if err != nil || !found {
+		return false, err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	v, err := s.resolver.resolveCurrent(requestCtx, claim.Owner, claim.Original, claim.Transaction)
+	if err == nil {
+		err = repository.finishSubscriptionRefresh(requestCtx, claim, v, s.now().UTC())
+	}
+	if err != nil {
+		// Failures change only retry metadata. They never renew freshness, infer
+		// expiry from an empty API response, or delete the user's cloud contents.
+		if errors.Is(err, ErrLease) {
+			return true, nil
+		}
+		if retryErr := repository.retrySubscriptionRefresh(ctx, claim, s.now().UTC()); retryErr != nil && !errors.Is(retryErr, ErrLease) {
+			return true, retryErr
+		}
+	}
+	return true, err
+}
+
+func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, repository *MySQLUploads) {
+	if service == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	g.subscriptionCancel = cancel
+	// Bounded concurrency. Database leases fence multiple API instances and
+	// restart recovery; only this API holds the App Store private key.
+	for range 4 {
+		g.subscriptionWorkers.Add(1)
+		go func() {
+			defer g.subscriptionWorkers.Done()
+			for ctx.Err() == nil {
+				found, err := service.refreshOne(ctx, repository)
+				if found && err == nil {
+					continue
+				}
+				timer := time.NewTimer(5 * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
+}

@@ -17,12 +17,14 @@ import (
 // executable; controlled tests can exercise the real assembly without keys or
 // requests reaching Apple/COS. Provider hosts remain fixed in their adapters.
 type Gateway struct {
-	db       *sql.DB
-	redis    *redis.Client
-	router   http.Handler
-	host     string
-	draining atomic.Bool
-	closed   sync.Once
+	db                  *sql.DB
+	redis               *redis.Client
+	router              http.Handler
+	host                string
+	draining            atomic.Bool
+	closed              sync.Once
+	subscriptionCancel  context.CancelFunc
+	subscriptionWorkers sync.WaitGroup
 }
 
 func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundTripper) (_ *Gateway, err error) {
@@ -85,6 +87,10 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album login rate limit configuration")
 	}
+	notificationLimiter, err := NewRedisLoginLimiter(g.redis, config.LoginLimitKey, 1000, time.Minute)
+	if err != nil {
+		return nil, errors.New("album notification rate limit configuration")
+	}
 	repository := NewMySQLUploads(db).WithSubscriptionEnvironment(albumStoreEnvironment(config.Environment))
 	subscriptions, err := newConfiguredAlbumSubscriptions(repository, config.Subscriptions, transport)
 	if err != nil {
@@ -100,11 +106,13 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	}
 	g.router, err = NewHTTPRouterWithLogin(config.APIHost, sessions, uploads, LoginHTTPOptions{
 		Service: login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
-		Subscriptions: subscriptions,
+		Subscriptions:       subscriptions,
+		NotificationLimiter: notificationLimiter,
 	})
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")
 	}
+	g.startSubscriptionRefresh(subscriptions, repository)
 	return g, nil
 }
 
@@ -189,9 +197,14 @@ func writeGatewayStatus(w http.ResponseWriter, status int, code string) {
 	_, _ = w.Write([]byte(`{"code":"` + code + `"}`))
 }
 
-func (g *Gateway) BeginDrain() { g.draining.Store(true) }
+func (g *Gateway) BeginDrain() {
+	g.draining.Store(true)
+	if g.subscriptionCancel != nil {
+		g.subscriptionCancel()
+	}
+}
 
 func (g *Gateway) Close() {
 	g.BeginDrain()
-	g.closed.Do(func() { _ = g.redis.Close(); _ = g.db.Close() })
+	g.closed.Do(func() { g.subscriptionWorkers.Wait(); _ = g.redis.Close(); _ = g.db.Close() })
 }

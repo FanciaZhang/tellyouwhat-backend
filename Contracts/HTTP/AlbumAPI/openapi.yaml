@@ -72,6 +72,23 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AlbumCloudAccount'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/subscription/notifications:
+    post:
+      operationId: receiveAlbumSubscriptionNotification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [signedPayload]
+              properties:
+                signedPayload: {type: string, minLength: 1, maxLength: 1048576}
+      responses:
+        '200': {description: 'Verified notification and current entitlement update committed, or verified identical event already processed'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/subscription/transactions:
     post:
       operationId: syncAlbumSubscription
@@ -410,6 +427,8 @@ components:
         expiresAt: {type: string, format: date-time}
         retentionDeadline: {type: string, format: date-time}
         purchasesEnabled: {type: boolean}
+        verificationExpiresAt: {type: string, format: date-time}
+        verificationPending: {type: boolean}
     LoginChallenge:
       type: object
       additionalProperties: false

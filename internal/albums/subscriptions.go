@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	Cloud50GBAnnualProduct  = "albums.cloud.50gb.annual"
-	Cloud500GBAnnualProduct = "albums.cloud.500gb.annual"
+	Cloud50GBAnnualProduct           = "albums.cloud.50gb.annual"
+	Cloud500GBAnnualProduct          = "albums.cloud.500gb.annual"
+	albumSubscriptionFreshness       = 15 * time.Minute
+	albumSubscriptionRefreshInterval = 5 * time.Minute
 )
 
 var (
@@ -21,6 +23,7 @@ var (
 	ErrSubscriptionUnavailable  = errors.New("album subscription verification unavailable")
 	ErrSubscriptionBinding      = errors.New("album subscription account binding mismatch")
 	ErrSubscriptionConflict     = errors.New("album subscription changed during verification")
+	ErrSubscriptionStale        = errors.New("album subscription status needs revalidation")
 )
 
 func subscriptionCapacity(product string) int64 {
@@ -104,7 +107,16 @@ func (r *AlbumSubscriptionResolver) Resolve(ctx context.Context, owner, signed s
 	if !transactionBelongsToAccount(submitted, owner, r.environment) {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionBinding
 	}
-	statuses, err := r.client.AllSubscriptionStatuses(ctx, submitted.TransactionID)
+	return r.resolveCurrent(ctx, owner, submitted.OriginalTransactionID, submitted.TransactionID)
+}
+
+// Only server-owned anchors or a separately verified incoming JWS reach this
+// method. An HTTP caller cannot choose the owner or original subscription chain.
+func (r *AlbumSubscriptionResolver) resolveCurrent(ctx context.Context, owner, originalID, transactionID string) (VerifiedAlbumSubscription, error) {
+	if r == nil || !validOwner(owner) || originalID == "" || len(originalID) > 128 || transactionID == "" || len(transactionID) > 128 {
+		return VerifiedAlbumSubscription{}, ErrSubscriptionVerification
+	}
+	statuses, err := r.client.AllSubscriptionStatuses(ctx, transactionID)
 	if err != nil {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionUnavailable
 	}
@@ -115,7 +127,7 @@ func (r *AlbumSubscriptionResolver) Resolve(ctx context.Context, owner, signed s
 		if err != nil {
 			return VerifiedAlbumSubscription{}, ErrSubscriptionVerification
 		}
-		if t.OriginalTransactionID != submitted.OriginalTransactionID {
+		if t.OriginalTransactionID != originalID {
 			continue
 		}
 		if !transactionBelongsToAccount(t, owner, r.environment) {
@@ -188,17 +200,19 @@ func albumRetentionDeadline(expiry time.Time) time.Time {
 }
 
 type AlbumCloudAccount struct {
-	AccountID         string     `json:"accountID"`
-	State             string     `json:"state"`
-	ProductID         string     `json:"productID,omitempty"`
-	QuotaBytes        int64      `json:"quotaBytes"`
-	UsedBytes         int64      `json:"usedBytes"`
-	ReservedBytes     int64      `json:"reservedBytes"`
-	AvailableBytes    int64      `json:"availableBytes"`
-	Revision          int64      `json:"revision"`
-	ExpiresAt         *time.Time `json:"expiresAt,omitempty"`
-	RetentionDeadline *time.Time `json:"retentionDeadline,omitempty"`
-	PurchasesEnabled  bool       `json:"purchasesEnabled"`
+	AccountID             string     `json:"accountID"`
+	State                 string     `json:"state"`
+	ProductID             string     `json:"productID,omitempty"`
+	QuotaBytes            int64      `json:"quotaBytes"`
+	UsedBytes             int64      `json:"usedBytes"`
+	ReservedBytes         int64      `json:"reservedBytes"`
+	AvailableBytes        int64      `json:"availableBytes"`
+	Revision              int64      `json:"revision"`
+	ExpiresAt             *time.Time `json:"expiresAt,omitempty"`
+	RetentionDeadline     *time.Time `json:"retentionDeadline,omitempty"`
+	PurchasesEnabled      bool       `json:"purchasesEnabled"`
+	VerificationExpiresAt *time.Time `json:"verificationExpiresAt,omitempty"`
+	VerificationPending   bool       `json:"verificationPending"`
 }
 
 type AlbumSubscriptionRepository interface {

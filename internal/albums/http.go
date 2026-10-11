@@ -43,7 +43,7 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 			c.AbortWithStatusJSON(http.StatusMisdirectedRequest, gin.H{"code": "unknown_app_host"})
 			return
 		}
-		if login != nil && c.Request.Method == http.MethodPost && (c.Request.URL.Path == "/v1/albums/auth/challenges" || c.Request.URL.Path == "/v1/albums/auth/apple") {
+		if login != nil && c.Request.Method == http.MethodPost && (c.Request.URL.Path == "/v1/albums/auth/challenges" || c.Request.URL.Path == "/v1/albums/auth/apple" || c.Request.URL.Path == "/v1/albums/subscription/notifications") {
 			c.Next()
 			return
 		}
@@ -158,6 +158,9 @@ func writeAlbumError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrSubscriptionRequired):
 		status, code = http.StatusForbidden, "cloud_subscription_required"
+	case errors.Is(err, ErrSubscriptionStale):
+		status, code = http.StatusServiceUnavailable, "cloud_subscription_refresh_pending"
+		c.Header("Retry-After", "30")
 	case errors.Is(err, ErrMultipartPending):
 		status, code = http.StatusServiceUnavailable, "multipart_pending"
 		c.Header("Retry-After", "30")

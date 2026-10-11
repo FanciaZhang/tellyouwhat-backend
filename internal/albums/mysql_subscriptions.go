@@ -11,14 +11,14 @@ type cloudSubscriptionRow struct {
 	Owner, Original, Transaction, Product, Environment string
 	Quota                                              int64
 	Active                                             bool
-	Expiry, SignedAt                                   time.Time
+	Expiry, SignedAt, VerifiedAt                       time.Time
 }
 
-const cloudSubscriptionColumns = `owner_id,original_transaction_id,transaction_id,product_id,environment,quota_bytes,active,expires_at,signed_at`
+const cloudSubscriptionColumns = `owner_id,original_transaction_id,transaction_id,product_id,environment,quota_bytes,active,expires_at,signed_at,verified_at`
 
 func scanCloudSubscription(row rowScanner) (cloudSubscriptionRow, error) {
 	var s cloudSubscriptionRow
-	err := row.Scan(&s.Owner, &s.Original, &s.Transaction, &s.Product, &s.Environment, &s.Quota, &s.Active, &s.Expiry, &s.SignedAt)
+	err := row.Scan(&s.Owner, &s.Original, &s.Transaction, &s.Product, &s.Environment, &s.Quota, &s.Active, &s.Expiry, &s.SignedAt, &s.VerifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -26,7 +26,7 @@ func scanCloudSubscription(row rowScanner) (cloudSubscriptionRow, error) {
 		return s, err
 	}
 	if !validOwner(s.Owner) || s.Original == "" || s.Transaction == "" || subscriptionCapacity(s.Product) != s.Quota ||
-		(s.Environment != "Sandbox" && s.Environment != "Production") || s.Expiry.IsZero() || s.SignedAt.IsZero() {
+		(s.Environment != "Sandbox" && s.Environment != "Production") || s.Expiry.IsZero() || s.SignedAt.IsZero() || s.VerifiedAt.IsZero() {
 		return s, ErrSubscriptionVerification
 	}
 	return s, nil
@@ -56,7 +56,7 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 		return result, err
 	}
 	defer rows.Close()
-	var lastExpiry, activeExpiry time.Time
+	var lastExpiry, activeExpiry, freshExpiry time.Time
 	for rows.Next() {
 		s, err := scanCloudSubscription(rows)
 		if err != nil {
@@ -70,8 +70,15 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 		}
 		if s.Quota > result.QuotaBytes {
 			result.QuotaBytes, result.ProductID, activeExpiry = s.Quota, s.Product, s.Expiry.UTC()
-		} else if s.Quota == result.QuotaBytes && s.Expiry.After(activeExpiry) {
-			activeExpiry = s.Expiry.UTC()
+			freshExpiry = minTime(s.Expiry.UTC(), s.VerifiedAt.UTC().Add(albumSubscriptionFreshness))
+		} else if s.Quota == result.QuotaBytes {
+			if s.Expiry.After(activeExpiry) {
+				activeExpiry = s.Expiry.UTC()
+			}
+			fresh := minTime(s.Expiry.UTC(), s.VerifiedAt.UTC().Add(albumSubscriptionFreshness))
+			if fresh.After(freshExpiry) {
+				freshExpiry = fresh
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -88,6 +95,10 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 	}
 	if result.QuotaBytes > 0 {
 		result.State, result.ExpiresAt = "active", &activeExpiry
+		if r.billingEnvironment != "" {
+			result.VerificationExpiresAt = &freshExpiry
+			result.VerificationPending = !now.Before(freshExpiry)
+		}
 	} else if r.billingEnvironment == "" && lastExpiry.IsZero() {
 		// Non-gateway repository users explicitly provision protocol-test accounts.
 		result.QuotaBytes = rawLimit
@@ -136,10 +147,26 @@ func (r *MySQLUploads) CloudMediaGrantDeadline(ctx context.Context, owner string
 	if account.UsedBytes > account.QuotaBytes || account.ReservedBytes > account.QuotaBytes-account.UsedBytes {
 		return time.Time{}, ErrQuota
 	}
-	return *account.ExpiresAt, nil
+	if account.VerificationPending || account.VerificationExpiresAt == nil {
+		return time.Time{}, ErrSubscriptionStale
+	}
+	return minTime(*account.ExpiresAt, *account.VerificationExpiresAt), nil
 }
 
 func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revision int64, v VerifiedAlbumSubscription, now time.Time) (AlbumCloudAccount, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AlbumCloudAccount{}, err
+	}
+	defer tx.Rollback()
+	result, err := r.applySubscriptionInTransaction(ctx, tx, owner, revision, v, now)
+	if err != nil {
+		return result, err
+	}
+	return result, tx.Commit()
+}
+
+func (r *MySQLUploads) applySubscriptionInTransaction(ctx context.Context, tx *sql.Tx, owner string, revision int64, v VerifiedAlbumSubscription, now time.Time) (AlbumCloudAccount, error) {
 	v.ExpiresAt = v.ExpiresAt.UTC().Truncate(time.Microsecond)
 	v.SignedAt = v.SignedAt.UTC().Truncate(time.Microsecond)
 	if !validOwner(owner) || revision < 0 || now.IsZero() || v.OriginalTransactionID == "" || len(v.OriginalTransactionID) > 128 ||
@@ -148,11 +175,6 @@ func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revi
 		v.ExpiresAt.Year() < 2000 || v.ExpiresAt.Year() > 9998 || v.SignedAt.UnixMilli() <= 0 || v.SignedAt.After(now.Add(5*time.Minute)) {
 		return AlbumCloudAccount{}, ErrSubscriptionVerification
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return AlbumCloudAccount{}, err
-	}
-	defer tx.Rollback()
 	if _, err := r.lockAccount(ctx, tx, owner); err != nil {
 		return AlbumCloudAccount{}, err
 	}
@@ -172,7 +194,13 @@ func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revi
 		if old.Owner != owner {
 			return AlbumCloudAccount{}, ErrSubscriptionBinding
 		}
-		if old.SignedAt.After(v.SignedAt) || (old.SignedAt.Equal(v.SignedAt) && (old.Transaction != v.TransactionID || old.Product != v.ProductID || !old.Expiry.Equal(v.ExpiresAt) || old.Active != v.Active)) {
+		// The same signed transaction can move from active to expired solely
+		// because its verified expiry has passed. This does not permit an equal
+		// or older proof to change the transaction, capacity or expiry, nor to
+		// reactivate a previously inactive chain.
+		sameTerms := old.Transaction == v.TransactionID && old.Product == v.ProductID && old.Expiry.Equal(v.ExpiresAt)
+		clockExpiry := sameTerms && old.Active && !v.Active && !now.Before(v.ExpiresAt)
+		if old.SignedAt.After(v.SignedAt) || (old.SignedAt.Equal(v.SignedAt) && (!sameTerms || (old.Active != v.Active && !clockExpiry))) {
 			return AlbumCloudAccount{}, ErrSubscriptionConflict
 		}
 	}
@@ -180,6 +208,13 @@ func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revi
 		VALUES (?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE transaction_id=VALUES(transaction_id),product_id=VALUES(product_id),quota_bytes=VALUES(quota_bytes),active=VALUES(active),expires_at=VALUES(expires_at),signed_at=VALUES(signed_at),verified_at=VALUES(verified_at)`,
 		v.Environment, v.OriginalTransactionID, owner, v.TransactionID, v.ProductID, subscriptionCapacity(v.ProductID), v.Active, v.ExpiresAt.UTC(), v.SignedAt.UTC(), now.UTC())
 	if err != nil {
+		return AlbumCloudAccount{}, err
+	}
+	interval := albumSubscriptionRefreshInterval
+	if !v.Active {
+		interval = 24 * time.Hour
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE album_cloud_subscriptions SET next_check_at=?,refresh_token=NULL,refresh_until=NULL,refresh_failures=0 WHERE environment=? AND original_transaction_id=? AND owner_id=?`, now.UTC().Add(interval), v.Environment, v.OriginalTransactionID, owner); err != nil {
 		return AlbumCloudAccount{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE album_storage_accounts SET subscription_revision=subscription_revision+1 WHERE owner_id=?`, owner); err != nil {
@@ -192,11 +227,11 @@ func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revi
 	if _, err := tx.ExecContext(ctx, `UPDATE album_storage_accounts SET quota_bytes=? WHERE owner_id=?`, result.QuotaBytes, owner); err != nil {
 		return result, err
 	}
-	return result, tx.Commit()
+	return result, nil
 }
 
 func (r *MySQLUploads) CheckSubscriptionSchema(ctx context.Context) error {
-	for _, query := range []string{`SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + ` FROM album_cloud_subscriptions LIMIT 0`} {
+	for _, query := range []string{`SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + `,next_check_at,refresh_token,refresh_until,refresh_failures FROM album_cloud_subscriptions LIMIT 0`, `SELECT environment,notification_id,payload_digest,owner_id,original_transaction_id,signed_at,processed_at FROM album_subscription_notifications LIMIT 0`} {
 		rows, err := r.db.QueryContext(ctx, query)
 		if err != nil {
 			return err
