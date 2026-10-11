@@ -32,6 +32,8 @@ func videoJournalUpload(t *testing.T, db *sql.DB) (Upload, VideoJob) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		db.Exec(`DELETE FROM album_derived_cleanups WHERE owner_id=?`, owner)
+		db.Exec(`DELETE FROM album_derived_finalizations WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_video_jobs WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
 		db.Exec(`DELETE FROM album_uploads WHERE owner_id=?`, owner)

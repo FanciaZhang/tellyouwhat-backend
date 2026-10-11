@@ -22,7 +22,7 @@ func TestAlbumWorkerConfigurationNeedsNoAISettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.PhotoProcessing || config.VideoProcessing || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
+	if config.PhotoProcessing || config.VideoProcessing || config.DerivedCleanup || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
 		t.Fatal("invalid worker settings")
 	}
 }
@@ -54,6 +54,7 @@ func TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets(t *test
 		{"ALBUM_MAX_ORIGINAL_BYTES", "9223372036854775807"},
 		{"ALBUM_MAX_DERIVED_BYTES", "0"},
 		{"ALBUM_PHOTO_PROCESSING_ENABLED", "yes"},
+		{"ALBUM_DERIVED_CLEANUP_ENABLED", "yes"},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			values := workerEnvironment()
@@ -77,5 +78,20 @@ func TestPhotoProcessingExplicitEnable(t *testing.T) {
 	config, err := LoadWorkerConfig(func(key string) string { return values[key] })
 	if err != nil || !config.PhotoProcessing {
 		t.Fatal("photo processing not enabled", err)
+	}
+}
+
+func TestDerivedCleanupRequiresExplicitEnable(t *testing.T) {
+	values := workerEnvironment()
+	values["ALBUM_DERIVED_CLEANUP_ENABLED"] = "true"
+	config, err := LoadWorkerConfig(func(key string) string { return values[key] })
+	if err != nil || !config.DerivedCleanup || config.PhotoProcessing || config.VideoProcessing {
+		t.Fatal("cleanup must be independently enabled", err)
+	}
+	for _, value := range []string{"1", "True", "yes"} {
+		values["ALBUM_DERIVED_CLEANUP_ENABLED"] = value
+		if _, err := LoadWorkerConfig(func(key string) string { return values[key] }); err == nil {
+			t.Fatal("invalid cleanup toggle accepted")
+		}
 	}
 }

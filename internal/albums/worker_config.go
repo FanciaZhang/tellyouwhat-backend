@@ -18,6 +18,7 @@ type WorkerConfig struct {
 	PollInterval    time.Duration
 	PhotoProcessing bool
 	VideoProcessing bool
+	DerivedCleanup  bool
 	VideoQueueID    string
 }
 
@@ -82,6 +83,13 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 		}
 	default:
 		return WorkerConfig{}, errors.New("invalid ALBUM_VIDEO_PROCESSING_ENABLED")
+	}
+	switch strings.TrimSpace(getenv("ALBUM_DERIVED_CLEANUP_ENABLED")) {
+	case "", "false":
+	case "true":
+		c.DerivedCleanup = true
+	default:
+		return WorkerConfig{}, errors.New("invalid ALBUM_DERIVED_CLEANUP_ENABLED")
 	}
 	c.Policy.UploadTTL = 24 * time.Hour
 	c.Policy.VerificationLease = 30 * time.Minute

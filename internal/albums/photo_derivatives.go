@@ -58,6 +58,9 @@ func (s *UploadService) GeneratePhotoDerivative(ctx context.Context, owner, vers
 	if _, err := record.Spec.key(); err != nil {
 		return PhotoWriteRecord{}, err
 	}
+	if !record.RetirementStartedAt.IsZero() || !record.RetiredAt.IsZero() {
+		return PhotoWriteRecord{}, ErrDerivedRetired
+	}
 	if record.ObjectVersion != "" {
 		if _, err := record.Receipt(); err != nil {
 			return PhotoWriteRecord{}, err

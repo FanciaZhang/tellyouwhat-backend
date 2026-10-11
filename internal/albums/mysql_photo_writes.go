@@ -11,26 +11,28 @@ import (
 // An empty ObjectVersion means the attempt is consumed, with no verified receipt.
 // It never authorizes another PUT, including after a process restart.
 type PhotoWriteRecord struct {
-	VersionID      string
-	ManifestDigest string
-	Spec           PhotoWriteSpec
-	ObjectVersion  string
+	VersionID                      string
+	ManifestDigest                 string
+	Spec                           PhotoWriteSpec
+	ObjectVersion                  string
+	RetirementStartedAt, RetiredAt time.Time
 }
 
 func (r PhotoWriteRecord) Receipt() (SealedObject, error) {
 	key, err := r.Spec.key()
-	if err != nil || !concreteCOSVersion(r.ObjectVersion) {
+	if err != nil || !concreteCOSVersion(r.ObjectVersion) || !r.RetirementStartedAt.IsZero() || !r.RetiredAt.IsZero() {
 		return SealedObject{}, ErrPhotoWriteUncertain
 	}
 	return SealedObject{ResourceID: string(r.Spec.Preset), Key: key, VersionID: r.ObjectVersion, SizeBytes: r.Spec.SizeBytes, SHA256: r.Spec.SHA256}, nil
 }
 
-const photoWriteColumns = `version_id,manifest_digest,owner_id,attempt_id,preset,size_bytes,sha256,pixel_width,pixel_height,object_version`
+const photoWriteColumns = `version_id,manifest_digest,owner_id,attempt_id,preset,size_bytes,sha256,pixel_width,pixel_height,object_version,retirement_started_at,retired_at`
 
 func scanPhotoWrite(row rowScanner) (PhotoWriteRecord, error) {
 	var r PhotoWriteRecord
 	var version sql.NullString
-	err := row.Scan(&r.VersionID, &r.ManifestDigest, &r.Spec.OwnerID, &r.Spec.AttemptID, &r.Spec.Preset, &r.Spec.SizeBytes, &r.Spec.SHA256, &r.Spec.Width, &r.Spec.Height, &version)
+	var retiring, retired sql.NullTime
+	err := row.Scan(&r.VersionID, &r.ManifestDigest, &r.Spec.OwnerID, &r.Spec.AttemptID, &r.Spec.Preset, &r.Spec.SizeBytes, &r.Spec.SHA256, &r.Spec.Width, &r.Spec.Height, &version, &retiring, &retired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -38,8 +40,10 @@ func scanPhotoWrite(row rowScanner) (PhotoWriteRecord, error) {
 		return r, err
 	}
 	r.ObjectVersion = version.String
+	r.RetirementStartedAt, r.RetiredAt = retiring.Time, retired.Time
 	digest, err := hex.DecodeString(r.ManifestDigest)
-	if _, specErr := r.Spec.key(); specErr != nil || !validOwner(r.VersionID) || err != nil || len(digest) != 32 || (version.Valid && !concreteCOSVersion(version.String)) {
+	if _, specErr := r.Spec.key(); specErr != nil || !validOwner(r.VersionID) || err != nil || len(digest) != 32 || (version.Valid && !concreteCOSVersion(version.String)) ||
+		(retired.Valid && !retiring.Valid) || (version.Valid && retiring.Valid) {
 		return PhotoWriteRecord{}, ErrConflict
 	}
 	return r, nil
@@ -75,6 +79,9 @@ func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest st
 		if !errors.Is(err, ErrNotFound) {
 			return u, err
 		}
+		if err := derivedBudgetOpen(ctx, tx, spec.OwnerID, versionID); err != nil {
+			return u, err
+		}
 		var allocated int64
 		if err := tx.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(size_bytes),0) FROM album_photo_writes WHERE owner_id=? AND version_id=?)+(SELECT COALESCE(SUM(reserve_size),0) FROM album_video_jobs WHERE owner_id=? AND version_id=?)`, spec.OwnerID, versionID, spec.OwnerID, versionID).Scan(&allocated); err != nil {
 			return u, err
@@ -98,7 +105,7 @@ func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest st
 
 // CompletePhotoWrite atomically publishes the receipt and transfers its actual
 // bytes from the upload's existing reserved budget into account used bytes.
-// Unused reserve remains reserved until a separate finalization policy exists.
+// Closed budgets also settle this attempt's escrow in the same transaction.
 func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWriteRecord, receipt SealedObject, now time.Time) (PhotoWriteRecord, error) {
 	key, err := expected.Spec.key()
 	if err != nil || !validOwner(expected.VersionID) || receipt.Key != key || receipt.ResourceID != string(expected.Spec.Preset) || receipt.SizeBytes != expected.Spec.SizeBytes || receipt.SHA256 != expected.Spec.SHA256 || !concreteCOSVersion(receipt.VersionID) {
@@ -119,6 +126,9 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 	if old.Spec != expected.Spec || old.ManifestDigest != expected.ManifestDigest {
 		return PhotoWriteRecord{}, ErrConflict
 	}
+	if !old.RetirementStartedAt.IsZero() || !old.RetiredAt.IsZero() {
+		return PhotoWriteRecord{}, ErrDerivedRetired
+	}
 	if old.ObjectVersion != "" {
 		if old.ObjectVersion != receipt.VersionID {
 			return PhotoWriteRecord{}, ErrConflict
@@ -135,6 +145,10 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 	}
 	if count != 1 {
 		return PhotoWriteRecord{}, ErrQuota
+	}
+	if err := settleClosedDerivedWrite(ctx, tx, old.Spec.OwnerID, old.VersionID, old.ManifestDigest, "photo", old.Spec.AttemptID,
+		old.Spec.SizeBytes, old.Spec.SizeBytes, receipt.VersionID, now); err != nil {
+		return PhotoWriteRecord{}, err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE album_photo_writes SET object_version=?,updated_at=? WHERE attempt_id=?`, receipt.VersionID, now, old.Spec.AttemptID)
 	if err != nil {

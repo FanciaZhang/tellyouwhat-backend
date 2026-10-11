@@ -1,6 +1,9 @@
 package albums
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type PhotoCandidateRenderer interface {
 	RenderPhotoCandidate(context.Context, SealedObject, PhotoPreset) (PhotoCandidate, error)
@@ -24,6 +27,17 @@ func (s *UploadService) PhotoCandidate(ctx context.Context, owner, versionID str
 	}
 	if version.Manifest.Kind != Photo && version.Manifest.Kind != LivePhoto {
 		return PhotoCandidate{}, ErrPhotoCandidate
+	}
+	if budget, ok := s.repository.(interface {
+		DerivedFinalization(context.Context, string, string) (DerivedFinalization, error)
+	}); ok {
+		_, err := budget.DerivedFinalization(ctx, owner, versionID)
+		if err == nil {
+			return PhotoCandidate{}, ErrDerivedClosed
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return PhotoCandidate{}, err
+		}
 	}
 	role := OriginalPhoto
 	if version.Manifest.Edited {

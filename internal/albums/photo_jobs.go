@@ -45,20 +45,24 @@ func scanPhotoJob(row rowScanner) (PhotoJob, error) {
 // Called within original publication, including idempotent Complete replay.
 // These are still-image candidates; a Live Photo additionally needs its movie
 // and pairing. Non-JPEG uses PNG to avoid silently flattening transparency.
-func enqueuePhotoJobs(ctx context.Context, tx *sql.Tx, u Upload, now time.Time) error {
-	if u.Manifest.Kind != Photo && u.Manifest.Kind != LivePhoto {
-		return nil
-	}
+func photoJobPresets(manifest Manifest) []PhotoPreset {
 	role := OriginalPhoto
-	if u.Manifest.Edited {
+	if manifest.Edited {
 		role = CurrentPhoto
 	}
 	presets := []PhotoPreset{PhotoGridPNG, PhotoDailyPNG}
-	for _, r := range u.Manifest.Resources {
+	for _, r := range manifest.Resources {
 		if r.Role == role && r.Descriptor != nil && r.Descriptor.UniformTypeIdentifier == "public.jpeg" {
 			presets = []PhotoPreset{PhotoGridJPEG, PhotoDailyJPEG}
 		}
 	}
+	return presets
+}
+func enqueuePhotoJobs(ctx context.Context, tx *sql.Tx, u Upload, now time.Time) error {
+	if u.Manifest.Kind != Photo && u.Manifest.Kind != LivePhoto {
+		return nil
+	}
+	presets := photoJobPresets(u.Manifest)
 	for _, preset := range presets {
 		_, err := tx.ExecContext(ctx, `INSERT INTO album_photo_jobs(job_id,owner_id,version_id,preset,available_at,updated_at) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE job_id=job_id`, uuid.NewString(), u.OwnerID, u.ID, preset, now, now)
 		if err != nil {

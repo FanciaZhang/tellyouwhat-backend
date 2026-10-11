@@ -53,6 +53,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := repository.CheckVideoSchema(startup); err != nil {
 		return errors.New("album video processing schema")
 	}
+	if err := repository.CheckDerivedSchema(startup); err != nil {
+		return errors.New("album derived settlement schema")
+	}
 	objects, err := albums.NewCOSObjects(config.COS)
 	if err != nil {
 		return errors.New("object storage configuration")
@@ -76,21 +79,67 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err != nil {
 		return errors.New("reconciliation worker configuration")
 	}
+	finalizer, err := albums.NewDerivedFinalizationWorker(repository, config.BatchSize, time.Now)
+	if err != nil {
+		return errors.New("derived settlement worker configuration")
+	}
+	var cleanup *albums.DerivedCleanupWorker
+	if config.DerivedCleanup {
+		cleanup, err = albums.NewDerivedCleanupWorker(repository, objects, config.BatchSize, time.Now)
+		if err != nil {
+			return errors.New("derived cleanup worker configuration")
+		}
+	}
+	var videoWorker *albums.VideoWorker
+	if config.VideoProcessing {
+		videoWorker, err = albums.NewVideoWorker(repository, service, config.VideoQueueID, config.BatchSize)
+		if err != nil {
+			return errors.New("video worker configuration")
+		}
+	}
+	var photoWorker *albums.PhotoWorker
+	if config.PhotoProcessing {
+		photoWorker, err = albums.NewPhotoWorker(repository, service, config.BatchSize)
+		if err != nil {
+			return errors.New("photo worker configuration")
+		}
+	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	defer stopWorkers()
-	workerCount := 2
+	workerCount := 3
 	if config.PhotoProcessing {
 		workerCount++
 	}
 	if config.VideoProcessing {
 		workerCount++
 	}
+	if cleanup != nil {
+		workerCount++
+	}
 	finished := make(chan error, workerCount)
+	go func() {
+		finished <- finalizer.Run(runCtx, config.PollInterval, func(batch albums.DerivedFinalizationBatch, available bool) {
+			if !available {
+				logger.Error("album derived settlement queue unavailable")
+			}
+			if batch.Closed+batch.Failed > 0 {
+				logger.Info("album derived settlement batch", "closed", batch.Closed, "held", batch.Held, "deferred", batch.Deferred, "failed", batch.Failed, "released_bytes", batch.ReleasedBytes)
+			}
+		})
+	}()
+	if cleanup != nil {
+		go func() {
+			finished <- cleanup.Run(runCtx, config.PollInterval, func(batch albums.DerivedCleanupBatch, available bool) {
+				if !available {
+					logger.Error("album derived cleanup queue unavailable")
+				}
+				if batch.Recovered+batch.Retired+batch.Pruned+batch.Failed > 0 {
+					logger.Info("album derived cleanup batch", "recovered", batch.Recovered, "retired", batch.Retired, "pruned", batch.Pruned, "waiting", batch.Waiting, "failed", batch.Failed, "contended", batch.Contended)
+				}
+			})
+		}()
+	}
 	if config.VideoProcessing {
-		videoWorker, err := albums.NewVideoWorker(repository, service, config.VideoQueueID, config.BatchSize)
-		if err != nil {
-			return errors.New("video worker configuration")
-		}
 		go func() {
 			finished <- videoWorker.Run(runCtx, config.PollInterval, func(batch albums.VideoJobBatch, available bool) {
 				if !available {
@@ -103,10 +152,6 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 		}()
 	}
 	if config.PhotoProcessing {
-		photoWorker, err := albums.NewPhotoWorker(repository, service, config.BatchSize)
-		if err != nil {
-			return errors.New("photo worker configuration")
-		}
 		go func() {
 			finished <- photoWorker.Run(runCtx, config.PollInterval, func(batch albums.PhotoJobBatch, available bool) {
 				if !available {
@@ -128,7 +173,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			}
 		})
 	}()
-	logger.Info("album workers started", "photo_processing", config.PhotoProcessing, "video_processing", config.VideoProcessing)
+	logger.Info("album workers started", "photo_processing", config.PhotoProcessing, "video_processing", config.VideoProcessing, "derived_cleanup", config.DerivedCleanup)
 	available := true
 	go func() {
 		finished <- worker.Run(runCtx, func(batch albums.VerificationBatch, queueAvailable bool) {

@@ -20,9 +20,10 @@ type VideoJob struct {
 	ProviderJobID                          string
 	Spec                                   *VideoTranscodeSpec
 	Result                                 *VideoResult
+	RetirementStartedAt, RetiredAt         time.Time
 }
 
-const videoJobColumns = `job_id,owner_id,version_id,manifest_digest,preset,state,failures,lease_token,lease_until,deadline_at,submitted_at,provider_job_id,spec_json,result_json,reserve_size`
+const videoJobColumns = `job_id,owner_id,version_id,manifest_digest,preset,state,failures,lease_token,lease_until,deadline_at,submitted_at,provider_job_id,spec_json,result_json,reserve_size,retirement_started_at,retired_at`
 
 func scanVideoJob(row rowScanner) (VideoJob, error) {
 	var j VideoJob
@@ -30,7 +31,8 @@ func scanVideoJob(row rowScanner) (VideoJob, error) {
 	var lease, deadline, submitted sql.NullTime
 	var spec, result []byte
 	var reserve int64
-	err := row.Scan(&j.ID, &j.OwnerID, &j.VersionID, &j.ManifestDigest, &j.Preset, &j.State, &j.Failures, &token, &lease, &deadline, &submitted, &provider, &spec, &result, &reserve)
+	var retiring, retired sql.NullTime
+	err := row.Scan(&j.ID, &j.OwnerID, &j.VersionID, &j.ManifestDigest, &j.Preset, &j.State, &j.Failures, &token, &lease, &deadline, &submitted, &provider, &spec, &result, &reserve, &retiring, &retired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return j, ErrNotFound
 	}
@@ -38,6 +40,7 @@ func scanVideoJob(row rowScanner) (VideoJob, error) {
 		return j, err
 	}
 	j.LeaseToken, j.LeaseUntil, j.Deadline, j.SubmittedAt, j.ProviderJobID = token.String, lease.Time, deadline.Time, submitted.Time, provider.String
+	j.RetirementStartedAt, j.RetiredAt = retiring.Time, retired.Time
 	if _, err := j.outputKey(); err != nil || !validSHA256(j.ManifestDigest) || j.Failures < 0 || j.Failures > 8 || len(spec) > 16384 || len(result) > 8192 ||
 		(j.State != "queued" && j.State != "running" && j.State != "completed" && j.State != "attention") ||
 		(provider.Valid && !ciJobPattern.MatchString(provider.String)) || (j.State == "running" && (!validOwner(j.LeaseToken) || j.LeaseUntil.IsZero() || j.Deadline.IsZero())) {
@@ -57,6 +60,9 @@ func scanVideoJob(row rowScanner) (VideoJob, error) {
 			return VideoJob{}, ErrConflict
 		}
 	} else if j.State == "completed" {
+		return VideoJob{}, ErrConflict
+	}
+	if (retired.Valid && !retiring.Valid) || (retiring.Valid && (j.Spec == nil || j.Result != nil || j.State != "attention")) {
 		return VideoJob{}, ErrConflict
 	}
 	return j, nil
@@ -173,6 +179,9 @@ func (r *MySQLUploads) BeginVideoSubmission(ctx context.Context, expected VideoJ
 			}
 			return u, nil
 		}
+		if err := derivedBudgetOpen(ctx, tx, u.OwnerID, u.ID); err != nil {
+			return u, err
+		}
 		// Bind to the actual verified original, not a caller-supplied object path.
 		v, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, expected.OwnerID, expected.VersionID))
 		if err != nil {
@@ -250,6 +259,9 @@ func (r *MySQLUploads) CompleteVideoJob(ctx context.Context, expected VideoJob, 
 	if j.Spec == nil || *j.Spec != *expected.Spec || j.ProviderJobID != expected.ProviderJobID || j.ManifestDigest != expected.ManifestDigest {
 		return VideoJob{}, ErrConflict
 	}
+	if !j.RetirementStartedAt.IsZero() || !j.RetiredAt.IsZero() {
+		return VideoJob{}, ErrDerivedRetired
+	}
 	if j.Result != nil {
 		if *j.Result != result {
 			return VideoJob{}, ErrConflict
@@ -259,6 +271,16 @@ func (r *MySQLUploads) CompleteVideoJob(ctx context.Context, expected VideoJob, 
 	if !videoLease(j, expected, now) {
 		return VideoJob{}, ErrLease
 	}
+	j, err = publishVideoResult(ctx, tx, j, result, now)
+	if err != nil {
+		return VideoJob{}, err
+	}
+	return j, tx.Commit()
+}
+
+// Both an active processing lease and recovery under a closed-budget cleanup
+// lease use the same atomic publication and quota transfer.
+func publishVideoResult(ctx context.Context, tx *sql.Tx, j VideoJob, result VideoResult, now time.Time) (VideoJob, error) {
 	transfer, err := tx.ExecContext(ctx, `UPDATE album_storage_accounts SET used_bytes=used_bytes+?,reserved_bytes=reserved_bytes-? WHERE owner_id=? AND reserved_bytes>=?`, result.Object.SizeBytes, result.Object.SizeBytes, j.OwnerID, result.Object.SizeBytes)
 	if err != nil {
 		return VideoJob{}, err
@@ -266,6 +288,10 @@ func (r *MySQLUploads) CompleteVideoJob(ctx context.Context, expected VideoJob, 
 	count, err := transfer.RowsAffected()
 	if err != nil || count != 1 {
 		return VideoJob{}, ErrQuota
+	}
+	if err := settleClosedDerivedWrite(ctx, tx, j.OwnerID, j.VersionID, j.ManifestDigest, "video", j.ID,
+		j.Spec.MaxBytes, result.Object.SizeBytes, result.Object.VersionID, now); err != nil {
+		return VideoJob{}, err
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -276,7 +302,7 @@ func (r *MySQLUploads) CompleteVideoJob(ctx context.Context, expected VideoJob, 
 		return VideoJob{}, err
 	}
 	j.State, j.Result, j.LeaseToken, j.LeaseUntil = "completed", &result, "", time.Time{}
-	return j, tx.Commit()
+	return j, nil
 }
 
 // Successful asynchronous waiting does not spend the transient failure budget.
