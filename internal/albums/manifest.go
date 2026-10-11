@@ -120,12 +120,63 @@ func (m AssetMetadata) validate() error {
 }
 
 type Manifest struct {
-	AssetID        string         `json:"assetID"`
-	SourceRevision string         `json:"sourceRevision"`
-	Kind           AssetKind      `json:"kind"`
-	Edited         bool           `json:"edited"`
-	Resources      []Resource     `json:"resources"`
-	Metadata       *AssetMetadata `json:"metadata,omitempty"`
+	AssetID         string           `json:"assetID"`
+	SourceRevision  string           `json:"sourceRevision"`
+	Kind            AssetKind        `json:"kind"`
+	Edited          bool             `json:"edited"`
+	Resources       []Resource       `json:"resources"`
+	Metadata        *AssetMetadata   `json:"metadata,omitempty"`
+	LivePhotoTiming *LivePhotoTiming `json:"livePhotoTiming,omitempty"`
+}
+
+// Timing belongs to the current resource pair, not PHAsset.duration (which may
+// be zero for a Live Photo). It is digest-bound reconstruction metadata only.
+// Legacy backups without timing remain valid, but cannot produce a daily pair.
+type LivePhotoTiming struct {
+	PhotoResourceID       string `json:"photoResourceID"`
+	VideoResourceID       string `json:"videoResourceID"`
+	PhotoTimeMicroseconds int64  `json:"photoTimeMicroseconds"`
+	DurationMicroseconds  int64  `json:"durationMicroseconds"`
+}
+
+func (t LivePhotoTiming) valid() bool {
+	return t.DurationMicroseconds > 0 && t.DurationMicroseconds <= 3_600_000_000 &&
+		t.PhotoTimeMicroseconds >= 0 && t.PhotoTimeMicroseconds < t.DurationMicroseconds &&
+		resourceIDPattern.MatchString(t.PhotoResourceID) && resourceIDPattern.MatchString(t.VideoResourceID) && t.PhotoResourceID != t.VideoResourceID
+}
+func sameLiveTiming(a, b *LivePhotoTiming) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+func (m Manifest) validateLivePhotoTiming() error {
+	t := m.LivePhotoTiming
+	if t == nil {
+		return nil
+	}
+	if m.Kind != LivePhoto || m.Metadata == nil || m.Metadata.MediaSubtypes&8 == 0 ||
+		!t.valid() {
+		return ErrInvalidManifest
+	}
+	photoRole, videoRole, photoType, videoType := OriginalPhoto, PairedVideo, 1, 9
+	if m.Edited {
+		photoRole, videoRole, photoType, videoType = CurrentPhoto, CurrentVideo, 5, 10
+	}
+	photo, video := false, false
+	for _, r := range m.Resources {
+		if r.Descriptor == nil {
+			return ErrInvalidManifest
+		}
+		if r.ID == t.PhotoResourceID {
+			photo = r.Role == photoRole && r.Descriptor.PhotoKitType == photoType
+		}
+		if r.ID == t.VideoResourceID {
+			video = r.Role == videoRole && r.Descriptor.PhotoKitType == videoType
+		}
+	}
+	if !photo || !video {
+		return ErrInvalidManifest
+	}
+	return nil
 }
 
 var resourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)
@@ -193,7 +244,7 @@ func (m Manifest) Validate() error {
 	default:
 		return ErrInvalidManifest
 	}
-	return nil
+	return m.validateLivePhotoTiming()
 }
 
 // Digest binds a backup to all its resources and the exact source revision.

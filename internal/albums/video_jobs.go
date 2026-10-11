@@ -69,7 +69,7 @@ func scanVideoJob(row rowScanner) (VideoJob, error) {
 }
 
 func enqueueVideoJobs(ctx context.Context, tx *sql.Tx, u Upload, now time.Time) error {
-	if u.Manifest.Kind != Video {
+	if u.Manifest.Kind != Video && !livePhotoPreviewEligible(u.Manifest) {
 		return nil
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO album_video_jobs(job_id,owner_id,version_id,manifest_digest,preset,available_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE job_id=job_id`, uuid.NewString(), u.OwnerID, u.ID, u.Digest, VideoDaily1080, now, now, now)
@@ -174,7 +174,7 @@ func (r *MySQLUploads) BeginVideoSubmission(ctx context.Context, expected VideoJ
 			return u, ErrLease
 		}
 		if j.Spec != nil {
-			if *j.Spec != spec {
+			if !j.Spec.matches(spec) {
 				return u, ErrConflict
 			}
 			return u, nil
@@ -188,7 +188,7 @@ func (r *MySQLUploads) BeginVideoSubmission(ctx context.Context, expected VideoJ
 			return u, err
 		}
 		source, err := videoSource(v)
-		if err != nil || source != spec.Source {
+		if err != nil || source != spec.Source || !sameLiveTiming(spec.LivePhotoTiming, v.Manifest.LivePhotoTiming) {
 			return u, ErrIncompleteBackup
 		}
 		var allocated int64
@@ -256,7 +256,7 @@ func (r *MySQLUploads) CompleteVideoJob(ctx context.Context, expected VideoJob, 
 	if err != nil {
 		return VideoJob{}, err
 	}
-	if j.Spec == nil || *j.Spec != *expected.Spec || j.ProviderJobID != expected.ProviderJobID || j.ManifestDigest != expected.ManifestDigest {
+	if j.Spec == nil || !j.Spec.matches(*expected.Spec) || j.ProviderJobID != expected.ProviderJobID || j.ManifestDigest != expected.ManifestDigest {
 		return VideoJob{}, ErrConflict
 	}
 	if !j.RetirementStartedAt.IsZero() || !j.RetiredAt.IsZero() {
@@ -312,7 +312,7 @@ func (r *MySQLUploads) FinishVideoStep(ctx context.Context, j VideoJob, failed, 
 		return ErrInvalidManifest
 	}
 	state, failures, delay := "queued", j.Failures, time.Minute
-	if j.SubmittedAt.IsZero() || j.ProviderJobID == "" {
+	if !j.SubmittedAt.IsZero() && j.ProviderJobID == "" {
 		delay = 15 * time.Minute
 	}
 	if failed {

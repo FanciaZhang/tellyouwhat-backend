@@ -55,7 +55,7 @@ func (s *UploadService) VideoPreviewReadGrant(ctx context.Context, owner, versio
 	if j.State != "completed" || j.Result == nil {
 		return VideoPreviewReadGrant{}, ErrVideoNotReady
 	}
-	if j.validateResult(*j.Result) != nil || !ciJobPattern.MatchString(j.ProviderJobID) || j.SubmittedAt.IsZero() {
+	if j.validateResult(*j.Result) != nil || !sameLiveTiming(j.Spec.LivePhotoTiming, v.Manifest.LivePhotoTiming) || !livePhotoProfileMatches(v.Manifest, j.Result.Profile) || !ciJobPattern.MatchString(j.ProviderJobID) || j.SubmittedAt.IsZero() {
 		return VideoPreviewReadGrant{}, ErrConflict
 	}
 	if err := ctx.Err(); err != nil {

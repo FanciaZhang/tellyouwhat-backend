@@ -141,3 +141,23 @@ func (h *uploadHTTP) AuthorizeAlbumVideoPreviewRead(c *gin.Context, versionID uu
 	}
 	c.JSON(http.StatusOK, grant)
 }
+
+func (h *uploadHTTP) AuthorizeAlbumLivePhotoPreviewRead(c *gin.Context, versionID uuid.UUID) {
+	if !emptyAlbumBody(c) {
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		writeAlbumError(c, ErrInvalidManifest)
+		return
+	}
+	grant, err := h.service.LivePhotoPreviewReadGrant(c.Request.Context(), c.GetString("album.owner"), versionID.String())
+	if errors.Is(err, ErrLivePhotoNotReady) {
+		c.JSON(http.StatusConflict, gin.H{"code": "live_photo_preview_not_ready"})
+		return
+	}
+	if err != nil {
+		writeLibraryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, grant)
+}

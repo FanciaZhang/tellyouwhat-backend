@@ -46,6 +46,9 @@ func scanPhotoJob(row rowScanner) (PhotoJob, error) {
 // These are still-image candidates; a Live Photo additionally needs its movie
 // and pairing. Non-JPEG uses PNG to avoid silently flattening transparency.
 func photoJobPresets(manifest Manifest) []PhotoPreset {
+	if livePhotoPreviewEligible(manifest) {
+		return []PhotoPreset{PhotoGridJPEG, PhotoDailyJPEG}
+	}
 	role := OriginalPhoto
 	if manifest.Edited {
 		role = CurrentPhoto

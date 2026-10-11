@@ -52,15 +52,20 @@ func videoCanvas(p VideoProfile) (int, int) {
 }
 
 type VideoTranscodeSpec struct {
-	Source   SealedObject `json:"source"`
-	Profile  VideoProfile `json:"profile"`
-	MaxBytes int64        `json:"maxBytes"`
-	QueueID  string       `json:"queueID"`
+	Source          SealedObject     `json:"source"`
+	Profile         VideoProfile     `json:"profile"`
+	MaxBytes        int64            `json:"maxBytes"`
+	QueueID         string           `json:"queueID"`
+	LivePhotoTiming *LivePhotoTiming `json:"livePhotoTiming,omitempty"`
 }
 
 type VideoResult struct {
 	Object  SealedObject `json:"object"`
 	Profile VideoProfile `json:"profile"`
+}
+
+func (spec VideoTranscodeSpec) matches(other VideoTranscodeSpec) bool {
+	return spec.Source == other.Source && spec.Profile == other.Profile && spec.MaxBytes == other.MaxBytes && spec.QueueID == other.QueueID && sameLiveTiming(spec.LivePhotoTiming, other.LivePhotoTiming)
 }
 
 func (j VideoJob) outputKey() (string, error) {
@@ -83,6 +88,9 @@ func (j VideoJob) validateSpec(spec VideoTranscodeSpec) error {
 		spec.Source.Key != "albums/originals/"+j.OwnerID+"/"+j.VersionID+"/"+spec.Source.ResourceID {
 		return ErrInvalidManifest
 	}
+	if t := spec.LivePhotoTiming; t != nil && (!t.valid() || t.VideoResourceID != spec.Source.ResourceID || !liveTimingProfileMatches(t, spec.Profile)) {
+		return ErrInvalidManifest
+	}
 	return nil
 }
 
@@ -94,6 +102,9 @@ func (j VideoJob) validateResult(result VideoResult) error {
 		return ErrVideoProcessing
 	}
 	profile, source := result.Profile, j.Spec.Profile
+	if j.Spec.LivePhotoTiming != nil && !liveTimingProfileMatches(j.Spec.LivePhotoTiming, profile) {
+		return ErrVideoProcessing
+	}
 	if max(profile.Width, profile.Height) > 1920 || min(profile.Width, profile.Height) > 1080 ||
 		profile.Width > source.Width+2 || profile.Height > source.Height+2 ||
 		math.Abs(float64(profile.Width)/float64(profile.Height)-float64(source.Width)/float64(source.Height)) > .015*float64(source.Width)/float64(source.Height) ||
@@ -123,10 +134,14 @@ type VideoJobRepository interface {
 func videoSource(v AssetVersion) (SealedObject, error) {
 	// Special subtypes (HDR, slow motion, spatial, cinematic) and legacy metadata
 	// remain backup-only until their own media and system-import checks exist.
-	if v.Manifest.Kind != Video || v.Manifest.Metadata == nil || v.Manifest.Metadata.MediaSubtypes != 0 {
+	if v.Manifest.Metadata == nil || (v.Manifest.Kind != Video && !livePhotoPreviewEligible(v.Manifest)) ||
+		(v.Manifest.Kind == Video && v.Manifest.Metadata.MediaSubtypes != 0) {
 		return SealedObject{}, ErrVideoUnsupported
 	}
 	role := OriginalVideo
+	if v.Manifest.Kind == LivePhoto {
+		role = PairedVideo
+	}
 	if v.Manifest.Edited {
 		role = CurrentVideo
 	}
@@ -141,6 +156,73 @@ func videoSource(v AssetVersion) (SealedObject, error) {
 		}
 	}
 	return SealedObject{}, ErrVideoUnsupported
+}
+
+func livePhotoPreviewEligible(m Manifest) bool {
+	return m.Kind == LivePhoto && m.LivePhotoTiming != nil && m.Metadata != nil &&
+		m.Metadata.MediaSubtypes == 8 && m.Validate() == nil
+}
+
+func livePhotoProfileMatches(m Manifest, p VideoProfile) bool {
+	if m.Kind != LivePhoto {
+		return true
+	}
+	if !livePhotoPreviewEligible(m) || !p.valid() {
+		return false
+	}
+	return liveTimingProfileMatches(m.LivePhotoTiming, p)
+}
+func liveTimingProfileMatches(t *LivePhotoTiming, p VideoProfile) bool {
+	if t == nil || !t.valid() || !p.valid() {
+		return false
+	}
+	return t.PhotoTimeMicroseconds < p.DurationMilliseconds*1000 &&
+		math.Abs(float64(t.DurationMicroseconds)/1000-float64(p.DurationMilliseconds)) <= max(150, 2000/p.FrameRate)
+}
+
+// Finish both still components before reserving the movie. Otherwise whichever
+// worker wins the race could consume the entire common budget. This is a wait,
+// not permission to submit, retry encoding or replace either original resource.
+func (s *UploadService) livePhotoMovieBudget(ctx context.Context, owner string, v AssetVersion) (int64, bool, error) {
+	r, ok := s.repository.(PhotoWriteRepository)
+	if !ok {
+		return 0, false, ErrVideoUnsupported
+	}
+	u, err := s.repository.Get(ctx, owner, v.VersionID)
+	if err != nil {
+		return 0, false, err
+	}
+	if u.State != OriginalsVerified || u.Digest != v.ManifestDigest {
+		return 0, false, ErrIncompleteBackup
+	}
+	var used int64
+	for _, preset := range photoJobPresets(v.Manifest) {
+		p, err := r.PhotoWrite(ctx, owner, v.VersionID, preset)
+		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrPhotoWriteUncertain) {
+			return 0, false, nil
+		}
+		if err != nil {
+			return 0, false, err
+		}
+		if p.Spec.OwnerID != owner || p.VersionID != v.VersionID || p.ManifestDigest != v.ManifestDigest || p.Spec.Preset != preset {
+			return 0, false, ErrConflict
+		}
+		receipt, err := p.Receipt()
+		if errors.Is(err, ErrPhotoWriteUncertain) {
+			return 0, false, nil
+		}
+		if err != nil {
+			return 0, false, err
+		}
+		if receipt.SizeBytes > u.DerivedBudget-used {
+			return 0, false, ErrQuota
+		}
+		used += receipt.SizeBytes
+	}
+	if used >= u.DerivedBudget {
+		return 0, false, ErrQuota
+	}
+	return u.DerivedBudget - used, true, nil
 }
 
 func videoBitrate(p VideoProfile) int64 {
@@ -169,11 +251,19 @@ func (s *UploadService) AdvanceVideoJob(ctx context.Context, j VideoJob, queueID
 	}
 	fresh := false
 	if j.SubmittedAt.IsZero() {
+		available := s.policy.MaxDerivedBytes
+		if version.Manifest.Kind == LivePhoto {
+			var ready bool
+			available, ready, err = s.livePhotoMovieBudget(ctx, j.OwnerID, version)
+			if err != nil || !ready {
+				return false, err
+			}
+		}
 		profile, err := processor.InspectVideoSource(ctx, source)
 		if err != nil {
 			return false, err
 		}
-		if !profile.valid() {
+		if !profile.valid() || !livePhotoProfileMatches(version.Manifest, profile) {
 			return false, ErrVideoUnsupported
 		}
 		// Maxrate is 1.5 * bitrate; reserve an upper estimate plus container slack.
@@ -181,13 +271,13 @@ func (s *UploadService) AdvanceVideoJob(ctx context.Context, j VideoJob, queueID
 		cap := (videoBitrate(profile)*1500+128000)*profile.DurationMilliseconds/8000 + (32 << 20)
 		// Upload creation reserves at most the originals' size. Do not demand a
 		// large fixed allowance for a short clip, or every small video would fail.
-		cap = min(cap, source.SizeBytes, s.policy.MaxDerivedBytes)
-		j, fresh, err = repository.BeginVideoSubmission(ctx, j, VideoTranscodeSpec{source, profile, cap, queueID}, s.now().UTC())
+		cap = min(cap, source.SizeBytes, s.policy.MaxDerivedBytes, available)
+		j, fresh, err = repository.BeginVideoSubmission(ctx, j, VideoTranscodeSpec{Source: source, Profile: profile, MaxBytes: cap, QueueID: queueID, LivePhotoTiming: version.Manifest.LivePhotoTiming}, s.now().UTC())
 		if err != nil {
 			return false, err
 		}
 	}
-	if j.Spec == nil || j.Spec.Source != source || j.validateSpec(*j.Spec) != nil {
+	if j.Spec == nil || j.Spec.Source != source || j.validateSpec(*j.Spec) != nil || !sameLiveTiming(j.Spec.LivePhotoTiming, version.Manifest.LivePhotoTiming) || !livePhotoProfileMatches(version.Manifest, j.Spec.Profile) {
 		return false, ErrConflict
 	}
 	if j.ProviderJobID == "" {
@@ -213,7 +303,7 @@ func (s *UploadService) AdvanceVideoJob(ctx context.Context, j VideoJob, queueID
 		return false, err
 	}
 	result, err := processor.VerifyVideoResult(ctx, j)
-	if err != nil || j.validateResult(result) != nil {
+	if err != nil || j.validateResult(result) != nil || !livePhotoProfileMatches(version.Manifest, result.Profile) {
 		if err != nil {
 			return false, err
 		}

@@ -133,6 +133,18 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/VideoPreviewReadGrant'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/live-previews/daily/read-grant:
+    post:
+      operationId: authorizeAlbumLivePhotoPreviewRead
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Owned immutable JPEG and MP4 components with digest-bound source timing; requires native pairing and system readback and does not authorize replacement
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LivePhotoPreviewReadGrant'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -334,6 +346,28 @@ components:
         mediaSubtypes: {type: integer, format: int64, minimum: 0}
         favorite: {type: boolean}
         location: {$ref: '#/components/schemas/AssetLocation'}
+    LivePhotoTiming:
+      type: object
+      additionalProperties: false
+      required: [photoResourceID, videoResourceID, photoTimeMicroseconds, durationMicroseconds]
+      properties:
+        photoResourceID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        videoResourceID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        photoTimeMicroseconds: {type: integer, format: int64, minimum: 0, maximum: 3599999999}
+        durationMicroseconds: {type: integer, format: int64, minimum: 1, maximum: 3600000000}
+    LivePhotoPreviewReadGrant:
+      type: object
+      additionalProperties: false
+      required: [assetID, versionID, manifestDigest, timing, photo, video, replacementEligible, expiresAt]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        timing: {$ref: '#/components/schemas/LivePhotoTiming'}
+        photo: {$ref: '#/components/schemas/PhotoPreviewReadGrant'}
+        video: {$ref: '#/components/schemas/VideoPreviewReadGrant'}
+        replacementEligible: {type: boolean, enum: [false]}
+        expiresAt: {type: string, format: date-time}
     Manifest:
       type: object
       additionalProperties: false
@@ -344,6 +378,7 @@ components:
         kind: {type: string, enum: [photo, video, live_photo]}
         edited: {type: boolean}
         metadata: {$ref: '#/components/schemas/AssetMetadata'}
+        livePhotoTiming: {$ref: '#/components/schemas/LivePhotoTiming'}
         resources:
           type: array
           minItems: 1

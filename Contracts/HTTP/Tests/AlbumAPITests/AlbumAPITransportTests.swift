@@ -4,6 +4,34 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("Live Photo grant retains same-source components and integer key-photo timing")
+    func livePhotoPreviewReadGrant() async throws {
+        let recorder = AlbumRequestRecorder(), digest = String(repeating: "a", count: 64)
+        let common: [String:Any] = ["assetID": "asset-1", "versionID": Self.uploadID, "manifestDigest": digest,
+            "objectVersionID": "immutable-version", "sizeBytes": 1234, "sha256": String(repeating: "b", count: 64),
+            "replacementEligible": false, "url": "https://storage.example/read", "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"]
+        var photo = common, video = common
+        photo["preset"] = "daily_jpeg_v1"; photo["contentType"] = "image/jpeg"; photo["width"] = 800; photo["height"] = 600
+        video["preset"] = "daily_mp4_1080_v1"; video["contentType"] = "video/mp4"
+        video["profile"] = ["width": 1920, "height": 1080, "durationMilliseconds": 1000, "frameRate": 30, "audioChannels": 2]
+        let body = try JSONSerialization.data(withJSONObject: ["assetID": "asset-1", "versionID": Self.uploadID,
+            "manifestDigest": digest, "photo": photo, "video": video, "replacementEligible": false,
+            "timing": ["photoResourceID": "photo", "videoResourceID": "motion", "photoTimeMicroseconds": 500001, "durationMicroseconds": 1000001],
+            "expiresAt": "2026-10-11T02:00:00Z"])
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(body))
+        })
+        let response = try await client.authorizeAlbumLivePhotoPreviewRead(path: .init(versionID: Self.uploadID))
+        guard case .ok(let result) = response, case .json(let grant) = result.body else { Issue.record("Wrong live response"); return }
+        #expect(grant.manifestDigest == digest && grant.photo.manifestDigest == digest && grant.video.manifestDigest == digest)
+        #expect(grant.timing.photoTimeMicroseconds == 500001 && grant.timing.durationMicroseconds == 1000001)
+        #expect(grant.photo.contentType == .imageJpeg && grant.video.contentType == .videoMp4)
+        #expect(!grant.replacementEligible && !grant.photo.replacementEligible && !grant.video.replacementEligible)
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID + "/live-previews/daily/read-grant")
+        #expect(request.method == "POST" && request.body.isEmpty)
+    }
     @Test("stored video grant preserves exact media metadata and does not authorize system deletion")
     func videoPreviewReadGrant() async throws {
         let recorder = AlbumRequestRecorder()
