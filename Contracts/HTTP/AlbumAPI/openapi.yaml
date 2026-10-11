@@ -145,6 +145,81 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LivePhotoPreviewReadGrant'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/live-pair:
+    get:
+      operationId: getAlbumLivePair
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Durable finished-pair upload state without object locations or signed URLs
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LivePairUpload'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createAlbumLivePair
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestID, descriptor]
+              properties:
+                requestID: {type: string, format: uuid}
+                descriptor: {$ref: '#/components/schemas/LivePairDescriptor'}
+      responses:
+        '201':
+          description: Reserved pair intent or the already verified canonical pair; declarations alone do not publish a receipt
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LivePairUpload'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/live-pair-uploads/{pairUploadID}/resource-grants:
+    post:
+      operationId: authorizeAlbumLivePairUpload
+      parameters:
+        - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Ten-minute size and content-type constrained JPEG and MOV staging PUTs, never archive writes
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [grants]
+                properties:
+                  grants: {type: array, minItems: 2, maxItems: 2, items: {$ref: '#/components/schemas/Grant'}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/live-pair-uploads/{pairUploadID}/submit:
+    post:
+      operationId: submitAlbumLivePair
+      parameters:
+        - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '202':
+          description: Queued server verification, never accepts client proof or a source-deletion certificate
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LivePairUpload'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/live-pair/read-grant:
+    post:
+      operationId: authorizeAlbumLivePairRead
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Five-minute private GETs pinned to fully byte-verified JPEG and MOV versions; native semantic validation is still required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LivePairReadGrant'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads:
     post:
       operationId: createAlbumUpload
@@ -366,6 +441,103 @@ components:
         timing: {$ref: '#/components/schemas/LivePhotoTiming'}
         photo: {$ref: '#/components/schemas/PhotoPreviewReadGrant'}
         video: {$ref: '#/components/schemas/VideoPreviewReadGrant'}
+        replacementEligible: {type: boolean, enum: [false]}
+        expiresAt: {type: string, format: date-time}
+    LivePairResource:
+      type: object
+      additionalProperties: false
+      required: [sizeBytes, sha256]
+      properties:
+        sizeBytes: {type: integer, format: int64, minimum: 1, maximum: 4294967296}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+    LivePairPhotoSource:
+      type: object
+      additionalProperties: false
+      required: [preset, sizeBytes, sha256, width, height, contentType]
+      properties:
+        preset: {type: string, enum: [daily_jpeg_v1]}
+        contentType: {type: string, enum: [image/jpeg]}
+        sizeBytes: {type: integer, format: int64, minimum: 1, maximum: 16777216}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        width: {type: integer, minimum: 1, maximum: 2560}
+        height: {type: integer, minimum: 1, maximum: 2560}
+    LivePairVideoSource:
+      type: object
+      additionalProperties: false
+      required: [preset, sizeBytes, sha256, width, height, durationMilliseconds, frameRate, audioChannels]
+      properties:
+        preset: {type: string, enum: [daily_mp4_1080_v1]}
+        sizeBytes: {type: integer, format: int64, minimum: 1, maximum: 4294967296}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        width: {type: integer, minimum: 128, maximum: 1920}
+        height: {type: integer, minimum: 128, maximum: 1920}
+        durationMilliseconds: {type: integer, format: int64, minimum: 1, maximum: 3600000}
+        frameRate: {type: number, format: double, minimum: 0, exclusiveMinimum: true, maximum: 60}
+        audioChannels: {type: integer, minimum: 0, maximum: 2}
+    LivePairInfo:
+      type: object
+      additionalProperties: false
+      required: [identifier, photoTime, duration, photoWidth, photoHeight, hasAudio, hasHDRVideo]
+      properties:
+        identifier: {type: string, format: uuid}
+        photoTime: {type: number, format: double, minimum: 0, maximum: 3600}
+        duration: {type: number, format: double, minimum: 0, exclusiveMinimum: true, maximum: 3600.15}
+        photoWidth: {type: integer, minimum: 1, maximum: 2560}
+        photoHeight: {type: integer, minimum: 1, maximum: 2560}
+        hasAudio: {type: boolean}
+        hasHDRVideo: {type: boolean, enum: [false]}
+    LivePairDescriptor:
+      type: object
+      additionalProperties: false
+      required: [sourcePhoto, sourceVideo, timing, photo, movie, pair]
+      properties:
+        sourcePhoto: {$ref: '#/components/schemas/LivePairPhotoSource'}
+        sourceVideo: {$ref: '#/components/schemas/LivePairVideoSource'}
+        timing: {$ref: '#/components/schemas/LivePhotoTiming'}
+        photo: {$ref: '#/components/schemas/LivePairResource'}
+        movie: {$ref: '#/components/schemas/LivePairResource'}
+        pair: {$ref: '#/components/schemas/LivePairInfo'}
+    LivePairUpload:
+      type: object
+      additionalProperties: false
+      required: [id, requestID, assetID, versionID, manifestDigest, preset, descriptor, state, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        requestID: {type: string, format: uuid}
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        preset: {type: string, enum: [daily_live_pair_v1]}
+        descriptor: {$ref: '#/components/schemas/LivePairDescriptor'}
+        state: {type: string, enum: [uploading, queued, verifying, verified, attention, retiring, retired]}
+        expiresAt: {type: string, format: date-time}
+    LivePairObjectReadGrant:
+      type: object
+      additionalProperties: false
+      required: [objectVersionID, sizeBytes, sha256, contentType, url, headers, expiresAt]
+      properties:
+        objectVersionID: {type: string, minLength: 1, maxLength: 1024}
+        sizeBytes: {type: integer, format: int64, minimum: 1, maximum: 4294967296}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        contentType: {type: string, enum: [image/jpeg, video/quicktime]}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+    LivePairReadGrant:
+      type: object
+      additionalProperties: false
+      required: [pairUploadID, assetID, versionID, manifestDigest, preset, descriptor, photo, movie, replacementEligible, expiresAt]
+      properties:
+        pairUploadID: {type: string, format: uuid}
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        preset: {type: string, enum: [daily_live_pair_v1]}
+        descriptor: {$ref: '#/components/schemas/LivePairDescriptor'}
+        photo: {$ref: '#/components/schemas/LivePairObjectReadGrant'}
+        movie: {$ref: '#/components/schemas/LivePairObjectReadGrant'}
         replacementEligible: {type: boolean, enum: [false]}
         expiresAt: {type: string, format: date-time}
     Manifest:

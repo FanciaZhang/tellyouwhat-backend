@@ -4,6 +4,53 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("Finished live pair contract keeps QuickTime bytes separate from original and MP4 receipts")
+    func finishedLivePair() async throws {
+        let recorder = AlbumRequestRecorder(), digest = String(repeating: "a", count: 64)
+        let descriptorJSON: [String: Any] = [
+            "sourcePhoto": ["preset": "daily_jpeg_v1", "sizeBytes": 123, "sha256": digest, "width": 800, "height": 600, "contentType": "image/jpeg"],
+            "sourceVideo": ["preset": "daily_mp4_1080_v1", "sizeBytes": 456, "sha256": digest, "width": 1920, "height": 1080,
+                            "durationMilliseconds": 1000, "frameRate": 30, "audioChannels": 2],
+            "timing": ["photoResourceID": "photo", "videoResourceID": "motion", "photoTimeMicroseconds": 500001, "durationMicroseconds": 1000001],
+            "photo": ["sizeBytes": 140, "sha256": digest], "movie": ["sizeBytes": 500, "sha256": digest],
+            "pair": ["identifier": Self.uploadID, "photoTime": 0.500001, "duration": 1.000001, "photoWidth": 800, "photoHeight": 600,
+                     "hasAudio": true, "hasHDRVideo": false]
+        ]
+        let descriptor = try JSONDecoder().decode(Components.Schemas.LivePairDescriptor.self, from: JSONSerialization.data(withJSONObject: descriptorJSON))
+        let uploadJSON: [String: Any] = ["id": Self.uploadID, "requestID": Self.uploadID, "assetID": "asset-1", "versionID": Self.uploadID,
+            "manifestDigest": digest, "preset": "daily_live_pair_v1", "descriptor": descriptorJSON, "state": "queued", "expiresAt": "2026-10-11T02:00:00Z"]
+        let uploadData = try JSONSerialization.data(withJSONObject: uploadJSON)
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 201, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(uploadData))
+        })
+        let created = try await client.createAlbumLivePair(path: .init(versionID: Self.uploadID), body: .json(.init(requestID: Self.uploadID, descriptor: descriptor)))
+        guard case .created(let value) = created, case .json(let upload) = value.body else { Issue.record("Wrong pair state"); return }
+        #expect(upload.state.rawValue == "queued" && upload.descriptor.movie.sizeBytes == 500)
+        let request = try #require(await recorder.last)
+        #expect(request.path == "/v1/albums/library/versions/" + Self.uploadID + "/live-pair")
+        let posted = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
+        #expect(posted["requestID"] as? String == Self.uploadID && posted["state"] == nil)
+        let photo: [String: Any] = ["objectVersionID": "photo-v1", "sizeBytes": 140, "sha256": digest, "contentType": "image/jpeg",
+            "url": "https://storage.example/photo", "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"]
+        let movie: [String: Any] = ["objectVersionID": "movie-v1", "sizeBytes": 500, "sha256": digest, "contentType": "video/quicktime",
+            "url": "https://storage.example/motion", "headers": [:], "expiresAt": "2026-10-11T02:00:00Z"]
+        let readData = try JSONSerialization.data(withJSONObject: ["pairUploadID": Self.uploadID, "assetID": "asset-1", "versionID": Self.uploadID, "manifestDigest": digest,
+                    "preset": "daily_live_pair_v1", "descriptor": descriptorJSON, "photo": photo, "movie": movie,
+                    "replacementEligible": false, "expiresAt": "2026-10-11T02:00:00Z"])
+        let reader = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(readData))
+        })
+        let read = try await reader.authorizeAlbumLivePairRead(path: .init(versionID: Self.uploadID))
+        guard case .ok(let result) = read, case .json(let grant) = result.body else { Issue.record("Wrong pair grant"); return }
+        #expect(grant.movie.contentType.rawValue == "video/quicktime" && !grant.replacementEligible)
+        #expect(grant.descriptor.timing.photoTimeMicroseconds == 500001)
+        let readRequest = try #require(await recorder.last)
+        #expect(readRequest.method == "POST" && readRequest.body.isEmpty)
+    }
     @Test("Live Photo grant retains same-source components and integer key-photo timing")
     func livePhotoPreviewReadGrant() async throws {
         let recorder = AlbumRequestRecorder(), digest = String(repeating: "a", count: 64)

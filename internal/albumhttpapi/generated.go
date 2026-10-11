@@ -20,6 +20,162 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for LivePairInfoHasHDRVideo.
+const (
+	LivePairInfoHasHDRVideoFalse LivePairInfoHasHDRVideo = false
+)
+
+// Valid indicates whether the value is a known member of the LivePairInfoHasHDRVideo enum.
+func (e LivePairInfoHasHDRVideo) Valid() bool {
+	switch e {
+	case LivePairInfoHasHDRVideoFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairObjectReadGrantContentType.
+const (
+	LivePairObjectReadGrantContentTypeImagejpeg      LivePairObjectReadGrantContentType = "image/jpeg"
+	LivePairObjectReadGrantContentTypeVideoquicktime LivePairObjectReadGrantContentType = "video/quicktime"
+)
+
+// Valid indicates whether the value is a known member of the LivePairObjectReadGrantContentType enum.
+func (e LivePairObjectReadGrantContentType) Valid() bool {
+	switch e {
+	case LivePairObjectReadGrantContentTypeImagejpeg:
+		return true
+	case LivePairObjectReadGrantContentTypeVideoquicktime:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairPhotoSourceContentType.
+const (
+	LivePairPhotoSourceContentTypeImagejpeg LivePairPhotoSourceContentType = "image/jpeg"
+)
+
+// Valid indicates whether the value is a known member of the LivePairPhotoSourceContentType enum.
+func (e LivePairPhotoSourceContentType) Valid() bool {
+	switch e {
+	case LivePairPhotoSourceContentTypeImagejpeg:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairPhotoSourcePreset.
+const (
+	LivePairPhotoSourcePresetDailyJpegV1 LivePairPhotoSourcePreset = "daily_jpeg_v1"
+)
+
+// Valid indicates whether the value is a known member of the LivePairPhotoSourcePreset enum.
+func (e LivePairPhotoSourcePreset) Valid() bool {
+	switch e {
+	case LivePairPhotoSourcePresetDailyJpegV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairReadGrantPreset.
+const (
+	LivePairReadGrantPresetDailyLivePairV1 LivePairReadGrantPreset = "daily_live_pair_v1"
+)
+
+// Valid indicates whether the value is a known member of the LivePairReadGrantPreset enum.
+func (e LivePairReadGrantPreset) Valid() bool {
+	switch e {
+	case LivePairReadGrantPresetDailyLivePairV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairReadGrantReplacementEligible.
+const (
+	LivePairReadGrantReplacementEligibleFalse LivePairReadGrantReplacementEligible = false
+)
+
+// Valid indicates whether the value is a known member of the LivePairReadGrantReplacementEligible enum.
+func (e LivePairReadGrantReplacementEligible) Valid() bool {
+	switch e {
+	case LivePairReadGrantReplacementEligibleFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairUploadPreset.
+const (
+	LivePairUploadPresetDailyLivePairV1 LivePairUploadPreset = "daily_live_pair_v1"
+)
+
+// Valid indicates whether the value is a known member of the LivePairUploadPreset enum.
+func (e LivePairUploadPreset) Valid() bool {
+	switch e {
+	case LivePairUploadPresetDailyLivePairV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairUploadState.
+const (
+	LivePairUploadStateAttention LivePairUploadState = "attention"
+	LivePairUploadStateQueued    LivePairUploadState = "queued"
+	LivePairUploadStateRetired   LivePairUploadState = "retired"
+	LivePairUploadStateRetiring  LivePairUploadState = "retiring"
+	LivePairUploadStateUploading LivePairUploadState = "uploading"
+	LivePairUploadStateVerified  LivePairUploadState = "verified"
+	LivePairUploadStateVerifying LivePairUploadState = "verifying"
+)
+
+// Valid indicates whether the value is a known member of the LivePairUploadState enum.
+func (e LivePairUploadState) Valid() bool {
+	switch e {
+	case LivePairUploadStateAttention:
+		return true
+	case LivePairUploadStateQueued:
+		return true
+	case LivePairUploadStateRetired:
+		return true
+	case LivePairUploadStateRetiring:
+		return true
+	case LivePairUploadStateUploading:
+		return true
+	case LivePairUploadStateVerified:
+		return true
+	case LivePairUploadStateVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LivePairVideoSourcePreset.
+const (
+	LivePairVideoSourcePresetDailyMp41080V1 LivePairVideoSourcePreset = "daily_mp4_1080_v1"
+)
+
+// Valid indicates whether the value is a known member of the LivePairVideoSourcePreset enum.
+func (e LivePairVideoSourcePreset) Valid() bool {
+	switch e {
+	case LivePairVideoSourcePresetDailyMp41080V1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LivePhotoPreviewReadGrantReplacementEligible.
 const (
 	LivePhotoPreviewReadGrantReplacementEligibleFalse LivePhotoPreviewReadGrantReplacementEligible = false
@@ -94,22 +250,22 @@ func (e MultipartStatusState) Valid() bool {
 
 // Defines values for PhotoPreset.
 const (
-	DailyJpegV1 PhotoPreset = "daily_jpeg_v1"
-	DailyPngV1  PhotoPreset = "daily_png_v1"
-	GridJpegV1  PhotoPreset = "grid_jpeg_v1"
-	GridPngV1   PhotoPreset = "grid_png_v1"
+	PhotoPresetDailyJpegV1 PhotoPreset = "daily_jpeg_v1"
+	PhotoPresetDailyPngV1  PhotoPreset = "daily_png_v1"
+	PhotoPresetGridJpegV1  PhotoPreset = "grid_jpeg_v1"
+	PhotoPresetGridPngV1   PhotoPreset = "grid_png_v1"
 )
 
 // Valid indicates whether the value is a known member of the PhotoPreset enum.
 func (e PhotoPreset) Valid() bool {
 	switch e {
-	case DailyJpegV1:
+	case PhotoPresetDailyJpegV1:
 		return true
-	case DailyPngV1:
+	case PhotoPresetDailyPngV1:
 		return true
-	case GridJpegV1:
+	case PhotoPresetGridJpegV1:
 		return true
-	case GridPngV1:
+	case PhotoPresetGridPngV1:
 		return true
 	default:
 		return false
@@ -118,16 +274,16 @@ func (e PhotoPreset) Valid() bool {
 
 // Defines values for PhotoPreviewReadGrantContentType.
 const (
-	Imagejpeg PhotoPreviewReadGrantContentType = "image/jpeg"
-	Imagepng  PhotoPreviewReadGrantContentType = "image/png"
+	PhotoPreviewReadGrantContentTypeImagejpeg PhotoPreviewReadGrantContentType = "image/jpeg"
+	PhotoPreviewReadGrantContentTypeImagepng  PhotoPreviewReadGrantContentType = "image/png"
 )
 
 // Valid indicates whether the value is a known member of the PhotoPreviewReadGrantContentType enum.
 func (e PhotoPreviewReadGrantContentType) Valid() bool {
 	switch e {
-	case Imagejpeg:
+	case PhotoPreviewReadGrantContentTypeImagejpeg:
 		return true
-	case Imagepng:
+	case PhotoPreviewReadGrantContentTypeImagepng:
 		return true
 	default:
 		return false
@@ -208,13 +364,13 @@ func (e UploadState) Valid() bool {
 
 // Defines values for VideoPreset.
 const (
-	DailyMp41080V1 VideoPreset = "daily_mp4_1080_v1"
+	VideoPresetDailyMp41080V1 VideoPreset = "daily_mp4_1080_v1"
 )
 
 // Valid indicates whether the value is a known member of the VideoPreset enum.
 func (e VideoPreset) Valid() bool {
 	switch e {
-	case DailyMp41080V1:
+	case VideoPresetDailyMp41080V1:
 		return true
 	default:
 		return false
@@ -301,6 +457,120 @@ type Grant struct {
 	ResourceID string            `json:"resourceID"`
 	Url        string            `json:"url"`
 }
+
+// LivePairDescriptor defines model for LivePairDescriptor.
+type LivePairDescriptor struct {
+	Movie       LivePairResource    `json:"movie"`
+	Pair        LivePairInfo        `json:"pair"`
+	Photo       LivePairResource    `json:"photo"`
+	SourcePhoto LivePairPhotoSource `json:"sourcePhoto"`
+	SourceVideo LivePairVideoSource `json:"sourceVideo"`
+	Timing      LivePhotoTiming     `json:"timing"`
+}
+
+// LivePairInfo defines model for LivePairInfo.
+type LivePairInfo struct {
+	Duration    float64                 `json:"duration"`
+	HasAudio    bool                    `json:"hasAudio"`
+	HasHDRVideo LivePairInfoHasHDRVideo `json:"hasHDRVideo"`
+	Identifier  openapi_types.UUID      `json:"identifier"`
+	PhotoHeight int                     `json:"photoHeight"`
+	PhotoTime   float64                 `json:"photoTime"`
+	PhotoWidth  int                     `json:"photoWidth"`
+}
+
+// LivePairInfoHasHDRVideo defines model for LivePairInfo.HasHDRVideo.
+type LivePairInfoHasHDRVideo bool
+
+// LivePairObjectReadGrant defines model for LivePairObjectReadGrant.
+type LivePairObjectReadGrant struct {
+	ContentType     LivePairObjectReadGrantContentType `json:"contentType"`
+	ExpiresAt       time.Time                          `json:"expiresAt"`
+	Headers         map[string]string                  `json:"headers"`
+	ObjectVersionID string                             `json:"objectVersionID"`
+	Sha256          string                             `json:"sha256"`
+	SizeBytes       int64                              `json:"sizeBytes"`
+	Url             string                             `json:"url"`
+}
+
+// LivePairObjectReadGrantContentType defines model for LivePairObjectReadGrant.ContentType.
+type LivePairObjectReadGrantContentType string
+
+// LivePairPhotoSource defines model for LivePairPhotoSource.
+type LivePairPhotoSource struct {
+	ContentType LivePairPhotoSourceContentType `json:"contentType"`
+	Height      int                            `json:"height"`
+	Preset      LivePairPhotoSourcePreset      `json:"preset"`
+	Sha256      string                         `json:"sha256"`
+	SizeBytes   int64                          `json:"sizeBytes"`
+	Width       int                            `json:"width"`
+}
+
+// LivePairPhotoSourceContentType defines model for LivePairPhotoSource.ContentType.
+type LivePairPhotoSourceContentType string
+
+// LivePairPhotoSourcePreset defines model for LivePairPhotoSource.Preset.
+type LivePairPhotoSourcePreset string
+
+// LivePairReadGrant defines model for LivePairReadGrant.
+type LivePairReadGrant struct {
+	AssetID             string                               `json:"assetID"`
+	Descriptor          LivePairDescriptor                   `json:"descriptor"`
+	ExpiresAt           time.Time                            `json:"expiresAt"`
+	ManifestDigest      string                               `json:"manifestDigest"`
+	Movie               LivePairObjectReadGrant              `json:"movie"`
+	PairUploadID        openapi_types.UUID                   `json:"pairUploadID"`
+	Photo               LivePairObjectReadGrant              `json:"photo"`
+	Preset              LivePairReadGrantPreset              `json:"preset"`
+	ReplacementEligible LivePairReadGrantReplacementEligible `json:"replacementEligible"`
+	VersionID           openapi_types.UUID                   `json:"versionID"`
+}
+
+// LivePairReadGrantPreset defines model for LivePairReadGrant.Preset.
+type LivePairReadGrantPreset string
+
+// LivePairReadGrantReplacementEligible defines model for LivePairReadGrant.ReplacementEligible.
+type LivePairReadGrantReplacementEligible bool
+
+// LivePairResource defines model for LivePairResource.
+type LivePairResource struct {
+	Sha256    string `json:"sha256"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+// LivePairUpload defines model for LivePairUpload.
+type LivePairUpload struct {
+	AssetID        string               `json:"assetID"`
+	Descriptor     LivePairDescriptor   `json:"descriptor"`
+	ExpiresAt      time.Time            `json:"expiresAt"`
+	Id             openapi_types.UUID   `json:"id"`
+	ManifestDigest string               `json:"manifestDigest"`
+	Preset         LivePairUploadPreset `json:"preset"`
+	RequestID      openapi_types.UUID   `json:"requestID"`
+	State          LivePairUploadState  `json:"state"`
+	VersionID      openapi_types.UUID   `json:"versionID"`
+}
+
+// LivePairUploadPreset defines model for LivePairUpload.Preset.
+type LivePairUploadPreset string
+
+// LivePairUploadState defines model for LivePairUpload.State.
+type LivePairUploadState string
+
+// LivePairVideoSource defines model for LivePairVideoSource.
+type LivePairVideoSource struct {
+	AudioChannels        int                       `json:"audioChannels"`
+	DurationMilliseconds int64                     `json:"durationMilliseconds"`
+	FrameRate            float64                   `json:"frameRate"`
+	Height               int                       `json:"height"`
+	Preset               LivePairVideoSourcePreset `json:"preset"`
+	Sha256               string                    `json:"sha256"`
+	SizeBytes            int64                     `json:"sizeBytes"`
+	Width                int                       `json:"width"`
+}
+
+// LivePairVideoSourcePreset defines model for LivePairVideoSource.Preset.
+type LivePairVideoSourcePreset string
 
 // LivePhotoPreviewReadGrant defines model for LivePhotoPreviewReadGrant.
 type LivePhotoPreviewReadGrant struct {
@@ -526,6 +796,12 @@ type ListAlbumAssetVersionsParams struct {
 	Limit *int   `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateAlbumLivePairJSONBody defines parameters for CreateAlbumLivePair.
+type CreateAlbumLivePairJSONBody struct {
+	Descriptor LivePairDescriptor `json:"descriptor"`
+	RequestID  openapi_types.UUID `json:"requestID"`
+}
+
 // CreateAlbumUploadJSONBody defines parameters for CreateAlbumUpload.
 type CreateAlbumUploadJSONBody struct {
 	Manifest  Manifest           `json:"manifest"`
@@ -534,6 +810,9 @@ type CreateAlbumUploadJSONBody struct {
 
 // LoginAlbumWithAppleJSONRequestBody defines body for LoginAlbumWithApple for application/json ContentType.
 type LoginAlbumWithAppleJSONRequestBody LoginAlbumWithAppleJSONBody
+
+// CreateAlbumLivePairJSONRequestBody defines body for CreateAlbumLivePair for application/json ContentType.
+type CreateAlbumLivePairJSONRequestBody CreateAlbumLivePairJSONBody
 
 // CreateAlbumUploadJSONRequestBody defines body for CreateAlbumUpload for application/json ContentType.
 type CreateAlbumUploadJSONRequestBody CreateAlbumUploadJSONBody
@@ -559,6 +838,15 @@ type ServerInterface interface {
 	// (GET /v1/albums/library/versions/{versionID})
 	GetAlbumAssetVersion(c *gin.Context, versionID openapi_types.UUID)
 
+	// (GET /v1/albums/library/versions/{versionID}/live-pair)
+	GetAlbumLivePair(c *gin.Context, versionID openapi_types.UUID)
+
+	// (POST /v1/albums/library/versions/{versionID}/live-pair)
+	CreateAlbumLivePair(c *gin.Context, versionID openapi_types.UUID)
+
+	// (POST /v1/albums/library/versions/{versionID}/live-pair/read-grant)
+	AuthorizeAlbumLivePairRead(c *gin.Context, versionID openapi_types.UUID)
+
 	// (POST /v1/albums/library/versions/{versionID}/live-previews/daily/read-grant)
 	AuthorizeAlbumLivePhotoPreviewRead(c *gin.Context, versionID openapi_types.UUID)
 
@@ -570,6 +858,12 @@ type ServerInterface interface {
 
 	// (POST /v1/albums/library/versions/{versionID}/video-previews/{preset}/read-grant)
 	AuthorizeAlbumVideoPreviewRead(c *gin.Context, versionID openapi_types.UUID, preset VideoPreset)
+
+	// (POST /v1/albums/live-pair-uploads/{pairUploadID}/resource-grants)
+	AuthorizeAlbumLivePairUpload(c *gin.Context, pairUploadID openapi_types.UUID)
+
+	// (POST /v1/albums/live-pair-uploads/{pairUploadID}/submit)
+	SubmitAlbumLivePair(c *gin.Context, pairUploadID openapi_types.UUID)
 
 	// (POST /v1/albums/uploads)
 	CreateAlbumUpload(c *gin.Context)
@@ -717,6 +1011,81 @@ func (siw *ServerInterfaceWrapper) GetAlbumAssetVersion(c *gin.Context) {
 	siw.Handler.GetAlbumAssetVersion(c, versionID)
 }
 
+// GetAlbumLivePair operation middleware
+func (siw *ServerInterfaceWrapper) GetAlbumLivePair(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "versionID" -------------
+	var versionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionID", c.Param("versionID"), &versionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter versionID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAlbumLivePair(c, versionID)
+}
+
+// CreateAlbumLivePair operation middleware
+func (siw *ServerInterfaceWrapper) CreateAlbumLivePair(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "versionID" -------------
+	var versionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionID", c.Param("versionID"), &versionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter versionID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateAlbumLivePair(c, versionID)
+}
+
+// AuthorizeAlbumLivePairRead operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAlbumLivePairRead(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "versionID" -------------
+	var versionID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "versionID", c.Param("versionID"), &versionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter versionID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeAlbumLivePairRead(c, versionID)
+}
+
 // AuthorizeAlbumLivePhotoPreviewRead operation middleware
 func (siw *ServerInterfaceWrapper) AuthorizeAlbumLivePhotoPreviewRead(c *gin.Context) {
 
@@ -842,6 +1211,56 @@ func (siw *ServerInterfaceWrapper) AuthorizeAlbumVideoPreviewRead(c *gin.Context
 	}
 
 	siw.Handler.AuthorizeAlbumVideoPreviewRead(c, versionID, preset)
+}
+
+// AuthorizeAlbumLivePairUpload operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAlbumLivePairUpload(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "pairUploadID" -------------
+	var pairUploadID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "pairUploadID", c.Param("pairUploadID"), &pairUploadID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter pairUploadID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeAlbumLivePairUpload(c, pairUploadID)
+}
+
+// SubmitAlbumLivePair operation middleware
+func (siw *ServerInterfaceWrapper) SubmitAlbumLivePair(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "pairUploadID" -------------
+	var pairUploadID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "pairUploadID", c.Param("pairUploadID"), &pairUploadID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter pairUploadID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SubmitAlbumLivePair(c, pairUploadID)
 }
 
 // CreateAlbumUpload operation middleware
@@ -1114,6 +1533,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/photo-previews/:preset/read-grant", wrapper.AuthorizeAlbumPhotoPreviewRead)
 	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/video-previews/:preset/read-grant", wrapper.AuthorizeAlbumVideoPreviewRead)
 	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/live-previews/daily/read-grant", wrapper.AuthorizeAlbumLivePhotoPreviewRead)
+	router.GET(options.BaseURL+"/v1/albums/library/versions/:versionID/live-pair", wrapper.GetAlbumLivePair)
+	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/live-pair", wrapper.CreateAlbumLivePair)
+	router.POST(options.BaseURL+"/v1/albums/live-pair-uploads/:pairUploadID/resource-grants", wrapper.AuthorizeAlbumLivePairUpload)
+	router.POST(options.BaseURL+"/v1/albums/live-pair-uploads/:pairUploadID/submit", wrapper.SubmitAlbumLivePair)
+	router.POST(options.BaseURL+"/v1/albums/library/versions/:versionID/live-pair/read-grant", wrapper.AuthorizeAlbumLivePairRead)
 	router.POST(options.BaseURL+"/v1/albums/uploads", wrapper.CreateAlbumUpload)
 	router.GET(options.BaseURL+"/v1/albums/uploads/:id", wrapper.GetAlbumUpload)
 	router.POST(options.BaseURL+"/v1/albums/uploads/:id/grants", wrapper.AuthorizeAlbumUploadResources)
@@ -1129,62 +1553,74 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

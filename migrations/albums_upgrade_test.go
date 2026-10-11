@@ -100,13 +100,15 @@ func TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema(t *testing.T) {
 				}
 			}
 			var count int
-			if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name='0026_album_derived_finalizations.sql'`).Scan(&count); err != nil || count != 1 {
-				t.Fatal("migration ledger duplicated", count, err)
+			for _, migration := range []string{"0026_album_derived_finalizations.sql", "0027_album_live_pairs.sql"} {
+				if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name=?`, migration).Scan(&count); err != nil || count != 1 {
+					t.Fatal("migration ledger duplicated", migration, count, err)
+				}
 			}
 			if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='album_uploads' AND index_name='album_derived_pending'`).Scan(&count); err != nil || count != 4 {
 				t.Fatal("pending scheduling index absent", count, err)
 			}
-			for _, table := range []string{"album_derived_finalizations", "album_derived_cleanups"} {
+			for _, table := range []string{"album_derived_finalizations", "album_derived_cleanups", "album_live_pairs"} {
 				if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil || count != 0 {
 					t.Fatal("migration invented derived receipts", table, count, err)
 				}

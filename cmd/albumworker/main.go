@@ -56,6 +56,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := repository.CheckDerivedSchema(startup); err != nil {
 		return errors.New("album derived settlement schema")
 	}
+	if err := repository.CheckLivePairSchema(startup); err != nil {
+		return errors.New("album live pair schema")
+	}
 	objects, err := albums.NewCOSObjects(config.COS)
 	if err != nil {
 		return errors.New("object storage configuration")
@@ -70,6 +73,10 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	worker, err := albums.NewVerificationWorker(repository, service, config.BatchSize, config.PollInterval)
 	if err != nil {
 		return errors.New("verification worker configuration")
+	}
+	livePairs, err := albums.NewLivePairWorker(repository, service, config.BatchSize)
+	if err != nil {
+		return errors.New("live pair worker configuration")
 	}
 	multipart, err := albums.NewMultipartService(repository, objects, time.Now)
 	if err != nil {
@@ -106,7 +113,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	defer stopWorkers()
-	workerCount := 3
+	workerCount := 4
 	if config.PhotoProcessing {
 		workerCount++
 	}
@@ -117,6 +124,16 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 		workerCount++
 	}
 	finished := make(chan error, workerCount)
+	go func() {
+		finished <- livePairs.Run(runCtx, config.PollInterval, func(batch albums.LivePairBatch, available bool) {
+			if !available {
+				logger.Error("album live pair queue unavailable")
+			}
+			if batch.Verified+batch.Failed > 0 {
+				logger.Info("album live pair batch", "verified", batch.Verified, "failed", batch.Failed, "contended", batch.Contended)
+			}
+		})
+	}()
 	go func() {
 		finished <- finalizer.Run(runCtx, config.PollInterval, func(batch albums.DerivedFinalizationBatch, available bool) {
 			if !available {

@@ -329,3 +329,17 @@ PhotoWorker 使用数据库队列：生成前领取十分钟租约，每项操�
 每项十分钟租约、六分钟操作期限。第一次 DELETE 前持久化终止证明、具体版本计划和禁止迟到 receipt 的 retirement 标志。响应丢失后重开数据库只继续计划内的版本；出现计划外新版本或保留版本缺失就停止。删除后再完整列举一次，确认应删版本均消失后，才在同一事务标记 retired 并退回 held；有效预览只清理额外版本，不改变 used。迟到有效结果在 retirement 开始前可恢复，并撤销旧回收租约；开始后拒绝发布。重试间隔十五分钟，八次后进入 attention，held 不凭超时自动返还。
 
 验证：全仓 Go test/vet 通过；隔离 MySQL 8.4 的相册、albumworker、迁移 race 共 352 个测试项通过、0 失败，已有 Redis 登录限流用例因未启动 Redis 跳过 1 项。覆盖空库、0025 升级、DDL 部分执行后恢复、并发结算/认领、额度异常回滚、数据库重开、丢 DELETE 响应、迟到有效结果恢复、旧租约拒绝、原件账目保留，以及缺失 receipt/尺寸变化/计划外版本不删除。COS/CI 为协议替身，未操作真实云端对象或部署；本次未改 HTTP/Swift 契约，也不授权系统原件删除。
+
+## 完成封装的日常实况文件对（2026-10-11，生产未部署）
+
+迁移 0027 新增 `album_live_pairs`。客户端声明实际配对 JPEG/MOV 的大小、SHA-256、共同配对标识和时间，并绑定已确认的日常 JPEG/MP4 组件。创建事务重新锁定原件版本及两份组件凭据，核对来源和清单摘要。每个账户/原件版本只允许一个活动日常文件对；并发设备不能覆盖待处理任务，已有 verified 文件对会优先返回，避免再占容量。新文件对按实际声明字节独立预留，原组件预算已关闭也不再动用或重开它。
+
+OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUploadID}/resource-grants`、bodyless submit 和 `live-pair/read-grant`。创建、授予 staging PUT 和 submit 都不会发布保存凭据；不接受客户端 `state=verified`、owner、COS 路径或 proof。只授予十分钟内、精确大小和 MIME 的私有 staging 写入：`albums/staging/live-pairs/{owner}/{intent}/{photo|motion}`。上传角色不能写归档，原件适配器仍拒绝实况文件对的命名空间。
+
+后台队列先领取租约，再为每项 COPY 持久化一次性消费标志。唯一获得 fresh 许可的工作进程可将固定 staging version 复制到 `albums/live-pairs/{owner}/{intent}/{photo|motion}`；丢失响应或重启只 HEAD/GET 恢复，不重发 COPY。读取具体归档版本的完整内容，限制到预期大小加一，核对实际字节数与 SHA-256 后逐项记账。两项齐全才一次转 reserved→used 并发布 verified。最多八次尝试，超过期限/次数进 attention；未知结果保留预留，不能仅凭超时退款。启动新版 albumworker 前必须应用 0027，循环日志只记录汇总。
+
+读取接口检查账户、完整原件版本、源清单与两份固定归档凭据，返回五分钟 GET、JPEG/QuickTime MIME、各自版本和完整描述。`replacementEligible=false`。服务端校验的是云端实际内容与来源绑定；配对语义描述来自客户端声明，**不是服务端原生 Apple 实况结构认证**，必须再经 iOS 完整解析、播放及系统写回验证。
+
+本次新增验证覆盖：隔离 MySQL 的 20 并发创建/认领/消费、预算关闭后独立预留、重开连接与旧租约拒绝、COPY 响应丢失只读恢复、大小相同但 SHA 不符不发布、容量结算重放和跨设备 verified 重用。COS 为 HTTP 协议替身，完整字节测试不代表真实云端或实况画质验收。
+
+尚未启用生产 API、worker 或相关凭据。原生成组件目前继续保留；完整文件对额外计入 used。客户端持久化上传任务、成功后 staging 历史版本清理、失效/attention 意图的终止证明与回收，以及用真实媒体完成 COS 与系统图库闭环均需继续实现/验收；不能以本次接口通过称自动回存已经交付，也不能启用原件删除。
