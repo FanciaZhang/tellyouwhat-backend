@@ -74,29 +74,36 @@ func (s *UploadService) verifiedAssetVersion(ctx context.Context, owner, version
 	if err != nil {
 		return AssetVersion{}, err
 	}
+	if err := validateReadableVersion(version, owner, versionID); err != nil {
+		return AssetVersion{}, err
+	}
+	return version, nil
+}
+
+func validateReadableVersion(version AssetVersion, owner, versionID string) error {
 	if version.VersionID != versionID || version.Sequence <= 0 || version.AssetID != version.Manifest.AssetID {
-		return AssetVersion{}, ErrIncompleteBackup
+		return ErrIncompleteBackup
 	}
 	if err := validateVersionOwner(version, owner); err != nil {
-		return AssetVersion{}, err
+		return err
 	}
 	observations := make([]Observation, 0, len(version.Objects))
 	for _, object := range version.Objects {
 		if !concreteCOSVersion(object.VersionID) {
-			return AssetVersion{}, ErrIncompleteBackup
+			return ErrIncompleteBackup
 		}
 		observations = append(observations, Observation{object.ResourceID, object.SizeBytes, object.SHA256})
 	}
 	digest, err := VerifyBackup(version.Manifest, observations)
 	if err != nil || digest != version.ManifestDigest {
-		return AssetVersion{}, ErrIncompleteBackup
+		return ErrIncompleteBackup
 	}
 	var total int64
 	for _, resource := range version.Manifest.Resources {
 		total += resource.SizeBytes
 	}
 	if total != version.OriginalBytes {
-		return AssetVersion{}, ErrIncompleteBackup
+		return ErrIncompleteBackup
 	}
-	return version, nil
+	return nil
 }

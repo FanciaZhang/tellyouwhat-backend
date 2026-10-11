@@ -43,6 +43,12 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 			c.AbortWithStatusJSON(http.StatusMisdirectedRequest, gin.H{"code": "unknown_app_host"})
 			return
 		}
+		if sharePublicRequest(c, login) {
+			if !c.IsAborted() {
+				c.Next()
+			}
+			return
+		}
 		if login != nil && c.Request.Method == http.MethodPost && (c.Request.URL.Path == "/v1/albums/auth/challenges" || c.Request.URL.Path == "/v1/albums/auth/apple" || c.Request.URL.Path == "/v1/albums/subscription/notifications") {
 			c.Next()
 			return

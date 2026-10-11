@@ -30,6 +30,7 @@ type GatewayConfig struct {
 	CredentialKey  string
 	LoginLimitKey  []byte
 	Subscriptions  *AlbumSubscriptionConfig
+	Sharing        *AlbumShareConfig
 }
 
 func (GatewayConfig) String() string   { return "[redacted album gateway configuration]" }
@@ -111,6 +112,10 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	}
 	c.CredentialKey = base64.StdEncoding.EncodeToString(keys[0])
 	c.LoginLimitKey = keys[1]
+	c.Sharing, err = loadAlbumShareConfig(getenv, keys...)
+	if err != nil {
+		return GatewayConfig{}, err
+	}
 	c.Subscriptions, err = loadAlbumSubscriptionConfig(getenv, c.Environment)
 	if err != nil {
 		return GatewayConfig{}, err

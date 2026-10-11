@@ -104,10 +104,29 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album multipart configuration")
 	}
+	var shares *ShareService
+	if config.Sharing != nil {
+		if err := repository.CheckShareSchema(ctx); err != nil {
+			return nil, ErrShareUnavailable
+		}
+		shares, err = NewShareService(repository, uploads, config.Sharing.SiteOrigin, config.Sharing.Keys, time.Now)
+		if err != nil {
+			return nil, ErrShareUnavailable
+		}
+	}
+	shareLimiter, err := NewRedisLoginLimiter(g.redis, config.LoginLimitKey, 60, time.Minute)
+	if err != nil {
+		return nil, ErrShareUnavailable
+	}
+	shareClaimLimiter, err := NewRedisLoginLimiter(g.redis, config.LoginLimitKey, 10, time.Minute)
+	if err != nil {
+		return nil, ErrShareUnavailable
+	}
 	g.router, err = NewHTTPRouterWithLogin(config.APIHost, sessions, uploads, LoginHTTPOptions{
 		Service: login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
 		Subscriptions:       subscriptions,
 		NotificationLimiter: notificationLimiter,
+		Shares:              shares, ShareLimiter: shareLimiter, ShareClaimLimiter: shareClaimLimiter,
 	})
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")

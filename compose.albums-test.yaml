@@ -28,6 +28,8 @@ services:
       <<: *album-environment
       ALBUM_HTTP_LISTEN_ADDRESS: "0.0.0.0:8080"
       ALBUM_TRUSTED_PROXIES: "${ALBUM_TEST_PROXY_CIDR:-172.29.90.1/32}"
+      # Two bounded 64-MiB password jobs plus runtime; collect before the cgroup limit.
+      GOMEMLIMIT: "180MiB"
     volumes:
       - "${ALBUM_TEST_SECRET_DIRECTORY:?Set the private test secret directory}:/album-secrets:ro"
     ports: ["127.0.0.1:${ALBUM_TEST_API_PORT:-18090}:8080/tcp"]

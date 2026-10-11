@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-11T13:15:35.070835+00:00",
+  "baselineCommit": "6ca099b0f593f6564c1cac4f40271501af60b7eb",
+  "scope": "account-owned immutable-version sharing with extraction codes, idempotent bounded claims and pinned COS attachments",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "d1782ab2c93fb35aafed8bc85240dd25628a464a3d9c8c93540050acdae9601a",
+    "compose.albums-test.yaml": "257bfcea0fcfa576751bc18e7f32339b4eff24ff64c5f091664a27dab907f666",
+    "deploy/albums/runtime.env.example": "dbe758ec2da9593fcceff7070d92473a48b9e08677749dd9f8f317d61bc118d9",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "internal/albumhttpapi/generated.go": "4b586e35b2cf795af5bdadb118b9415855b843f9f3e8fd67c149d34a0f54472c",
+    "internal/albums/cos_objects.go": "41ebc4d541702214f5e752ae5cc933fbb42edfde50f7a885496cac8d0c8c1450",
+    "internal/albums/gateway.go": "ffd3c1386640702ecd9a52dc5d638be8a006b88157711108c6950410ebf47546",
+    "internal/albums/gateway_config.go": "250d4f061b514715c746a28edeafb96f87624c6c8eeae46b11a377dda30f323d",
+    "internal/albums/http.go": "8432bbde10bc0507661dd2a8572e0579fb4791fc233449e2a977760c34649021",
+    "internal/albums/login_http.go": "ec7b3951cbbcb47cf291034d9882315d91e3bedeff3c2c2d64d5e54017e850db",
+    "internal/albums/login_limit.go": "380d71ab0faf25f3d6140e94dae66f98711afa48fc2ec20a9b37c9eef65630d3",
+    "internal/albums/mysql_sharing.go": "d3e5a9ec6a9ffefd7daf0159f3eb89d626ba3e9629f23ca032ce4e23a681c40f",
+    "internal/albums/read_grants.go": "ff619fc206c454478c8e4577d68564749c0dcdc706c0802f54300b803425f268",
+    "internal/albums/sharing.go": "259770cd4d54a7c18b94600519633b2289c354be32e475d31a08437f77105ac6",
+    "internal/albums/sharing_config.go": "75ca6d17aecc0b6cd2374de1e61d3c26a662235e7afe968604fbd3e21c8e672a",
+    "internal/albums/sharing_config_test.go": "9c19171bb7ca2f18ebab34c08e1a9459f38e2139d4a5ecef48f5aaa1daeb7b08",
+    "internal/albums/sharing_cos.go": "b410954e044f9c3d2735df236c5c54d9a6d09c098d550143b460030c729fc767",
+    "internal/albums/sharing_filename_test.go": "6a5d9370fe2e8db3790e8d4cfcfafe9d8e25ddac1c5d99f1e59d9f33838998e1",
+    "internal/albums/sharing_http.go": "ca6643f29859468f8e0133824bef33671b3b135d9f9a887ef631c89647d21a10",
+    "internal/albums/sharing_http_integration_test.go": "5ee8b39cd4b9f3667336fe3a8f5abd1aa33d9dcd5099533f25d15407d77900d2",
+    "internal/albums/sharing_integration_test.go": "07fe34b150618cd334ef1913f467991401065c41c3e0caa2c680c85af23b2415",
+    "migrations/0030_album_share_links.sql": "9cbe2e8e4b38e24e8a8e326d84c6949511ab35a9dfbc6aaaa3e7aea14ee9475c",
+    "migrations/embed_test.go": "b7c5e036b7e064f27f5824bf23df055533bc28e6ddb08e7a3ba2d30e7dafcc6b"
+  },
+  "environment": "isolated MySQL 8.4 and Redis over private Unix sockets; real MySQL sessions, HTTP/Gateway, migrations and COS SDK signing; controlled object transports and synthetic media",
+  "validation": [
+    {
+      "name": "subscription-integration",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-sbst5euh/subscription-integration.log",
+      "testCounts": {
+        "pass": 55
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "related-regression",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-sbst5euh/related-regression.log",
+      "testCounts": {
+        "pass": 507
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-sbst5euh/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-sbst5euh/build.log"
+    },
+    {
+      "name": "subscription-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-toji1dty/subscription-race.log",
+      "testCounts": {
+        "pass": 55
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-toji1dty/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-toji1dty/build.log"
+    }
+  ],
+  "servicesStopped": true,
+  "countsOverlap": true,
+  "verified": [
+    "real-session cross-account create/list/revoke rejected",
+    "password proof persisted without plaintext; process restart and key rotation recover stable links and claims",
+    "30 concurrent claimers cannot exceed final claim budget",
+    "one-hour claim retries are idempotent; expired requests cannot replay for free",
+    "all-resource Live bundle requires complete verified original evidence",
+    "fixed COS object version and authenticated unicode attachment filename",
+    "exact recipient CORS, real Redis rate limit, private bounded HTTP errors and drain rejection",
+    "revocation serializes against signing; no grants after revocation",
+    "retention deadline clips share and grant expiry; inactive accounts denied",
+    "connection pool size one does not deadlock grant signing",
+    "filename path, control and bidi spoofing sanitized"
+  ],
+  "runtimeSharingEnabled": false,
+  "providerCalls": "controlled COS transports only; no real cloud object requests",
+  "unverified": [
+    "real public HTTPS/COS downloads and provider attachment behavior",
+    "live Apple subscription/login configuration",
+    "physical-device share-sheet and recipient import behavior",
+    "account deletion, reminders and all-version retention purge",
+    "production hosting or IAM enablement"
+  ],
+  "automaticOriginalDeletionEnabled": false
+}

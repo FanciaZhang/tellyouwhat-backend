@@ -163,6 +163,10 @@ func (s *COSObjects) AuthorizeOriginalRead(ctx context.Context, object SealedObj
 
 // Callers validate the key against their own original or derivative namespace.
 func (s *COSObjects) signImmutableRead(ctx context.Context, key, version string, expiry time.Time) (string, error) {
+	return s.signImmutableReadWithQuery(ctx, key, version, expiry, nil)
+}
+
+func (s *COSObjects) signImmutableReadWithQuery(ctx context.Context, key, version string, expiry time.Time, extra url.Values) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -172,6 +176,9 @@ func (s *COSObjects) signImmutableRead(ctx context.Context, key, version string,
 		return "", ErrInvalidManifest
 	}
 	query := url.Values{"versionId": []string{version}}
+	for name, values := range extra {
+		query[name] = append([]string(nil), values...)
+	}
 	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, key, duration, &cos.PresignedURLOptions{Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
 	if err != nil {
 		return "", ErrCOSOperation

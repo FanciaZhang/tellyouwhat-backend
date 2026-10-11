@@ -23,6 +23,9 @@ type LoginHTTPOptions struct {
 	Sessions            SessionRevoker
 	Subscriptions       *AlbumSubscriptionService
 	NotificationLimiter LoginRateLimiter
+	Shares              *ShareService
+	ShareLimiter        LoginRateLimiter
+	ShareClaimLimiter   LoginRateLimiter
 	// Empty means direct peer only. Set only actual deployment proxy networks.
 	TrustedProxies []string
 }
@@ -30,6 +33,9 @@ type LoginHTTPOptions struct {
 func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *UploadService, options LoginHTTPOptions) (*gin.Engine, error) {
 	if options.Service == nil || options.Limiter == nil || options.Sessions == nil {
 		return nil, errors.New("album login, limiter and revoker are required")
+	}
+	if options.Shares != nil && (options.ShareLimiter == nil || options.ShareClaimLimiter == nil) {
+		return nil, ErrShareUnavailable
 	}
 	options.TrustedProxies = append([]string(nil), options.TrustedProxies...)
 	return newHTTPRouter(host, auth, uploads, &options, options.Multipart)
