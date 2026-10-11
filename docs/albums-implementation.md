@@ -349,3 +349,17 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 实况 staging PUT 显式向 COS SDK 传入 AuthTime，签名和 JSON 使用相同的开始/截止时间。避免 SDK 自行读取系统时间后跨越秒边界，导致严格客户端拒绝仍有效的授权。真实 SDK 的受控测试使用固定历史时间，验证 q-sign-time、q-key-time、Content-Length/Content-Type/Host 的签名列表和 JSON 截止时间一致；原件及归档命名空间继续分离。
 
 相册与 albumworker 的 Go race 共 323 passed / 0 failed；未启动 MySQL/Redis，相关 34 项集成用例 skipped。本次不更改数据库或 HTTP schema；相册、albumworker、gateway 的 vet 通过。证据与源码 SHA：[albums-live-pair-grant-deadline-2026-10-11.json](evidence/albums-live-pair-grant-deadline-2026-10-11.json)。没有真实 COS 请求或生产开通动作。
+
+## 独立相册 API 与隔离测试栈（2026-10-11）
+
+新增 `cmd/albumgateway`，装配既有 Apple 单次挑战/真实签名校验、AES-GCM refresh grant、MySQL 会话、Redis 限流及全部相册 HTTP 接口。只读取相册配置，不需要 Health/Journal/TOS/托管 AI 设置。启动检查相册身份、上传、分片、索引、媒体任务与完整实况表，以及 COS 版本控制；未迁移或桶版本控制暂停时拒绝启动。新登录账户额度仍为零，不伪造订阅或测试权益。
+
+配置拒绝 root 数据库用户、其他 App 数据库、Redis 非零 DB、公开/不规范代理 CIDR、无效或权限过宽的密钥文件，以及复用账户加密/HMAC 密钥。运行时 `/readyz` 检查 MySQL、Redis、退出状态；探针限定本机请求、正确 Host、固定小响应和无重定向。信号退出先拒绝新任务并等待 HTTP 排空，数据库和 Redis 随后关闭。
+
+`compose.albums-test.yaml` 独立项目提供专用 MySQL/Redis/网络/数据卷，API 仅发布本机端口 18090，迁移先完成才启动。Compose/root 数据库密码与应用运行环境分文件；Apple/账户私钥目录只挂 API。相册桶当前专用于开发联调，正式服务需独立桶和身份。部署、密钥挂载及 Caddy 接入操作见 [deploy/albums/README.md](../deploy/albums/README.md)。两份 CAM JSON 是待审批草案，没有应用真实权限；默认没有对象永久删除或桶/权限管理。
+
+本机隔离 MySQL 8.4/Redis 的相册及 worker race 回归 **386 passed / 0 failed / 0 skipped**；最终入口专项 **35 passed / 0 failed / 0 skipped**，包含已覆盖的相册测试及 6 个容器探针条目，两组有重叠。以独立测试数据库用户实际验证无法访问已有父测试库；真实 HTTP、RSA/ECDSA、AES-GCM、MySQL/Redis 覆盖挑战不可重用、会话跨实例恢复与即时撤销、零额度拒绝上传、图库接口、伪造代理头限流、缺库/Redis 故障/退出拒绝。Apple/COS 为协议替身，未进行真实用户授权或对象访问。
+
+相关 vet/build 退出码为 0；完整源码/结果摘要见 [albums-gateway-assembly-2026-10-11.json](evidence/albums-gateway-assembly-2026-10-11.json)。CI 增加相册 API/worker 两份容器以及隔离 Compose/Caddy 静态配置验证，生产部署条件未更改。本机未安装 Docker/Caddy，完整容器验证交给本提交 CI；不把 Compose 静态校验说成栈已部署。
+
+现网 `https://api.albums.tellyouwhat.cn/readyz` 本次 TLS 握手失败（curl 35），还不能配置成客户端真实 API。浏览器确认媒体默认/倍速转码两队列使用中，仅默认队列进入测试示例；处理、回收保持关闭。真实 COS/CI、Apple Sign in Key/App ID、测试权益、服务器/TLS、画质/费用、暂存与完整实况回收、原件安全释放和真机完整旅程继续验收。
