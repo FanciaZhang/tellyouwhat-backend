@@ -385,3 +385,13 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 本机隔离 MySQL 8.4/Redis 的相册与迁移 race **451 passed / 0 failed / 0 skipped**；入口 race **7 passed**；补充通知与定时核验入队断言后，专项 race **8 passed**，与前述相册条目重叠。首轮回滚测试受限于触发器 SUPER 权限，改为测试库 CHECK 约束注入失败后通过，未提升权限。验证覆盖月末截止日、迁移重放、并发领取、过期租约、重试、续费撤销、环境/账户隔离、空账户和事务失败回滚；vet/build 均退出 0。独立测试服务已停止，证据见 [albums-retention-reminders-2026-10-12.json](evidence/albums-retention-reminders-2026-10-12.json)。
 
 **尚未装配通知发送器。** APNs 注册/授权/设备路由、实际送达、发送前重新查询 Apple 当前权益及处理发送中的续费竞争仍需实现。本次没有生产迁移或通知，也没有媒体删除；回收站与六个月后原件、派生、分片及历史版本的永久清理仍未完成。
+
+### APNs 协议层（2026-10-12，未装配到运行时）
+
+新增相册专用 APNs 发送器，固定 `cn.tellyouwhat.albums` 与 Apple 官方域名，使用 HTTP/2、TLS 和 ES256。APNs 开发/生产环境显式选择，与订阅凭据环境独立；没有自动环境回退或复用登录/App Store 密钥。签名令牌复用五十分钟，多线程共享刷新；时钟回退拒绝发送。请求有效期受提醒租约限制，拒绝重定向和 HTTP/1 回执，网络结果不明时不在发送器内重发。
+
+锁屏只显示通用保留提醒，不包含账户、文件、地址或具体截止时间。APNs 保存期限最多二十四小时，且不越过当前提醒窗口；合并标识避免同一设备上堆积重复提醒，但不提供恰好一次保证。**APNs 接收不等于设备已显示，过期参数也不能保证绝不迟到。** 点击后的实际状态仍须由 App 查询。410 返回失效时间，后续必须比较设备注册代次和时间才能停用，不能让旧请求删除新注册；配置/令牌错误不盲目重试，429 限流及 5xx 至少延后十五分钟，并尊重更晚的 Retry-After。
+
+专项 race **21 passed / 0 failed / 0 skipped**；相关 race **421 passed / 0 failed / 51 skipped**，专项计数包含在后者中。真实本机 TLS/HTTP/2 与 ES256 验签覆盖固定请求和载荷；受控响应覆盖失效时间、退避、未知结果、格式/大小/回执异常、窗口及租约截止。未启动 MySQL/Redis，51 项集成用例跳过，不能拿本轮结果替代上一轮数据库验证。vet/build 通过；[源码和测试证据](evidence/albums-retention-apns-2026-10-12.json)。
+
+下一步仍需设备注册/授权/账户切换撤销、发送前最新权益核验、持久发送调度与回执，以及真实 APNs/真机验收。本发送器当前没有生产调用方，没有读取真实推送密钥或发送通知。协议依据：[APNs 请求](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)、[响应处理](https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns)、[签名连接](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns)。
