@@ -141,6 +141,10 @@ func (r *MySQLUploads) CloudMediaGrantDeadline(ctx context.Context, owner string
 	if err != nil {
 		return time.Time{}, err
 	}
+	return cloudAccountMediaDeadline(account)
+}
+
+func cloudAccountMediaDeadline(account AlbumCloudAccount) (time.Time, error) {
 	if account.State != "active" {
 		return time.Time{}, ErrSubscriptionRequired
 	}

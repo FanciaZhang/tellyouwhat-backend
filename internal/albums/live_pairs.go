@@ -180,6 +180,10 @@ func (s *UploadService) CreateLivePair(ctx context.Context, owner, version, requ
 	if err != nil {
 		return LivePairUpload{}, err
 	}
+	v, err := s.verifiedAssetVersion(ctx, owner, version)
+	if err != nil {
+		return LivePairUpload{}, err
+	}
 	// A verified canonical pair wins a race between devices. No second write or
 	// quota reservation is permitted, even if the locally generated UUID differs.
 	if old, err := r.LivePair(ctx, owner, version); err == nil {
@@ -191,10 +195,6 @@ func (s *UploadService) CreateLivePair(ctx context.Context, owner, version, requ
 		}
 		return old, nil
 	} else if !errors.Is(err, ErrNotFound) {
-		return LivePairUpload{}, err
-	}
-	v, err := s.verifiedAssetVersion(ctx, owner, version)
-	if err != nil {
 		return LivePairUpload{}, err
 	}
 	pr, ok := s.repository.(PhotoWriteRepository)
@@ -230,6 +230,9 @@ func (s *UploadService) LivePair(ctx context.Context, owner, version string) (Li
 	if err != nil {
 		return LivePairUpload{}, err
 	}
+	if _, err := s.verifiedAssetVersion(ctx, owner, version); err != nil {
+		return LivePairUpload{}, err
+	}
 	return r.LivePair(ctx, owner, version)
 }
 func (s *UploadService) LivePairGrants(ctx context.Context, owner, id string) ([]PutGrant, error) {
@@ -259,17 +262,38 @@ func (s *UploadService) LivePairGrants(ctx context.Context, owner, id string) ([
 	if u.ExpiresAt.Before(expiry) {
 		expiry = u.ExpiresAt
 	}
-	expiry, err = cloudMediaGrantExpiry(ctx, s.repository, owner, now, expiry)
+	grants := make([]PutGrant, 0, 2)
+	sign := func(deadline time.Time) error {
+		if deadline.After(expiry) || !s.now().UTC().Before(deadline) {
+			return ErrExpired
+		}
+		for _, part := range []string{"photo", "motion"} {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			g, err := storage.AuthorizeLivePairPut(ctx, u, part, deadline)
+			if err != nil {
+				return err
+			}
+			grants = append(grants, g)
+		}
+		if !s.now().UTC().Before(deadline) {
+			return ErrExpired
+		}
+		return nil
+	}
+	if repository, ok := s.repository.(interface {
+		WithLivePairUploadGrant(context.Context, LivePairUpload, time.Time, time.Time, func(time.Time) error) error
+	}); ok {
+		err = repository.WithLivePairUploadGrant(ctx, u, now, expiry, sign)
+	} else {
+		expiry, err = cloudMediaGrantExpiry(ctx, s.repository, owner, now, expiry)
+		if err == nil {
+			err = sign(expiry)
+		}
+	}
 	if err != nil {
 		return nil, err
-	}
-	grants := make([]PutGrant, 0, 2)
-	for _, id := range []string{"photo", "motion"} {
-		g, err := storage.AuthorizeLivePairPut(ctx, u, id, expiry)
-		if err != nil {
-			return nil, err
-		}
-		grants = append(grants, g)
 	}
 	return grants, nil
 }

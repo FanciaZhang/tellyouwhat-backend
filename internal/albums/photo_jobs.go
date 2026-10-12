@@ -78,7 +78,7 @@ func (r *MySQLUploads) PendingPhotoJobs(ctx context.Context, now time.Time, limi
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+photoJobColumns+` FROM album_photo_jobs WHERE (state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?) ORDER BY available_at,CASE WHEN preset LIKE 'grid_%' THEN 0 ELSE 1 END,job_id LIMIT ?`, now, now, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+photoJobColumns+` FROM album_photo_jobs j WHERE ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_versions v JOIN album_asset_lifecycle a ON a.owner_id=v.owner_id AND a.asset_id=v.asset_id WHERE v.owner_id=j.owner_id AND v.version_id=j.version_id AND a.state='active') ORDER BY available_at,CASE WHEN preset LIKE 'grid_%' THEN 0 ELSE 1 END,job_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +102,23 @@ func (r *MySQLUploads) ClaimPhotoJob(ctx context.Context, owner, id, token strin
 		return PhotoJob{}, err
 	}
 	defer tx.Rollback()
+	if _, err := lockAccount(ctx, tx, owner); err != nil {
+		if errors.Is(err, ErrOwner) {
+			return PhotoJob{}, ErrLease
+		}
+		return PhotoJob{}, err
+	}
 	j, err := scanPhotoJob(tx.QueryRowContext(ctx, `SELECT `+photoJobColumns+` FROM album_photo_jobs WHERE owner_id=? AND job_id=? AND ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) FOR UPDATE`, owner, id, now, now))
 	if errors.Is(err, ErrNotFound) {
 		return PhotoJob{}, ErrLease
 	}
 	if err != nil {
+		return PhotoJob{}, err
+	}
+	if err := requireVisibleVersion(ctx, tx, owner, j.VersionID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return PhotoJob{}, ErrLease
+		}
 		return PhotoJob{}, err
 	}
 	if j.Attempts >= 8 {

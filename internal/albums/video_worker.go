@@ -73,8 +73,9 @@ func (w *VideoWorker) RunOnce(ctx context.Context) (VideoJobBatch, error) {
 			batch.Contended++
 			continue
 		}
+		// A concurrent trash may hide the version; restoration can resume this job.
 		terminal := errors.Is(stepErr, ErrVideoFailed) || errors.Is(stepErr, ErrVideoUnsupported) || errors.Is(stepErr, ErrInvalidManifest) ||
-			errors.Is(stepErr, ErrIncompleteBackup) || errors.Is(stepErr, ErrNotFound) || errors.Is(stepErr, ErrQuota) || errors.Is(stepErr, ErrConflict)
+			errors.Is(stepErr, ErrIncompleteBackup) || errors.Is(stepErr, ErrQuota) || errors.Is(stepErr, ErrConflict)
 		finishErr := w.queue.FinishVideoStep(ctx, current, stepErr != nil, terminal, w.service.now().UTC())
 		if errors.Is(finishErr, ErrLease) {
 			batch.Contended++

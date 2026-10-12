@@ -79,6 +79,9 @@ func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest st
 		if !errors.Is(err, ErrNotFound) {
 			return u, err
 		}
+		if err := requireVisibleVersion(ctx, tx, u.OwnerID, u.ID); err != nil {
+			return u, err
+		}
 		if err := derivedBudgetOpen(ctx, tx, spec.OwnerID, versionID); err != nil {
 			return u, err
 		}

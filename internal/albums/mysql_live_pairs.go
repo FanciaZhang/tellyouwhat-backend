@@ -78,6 +78,9 @@ func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, no
 	if err != nil {
 		return LivePairUpload{}, err
 	}
+	if err := requireVisibleVersion(ctx, tx, u.OwnerID, u.VersionID); err != nil {
+		return LivePairUpload{}, err
+	}
 	old, err := scanLivePair(tx.QueryRowContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs WHERE owner_id=? AND request_id=? FOR UPDATE`, u.OwnerID, u.RequestID))
 	if err == nil {
 		if old.VersionID != u.VersionID || old.Descriptor != u.Descriptor || old.ManifestDigest != u.ManifestDigest || old.State == "retired" || old.State == "retiring" {
@@ -167,6 +170,9 @@ func (r *MySQLUploads) mutateLivePair(ctx context.Context, owner, id string, fn 
 }
 func (r *MySQLUploads) SubmitLivePair(ctx context.Context, owner, id string, now time.Time) (LivePairUpload, error) {
 	return r.mutateLivePair(ctx, owner, id, func(tx *sql.Tx, u LivePairUpload) (LivePairUpload, error) {
+		if err := requireVisibleVersion(ctx, tx, owner, u.VersionID); err != nil {
+			return u, err
+		}
 		if u.State == "verified" || u.State == "queued" || u.State == "verifying" {
 			return u, nil
 		}
@@ -185,7 +191,7 @@ func (r *MySQLUploads) PendingLivePairs(ctx context.Context, now time.Time, limi
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs WHERE (state='queued' AND available_at<=?) OR (state='verifying' AND lease_until<=?) ORDER BY available_at,pair_upload_id LIMIT ?`, now, now, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs p WHERE ((state='queued' AND available_at<=?) OR (state='verifying' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=p.owner_id AND a.asset_id=p.asset_id AND a.state='active') ORDER BY available_at,pair_upload_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +211,12 @@ func (r *MySQLUploads) ClaimLivePair(ctx context.Context, owner, id, token strin
 		return LivePairUpload{}, ErrInvalidManifest
 	}
 	u, err := r.mutateLivePair(ctx, owner, id, func(tx *sql.Tx, u LivePairUpload) (LivePairUpload, error) {
+		if err := requireVisibleVersion(ctx, tx, owner, u.VersionID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return u, ErrLease
+			}
+			return u, err
+		}
 		if (u.State != "queued" && u.State != "verifying") || (u.State == "verifying" && u.LeaseUntil.After(now)) {
 			return u, ErrLease
 		}
@@ -245,6 +257,9 @@ func (r *MySQLUploads) BeginLivePairSeal(ctx context.Context, expected LivePairU
 		}
 		if consumed {
 			return u, nil
+		}
+		if err := requireVisibleVersion(ctx, tx, u.OwnerID, u.VersionID); err != nil {
+			return u, err
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE album_live_pairs SET `+column+`=TRUE,updated_at=? WHERE pair_upload_id=?`, now, u.ID)
 		if part == "photo" {
@@ -321,6 +336,53 @@ func (r *MySQLUploads) DeferLivePair(ctx context.Context, expected LivePairUploa
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE album_live_pairs SET state=?,available_at=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE pair_upload_id=?`, state, now.Add(time.Minute), now, u.ID)
 		return u, err
+	})
+	return err
+}
+
+// Sign locally under the same account lock as trash and subscription changes.
+// A previously issued PUT may finish later; it must be reconciled before purge.
+func (r *MySQLUploads) WithLivePairUploadGrant(ctx context.Context, expected LivePairUpload, now, expiry time.Time, authorize func(time.Time) error) error {
+	if !validOwner(expected.OwnerID) || !validOwner(expected.ID) || !validOwner(expected.VersionID) || now.IsZero() || !expiry.After(now) || expiry.After(now.Add(10*time.Minute)) || authorize == nil {
+		return ErrInvalidManifest
+	}
+	currentTime := func() time.Time {
+		if r.billingNow != nil {
+			if current := r.billingNow().UTC(); current.After(now) {
+				return current
+			}
+		}
+		return now
+	}
+	_, err := r.mutateLivePair(ctx, expected.OwnerID, expected.ID, func(tx *sql.Tx, u LivePairUpload) (LivePairUpload, error) {
+		if u.VersionID != expected.VersionID || u.AssetID != expected.AssetID || u.ManifestDigest != expected.ManifestDigest || u.Descriptor != expected.Descriptor || u.State != "uploading" {
+			return u, ErrConflict
+		}
+		if err := requireVisibleVersion(ctx, tx, u.OwnerID, u.VersionID); err != nil {
+			return u, err
+		}
+		expiry = minTime(expiry, u.ExpiresAt)
+		if r.billingEnvironment != "" {
+			account, err := r.cloudAccountInTransaction(ctx, tx, u.OwnerID, currentTime())
+			if err != nil {
+				return u, err
+			}
+			deadline, err := cloudAccountMediaDeadline(account)
+			if err != nil {
+				return u, err
+			}
+			expiry = minTime(expiry, deadline)
+		}
+		if !currentTime().Before(expiry) {
+			return u, ErrExpired
+		}
+		if err := authorize(expiry); err != nil {
+			return u, err
+		}
+		if !currentTime().Before(expiry) {
+			return u, ErrExpired
+		}
+		return u, nil
 	})
 	return err
 }

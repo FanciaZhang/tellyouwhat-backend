@@ -94,7 +94,7 @@ func (r *MySQLUploads) PendingVideoJobs(ctx context.Context, now time.Time, limi
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+videoJobColumns+` FROM album_video_jobs WHERE (state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?) ORDER BY available_at,job_id LIMIT ?`, now, now, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+videoJobColumns+` FROM album_video_jobs j WHERE ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_versions v JOIN album_asset_lifecycle a ON a.owner_id=v.owner_id AND a.asset_id=v.asset_id WHERE v.owner_id=j.owner_id AND v.version_id=j.version_id AND a.state='active') ORDER BY available_at,job_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +119,23 @@ func (r *MySQLUploads) ClaimVideoJob(ctx context.Context, owner, id, token strin
 		return VideoJob{}, err
 	}
 	defer tx.Rollback()
+	if _, err := lockAccount(ctx, tx, owner); err != nil {
+		if errors.Is(err, ErrOwner) {
+			return VideoJob{}, ErrLease
+		}
+		return VideoJob{}, err
+	}
 	j, err := scanVideoJob(tx.QueryRowContext(ctx, `SELECT `+videoJobColumns+` FROM album_video_jobs WHERE owner_id=? AND job_id=? AND ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) FOR UPDATE`, owner, id, now, now))
 	if errors.Is(err, ErrNotFound) {
 		return VideoJob{}, ErrLease
 	}
 	if err != nil {
+		return VideoJob{}, err
+	}
+	if err := requireVisibleVersion(ctx, tx, owner, j.VersionID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return VideoJob{}, ErrLease
+		}
 		return VideoJob{}, err
 	}
 	if j.Failures >= 8 || (!j.Deadline.IsZero() && !j.Deadline.After(now)) {
@@ -178,6 +190,9 @@ func (r *MySQLUploads) BeginVideoSubmission(ctx context.Context, expected VideoJ
 				return u, ErrConflict
 			}
 			return u, nil
+		}
+		if err := requireVisibleVersion(ctx, tx, u.OwnerID, u.ID); err != nil {
+			return u, err
 		}
 		if err := derivedBudgetOpen(ctx, tx, u.OwnerID, u.ID); err != nil {
 			return u, err
