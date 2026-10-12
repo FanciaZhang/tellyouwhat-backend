@@ -12,6 +12,8 @@
 
 服务按 `compose.birthday-development.yaml` 运行，只绑定回环端口。后端代码位于 `codex/birthday-real-ai` 分支；该开发部署使用固定源码提交编译的 Linux amd64 二进制，不替换其他 App 的运行镜像。HTTP 合同位于 `Contracts/HTTP/BirthdayAPI/app.openapi.yaml`，使用现有 `openapi-compose` 和 Gin 生成器，纳入全量 Go 测试与生成检查。
 
+现有已部署的运营策略只接受健康和手记两种 App。生日开发调用暂以代码限定 `birthday.propose`／`birthday.revise`、Ark 计费和每月 10 元的独立成本上限，同时执行数据库中的共享项目预算与并发限制；不会重写原有已发布策略。其他未知 App 或生日的其他操作仍被拒绝。正式运营面板支持生日后，应迁移到版本化策略。
+
 首块使用代码版本化提示词和生日专用固定额度，独立启动不加载健康与手记的提示词或运营默认配置。正式需要提示词灰度发布时，再添加生日专用的管理作用域。
 
 客户端 Debug 使用 `Configuration/AI.Debug.xcconfig`，开发注册凭据位于被 Git 忽略的 `Configuration/AI.local.xcconfig`，文件权限为 `0600`。Release 不读取该配置，当前正式服务地址仍为空。正式接入需完成生日域名 DNS/TLS、Production App Attest 与正式设备验收。
