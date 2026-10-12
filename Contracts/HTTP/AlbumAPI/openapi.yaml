@@ -943,7 +943,7 @@ components:
         assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
         versionID: {type: string, format: uuid}
         revision: {type: integer, format: int64, minimum: 1}
-        state: {type: string, enum: [active, trashed]}
+        state: {type: string, enum: [active, trashed, purged]}
         changedAt: {type: string, format: date-time}
         trashedAt: {type: string, format: date-time}
         trashExpiresAt: {type: string, format: date-time}

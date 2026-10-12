@@ -36,7 +36,7 @@ func scanAssetState(row rowScanner) (CloudAssetState, error) {
 	if err != nil {
 		return state, err
 	}
-	if !resourceIDPattern.MatchString(state.AssetID) || state.Revision < 0 || state.epoch < 0 || (state.State != "active" && state.State != "trashed") || trashed.Valid != expires.Valid || (state.State == "trashed") != trashed.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
+	if !resourceIDPattern.MatchString(state.AssetID) || state.Revision < 0 || state.epoch < 0 || (state.State != "active" && state.State != "trashed" && state.State != "purged") || trashed.Valid != expires.Valid || (state.State == "trashed") != trashed.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
 		return state, ErrConflict
 	}
 	if trashed.Valid {
@@ -89,6 +89,9 @@ func (r *MySQLUploads) CloudAsset(ctx context.Context, owner, asset string, now 
 	state, err := scanAssetState(tx.QueryRowContext(ctx, `SELECT `+lifecycleColumns+` FROM album_asset_lifecycle WHERE owner_id=? AND asset_id=? AND revision>0`, owner, asset))
 	if err != nil {
 		return state, err
+	}
+	if state.State == "purged" {
+		return state, ErrNotFound
 	}
 	if state.TrashExpiresAt != nil {
 		until := minTime(deadline, *state.TrashExpiresAt)

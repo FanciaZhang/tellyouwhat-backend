@@ -393,4 +393,14 @@ func TestMySQLObjectPurgeIncludesLivePhotoComponentsAndPair(t *testing.T) {
 			}
 		}
 	}
+	used, reserved := photoJournalBalance(t, db, u.OwnerID)
+	storage := drainPurgeFixture(t, r, u, now)
+	refund, err := r.settleObjectPurge(ctx, u.OwnerID, u.Manifest.AssetID, storage, func() time.Time { return now })
+	if err != nil || refund != used || reserved != 0 {
+		t.Fatal("Live Photo settlement omitted components", refund, used, reserved, err)
+	}
+	after, held := photoJournalBalance(t, db, u.OwnerID)
+	if after != 0 || held != 0 {
+		t.Fatal("Live Photo quota retained", after, held)
+	}
 }

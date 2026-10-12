@@ -33,7 +33,7 @@ func scanLibraryChange(row rowScanner) (LibraryChange, error) {
 	if err != nil {
 		return c, err
 	}
-	if c.Sequence < 1 || c.Revision < 1 || !resourceIDPattern.MatchString(c.AssetID) || !validOwner(c.VersionID) || c.ChangedAt.IsZero() || (c.State != "active" && c.State != "trashed") || (c.State == "trashed") != trashed.Valid || trashed.Valid != expires.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
+	if c.Sequence < 1 || c.Revision < 1 || !resourceIDPattern.MatchString(c.AssetID) || !validOwner(c.VersionID) || c.ChangedAt.IsZero() || (c.State != "active" && c.State != "trashed" && c.State != "purged") || (c.State == "trashed") != trashed.Valid || trashed.Valid != expires.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
 		return c, ErrConflict
 	}
 	if trashed.Valid {

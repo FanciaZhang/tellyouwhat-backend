@@ -70,6 +70,12 @@ type objectPurge struct {
 }
 
 func (p objectPurge) validate() error {
+	if p.State == "completed" {
+		if !validOwner(p.OwnerID) || !resourceIDPattern.MatchString(p.AssetID) || p.Revision <= 0 || p.ExpiresAt.IsZero() || len(p.Targets) != 0 || p.Index != 0 || p.ActionIndex != 0 || p.Plan != nil || p.LeaseToken != "" || !p.LeaseUntil.IsZero() {
+			return ErrConflict
+		}
+		return nil
+	}
 	if !validOwner(p.OwnerID) || !resourceIDPattern.MatchString(p.AssetID) || p.Revision <= 0 || p.ExpiresAt.IsZero() ||
 		len(p.Targets) == 0 || len(p.Targets) > 10000 || p.Index < 0 || p.Index > len(p.Targets) ||
 		(p.State != "queued" && p.State != "running" && p.State != "objects_removed") ||
