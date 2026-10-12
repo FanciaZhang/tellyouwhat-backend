@@ -107,6 +107,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	birthdayOnly := len(platform.Apps) == 1 && platform.Apps[0].Registry.ID == appregistry.Birthday
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
@@ -124,7 +125,7 @@ func run(logger *slog.Logger) error {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH contains no certificates")
 	}
 	var tosStore *media.TOSStore
-	if len(platform.Apps) != 1 || platform.Apps[0].Registry.ID != appregistry.Birthday {
+	if !birthdayOnly {
 		tosStore, err = media.NewTOSStore(platform.TOS)
 		if err != nil {
 			return err
@@ -135,7 +136,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeStorage()
-	if platform.StorageMode == "mysql" {
+	if platform.StorageMode == "mysql" && !birthdayOnly {
 		defaults, err := config.LoadOperationsDefaults()
 		if err != nil {
 			return err
@@ -318,7 +319,9 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	ops := platformops.Store{DB: shared.database}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
-	limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	if appConfig.Registry.ID != appregistry.Birthday {
+		limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
 		operations:        ops,
