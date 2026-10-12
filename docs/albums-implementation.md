@@ -395,3 +395,15 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 专项 race **21 passed / 0 failed / 0 skipped**；相关 race **421 passed / 0 failed / 51 skipped**，专项计数包含在后者中。真实本机 TLS/HTTP/2 与 ES256 验签覆盖固定请求和载荷；受控响应覆盖失效时间、退避、未知结果、格式/大小/回执异常、窗口及租约截止。未启动 MySQL/Redis，51 项集成用例跳过，不能拿本轮结果替代上一轮数据库验证。vet/build 通过；[源码和测试证据](evidence/albums-retention-apns-2026-10-12.json)。
 
 下一步仍需设备注册/授权/账户切换撤销、发送前最新权益核验、持久发送调度与回执，以及真实 APNs/真机验收。本发送器当前没有生产调用方，没有读取真实推送密钥或发送通知。协议依据：[APNs 请求](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)、[响应处理](https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns)、[签名连接](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns)。
+
+### 设备注册存储（2026-10-12，尚未公开接口）
+
+迁移 0032 将每个会话、推送环境的注册单独保存；设备令牌 AES-GCM 加密，认证数据绑定注册 ID、会话、账户、环境和修订号。数据库仅以 SHA-256 查重，状态响应不包含令牌，内部目标的日志及 JSON 也不暴露令牌。更新从真实会话解析身份，按账户、Apple 授权、会话顺序加锁；请求 ID 保证重试幂等，修订号拒绝迟到更新，关闭通知擦除令牌密文。
+
+同一环境的一个令牌只属于一个注册。新的登录会话可以接管；旧会话留下不可恢复的替代状态，不能利用迟到请求抢回。接管与旧绑定撤销在同一事务完成；保存失败全部回滚。旧账户随后退出不会撤销新绑定。APNs 410 只有在注册修订号匹配且失效时间不早于当前注册时才停用，避免旧回执误伤新注册。
+
+自然会话过期只阻止注册读取/更新，不阻止到期提醒的内部目标读取，避免三十天会话令牌让六个月保留提醒失效。内部目标读取仍要求账户有效、会话未撤销、Apple 授权未被数据库记录为撤销；退出后的读取立即拒绝。这里只验证数据库状态，不能作为已接通 Apple 撤销通知或实际发送前复核的证据。
+
+隔离 MySQL 8.4/Redis 的相册、迁移和入口 race **484 passed / 0 failed / 0 skipped**，包含 APNs 协议测试。补充注册状态读取后专项 **5 passed**，与前述重叠；最终 vet/build 通过。覆盖八并发更新、重启、加密绑定、环境/账户隔离、令牌轮换、权限关闭、会话到期/退出、账户停用、数据库授权撤销、迟到失效回执及接管失败回滚。测试服务已停止，[证据与源码绑定](evidence/albums-push-registrations-2026-10-12.json)。
+
+前一提交 `64198dc` 的 [CI 38207404276](https://github.com/FanciaZhang/tellyouwhat-backend/actions/runs/38207404276) 已全部成功：verify 和八份容器通过，部署跳过；该结果不覆盖此后的 APNs 和设备注册代码。**HTTP 合约/接口、iOS 通知授权与注册、离线退出重试、运行时调度及真实送达仍未接通。** 当前注册模块仅供内部调用与测试，未收集真实设备令牌、未发送通知，也未部署迁移。

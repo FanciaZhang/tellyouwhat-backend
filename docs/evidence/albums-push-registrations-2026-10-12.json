@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T05:34:44.719512+00:00",
+  "baselineCommit": "f2b03ae4b365c0e94b9a347f6b79d553bb72c636",
+  "scope": "encrypted session-bound APNs registration storage, versioned updates and delivery eligibility; no HTTP/client/dispatcher wiring",
+  "sourceSHA256": {
+    "internal/albums/push_registrations.go": "e4c00d9f3848442c73ddf1210bf03565305071c2c564d749e8800d32a668adfe",
+    "internal/albums/push_registrations_integration_test.go": "38be91e36e79f16491f7f5d1c75bb6e62c9d66d9f0f7c59f941e8b5fb99ac826",
+    "internal/albums/sessions.go": "eeb0295f72e082e6f9d084da4afc0adb6771a1b37d2d4060e994e3f2c8a9e50e",
+    "internal/albums/accounts.go": "5dd7b119f44b214812c77748b61714b385e65bef80ad184f399d4dd66d783733",
+    "internal/albums/retention_apns.go": "8c28a941bcca991c08eb5a6353fc90f26192d5472d6853a904dcb2449b0b5657",
+    "internal/albums/retention_apns_test.go": "c071efe5de5c5bfb167b647d95aa5cb2dc89aaf355e86f3680bed29048dc6f2c",
+    "migrations/0032_album_push_registrations.sql": "39af75221d19c803112fae08f269a579866102d670a1f41191d106c522f6d24e",
+    "migrations/embed_test.go": "f51d55828c55d20395a7d39355f1e7c952017f035595f0be811726568c3afc39",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b"
+  },
+  "validation": [
+    {
+      "name": "RegressionRace",
+      "exitCode": 0,
+      "logSHA256": "0986c9ec681830d67c98d0122803ee9e0c7fb7014350bc55e7f1dfb9fc52155c",
+      "counts": {
+        "pass": 484
+      },
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+          "Action": "pass",
+          "Elapsed": 1.865
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Action": "pass",
+          "Elapsed": 1.9409999999999998
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Action": "pass",
+          "Elapsed": 3.806
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 19.192
+        }
+      ],
+      "tests": []
+    },
+    {
+      "name": "FinalPushRace",
+      "exitCode": 0,
+      "logSHA256": "122269b911c72096669914d39ee22b8117cf2954c45613fda7eeb0a1556fc5dd",
+      "counts": {
+        "pass": 5
+      },
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 3.863
+        }
+      ],
+      "tests": [
+        {
+          "Test": "TestMySQLAlbumPushEncryptionReplayExpiryAndLogout",
+          "Action": "pass",
+          "Elapsed": 0.55
+        },
+        {
+          "Test": "TestMySQLAlbumPushAccountSwitchFencesOldSession",
+          "Action": "pass",
+          "Elapsed": 0.47
+        },
+        {
+          "Test": "TestMySQLAlbumPushRotationPermissionAndLateInvalidation",
+          "Action": "pass",
+          "Elapsed": 0.55
+        },
+        {
+          "Test": "TestMySQLAlbumPushConcurrentCASAndEnvironmentIsolation",
+          "Action": "pass",
+          "Elapsed": 0.37
+        },
+        {
+          "Test": "TestMySQLAlbumPushTransferFailureRollsBackOldBinding",
+          "Action": "pass",
+          "Elapsed": 0.36
+        }
+      ]
+    },
+    {
+      "name": "FinalVet",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "FinalBuild",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "countsOverlap": true,
+  "sourceBindingNote": "484-entry regression precedes addition of the current-registration read method; final five integration tests plus vet/build verify the recorded source, including locked current reads.",
+  "environment": "isolated MySQL 8.4 and Redis over private Unix sockets; each integration test uses its own restricted schema/user; real AES-GCM; synthetic session, Apple grant and APNs data",
+  "verified": [
+    "migration replay and encrypted token recovery after repository reopen",
+    "AAD rejects account, environment, revision and registration transplantation",
+    "stable idempotent request replay and conflict on changed payload",
+    "eight concurrent same-revision updates yield one commit",
+    "device token rotation and notification disable reject late enable requests",
+    "newer session transfers a token across accounts; replaced session remains superseded",
+    "older session cannot steal a token and old logout cannot revoke the new binding",
+    "normal 30-day session expiry blocks mutations but does not lose six-month reminder eligibility",
+    "committed session revocation, grant revocation and account disable block target lookup",
+    "owner and development/production isolation",
+    "APNs invalidation compares both exact revision and registration time",
+    "injected SQL failure after old-binding mutation rolls back the whole transfer",
+    "same transfer request succeeds after the injected failure is removed"
+  ],
+  "servicesStopped": true,
+  "runtimeEnabled": false,
+  "liveProviderAcceptance": false,
+  "priorCI": {
+    "headCommit": "64198dc8a4692707054cc2e39c20587605831350",
+    "runID": 38207404276,
+    "conclusion": "success",
+    "verify": "success",
+    "containersPassed": 8,
+    "deployment": "skipped",
+    "coversThisChange": false
+  },
+  "unverified": [
+    "HTTP endpoints and strict request contract; deployment wiring",
+    "native notification consent and registration, account switching and durable offline logout",
+    "delivery worker, fresh Apple entitlement check and prevention of stale target use before external send",
+    "Apple revocation ingestion and real APNs/device/TestFlight journey",
+    "account deletion, inactive registration cleanup and all-version permanent media purge"
+  ]
+}
