@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/tellyouwhat/backend/internal/birthdayhttpapi"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
@@ -49,6 +50,14 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 		server.registerHealthRoutes(router)
 	case appregistry.Journal:
 		server.registerJournalRoutes(router)
+	case appregistry.Birthday:
+		strict := birthdayhttpapi.NewStrictHandlerWithOptions(server, nil, birthdayhttpapi.StrictGinServerOptions{
+			RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+				writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request violates the transport contract")
+			},
+			HandlerErrorFunc: strictHandlerError, ResponseErrorHandlerFunc: strictResponseError,
+		})
+		birthdayhttpapi.RegisterHandlersWithOptions(router, strict, birthdayhttpapi.GinServerOptions{ErrorHandler: parameterError})
 	default:
 		panic("unsupported App router")
 	}
@@ -138,6 +147,8 @@ func captureRawRequestBody() gin.HandlerFunc {
 
 func requestBodyLimit(method, path string) int64 {
 	switch method + " " + path {
+	case "POST /v2/birthday/assist":
+		return 64 << 10
 	case "POST /v1/journal/voice/sessions":
 		return 8 << 10
 	case "POST /v1/attest/challenges":
@@ -197,6 +208,8 @@ func (server *Server) operationIDs() map[string]string {
 		documents = append(documents, mustOpenAPI(healthhttpapi.GetSwagger()))
 	case appregistry.Journal:
 		documents = append(documents, mustOpenAPI(journalhttpapi.GetSwagger()))
+	case appregistry.Birthday:
+		documents = append(documents, mustOpenAPI(birthdayhttpapi.GetSwagger()))
 	}
 	result := make(map[string]string)
 	for _, document := range documents {

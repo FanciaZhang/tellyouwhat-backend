@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: Birthday Assistant API
+  version: 2.0.0
+  description: Scoped decisions for one birthday, with shared PlatformAPI authentication.
+servers:
+- url: https://api.journal.tellyouwhat.cn/_development/birthday
+  description: Private development
+tags:
+- name: Birthday
+paths:
+  /v2/birthday/assist:
+    post:
+      operationId: assistBirthday
+      tags: [Birthday]
+      summary: Propose or revise an arrangement without saving or executing it.
+      security:
+      - AppAttestKeyID: []
+        AppAttestAssertion: []
+        AppAttestNonce: []
+        AppAttestTimestamp: []
+        AppAttestRequestID: []
+      parameters:
+      - $ref: '#/components/parameters/RequestIDHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BirthdayRequest'}
+      responses:
+        '200':
+          description: Validated model output, bound to the request and draft revision.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BirthdayResponse'}
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  schemas:
+    BirthdayRequest:
+      type: object
+      additionalProperties: false
+      x-go-type: birthday.Request
+      x-go-type-import: {path: github.com/tellyouwhat/backend/internal/birthday}
+      required: [contractVersion, promptVersion, requestID, sessionID, draftRevision, operation, celebrationDate, timeZone, leadTimeDays, relationshipTags, idea, budgetText, currency, evidence, history, answers, questionsAsked, skipQuestions, completedPreparations, change]
+      properties:
+        contractVersion: {type: integer, enum: [2]}
+        promptVersion: {type: integer, enum: [1]}
+        requestID: {type: string, format: uuid}
+        sessionID: {type: string, format: uuid}
+        draftRevision: {type: integer, minimum: 0, maximum: 10000}
+        operation: {type: string, enum: [propose, revise]}
+        celebrationDate: {type: string, format: date}
+        timeZone: {type: string}
+        leadTimeDays: {type: integer, minimum: 0, maximum: 36525}
+        relationshipTags: {type: array, items: {type: string}}
+        idea: {type: string, maxLength: 3000}
+        budgetText: {type: string}
+        budgetMaximum: {type: number, nullable: true, minimum: 0}
+        currency: {type: string, enum: [CNY]}
+        evidence:
+          type: array
+          maxItems: 28
+          items: {$ref: '#/components/schemas/BirthdayEvidence'}
+        history:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/BirthdayHistory'}
+        answers: {type: object, additionalProperties: {type: string}, maxProperties: 2}
+        questionsAsked: {type: integer, minimum: 0, maximum: 2}
+        skipQuestions: {type: boolean}
+        currentProposal:
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/BirthdayProposal'}]
+        completedPreparations: {type: array, items: {type: string}}
+        change: {type: string, maxLength: 3000}
+    BirthdayEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, kind, text]
+      properties:
+        id: {type: string, minLength: 1}
+        kind: {type: string, enum: [preference, taboo, history]}
+        text: {type: string, minLength: 1}
+        date: {type: string, nullable: true}
+    BirthdayHistory:
+      type: object
+      additionalProperties: false
+      required: [sourceID, title, category, actualCelebration, reaction, tags, reusePolicy, nextTimeNote, date]
+      properties:
+        sourceID: {type: string}
+        title: {type: string}
+        category: {type: string}
+        actualCelebration: {type: string}
+        reaction: {type: string}
+        tags: {type: array, items: {type: string}}
+        reusePolicy: {type: string, enum: [undecided, similarIsFine, avoidRepeating]}
+        nextTimeNote: {type: string}
+        date: {type: string}
+    BirthdayAction:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, detail]
+      properties:
+        id: {type: string, minLength: 1}
+        kind: {type: string, enum: [gift, meal, experience, call, visit, custom, skip]}
+        title: {type: string, minLength: 1}
+        detail: {type: string, minLength: 1}
+    BirthdayPreparation:
+      type: object
+      additionalProperties: false
+      required: [id, actionID, title, completion, dependsOn, estimatedDays, timingBasis]
+      properties:
+        id: {type: string}
+        actionID: {type: string}
+        title: {type: string}
+        completion: {type: string}
+        dependsOn: {type: array, items: {type: string}}
+        estimatedDays: {type: integer, nullable: true, minimum: 0}
+        timingBasis: {type: string, nullable: true}
+    BirthdayProposal:
+      type: object
+      additionalProperties: false
+      required: [id, title, reason, evidenceIDs, actions, preparations, budgetUpperBound, budgetNote, unknowns, tradeoff, alternative]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        reason: {type: string}
+        evidenceIDs: {type: array, items: {type: string}}
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: {$ref: '#/components/schemas/BirthdayAction'}
+        preparations:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/BirthdayPreparation'}
+        budgetUpperBound: {type: number, nullable: true, minimum: 0}
+        budgetNote: {type: string}
+        unknowns: {type: array, items: {type: string}}
+        tradeoff: {type: string}
+        alternative: {type: string}
+    BirthdayQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, title, choices]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        choices: {type: array, minItems: 2, maxItems: 5, items: {type: string}}
+    BirthdayResponse:
+      type: object
+      additionalProperties: false
+      x-go-type: birthday.Response
+      x-go-type-import: {path: github.com/tellyouwhat/backend/internal/birthday}
+      required: [contractVersion, requestID, draftRevision, source, kind, questions, proposals, changes, notice]
+      properties:
+        contractVersion: {type: integer, enum: [2]}
+        requestID: {type: string, format: uuid}
+        draftRevision: {type: integer, minimum: 0}
+        source: {type: string, enum: [model]}
+        kind: {type: string, enum: [clarification, proposals, revision]}
+        questions: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/BirthdayQuestion'}}
+        proposals: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/BirthdayProposal'}}
+        changes: {type: array, items: {type: string}}
+        notice: {type: string}

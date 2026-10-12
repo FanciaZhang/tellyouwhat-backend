@@ -14,8 +14,9 @@ import (
 type AppID string
 
 const (
-	Health  AppID = "health"
-	Journal AppID = "journal"
+	Birthday AppID = "birthday"
+	Health   AppID = "health"
+	Journal  AppID = "journal"
 )
 
 type PromptMode string
