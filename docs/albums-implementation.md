@@ -407,3 +407,13 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 隔离 MySQL 8.4/Redis 的相册、迁移和入口 race **484 passed / 0 failed / 0 skipped**，包含 APNs 协议测试。补充注册状态读取后专项 **5 passed**，与前述重叠；最终 vet/build 通过。覆盖八并发更新、重启、加密绑定、环境/账户隔离、令牌轮换、权限关闭、会话到期/退出、账户停用、数据库授权撤销、迟到失效回执及接管失败回滚。测试服务已停止，[证据与源码绑定](evidence/albums-push-registrations-2026-10-12.json)。
 
 前一提交 `64198dc` 的 [CI 38207404276](https://github.com/FanciaZhang/tellyouwhat-backend/actions/runs/38207404276) 已全部成功：verify 和八份容器通过，部署跳过；该结果不覆盖此后的 APNs 和设备注册代码。**HTTP 合约/接口、iOS 通知授权与注册、离线退出重试、运行时调度及真实送达仍未接通。** 当前注册模块仅供内部调用与测试，未收集真实设备令牌、未发送通知，也未部署迁移。
+
+### 设备注册 HTTP 与生成客户端（2026-10-12）
+
+`GET/PUT /v1/albums/notifications/registration` 接入 OpenAPI、生成 Go 路由及真实 Gateway。接口要求稳定账户会话，只读写该会话的注册；初始状态为 revision 0 / disabled，更新明确提交 requestID、expectedRevision、enabled，开启时附小写十六进制设备令牌，关闭时省略令牌。409 要求重新读取状态，不自动覆盖；superseded 会话不能再次接管。数据库再次检查会话/账户/授权状态，不只依赖入口认证。
+
+注册配置 `ALBUM_PUSH_ENVIRONMENT` 默认空，即接口返回 503；显式选择 development 或 production 后才接收注册，与 StoreKit 环境独立，不启用通知发送。Gateway 启动检查迁移 0032；客户端不能指定账户或环境。输入限四 KiB，拒绝缺失/null 授权状态、重复/未知字段、非 JSON、非法令牌、查询参数及 GET body。真实 Redis 限制每来源 IP 每分钟六十次，使用既有可信代理规则；响应 no-store、不开放浏览器 CORS、不返回设备令牌。
+
+隔离 MySQL/Redis 的 HTTP 专项 **3 passed**，相册/迁移/入口 race **486 passed / 0 failed / 0 skipped**（专项包含在其中），vet/build 通过；Go 生成代码重放哈希一致。Swift 合约包 **24 passed**（相册 16、健康 6、日记 2），新增用例核对 bodyless GET、PUT 明确 false/省略令牌及 409 不重试。独立测试服务已停止；[证据与源码绑定](evidence/albums-push-http-2026-10-12.json)。
+
+iOS 授权入口、APNs 注册回调与持久重试、离线退出、通知点击仍未实现；发送器与调度尚未装配，实际 Apple/COS/APNs 旅程未验收。部署示例仍关闭注册，本次没有真实注册、推送或生产迁移。

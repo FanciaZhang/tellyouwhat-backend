@@ -122,11 +122,23 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, ErrShareUnavailable
 	}
+	var push *albumPushRegistrations
+	if config.PushEnvironment != "" {
+		push, err = newAlbumPushRegistrations(db, cipher, config.PushEnvironment)
+		if err != nil {
+			return nil, errPushRegistration
+		}
+	}
+	pushLimiter, err := NewRedisLoginLimiter(g.redis, config.LoginLimitKey, 60, time.Minute)
+	if err != nil {
+		return nil, errPushRegistration
+	}
 	g.router, err = NewHTTPRouterWithLogin(config.APIHost, sessions, uploads, LoginHTTPOptions{
 		Service: login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
 		Subscriptions:       subscriptions,
 		NotificationLimiter: notificationLimiter,
 		Shares:              shares, ShareLimiter: shareLimiter, ShareClaimLimiter: shareClaimLimiter,
+		PushRegistrations: push, PushLimiter: pushLimiter,
 	})
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")
@@ -149,6 +161,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 		`SELECT account_id,apple_subject_sha256,state FROM album_accounts LIMIT 0`,
 		`SELECT grant_id,account_id,token_sha256,encrypted_token,token_nonce,revoked_at FROM album_apple_grants LIMIT 0`,
 		`SELECT session_id,account_id,grant_id,token_sha256,expires_at,revoked_at FROM album_sessions LIMIT 0`,
+		`SELECT registration_id,session_id,environment,state,revision,token_sha256,encrypted_token,token_nonce,registered_at,request_id,request_sha256 FROM album_push_registrations LIMIT 0`,
 		`SELECT challenge_id,proof_sha256,apple_nonce,expires_at,consumed_at FROM album_login_challenges LIMIT 0`,
 		`SELECT owner_id,quota_bytes,used_bytes,reserved_bytes FROM album_storage_accounts LIMIT 0`,
 		`SELECT ` + uploadColumns + ` FROM album_uploads LIMIT 0`,

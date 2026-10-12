@@ -4,6 +4,51 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("push registration is session scoped and preserves explicit disable")
+    func pushRegistration() async throws {
+        let recorder = AlbumRequestRecorder()
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(#"{"revision":0,"state":"disabled"}"#.utf8)))
+        })
+        let initial = try await client.getAlbumPushRegistration()
+        switch initial {
+        case .ok(let value):
+            let state = try value.body.json
+            #expect(state.registrationID == nil && state.revision == 0 && state.state.rawValue == "disabled")
+        default: Issue.record("Unexpected registration response")
+        }
+        let read = try #require(await recorder.last)
+        #expect(read.method == "GET" && read.path == "/v1/albums/notifications/registration" && read.body.isEmpty)
+        _ = try await client.updateAlbumPushRegistration(body: .json(.init(requestID: Self.uploadID, expectedRevision: 7, enabled: false)))
+        let write = try #require(await recorder.last)
+        #expect(write.method == "PUT" && write.path == read.path)
+        let json = try #require(JSONSerialization.jsonObject(with: write.body) as? [String: Any])
+        #expect(Set(json.keys) == ["requestID", "expectedRevision", "enabled"])
+        #expect(json["enabled"] as? Bool == false && json["expectedRevision"] as? Int == 7)
+    }
+
+    @Test("push registration conflict remains a conflict and is not retried")
+    func pushRegistrationConflict() async throws {
+        let recorder = AlbumRequestRecorder()
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 409, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(#"{"code":"push_registration_changed"}"#.utf8)))
+        })
+        let response = try await client.updateAlbumPushRegistration(body: .json(.init(requestID: Self.uploadID, expectedRevision: 1, enabled: true, deviceToken: "abcd")))
+        switch response {
+        case .conflict(let value): #expect(try value.body.json.code == "push_registration_changed")
+        default: Issue.record("Conflict was converted to success")
+        }
+        let request = try #require(await recorder.last)
+        let json = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
+        #expect(json["deviceToken"] as? String == "abcd")
+        #expect(json["accountID"] == nil && json["environment"] == nil)
+        #expect(await recorder.count == 1)
+    }
+
     @Test("Finished live pair contract keeps QuickTime bytes separate from original and MP4 receipts")
     func finishedLivePair() async throws {
         let recorder = AlbumRequestRecorder(), digest = String(repeating: "a", count: 64)
@@ -412,5 +457,6 @@ struct AlbumAPITransportTests {
 
 private actor AlbumRequestRecorder {
     private(set) var last: AlbumAPIHTTPRequest?
-    func record(_ request: AlbumAPIHTTPRequest) { last = request }
+    private(set) var count = 0
+    func record(_ request: AlbumAPIHTTPRequest) { last = request; count += 1 }
 }

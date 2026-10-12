@@ -20,17 +20,18 @@ import (
 // GatewayConfig is independent of Health/Journal/TOS and has no debug owner,
 // identity-cipher, or free-quota fallback. Secret files are server-only.
 type GatewayConfig struct {
-	Worker         WorkerConfig
-	Environment    string
-	APIHost        string
-	ListenAddress  string
-	RedisURL       string
-	TrustedProxies []string
-	AppleCode      AppleCodeConfig
-	CredentialKey  string
-	LoginLimitKey  []byte
-	Subscriptions  *AlbumSubscriptionConfig
-	Sharing        *AlbumShareConfig
+	Worker          WorkerConfig
+	Environment     string
+	APIHost         string
+	ListenAddress   string
+	RedisURL        string
+	TrustedProxies  []string
+	AppleCode       AppleCodeConfig
+	CredentialKey   string
+	LoginLimitKey   []byte
+	Subscriptions   *AlbumSubscriptionConfig
+	Sharing         *AlbumShareConfig
+	PushEnvironment string
 }
 
 func (GatewayConfig) String() string   { return "[redacted album gateway configuration]" }
@@ -119,6 +120,10 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	c.Subscriptions, err = loadAlbumSubscriptionConfig(getenv, c.Environment)
 	if err != nil {
 		return GatewayConfig{}, err
+	}
+	c.PushEnvironment = strings.TrimSpace(getenv("ALBUM_PUSH_ENVIRONMENT"))
+	if c.PushEnvironment != "" && c.PushEnvironment != "development" && c.PushEnvironment != "production" {
+		return GatewayConfig{}, errors.New("invalid ALBUM_PUSH_ENVIRONMENT")
 	}
 	return c, nil
 }

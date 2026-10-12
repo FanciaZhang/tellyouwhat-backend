@@ -18,6 +18,7 @@ import (
 )
 
 type pushFixture struct {
+	dsn      string
 	r        *albumPushRegistrations
 	accounts *MySQLAccounts
 	sessions *MySQLSessions
@@ -26,7 +27,7 @@ type pushFixture struct {
 
 func newPushFixture(t *testing.T) *pushFixture {
 	t.Helper()
-	db, _ := gatewayTestDatabase(t)
+	db, dsn := gatewayTestDatabase(t)
 	if err := migrations.Run(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +38,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &pushFixture{now: time.Now().UTC().Truncate(time.Microsecond)}
+	f := &pushFixture{dsn: dsn, now: time.Now().UTC().Truncate(time.Microsecond)}
 	f.r, _ = newAlbumPushRegistrations(db, cipher, "production")
 	f.accounts, _ = NewMySQLAccounts(db, cipher)
 	f.sessions, _ = NewMySQLSessions(db, func() time.Time { return f.now })

@@ -26,6 +26,8 @@ type LoginHTTPOptions struct {
 	Shares              *ShareService
 	ShareLimiter        LoginRateLimiter
 	ShareClaimLimiter   LoginRateLimiter
+	PushRegistrations   *albumPushRegistrations
+	PushLimiter         LoginRateLimiter
 	// Empty means direct peer only. Set only actual deployment proxy networks.
 	TrustedProxies []string
 }
@@ -36,6 +38,9 @@ func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *Upl
 	}
 	if options.Shares != nil && (options.ShareLimiter == nil || options.ShareClaimLimiter == nil) {
 		return nil, ErrShareUnavailable
+	}
+	if options.PushRegistrations != nil && options.PushLimiter == nil {
+		return nil, errPushRegistration
 	}
 	options.TrustedProxies = append([]string(nil), options.TrustedProxies...)
 	return newHTTPRouter(host, auth, uploads, &options, options.Multipart)

@@ -47,6 +47,45 @@ paths:
       responses:
         '204': {description: Current session revoked}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/notifications/registration:
+    get:
+      operationId: getAlbumPushRegistration
+      responses:
+        '200':
+          description: Current session registration; absent registration has revision zero and state disabled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PushRegistration'}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      operationId: updateAlbumPushRegistration
+      description: Explicit notification preference for the authenticated session. Environment is server configured. A conflict requires rereading state; never silently overwrite it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestID, expectedRevision, enabled]
+              properties:
+                requestID: {type: string, format: uuid}
+                expectedRevision: {type: integer, format: int64, minimum: 0, maximum: 9223372036854775806}
+                enabled: {type: boolean}
+                deviceToken:
+                  type: string
+                  minLength: 2
+                  maxLength: 1024
+                  pattern: '^(?:[0-9a-f]{2})+$'
+                  description: Required only when enabled; omit when disabling. Canonical lowercase APNs token, never an account identifier.
+      responses:
+        '200':
+          description: Committed registration or exact replay
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PushRegistration'}
+        '409': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/account:
     get:
       operationId: getAlbumAccount
@@ -503,6 +542,14 @@ components:
             properties:
               code: {type: string}
   schemas:
+    PushRegistration:
+      type: object
+      additionalProperties: false
+      required: [revision, state]
+      properties:
+        registrationID: {type: string, format: uuid}
+        revision: {type: integer, format: int64, minimum: 0}
+        state: {type: string, enum: [enabled, disabled, superseded]}
     ShareCreateRequest:
       type: object
       additionalProperties: false
