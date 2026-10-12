@@ -14,7 +14,15 @@
 4. `secrets/` 在宿主机设为 `root:65532 0750`，三个文件设为 `root:65532 0440`，让容器 UID/GID 65532 可读。只把该目录挂给 API；worker 不接收 Apple 私钥和账户加密文件。密钥不进入 Git、App、日志或聊天。
 5. 腾讯 CAM 新身份分别命名 `albums-test-upload`、`albums-test-backend`，分别绑定 `cam-upload.policy.json`、`cam-backend.policy.json`；保留独立 Secret ID/Key。2026-10-12 经用户当次确认，两份策略已分别绑定；控制台核对各身份只有这一条直接策略、无随组权限。新密钥保存在本机与测试服务器的受限目录，未进入仓库。上传身份只写暂存；后端直接读写权限限于开发桶的相册范围，管理分片并查询/提交媒体任务。两份策略没有对象永久删除、ACL/桶管理、其他桶或 CAM 管理权限。若身份另有策略，必须核对总权限。
 
-数据万象[异步任务接口](https://cloud.tencent.com/document/product/460/84789)还要求 `cam:PassRole`。第三份 `cam-media-role.policy.json` 草案只允许后端传递控制台已核实的 `CI_QCSRole`，不会授予直接扮演角色、创建角色或修改权限的能力。**这份策略需要一并明确确认后才可绑定。**现有 CI 服务角色关联了 `QcloudCOSDataFullControl` 等跨桶策略；直接 COS 策略只限开发桶，不代表经此服务角色处理任务也已严格隔离。保留现有角色设置，先用合成媒体核实任务输入/输出的范围及拒绝行为；通过前不启用自动媒体处理，正式数据隔离仍是上线条件，不能为修复 403 授予 `cam:*` 或所有角色的 PassRole。
+数据万象[异步任务接口](https://cloud.tencent.com/document/product/460/84789)还要求 `cam:PassRole`。`cam-media-role.policy.json` 只允许后端传递 `CI_QCSRole`；它不限制该角色本身可访问的 COS 数据，因此不能单独绑定来解锁处理。
+
+2026-10-13 控制台只列出相册这一个 CI 桶，但共享 `CI_QCSRole` 自 2018 年存在，仍关联 `QcloudPartAccessForCIRole`、`QcloudAccessForCIRole` 和 `QcloudCOSDataFullControl`，没有权限边界。桶列表不能证明所有旧业务都不依赖此角色。公开提交任务说明及当前 SDK `CreateMediaJobsOptions` 未提供可确认的自定义角色参数；不要编造一个独立角色并宣称任务会使用它。
+
+**待用户明确确认、尚未应用的方案**：把这三条共享角色策略替换为 `cam-ci-service.policy.json`，再将既有 `cam-media-role.policy.json` 绑定到 `albums-test-backend`。新服务策略只允许读取相册测试桶的 `albums/originals/*` 和 `albums/video-previews/*`，写入及分片管理仅限 `albums/video-previews/*`。当前视频及实况动态派生由 `SubmitVideoOnce` 使用此输出目录；静态图片仍通过现有同步图片适配器处理。没有对象删除、原件写入、桶管理、跨桶、CAM 或其他云服务权限。此替换会限制整个共享 CI 角色，旧业务若依赖它可能停止处理；不能仅增加受限策略却保留原来的宽泛策略。
+
+执行顺序：记录原关联策略 ID，创建并绑定 `AlbumsTestCIMediaService`，移除原三条策略并核对只剩新策略，然后创建/绑定 `AlbumsTestCIMediaPassRole` 到后端身份。以合成短视频验证当前桶内读取与派生输出，并验证越出目录/跨桶/写原件的任务失败，核对精确对象版本及大小；错误按最小所需权限定位，不能扩大为 `cos:*` 或 `cam:*`。自动处理仍保持关闭直到真实媒体链路通过。若需回滚，先撤销新增 PassRole，再恢复之前的角色关联，避免后端重新获得宽泛间接访问。角色会话与权限变更可能有传播延迟，必须重新验证，不能把控制台绑定成功当作隔离已通过。
+
+`python3 deploy/albums/cam_policy_test.py` 只检查本地简单 allow-list 的范围及 PassRole 目标，不模拟腾讯 CAM、不证明服务可用，也不证明云端实际拒绝。当前两份策略均未配置到云端。
 
 权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；2026-10-12 已用合成字节验证真实暂存上传、普通 COPY 的固定版本归档/读取及哈希、分片初始化/上传/列举/合并；上传读暂存/写归档、后端越出相册前缀写入/读取桶 ACL 均返回 403。跨桶、永久删除拒绝、分片复制及 CI 服务角色范围仍待单独验证。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
 
@@ -88,3 +96,5 @@ curl --fail --silent --show-error -H 'Host: api.albums.tellyouwhat.cn' \
 Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册 API，再迁移并启动新版；旧 API 不检查身份撤销截止，不能混跑或回退后继续提供登录。新 API 启动检查撤销表和授权签发时间列。既有授权的 NULL 签发时间按旧授权保守处理。
 
 待相册 HTTPS API 可用并验证请求边界后，在相册主 App ID 配置服务器通知地址 `https://api.albums.tellyouwhat.cn/v1/albums/auth/apple/notifications`。此公开入口使用 Apple 签名验证，不接受 App bearer 作为真实性证据。只有提交撤销状态后返回 200，依赖不可用返回 503 供重试；重复事件安全。通知撤销账户会话与后续推送查询，不撤回已经签发的下载地址或在途推送；`account-deleted` 当前停用访问，完整物理删除仍须独立实现。当前尚未登记通知地址或收到真实事件。
+
+2026-10-13 删除权限实测：`ALBUM_COS_PERMISSION_PROBE=1 go run deploy/albums/cos_delete_denial_probe.go` 只在固定测试桶的原件前缀创建一个随机名称的 48 字节合成对象。后端删除指定版本、上传身份删除同一版本、后端无版本删除三项均返回 403 AccessDenied；随后精确版本读取与字节校验通过。对象保留，不接触既有媒体。此结果覆盖这两个身份对本次对象的直接 COS 删除请求，不覆盖其他前缀、跨桶或 CI 角色间接权限。证据：`docs/evidence/albums-cos-delete-denial-2026-10-13.json`。
