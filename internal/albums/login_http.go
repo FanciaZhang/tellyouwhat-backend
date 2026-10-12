@@ -107,8 +107,7 @@ func (h *uploadHTTP) GetAlbumAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"accountID": c.GetString("album.owner")})
 }
 func (h *uploadHTTP) LogoutAlbumSession(c *gin.Context) {
-	if h.login == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "login_unavailable"})
+	if !h.allowLogin(c, "logout") {
 		return
 	}
 	if !emptyAlbumBody(c) {

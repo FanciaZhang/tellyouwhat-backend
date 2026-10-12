@@ -417,3 +417,5 @@ OpenAPI 增加版本级 `live-pair` 状态/创建、`live-pair-uploads/{pairUplo
 隔离 MySQL/Redis 的 HTTP 专项 **3 passed**，相册/迁移/入口 race **486 passed / 0 failed / 0 skipped**（专项包含在其中），vet/build 通过；Go 生成代码重放哈希一致。Swift 合约包 **24 passed**（相册 16、健康 6、日记 2），新增用例核对 bodyless GET、PUT 明确 false/省略令牌及 409 不重试。独立测试服务已停止；[证据与源码绑定](evidence/albums-push-http-2026-10-12.json)。
 
 iOS 授权入口、APNs 注册回调与持久重试、离线退出、通知点击仍未实现；发送器与调度尚未装配，实际 Apple/COS/APNs 旅程未验收。部署示例仍关闭注册，本次没有真实注册、推送或生产迁移。
+
+补充修复过期会话退出：只有精确 `POST /v1/albums/auth/logout` 可绕过“尚未过期”的入口判断，处理器仍验证所提交会话凭据格式、无 body 和既有 Host，并每 IP 每分钟限十次；存储只撤销该凭据自身，重试幂等。其他操作仍拒绝过期会话。真实 HTTP 测试先令会话过期，确认私有读取 401，再执行退出及重试 204，最后确认设备目标不可读取；修复后重新执行完整 **486 项 race**、vet/build 及 **24 项 Swift 合约测试**，全部通过。不能据此声称 iOS 离线退出重试已完成。

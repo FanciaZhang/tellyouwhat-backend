@@ -4,20 +4,21 @@
   "baselineCommit": "77b55fcf8844cc9843f0d6968f40c53f6cf21f83",
   "scope": "authenticated GET/PUT push registration contract, opt-in Gateway wiring, strict JSON and generated Swift client verification",
   "sourceSHA256": {
-    "Contracts/HTTP/AlbumAPI/openapi.yaml": "9bed34adac9ab41a8ce9afb810ae58de8a3a251d6b6fe629da09c48a0335f6ca",
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "7d94c7a4ac5841018449ba9dd742414c1daf7eb569448623fc176e0e4f953945",
     "Contracts/HTTP/Tests/AlbumAPITests/AlbumAPITransportTests.swift": "4babd0ade6e5716cd7c8c5c716179c7feb0790a7b6c6099680d77a1e1193eca8",
-    "internal/albumhttpapi/generated.go": "c1f90756d031c1e7681449e3daf685c6c92ae33cc60e9f4fe83e3168eb7d5f5d",
+    "internal/albumhttpapi/generated.go": "e05d5bd3fbcae45efaef1e2e0358b33157138cd4f77fb9029a01104fc9951e29",
     "internal/albums/gateway.go": "c1f8f79718487e462f9df5325b668ae428659ceefc62b0943b2777eb29d876e2",
     "internal/albums/gateway_config.go": "76779f84e939c69830087df572236b6e2b0582f3426536ccce4e759e258391ad",
-    "internal/albums/login_http.go": "e160bfd488c4f63aa9e3220f67f6f4d0fe7e485c67807242cd33f0b85a92d185",
-    "internal/albums/login_limit.go": "a5f42f997b11997d2f50f8b3c99f569942a8ba9b3cf61e1a62c1054b39183593",
+    "internal/albums/login_http.go": "5317bcf2dc58f3b9c1897fb72dbf4dccebefd5ce7117f3a02c4c8e378bc4dcbb",
+    "internal/albums/login_limit.go": "22f21fbb50b6eab74be2e9886792bb93e307c1e0d6706b015e38f813a5c89ebf",
     "internal/albums/push_http.go": "f358c51a3f6351310a5870d6b454ef938314f0a83502ec32c423a9d6ef2a911f",
-    "internal/albums/push_http_integration_test.go": "f14904765f34c3f1b9637dd4f6e1fb68279d64834eaa122aa8848ca0d877b88b",
+    "internal/albums/push_http_integration_test.go": "557afc36388d2cb3babacde55d84b076b5cd521f88eb9234eca3347eeaec8388",
     "internal/albums/push_registrations.go": "e4c00d9f3848442c73ddf1210bf03565305071c2c564d749e8800d32a668adfe",
     "internal/albums/push_registrations_integration_test.go": "d74676621a751342412fd56eb17b011bf4e09f480c9e901b0c7d0e3a22330ebb",
     "deploy/albums/runtime.env.example": "77bfad7213578f8c32cfb3073fd3835ebc3a59313ed0eaef682821d9ed19b259",
     "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
-    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b"
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b",
+    "internal/albums/http.go": "14600e4f10c1a66ad12aba31309efe628a1ece549ff43d8bfc9eec035aefcf57"
   },
   "validation": [
     {
@@ -112,12 +113,41 @@
         "✔ Test run with 6 tests in 1 suite passed after 0.003 seconds.",
         "✔ Test run with 16 tests in 1 suite passed after 0.008 seconds."
       ]
+    },
+    {
+      "name": "FinalRegressionRace",
+      "exitCode": 0,
+      "logSHA256": "9d39c6ac0bc80e6bfc1be17e8ef3916e7e8c37c097e6541256bb89fb38989fae",
+      "counts": {
+        "pass": 486
+      },
+      "failuresAndSkips": []
+    },
+    {
+      "name": "FinalVet",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "FinalBuild",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Swift final contract package",
+      "exitCode": 0,
+      "counts": {
+        "pass": 24,
+        "fail": 0,
+        "skip": 0
+      },
+      "logSHA256": "28c567d9511fe67cab987df645aa8f953416499e987222c3167ad193f0115bcb"
     }
   ],
   "generatedCode": {
     "exitCode": 0,
-    "before": "c1f90756d031c1e7681449e3daf685c6c92ae33cc60e9f4fe83e3168eb7d5f5d",
-    "after": "c1f90756d031c1e7681449e3daf685c6c92ae33cc60e9f4fe83e3168eb7d5f5d"
+    "before": "e05d5bd3fbcae45efaef1e2e0358b33157138cd4f77fb9029a01104fc9951e29",
+    "after": "e05d5bd3fbcae45efaef1e2e0358b33157138cd4f77fb9029a01104fc9951e29"
   },
   "countsOverlap": true,
   "environment": "isolated MySQL 8.4 / Redis; real Gateway and HTTP; controlled COS versioning response; generated Swift clients with local transport; no provider push",
@@ -131,7 +161,8 @@
     "HTTP logout invalidates both endpoint access and internal target eligibility",
     "empty push environment disables registration; explicit signing environment independent of deployment billing environment",
     "generated Swift GET/PUT paths, explicit false, omitted device token, 409 handling and single request",
-    "Go generated code reproduces byte for byte"
+    "Go generated code reproduces byte for byte",
+    "expired credentials cannot read registration but can revoke themselves via rate-limited exact POST logout; replay is idempotent and target becomes ineligible"
   ],
   "servicesStopped": true,
   "runtimeEnabled": false,
@@ -142,5 +173,6 @@
     "dispatcher, fresh Apple entitlement verification, durable per-device acceptance and delivery",
     "real APNs/device/Apple revocation integration and production migration/deployment",
     "six-month permanent all-version media purge"
-  ]
+  ],
+  "sourceBindingNote": "FinalRegressionRace, FinalVet, FinalBuild and Swift final tests cover the final source including expired-session logout. Earlier runs precede that fix; their counts overlap."
 }

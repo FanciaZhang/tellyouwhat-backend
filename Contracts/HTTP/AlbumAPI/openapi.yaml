@@ -44,6 +44,7 @@ paths:
   /v1/albums/auth/logout:
     post:
       operationId: logoutAlbumSession
+      description: Revokes only the presented opaque session credential, including expired sessions. No account ID is accepted; retries are idempotent.
       responses:
         '204': {description: Current session revoked}
         default: {$ref: '#/components/responses/Error'}

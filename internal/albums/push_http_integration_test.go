@@ -138,8 +138,18 @@ func TestGatewayAlbumPushRegistrationHTTPAndRevocation(t *testing.T) {
 	if status, _, _ := send("PUT", path, owner.Token, string(raw), nil); status != 200 {
 		t.Fatal("explicit reenable", status)
 	}
+	digest, _ := sessionDigest(owner.Token)
+	if _, err := f.r.db.Exec(`UPDATE album_sessions SET expires_at=? WHERE token_sha256=?`, time.Now().Add(-time.Minute), digest[:]); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := send("GET", path, owner.Token, "", nil); status != 401 {
+		t.Fatal("expired credential read private state", status)
+	}
 	if status, _, _ := send("POST", "/v1/albums/auth/logout", owner.Token, "", nil); status != 204 {
-		t.Fatal("logout", status)
+		t.Fatal("expired credential could not revoke itself", status)
+	}
+	if status, _, _ := send("POST", "/v1/albums/auth/logout", owner.Token, "", nil); status != 204 {
+		t.Fatal("logout replay", status)
 	}
 	if status, _, _ := send("GET", path, owner.Token, "", nil); status != 401 {
 		t.Fatal("revoked session read registration", status)
