@@ -287,6 +287,7 @@ func liveJournalUpload(t *testing.T, db *sql.DB, timing bool) Upload {
 	for _, resource := range m.Resources {
 		objects = append(objects, SealedObject{resource.ID, sealedKey(u, resource.ID), "original-version", resource.SizeBytes, resource.SHA256})
 	}
+	recordFixtureSeals(t, r, u, token, objects, now)
 	u, err = r.Complete(ctx, owner, u.ID, token, objects, now)
 	if err != nil {
 		t.Fatal(err)

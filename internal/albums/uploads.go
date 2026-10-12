@@ -56,6 +56,9 @@ type SealedObject struct {
 }
 
 type UploadRepository interface {
+	OriginalSeal(context.Context, Upload, string) (string, bool, error)
+	BeginOriginalSeal(context.Context, Upload, string, time.Time) (string, bool, error)
+	RecordOriginalSeal(context.Context, Upload, string, string) error
 	Reserve(context.Context, Upload) (Upload, error)
 	Get(context.Context, string, string) (Upload, error)
 	Submit(context.Context, string, string, time.Time) (Upload, error)
@@ -73,9 +76,16 @@ type PutGrant struct {
 // Client writes are limited to staging. Seal must create an immutable server-only
 // destination/version, and OpenVersion must read precisely that version.
 // A production provider must enforce these guarantees, not just attach metadata.
+type OriginalSealSource struct {
+	VersionID string
+	SizeBytes int64
+}
+
 type AlbumObjects interface {
 	AuthorizePut(context.Context, string, Resource, time.Time) (PutGrant, error)
-	Seal(context.Context, string, string) (versionID string, err error)
+	PrepareSeal(context.Context, string) (OriginalSealSource, error)
+	Seal(context.Context, string, string, OriginalSealSource) (versionID string, err error)
+	ReconcileSeal(context.Context, string) (versionID string, err error)
 	OpenVersion(context.Context, string, string) (io.ReadCloser, error)
 }
 
@@ -225,12 +235,47 @@ func (s *UploadService) Verify(ctx context.Context, owner, id string) (Upload, e
 			return Upload{}, err
 		}
 		key := sealedKey(upload, resource.ID)
-		version, err := s.objects.Seal(workerContext, stagingKey(upload, resource.ID), key)
+		version, consumed, err := s.repository.OriginalSeal(workerContext, upload, resource.ID)
 		if err != nil {
 			return Upload{}, err
 		}
+		if !consumed {
+			source, err := s.objects.PrepareSeal(workerContext, stagingKey(upload, resource.ID))
+			if err != nil {
+				return Upload{}, err
+			}
+			if !concreteCOSVersion(source.VersionID) || source.SizeBytes != resource.SizeBytes {
+				return Upload{}, ErrIncompleteBackup
+			}
+			var fresh bool
+			version, fresh, err = s.repository.BeginOriginalSeal(workerContext, upload, resource.ID, s.now().UTC())
+			if err != nil {
+				return Upload{}, err
+			}
+			if fresh {
+				version, err = s.objects.Seal(workerContext, stagingKey(upload, resource.ID), key, source)
+				if err != nil {
+					return Upload{}, err
+				}
+				if !concreteCOSVersion(version) {
+					return Upload{}, ErrIncompleteBackup
+				}
+			}
+		}
 		if version == "" {
+			version, err = s.objects.ReconcileSeal(workerContext, key)
+			if err != nil {
+				return Upload{}, err
+			}
+		}
+		if !concreteCOSVersion(version) {
 			return Upload{}, ErrIncompleteBackup
+		}
+		persist, finish := context.WithTimeout(context.WithoutCancel(workerContext), 5*time.Second)
+		err = s.repository.RecordOriginalSeal(persist, upload, resource.ID, version)
+		finish()
+		if err != nil {
+			return Upload{}, err
 		}
 		body, err := s.objects.OpenVersion(workerContext, key, version)
 		if err != nil {

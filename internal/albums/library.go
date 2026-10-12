@@ -157,6 +157,7 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 }
 func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
 	for _, query := range []string{
+		`SELECT upload_id,resource_id,manifest_digest,consumed_at,object_version,legacy FROM album_original_seals LIMIT 0`,
 		`SELECT ` + versionColumns + ` FROM album_asset_versions LIMIT 0`,
 		`SELECT ` + lifecycleColumns + ` FROM album_asset_lifecycle LIMIT 0`,
 		`SELECT ` + changeColumns + ` FROM album_library_changes LIMIT 0`,

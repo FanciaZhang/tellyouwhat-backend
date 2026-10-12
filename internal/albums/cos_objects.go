@@ -104,20 +104,30 @@ func concreteCOSVersion(value string) bool {
 	return value != "" && value != "null" && len(value) <= 1024 && !strings.ContainsFunc(value, func(r rune) bool { return r < 32 || r == 127 })
 }
 
-func (s *COSObjects) Seal(ctx context.Context, from, to string) (string, error) {
-	if !albumObjectKey(from, "staging") || !albumObjectKey(to, "originals") || strings.TrimPrefix(from, "albums/staging/") != strings.TrimPrefix(to, "albums/originals/") {
+func (s *COSObjects) PrepareSeal(ctx context.Context, key string) (OriginalSealSource, error) {
+	if !albumObjectKey(key, "staging") {
+		return OriginalSealSource{}, ErrInvalidManifest
+	}
+	response, err := s.client.Object.Head(ctx, key, nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if err != nil || response == nil || response.StatusCode != http.StatusOK {
+		return OriginalSealSource{}, ErrCOSOperation
+	}
+	version := response.Header.Get("x-cos-version-id")
+	if !concreteCOSVersion(version) || response.ContentLength <= 0 {
+		return OriginalSealSource{}, ErrIncompleteBackup
+	}
+	return OriginalSealSource{version, response.ContentLength}, nil
+}
+
+func (s *COSObjects) Seal(ctx context.Context, from, to string, source OriginalSealSource) (string, error) {
+	if !albumObjectKey(from, "staging") || !albumObjectKey(to, "originals") || strings.TrimPrefix(from, "albums/staging/") != strings.TrimPrefix(to, "albums/originals/") || !concreteCOSVersion(source.VersionID) || source.SizeBytes <= 0 {
 		return "", ErrInvalidManifest
 	}
-	source, err := s.client.Object.Head(ctx, from, nil)
-	if err != nil {
-		return "", ErrCOSOperation
-	}
-	version := source.Header.Get("x-cos-version-id")
-	if !concreteCOSVersion(version) {
-		return "", ErrIncompleteBackup
-	}
 	// Every copy part reads the exact source version observed above.
-	response, err := s.copyVersion(ctx, from, to, version, source.ContentLength)
+	response, err := s.copyVersion(ctx, from, to, source.VersionID, source.SizeBytes)
 	if err != nil {
 		if errors.Is(err, ErrCOSCleanup) {
 			return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
@@ -184,4 +194,24 @@ func (s *COSObjects) signImmutableReadWithQuery(ctx context.Context, key, versio
 		return "", ErrCOSOperation
 	}
 	return signed.String(), nil
+}
+
+// Reconcile only the server-owned archive key. The caller still reads this exact
+// version and checks all bytes against the original manifest before publication.
+func (s *COSObjects) ReconcileSeal(ctx context.Context, key string) (string, error) {
+	if !albumObjectKey(key, "originals") {
+		return "", ErrInvalidManifest
+	}
+	response, err := s.client.Object.Head(ctx, key, nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if err != nil || response == nil || response.StatusCode != http.StatusOK {
+		return "", ErrCOSOperation
+	}
+	version := response.Header.Get("x-cos-version-id")
+	if !concreteCOSVersion(version) {
+		return "", ErrIncompleteBackup
+	}
+	return version, nil
 }

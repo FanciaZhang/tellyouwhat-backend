@@ -23,6 +23,7 @@ type uploadTestRepository struct {
 	mu        sync.Mutex
 	values    map[string]Upload
 	completed int
+	seals     map[string]string
 }
 
 func (r *uploadTestRepository) Reserve(_ context.Context, u Upload) (Upload, error) {
@@ -119,7 +120,7 @@ func (s *objectTestStore) AuthorizePut(_ context.Context, key string, _ Resource
 	s.grantKeys = append(s.grantKeys, key)
 	return PutGrant{URL: "https://storage.invalid/temporary-grant", ExpiresAt: expiry}, nil
 }
-func (s *objectTestStore) Seal(_ context.Context, from, to string) (string, error) {
+func (s *objectTestStore) Seal(_ context.Context, from, to string, _ OriginalSealSource) (string, error) {
 	data, ok := s.staging[from]
 	if !ok {
 		return "", ErrNotFound
@@ -372,4 +373,52 @@ func TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim(t *testi
 			t.Fatalf("client submit claimed backup: %s", upload.State)
 		}
 	}
+}
+
+func (r *uploadTestRepository) OriginalSeal(_ context.Context, u Upload, id string) (string, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.seals[u.ID+"/"+id]
+	return v, ok, nil
+}
+func (r *uploadTestRepository) BeginOriginalSeal(_ context.Context, u Upload, id string, now time.Time) (string, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current := r.values[u.ID]
+	if current.LeaseToken != u.LeaseToken || !now.Before(current.LeaseUntil) {
+		return "", false, ErrLease
+	}
+	if r.seals == nil {
+		r.seals = map[string]string{}
+	}
+	key := u.ID + "/" + id
+	if v, ok := r.seals[key]; ok {
+		return v, false, nil
+	}
+	r.seals[key] = ""
+	return "", true, nil
+}
+func (r *uploadTestRepository) RecordOriginalSeal(_ context.Context, u Upload, id, version string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := u.ID + "/" + id
+	old, ok := r.seals[key]
+	if !ok || old != "" && old != version {
+		return ErrConflict
+	}
+	r.seals[key] = version
+	return nil
+}
+func (s *objectTestStore) PrepareSeal(_ context.Context, key string) (OriginalSealSource, error) {
+	data, ok := s.staging[key]
+	if !ok {
+		return OriginalSealSource{}, ErrNotFound
+	}
+	return OriginalSealSource{"source-v1", int64(len(data))}, nil
+}
+func (s *objectTestStore) ReconcileSeal(_ context.Context, key string) (string, error) {
+	if _, ok := s.sealed[key]; !ok {
+		return "", ErrNotFound
+	}
+	return "immutable-v1", nil
 }

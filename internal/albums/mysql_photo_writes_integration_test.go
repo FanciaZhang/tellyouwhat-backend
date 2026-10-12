@@ -76,6 +76,7 @@ func photoJournalUpload(t *testing.T, db *sql.DB) (Upload, PhotoCandidate) {
 	resource := m.Resources[0]
 	objects := []SealedObject{{ResourceID: resource.ID, Key: sealedKey(u, resource.ID), VersionID: "source-version", SizeBytes: resource.SizeBytes, SHA256: resource.SHA256}}
 	var err error
+	recordFixtureSeals(t, r, u, token, objects, now)
 	u, err = r.Complete(ctx, owner, u.ID, token, objects, now)
 	if err != nil {
 		t.Fatal(err)
@@ -309,5 +310,19 @@ func TestMySQLPhotoPreviewGrantOnlyAfterReceiptAndQuotaCommit(t *testing.T) {
 	}
 	if _, err := service.PhotoPreviewReadGrant(ctx, uuid.NewString(), u.ID, PhotoGridPNG); !errors.Is(err, ErrNotFound) || signer.calls != 3 {
 		t.Fatal("cross account read granted", err)
+	}
+}
+
+// Synthetic receipts exercise the SQL protocol, not real provider COPY evidence.
+func recordFixtureSeals(t *testing.T, r *MySQLUploads, u Upload, token string, objects []SealedObject, now time.Time) {
+	t.Helper()
+	u.LeaseToken = token
+	for _, object := range objects {
+		if _, fresh, err := r.BeginOriginalSeal(context.Background(), u, object.ResourceID, now); err != nil || !fresh {
+			t.Fatal("fixture seal intent", err)
+		}
+		if err := r.RecordOriginalSeal(context.Background(), u, object.ResourceID, object.VersionID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -66,7 +66,7 @@ func TestCOSAdapterFixesCopyAndReadVersions(t *testing.T) {
 			return nil, nil
 		}
 	})
-	version, err := s.Seal(context.Background(), from, to)
+	version, err := sealCOSFixture(context.Background(), s, from, to)
 	if err != nil || version != "archive+v2&reserved=#?" {
 		t.Fatalf("seal %q %v", version, err)
 	}
@@ -114,7 +114,7 @@ func TestCOSUnversionedSourceAndMismatchedReadFailClosed(t *testing.T) {
 	from := "albums/staging/" + uuid.NewString() + "/" + uuid.NewString() + "/photo"
 	to := strings.Replace(from, "/staging/", "/originals/", 1)
 	s := cosFixture(t, func(r *http.Request) (*http.Response, error) { return cosResponse(r, "bytes", "null"), nil })
-	if _, err := s.Seal(context.Background(), from, to); !errors.Is(err, ErrIncompleteBackup) {
+	if _, err := sealCOSFixture(context.Background(), s, from, to); !errors.Is(err, ErrIncompleteBackup) {
 		t.Fatalf("unversioned source: %v", err)
 	}
 	if _, err := s.OpenVersion(context.Background(), to, "requested-version"); !errors.Is(err, ErrIncompleteBackup) {
@@ -156,7 +156,7 @@ func TestCOSLargeCopyPinsEveryPartToSourceVersion(t *testing.T) {
 			return nil, errors.New("unexpected test request")
 		}
 	})
-	version, err := s.Seal(context.Background(), from, to)
+	version, err := sealCOSFixture(context.Background(), s, from, to)
 	if err != nil || version != "large-archive+v2&reserved=#?" || parts.Load() != 96 || !completed.Load() {
 		t.Fatalf("large copy version=%q parts=%d completed=%v err=%v", version, parts.Load(), completed.Load(), err)
 	}
@@ -179,7 +179,7 @@ func TestCOSCopyEmbeddedErrorAndDisabledVersioningAreRejected(t *testing.T) {
 	if err := s.Check(context.Background()); !errors.Is(err, ErrIncompleteBackup) {
 		t.Fatalf("suspended versioning: %v", err)
 	}
-	if _, err := s.Seal(context.Background(), from, to); !errors.Is(err, ErrCOSOperation) {
+	if _, err := sealCOSFixture(context.Background(), s, from, to); !errors.Is(err, ErrCOSOperation) {
 		t.Fatalf("HTTP 200 copy error accepted: %v", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestCOSMultipartFailureAbortsWithIndependentContext(t *testing.T) {
 					return nil, errors.New("unexpected request")
 				}
 			})
-			version, err := s.Seal(ctx, from, to)
+			version, err := sealCOSFixture(ctx, s, from, to)
 			if err == nil || version != "" || aborts.Load() != 1 {
 				t.Fatalf("failure version=%q err=%v aborts=%d", version, err, aborts.Load())
 			}
@@ -252,4 +252,12 @@ func TestCOSMultipartFailureAbortsWithIndependentContext(t *testing.T) {
 			}
 		})
 	}
+}
+
+func sealCOSFixture(ctx context.Context, s *COSObjects, from, to string) (string, error) {
+	source, err := s.PrepareSeal(ctx, from)
+	if err != nil {
+		return "", err
+	}
+	return s.Seal(ctx, from, to, source)
 }

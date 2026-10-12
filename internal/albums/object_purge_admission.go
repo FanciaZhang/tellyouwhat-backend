@@ -92,6 +92,9 @@ func closedPurgeTargets(ctx context.Context, tx *sql.Tx, owner, asset string, no
 		if u.State != OriginalsVerified || u.Manifest.AssetID != asset || u.Digest != v.ManifestDigest || u.ExpiresAt.After(now) {
 			return nil, ErrDerivedPending
 		}
+		if err := closedOriginalSeals(ctx, tx, u); err != nil {
+			return nil, err
+		}
 		f, err := scanFinalization(tx.QueryRowContext(ctx, `SELECT `+finalizationColumns+` FROM album_derived_finalizations WHERE owner_id=? AND version_id=?`, owner, v.VersionID))
 		if errors.Is(err, ErrNotFound) {
 			return nil, ErrDerivedPending

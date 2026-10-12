@@ -96,7 +96,7 @@ func TestVerificationWorkerCancellationStopsPolling(t *testing.T) {
 
 type cleanupFailureObjects struct{ AlbumObjects }
 
-func (o cleanupFailureObjects) Seal(context.Context, string, string) (string, error) {
+func (o cleanupFailureObjects) Seal(context.Context, string, string, OriginalSealSource) (string, error) {
 	return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
 }
 
@@ -111,6 +111,7 @@ func TestVerificationWorkerReportsUnfinishedCleanupWithoutBackup(t *testing.T) {
 	if _, err := s.Submit(ctx, owner, upload.ID); err != nil {
 		t.Fatal(err)
 	}
+	objects.staging[stagingKey(upload, "photo")] = []byte("original-resource-bytes")
 	worker, _ := NewVerificationWorker(repo, s, 1, time.Second)
 	result, err := worker.RunOnce(ctx)
 	if err != nil || result.Failed != 1 || result.CleanupRequired != 1 || result.Verified != 0 || repo.completed != 0 {
