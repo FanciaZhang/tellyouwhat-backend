@@ -62,6 +62,9 @@ func (p purgePlan) validate() error {
 type objectPurge struct {
 	OwnerID, AssetID, State, LeaseToken string
 	Revision                            int64
+	Reason, Environment                 string
+	SubscriptionRevision                int64
+	VerificationUntil, StartedAt        time.Time
 	ExpiresAt, LeaseUntil               time.Time
 	Targets                             []purgeTarget
 	Index                               int
@@ -70,6 +73,14 @@ type objectPurge struct {
 }
 
 func (p objectPurge) validate() error {
+	if p.Reason == "trash" {
+		if p.Environment != "" || p.SubscriptionRevision != 0 || !p.VerificationUntil.IsZero() || !p.StartedAt.IsZero() {
+			return ErrConflict
+		}
+	} else if p.Reason != "retention" || (p.Environment != "Sandbox" && p.Environment != "Production") || p.SubscriptionRevision <= 0 || p.VerificationUntil.IsZero() {
+		return ErrConflict
+	}
+
 	if p.State == "completed" {
 		if !validOwner(p.OwnerID) || !resourceIDPattern.MatchString(p.AssetID) || p.Revision <= 0 || p.ExpiresAt.IsZero() || len(p.Targets) != 0 || p.Index != 0 || p.ActionIndex != 0 || p.Plan != nil || p.LeaseToken != "" || !p.LeaseUntil.IsZero() {
 			return ErrConflict
@@ -101,7 +112,7 @@ func samePurgeLease(a, b objectPurge, now time.Time) bool {
 	x, _ := json.Marshal(a.Targets)
 	y, _ := json.Marshal(b.Targets)
 	return a.OwnerID == b.OwnerID && a.AssetID == b.AssetID && a.Revision == b.Revision && a.ExpiresAt.Equal(b.ExpiresAt) &&
-		a.Index == b.Index && a.ActionIndex == b.ActionIndex && string(x) == string(y) && a.State == "running" && validOwner(b.LeaseToken) && a.LeaseToken == b.LeaseToken && a.LeaseUntil.After(now)
+		a.Reason == b.Reason && a.Environment == b.Environment && a.SubscriptionRevision == b.SubscriptionRevision && a.VerificationUntil.Equal(b.VerificationUntil) && a.StartedAt.Equal(b.StartedAt) && a.Index == b.Index && a.ActionIndex == b.ActionIndex && string(x) == string(y) && a.State == "running" && validOwner(b.LeaseToken) && a.LeaseToken == b.LeaseToken && a.LeaseUntil.After(now)
 }
 
 type objectPurgeStorage interface {
@@ -111,8 +122,8 @@ type objectPurgeStorage interface {
 	abortPurgeUpload(context.Context, string, purgeTarget, string) error
 }
 
-// Not scheduled in albumworker yet: account-expiry admission, metadata removal,
-// quota settlement and backup deletion propagation must precede activation.
+// Not scheduled yet: provider quiescence and backup deletion propagation must
+// be verified before activation.
 func (r *MySQLUploads) runObjectPurgeStep(ctx context.Context, owner, asset string, storage objectPurgeStorage, now func() time.Time) error {
 	if storage == nil || now == nil {
 		return ErrInvalidManifest
@@ -140,7 +151,8 @@ func (r *MySQLUploads) runObjectPurgeStep(ctx context.Context, owner, asset stri
 		}
 	}
 	for p.ActionIndex < len(p.Plan.Uploads)+len(p.Plan.Versions) {
-		if err := r.checkObjectPurgeLease(ctx, p, now().UTC()); err != nil {
+		p, err = r.authorizeObjectPurgeAction(ctx, p, now)
+		if err != nil {
 			return err
 		}
 		if !p.LeaseUntil.After(now().UTC()) {

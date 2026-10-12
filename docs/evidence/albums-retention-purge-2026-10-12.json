@@ -1,0 +1,82 @@
+{
+  "startedAt": "2026-10-12T08:29:36.972383+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-h4fmht80",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-h4fmht80/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 84
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "5e7d1f33c2d9eede7d78eeba7836357bd691c0c3e3bbbf731a98113df050188e"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-h4fmht80/related-race.log",
+      "testCounts": {
+        "pass": 643
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "93dfaa774e756f5f649c548eb0a65719597fe0a22504f47a814bd2fb9117ad96"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-h4fmht80/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-h4fmht80/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T08:31:05.245153+00:00",
+  "scope": "Internal six-calendar-month retention purge admission using current signed Apple subscription statuses, renewal cancellation before durable first-action grant, resumable deletion and settlement after that grant. No production scheduler.",
+  "baselineCommit": "ba46fd715e060cab2f875e5f62e371d94430ee4f",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "2144e8a344b54373ae08f079ed1cc521d24e8021fa8228b4ba5ee205ed9be545",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b",
+    "internal/albums/asset_lifecycle.go": "998bef75b2006d73ce4b73574cbd4f74adf1113f65d5ef4cb68c9b5c0dec3826",
+    "internal/albums/asset_lifecycle_integration_test.go": "7e626b223e8713287a35dc976ae874188d0af2ead4b6acd86676c141e163530e",
+    "internal/albums/expired_retention.go": "3f4e544a80cd90ea0d5110e1ea0dd15fd523818837983091a596e9fd54225b71",
+    "internal/albums/expired_retention_integration_test.go": "2d2d7e2551688edb3377818ddaa8b9c8787c3df185beaa2d9e2b615658855c59",
+    "internal/albums/mysql_object_purge.go": "ff3791f108d87185de2f4288c45c1cb58accb7e0c3b03b173f494de739f5860b",
+    "internal/albums/mysql_subscriptions.go": "198b0863472be2cf449de6f4df50f001b7b6df78c76fab0b6a76717b6e053b4c",
+    "internal/albums/object_purge.go": "758c9abec8353a58ae56d2700debc9a5f309c399324463768fbaf856398ac172",
+    "internal/albums/object_purge_admission.go": "db94b890b9488eeeb5f580f1b34afadc5f9b9694144b4778b8298cede79572a0",
+    "internal/albums/object_purge_integration_test.go": "2bf534bfe8c37ab2b0c23e614b8ab18f710cb8ce61c2edc6090e0a251d4a885f",
+    "internal/albums/object_purge_settlement.go": "e336787c2fa4bb593ff8cad0b7e88bf9e7005bad6674595eea3ff5e89fda7b50",
+    "internal/albums/retention_object_purge.go": "8aa1abdf63548f24160f829bc14803cc27570f00fbeb4dc39293f96992a22a72",
+    "internal/albums/retention_object_purge_integration_test.go": "d561e60878913ab3fc46d4674f26defc6172471a9a835f34182432af629ce77b",
+    "internal/albums/retention_verification.go": "6de8468e33963342210628f879f6a169492b60cea0da7eecd410ea3cf4402926",
+    "migrations/0037_album_retention_purge_gate.sql": "666f31193cb1e637645086277e03b40a6675cbc67f2b6877926ee5f25633429c",
+    "migrations/embed_test.go": "15a8a869340346bf6be9369998f9d80f52ca8d679491cd4ac7e21c2c4ff38b1a"
+  },
+  "priorAttempt": {
+    "report": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-retention-purge-wexr7wya/result.json",
+    "result": "80 passed, 2 failed; synthetic upload fixture lacked an active login-account row required by public reads. Added fixture identity and reran targeted and full related race suites."
+  },
+  "boundaries": [
+    "Apple proof is private, environment/revision/deadline bound, and expires 30 seconds after verification starts. All known purchase chains must verify; failure, unknown owned chain or concurrent revision change fails closed.",
+    "Renewal and first-action grant serialize on the account lock. A grant commit marks the asset purging and publishes a final visibility tombstone before COS mutation. That durable intent cannot be undone by a subsequent renewal.",
+    "SQL commit and a COS HTTP operation are not a distributed atomic transaction; grant does not prove the request was sent or object removed. Interrupted grants resume exact persisted actions.",
+    "Public purged change means cloud backup is permanently unavailable to the app; objects_removed and completed remain separate internal observations.",
+    "No provider mutation is needed for entirely empty inventories, so settlement must still hold current unexpired authority. Renewal never erases completed settlement receipts."
+  ],
+  "notVerified": [
+    "Live Apple/COS/APNs behavior and costs",
+    "Production scheduling, provider quiescence and abandoned upload cleanup",
+    "Whole-account erasure and deletion propagation after database/index backup restoration",
+    "iOS build/device behavior in this backend-only change; HTTP contract and Swift source unchanged"
+  ]
+}

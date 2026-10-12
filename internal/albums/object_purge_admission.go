@@ -23,7 +23,7 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 	}
 	old, err := scanObjectPurge(tx.QueryRowContext(ctx, `SELECT `+objectPurgeColumns+` FROM album_object_purges WHERE owner_id=? AND asset_id=? FOR UPDATE`, owner, asset))
 	if err == nil {
-		if old.Revision != a.Revision || !old.ExpiresAt.Equal(*a.TrashExpiresAt) {
+		if old.Reason != "trash" || old.Revision != a.Revision || !old.ExpiresAt.Equal(*a.TrashExpiresAt) {
 			return old, ErrConflict
 		}
 		return old, tx.Commit()
@@ -35,7 +35,7 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 	if err != nil {
 		return objectPurge{}, err
 	}
-	p := objectPurge{OwnerID: owner, AssetID: asset, Revision: a.Revision, ExpiresAt: *a.TrashExpiresAt, Targets: targets, State: "queued"}
+	p := objectPurge{Reason: "trash", OwnerID: owner, AssetID: asset, Revision: a.Revision, ExpiresAt: *a.TrashExpiresAt, Targets: targets, State: "queued"}
 	if p.validate() != nil {
 		return p, ErrConflict
 	}

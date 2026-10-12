@@ -36,7 +36,7 @@ func scanAssetState(row rowScanner) (CloudAssetState, error) {
 	if err != nil {
 		return state, err
 	}
-	if !resourceIDPattern.MatchString(state.AssetID) || state.Revision < 0 || state.epoch < 0 || (state.State != "active" && state.State != "trashed" && state.State != "purged") || trashed.Valid != expires.Valid || (state.State == "trashed") != trashed.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
+	if !resourceIDPattern.MatchString(state.AssetID) || state.Revision < 0 || state.epoch < 0 || (state.State != "active" && state.State != "trashed" && state.State != "purged" && state.State != "purging") || trashed.Valid != expires.Valid || (state.State == "trashed") != trashed.Valid || expires.Valid && !trashed.Time.Before(expires.Time) {
 		return state, ErrConflict
 	}
 	if trashed.Valid {
@@ -90,7 +90,7 @@ func (r *MySQLUploads) CloudAsset(ctx context.Context, owner, asset string, now 
 	if err != nil {
 		return state, err
 	}
-	if state.State == "purged" {
+	if state.State == "purged" || state.State == "purging" {
 		return state, ErrNotFound
 	}
 	if state.TrashExpiresAt != nil {

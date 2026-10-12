@@ -204,7 +204,7 @@ func TestMySQLObjectPurgeResumesExactPlanThenRelistsWithoutRefund(t *testing.T) 
 	if _, err := r.AssetVersion(ctx, u.OwnerID, u.ID); err != nil {
 		t.Fatal("object worker erased metadata", err)
 	}
-	if err := r.checkObjectPurgeLease(ctx, before, now); !errors.Is(err, ErrLease) {
+	if _, err := r.authorizeObjectPurgeAction(ctx, before, clock); !errors.Is(err, ErrLease) {
 		t.Fatal("old lease resurrected", err)
 	}
 }

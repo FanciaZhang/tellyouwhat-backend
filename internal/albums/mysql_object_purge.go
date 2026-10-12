@@ -8,14 +8,16 @@ import (
 	"time"
 )
 
-const objectPurgeColumns = `owner_id,asset_id,revision,trash_expires_at,targets_json,target_index,plan_json,action_index,state,lease_token,lease_until`
+const objectPurgeColumns = `owner_id,asset_id,revision,trash_expires_at,targets_json,target_index,plan_json,action_index,state,lease_token,lease_until,reason,environment,subscription_revision,verification_until,started_at`
 
 func scanObjectPurge(row rowScanner) (objectPurge, error) {
 	var p objectPurge
 	var targets, plan []byte
 	var token sql.NullString
-	var until sql.NullTime
-	err := row.Scan(&p.OwnerID, &p.AssetID, &p.Revision, &p.ExpiresAt, &targets, &p.Index, &plan, &p.ActionIndex, &p.State, &token, &until)
+	var until, verified, started sql.NullTime
+	var environment sql.NullString
+	var revision sql.NullInt64
+	err := row.Scan(&p.OwnerID, &p.AssetID, &p.Revision, &p.ExpiresAt, &targets, &p.Index, &plan, &p.ActionIndex, &p.State, &token, &until, &p.Reason, &environment, &revision, &verified, &started)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -23,6 +25,7 @@ func scanObjectPurge(row rowScanner) (objectPurge, error) {
 		return p, err
 	}
 	p.LeaseToken, p.LeaseUntil = token.String, until.Time
+	p.Environment, p.SubscriptionRevision, p.VerificationUntil, p.StartedAt = environment.String, revision.Int64, verified.Time, started.Time
 	if len(targets) > 4<<20 || json.Unmarshal(targets, &p.Targets) != nil || len(plan) > 2<<20 {
 		return p, ErrConflict
 	}
@@ -60,16 +63,18 @@ func lockExpiredTrash(ctx context.Context, tx *sql.Tx, owner, asset string, now 
 }
 
 func (r *MySQLUploads) lockObjectPurge(ctx context.Context, tx *sql.Tx, owner, asset string, now time.Time) (objectPurge, error) {
-	a, err := lockExpiredTrash(ctx, tx, owner, asset, now)
-	if err != nil {
+	if !validOwner(owner) || !resourceIDPattern.MatchString(asset) || now.IsZero() {
+		return objectPurge{}, ErrInvalidManifest
+	}
+	if _, err := lockAccount(ctx, tx, owner); err != nil {
 		return objectPurge{}, err
 	}
 	p, err := scanObjectPurge(tx.QueryRowContext(ctx, `SELECT `+objectPurgeColumns+` FROM album_object_purges WHERE owner_id=? AND asset_id=? FOR UPDATE`, owner, asset))
 	if err != nil {
 		return p, err
 	}
-	if p.Revision != a.Revision || !p.ExpiresAt.Equal(*a.TrashExpiresAt) {
-		return p, ErrConflict
+	if _, err := r.validatePurgeLifecycle(ctx, tx, p, now); err != nil {
+		return p, err
 	}
 	return p, nil
 }
@@ -100,24 +105,6 @@ func (r *MySQLUploads) claimObjectPurge(ctx context.Context, owner, asset, token
 		return p, err
 	}
 	return p, tx.Commit()
-}
-
-func (r *MySQLUploads) checkObjectPurgeLease(ctx context.Context, expected objectPurge, now time.Time) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	p, err := r.lockObjectPurge(ctx, tx, expected.OwnerID, expected.AssetID, now)
-	if err != nil {
-		return err
-	}
-	a, _ := json.Marshal(p.Plan)
-	b, _ := json.Marshal(expected.Plan)
-	if !samePurgeLease(p, expected, now) || p.Plan == nil || string(a) != string(b) {
-		return ErrLease
-	}
-	return tx.Commit()
 }
 
 func (r *MySQLUploads) storeObjectPurgePlan(ctx context.Context, expected objectPurge, plan purgePlan, now time.Time) (objectPurge, error) {

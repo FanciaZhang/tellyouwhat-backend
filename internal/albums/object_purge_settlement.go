@@ -59,13 +59,13 @@ func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset strin
 		return refund, tx.Commit()
 	}
 	clock := now().UTC()
-	a, err := lockExpiredTrash(ctx, tx, owner, asset, clock)
+	a, err := r.validatePurgeLifecycle(ctx, tx, p, clock)
 	if err != nil {
 		return 0, err
 	}
 	x, _ := json.Marshal(p.Targets)
 	y, _ := json.Marshal(expected.Targets)
-	if p.State != "objects_removed" || p.Revision != expected.Revision || p.Revision != a.Revision || !p.ExpiresAt.Equal(*a.TrashExpiresAt) || string(x) != string(y) || a.Revision == math.MaxInt64 || a.epoch == math.MaxInt64 {
+	if p.State != "objects_removed" || p.Revision != expected.Revision || p.Revision != a.Revision || string(x) != string(y) || a.Revision == math.MaxInt64 || a.epoch == math.MaxInt64 {
 		return 0, ErrConflict
 	}
 	targets, err := closedPurgeTargets(ctx, tx, owner, asset, clock)
@@ -125,6 +125,9 @@ func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset strin
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE album_object_purges SET state='completed',targets_json=JSON_ARRAY(),target_index=0,refunded_bytes=?,completed_at=?,updated_at=? WHERE owner_id=? AND asset_id=?`, refund, clock, clock, owner, asset); err != nil {
 		return 0, err
+	}
+	if p.Reason == "retention" && p.StartedAt.IsZero() && !now().UTC().Before(p.VerificationUntil) {
+		return 0, ErrLease
 	}
 	return refund, tx.Commit()
 }
