@@ -168,7 +168,7 @@ func TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Hour + time.Second)
-	if _, err := verifier.key(context.Background(), "key"); !errors.Is(err, ErrAppleIdentity) {
+	if _, err := verifier.key(context.Background(), "key"); !errors.Is(err, errAppleKeyUnavailable) {
 		t.Fatalf("stale keys or raw errors escaped: %v", err)
 	}
 	for _, mode := range []string{"redirect", "oversize", "malformed"} {
@@ -184,7 +184,7 @@ func TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache(t *testing.T) {
 				}
 				return response, nil
 			}))
-			if _, err := v.key(context.Background(), "key"); !errors.Is(err, ErrAppleIdentity) {
+			if _, err := v.key(context.Background(), "key"); !errors.Is(err, errAppleKeyUnavailable) {
 				t.Fatal("invalid key response accepted")
 			}
 		})

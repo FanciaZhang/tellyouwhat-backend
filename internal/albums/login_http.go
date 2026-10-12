@@ -17,6 +17,7 @@ type SessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 type LoginHTTPOptions struct {
+	AppleNotifications  *appleAccountNotifications
 	TrashEnabled        bool
 	LibraryLimiter      LoginRateLimiter
 	Multipart           *MultipartService
@@ -35,6 +36,9 @@ type LoginHTTPOptions struct {
 }
 
 func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *UploadService, options LoginHTTPOptions) (*gin.Engine, error) {
+	if options.AppleNotifications != nil && (options.AppleNotifications.verifier == nil || options.AppleNotifications.accounts == nil) {
+		return nil, errors.New("album Apple notification dependencies are required")
+	}
 	if options.Service == nil || options.Limiter == nil || options.Sessions == nil {
 		return nil, errors.New("album login, limiter and revoker are required")
 	}

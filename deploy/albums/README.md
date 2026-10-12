@@ -83,3 +83,8 @@ curl --fail --silent --show-error -H 'Host: api.albums.tellyouwhat.cn' \
 迁移 0039 为分片初始化补充持久核对次数、租约和退避时间，现有核对 worker 同时处理初始化与合并结果未知的任务。两类分别最多自动核对 3 次，共用批次数量上限；至少等待 2 分钟再读取，每次领取先消耗次数，崩溃后等待租约与退避。旧未决初始化保留原意图 ID 并进入核对，不重新初始化。日志 `initialized` 表示找回供应商会话，`assembled` 表示合并文件经过字节核验，均不代表备份发布或清理完成。过期任务只记录观察，不延长上传期限；次数耗尽仍保留未知状态与预留额度，不能通过重置次数或数据库超时自动宣称不存在对象。API/worker 在旧表结构上拒绝启动。
 
 2026-10-12 实测修正：普通 COPY 的目标版本号位于响应 XML `CopyObjectResult.VersionId`，不能从 `x-cos-version-id` 响应头读取。共享复制方法已修复原件和实况路径，缺失或 null 版本仍拒绝确认。合成文件跑通现有 `AuthorizePut → PrepareSeal → Seal → OpenVersion`，但不包含完整账户 API、媒体处理、实际照片格式或 iOS 安全释放。见 `docs/evidence/albums-cos-cam-2026-10-12.json`。
+
+
+Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册 API，再迁移并启动新版；旧 API 不检查身份撤销截止，不能混跑或回退后继续提供登录。新 API 启动检查撤销表和授权签发时间列。既有授权的 NULL 签发时间按旧授权保守处理。
+
+待相册 HTTPS API 可用并验证请求边界后，在相册主 App ID 配置服务器通知地址 `https://api.albums.tellyouwhat.cn/v1/albums/auth/apple/notifications`。此公开入口使用 Apple 签名验证，不接受 App bearer 作为真实性证据。只有提交撤销状态后返回 200，依赖不可用返回 503 供重试；重复事件安全。通知撤销账户会话与后续推送查询，不撤回已经签发的下载地址或在途推送；`account-deleted` 当前停用访问，完整物理删除仍须独立实现。当前尚未登记通知地址或收到真实事件。

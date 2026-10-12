@@ -112,6 +112,23 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AlbumCloudAccount'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/auth/apple/notifications:
+    post:
+      operationId: receiveAlbumAppleNotification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payload]
+              properties:
+                payload: {type: string, minLength: 1, maxLength: 32768}
+      responses:
+        '200': {description: 'Verified Apple identity fence committed; repeated or older events cannot revoke newer consent'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/subscription/notifications:
     post:
       operationId: receiveAlbumSubscriptionNotification

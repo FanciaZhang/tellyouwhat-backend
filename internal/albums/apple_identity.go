@@ -21,11 +21,15 @@ const albumAppleAudience = "cn.tellyouwhat.albums"
 const appleIssuer = "https://appleid.apple.com"
 
 var ErrAppleIdentity = errors.New("Apple identity could not be verified")
+var errAppleKeyUnavailable = errors.New("Apple verification keys unavailable")
 var loginNoncePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // AppleIdentity is a verified provider identity, not an internal account UUID.
 // Account linking must use issuer/audience/subject, never name or email.
-type AppleIdentity struct{ Subject string }
+type AppleIdentity struct {
+	Subject  string
+	IssuedAt time.Time
+}
 
 type appleIdentityClaims struct {
 	jwt.RegisteredClaims
@@ -80,14 +84,14 @@ func (v *AppleIdentityVerifier) Verify(ctx context.Context, encoded, expectedNon
 		subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(expectedNonce)) != 1 {
 		return AppleIdentity{}, ErrAppleIdentity
 	}
-	return AppleIdentity{Subject: claims.Subject}, nil
+	return AppleIdentity{Subject: claims.Subject, IssuedAt: claims.IssuedAt.Time.UTC()}, nil
 }
 
 func (v *AppleIdentityVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if ctx.Err() != nil {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	now := v.now()
 	if key := v.keys[kid]; key != nil && now.Before(v.expires) {
@@ -95,7 +99,7 @@ func (v *AppleIdentityVerifier) key(ctx context.Context, kid string) (*rsa.Publi
 	}
 	// Unknown kids must not permit one outbound request per unauthenticated token.
 	if !v.lastFetch.IsZero() && now.Sub(v.lastFetch) < 30*time.Second {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	v.lastFetch = now
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, appleIssuer+"/auth/keys", nil)
@@ -104,19 +108,19 @@ func (v *AppleIdentityVerifier) key(ctx context.Context, kid string) (*rsa.Publi
 	}
 	response, err := v.client.Do(request)
 	if err != nil {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
 	if err != nil || len(data) > 64<<10 {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	keys, err := decodeAppleKeys(data)
 	if err != nil {
-		return nil, ErrAppleIdentity
+		return nil, errAppleKeyUnavailable
 	}
 	v.keys = keys
 	v.expires = now.Add(time.Hour)

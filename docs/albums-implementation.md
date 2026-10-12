@@ -517,3 +517,14 @@ Gateway 已接入单个有界发送 worker，使用现有 30/7/1 天提醒租约
 测试先复现初始化任务没有入队。修复后隔离 MySQL 8.4/Redis 专项 **49 passed**，相关完整 race **675 passed / 0 failed / 0 skipped**，全仓 vet/build 通过，各组有重叠。覆盖二十并发领取、崩溃接手、迟到租约、三次上限、混合队列顺序/数量、旧表升级、过期及取消后持久记录、数据库失败与额度不变。首次故障注入因测试角色不允许创建触发器失败，改为测试表 CHECK 约束后完成回归。[源码和验证记录](evidence/albums-initialization-reconciliation-2026-10-12.json)；测试服务已停止，临时数据库已移除。
 
 HTTP 合约与 Swift 未变，不重复构建 iOS。未部署迁移、未调用真实 COS 或删除媒体；云端登录待恢复，完整服务与设备验收仍待完成。
+
+
+## 2026-10-12 Apple 服务端授权撤销
+
+新增 `POST /v1/albums/auth/apple/notifications`，独立验证 Apple RS256 签名、固定签发方、相册受众、签发时间及事件内容；不把登录 identity token 当作通知。依据 [Apple 通知协议](https://developer.apple.com/documentation/signinwithapple/processing-changes-for-sign-in-with-apple-accounts)，接受秒级事件时间与可选 exp，邮箱事件不收集地址。公钥或数据库暂时失败返回 503；事务提交后才确认 200。
+
+迁移 0040 保存每个已验证身份的单调撤销截止与删除标记，登录记录保存验证过的签发时间。通知与登录使用同一锁顺序；重复、乱序、先通知后登录或十个旧授权并发登录，都不能重新启用已撤销会话。旧授权及其推送目标被拒绝，新同意产生的较晚独立授权保留；同一个已经撤销的 refresh grant 不复活。旧记录无签发时间时保守撤销。Apple 账户删除事件停止该身份全部访问；物理账户/媒体删除仍是待完成的独立流程，已有 URL 和已发出的推送不因此撤回。
+
+隔离 MySQL 8.4/Redis 专项 **32 passed**，相关 race **697 passed / 0 failed / 0 skipped**（两组有重叠），全仓 vet/build 通过。Swift HTTP 合约三个套件共 **24 passed**，OpenAPI 生成可重复。覆盖签名与用途混淆、HTTP 输入/代理/限流、数据库回滚、跨设备与账户隔离、重复/乱序和并发登录。[源码及验证证据](evidence/albums-apple-notifications-2026-10-12.json)。临时数据库服务已停止；首次触发器故障注入权限不足后改为测试表改名，没有扩大数据库权限；两处旧测试预期已同步并重跑通过。
+
+当前测试服务器仍为 6f6ec95、39 项迁移。本次没有部署 API、登记真实 Apple 通知地址或接收真实事件；私钥安装、真实登录与跨设备撤销仍待验收。

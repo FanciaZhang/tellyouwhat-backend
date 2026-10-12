@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -50,6 +51,14 @@ func (r *MySQLAccounts) RegisterAppleLogin(ctx context.Context, grant AppleGrant
 		return AccountLogin{}, err
 	}
 	defer tx.Rollback()
+	// Identity before account before grant: notifications use the same lock order.
+	revokedBefore, deleted, err := lockAppleIdentity(ctx, tx, subjectHash)
+	if err != nil {
+		return AccountLogin{}, err
+	}
+	if deleted.Valid || (revokedBefore.Valid && !grant.Identity.IssuedAt.Truncate(time.Second).After(revokedBefore.Time)) {
+		return AccountLogin{}, ErrAppleCode
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES (?,?) ON DUPLICATE KEY UPDATE account_id=account_id`, uuid.NewString(), subjectHash)
 	if err != nil {
 		return AccountLogin{}, err
@@ -72,7 +81,11 @@ func (r *MySQLAccounts) RegisterAppleLogin(ctx context.Context, grant AppleGrant
 		return AccountLogin{}, errors.New("album credential encryption failed")
 	}
 	digest := sha256.Sum256([]byte(grant.RefreshToken))
-	_, err = tx.ExecContext(ctx, `INSERT INTO album_apple_grants(grant_id,account_id,token_sha256,encrypted_token,token_nonce) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE grant_id=grant_id`, id, account, digest[:], ciphertext, nonce)
+	var issued any
+	if !grant.Identity.IssuedAt.IsZero() {
+		issued = grant.Identity.IssuedAt.UTC().Truncate(time.Second)
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO album_apple_grants(grant_id,account_id,token_sha256,encrypted_token,token_nonce,identity_issued_at) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE grant_id=grant_id`, id, account, digest[:], ciphertext, nonce, issued)
 	if err != nil {
 		return AccountLogin{}, err
 	}

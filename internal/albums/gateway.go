@@ -135,7 +135,8 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 		return nil, errPushRegistration
 	}
 	g.router, err = NewHTTPRouterWithLogin(config.APIHost, sessions, uploads, LoginHTTPOptions{
-		Service: login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
+		AppleNotifications: &appleAccountNotifications{verifier, accounts},
+		Service:            login, Limiter: limiter, Sessions: sessions, Multipart: multipart, TrustedProxies: config.TrustedProxies,
 		Subscriptions:       subscriptions,
 		NotificationLimiter: notificationLimiter,
 		Shares:              shares, ShareLimiter: shareLimiter, ShareClaimLimiter: shareClaimLimiter,
@@ -174,6 +175,8 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 	// Checking named columns detects an old/incomplete schema before accepting
 	// challenges or uploads; this process never applies migrations itself.
 	for _, query := range []string{
+		`SELECT subject_sha256,revoked_before,deleted_at FROM album_apple_identity_state LIMIT 0`,
+		`SELECT identity_issued_at FROM album_apple_grants LIMIT 0`,
 		`SELECT account_id,apple_subject_sha256,state FROM album_accounts LIMIT 0`,
 		`SELECT grant_id,account_id,token_sha256,encrypted_token,token_nonce,revoked_at FROM album_apple_grants LIMIT 0`,
 		`SELECT session_id,account_id,grant_id,token_sha256,expires_at,revoked_at FROM album_sessions LIMIT 0`,
