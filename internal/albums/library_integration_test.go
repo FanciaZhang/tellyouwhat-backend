@@ -199,6 +199,18 @@ func checkMySQLLibraryPageByteBudget(t *testing.T, ctx context.Context, r *MySQL
 	if err != nil || len(encoded) > 1<<20 {
 		t.Fatal("oversized response")
 	}
+	changes, err := r.LibraryChanges(ctx, owner, 0, 100)
+	if err != nil || len(changes.Changes) != 1 || !changes.HasMore {
+		t.Fatal("change feed byte budget", err)
+	}
+	data, err := json.Marshal(changes)
+	if err != nil || len(data) > 1<<20 {
+		t.Fatal("oversized change feed")
+	}
+	remaining, err := r.LibraryChanges(ctx, owner, changes.NextSequence, 100)
+	if err != nil || len(remaining.Changes) != 1 || remaining.HasMore || remaining.Changes[0].VersionID == changes.Changes[0].VersionID {
+		t.Fatal("byte-limited change cursor lost version", err)
+	}
 	second, err := r.AssetVersions(ctx, owner, first.NextSequence, 100)
 	if err != nil || len(second.Versions) != 1 || second.HasMore || second.Versions[0].VersionID == first.Versions[0].VersionID {
 		t.Fatal("truncated page cursor lost version", err)

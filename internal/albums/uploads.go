@@ -32,18 +32,19 @@ const (
 
 // OwnerID is a server-issued stable account UUID, never an App Attest key or device ID.
 type Upload struct {
-	ID            string         `json:"id"`
-	OwnerID       string         `json:"-"`
-	RequestID     string         `json:"requestID"`
-	Manifest      Manifest       `json:"manifest"`
-	Digest        string         `json:"manifestDigest"`
-	State         UploadState    `json:"state"`
-	OriginalBytes int64          `json:"originalBytes"`
-	DerivedBudget int64          `json:"derivedBudget"`
-	ExpiresAt     time.Time      `json:"expiresAt"`
-	LeaseToken    string         `json:"-"`
-	LeaseUntil    time.Time      `json:"-"`
-	Objects       []SealedObject `json:"-"`
+	ID             string         `json:"id"`
+	OwnerID        string         `json:"-"`
+	RequestID      string         `json:"requestID"`
+	Manifest       Manifest       `json:"manifest"`
+	Digest         string         `json:"manifestDigest"`
+	State          UploadState    `json:"state"`
+	OriginalBytes  int64          `json:"originalBytes"`
+	DerivedBudget  int64          `json:"derivedBudget"`
+	ExpiresAt      time.Time      `json:"expiresAt"`
+	LeaseToken     string         `json:"-"`
+	LeaseUntil     time.Time      `json:"-"`
+	Objects        []SealedObject `json:"-"`
+	LifecycleEpoch int64          `json:"-"`
 }
 
 type SealedObject struct {
@@ -142,7 +143,18 @@ func (s *UploadService) Get(ctx context.Context, owner, id string) (Upload, erro
 	if !validOwner(id) {
 		return Upload{}, ErrNotFound
 	}
-	return s.repository.Get(ctx, owner, id)
+	u, err := s.repository.Get(ctx, owner, id)
+	if err != nil {
+		return Upload{}, err
+	}
+	if repository, ok := s.repository.(interface {
+		ValidateUploadVisibility(context.Context, Upload) error
+	}); ok {
+		if err := repository.ValidateUploadVisibility(ctx, u); err != nil {
+			return Upload{}, err
+		}
+	}
+	return u, nil
 }
 
 func (s *UploadService) Grants(ctx context.Context, owner, id string) ([]PutGrant, error) {

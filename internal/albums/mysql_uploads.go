@@ -76,7 +76,7 @@ func (r *MySQLUploads) lockAccount(ctx context.Context, tx *sql.Tx, owner string
 	return b, nil
 }
 
-const uploadColumns = `upload_id, owner_id, request_id, manifest_json, manifest_digest, state, original_bytes, derived_budget, expires_at, lease_token, lease_until, sealed_objects`
+const uploadColumns = `upload_id, owner_id, request_id, manifest_json, manifest_digest, state, original_bytes, derived_budget, expires_at, lease_token, lease_until, sealed_objects, lifecycle_epoch`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -85,7 +85,7 @@ func scanUpload(row rowScanner) (Upload, error) {
 	var manifest, objects []byte
 	var lease sql.NullString
 	var until sql.NullTime
-	err := row.Scan(&u.ID, &u.OwnerID, &u.RequestID, &manifest, &u.Digest, &u.State, &u.OriginalBytes, &u.DerivedBudget, &u.ExpiresAt, &lease, &until, &objects)
+	err := row.Scan(&u.ID, &u.OwnerID, &u.RequestID, &manifest, &u.Digest, &u.State, &u.OriginalBytes, &u.DerivedBudget, &u.ExpiresAt, &lease, &until, &objects, &u.LifecycleEpoch)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -127,9 +127,17 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 	if err != nil {
 		return Upload{}, err
 	}
+	lifecycle, err := ensureActiveAsset(ctx, tx, u.OwnerID, u.Manifest.AssetID)
+	if err != nil {
+		return Upload{}, err
+	}
+	u.LifecycleEpoch = lifecycle.epoch
 	old, err := scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND request_id=? FOR UPDATE`, u.OwnerID, u.RequestID))
 	if err == nil {
 		if old.Digest != u.Digest {
+			return Upload{}, ErrConflict
+		}
+		if old.State != OriginalsVerified && old.LifecycleEpoch != lifecycle.epoch {
 			return Upload{}, ErrConflict
 		}
 		return old, tx.Commit()
@@ -137,8 +145,11 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 	if !errors.Is(err, ErrNotFound) {
 		return Upload{}, err
 	}
-	old, err = scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND manifest_digest=? FOR UPDATE`, u.OwnerID, u.Digest))
+	old, err = scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND manifest_digest=? AND (state='originals_verified' OR lifecycle_epoch=?) ORDER BY state='originals_verified' DESC LIMIT 1 FOR UPDATE`, u.OwnerID, u.Digest, lifecycle.epoch))
 	if err == nil {
+		if old.State != OriginalsVerified && old.LifecycleEpoch != lifecycle.epoch {
+			return Upload{}, ErrConflict
+		}
 		return old, tx.Commit()
 	}
 	if !errors.Is(err, ErrNotFound) {
@@ -158,8 +169,8 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 	if err != nil {
 		return Upload{}, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO album_uploads(upload_id,owner_id,request_id,manifest_json,manifest_digest,state,original_bytes,derived_budget,expires_at)
-		VALUES (?,?,?,?,?,?,?,?,?)`, u.ID, u.OwnerID, u.RequestID, manifest, u.Digest, u.State, u.OriginalBytes, u.DerivedBudget, u.ExpiresAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO album_uploads(upload_id,owner_id,request_id,manifest_json,manifest_digest,state,original_bytes,derived_budget,expires_at,lifecycle_epoch)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`, u.ID, u.OwnerID, u.RequestID, manifest, u.Digest, u.State, u.OriginalBytes, u.DerivedBudget, u.ExpiresAt, u.LifecycleEpoch)
 	if err != nil {
 		return Upload{}, err
 	}
@@ -196,6 +207,9 @@ func (r *MySQLUploads) mutate(ctx context.Context, owner, id string, action func
 
 func (r *MySQLUploads) Submit(ctx context.Context, owner, id string, now time.Time) (Upload, error) {
 	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return Upload{}, err
+		}
 		if u.State == OriginalsVerified || u.State == Queued || u.State == Verifying {
 			return u, nil
 		}
@@ -216,6 +230,9 @@ func (r *MySQLUploads) Claim(ctx context.Context, owner, id, token string, now, 
 		return Upload{}, ErrLease
 	}
 	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return Upload{}, err
+		}
 		if u.State == OriginalsVerified {
 			return u, nil
 		}
@@ -283,7 +300,8 @@ func (r *MySQLUploads) Pending(ctx context.Context, now time.Time, limit int) ([
 	if limit < 1 || limit > 100 {
 		return nil, ErrConflict
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE expires_at>? AND
+	rows, err := r.db.QueryContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads u WHERE expires_at>? AND
+        EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=u.owner_id AND a.asset_id=JSON_UNQUOTE(JSON_EXTRACT(u.manifest_json,'$.assetID')) AND a.state='active' AND a.lifecycle_epoch=u.lifecycle_epoch) AND
 		(state='queued' OR (state='verifying' AND lease_until<=?)) ORDER BY created_at,upload_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err

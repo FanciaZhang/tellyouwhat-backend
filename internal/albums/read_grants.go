@@ -74,7 +74,15 @@ func (s *UploadService) verifiedAssetVersion(ctx context.Context, owner, version
 	if !ok {
 		return AssetVersion{}, ErrReadUnavailable
 	}
-	version, err := repository.AssetVersion(ctx, owner, versionID)
+	var version AssetVersion
+	var err error
+	if visible, ok := repository.(interface {
+		VisibleAssetVersion(context.Context, string, string) (AssetVersion, error)
+	}); ok {
+		version, err = visible.VisibleAssetVersion(ctx, owner, versionID)
+	} else {
+		version, err = repository.AssetVersion(ctx, owner, versionID)
+	}
 	if err != nil {
 		return AssetVersion{}, err
 	}

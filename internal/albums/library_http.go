@@ -33,26 +33,8 @@ func (h *uploadHTTP) ListAlbumAssetVersions(c *gin.Context, params albumhttpapi.
 	if !emptyAlbumBody(c) {
 		return
 	}
-	values, err := url.ParseQuery(c.Request.URL.RawQuery)
-	if err != nil {
-		writeAlbumError(c, ErrInvalidManifest)
-		return
-	}
-	for name, values := range values {
-		if (name != "after" && name != "limit") || len(values) != 1 || values[0] == "" {
-			writeAlbumError(c, ErrInvalidManifest)
-			return
-		}
-	}
-	after, limit := int64(0), 50
-	if params.After != nil {
-		after = *params.After
-	}
-	if params.Limit != nil {
-		limit = *params.Limit
-	}
-	if after < 0 || limit < 1 || limit > 100 {
-		writeAlbumError(c, ErrInvalidManifest)
+	after, limit, ok := libraryPageParameters(c, params.After, params.Limit)
+	if !ok {
 		return
 	}
 	repository := h.library(c)
@@ -78,7 +60,7 @@ func (h *uploadHTTP) GetAlbumAssetVersion(c *gin.Context, versionID uuid.UUID) {
 	if repository == nil {
 		return
 	}
-	result, err := repository.AssetVersion(c.Request.Context(), c.GetString("album.owner"), versionID.String())
+	result, err := h.service.verifiedAssetVersion(c.Request.Context(), c.GetString("album.owner"), versionID.String())
 	if err != nil {
 		writeLibraryError(c, err)
 		return
@@ -160,4 +142,30 @@ func (h *uploadHTTP) AuthorizeAlbumLivePhotoPreviewRead(c *gin.Context, versionI
 		return
 	}
 	c.JSON(http.StatusOK, grant)
+}
+
+func libraryPageParameters(c *gin.Context, afterValue *int64, limitValue *int) (int64, int, bool) {
+	values, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		writeAlbumError(c, ErrInvalidManifest)
+		return 0, 0, false
+	}
+	for name, values := range values {
+		if (name != "after" && name != "limit") || len(values) != 1 || values[0] == "" {
+			writeAlbumError(c, ErrInvalidManifest)
+			return 0, 0, false
+		}
+	}
+	after, limit := int64(0), 50
+	if afterValue != nil {
+		after = *afterValue
+	}
+	if limitValue != nil {
+		limit = *limitValue
+	}
+	if after < 0 || limit < 1 || limit > 100 {
+		writeAlbumError(c, ErrInvalidManifest)
+		return 0, 0, false
+	}
+	return after, limit, true
 }

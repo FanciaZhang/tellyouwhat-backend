@@ -149,6 +149,68 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AlbumCloudAccount'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/changes:
+    get:
+      operationId: listAlbumLibraryChanges
+      description: Independent event cursor; apply each page atomically. Trashed events remove a version from browsing without deleting system media. Restores publish full version metadata again.
+      parameters:
+        - {name: after, in: query, schema: {type: integer, format: int64, minimum: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: Owner-scoped publication, trash and restoration events, bounded to one MiB
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LibraryChangePage'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/assets/{assetID}:
+    get:
+      operationId: getAlbumCloudAsset
+      parameters:
+        - {$ref: '#/components/parameters/AssetID'}
+      responses:
+        '200':
+          description: Logical cloud state; restoreUntil is bounded by current account retention
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CloudAssetState'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/assets/{assetID}/trash:
+    post:
+      operationId: trashAlbumCloudAsset
+      description: Applies to all historical versions. Requires the observed logical revision and a fresh request ID for new intent. Replaying the same request returns its historical result; clients must not roll back newer revisions. Does not change system photos. Previously issued read URLs remain valid until their short expiry.
+      parameters:
+        - {$ref: '#/components/parameters/AssetID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CloudAssetMutation'}
+      responses:
+        '200':
+          description: Committed cloud state; trash revokes old shares and restoration never reopens them
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CloudAssetState'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/assets/{assetID}/restore:
+    post:
+      operationId: restoreAlbumCloudAsset
+      description: Applies to all historical versions. Requires the observed logical revision and a fresh request ID for new intent. Replaying the same request returns its historical result; clients must not roll back newer revisions. Does not change system photos. Previously issued read URLs remain valid until their short expiry.
+      parameters:
+        - {$ref: '#/components/parameters/AssetID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CloudAssetMutation'}
+      responses:
+        '200':
+          description: Committed cloud state; trash revokes old shares and restoration never reopens them
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CloudAssetState'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/library/versions:
     get:
       operationId: listAlbumAssetVersions
@@ -521,6 +583,11 @@ components:
       scheme: bearer
       description: Verified stable account authentication scoped to the albums application. App Attest alone is insufficient.
   parameters:
+    AssetID:
+      name: assetID
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
     ResourceID:
       name: resourceID
       in: path
@@ -849,6 +916,49 @@ components:
         manifest: {$ref: '#/components/schemas/Manifest'}
         originalBytes: {type: integer, format: int64, minimum: 1}
         publishedAt: {type: string, format: date-time}
+    CloudAssetMutation:
+      type: object
+      additionalProperties: false
+      required: [requestID, expectedRevision]
+      properties:
+        requestID: {type: string, format: uuid}
+        expectedRevision: {type: integer, format: int64, minimum: 1, maximum: 9223372036854775806}
+    CloudAssetState:
+      type: object
+      additionalProperties: false
+      required: [assetID, revision, state]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        revision: {type: integer, format: int64, minimum: 1}
+        state: {type: string, enum: [active, trashed]}
+        trashedAt: {type: string, format: date-time}
+        trashExpiresAt: {type: string, format: date-time}
+        restoreUntil: {type: string, format: date-time}
+    LibraryChange:
+      type: object
+      additionalProperties: false
+      required: [sequence, assetID, versionID, revision, state, changedAt]
+      properties:
+        sequence: {type: integer, format: int64, minimum: 1}
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        revision: {type: integer, format: int64, minimum: 1}
+        state: {type: string, enum: [active, trashed]}
+        changedAt: {type: string, format: date-time}
+        trashedAt: {type: string, format: date-time}
+        trashExpiresAt: {type: string, format: date-time}
+        version: {$ref: '#/components/schemas/AssetVersion'}
+    LibraryChangePage:
+      type: object
+      additionalProperties: false
+      required: [changes, nextSequence, hasMore]
+      properties:
+        changes:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/LibraryChange'}
+        nextSequence: {type: integer, format: int64, minimum: 0}
+        hasMore: {type: boolean}
     AssetVersionPage:
       type: object
       additionalProperties: false

@@ -66,6 +66,9 @@ func (r *MySQLUploads) WithCloudReadGrant(ctx context.Context, owner string, exp
 	} else if _, err := lockAccount(ctx, tx, owner); err != nil {
 		return err
 	}
+	if err := requireVisibleVersion(ctx, tx, owner, expected.VersionID); err != nil {
+		return err
+	}
 	current, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, owner, expected.VersionID))
 	if err != nil {
 		return err

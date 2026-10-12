@@ -131,6 +131,9 @@ func (r *MySQLUploads) createShare(ctx context.Context, candidate shareRow, now 
 	if err != nil {
 		return shareRow{}, err
 	}
+	if err := requireVisibleVersion(ctx, tx, candidate.Owner, candidate.Version); err != nil {
+		return shareRow{}, ErrShareNotAvailable
+	}
 	old, err := scanShare(tx.QueryRowContext(ctx, `SELECT `+shareColumns+` FROM album_share_links WHERE owner_id=? AND request_id=? FOR UPDATE`, candidate.Owner, candidate.Request))
 	if err == nil {
 		return old, nil
@@ -342,6 +345,9 @@ func (r *MySQLUploads) withShareClaim(ctx context.Context, id string, digest [32
 	}
 	if !now.Before(claim.Expiry) {
 		return ErrShareClaimExpired
+	}
+	if err := requireVisibleVersion(ctx, tx, row.Owner, row.Version); err != nil {
+		return ErrShareNotAvailable
 	}
 	version, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, row.Owner, row.Version))
 	if err != nil {

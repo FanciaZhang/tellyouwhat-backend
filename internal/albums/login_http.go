@@ -17,6 +17,8 @@ type SessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 type LoginHTTPOptions struct {
+	TrashEnabled        bool
+	LibraryLimiter      LoginRateLimiter
 	Multipart           *MultipartService
 	Service             *LoginService
 	Limiter             LoginRateLimiter
@@ -41,6 +43,9 @@ func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *Upl
 	}
 	if options.PushRegistrations != nil && options.PushLimiter == nil {
 		return nil, errPushRegistration
+	}
+	if options.TrashEnabled && options.LibraryLimiter == nil {
+		return nil, errors.New("album library limiter required")
 	}
 	options.TrustedProxies = append([]string(nil), options.TrustedProxies...)
 	return newHTTPRouter(host, auth, uploads, &options, options.Multipart)

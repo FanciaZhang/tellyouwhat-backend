@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -102,6 +103,10 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 	if err != nil || digest != u.Digest {
 		return ErrIncompleteBackup
 	}
+	lifecycle, err := ensureActiveAsset(ctx, tx, u.OwnerID, u.Manifest.AssetID)
+	if err != nil {
+		return err
+	}
 	existing, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, u.OwnerID, u.ID))
 	if err == nil {
 		if existing.ManifestDigest != u.Digest || existing.OriginalBytes != u.OriginalBytes {
@@ -125,6 +130,9 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 	if !errors.Is(err, ErrNotFound) {
 		return err
 	}
+	if lifecycle.epoch != u.LifecycleEpoch || lifecycle.Revision == math.MaxInt64 {
+		return ErrConflict
+	}
 	manifest, err := json.Marshal(u.Manifest)
 	if err != nil {
 		return err
@@ -138,14 +146,31 @@ func publishAssetVersion(ctx context.Context, tx *sql.Tx, u Upload, objects []Se
 	if err != nil {
 		return err
 	}
+	revision := lifecycle.Revision + 1
+	if _, err = tx.ExecContext(ctx, `UPDATE album_asset_lifecycle SET revision=? WHERE owner_id=? AND asset_id=?`, revision, u.OwnerID, u.Manifest.AssetID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO album_library_changes(owner_id,asset_id,version_id,revision,state,changed_at) VALUES(?,?,?,?,'active',?)`, u.OwnerID, u.Manifest.AssetID, u.ID, revision, now); err != nil {
+		return err
+	}
 	return enqueuePreviewJobs(ctx, tx, u, now)
 }
 func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions LIMIT 0`)
-	if err != nil {
-		return err
+	for _, query := range []string{
+		`SELECT ` + versionColumns + ` FROM album_asset_versions LIMIT 0`,
+		`SELECT ` + lifecycleColumns + ` FROM album_asset_lifecycle LIMIT 0`,
+		`SELECT ` + changeColumns + ` FROM album_library_changes LIMIT 0`,
+		`SELECT owner_id,request_id,asset_id,expected_revision,action,result_json FROM album_asset_operations LIMIT 0`,
+	} {
+		rows, err := r.db.QueryContext(ctx, query)
+		if err != nil {
+			return err
+		}
+		if err = rows.Close(); err != nil {
+			return err
+		}
 	}
-	return rows.Close()
+	return nil
 }
 func (r *MySQLUploads) AssetVersion(ctx context.Context, owner, versionID string) (AssetVersion, error) {
 	if !validOwner(owner) {
@@ -168,7 +193,7 @@ func (r *MySQLUploads) AssetVersions(ctx context.Context, owner string, after in
 	if after < 0 || limit < 1 || limit > 100 {
 		return result, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND sequence_id>? ORDER BY sequence_id LIMIT ?`, owner, after, limit+1)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions v WHERE owner_id=? AND sequence_id>? AND EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=v.owner_id AND a.asset_id=v.asset_id AND a.state='active') ORDER BY sequence_id LIMIT ?`, owner, after, limit+1)
 	if err != nil {
 		return result, err
 	}

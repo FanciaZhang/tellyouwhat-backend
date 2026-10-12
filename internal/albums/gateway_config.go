@@ -20,6 +20,7 @@ import (
 // GatewayConfig is independent of Health/Journal/TOS and has no debug owner,
 // identity-cipher, or free-quota fallback. Secret files are server-only.
 type GatewayConfig struct {
+	TrashEnabled    bool
 	Worker          WorkerConfig
 	Environment     string
 	APIHost         string
@@ -121,6 +122,13 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	c.Subscriptions, err = loadAlbumSubscriptionConfig(getenv, c.Environment)
 	if err != nil {
 		return GatewayConfig{}, err
+	}
+	switch strings.TrimSpace(getenv("ALBUM_TRASH_ENABLED")) {
+	case "", "false":
+	case "true":
+		c.TrashEnabled = true
+	default:
+		return GatewayConfig{}, errors.New("invalid ALBUM_TRASH_ENABLED")
 	}
 	c.PushEnvironment = strings.TrimSpace(getenv("ALBUM_PUSH_ENVIRONMENT"))
 	if c.PushEnvironment != "" && c.PushEnvironment != "development" && c.PushEnvironment != "production" {

@@ -140,6 +140,7 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 		NotificationLimiter: notificationLimiter,
 		Shares:              shares, ShareLimiter: shareLimiter, ShareClaimLimiter: shareClaimLimiter,
 		PushRegistrations: push, PushLimiter: pushLimiter,
+		TrashEnabled: config.TrashEnabled, LibraryLimiter: shareLimiter,
 	})
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")
