@@ -13,6 +13,7 @@ require (
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/volcengine/ve-tos-golang-sdk/v2 v2.9.8
+	golang.org/x/text v0.41.0
 	github.com/volcengine/volcengine-go-sdk v1.2.47
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -63,7 +64,6 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 )

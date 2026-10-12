@@ -456,7 +456,7 @@ func buildAppHandler(
 		}
 		organizer := &journalservice.Organizer{
 			Model: model, Config: storage.prompts, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
-			AnalysisVersion: "journal-organize-2026-08-31",
+			AnalysisVersion: journalprovider.OrganizationAnalysisVersion,
 		}
 		if appConfig.VoiceEnabled {
 			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {

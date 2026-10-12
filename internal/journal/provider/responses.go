@@ -155,7 +155,7 @@ func (c *Client) Organize(ctx context.Context, request contracts.OrganizeRequest
 	if !request.IllustrationSuggestionsEnabled || !result.IllustrationSuggestion.Grounded([]string{request.Body}) {
 		result.IllustrationSuggestion = nil
 	}
-	metered.Value = result
+	metered.Value = curateOrganization(request, result)
 	return metered, nil
 }
 
@@ -197,7 +197,7 @@ func PrepareOrganize(ctx context.Context, request contracts.OrganizeRequest, pro
 		"thinking":     map[string]any{"type": "disabled"},
 		"instructions": settings.Prompt + contracts.IllustrationSuggestionInstructions,
 		"input":        string(input),
-		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": contracts.ResponseSchema()}},
+		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_organize", "strict": true, "schema": organizationSchema()}},
 	}
 	parameters.Apply(payload)
 	encoded, err := json.Marshal(payload)
