@@ -169,8 +169,8 @@ func New(c Config) (http.Handler, error) {
 		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
 		Privacy: consent, Consent: consent,
 		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
-		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: "journal-organize-2026-08-31"},
-		JournalAnalysisVersion: "journal-organize-2026-08-31",
+		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: provider.OrganizationAnalysisVersion},
+		JournalAnalysisVersion: provider.OrganizationAnalysisVersion,
 		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000, Logger: c.Logger}, VoiceEntitlements: store,
 		Now: c.Now,
 	})
