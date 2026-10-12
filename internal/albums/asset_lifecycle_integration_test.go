@@ -319,9 +319,10 @@ func TestMySQLCloudLifecycleMigrationBackfillsPublishedVersions(t *testing.T) {
 	}
 	// Recreate the prior schema around real published versions and upload rows.
 	for _, query := range []string{
+		`DROP TABLE album_object_purges`,
 		`DROP TABLE album_asset_operations`, `DROP TABLE album_library_changes`, `DROP TABLE album_asset_lifecycle`,
 		`ALTER TABLE album_uploads DROP INDEX album_upload_manifest, DROP COLUMN lifecycle_epoch, ADD UNIQUE KEY album_upload_manifest(owner_id,manifest_digest)`,
-		`DELETE FROM schema_migrations WHERE name='0034_album_asset_lifecycle.sql'`,
+		`DELETE FROM schema_migrations WHERE name IN ('0034_album_asset_lifecycle.sql','0035_album_object_purges.sql')`,
 	} {
 		if _, err := f.db.Exec(query); err != nil {
 			t.Fatal(err)

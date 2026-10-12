@@ -48,6 +48,10 @@ func (s *COSObjects) ListDerivedVersions(ctx context.Context, t DerivedCleanupTa
 	if err != nil {
 		return nil, err
 	}
+	return s.listObjectVersions(ctx, key, false)
+}
+
+func (s *COSObjects) listObjectVersions(ctx context.Context, key string, batch bool) ([]DerivedObjectVersion, error) {
 	bucket := strings.Split(s.host, ".cos.")[0]
 	marker, versionMarker := "", ""
 	seenPages := map[string]bool{}
@@ -86,7 +90,7 @@ func (s *COSObjects) ListDerivedVersions(ctx context.Context, t DerivedCleanupTa
 				return nil, err
 			}
 		}
-		if !result.IsTruncated {
+		if !result.IsTruncated || batch && len(versions) > 0 {
 			return versions, nil
 		}
 		if !strings.HasPrefix(result.NextKeyMarker, key) || !concreteCOSVersion(result.NextVersionIdMarker) {
@@ -109,7 +113,11 @@ func (s *COSObjects) DeleteDerivedVersion(ctx context.Context, t DerivedCleanupT
 	if err != nil || !concreteCOSVersion(v.VersionID) {
 		return ErrInvalidManifest
 	}
-	query := url.Values{"versionId": []string{v.VersionID}}
+	return s.deleteObjectVersion(ctx, key, v.VersionID)
+}
+
+func (s *COSObjects) deleteObjectVersion(ctx context.Context, key, version string) error {
+	query := url.Values{"versionId": []string{version}}
 	response, err := s.client.Object.Delete(ctx, key, &cos.ObjectDeleteOptions{XOptionQuery: &query})
 	if response != nil && response.Body != nil {
 		defer response.Body.Close()
@@ -125,7 +133,7 @@ func (s *COSObjects) DeleteDerivedVersion(ctx context.Context, t DerivedCleanupT
 	if response == nil || response.StatusCode != http.StatusNoContent {
 		return ErrCOSOperation
 	}
-	if id := response.Header.Get("x-cos-version-id"); id != "" && id != v.VersionID {
+	if id := response.Header.Get("x-cos-version-id"); id != "" && id != version {
 		return ErrCOSOperation
 	}
 	return nil

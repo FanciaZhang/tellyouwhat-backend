@@ -1,0 +1,88 @@
+{
+  "startedAt": "2026-10-12T07:56:41.403343+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-he1goojn",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-he1goojn/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 35
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "1cf850fcbcef72db6360ed80bdacb73f5fec92c7e7f01815bc721e8ae80abb58"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-he1goojn/related-race.log",
+      "testCounts": {
+        "pass": 619
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "dd58d07c3ee811bd55046def0e37db9d86a7b97c4d147937c05b1a00b291db43"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-he1goojn/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-he1goojn/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T07:57:41.516510+00:00",
+  "baselineCommit": "505e43bb58d9f70bd3879a8c8e7fa482adba9c7a",
+  "scope": "Internal expired-trash object purge admission, immutable targets, durable per-action progress, exact COS versions/delete markers and multipart aborts; not scheduled or enabled",
+  "sourceSHA256": {
+    "internal/albums/asset_lifecycle_integration_test.go": "c787c172d3b3ffe8ef05829171cfd8e3f9a72dcf9afc0501fa8b73cf5f11b5c4",
+    "internal/albums/cos_derived_cleanup.go": "deaa2743d0d874df77757f45e489d801fa4990507c4003c6797b49f08d2c20ee",
+    "internal/albums/cos_object_purge.go": "51f10537d4c4997d2c8b43e50d658237c35ce0390f149218bedeaf889912b34c",
+    "internal/albums/cos_object_purge_test.go": "0ee17d1bf77a9a6a572beafcdb186785fc65adde7af4a88dc2d92598ca8344c8",
+    "internal/albums/mysql_object_purge.go": "22a5ccccfd4721d0b8451f9567c0991a5f25605bc71295ee0a9ea759fc842705",
+    "internal/albums/object_purge.go": "15f55cfd2f6854ab640a990688ea542b37b54de65b5fda51956e3390fcb80cac",
+    "internal/albums/object_purge_admission.go": "e6814db43195b11e270606502767a6c2589d5ff799b5c699e9035d4dbe27539f",
+    "internal/albums/object_purge_integration_test.go": "f293c6a048865236f2691803eb195cf244f66165ab107767de9169b337ccc719",
+    "migrations/0035_album_object_purges.sql": "bb80cda2eaaf4ae5b9e989cca2434296b522e1b40e332818f47d42d50be87432",
+    "migrations/embed_test.go": "cb560551f6f0da902451047e0f041be273fe4a0b49f5d4cb50c95b7434a48a56"
+  },
+  "earlierRuns": [
+    {
+      "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-h6u02s1e",
+      "result": "30 targeted passed; related race 613 passed / 1 failed",
+      "reason": "Prior-schema migration fixture must drop new foreign-key dependent table before lifecycle table. Fixed fixture."
+    },
+    {
+      "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-lvh4rqxn",
+      "result": "32 passed / 2 failed (parent and subtest)",
+      "reason": "Fault-injection trigger required SUPER on restricted test account. Replaced with isolated column-capacity fault, without granting extra privileges."
+    }
+  ],
+  "verified": [
+    "30-day trash deadline and revision fencing under owner lock",
+    "Reject open derivative budget, held escrow, pending jobs, derivative retirement and Live Photo uncertainty",
+    "Account isolation and one winner across concurrent claimants with single connection pool",
+    "Plan persistence before provider mutation; database write failure prevents DELETE",
+    "Lost DELETE response retries only exact unacknowledged version; acknowledged action prefix survives lease replacement",
+    "Recovered empty plan requires fresh inventory; new observations cannot skip a key",
+    "Bounded positive batches cover more than 1000 historical COS versions; incomplete empty inventories fail closed",
+    "Original, photo, video and Live Photo archive/staging namespaces; exact version/delete marker and upload IDs",
+    "Object completion does not remove metadata, settle quota or represent full account erasure"
+  ],
+  "notVerifiedOrImplemented": [
+    "Production scheduling disabled; no HTTP purge action",
+    "Six-month subscription-expiry admission with current Apple evidence and renewal cutover",
+    "Abandoned/unknown writes and provider quiescence for already accepted requests",
+    "Final metadata/index/account deletion, quota settlement and backup restore deletion propagation",
+    "Admission histories over 1000 asset versions / 10000 keys defer intact; five-page nonmatching inventory defers intact",
+    "Real COS deletion, actual Apple/APNs, production migration/deploy, native device verification"
+  ]
+}
