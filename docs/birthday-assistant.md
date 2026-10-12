@@ -8,7 +8,7 @@
 
 开发服务使用 `https://api.journal.tellyouwhat.cn/_development/birthday/`，由现有可信 HTTPS 站点转发到独立生日进程的回环端口 `18788`。代理删除入口前缀，内部 Host 固定为 `birthday.development`；签名仍使用 `/v2/birthday/assist` 等业务路径。只开放就绪、App Attest 注册与生日决策接口。
 
-运行配置设置 `BIRTHDAY_AI_ONLY=true`，仅加载生日。开发进程不持有健康、手记、TOS 或控制面密钥；服务端明确复用既有 Ark 推理凭据和 Pro 推理端点，客户端只持有生日开发注册凭据。身份、额度和用量以 `birthday` 隔离，成本受现有共享项目预算约束。当前用每百万输入／输出 token 9.6／48 元作保守成本预留，这不是供应商账单。
+运行配置设置 `BIRTHDAY_AI_ONLY=true`，仅加载生日身份配置。开发进程复用平台的数据库、Redis 与加密配置，并显式复用既有 Ark 推理凭据和 Pro 推理端点；不加载其他 App 的注册凭据，不挂载 TOS 或控制面凭据。客户端只持有生日开发注册凭据。身份、存储访问、额度和用量在代码中以 `birthday` 隔离，成本受现有共享项目预算约束。当前用每百万输入／输出 token 9.6／48 元作保守成本预留，这不是供应商账单。
 
 服务按 `compose.birthday-development.yaml` 运行，只绑定回环端口。后端代码位于 `codex/birthday-real-ai` 分支；该开发部署使用固定源码提交编译的 Linux amd64 二进制，不替换其他 App 的运行镜像。HTTP 合同位于 `Contracts/HTTP/BirthdayAPI/app.openapi.yaml`，使用现有 `openapi-compose` 和 Gin 生成器，纳入全量 Go 测试与生成检查。
 
