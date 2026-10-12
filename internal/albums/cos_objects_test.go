@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -107,6 +108,49 @@ func TestCOSGrantsCannotWriteArchiveAndBindSize(t *testing.T) {
 		if _, err := s.AuthorizePut(context.Background(), invalid, resource, time.Now().Add(time.Minute)); err == nil {
 			t.Fatal("invalid write path accepted")
 		}
+	}
+}
+
+func TestCOSUploadGrantsUseExactDeadline(t *testing.T) {
+	s := cosFixture(t, func(*http.Request) (*http.Response, error) {
+		t.Fatal("signing should not contact storage")
+		return nil, nil
+	})
+	now := time.Date(2025, 1, 2, 3, 4, 5, 250000000, time.UTC)
+	s.now = func() time.Time { return now }
+	key := "albums/staging/" + uuid.NewString() + "/" + uuid.NewString() + "/photo"
+	resource := Resource{ID: "photo", SizeBytes: 123}
+	for name, authorize := range map[string]func(time.Time) (PutGrant, error){
+		"put": func(expiry time.Time) (PutGrant, error) {
+			return s.AuthorizePut(context.Background(), key, resource, expiry)
+		},
+		"part": func(expiry time.Time) (PutGrant, error) {
+			grant, err := s.AuthorizePart(context.Background(), key, "provider-upload", resource, 1, expiry)
+			return grant.PutGrant, err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, duration := range []time.Duration{500 * time.Millisecond, 47 * time.Second, 10 * time.Minute} {
+				expiry := now.Add(duration)
+				grant, err := authorize(expiry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parsed, err := url.Parse(grant.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				interval := strconv.FormatInt(now.Unix(), 10) + ";" + strconv.FormatInt(expiry.Unix(), 10)
+				if !grant.ExpiresAt.Equal(expiry) || parsed.Query().Get("q-sign-time") != interval || parsed.Query().Get("q-key-time") != interval {
+					t.Fatalf("duration %s: signature does not use caller deadline", duration)
+				}
+			}
+			for _, duration := range []time.Duration{-time.Second, 0, 10*time.Minute + time.Nanosecond} {
+				if _, err := authorize(now.Add(duration)); !errors.Is(err, ErrInvalidManifest) {
+					t.Fatalf("invalid duration %s: %v", duration, err)
+				}
+			}
+		})
 	}
 }
 

@@ -85,7 +85,8 @@ func (s *COSObjects) AuthorizePart(ctx context.Context, key, uploadID string, re
 		return MultipartPartGrant{}, err
 	}
 	offset, size, err := layout.Part(number)
-	duration := expiry.Sub(s.now())
+	now := s.now()
+	duration := expiry.Sub(now)
 	if err != nil || !validMultipartTarget(key, uploadID) || !strings.HasSuffix(key, "/"+resource.ID) || duration <= 0 || duration > 10*time.Minute {
 		return MultipartPartGrant{}, ErrInvalidManifest
 	}
@@ -93,7 +94,7 @@ func (s *COSObjects) AuthorizePart(ctx context.Context, key, uploadID string, re
 	headers.Set("Content-Length", strconv.FormatInt(size, 10))
 	headers.Set("Content-Type", "application/octet-stream")
 	query := url.Values{"uploadId": {uploadID}, "partNumber": {strconv.Itoa(number)}}
-	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, duration, &cos.PresignedURLOptions{Header: &headers, Query: &query})
+	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, duration, &cos.PresignedURLOptions{Header: &headers, Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
 	if err != nil {
 		return MultipartPartGrant{}, ErrCOSOperation
 	}

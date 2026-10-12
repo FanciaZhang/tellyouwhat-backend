@@ -84,14 +84,15 @@ func albumObjectKey(key, area string) bool {
 }
 
 func (s *COSObjects) AuthorizePut(ctx context.Context, key string, resource Resource, expiry time.Time) (PutGrant, error) {
-	duration := expiry.Sub(s.now())
+	now := s.now()
+	duration := expiry.Sub(now)
 	if !albumObjectKey(key, "staging") || !strings.HasSuffix(key, "/"+resource.ID) || resource.SizeBytes <= 0 || duration <= 0 || duration > 10*time.Minute {
 		return PutGrant{}, ErrInvalidManifest
 	}
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/octet-stream")
 	headers.Set("Content-Length", strconv.FormatInt(resource.SizeBytes, 10))
-	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, duration, &cos.PresignedURLOptions{Header: &headers})
+	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, duration, &cos.PresignedURLOptions{Header: &headers, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
 	if err != nil {
 		return PutGrant{}, ErrCOSOperation
 	}
