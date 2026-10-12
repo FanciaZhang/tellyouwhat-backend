@@ -128,17 +128,13 @@ func (s *COSObjects) Seal(ctx context.Context, from, to string, source OriginalS
 		return "", ErrInvalidManifest
 	}
 	// Every copy part reads the exact source version observed above.
-	response, err := s.copyVersion(ctx, from, to, source.VersionID, source.SizeBytes)
+	archived, err := s.copyVersion(ctx, from, to, source.VersionID, source.SizeBytes)
 	if err != nil {
 		if errors.Is(err, ErrCOSCleanup) {
 			return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
 		}
 		return "", ErrCOSOperation
 	}
-	if response == nil {
-		return "", ErrIncompleteBackup
-	}
-	archived := response.Header.Get("x-cos-version-id")
 	if !concreteCOSVersion(archived) {
 		return "", ErrIncompleteBackup
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	cos "github.com/tencentyun/cos-go-sdk-v5"
@@ -15,29 +16,36 @@ var ErrCOSCleanup = errors.New("album multipart cleanup requires reconciliation"
 // copyVersion keeps the upload ID until completion and aborts failed copies even
 // when the caller's context has expired. Process death or an unavailable storage
 // service still requires bucket lifecycle/reconciliation; abort is not a guarantee.
-func (s *COSObjects) copyVersion(ctx context.Context, from, to, version string, size int64) (response *cos.Response, err error) {
+func (s *COSObjects) copyVersion(ctx context.Context, from, to, version string, size int64) (archived string, err error) {
 	if size <= 0 {
-		return nil, ErrIncompleteBackup
+		return "", ErrIncompleteBackup
 	}
 	source := s.host + "/" + from
 	if size <= 5<<30 {
-		_, response, err = s.client.Object.Copy(ctx, to, source, nil, version)
-		return response, err
+		result, response, err := s.client.Object.Copy(ctx, to, source, nil, version)
+		if err != nil {
+			return "", err
+		}
+		// COS returns the destination version in XML, not the COPY response header.
+		if response == nil || response.StatusCode != http.StatusOK || result == nil || !concreteCOSVersion(result.VersionId) {
+			return "", ErrIncompleteBackup
+		}
+		return result.VersionId, nil
 	}
 	partSize := int64(64 << 20)
 	if minimum := (size-1)/10000 + 1; minimum > partSize {
 		partSize = minimum
 	}
 	if partSize > 5<<30 {
-		return nil, ErrInvalidManifest
+		return "", ErrInvalidManifest
 	}
 	count := int((size-1)/partSize + 1)
 	upload, _, err := s.client.Object.InitiateMultipartUpload(ctx, to, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if upload == nil || upload.UploadID == "" {
-		return nil, ErrIncompleteBackup
+		return "", ErrIncompleteBackup
 	}
 	complete := false
 	defer func() {
@@ -77,15 +85,18 @@ func (s *COSObjects) copyVersion(ctx context.Context, from, to, version string, 
 		})
 	}
 	if err := group.Wait(); err != nil {
-		return nil, err
+		return "", err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return "", err
 	}
-	_, response, err = s.client.Object.CompleteMultipartUpload(ctx, to, upload.UploadID, &cos.CompleteMultipartUploadOptions{Parts: parts})
+	_, response, err := s.client.Object.CompleteMultipartUpload(ctx, to, upload.UploadID, &cos.CompleteMultipartUploadOptions{Parts: parts})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	complete = true
-	return response, nil
+	if response == nil || response.StatusCode != http.StatusOK || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
+		return "", ErrIncompleteBackup
+	}
+	return response.Header.Get("x-cos-version-id"), nil
 }

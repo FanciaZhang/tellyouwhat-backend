@@ -55,7 +55,7 @@ func TestCOSAdapterFixesCopyAndReadVersions(t *testing.T) {
 			if r.URL.Path != "/"+to || !strings.HasSuffix(r.Header.Get("x-cos-copy-source"), "?versionId=source-v1") {
 				t.Errorf("unfixed copy: %s", r.Header.Get("x-cos-copy-source"))
 			}
-			return cosResponse(r, `<CopyObjectResult><ETag>etag</ETag></CopyObjectResult>`, "archive+v2&reserved=#?"), nil
+			return cosResponse(r, `<CopyObjectResult><ETag>etag</ETag><VersionId>archive+v2&amp;reserved=#?</VersionId></CopyObjectResult>`, ""), nil
 		case http.MethodGet:
 			reads++
 			if r.URL.Path != "/"+to || r.URL.Query().Get("versionId") != "archive+v2&reserved=#?" {
@@ -304,4 +304,24 @@ func sealCOSFixture(ctx context.Context, s *COSObjects, from, to string) (string
 		return "", err
 	}
 	return s.Seal(ctx, from, to, source)
+}
+
+func TestCOSCopyRequiresDestinationVersionInXML(t *testing.T) {
+	for _, body := range []string{`<CopyObjectResult><ETag>ok</ETag></CopyObjectResult>`, `<CopyObjectResult><VersionId>null</VersionId></CopyObjectResult>`, `<CopyObjectResult><VersionId></VersionId></CopyObjectResult>`} {
+		t.Run(body, func(t *testing.T) {
+			copies := 0
+			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+				copies++
+				response := cosResponse(r, body, "")
+				response.Header.Set("x-cos-copy-source-version-id", "source-only")
+				return response, nil
+			})
+			from := "albums/staging/" + uuid.NewString() + "/" + uuid.NewString() + "/photo"
+			to := strings.Replace(from, "/staging/", "/originals/", 1)
+			version, err := s.Seal(context.Background(), from, to, OriginalSealSource{"source-only", 23})
+			if err == nil || version != "" || copies != 1 {
+				t.Fatalf("version=%q err=%v copies=%d", version, err, copies)
+			}
+		})
+	}
 }

@@ -72,7 +72,7 @@ func TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead(t *testing
 			if r.URL.Path != "/"+k || !strings.HasSuffix(r.Header.Get("x-cos-copy-source"), "?versionId=staging-v1") {
 				t.Error("unpinned or cross-scope COPY")
 			}
-			return cosResponse(r, `<CopyObjectResult><ETag>pair</ETag></CopyObjectResult>`, "pair+v2&query=#?"), nil
+			return cosResponse(r, `<CopyObjectResult><ETag>pair</ETag><VersionId>pair+v2&amp;query=#?</VersionId></CopyObjectResult>`, ""), nil
 		case http.MethodGet:
 			reads++
 			if r.URL.Query().Get("versionId") != "pair+v2&query=#?" {

@@ -1,0 +1,220 @@
+{
+  "date": "2026-10-12",
+  "sourceBase": "cab20dd45cf9a3c98dc3984c407744d87ebeb2f4",
+  "sourceSha256": {
+    "internal/albums/cos_copy.go": "a20570144a4f81cb781061bb07e5487cb49f33a291755b716e529ede52a3c746",
+    "internal/albums/cos_objects.go": "4fcb6e471199cdcf3e761e22add1f3964dcef616e9e35e3c3ede8f5a42799a8a",
+    "internal/albums/cos_live_pairs.go": "22962e37c744d9f36ac5335d972497c42e3043a9e3f300f9c522933f993950c7",
+    "internal/albums/cos_objects_test.go": "0b33e3b0cb1b27deffdbdbdeb23eccc1a159aaf63a09c7b948ecfba353d9b108",
+    "internal/albums/live_pairs_test.go": "984945a578cc4d51918cf764eded7d8f9eb3dfe221d221a5d5ad94fada949e45",
+    "internal/albums/mysql_live_pairs_integration_test.go": "44a0362dc918362eb62dd2609578046195f8628ee30301b73659fe10e9b71a31",
+    "deploy/albums/cam-upload.policy.json": "1ea964fd165eb3d2d27a06320440f20aa0f51b3d9089bdb2f3e632e9576b3506",
+    "deploy/albums/cam-backend.policy.json": "d447863b8ea5adef259244955bb790e3f1140be8c8187a7cd7f8b7eb8c3faae5"
+  },
+  "cam": {
+    "confirmedByUser": true,
+    "upload": {
+      "accountID": "100053615605",
+      "policyID": "289454412",
+      "policy": "AlbumsTestStagingUpload"
+    },
+    "backend": {
+      "accountID": "100053652091",
+      "policyID": "289454608",
+      "policy": "AlbumsTestBackend"
+    },
+    "eachIdentityDirectPolicies": 1,
+    "groups": 0,
+    "consoleLogin": false,
+    "passRoleGranted": false,
+    "permanentDeleteGranted": false,
+    "localCredentialDirectoryMode": "0700",
+    "localCredentialFileMode": "0600",
+    "serverCredentialDirectory": "/opt/tellyouwhat/albums-test",
+    "serverCredentialDirectoryMode": "0700",
+    "serverCredentialFileMode": "0600",
+    "credentialIncident": "First backend key appeared in tool output. Disabled it before use and replaced it; console verified disabled. Provider warns disabling can take up to 15 minutes. No secret included in this evidence.",
+    "oldUploadKey": "unavailable key disabled; replacement saved"
+  },
+  "permissionsProbe": {
+    "bucket": "tellyouwhat-albums-1251995834",
+    "checks": [
+      {
+        "name": "backend_bucket_versioning",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "versioning_enabled",
+        "status": 0,
+        "passed": true
+      },
+      {
+        "name": "upload_staging_put",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "upload_staging_read_denied",
+        "status": 403,
+        "code": "AccessDenied",
+        "passed": true
+      },
+      {
+        "name": "upload_archive_write_denied",
+        "status": 403,
+        "code": "AccessDenied",
+        "passed": true
+      },
+      {
+        "name": "backend_staging_head",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "backend_exact_version_copy",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "copy_xml_destination_version",
+        "status": 0,
+        "passed": true
+      },
+      {
+        "name": "backend_exact_archive_read",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "archive_bytes_match",
+        "status": 0,
+        "passed": true
+      },
+      {
+        "name": "backend_outside_prefix_write_denied",
+        "status": 403,
+        "code": "AccessDenied",
+        "passed": true
+      },
+      {
+        "name": "backend_bucket_acl_read_denied",
+        "status": 403,
+        "code": "AccessDenied",
+        "passed": true
+      },
+      {
+        "name": "backend_multipart_init",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "upload_multipart_part",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "backend_multipart_list",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "backend_multipart_complete",
+        "status": 200,
+        "passed": true
+      }
+    ],
+    "passed": true,
+    "payload_sha256": "833f8f90ba0b98b70de6a4c5b44310e84690b5864147e4aede16fc95e3088842",
+    "run": "cam-smoke-20261012T091807Z",
+    "synthetic_objects_retained": true,
+    "time": "2026-10-12T09:18:09.058899Z",
+    "versions": {
+      "albums/originals/cam-smoke-20261012T091807Z/probe.txt": "MTg0NDQ5NTIyNzcwMjE0MjI0OTM",
+      "albums/staging/cam-smoke-20261012T091807Z/multipart.txt": "MTg0NDQ5NTIyNzcwMjA5NzE5MTc",
+      "albums/staging/cam-smoke-20261012T091807Z/probe.txt": "MTg0NDQ5NTIyNzcwMjE5MjMzNTQ"
+    }
+  },
+  "productAdapterRoundtrip": {
+    "archive_key": "albums/originals/32e4e797-3863-4cab-ad17-02c9b9947821/db9b0278-2519-4cf2-ab38-6e84d865fe26/photo",
+    "archive_version": "MTg0NDQ5NTIyNzY5ODg4MjY0Njk",
+    "bytes": 48,
+    "passed": true,
+    "sha256": "8b11d8d6e8da5e7d35f02941b72489531ed243ea2a9808fd14a619737291caec",
+    "source_version": "MTg0NDQ5NTIyNzY5ODkwNjY2ODU",
+    "staging_key": "albums/staging/32e4e797-3863-4cab-ad17-02c9b9947821/db9b0278-2519-4cf2-ab38-6e84d865fe26/photo",
+    "steps": [
+      "AuthorizePut",
+      "signed HTTP PUT",
+      "PrepareSeal",
+      "Seal",
+      "OpenVersion",
+      "byte equality"
+    ],
+    "synthetic_objects_retained": true,
+    "time": "2026-10-12T09:18:40.914001Z"
+  },
+  "discovery": "Initial exploratory script mistakenly labelled an unversioned archive GET as a fixed-version GET after observing an empty COPY response header. That label is not accepted as evidence. Corrected harness requires CopyObjectResult.VersionId and reran against COS; product adapter then passed separately.",
+  "redTests": {
+    "count": 2,
+    "names": [
+      "TestCOSAdapterFixesCopyAndReadVersions",
+      "TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead"
+    ],
+    "logSha256": "7dba27bf97afb22390f4a8b79a0a1514d24b1d6df4c166cbdfa9b0df00a5f41a"
+  },
+  "validation": {
+    "startedAt": "2026-10-12T09:18:22.100903+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-copy-xml-efeozhzy",
+    "phases": [
+      {
+        "name": "targeted-after-fix",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-copy-xml-efeozhzy/targeted-after-fix.log",
+        "testCounts": {
+          "pass": 178
+        },
+        "failures": [],
+        "skips": [],
+        "logSha256": "7e2cd4084f3d6fbdc26d2bb1b391f8224c89741ebeb0a0f5a9163a9c6c964cfd"
+      },
+      {
+        "name": "related-race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-copy-xml-efeozhzy/related-race.log",
+        "testCounts": {
+          "pass": 679
+        },
+        "failures": [],
+        "skips": [],
+        "logSha256": "66f64508fe9d6d4fe487952248e4bdbe1a999b67b8c960540584bbe211501a98"
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-copy-xml-efeozhzy/vet.log",
+        "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-copy-xml-efeozhzy/build.log",
+        "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-12T09:19:36.833158+00:00"
+  },
+  "notVerified": [
+    "cross-bucket denial",
+    "permanent-delete denial",
+    "real multipart COPY over 5 GiB",
+    "real CI media processing and PassRole isolation",
+    "full account HTTP API and StoreKit",
+    "iOS device system-photo replacement",
+    "production deployment"
+  ],
+  "syntheticObjectsRetained": true,
+  "productionEnabled": false
+}

@@ -55,14 +55,11 @@ func (s *COSObjects) SealLivePairOnce(ctx context.Context, u LivePairUpload, par
 	if err != nil || response == nil || response.StatusCode != http.StatusOK || response.ContentLength != expected.SizeBytes || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
 		return "", ErrLivePairNotReady
 	}
-	response, err = s.copyVersion(ctx, from, to, response.Header.Get("x-cos-version-id"), expected.SizeBytes)
-	if response != nil && response.Body != nil {
-		response.Body.Close()
-	}
-	if err != nil || response == nil || response.StatusCode != http.StatusOK || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
+	archived, err := s.copyVersion(ctx, from, to, response.Header.Get("x-cos-version-id"), expected.SizeBytes)
+	if err != nil || !concreteCOSVersion(archived) {
 		return "", ErrLivePairNotReady
 	}
-	return response.Header.Get("x-cos-version-id"), nil
+	return archived, nil
 }
 
 // A missing HEAD is uncertainty, never permission for another COPY. This also

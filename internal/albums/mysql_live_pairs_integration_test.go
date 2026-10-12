@@ -234,7 +234,7 @@ func TestMySQLLivePairRecoversLostCopyResponseWithoutRepeatingAndPublishesPinned
 				lost = false
 				return nil, io.ErrUnexpectedEOF
 			}
-			return cosResponse(request, `<CopyObjectResult><ETag>ok</ETag></CopyObjectResult>`, version), nil
+			return cosResponse(request, `<CopyObjectResult><ETag>ok</ETag><VersionId>`+version+`</VersionId></CopyObjectResult>`, ""), nil
 		case http.MethodGet:
 			if request.URL.Query().Get("versionId") != version {
 				t.Error("read not immutable")
@@ -332,7 +332,7 @@ func TestMySQLLivePairRejectsSourceReceiptSubstitutionAndRetainsEscrowOnHashMism
 			response.ContentLength = int64(len(data))
 			return response, nil
 		case http.MethodPut:
-			return cosResponse(request, `<CopyObjectResult><ETag>ok</ETag></CopyObjectResult>`, version), nil
+			return cosResponse(request, `<CopyObjectResult><ETag>ok</ETag><VersionId>`+version+`</VersionId></CopyObjectResult>`, ""), nil
 		case http.MethodGet:
 			return cosResponse(request, strings.Repeat("x", len(data)), version), nil
 		}

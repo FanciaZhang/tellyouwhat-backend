@@ -12,11 +12,11 @@
 2. `test.env.example` 复制为私有 `.env.compose-albums-test`，只供 Compose 插值；`runtime.env.example` 复制为独立 `.env.albums-test`，只供应用 `env_file`。两个文件均 `0600`；前者的 root 数据库密码不能传给 API/worker。密码分别生成，数据库/Redis 密码使用随机十六进制，避免 DSN/URL/Compose 转义问题。
 3. Apple Sign in `.p8` 必须实际授权团队 `T6DD96HY2B` 与 App ID `cn.tellyouwhat.albums`。加密密钥、登录 IP HMAC 密钥各生成独立随机 32 字节，再以标准 Base64 保存到对应文件。应用拒绝同一密钥、非法格式、公共可读或可写文件。须保留加密密钥，换掉它会导致既有 Apple grant 无法解密。
 4. `secrets/` 在宿主机设为 `root:65532 0750`，三个文件设为 `root:65532 0440`，让容器 UID/GID 65532 可读。只把该目录挂给 API；worker 不接收 Apple 私钥和账户加密文件。密钥不进入 Git、App、日志或聊天。
-5. 腾讯 CAM 新身份分别命名 `albums-test-upload`、`albums-test-backend`，分别绑定 `cam-upload.policy.json`、`cam-backend.policy.json`；保留独立 Secret ID/Key。策略草案尚未应用，需创建访问权限前的确认及实际授权验收。上传身份只写暂存；后端直接读写权限限于开发桶的相册范围，管理分片并查询/提交媒体任务。两份策略没有对象永久删除、ACL/桶管理、其他桶或 CAM 管理权限。若身份另有策略，必须核对总权限。
+5. 腾讯 CAM 新身份分别命名 `albums-test-upload`、`albums-test-backend`，分别绑定 `cam-upload.policy.json`、`cam-backend.policy.json`；保留独立 Secret ID/Key。2026-10-12 经用户当次确认，两份策略已分别绑定；控制台核对各身份只有这一条直接策略、无随组权限。新密钥保存在本机与测试服务器的受限目录，未进入仓库。上传身份只写暂存；后端直接读写权限限于开发桶的相册范围，管理分片并查询/提交媒体任务。两份策略没有对象永久删除、ACL/桶管理、其他桶或 CAM 管理权限。若身份另有策略，必须核对总权限。
 
 数据万象[异步任务接口](https://cloud.tencent.com/document/product/460/84789)还要求 `cam:PassRole`。第三份 `cam-media-role.policy.json` 草案只允许后端传递控制台已核实的 `CI_QCSRole`，不会授予直接扮演角色、创建角色或修改权限的能力。**这份策略需要一并明确确认后才可绑定。**现有 CI 服务角色关联了 `QcloudCOSDataFullControl` 等跨桶策略；直接 COS 策略只限开发桶，不代表经此服务角色处理任务也已严格隔离。保留现有角色设置，先用合成媒体核实任务输入/输出的范围及拒绝行为；通过前不启用自动媒体处理，正式数据隔离仍是上线条件，不能为修复 403 授予 `cam:*` 或所有角色的 PassRole。
 
-权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；真实账号还需校验分片复制、固定版本读取、越界写入和 CI 服务角色范围。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
+权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；2026-10-12 已用合成字节验证真实暂存上传、普通 COPY 的固定版本归档/读取及哈希、分片初始化/上传/列举/合并；上传读暂存/写归档、后端越出相册前缀写入/读取桶 ACL 均返回 403。跨桶、永久删除拒绝、分片复制及 CI 服务角色范围仍待单独验证。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
 
 ## 构建与接入
 
@@ -81,3 +81,5 @@ curl --fail --silent --show-error -H 'Host: api.albums.tellyouwhat.cn' \
 原件写入日志使用迁移 0038。升级前须停止并排空全部旧版相册验证 worker，再迁移并启动新版；不能在新旧归档 worker 混跑时执行，也不能回退到不检查写入日志的旧二进制继续处理队列。迁移把旧 `verifying` 与 `originals_verified` 资源标记为已消耗许可、旧协议记录：前者只核对可能已完成的 COPY，后者仍可读取已有备份。旧记录不能作为“只发过一次写入”的证据，必须独立核对遗留写入后才能放开永久清理。新进程启动会检查此表，未迁移时拒绝启动。
 
 迁移 0039 为分片初始化补充持久核对次数、租约和退避时间，现有核对 worker 同时处理初始化与合并结果未知的任务。两类分别最多自动核对 3 次，共用批次数量上限；至少等待 2 分钟再读取，每次领取先消耗次数，崩溃后等待租约与退避。旧未决初始化保留原意图 ID 并进入核对，不重新初始化。日志 `initialized` 表示找回供应商会话，`assembled` 表示合并文件经过字节核验，均不代表备份发布或清理完成。过期任务只记录观察，不延长上传期限；次数耗尽仍保留未知状态与预留额度，不能通过重置次数或数据库超时自动宣称不存在对象。API/worker 在旧表结构上拒绝启动。
+
+2026-10-12 实测修正：普通 COPY 的目标版本号位于响应 XML `CopyObjectResult.VersionId`，不能从 `x-cos-version-id` 响应头读取。共享复制方法已修复原件和实况路径，缺失或 null 版本仍拒绝确认。合成文件跑通现有 `AuthorizePut → PrepareSeal → Seal → OpenVersion`，但不包含完整账户 API、媒体处理、实际照片格式或 iOS 安全释放。见 `docs/evidence/albums-cos-cam-2026-10-12.json`。
