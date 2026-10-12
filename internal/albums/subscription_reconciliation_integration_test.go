@@ -161,6 +161,10 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 	if err != nil || a.QuotaBytes != 0 || a.State != "expired" || a.UsedBytes != 123 || a.RetentionDeadline == nil {
 		t.Fatal("refund did not retain existing bytes", a, err)
 	}
+	var reminders int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_retention_reminders WHERE owner_id=? AND state='pending' AND retention_deadline=?`, owner, a.RetentionDeadline).Scan(&reminders); err != nil || reminders != 3 {
+		t.Fatal("notification acknowledged before reminder schedule", reminders, err)
+	}
 	// A delayed renewal event still resolves the current revoked state.
 	if status, _ := send(encoded(fixture.notification(t, uuid.NewString(), "DID_RENEW", active)), "POST", config.APIHost); status != 200 {
 		t.Fatal("delayed event", status)
@@ -285,6 +289,10 @@ func TestMySQLAlbumSubscriptionRefreshClockExpiryKeepsSameSignedTransaction(t *t
 	expired, err := r.CloudAccount(ctx, owner, now)
 	if err != nil || expired.State != "expired" || expired.QuotaBytes != 0 || expired.Revision != active.Revision+1 || expired.UsedBytes != 64 || !expired.ExpiresAt.Equal(*active.ExpiresAt) || expired.VerificationExpiresAt != nil {
 		t.Fatal("clock expiry changed transaction terms or retained bytes", expired, err)
+	}
+	var reminders int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_retention_reminders WHERE owner_id=? AND state='pending' AND retention_deadline=?`, owner, expired.RetentionDeadline).Scan(&reminders); err != nil || reminders != 3 {
+		t.Fatal("server refresh did not schedule reminders", reminders, err)
 	}
 	if _, err := r.ApplySubscription(ctx, owner, expired.Revision, staleActive, now); !errors.Is(err, ErrSubscriptionConflict) {
 		t.Fatal("same signature reactivated expired capacity", err)
