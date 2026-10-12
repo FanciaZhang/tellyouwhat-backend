@@ -93,10 +93,10 @@ func (s *albumAPNS) providerToken(now time.Time) (string, error) {
 
 // The caller must reverify subscription and device ownership before sending.
 // A live database lease cannot retract a push already accepted by APNs.
-func (s *albumAPNS) sendRetention(ctx context.Context, deviceToken string, c albumRetentionReminder) (albumAPNSResult, error) {
+func (s *albumAPNS) sendRetention(ctx context.Context, deviceToken string, c albumRetentionReminder, requestID string) (albumAPNSResult, error) {
 	now := s.now().UTC()
 	due, expires, err := reminderWindow(c.Deadline, c.Days)
-	if err != nil || !validOwner(c.ID) || !validOwner(c.Owner) || !validOwner(c.Token) ||
+	if err != nil || !validOwner(requestID) || !validOwner(c.ID) || !validOwner(c.Owner) || !validOwner(c.Token) ||
 		(c.Environment != "Sandbox" && c.Environment != "Production") || !c.Due.Equal(due) || !c.Expires.Equal(expires) ||
 		c.State != "pending" || c.Attempts < 1 || now.Before(due) || !now.Before(expires) || !now.Before(c.Until) || c.Until.After(expires) ||
 		len(deviceToken) == 0 || len(deviceToken) > 1024 || deviceToken != strings.ToLower(deviceToken) {
@@ -122,7 +122,7 @@ func (s *albumAPNS) sendRetention(ctx context.Context, deviceToken string, c alb
 	req.Header.Set("apns-topic", albumAppleAudience)
 	req.Header.Set("apns-push-type", "alert")
 	req.Header.Set("apns-priority", "5")
-	req.Header.Set("apns-id", c.ID)
+	req.Header.Set("apns-id", requestID)
 	req.Header.Set("apns-collapse-id", "album-retention")
 	// Expiration limits APNs storage; Apple documents that late delivery remains possible.
 	req.Header.Set("apns-expiration", strconv.FormatInt(minTime(now.Add(24*time.Hour), expires).Unix(), 10))
@@ -133,7 +133,7 @@ func (s *albumAPNS) sendRetention(ctx context.Context, deviceToken string, c alb
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 || response.ProtoMajor != 2 || response.Header.Get("apns-id") != c.ID {
+	if err != nil || len(body) > 4096 || response.ProtoMajor != 2 || response.Header.Get("apns-id") != requestID {
 		return albumAPNSResult{}, errAlbumAPNS
 	}
 	if response.StatusCode == http.StatusOK && len(body) == 0 {

@@ -32,6 +32,7 @@ type GatewayConfig struct {
 	Subscriptions   *AlbumSubscriptionConfig
 	Sharing         *AlbumShareConfig
 	PushEnvironment string
+	RetentionAPNS   *albumAPNSConfig
 }
 
 func (GatewayConfig) String() string   { return "[redacted album gateway configuration]" }
@@ -124,6 +125,10 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	c.PushEnvironment = strings.TrimSpace(getenv("ALBUM_PUSH_ENVIRONMENT"))
 	if c.PushEnvironment != "" && c.PushEnvironment != "development" && c.PushEnvironment != "production" {
 		return GatewayConfig{}, errors.New("invalid ALBUM_PUSH_ENVIRONMENT")
+	}
+	c.RetentionAPNS, err = loadRetentionAPNSConfig(getenv, c)
+	if err != nil {
+		return GatewayConfig{}, err
 	}
 	return c, nil
 }

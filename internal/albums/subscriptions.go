@@ -120,6 +120,10 @@ func (r *AlbumSubscriptionResolver) resolveCurrent(ctx context.Context, owner, o
 	if err != nil {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionUnavailable
 	}
+	return r.resolveStatuses(owner, originalID, statuses)
+}
+
+func (r *AlbumSubscriptionResolver) resolveStatuses(owner, originalID string, statuses []appstore.SubscriptionStatus) (VerifiedAlbumSubscription, error) {
 	var latest VerifiedAlbumSubscription
 	now := r.now().UTC()
 	for _, status := range statuses {

@@ -24,6 +24,7 @@ type Gateway struct {
 	draining            atomic.Bool
 	closed              sync.Once
 	subscriptionCancel  context.CancelFunc
+	retentionCancel     context.CancelFunc
 	subscriptionWorkers sync.WaitGroup
 }
 
@@ -143,7 +144,21 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album HTTP configuration")
 	}
+	var dispatcher *albumRetentionDispatcher
+	if config.RetentionAPNS != nil {
+		if push == nil || subscriptions == nil || config.RetentionAPNS.Environment != push.environment {
+			return nil, errAlbumAPNS
+		}
+		sender, senderErr := newAlbumAPNS(*config.RetentionAPNS, transport)
+		if senderErr != nil {
+			return nil, senderErr
+		}
+		dispatcher = &albumRetentionDispatcher{repository, subscriptions, push, sender, time.Now}
+	}
 	g.startSubscriptionRefresh(subscriptions, repository)
+	if dispatcher != nil {
+		g.startRetentionDispatch(dispatcher)
+	}
 	return g, nil
 }
 
@@ -162,6 +177,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 		`SELECT grant_id,account_id,token_sha256,encrypted_token,token_nonce,revoked_at FROM album_apple_grants LIMIT 0`,
 		`SELECT session_id,account_id,grant_id,token_sha256,expires_at,revoked_at FROM album_sessions LIMIT 0`,
 		`SELECT registration_id,session_id,environment,state,revision,token_sha256,encrypted_token,token_nonce,registered_at,request_id,request_sha256 FROM album_push_registrations LIMIT 0`,
+		`SELECT delivery_id,reminder_id,registration_id,registration_revision,state,available_at,lease_token,accepted_at FROM album_retention_deliveries LIMIT 0`,
 		`SELECT challenge_id,proof_sha256,apple_nonce,expires_at,consumed_at FROM album_login_challenges LIMIT 0`,
 		`SELECT owner_id,quota_bytes,used_bytes,reserved_bytes FROM album_storage_accounts LIMIT 0`,
 		`SELECT ` + uploadColumns + ` FROM album_uploads LIMIT 0`,
@@ -231,6 +247,9 @@ func writeGatewayStatus(w http.ResponseWriter, status int, code string) {
 
 func (g *Gateway) BeginDrain() {
 	g.draining.Store(true)
+	if g.retentionCancel != nil {
+		g.retentionCancel()
+	}
 	if g.subscriptionCancel != nil {
 		g.subscriptionCancel()
 	}

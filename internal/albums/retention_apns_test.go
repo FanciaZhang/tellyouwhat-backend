@@ -38,6 +38,19 @@ func apnsFixture(t *testing.T) (albumAPNSConfig, *ecdsa.PrivateKey, albumRetenti
 	return albumAPNSConfig{"TESTTEAM01", "TESTPUSH01", "production", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, key, c, now
 }
 
+func TestAlbumAPNSRejectsMissingDeliveryIdentity(t *testing.T) {
+	config, _, claim, now := apnsFixture(t)
+	calls := 0
+	sender, err := newAlbumAPNS(config, appleTestTransport(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New("unexpected request") }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender.now = func() time.Time { return now }
+	if _, err := sender.sendRetention(context.Background(), "ab", claim, ""); err == nil || calls != 0 {
+		t.Fatal("unidentified request sent", err)
+	}
+}
+
 func TestAlbumAPNSRealHTTP2RequestAndSignature(t *testing.T) {
 	config, key, claim, now := apnsFixture(t)
 	device := strings.Repeat("ab", 32)
@@ -92,7 +105,7 @@ func TestAlbumAPNSRealHTTP2RequestAndSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.now = func() time.Time { return now }
-	result, err := s.sendRetention(context.Background(), device, claim)
+	result, err := s.sendRetention(context.Background(), device, claim, claim.ID)
 	if err != nil || result.Status != "accepted" {
 		t.Fatal("HTTP/2 send", result, err)
 	}
@@ -171,7 +184,7 @@ func TestAlbumAPNSResponseDisposition(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.now = func() time.Time { return now }
-			result, err := s.sendRetention(context.Background(), strings.Repeat("cd", 32), claim)
+			result, err := s.sendRetention(context.Background(), strings.Repeat("cd", 32), claim, claim.ID)
 			if (err != nil) != tc.invalid || result.Status != tc.status || calls != 1 {
 				t.Fatal("response classification", result, err, calls)
 			}
@@ -208,16 +221,16 @@ func TestAlbumAPNSValidationAndUnknownOutcomes(t *testing.T) {
 	}))
 	s.now = func() time.Time { return now }
 	for _, device := range []string{"", "abc", "ABCDEF", "../escape", strings.Repeat("ab", 513)} {
-		if _, err := s.sendRetention(context.Background(), device, claim); err == nil {
+		if _, err := s.sendRetention(context.Background(), device, claim, claim.ID); err == nil {
 			t.Fatal("invalid device token accepted")
 		}
 	}
 	stale := claim
 	stale.Until = now
-	if _, err := s.sendRetention(context.Background(), "ab", stale); err == nil || calls != 0 {
+	if _, err := s.sendRetention(context.Background(), "ab", stale, stale.ID); err == nil || calls != 0 {
 		t.Fatal("invalid input contacted provider")
 	}
-	result, err := s.sendRetention(context.Background(), "ab", claim)
+	result, err := s.sendRetention(context.Background(), "ab", claim, claim.ID)
 	if err != errAlbumAPNS || result.Status != "" || calls != 1 || strings.Contains(err.Error(), "private") {
 		t.Fatal("unknown result retried, accepted or leaked details")
 	}
@@ -230,7 +243,7 @@ func TestAlbumAPNSValidationAndUnknownOutcomes(t *testing.T) {
 			return &http.Response{StatusCode: 200, ProtoMajor: proto, Header: http.Header{"Apns-Id": {id}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
 		}))
 		s.now = func() time.Time { return now }
-		if result, err := s.sendRetention(context.Background(), "ab", claim); err == nil || result.Status != "" {
+		if result, err := s.sendRetention(context.Background(), "ab", claim, claim.ID); err == nil || result.Status != "" {
 			t.Fatal("unbound acknowledgement accepted")
 		}
 	}
@@ -262,13 +275,13 @@ func TestAlbumAPNSStageWindowAndRequestCancellation(t *testing.T) {
 	} {
 		invalid := claim
 		mutate(&invalid)
-		if _, err := s.sendRetention(context.Background(), "ab", invalid); err == nil {
+		if _, err := s.sendRetention(context.Background(), "ab", invalid, invalid.ID); err == nil {
 			t.Fatal("invalid lease accepted")
 		}
 	}
 	for _, stamp := range []time.Time{now.Add(-time.Microsecond), claim.Expires} {
 		s.now = func() time.Time { return stamp }
-		if _, err := s.sendRetention(context.Background(), "ab", claim); err == nil {
+		if _, err := s.sendRetention(context.Background(), "ab", claim, claim.ID); err == nil {
 			t.Fatal("outside window accepted")
 		}
 	}
@@ -280,7 +293,7 @@ func TestAlbumAPNSStageWindowAndRequestCancellation(t *testing.T) {
 	claim.Deadline = now.Add(30 * time.Second)
 	claim.Due, claim.Expires, _ = reminderWindow(claim.Deadline, 1)
 	claim.Until = now.Add(20 * time.Millisecond)
-	result, err := s.sendRetention(context.Background(), "ab", claim)
+	result, err := s.sendRetention(context.Background(), "ab", claim, claim.ID)
 	if err != errAlbumAPNS || result.Status != "" || calls != 1 {
 		t.Fatal("cancelled request accepted or retried")
 	}
