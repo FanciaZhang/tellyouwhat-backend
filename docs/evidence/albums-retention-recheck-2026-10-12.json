@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T06:39:48.564405+00:00",
+  "baselineCommit": "ac7a9358de375be137283994e45b394c26fba55e",
+  "scope": "retain the latest signed entitlement evidence seen across all provider responses before expiry reminders; deterministic dispatch fixture clock",
+  "sourceSHA256": {
+    "internal/albums/retention_verification.go": "49b7189275b0c696f9151e2bd4c22acb7397b6876f6eb4430e119995d95bd8e6",
+    "internal/albums/retention_verification_integration_test.go": "3c991edef00a9a302e32999f1915589519449e4fd9cabc9fc59a3c74962d39c8",
+    "internal/albums/retention_dispatch_integration_test.go": "e9390aaece5b5289eb56ca1c7b5d8f21fe54123496c599263006715756b43396"
+  },
+  "baselineEvidence": "albums-retention-dispatch-2026-10-12.json",
+  "validation": [
+    {
+      "log": "fixed-clock-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "571bb1d0e2d733ebc4392a5033d7bc130624590592221ccbef07438be8fc5a03",
+      "counts": {
+        "pass": 18,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    {
+      "log": "cross-response-before.jsonl",
+      "exitCode": 1,
+      "sha256": "4a2df732258adb827be8e120dbbd829109a1a07353b4687647e8dd1cce74aded",
+      "counts": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 0
+      },
+      "results": [
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse/false",
+          "Action": "fail",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse/true",
+          "Action": "fail",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse",
+          "Action": "fail",
+          "Elapsed": 0
+        }
+      ]
+    },
+    {
+      "log": "cross-response-reproduced.jsonl",
+      "exitCode": 1,
+      "sha256": "fd943467d820a98f8bc117617f7b51cd2be16066c15276261dfa331b2eeb525e",
+      "counts": {
+        "pass": 0,
+        "fail": 3,
+        "skip": 0
+      },
+      "results": [
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse/false",
+          "Action": "fail",
+          "Elapsed": 0.35
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse/true",
+          "Action": "fail",
+          "Elapsed": 0.32
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse",
+          "Action": "fail",
+          "Elapsed": 0.67
+        }
+      ]
+    },
+    {
+      "log": "final-regression-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "cf642ff41741d327cb1b6749d00c6c2e76d59afb4912b21b351adeec5da3dce6",
+      "counts": {
+        "pass": 542,
+        "fail": 0,
+        "skip": 0
+      },
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Action": "pass",
+          "Elapsed": 1.562
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+          "Action": "pass",
+          "Elapsed": 1.627
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Action": "pass",
+          "Elapsed": 2.705
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 28.805
+        }
+      ]
+    },
+    {
+      "log": "vet.log",
+      "exitCode": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    {
+      "log": "build.log",
+      "exitCode": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0
+      }
+    }
+  ],
+  "reproduction": "The first attempted reproduction failed because child database processes exited with the bootstrap command. After restarting isolated services in independent process sessions, both cases reproduced the real bug: a newer renewal seen in another chain response and equal-time contradictory evidence were ignored. The fixed preflight resolves each chain from all observed responses after every individual query succeeds. Newer renewal prevents sending; equal-time contradictions abort without mutation.",
+  "limits": [
+    "Same controlled provider/device limitations as baseline; no real cloud/APNs/media access",
+    "Database revision fences and current target checks cannot retract a notification already in flight",
+    "No new native sources or generated API changes; no iOS build performed for this backend-only change"
+  ]
+}

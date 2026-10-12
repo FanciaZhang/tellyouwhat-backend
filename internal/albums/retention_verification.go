@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/appstore"
 )
 
 type reminderSubscriptionAnchor struct {
@@ -32,7 +34,7 @@ func (s *AlbumSubscriptionService) verifyRetentionReminder(ctx context.Context, 
 	for _, anchor := range anchors {
 		known[anchor.Original] = true
 	}
-	verified := make([]VerifiedAlbumSubscription, 0, len(anchors))
+	byChain := make(map[string][]appstore.SubscriptionStatus, len(anchors))
 	for _, anchor := range anchors {
 		statuses, err := s.resolver.client.AllSubscriptionStatuses(ctx, anchor.Transaction)
 		if err != nil {
@@ -48,8 +50,18 @@ func (s *AlbumSubscriptionService) verifyRetentionReminder(ctx context.Context, 
 			if !known[transaction.OriginalTransactionID] && transactionBelongsToAccount(transaction, claim.Owner, r.billingEnvironment) {
 				return 0, ErrSubscriptionConflict
 			}
+			if known[transaction.OriginalTransactionID] {
+				byChain[transaction.OriginalTransactionID] = append(byChain[transaction.OriginalTransactionID], status)
+			}
 		}
-		proof, err := s.resolver.resolveStatuses(claim.Owner, anchor.Original, statuses)
+		if _, err := s.resolver.resolveStatuses(claim.Owner, anchor.Original, statuses); err != nil {
+			return 0, err
+		}
+	}
+	// A later response may reveal a renewal of an earlier queried chain.
+	verified := make([]VerifiedAlbumSubscription, 0, len(anchors))
+	for _, anchor := range anchors {
+		proof, err := s.resolver.resolveStatuses(claim.Owner, anchor.Original, byChain[anchor.Original])
 		if err != nil {
 			return 0, err
 		}

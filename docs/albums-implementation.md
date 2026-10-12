@@ -430,3 +430,5 @@ Gateway 已接入单个有界发送 worker，使用现有 30/7/1 天提醒租约
 配置 `ALBUM_RETENTION_PUSH_ENABLED` 默认 false，要求订阅核验、注册环境及独立 APNs P8 密钥均可用；密钥仅挂 API。服务排空会停止发送 worker。已进入网络请求的通知无法因随后续费或退出而撤回；稳定 ID 和合并标识不提供恰好一次送达保证，锁屏只使用通用文案。
 
 隔离 MySQL 8.4/Redis 最终相关 race **539 passed / 0 failed / 0 skipped**，vet/build 退出 0；包含真实本机 TLS/HTTP/2 协议验签、实际 Gateway 启停及受控 APNs 适配器发送回执。最初测试夹具的重复令牌更新/续费时间已修正，完整回归发现的迁移清单遗漏已补齐。[源码与测试证据](evidence/albums-retention-dispatch-2026-10-12.json)。原生通知授权与离线退出实现位于 App 仓库，已单独取得模拟器证据。本轮没有真实 APNs、云端部署、生产迁移或媒体删除；真机送达、Apple 授权撤销接入、回收站及六个月全版本清理仍待验收。
+
+补充核验修复：一次后续购买链查询可能同时带回前一条链的新续费结果。现在汇总每次响应中观察到的证据，再按链选择最新已签名状态；同一时间的矛盾状态暂停发送并保留旧数据库快照。新增两种情况先复现失败，再修复；最终相关 race **542 passed / 0 failed / 0 skipped**，vet/build 通过。发送测试固定时钟，避免未来日期导致夹具失效。[最终源码差异与验证](evidence/albums-retention-recheck-2026-10-12.json)。

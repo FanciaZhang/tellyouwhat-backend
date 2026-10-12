@@ -35,6 +35,7 @@ type retentionDispatchFixture struct {
 func newRetentionDispatchFixture(t *testing.T, devices int) *retentionDispatchFixture {
 	t.Helper()
 	p := newPushFixture(t)
+	p.now = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	f := &retentionDispatchFixture{push: p}
 	for i := range devices {
 		session, _ := p.login(t, "retention-owner", p.now.Add(time.Duration(i)*time.Microsecond))

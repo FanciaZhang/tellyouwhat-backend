@@ -254,3 +254,43 @@ func TestMySQLRetentionVerificationNeverTruncatesChains(t *testing.T) {
 		t.Fatal("truncated incomplete verification", revision, err, client.calls)
 	}
 }
+
+func TestMySQLRetentionVerificationUsesNewerEvidenceFromEveryResponse(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		t.Run(fmt.Sprint(conflict), func(t *testing.T) {
+			r, owner, now, proofs, claim := reminderVerificationFixture(t)
+			before, _ := r.CloudAccount(context.Background(), owner, now)
+			fixture := newAlbumReceiptFixture(t, now)
+			client := reminderStatusFunc(func(_ context.Context, id string) ([]appstore.SubscriptionStatus, error) {
+				if id == "transaction-1" {
+					return []appstore.SubscriptionStatus{reminderSignedStatus(t, fixture, owner, proofs[0])}, nil
+				}
+				renewed := proofs[0]
+				renewed.Active = true
+				renewed.TransactionID = "renewed-while-querying-other-chain"
+				renewed.ExpiresAt = now.AddDate(1, 0, 0)
+				later := fixture
+				if !conflict {
+					later.now = now.Add(time.Millisecond)
+				}
+				return []appstore.SubscriptionStatus{reminderSignedStatus(t, fixture, owner, proofs[1]), reminderSignedStatus(t, later, owner, renewed)}, nil
+			})
+			service := reminderVerificationService(t, r, fixture, client, func() time.Time { return now })
+			revision, err := service.verifyRetentionReminder(context.Background(), r, claim)
+			if revision != 0 {
+				t.Fatal("renewal visible in another response was ignored")
+			}
+			after, e := r.CloudAccount(context.Background(), owner, now)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if conflict {
+				if !errors.Is(err, ErrSubscriptionUnavailable) || after.Revision != before.Revision {
+					t.Fatal("contradictory equal-time evidence committed", err)
+				}
+			} else if err != nil || after.State != "active" {
+				t.Fatal("newer renewal was not reconciled", err, after.State)
+			}
+		})
+	}
+}
