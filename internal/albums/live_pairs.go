@@ -403,26 +403,32 @@ func (s *UploadService) LivePairReadGrant(ctx context.Context, owner, version st
 	if !ok {
 		return LivePairReadGrant{}, ErrReadUnavailable
 	}
-	expiry := s.now().UTC().Add(5 * time.Minute)
-	result := LivePairReadGrant{PairUploadID: u.ID, AssetID: u.AssetID, VersionID: version, ManifestDigest: u.ManifestDigest, Preset: DailyLivePair, Descriptor: u.Descriptor, ExpiresAt: expiry}
-	seen := map[string]bool{}
-	for _, object := range u.Objects {
-		if u.validateReceipt(object) != nil || seen[object.ResourceID] {
-			return LivePairReadGrant{}, ErrConflict
+	result := LivePairReadGrant{PairUploadID: u.ID, AssetID: u.AssetID, VersionID: version, ManifestDigest: u.ManifestDigest, Preset: DailyLivePair, Descriptor: u.Descriptor}
+	_, err = s.authorizeLibraryRead(ctx, owner, v, func(expiry time.Time) error {
+		result.ExpiresAt = expiry
+		seen := map[string]bool{}
+		for _, object := range u.Objects {
+			if u.validateReceipt(object) != nil || seen[object.ResourceID] {
+				return ErrConflict
+			}
+			seen[object.ResourceID] = true
+			url, err := storage.AuthorizeLivePairRead(ctx, u, object, expiry)
+			if err != nil {
+				return err
+			}
+			g := LivePairObjectReadGrant{ObjectVersionID: object.VersionID, SizeBytes: object.SizeBytes, SHA256: object.SHA256, URL: url, Headers: map[string]string{}, ExpiresAt: expiry}
+			if object.ResourceID == "photo" {
+				g.ContentType = "image/jpeg"
+				result.Photo = g
+			} else {
+				g.ContentType = "video/quicktime"
+				result.Movie = g
+			}
 		}
-		seen[object.ResourceID] = true
-		url, err := storage.AuthorizeLivePairRead(ctx, u, object, expiry)
-		if err != nil {
-			return LivePairReadGrant{}, err
-		}
-		g := LivePairObjectReadGrant{ObjectVersionID: object.VersionID, SizeBytes: object.SizeBytes, SHA256: object.SHA256, URL: url, Headers: map[string]string{}, ExpiresAt: expiry}
-		if object.ResourceID == "photo" {
-			g.ContentType = "image/jpeg"
-			result.Photo = g
-		} else {
-			g.ContentType = "video/quicktime"
-			result.Movie = g
-		}
+		return nil
+	})
+	if err != nil {
+		return LivePairReadGrant{}, err
 	}
 	return result, nil
 }

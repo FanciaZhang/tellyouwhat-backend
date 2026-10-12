@@ -60,8 +60,12 @@ func (s *UploadService) PhotoPreviewReadGrant(ctx context.Context, owner, versio
 	if err := ctx.Err(); err != nil {
 		return PhotoPreviewReadGrant{}, err
 	}
-	expiry := s.now().UTC().Add(5 * time.Minute)
-	signed, err := signer.AuthorizePhotoPreviewRead(ctx, record, expiry)
+	var signed string
+	expiry, err := s.authorizeLibraryRead(ctx, owner, version, func(expiry time.Time) error {
+		var err error
+		signed, err = signer.AuthorizePhotoPreviewRead(ctx, record, expiry)
+		return err
+	})
 	if err != nil {
 		return PhotoPreviewReadGrant{}, err
 	}

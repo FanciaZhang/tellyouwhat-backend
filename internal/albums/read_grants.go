@@ -50,8 +50,12 @@ func (s *UploadService) OriginalReadGrant(ctx context.Context, owner, versionID,
 	if selected == nil {
 		return OriginalReadGrant{}, ErrNotFound
 	}
-	expiresAt := s.now().UTC().Add(5 * time.Minute)
-	signed, err := signer.AuthorizeOriginalRead(ctx, *selected, expiresAt)
+	var signed string
+	expiresAt, err := s.authorizeLibraryRead(ctx, owner, version, func(expiry time.Time) error {
+		var err error
+		signed, err = signer.AuthorizeOriginalRead(ctx, *selected, expiry)
+		return err
+	})
 	if err != nil {
 		return OriginalReadGrant{}, err
 	}

@@ -61,8 +61,12 @@ func (s *UploadService) VideoPreviewReadGrant(ctx context.Context, owner, versio
 	if err := ctx.Err(); err != nil {
 		return VideoPreviewReadGrant{}, err
 	}
-	expiry := s.now().UTC().Add(5 * time.Minute)
-	signed, err := signer.AuthorizeVideoPreviewRead(ctx, j, expiry)
+	var signed string
+	expiry, err := s.authorizeLibraryRead(ctx, owner, v, func(expiry time.Time) error {
+		var err error
+		signed, err = signer.AuthorizeVideoPreviewRead(ctx, j, expiry)
+		return err
+	})
 	if err != nil {
 		return VideoPreviewReadGrant{}, err
 	}
