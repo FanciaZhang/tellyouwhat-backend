@@ -1,0 +1,75 @@
+{
+  "startedAt": "2026-10-12T07:26:53.411903+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-trash-ci-dpjtrwby",
+  "phases": [
+    {
+      "name": "all-packages",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-trash-ci-dpjtrwby/all-packages.log",
+      "testCounts": {
+        "pass": 1972,
+        "skip": 32
+      },
+      "failures": [],
+      "skips": [
+        "TestLiveAIBrowserServer",
+        "TestLiveNativeCommandLifecycle",
+        "TestLiveConfiguredPromptModels",
+        "TestLiveServiceInventory",
+        "TestLiveRollingDryRun",
+        "TestLiveSelectedModelPrice",
+        "TestLiveSelectedRollingPreview",
+        "TestLiveJournalOrganization",
+        "TestConfiguredContinuousVoiceProtocolAcrossAudioCheckpoints",
+        "TestCaddyReloadPreservesRequestsAndStreams",
+        "TestConfiguredIdentityReplayFromSyntheticApp",
+        "TestIdentityWithConfiguredAI",
+        "TestLiveSyntheticCommandSnapshot",
+        "TestLiveManualEditIntent",
+        "TestLiveIncrementalSyntheticRevision",
+        "TestLiveStreamingLatency",
+        "TestLiveStreamingDiaryLatency",
+        "TestLiveNumberedSpeech",
+        "TestLiveRecordingRewriteComparison",
+        "TestPrivateRecordingDraftReview",
+        "TestLiveRecordingAnalysis",
+        "TestLiveSemanticLists",
+        "TestLiveWritingStylesOnDevelopmentService",
+        "TestLiveSpeechAndDiaryRewrite",
+        "TestConfiguredNarrativeReplayFromSyntheticApp",
+        "TestConfiguredNarrativePreservesActorsAndReciprocalPerspective",
+        "TestConfiguredNaturalASRReturnsCompletedTurnsDuringCapture",
+        "TestConfiguredContinuousASRAndIdentityAcrossBudgetWindows",
+        "TestLiveRecordingQualityGoldenCases",
+        "TestConfiguredHesitantNarrativeRecovery",
+        "TestConfiguredSituationalNarrativeSelection",
+        "TestLiveSelectedModelProtocol"
+      ],
+      "logSHA256": "5b00c76f1784eecb803b1d23065afc58cab4cd2e93e3db2a4af786d6455bae9e"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-trash-ci-dpjtrwby/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-trash-ci-dpjtrwby/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T07:28:00.792835+00:00",
+  "baselineCommit": "3e97520423f4a98c8132acef399e0ddedb76c485",
+  "scope": "Isolate destructive mysqlstore persistence fixtures from concurrent package migrations; no production behavior change",
+  "sourceSHA256": {
+    "internal/storage/mysqlstore/integration_test.go": "e2d1669292f2f1e866ac6791107888c8505584458ca34dee54ff29941b6d4ace"
+  },
+  "failedCIRun": "https://github.com/FanciaZhang/tellyouwhat-backend/actions/runs/38216242794",
+  "limitations": [
+    "External-service and configured Caddy tests skipped locally; provider integrations and deployment not verified"
+  ]
+}
