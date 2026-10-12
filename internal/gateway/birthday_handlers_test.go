@@ -13,6 +13,23 @@ import (
 
 type birthdayFixture struct{ calls int }
 
+func TestBirthdayReadinessRequiresItsModelAndIdentityWithoutCommerce(t *testing.T) {
+	deps := Dependencies{App: appregistry.App{ID: appregistry.Birthday}, Authenticator: fakeAuthenticator{appID: "birthday"},
+		Quota: fakeQuota{}, Enrollment: fakeEnrollment{}, Usage: usage.NewMemoryRecorder(),
+		BirthdayAssistant: &birthdayFixture{}, Readiness: ReadinessFunc(func(context.Context) error { return nil })}
+	response := httptest.NewRecorder()
+	New(deps).Router().ServeHTTP(response, httptest.NewRequest("GET", "/readyz", nil))
+	if response.Code != 200 {
+		t.Fatal("birthday readiness still requires unrelated commerce or media dependencies")
+	}
+	deps.BirthdayAssistant = nil
+	response = httptest.NewRecorder()
+	New(deps).Router().ServeHTTP(response, httptest.NewRequest("GET", "/readyz", nil))
+	if response.Code != 503 {
+		t.Fatal("birthday reported ready without its model")
+	}
+}
+
 func (f *birthdayFixture) Assist(_ context.Context, _ birthday.Request) (birthday.Result, error) {
 	f.calls++
 	return birthday.Result{InputTokens: 1, OutputTokens: 1, Value: birthday.ModelResult{Kind: "proposals", Questions: []birthday.Question{}, Changes: []string{}, Proposals: []birthday.Proposal{{ID: "p1", Title: "打电话", Reason: "先表达祝福", Actions: []birthday.Action{{ID: "a1", Kind: "call", Title: "打电话", Detail: "确认方便时间"}}, Preparations: []birthday.Preparation{}, EvidenceIDs: []string{}, BudgetNote: "未确定", Tradeoff: "可能需要改时间", Alternative: "文字祝福"}}}}, nil
