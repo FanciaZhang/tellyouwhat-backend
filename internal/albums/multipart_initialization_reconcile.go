@@ -9,6 +9,10 @@ import (
 // ReconcileInitialization is trusted control work; it never creates or aborts a
 // provider session. The unique staging key is derived from the owned manifest.
 func (s *MultipartService) ReconcileInitialization(ctx context.Context, owner, uploadID, resourceID string) (MultipartSession, error) {
+	return s.reconcileInitialization(ctx, owner, uploadID, resourceID, "")
+}
+
+func (s *MultipartService) reconcileInitialization(ctx context.Context, owner, uploadID, resourceID, intentID string) (MultipartSession, error) {
 	if !validOwner(owner) {
 		return MultipartSession{}, ErrOwner
 	}
@@ -43,6 +47,9 @@ func (s *MultipartService) ReconcileInitialization(ctx context.Context, owner, u
 	if intent.UploadID != uploadID || intent.ResourceID != resourceID || !validOwner(intent.IntentID) {
 		return MultipartSession{}, ErrConflict
 	}
+	if intentID != "" && intent.IntentID != intentID {
+		return MultipartSession{}, ErrLease
+	}
 	if intent.State != "ready" {
 		if intent.State != "initiating" && intent.State != "unknown" {
 			return MultipartSession{}, ErrConflict
@@ -64,9 +71,12 @@ func (s *MultipartService) ReconcileInitialization(ctx context.Context, owner, u
 	if err := readyMultipart(intent, uploadID, resourceID); err != nil {
 		return MultipartSession{}, err
 	}
-	// Late observations remain stored for cleanup, but do not reopen expired work.
-	if _, _, err := s.resource(ctx, owner, uploadID, resourceID); err != nil {
-		return MultipartSession{}, err
+	// A worker may record late observations; interactive callers still cannot
+	// reopen expired work. Neither path issues new upload grants.
+	if intentID == "" {
+		if _, _, err := s.resource(ctx, owner, uploadID, resourceID); err != nil {
+			return MultipartSession{}, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return MultipartSession{}, err

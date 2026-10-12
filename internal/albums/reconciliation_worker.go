@@ -12,7 +12,7 @@ type ReconciliationQueue interface {
 	FinishReconciliation(context.Context, ReconciliationJob, time.Time) error
 }
 
-type ReconciliationBatch struct{ Assembled, Failed, Contended int }
+type ReconciliationBatch struct{ Initialized, Assembled, Failed, Contended int }
 
 type ReconciliationWorker struct {
 	queue     ReconciliationQueue
@@ -26,8 +26,16 @@ func NewReconciliationWorker(queue ReconciliationQueue, service *MultipartServic
 		return nil, errors.New("invalid reconciliation worker configuration")
 	}
 	return &ReconciliationWorker{queue: queue, now: service.now, batchSize: batchSize, reconcile: func(ctx context.Context, job ReconciliationJob) error {
-		_, err := service.reconcileCompletion(ctx, job.OwnerID, job.UploadID, job.ResourceID, job.OperationID)
-		return err
+		switch job.Kind {
+		case "initialization":
+			_, err := service.reconcileInitialization(ctx, job.OwnerID, job.UploadID, job.ResourceID, job.OperationID)
+			return err
+		case "completion":
+			_, err := service.reconcileCompletion(ctx, job.OwnerID, job.UploadID, job.ResourceID, job.OperationID)
+			return err
+		default:
+			return ErrInvalidManifest
+		}
 	}}, nil
 }
 func (w *ReconciliationWorker) RunOnce(ctx context.Context) (ReconciliationBatch, error) {
@@ -64,7 +72,11 @@ func (w *ReconciliationWorker) RunOnce(ctx context.Context) (ReconciliationBatch
 		finishErr := w.queue.FinishReconciliation(finishCtx, job, w.now().UTC())
 		finishCancel()
 		if readErr == nil && finishErr == nil {
-			result.Assembled++
+			if job.Kind == "initialization" {
+				result.Initialized++
+			} else {
+				result.Assembled++
+			}
 		} else {
 			result.Failed++
 		}

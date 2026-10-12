@@ -34,7 +34,7 @@ func TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel(t *testing.T
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			q := &reconciliationQueueStub{jobs: []ReconciliationJob{{OperationID: "expected"}}}
+			q := &reconciliationQueueStub{jobs: []ReconciliationJob{{OperationID: "expected", Kind: "completion"}}}
 			if scenario == "contended" {
 				q.claimErr = ErrLease
 			}

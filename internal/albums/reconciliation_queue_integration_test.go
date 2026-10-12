@@ -14,7 +14,13 @@ import (
 func checkMySQLReconciliationQueue(t *testing.T, ctx context.Context, db *sql.DB, u Upload, record MultipartCompletion, now time.Time) {
 	t.Helper()
 	r := NewMySQLUploads(db)
-	job := ReconciliationJob{OwnerID: u.OwnerID, UploadID: u.ID, ResourceID: record.ResourceID, OperationID: record.OperationID}
+	job := ReconciliationJob{OwnerID: u.OwnerID, UploadID: u.ID, ResourceID: record.ResourceID, OperationID: record.OperationID, Kind: "completion"}
+	checkReconciliationQueue(t, ctx, r, job, now)
+}
+
+func checkReconciliationQueue(t *testing.T, ctx context.Context, r *MySQLUploads, job ReconciliationJob, now time.Time) {
+	t.Helper()
+	db := r.db
 	if _, err := r.ClaimReconciliation(ctx, job, now); !errors.Is(err, ErrLease) {
 		t.Fatal("did not wait for active completion", err)
 	}

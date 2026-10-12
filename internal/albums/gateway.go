@@ -182,7 +182,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 		`SELECT challenge_id,proof_sha256,apple_nonce,expires_at,consumed_at FROM album_login_challenges LIMIT 0`,
 		`SELECT owner_id,quota_bytes,used_bytes,reserved_bytes FROM album_storage_accounts LIMIT 0`,
 		`SELECT ` + uploadColumns + ` FROM album_uploads LIMIT 0`,
-		`SELECT upload_id,resource_id,intent_id,state,provider_upload_id FROM album_multipart_intents LIMIT 0`,
+		`SELECT upload_id,resource_id,intent_id,state,provider_upload_id,reconcile_attempts,reconcile_token,reconcile_until,reconcile_after FROM album_multipart_intents LIMIT 0`,
 		`SELECT upload_id,resource_id,operation_id,state,object_version,reconcile_attempts,reconcile_token,reconcile_until,reconcile_after FROM album_multipart_completions LIMIT 0`,
 	} {
 		rows, err := g.db.QueryContext(ctx, query)

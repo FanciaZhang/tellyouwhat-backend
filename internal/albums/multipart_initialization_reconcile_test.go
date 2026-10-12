@@ -10,7 +10,7 @@ import (
 )
 
 func TestInitializationReconcileBindsOnlyDiscoveredSession(t *testing.T) {
-	for _, scenario := range []string{"unknown", "initiating", "ready", "missing", "database", "cancel", "expired", "wrong-owner", "submitted"} {
+	for _, scenario := range []string{"unknown", "initiating", "ready", "missing", "database", "cancel", "expired", "wrong-owner", "submitted", "stale-intent"} {
 		t.Run(scenario, func(t *testing.T) {
 			uploads, repository, _, owner, manifest := uploadFixture(t)
 			u, err := uploads.Create(context.Background(), owner, uuid.NewString(), manifest)
@@ -58,7 +58,12 @@ func TestInitializationReconcileBindsOnlyDiscoveredSession(t *testing.T) {
 			if scenario == "wrong-owner" {
 				caller = uuid.NewString()
 			}
-			result, err := service.ReconcileInitialization(ctx, caller, u.ID, "photo")
+			var result MultipartSession
+			if scenario == "stale-intent" {
+				result, err = service.reconcileInitialization(ctx, caller, u.ID, "photo", uuid.NewString())
+			} else {
+				result, err = service.ReconcileInitialization(ctx, caller, u.ID, "photo")
+			}
 			switch scenario {
 			case "unknown", "initiating":
 				if err != nil || result.ResourceID != "photo" || r.intent.ProviderUploadID != "found-session" || calls != 1 {
@@ -85,8 +90,8 @@ func TestInitializationReconcileBindsOnlyDiscoveredSession(t *testing.T) {
 					t.Fatal("failed discovery changed binding", err)
 				}
 			}
-			if scenario == "wrong-owner" && calls != 0 {
-				t.Fatal("cross account queried COS")
+			if (scenario == "wrong-owner" || scenario == "stale-intent") && calls != 0 {
+				t.Fatal("cross account or stale operation queried COS")
 			}
 		})
 	}

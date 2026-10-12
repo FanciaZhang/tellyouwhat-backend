@@ -1,0 +1,64 @@
+{
+  "startedAt": "2026-10-12T08:56:56.107377+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-initialization-queue-nmq1x9n7",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-initialization-queue-nmq1x9n7/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 49
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "477f7cec8740c00276ccd1fc218603e2fa750dcb2731576484607342c0089fd9"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-initialization-queue-nmq1x9n7/related-race.log",
+      "testCounts": {
+        "pass": 675
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "4957b523bcdf49897cdea250574adea8dcc599cb3820be4f6717ecd91c415d80"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-initialization-queue-nmq1x9n7/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-initialization-queue-nmq1x9n7/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T08:58:08.011953+00:00",
+  "sourceBase": "ec2c04fe03bff86aaf7c2b8a357bcd89b41c8fc5",
+  "sourceSHA256": {
+    "cmd/albumworker/main.go": "86ac9f7b2bf7325d7a5901fa0d3a1362de1672dbb309d3f140c383cf96cd05d5",
+    "internal/albums/gateway.go": "5a18070f4e23dd43d484a7007919dfb5306f09661d32c89220e193cae4c46110",
+    "internal/albums/initialization_queue_integration_test.go": "cfd7052463ba0512486d8c7cd7500634c0f2d525111e9ae2567fa6626da8dda6",
+    "internal/albums/multipart_initialization_reconcile.go": "a2991e11a8fabb6abb93fe977f15d469e42587a81d05fa71ceb2637964d524ca",
+    "internal/albums/multipart_initialization_reconcile_test.go": "a6e0d9fb883d55fa307f11555de02be43820f6007a2ac795f6842ccc93d552c8",
+    "internal/albums/reconciliation_queue.go": "0dae5e032b7ba9585299c2f4e7b149b6964f14c159d0cb1bc5ceed889105dee0",
+    "internal/albums/reconciliation_queue_integration_test.go": "83dd17aa2c9f49a50b4d2da1dce60187bb19bc9e998e15fc47bbd2fdb380d249",
+    "internal/albums/reconciliation_worker.go": "383d6f4b2913b69f938657f57430251de2ad40a35928b8b54e84c42725338a91",
+    "internal/albums/reconciliation_worker_test.go": "2d7e4a781c0e8e312d031c7052dc42fa6ca407b5e419f215141e9ab9748bed03",
+    "migrations/0039_album_initialization_reconciliation.sql": "aae33dbccd11f9a2912a87e127a7baa2d4f1714bf532b814a298eb64d8419834",
+    "migrations/embed_test.go": "d9403d3c05475008db3fbf5d279e2db4cb8bae3f3236cfa862e5cabc81069f16"
+  },
+  "failureBeforeFix": {
+    "test": "TestMySQLInitializationReconciliationScheduled",
+    "result": "failed: lost initialization was absent from queue",
+    "logSHA256": "f83be3e12fbed971b6eb33af346dda88aa214be98a331f3dd51cafc30cc4f3f8"
+  },
+  "scope": "Isolated MySQL 8.4/Redis and controlled COS provider; no production migration, live media requests, deletion, or iOS change.",
+  "initialFixtureFailure": "Trigger creation required elevated privileges; replaced with a CHECK constraint on the isolated test table, then reran targeted and related suites."
+}

@@ -185,8 +185,8 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			if !available {
 				logger.Error("album reconciliation queue unavailable")
 			}
-			if batch.Assembled+batch.Failed+batch.Contended > 0 {
-				logger.Info("album reconciliation batch", "assembled", batch.Assembled, "failed", batch.Failed, "contended", batch.Contended)
+			if batch.Initialized+batch.Assembled+batch.Failed+batch.Contended > 0 {
+				logger.Info("album reconciliation batch", "initialized", batch.Initialized, "assembled", batch.Assembled, "failed", batch.Failed, "contended", batch.Contended)
 			}
 		})
 	}()
