@@ -60,5 +60,29 @@ class CIMediaPolicyTests(unittest.TestCase):
             "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]}])
 
 
+    def test_backend_version_inventory_requires_a_media_prefix(self):
+        policy = json.loads(Path(__file__).with_name("cam-backend.policy.json").read_text())
+        entries = [entry for entry in policy["statement"] if "cos:GetBucketObjectVersions" in entry["action"]]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(set(entry), {"effect", "action", "resource", "condition"})
+        self.assertEqual(entry["effect"], "allow")
+        self.assertEqual(entry["action"], ["cos:GetBucketObjectVersions"])
+        self.assertEqual(entry["resource"], ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/*"])
+        patterns = ["albums/" + area + "/*" for area in (
+            "staging", "originals", "derivatives", "video-previews", "live-pairs")]
+        self.assertEqual(entry["condition"], {"string_like": {"cos:prefix": patterns}})
+        for prefix, expected in [
+            ("", False), ("albums/", False), ("health/", False),
+            ("albums/originals-other/", False), ("albums/Originals/", False),
+            ("albums/staging/live-pairs/owner/", True),
+            ("albums/originals/owner/", True),
+        ]:
+            with self.subTest(prefix=prefix):
+                self.assertEqual(any(fnmatch.fnmatchcase(prefix, p) for p in patterns), expected)
+        for entry in policy["statement"]:
+            self.assertFalse(any("Delete" in action or "*" in action for action in entry["action"]))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,22 @@
     },
     {
       "effect": "allow",
+      "action": ["cos:GetBucketObjectVersions"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/*"],
+      "condition": {
+        "string_like": {
+          "cos:prefix": [
+            "albums/staging/*",
+            "albums/originals/*",
+            "albums/derivatives/*",
+            "albums/video-previews/*",
+            "albums/live-pairs/*"
+          ]
+        }
+      }
+    },
+    {
+      "effect": "allow",
       "action": ["cos:GetObject", "cos:HeadObject", "cos:PutObject", "cos:InitiateMultipartUpload", "cos:CompleteMultipartUpload", "cos:ListParts", "cos:AbortMultipartUpload"],
       "resource": [
         "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/staging/*",

@@ -12,7 +12,7 @@ import (
 
 func TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing(t *testing.T) {
 	key := "albums/staging/" + uuid.NewString() + "/" + uuid.NewString() + "/photo"
-	for _, scenario := range []string{"one", "none", "neighbor", "multiple", "paged", "bad-marker", "duplicate-page", "wrong-prefix", "outside-prefix", "bad-id", "page-budget"} {
+	for _, scenario := range []string{"one", "none", "neighbor", "multiple", "paged", "bad-marker", "duplicate-page", "wrong-prefix", "outside-prefix", "bad-id", "page-budget", "grouped", "delimiter", "missing-truncation", "bad-bucket", "wrong-request-marker"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
@@ -33,7 +33,7 @@ func TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing(t *testing.T) 
 				if scenario == "wrong-prefix" {
 					prefix = "other"
 				}
-				tail := ""
+				tail := "<IsTruncated>false</IsTruncated>"
 				if scenario == "paged" || scenario == "bad-marker" || scenario == "duplicate-page" {
 					if calls == 1 {
 						tail = fmt.Sprintf(`<IsTruncated>true</IsTruncated><NextKeyMarker>%s</NextKeyMarker><NextUploadIdMarker>provider-one</NextUploadIdMarker>`, key)
@@ -62,7 +62,23 @@ func TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing(t *testing.T) 
 				if scenario == "multiple" {
 					uploads += fmt.Sprintf(`<Upload><Key>%s</Key><UploadId>provider-two</UploadId></Upload>`, key)
 				}
-				return cosResponse(r, fmt.Sprintf(`<ListMultipartUploadsResult><Prefix>%s</Prefix>%s%s</ListMultipartUploadsResult>`, prefix, uploads, tail), ""), nil
+				if scenario == "grouped" {
+					tail += "<CommonPrefixes><Prefix>hidden/</Prefix></CommonPrefixes>"
+				}
+				if scenario == "delimiter" {
+					tail += "<Delimiter>/</Delimiter>"
+				}
+				if scenario == "missing-truncation" {
+					tail = ""
+				}
+				bucket, marker := "albums-test-1250000000", r.URL.Query().Get("key-marker")
+				if scenario == "bad-bucket" {
+					bucket = "foreign"
+				}
+				if scenario == "wrong-request-marker" {
+					marker = "unrequested"
+				}
+				return cosResponse(r, fmt.Sprintf(`<ListMultipartUploadsResult><Bucket>%s</Bucket><MaxUploads>1000</MaxUploads><KeyMarker>%s</KeyMarker><UploadIdMarker>%s</UploadIdMarker><Prefix>%s</Prefix>%s%s</ListMultipartUploadsResult>`, bucket, marker, r.URL.Query().Get("upload-id-marker"), prefix, uploads, tail), ""), nil
 			})
 			id, err := s.FindStagingMultipart(context.Background(), key)
 			if scenario == "one" || scenario == "paged" {

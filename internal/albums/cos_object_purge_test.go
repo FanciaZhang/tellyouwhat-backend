@@ -113,7 +113,7 @@ func TestCOSObjectPurgeVersionsBoundBatchesButNeverClaimIncompleteEmpty(t *testi
 func TestCOSObjectPurgeMultipartExactInventoryAndIdempotentAbort(t *testing.T) {
 	owner := uuid.NewString()
 	target := purgeTarget{"albums/staging/" + owner + "/" + uuid.NewString() + "/source"}
-	for _, scenario := range []string{"batch", "empty", "neighbor", "bad-bucket", "bad-marker", "duplicate", "truncated-empty", "bad-prefix"} {
+	for _, scenario := range []string{"batch", "empty", "neighbor", "bad-bucket", "bad-marker", "duplicate", "truncated-empty", "bad-prefix", "grouped", "delimiter", "missing-truncation"} {
 		t.Run(scenario, func(t *testing.T) {
 			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
 				q := r.URL.Query()
@@ -135,6 +135,8 @@ func TestCOSObjectPurgeMultipartExactInventoryAndIdempotentAbort(t *testing.T) {
 				}
 				if scenario == "truncated-empty" || scenario == "batch" {
 					extra += "<IsTruncated>true</IsTruncated>"
+				} else {
+					extra += "<IsTruncated>false</IsTruncated>"
 				}
 				entry := fmt.Sprintf("<Upload><Key>%s</Key><UploadId>multipart-one</UploadId></Upload>", key)
 				if scenario == "duplicate" {
@@ -143,7 +145,19 @@ func TestCOSObjectPurgeMultipartExactInventoryAndIdempotentAbort(t *testing.T) {
 				if scenario == "empty" || scenario == "truncated-empty" {
 					entry = ""
 				}
-				return cosResponse(r, fmt.Sprintf("<ListMultipartUploadsResult><Bucket>%s</Bucket><Prefix>%s</Prefix>%s%s</ListMultipartUploadsResult>", bucket, prefix, entry, extra), ""), nil
+				if scenario == "grouped" {
+					entry = ""
+					extra += "<CommonPrefixes><Prefix>hidden/</Prefix></CommonPrefixes>"
+				}
+				if scenario == "delimiter" {
+					entry = ""
+					extra += "<Delimiter>/</Delimiter>"
+				}
+				if scenario == "missing-truncation" {
+					entry = ""
+					extra = ""
+				}
+				return cosResponse(r, fmt.Sprintf("<ListMultipartUploadsResult><MaxUploads>1000</MaxUploads><Bucket>%s</Bucket><Prefix>%s</Prefix>%s%s</ListMultipartUploadsResult>", bucket, prefix, entry, extra), ""), nil
 			})
 			ids, err := s.listPurgeUploads(context.Background(), owner, target)
 			if scenario == "batch" {

@@ -39,12 +39,12 @@ func (s *COSObjects) listPurgeUploads(ctx context.Context, owner string, t purge
 	keyMarker, idMarker := "", ""
 	seen := map[string]bool{}
 	for range 5 {
-		result, response, err := s.client.Bucket.ListMultipartUploads(ctx, &cos.ListMultipartUploadsOptions{Prefix: t.Key, MaxUploads: 1000, KeyMarker: keyMarker, UploadIDMarker: idMarker})
-		if err != nil || response == nil || response.StatusCode != http.StatusOK || result == nil {
+		result, err := s.readMultipartInventory(ctx, t.Key, keyMarker, idMarker)
+		if err != nil {
 			return nil, ErrCOSOperation
 		}
 		if result.Bucket != strings.Split(s.host, ".cos.")[0] || result.Prefix != t.Key || result.EncodingType != "" || result.Delimiter != "" ||
-			len(result.CommonPrefixes) != 0 || len(result.Uploads) > 1000 || result.KeyMarker != keyMarker || result.UploadIDMarker != idMarker {
+			len(result.CommonPrefixes) != 0 || result.IsTruncated == nil || result.MaxUploads != 1000 || len(result.Uploads) > 1000 || result.KeyMarker != keyMarker || result.UploadIDMarker != idMarker {
 			return nil, ErrConflict
 		}
 		var ids []string
@@ -58,7 +58,7 @@ func (s *COSObjects) listPurgeUploads(ctx context.Context, owner string, t purge
 				ids = append(ids, u.UploadID)
 			}
 		}
-		if len(ids) > 0 || !result.IsTruncated {
+		if len(ids) > 0 || !*result.IsTruncated {
 			return ids, nil
 		}
 		if len(result.Uploads) == 0 {

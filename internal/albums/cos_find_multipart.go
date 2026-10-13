@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"time"
-
-	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
 // FindStagingMultipart discovers a single unfinished upload for the exact,
@@ -22,11 +20,11 @@ func (s *COSObjects) FindStagingMultipart(ctx context.Context, key string) (stri
 	seen := map[string]bool{}
 	found := ""
 	for page := 0; page < 10; page++ {
-		result, _, err := s.client.Bucket.ListMultipartUploads(ctx, &cos.ListMultipartUploadsOptions{Prefix: key, MaxUploads: 1000, KeyMarker: keyMarker, UploadIDMarker: idMarker})
+		result, err := s.readMultipartInventory(ctx, key, keyMarker, idMarker)
 		if err != nil {
 			return "", ErrCOSOperation
 		}
-		if result == nil || result.Prefix != key || result.EncodingType != "" || result.Delimiter != "" || len(result.CommonPrefixes) != 0 || len(result.Uploads) > 1000 {
+		if result.Bucket != strings.Split(s.host, ".cos.")[0] || result.KeyMarker != keyMarker || result.UploadIDMarker != idMarker || result.IsTruncated == nil || result.MaxUploads != 1000 || result.Prefix != key || result.EncodingType != "" || result.Delimiter != "" || len(result.CommonPrefixes) != 0 || len(result.Uploads) > 1000 {
 			return "", ErrMultipartPending
 		}
 		for _, upload := range result.Uploads {
@@ -45,7 +43,7 @@ func (s *COSObjects) FindStagingMultipart(ctx context.Context, key string) (stri
 				found = upload.UploadID
 			}
 		}
-		if !result.IsTruncated {
+		if !*result.IsTruncated {
 			if found == "" {
 				return "", ErrMultipartPending
 			}

@@ -35,6 +35,7 @@ type COSConfig struct {
 type COSObjects struct {
 	client       *cos.Client
 	uploadClient *cos.Client
+	archiveHTTP  *http.Client
 	host         string
 	now          func() time.Time
 }
@@ -51,10 +52,11 @@ func newCOSObjects(config COSConfig, transport http.RoundTripper) (*COSObjects, 
 		return nil, errors.New("invalid album COS configuration")
 	}
 	host := config.Bucket + ".cos." + config.Region + ".myqcloud.com"
-	client := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}, CIURL: &url.URL{Scheme: "https", Host: config.Bucket + ".ci." + config.Region + ".myqcloud.com"}}, &http.Client{
+	archiveHTTP := &http.Client{
 		Transport:     &cos.AuthorizationTransport{SecretID: config.SecretID, SecretKey: config.SecretKey, SessionToken: config.SessionToken, Transport: transport},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	})
+	}
+	client := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}, CIURL: &url.URL{Scheme: "https", Host: config.Bucket + ".ci." + config.Region + ".myqcloud.com"}}, archiveHTTP)
 	uploadClient := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}}, &http.Client{
 		Transport:     &cos.AuthorizationTransport{SecretID: config.UploadSecretID, SecretKey: config.UploadSecretKey, SessionToken: config.UploadSessionToken, Transport: transport},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -63,7 +65,7 @@ func newCOSObjects(config COSConfig, transport http.RoundTripper) (*COSObjects, 
 	// the SDK silently repeat mutations; durable workers decide recovery.
 	client.Conf.RetryOpt.Count = 1
 	uploadClient.Conf.RetryOpt.Count = 1
-	return &COSObjects{client: client, uploadClient: uploadClient, host: host, now: time.Now}, nil
+	return &COSObjects{client: client, uploadClient: uploadClient, archiveHTTP: archiveHTTP, host: host, now: time.Now}, nil
 }
 
 // Check verifies configuration without mutating the customer's bucket settings.

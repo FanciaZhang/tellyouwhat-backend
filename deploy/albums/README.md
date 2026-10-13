@@ -133,3 +133,7 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 配置更新使用 `configure_sandbox.py prepare` 保存私有 before/after 配置和镜像/密钥引用，再通过 `deploy/tencent/ops_artifacts.py --apply --register --owner albums-test ... --run python3 .../configure_sandbox.py apply ...` 激活。该流程只重建相册 API，失败时恢复旧配置。共享运维检查为相册增加正确 Host 和 `{code:ok}` 检查，生日服务仍使用原协议。不要直接运行 apply 绕过注册和锁。
 
 本次独立探针：`go run deploy/albums/appstore_probe.go request`（只允许一次 POST），随后 `go run deploy/albums/appstore_probe.go status`；固定相册 Sandbox、密钥 ID 与本次私有证据目录，不用于生产。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针私有文件边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
+
+### 账户注销清单权限（2026-10-13，待确认保存）
+
+`cam-backend.policy.json` 已准备新增 `cos:GetBucketObjectVersions`，用 `string_like` / `cos:prefix` 限制到相册五类媒体前缀（暂存前缀包含实况暂存）。当前在线策略仍缺少此权限，真实探针返回 403；浏览器编辑表单未保存。批准保存后须验证固定合成账户的版本清单及范围外前缀被拒绝。不得把此草案当作已部署权限或永久删除授权。
