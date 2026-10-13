@@ -93,6 +93,7 @@ func (server *Server) executeJournalAnalysis(ctx context.Context, input journalc
 	}
 	estimatedTokens := journalReservationTokens(input)
 	analysisVersion := server.journalAnalysisVersion
+	ginContext := strictGinContext(ctx)
 	if server.promptConfig != nil {
 		var configErr error
 		ctx, configErr = promptconfig.Freeze(ctx, server.promptConfig)
@@ -110,7 +111,7 @@ func (server *Server) executeJournalAnalysis(ctx context.Context, input journalc
 	}
 	lease, err := server.quota.Acquire(ctx, quota.Identity{
 		DeviceID: principal.DeviceID, TransactionID: transactionID,
-		IP: server.ipResolver(strictGinContext(ctx).Request),
+		IP: server.ipResolver(ginContext.Request),
 	}, contracts.Operation("journal.organize"), estimatedTokens, "", server.now())
 	if err != nil {
 		if errors.Is(err, quota.ErrExceeded) {
@@ -123,7 +124,7 @@ func (server *Server) executeJournalAnalysis(ctx context.Context, input journalc
 		return journalcontracts.OrganizeResponse{}, failure
 	}
 	artifact := contracts.Request{RequestID: input.RequestID, Operation: contracts.Operation("journal.organize")}
-	if err := server.media.Consume(ctx, principal, artifact, contracts.BodySHA256(rawRequestBody(strictGinContext(ctx)))); err != nil {
+	if err := server.media.Consume(ctx, principal, artifact, contracts.BodySHA256(rawRequestBody(ginContext))); err != nil {
 		lease.Release(0)
 		failure = server.apiAdmissionFailure(err, input.RequestID)
 		return journalcontracts.OrganizeResponse{}, failure
