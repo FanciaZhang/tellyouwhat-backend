@@ -24,6 +24,7 @@ type bindingProvider struct {
 	target      string
 	calls, puts int
 	mode        string
+	extra       []appstore.SubscriptionStatus
 	beforePut   func()
 	afterPut    func()
 }
@@ -42,7 +43,7 @@ func (p *bindingProvider) AllSubscriptionStatuses(context.Context, string) ([]ap
 		p.beforePut = nil
 		f()
 	}
-	return []appstore.SubscriptionStatus{{Status: 1, SignedTransaction: signed}}, nil
+	return append([]appstore.SubscriptionStatus{{Status: 1, SignedTransaction: signed}}, p.extra...), nil
 }
 func (p *bindingProvider) SetAppAccountToken(_ context.Context, original, token string) error {
 	p.puts++

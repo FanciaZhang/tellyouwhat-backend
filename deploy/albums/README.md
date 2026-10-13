@@ -178,3 +178,6 @@ Apple 字段与绑定规则依据：[appAccountToken](https://developer.apple.co
 Apple 的 [Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token) 只更改当前交易及未来续订的标识，历史交易不会改写，家庭共享交易不支持。最终身份擦除还须核对所有相关购买链及灾备；这里的回执不能单独授权最终擦除。真实 Sandbox 的历史交易恢复行为仍需设备验收。相册 API 已使用文档中的 `api.storekit-sandbox.apple.com` / `api.storekit.apple.com` 域名，Health 配置不变；仅对现有 TEST 通知做了真实只读查询，没有发送真实改绑请求。
 
 隔离测试覆盖租约、重启、撤销账户、签名与归属、后续通知、失败退避和事务回滚；证据见 `docs/evidence/albums-subscription-rebinding-2026-10-13.json`。升级前排空旧相册进程并迁移至 0059，不能混跑忽略队列维护的版本。没有部署或打开销售、永久清理及改绑开关。
+
+
+改绑查询也会检查响应中同一相册账户的其他购买链：逐条验签并完整核对该链的状态与续订信息后，未知链及其待改绑任务在同一事务落库。存在他人归属、同链冲突、过期执行租约或写入失败时整批回滚，且不发起本次 Apple PUT；超过 128 条关联链时拒绝截断。已知链不因重复出现在响应中被反复入队，其后续变更仍由通知处理及最终全链核验负责。此发现机制只覆盖 Apple 当前查询实际返回的记录，不能宣称已经枚举从未同步的全部历史购买；最终账户擦除仍未开放。验证见 `docs/evidence/albums-subscription-discovery-2026-10-13.json`。

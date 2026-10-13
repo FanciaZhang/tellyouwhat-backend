@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -144,18 +145,66 @@ func (r *MySQLUploads) authorizeSubscriptionBinding(ctx context.Context, j subsc
 	if err = r.lockSubscriptionBinding(ctx, tx, j); err != nil {
 		return err
 	}
-	var found int
-	err = tx.QueryRowContext(ctx, `SELECT 1 FROM album_deletion_subscription_jobs WHERE environment=? AND original_transaction_id=? AND account_id=? AND request_id=? AND target_token=? AND lease_token=? AND lease_until>? AND acknowledged_at IS NULL FOR UPDATE`, j.Environment, j.Original, j.Account, j.Request, j.Target, j.Lease, at).Scan(&found)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrLease
-	}
-	if err != nil {
+	if err = lockSubscriptionBindingLease(ctx, tx, j, at); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *AlbumSubscriptionService) observeSubscriptionBinding(ctx context.Context, j subscriptionBindingJob) (VerifiedAlbumSubscription, bool, error) {
+func lockSubscriptionBindingLease(ctx context.Context, tx *sql.Tx, j subscriptionBindingJob, at time.Time) error {
+	var found int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM album_deletion_subscription_jobs WHERE environment=? AND original_transaction_id=? AND account_id=? AND request_id=? AND target_token=? AND lease_token=? AND lease_until>? AND acknowledged_at IS NULL FOR UPDATE`, j.Environment, j.Original, j.Account, j.Request, j.Target, j.Lease, at).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrLease
+	}
+	return err
+}
+
+// Only verified current statuses reach this path. Existing receipts are left
+// intact; otherwise overlapping provider responses would endlessly requeue them.
+func (r *MySQLUploads) discoverSubscriptionBindings(ctx context.Context, j subscriptionBindingJob, proofs []VerifiedAlbumSubscription, at time.Time) error {
+	if len(proofs) == 0 || len(proofs) > 128 {
+		return ErrSubscriptionVerification
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = r.lockSubscriptionBinding(ctx, tx, j); err != nil {
+		return err
+	}
+	if err = lockSubscriptionBindingLease(ctx, tx, j, at); err != nil {
+		return err
+	}
+	account, err := r.cloudAccountInTransaction(ctx, tx, j.Account, at)
+	if err != nil {
+		return err
+	}
+	for _, v := range proofs {
+		if v.Environment != j.Environment || v.OriginalTransactionID == j.Original {
+			return ErrSubscriptionVerification
+		}
+		var owner string
+		err = tx.QueryRowContext(ctx, `SELECT owner_id FROM album_cloud_subscriptions WHERE environment=? AND original_transaction_id=? FOR UPDATE`, v.Environment, v.OriginalTransactionID).Scan(&owner)
+		if err == nil {
+			if owner != j.Account {
+				return ErrSubscriptionBinding
+			}
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		account, err = r.applySubscriptionInTransaction(ctx, tx, j.Account, account.Revision, v, at)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *AlbumSubscriptionService) observeSubscriptionBinding(ctx context.Context, r *MySQLUploads, j subscriptionBindingJob) (VerifiedAlbumSubscription, bool, error) {
 	states, err := s.resolver.client.AllSubscriptionStatuses(ctx, j.Transaction)
 	if err != nil {
 		return VerifiedAlbumSubscription{}, false, ErrSubscriptionUnavailable
@@ -169,12 +218,21 @@ func (s *AlbumSubscriptionService) observeSubscriptionBinding(ctx context.Contex
 	}
 	bound := true
 	found := false
+	related := map[string][]appstore.SubscriptionStatus{}
+	owned := map[string]bool{}
 	for _, state := range states {
 		t, e := s.resolver.verifier.VerifyTransaction(state.SignedTransaction)
 		if e != nil {
 			return proof, false, ErrSubscriptionVerification
 		}
-		if t.OriginalTransactionID != j.Original || t.IsUpgraded {
+		if t.OriginalTransactionID != j.Original {
+			related[t.OriginalTransactionID] = append(related[t.OriginalTransactionID], state)
+			if transactionBelongsToAccount(t, j.Account, j.Environment, j.Target) {
+				owned[t.OriginalTransactionID] = true
+			}
+			continue
+		}
+		if t.IsUpgraded {
 			continue
 		}
 		found = true
@@ -184,6 +242,28 @@ func (s *AlbumSubscriptionService) observeSubscriptionBinding(ctx context.Contex
 	}
 	if !found {
 		return proof, false, ErrSubscriptionVerification
+	}
+	if len(owned) > 128 {
+		return proof, false, ErrSubscriptionUnavailable
+	}
+	// Resolve each complete chain before saving any discovery or changing Apple.
+	keys := make([]string, 0, len(owned))
+	for original := range owned {
+		keys = append(keys, original)
+	}
+	sort.Strings(keys)
+	proofs := make([]VerifiedAlbumSubscription, 0, len(keys))
+	for _, original := range keys {
+		v, err := s.resolver.resolveStatuses(j.Account, original, related[original], j.Target)
+		if err != nil {
+			return proof, false, err
+		}
+		proofs = append(proofs, v)
+	}
+	if len(proofs) > 0 {
+		if err := r.discoverSubscriptionBindings(ctx, j, proofs, s.now()); err != nil {
+			return proof, false, err
+		}
 	}
 	return proof, bound, nil
 }
@@ -229,14 +309,14 @@ func (s *AlbumSubscriptionService) runSubscriptionBindingBatch(ctx context.Conte
 			return b, err
 		}
 		call, cancel := context.WithTimeout(ctx, 30*time.Second)
-		proof, bound, e := s.observeSubscriptionBinding(call, j)
+		proof, bound, e := s.observeSubscriptionBinding(call, r, j)
 		if e == nil && !bound {
 			e = r.authorizeSubscriptionBinding(call, j, s.now())
 			if e == nil {
 				e = setter.SetAppAccountToken(call, j.Original, j.Target)
 			}
 			if e == nil {
-				proof, bound, e = s.observeSubscriptionBinding(call, j)
+				proof, bound, e = s.observeSubscriptionBinding(call, r, j)
 			}
 		}
 		cancel()
