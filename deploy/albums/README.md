@@ -104,3 +104,7 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 2026-10-13 删除权限实测：`ALBUM_COS_PERMISSION_PROBE=1 go run deploy/albums/cos_delete_denial_probe.go` 只在固定测试桶的原件前缀创建一个随机名称的 48 字节合成对象。后端删除指定版本、上传身份删除同一版本、后端无版本删除三项均返回 403 AccessDenied；随后精确版本读取与字节校验通过。对象保留，不接触既有媒体。此结果覆盖这两个身份对本次对象的直接 COS 删除请求，不覆盖其他前缀、跨桶或 CI 角色间接权限。证据：`docs/evidence/albums-cos-delete-denial-2026-10-13.json`。
 
 照片适配器的真实付费探针独立于普通测试：显式设置 `ALBUM_CI_PHOTO_PROBE=1` 和 `ALBUM_CI_PHOTO_DIRECTORY=<新建证据目录>`，运行 `go test -tags albums_live ./internal/albums -run '^TestLiveCOSPhotoAdapter$' -count=1 -v`。仅使用批准的本机测试凭据与固定开发桶，生成三类合成图并保存六个预览，不读取用户图库、不删除对象；写入结果未知时不自动重复 PUT。重复运行会增加对象和处理费用。处理响应可缺版本头，但固定版本请求及前后原件 HEAD 核对不可省略；最终验收记录见 `docs/evidence/albums-ci-photo-adapter-2026-10-13.json`。
+
+实况真实探针位于 `internal/albums/cos_live_roundtrip_test.go`，同样仅在 `albums_live` 与 `ALBUM_CI_LIVE_PROBE=1` 下执行。`ALBUM_CI_LIVE_DIRECTORY` 指向 Xcode 管理运行目录内的合成素材目录：先用 App 的 `testPrepareRealCILiveSource` 生成配对原件，再单独运行 `TestLiveCOSLiveComponents`，随后由 `testAssembleRealCIComponents` 重建配对，最后单独运行 `TestLiveCOSLivePair` 并由 `testRealCanonicalCIPairSystemSaveAndRecovery` 验证系统保存。每次 Go 测试使用精确 `^名称$`，不要一次运行所有阶段；原生阶段显式设置 `ALBUMS_PHOTOKIT_FIXTURES=1` 和 `ALBUMS_CI_LIVE_PATH`。
+
+结果未知时不重跑写入阶段。已记录任务可通过 `TestLiveCOSLiveResume` 只读核验，成品下载签名过期可通过 `TestLiveCOSLiveRefreshReadGrants` 重新读回并签名；两者不新建媒体任务或对象。目录中的 `read-grants.json` 含短期授权 URL，保持私有且不复制到仓库证据。独立 `version.json` 是 App 测试所需的受控目录夹具，绑定本次资源 hash、timing 与 versionID，不代表服务器已发布完整备份。测试不删除云端对象，也不授权原件释放。

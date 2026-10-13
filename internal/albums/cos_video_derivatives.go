@@ -115,9 +115,11 @@ func parseVideoInfo(info *cos.MediaInfo, size int64, output bool) (VideoProfile,
 	width, widthErr := strconv.Atoi(v.Width)
 	height, heightErr := strconv.Atoi(v.Height)
 	duration, durationErr := ciNumber(info.Format.Duration)
-	fps, fpsErr := ciNumber(v.AvgFps)
+	// The native descriptor compares nominalFrameRate. Short MOVs with B-frames
+	// can report a different AvgFps even when all 30 fps samples are preserved.
+	fps, fpsErr := ciNumber(v.Fps)
 	if fpsErr != nil {
-		fps, fpsErr = ciNumber(v.Fps)
+		fps, fpsErr = ciNumber(v.AvgFps)
 	}
 	if widthErr != nil || heightErr != nil || durationErr != nil || fpsErr != nil || duration > 3600 {
 		return VideoProfile{}, ErrVideoUnsupported

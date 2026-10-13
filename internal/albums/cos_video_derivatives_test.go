@@ -377,3 +377,33 @@ func TestCOSVideoGrantSignsOnlyCompletedResultExactVersionGET(t *testing.T) {
 		t.Fatal("unfinished grant accepted")
 	}
 }
+
+func TestCOSVideoProfileUsesNominalRateForNativeContract(t *testing.T) {
+	for _, tc := range []struct {
+		name, fps, average string
+		want               float64
+		reject             bool
+	}{
+		{"short-b-frame-mov", "30", "29.032258", 30, false},
+		{"fractional", "30000/1001", "29.97003", 30000.0 / 1001, false},
+		{"missing-nominal", "", "30", 30, false},
+		{"unsupported-nominal", "120", "30", 0, true},
+		{"invalid-both", "0/0", "NaN", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := mediaInfoFixture(t, 1234, VideoProfile{1920, 1080, 1000, 30, 1})
+			info.Stream.Video[0].Fps = tc.fps
+			info.Stream.Video[0].AvgFps = tc.average
+			got, err := parseVideoInfo(info, 1234, false)
+			if tc.reject {
+				if err == nil {
+					t.Fatal("unsupported rate accepted")
+				}
+				return
+			}
+			if err != nil || got.FrameRate != tc.want {
+				t.Fatalf("nominal frame rate = %v, want %v; error %v", got.FrameRate, tc.want, err)
+			}
+		})
+	}
+}
