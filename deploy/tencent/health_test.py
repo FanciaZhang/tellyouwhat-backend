@@ -71,6 +71,12 @@ class OperationalHealthTests(unittest.TestCase):
             result = health(self.runtime)
         self.assertFalse(next(c for c in result["checks"] if c["name"] == "restore_freshness")["passed"])
 
+    def test_failed_latest_attempt_does_not_hide_behind_fresh_prior_success(self):
+        self.runtime.record("backup-failure", passed=False)
+        with patch("ops_health.probe", return_value=True):
+            result = health(self.runtime)
+        self.assertFalse(next(c for c in result["checks"] if c["name"] == "backup_freshness")["passed"])
+
     def test_reports_only_sanitized_health_evidence(self):
         with patch("ops_health.probe", return_value=True):
             result = health(self.runtime)

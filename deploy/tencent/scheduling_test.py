@@ -42,3 +42,15 @@ class SchedulingTests(unittest.TestCase):
                 operations.operate(self.runtime, SimpleNamespace(operation="maintenance"))
         cleanup.assert_called_once_with(self.runtime, cache=True)
         self.assertFalse((self.runtime.state / "maintenance.json").exists())
+
+    def test_failed_backup_attempt_is_recorded_and_a_successful_retry_clears_it(self):
+        from ops_common import OperationError
+        failure = self.runtime.state / "backup-failure.json"
+        with patch("sys.argv", ["operations.py", "backup"]), patch("operations.Runtime", return_value=self.runtime), \
+                patch("operations.create_backup", side_effect=OperationError("unavailable")):
+            self.assertEqual(operations.main(), 1)
+        self.assertFalse(json.loads(failure.read_text())["passed"])
+        with patch("sys.argv", ["operations.py", "backup"]), patch("operations.Runtime", return_value=self.runtime), \
+                patch("operations.create_backup", return_value={"passed": True}):
+            self.assertEqual(operations.main(), 0)
+        self.assertFalse(failure.exists())

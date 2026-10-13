@@ -101,6 +101,16 @@ def crypt(runtime, source, destination, *, decrypt=False):
 
 
 def create_backup(runtime):
+    try:
+        result = export_backup(runtime)
+    except (OperationError, OSError, subprocess.TimeoutExpired):
+        runtime.record("backup-failure", passed=False)
+        raise
+    (runtime.state / "backup-failure.json").unlink(missing_ok=True)
+    return result
+
+
+def export_backup(runtime):
     backup_secret(runtime)
     database = runtime.config.get("MYSQL_DATABASE", "")
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):

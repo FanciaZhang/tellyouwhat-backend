@@ -61,6 +61,18 @@ class BackupSafetyTests(unittest.TestCase):
                 create_backup(self.runtime)
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / "backup.json").exists())
+        self.assertFalse(json.loads((self.runtime.state / "backup-failure.json").read_text())["passed"])
+
+    def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
+        previous = create_backup(self.runtime)
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaises(OperationError):
+                create_backup(self.runtime)
+        self.assertEqual(json.loads((self.runtime.state / "backup.json").read_text())["filename"], previous["filename"])
+        self.assertTrue((self.runtime.state / "backup-failure.json").exists())
+        verify_backup(self.runtime, self.runtime.backups / previous["filename"])
+        create_backup(self.runtime)
+        self.assertFalse((self.runtime.state / "backup-failure.json").exists())
 
     def test_offsite_failure_does_not_publish_a_success_record(self):
         (self.runtime.state / "offsite-required").touch()

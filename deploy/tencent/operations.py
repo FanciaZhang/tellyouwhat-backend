@@ -32,7 +32,12 @@ def main():
         else:
             with runtime.lock(wait_seconds=600):
                 runtime.refresh()
-                result = operate(runtime, args)
+                try:
+                    result = operate(runtime, args)
+                except (OperationError, OSError, TimeoutError, KeyError, subprocess.TimeoutExpired):
+                    runtime.record(args.operation + "-failure", passed=False)
+                    raise
+                (runtime.state / (args.operation + "-failure.json")).unlink(missing_ok=True)
         print(json.dumps({"passed": True, **result}, sort_keys=True))
         return 0 if result.get("passed", True) else 1
     except subprocess.TimeoutExpired:

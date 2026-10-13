@@ -61,6 +61,9 @@ def health(runtime):
             record = json.loads((runtime.state / (name + ".json")).read_text())
             age = int(now - record["completed_at"])
             valid = 0 <= age <= maximum_age and record.get("passed", True) is True
+            failure = runtime.state / (name + "-failure.json")
+            if failure.exists():
+                valid = valid and json.loads(failure.read_text())["completed_at"] < record["completed_at"]
             if name == "backup":
                 valid = valid and backup_valid(runtime, record)
         except (OperationError, OSError, ValueError, TypeError, KeyError):
