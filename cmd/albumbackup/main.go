@@ -1,4 +1,4 @@
-// albumbackup moves encrypted recovery bundles only; it never lists or deletes media.
+// albumbackup moves encrypted bundles and signed receipts; it never lists or deletes media.
 package main
 
 import (
@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	cos "github.com/tencentyun/cos-go-sdk-v5"
@@ -20,7 +21,7 @@ import (
 
 const maximum = int64(1 << 30) // shortcut: use multipart uploads if encrypted bundles exceed 1 GiB.
 var rejected = errors.New("album backup transfer rejected")
-var keyPattern = regexp.MustCompile(`^albums/recovery/[0-9a-f]{32}\.enc$`)
+var keyPattern = regexp.MustCompile(`^albums/recovery/[0-9a-f]{32}(\.enc|\.receipt\.json)$`)
 var versionPattern = regexp.MustCompile(`^[A-Za-z0-9_.~-]+$`)
 
 type config struct{ Bucket, Region, SecretID, SecretKey string }
@@ -67,8 +68,8 @@ func newClient(c config, transport http.RoundTripper) (*cos.Client, error) {
 
 func transfer(ctx context.Context, c config, r request, transport http.RoundTripper) (receipt, error) {
 	out := receipt{Key: r.Key, Version: r.Version, SHA256: r.SHA256, Bytes: r.Bytes, Bucket: c.Bucket, Region: c.Region}
-	if (r.Operation != "put" && r.Operation != "get") || !keyPattern.MatchString(r.Key) || r.Bytes <= 0 || r.Bytes > maximum || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(r.SHA256) ||
-		(r.Operation == "put" && r.Version != "") || (r.Operation == "get" && (!validVersion(r.Version) || r.Bucket != c.Bucket || r.Region != c.Region)) {
+	if (r.Operation != "put" && r.Operation != "get") || !keyPattern.MatchString(r.Key) || r.Bytes <= 0 || r.Bytes > maximum || (strings.HasSuffix(r.Key, ".receipt.json") && r.Bytes > 65536) || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(r.SHA256) ||
+		(r.Bucket != "" && r.Bucket != c.Bucket) || (r.Region != "" && r.Region != c.Region) || (r.Operation == "put" && r.Version != "") || (r.Operation == "get" && (!validVersion(r.Version) || r.Bucket != c.Bucket || r.Region != c.Region)) {
 		return receipt{}, rejected
 	}
 	client, err := newClient(c, transport)

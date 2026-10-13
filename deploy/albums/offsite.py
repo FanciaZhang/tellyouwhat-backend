@@ -71,8 +71,7 @@ def publish(runtime, executable, credentials, filename, ledger, ledger_digest):
                "ledger_sha256": ledger_digest, "remote": remote}
     path = runtime.backups / ("albums-offsite-" + nonce + ".json")
     atomic_json(path, {"receipt": receipt, "hmac_sha256": manifest_signature(backup_secret(runtime), receipt)})
-    return runtime.record("albums-offsite-publish", receipt=str(path), receipt_sha256=file_digest(path),
-                          remote=remote, remotely_read_verified=True, latest_checkpoint_proven=False)
+    return publish_receipt(runtime, executable, credentials, path, file_digest(path))
 
 
 def read_receipt(runtime, path, digest):
@@ -97,6 +96,27 @@ def read_receipt(runtime, path, digest):
         return r
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("offsite receipt missing or invalid") from error
+
+
+def publish_receipt(runtime, executable, credentials, path, digest):
+    configure(runtime)
+    r = read_receipt(runtime, path, digest)
+    key = r["remote"]["Key"]
+    if not re.fullmatch(r"albums/recovery/[0-9a-f]{32}\.enc", key):
+        raise OperationError("invalid bundle key in publication receipt")
+    # Retrying only the receipt must not re-upload the encrypted bundle. Keep
+    # the local signed receipt even when the provider response is uncertain.
+    with tempfile.TemporaryDirectory(prefix=".albums-receipt-", dir=runtime.backups) as directory:
+        copied = Path(directory) / "receipt.json"
+        shutil.copyfile(path, copied)
+        copied.chmod(0o600)
+        read_receipt(runtime, copied, digest)
+        remote = move(runtime, executable, credentials, "put", copied, key.removesuffix(".enc") + ".receipt.json", digest, copied.stat().st_size, Bucket=r["remote"]["Bucket"], Region=r["remote"]["Region"])
+        if remote["Bucket"] != r["remote"]["Bucket"] or remote["Region"] != r["remote"]["Region"]:
+            raise OperationError("receipt and bundle destinations differ")
+    return runtime.record("albums-offsite-publish", receipt=str(path), receipt_sha256=digest,
+                          remote=r["remote"], receipt_remote=remote, remotely_read_verified=True,
+                          latest_checkpoint_proven=False)
 
 
 def fetch(runtime, executable, credentials, receipt, receipt_digest):

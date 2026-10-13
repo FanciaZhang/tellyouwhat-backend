@@ -46,6 +46,14 @@ class CIMediaPolicyTests(unittest.TestCase):
             with self.subTest(action=action, resource=resource):
                 self.assertEqual(permits(action, resource), expected)
 
+    def test_backup_identity_has_only_dedicated_recovery_access(self):
+        policy = json.loads(Path(__file__).with_name("cam-test-backup.policy.json").read_text())
+        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/"
+        self.assertEqual(policy, {"version": "2.0", "statement": [
+            {"effect": "allow", "action": ["cos:GetBucketVersioning"], "resource": [base + "*"]},
+            {"effect": "allow", "action": ["cos:PutObject", "cos:GetObject"], "resource": [base + "albums/recovery/*"]},
+        ]})
+
     def test_pass_role_names_only_the_reviewed_service_role(self):
         policy = json.loads(Path(__file__).with_name("cam-media-role.policy.json").read_text())
         self.assertEqual(policy, {"version": "2.0", "statement": [{

@@ -134,8 +134,9 @@ import offsite
 r=Runtime(sys.argv[2],sys.argv[3],sys.argv[4]);configure(r)
 remote=Path(sys.argv[2])/"controlled-offsite.enc"
 def transfer(runtime,executable,credentials,operation,path,key,digest,size,**pinned):
-    if operation=="put": shutil.copyfile(path,remote)
-    else: shutil.copyfile(remote,path)
+    object_path=remote.with_name(Path(key).name)
+    if operation=="put": shutil.copyfile(path,object_path)
+    else: shutil.copyfile(object_path,path)
     assert file_digest(path)==digest and Path(path).stat().st_size==size
     return dict(Key=key,SHA256=digest,Bytes=size,Version="fixture-version",Bucket="fixture-1250000000",Region="ap-guangzhou")
 offsite.move=transfer

@@ -222,7 +222,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 ### 加密恢复包的 COS 传输（未部署）
 
-`backup.py publish` 把已认证快照、快照清单和显式指定的删除清单复制核验后打包，再整体加密。删除清单不会以明文上传。`cmd/albumbackup` 复用现有 COS SDK，只处理 `albums/recovery/<随机ID>.enc`：先检查版本控制已启用，上传后按返回版本完整读回并比较字节数与 SHA-256，成功才写本机 HMAC 签名发布回执。ETag、上传成功响应或 HEAD 均不能代替回读。拒绝 HTTP 重定向，未知 PUT 结果不自动重试；失败可能留下未确认对象，不能记为可用备份。
+`backup.py publish` 把已认证快照、快照清单和显式指定的删除清单复制核验后打包，再整体加密。删除清单不会以明文上传。`cmd/albumbackup` 复用现有 COS SDK，只处理 `albums/recovery/<随机ID>.enc`：先检查版本控制已启用，上传后按返回版本完整读回并比较字节数与 SHA-256，成功才写本机 HMAC 签名发布回执，再上传到同一桶、同一随机 ID 的 `.receipt.json` 对象并固定版本回读核验。两个对象均确认后才返回发布成功。ETag、上传成功响应或 HEAD 均不能代替回读。拒绝 HTTP 重定向，未知 PUT 结果不自动重试；失败可能留下未确认对象，不能记为可用备份。
 
 构建 `go build -o <受管理输出目录>/albumbackup ./cmd/albumbackup`。使用单独的私有版本化备份桶和受限身份；配置格式见 `backup-cos.example.json`，真实文件 0600，密钥不得进入仓库。`cam-backup.policy.template.json` 仅为待填写模板，要求查询版本控制和备份前缀的读写，不含媒体读取、删除或桶管理权限；尚未创建或绑定这份策略。备份与媒体身份分开，不能把备份文件放进用户原件目录来绕过权限。
 
@@ -235,4 +235,7 @@ fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --t
 
 `fetch` 先认证固定摘要的回执，核对配置中的桶与地域，仅下载回执中的固定对象版本；再次验字节摘要后解密，只接受指定的三个普通文件，拒绝重复项、路径穿越和链接。不覆盖现有备份，输出到新的 0700 目录，各文件 0600。输出的快照、删除清单及摘要可用于现有 `drill`，恢复仍被隔离；不会启动服务。源快照超过 14 天时拒绝发布/下载。当前每个加密包最多 1 GiB，超限直接失败，扩大前须实现分片传输；不压缩或截断数据。
 
-发布回执当前只保存在本机，须连同其摘要另行异地保存；密钥也须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。因此该阶段尚无自动故障切换、最新检查点发现、远端保留期清理或按账户擦除能力，也未验证真实 COS 权限与恢复往返。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。
+发布回执保存在本机及备份桶的 `albums/recovery/<同一随机ID>.receipt.json`，其中不含解密密钥或原始凭据。若回执上传失败，本机签名文件保留；使用 `publish-receipt --receipt <file> --receipt-sha256 <sha256>` 及同样的传输参数只重发回执，不重传备份包。失败或未知响应不宣称发布成功。灾后可从 COS 控制台取回该回执，计算文件摘要后交给 `fetch`；仍须通过独立密钥的 HMAC 认证。密钥须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。因此该阶段尚无自动故障切换、最新检查点发现、远端保留期清理或按账户擦除能力，也未验证真实 COS 权限与恢复往返。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。
+
+
+备份资源核对（2026-10-13）：控制台显示现有 `tellyouwhat-backups-1251995834` 为广州、多 AZ，版本控制未开启，已有 `backups/` 目录。未修改该桶。已填写独立 `tellyouwhat-albums-backups-1251995834` 的私有、多 AZ、版本控制配置，但尚未提交；专用 `albums-test-backup` 身份及 `cam-test-backup.policy.json` 权限待用户确认后创建。此策略只含新桶的版本状态查询和 `albums/recovery/*` 的读写，不含删除、其他 App/媒体目录或桶管理。截图仅证明待提交配置，不能作为资源创建证据。签名回执的受控验证见 `docs/evidence/albums-offsite-receipt-2026-10-13.json`。

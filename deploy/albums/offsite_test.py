@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from backup import Runtime, TABLES, SCOPE, configure, OperationError
 from deletion_ledger import SCOPE as LEDGER_SCOPE
-from offsite import publish, fetch, read_receipt
+from offsite import publish, fetch, read_receipt, publish_receipt
 from ops_backup import file_digest, manifest_signature, backup_secret
 from ops_common import atomic_json
 
@@ -41,8 +41,9 @@ class OffsiteTests(unittest.TestCase):
         self.calls.append(operation)
         result = dict(Key=key, SHA256=digest, Bytes=size, Version="test-version", Bucket="test-1250000000", Region="ap-guangzhou")
         if operation == "put":
-            shutil.copyfile(path, self.remote)
-            self.assertNotIn(b"albums-deletion-ledger-v1", self.remote.read_bytes())
+            destination = self.remote if key.endswith(".enc") else self.remote.with_suffix(".receipt.json")
+            shutil.copyfile(path, destination)
+            self.assertNotIn(b"albums-deletion-ledger-v1", destination.read_bytes())
         else:
             self.assertEqual(pinned, {k: result[k] for k in ("Version", "Bucket", "Region")})
             shutil.copyfile(self.remote, path)
@@ -55,7 +56,8 @@ class OffsiteTests(unittest.TestCase):
         with patch("offsite.move", side_effect=self.move):
             receipt = self.publish()
             result = fetch(self.runtime, "/controlled/bin", "/controlled/config", receipt["receipt"], receipt["receipt_sha256"])
-        self.assertEqual(self.calls, ["put", "get"])
+        self.assertEqual(self.calls, ["put", "put", "get"])
+        self.assertEqual(file_digest(self.remote.with_suffix(".receipt.json")), receipt["receipt_sha256"])
         self.assertTrue(receipt["remotely_read_verified"])
         self.assertFalse(receipt["latest_checkpoint_proven"])
         self.assertFalse(result["recovery_ready"])
@@ -101,6 +103,23 @@ class OffsiteTests(unittest.TestCase):
             atomic_json(str(self.snapshot) + ".json", dict(manifest=self.manifest, hmac_sha256=manifest_signature(backup_secret(self.runtime), self.manifest)))
             with self.assertRaises(OperationError): self.publish()
             transfer.assert_not_called()
+
+    def test_receipt_upload_failure_can_resume_without_bundle_reupload(self):
+        def interrupted(*args, **kwargs):
+            if args[5].endswith(".receipt.json"):
+                raise OperationError("receipt response lost")
+            return self.move(*args, **kwargs)
+        with patch("offsite.move", side_effect=interrupted):
+            with self.assertRaises(OperationError): self.publish()
+        receipts = list(self.runtime.backups.glob("albums-offsite-*.json"))
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(self.calls, ["put"])
+        bundle_hash = file_digest(self.remote)
+        with patch("offsite.move", side_effect=self.move):
+            result = publish_receipt(self.runtime, "bin", "config", receipts[0], file_digest(receipts[0]))
+        self.assertEqual(self.calls, ["put", "put"])
+        self.assertEqual(file_digest(self.remote), bundle_hash)
+        self.assertEqual(result["receipt_remote"]["SHA256"], file_digest(receipts[0]))
 
     def test_private_receipt_is_required(self):
         with patch("offsite.move", side_effect=self.move): receipt = self.publish()

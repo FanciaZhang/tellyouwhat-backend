@@ -262,7 +262,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch", "publish-receipt"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
@@ -291,6 +291,9 @@ def main():
                 from offsite import publish
                 if not args.backup: raise OperationError("publish requires a backup filename")
                 result = publish(runtime, args.transfer_bin, args.cos_config, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
+            elif args.operation == "publish-receipt":
+                from offsite import publish_receipt
+                result = publish_receipt(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)
             elif args.operation == "fetch":
                 from offsite import fetch
                 result = fetch(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)

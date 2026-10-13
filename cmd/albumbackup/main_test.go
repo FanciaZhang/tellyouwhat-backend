@@ -175,3 +175,43 @@ func TestTransferBoundariesAndFailedDownloadCleanup(t *testing.T) {
 		t.Fatal("wrong bucket accepted")
 	}
 }
+
+func TestSignedReceiptTransferUsesSamePinnedVerification(t *testing.T) {
+	c, r, data := fixture(t)
+	r.Key = strings.TrimSuffix(r.Key, ".enc") + ".receipt.json"
+	r.Bucket = c.Bucket
+	r.Region = c.Region
+	reads := 0
+	tr := roundTrip(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Has("versioning") {
+			return response(req, 200, []byte(`<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>`), ""), nil
+		}
+		if req.Method == "PUT" {
+			body, _ := io.ReadAll(req.Body)
+			res := response(req, 200, nil, "receipt-version")
+			res.Header.Set("x-cos-hash-crc64ecma", strconv.FormatUint(crc64.Checksum(body, crc64.MakeTable(crc64.ECMA)), 10))
+			return res, nil
+		}
+		reads++
+		if req.URL.Query().Get("versionId") != "receipt-version" {
+			t.Fatal("unversioned receipt read")
+		}
+		return response(req, 200, data, "receipt-version"), nil
+	})
+	if _, err := transfer(context.Background(), c, r, tr); err != nil || reads != 1 {
+		t.Fatal("receipt not verified", err)
+	}
+	never := roundTrip(func(*http.Request) (*http.Response, error) {
+		t.Fatal("invalid receipt reached provider")
+		return nil, nil
+	})
+	r.Bytes = 65537
+	if _, err := transfer(context.Background(), c, r, never); err == nil {
+		t.Fatal("oversized receipt accepted")
+	}
+	r.Bytes = int64(len(data))
+	r.Bucket = "wrong-1250000000"
+	if _, err := transfer(context.Background(), c, r, never); err == nil {
+		t.Fatal("receipt uploaded to different bucket")
+	}
+}
