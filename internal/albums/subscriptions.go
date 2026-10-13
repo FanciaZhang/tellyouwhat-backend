@@ -86,9 +86,13 @@ func NewAlbumSubscriptionResolver(verifier *appstore.TransactionVerifier, client
 	return &AlbumSubscriptionResolver{verifier, client, environment, now}, nil
 }
 
-func transactionBelongsToAccount(t appstore.Transaction, owner, environment string) bool {
+func transactionBelongsToAccount(t appstore.Transaction, owner, environment string, accountToken ...string) bool {
 	token, err := uuid.Parse(t.AppAccountToken)
-	return err == nil && token.String() == owner && strings.EqualFold(token.String(), t.AppAccountToken) &&
+	matches := token.String() == owner
+	if len(accountToken) == 1 && validOwner(accountToken[0]) {
+		matches = matches || token.String() == accountToken[0]
+	}
+	return err == nil && matches && strings.EqualFold(token.String(), t.AppAccountToken) &&
 		t.Payment.OwnershipType == "PURCHASED" && strings.EqualFold(t.Environment, environment) &&
 		subscriptionCapacity(t.ProductID) > 0 && t.SignedAt.UnixMilli() > 0 &&
 		t.StartedAt.UnixMilli() > 0 && t.Payment.PurchasedAt.UnixMilli() > 0 &&
@@ -96,7 +100,7 @@ func transactionBelongsToAccount(t appstore.Transaction, owner, environment stri
 		len(t.OriginalTransactionID) > 0 && len(t.OriginalTransactionID) <= 128 && len(t.TransactionID) > 0 && len(t.TransactionID) <= 128
 }
 
-func (r *AlbumSubscriptionResolver) Resolve(ctx context.Context, owner, signed string) (VerifiedAlbumSubscription, error) {
+func (r *AlbumSubscriptionResolver) Resolve(ctx context.Context, owner, signed string, accountToken ...string) (VerifiedAlbumSubscription, error) {
 	if r == nil || !validOwner(owner) || signed == "" || len(signed) > 1<<20 {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionVerification
 	}
@@ -104,15 +108,15 @@ func (r *AlbumSubscriptionResolver) Resolve(ctx context.Context, owner, signed s
 	if err != nil {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionVerification
 	}
-	if !transactionBelongsToAccount(submitted, owner, r.environment) {
+	if !transactionBelongsToAccount(submitted, owner, r.environment, accountToken...) {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionBinding
 	}
-	return r.resolveCurrent(ctx, owner, submitted.OriginalTransactionID, submitted.TransactionID)
+	return r.resolveCurrent(ctx, owner, submitted.OriginalTransactionID, submitted.TransactionID, accountToken...)
 }
 
 // Only server-owned anchors or a separately verified incoming JWS reach this
 // method. An HTTP caller cannot choose the owner or original subscription chain.
-func (r *AlbumSubscriptionResolver) resolveCurrent(ctx context.Context, owner, originalID, transactionID string) (VerifiedAlbumSubscription, error) {
+func (r *AlbumSubscriptionResolver) resolveCurrent(ctx context.Context, owner, originalID, transactionID string, accountToken ...string) (VerifiedAlbumSubscription, error) {
 	if r == nil || !validOwner(owner) || originalID == "" || len(originalID) > 128 || transactionID == "" || len(transactionID) > 128 {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionVerification
 	}
@@ -120,10 +124,10 @@ func (r *AlbumSubscriptionResolver) resolveCurrent(ctx context.Context, owner, o
 	if err != nil {
 		return VerifiedAlbumSubscription{}, ErrSubscriptionUnavailable
 	}
-	return r.resolveStatuses(owner, originalID, statuses)
+	return r.resolveStatuses(owner, originalID, statuses, accountToken...)
 }
 
-func (r *AlbumSubscriptionResolver) resolveStatuses(owner, originalID string, statuses []appstore.SubscriptionStatus) (VerifiedAlbumSubscription, error) {
+func (r *AlbumSubscriptionResolver) resolveStatuses(owner, originalID string, statuses []appstore.SubscriptionStatus, accountToken ...string) (VerifiedAlbumSubscription, error) {
 	var latest VerifiedAlbumSubscription
 	now := r.now().UTC()
 	for _, status := range statuses {
@@ -134,7 +138,7 @@ func (r *AlbumSubscriptionResolver) resolveStatuses(owner, originalID string, st
 		if t.OriginalTransactionID != originalID {
 			continue
 		}
-		if !transactionBelongsToAccount(t, owner, r.environment) {
+		if !transactionBelongsToAccount(t, owner, r.environment, accountToken...) {
 			return VerifiedAlbumSubscription{}, ErrSubscriptionBinding
 		}
 		if t.IsUpgraded {
@@ -204,6 +208,7 @@ func albumRetentionDeadline(expiry time.Time) time.Time {
 }
 
 type AlbumCloudAccount struct {
+	AppAccountToken       string     `json:"appAccountToken"`
 	AccountID             string     `json:"accountID"`
 	State                 string     `json:"state"`
 	ProductID             string     `json:"productID,omitempty"`
@@ -220,6 +225,7 @@ type AlbumCloudAccount struct {
 }
 
 type AlbumSubscriptionRepository interface {
+	SubscriptionOwner(context.Context, string) (string, error)
 	CloudAccount(context.Context, string, time.Time) (AlbumCloudAccount, error)
 	ApplySubscription(context.Context, string, int64, VerifiedAlbumSubscription, time.Time) (AlbumCloudAccount, error)
 }
@@ -248,7 +254,7 @@ func (s *AlbumSubscriptionService) Sync(ctx context.Context, owner, signed strin
 	if err != nil {
 		return AlbumCloudAccount{}, err
 	}
-	v, err := s.resolver.Resolve(ctx, owner, signed)
+	v, err := s.resolver.Resolve(ctx, owner, signed, before.AppAccountToken)
 	if err != nil {
 		return AlbumCloudAccount{}, err
 	}

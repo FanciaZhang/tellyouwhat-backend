@@ -16,7 +16,11 @@ func (s *AlbumSubscriptionService) refreshOne(ctx context.Context, repository *M
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	v, err := s.resolver.resolveCurrent(requestCtx, claim.Owner, claim.Original, claim.Transaction)
+	before, err := repository.CloudAccount(requestCtx, claim.Owner, s.now().UTC())
+	var v VerifiedAlbumSubscription
+	if err == nil {
+		v, err = s.resolver.resolveCurrent(requestCtx, claim.Owner, claim.Original, claim.Transaction, before.AppAccountToken)
+	}
 	if err == nil {
 		err = repository.finishSubscriptionRefresh(requestCtx, claim, v, s.now().UTC())
 	}

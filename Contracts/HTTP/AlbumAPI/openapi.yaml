@@ -775,6 +775,10 @@ components:
         revision: {type: integer, format: int64, minimum: 0}
         expiresAt: {type: string, format: date-time}
         retentionDeadline: {type: string, format: date-time}
+        appAccountToken:
+          type: string
+          format: uuid
+          description: Server-issued StoreKit purchase binding; independent of the media account ID. Older transactions can retain accountID until explicitly migrated.
         purchasesEnabled: {type: boolean}
         verificationExpiresAt: {type: string, format: date-time}
         verificationPending: {type: boolean}

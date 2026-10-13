@@ -4,6 +4,26 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("subscription response preserves purchase binding separately from media account identity")
+    func subscriptionIdentity() async throws {
+        let token = "c541c2c4-9a23-5f20-a493-a201b6123d90"
+        for stable in [false, true] {
+            var payload: [String: Any] = ["accountID": Self.uploadID, "state": "none", "quotaBytes": 0,
+                "usedBytes": 0, "reservedBytes": 0, "availableBytes": 0, "revision": 0, "purchasesEnabled": true]
+            if stable { payload["appAccountToken"] = token }
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+                #expect(request.method == "GET" && request.path == "/v1/albums/subscription" && request.body.isEmpty)
+                return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(data))
+            })
+            let response = try await client.getAlbumSubscription()
+            guard case .ok(let value) = response else { Issue.record("Unexpected subscription response"); return }
+            let account = try value.body.json
+            #expect(account.accountID == Self.uploadID)
+            #expect(account.appAccountToken == (stable ? token : nil))
+        }
+    }
+
     @Test("push registration is session scoped and preserves explicit disable")
     func pushRegistration() async throws {
         let recorder = AlbumRequestRecorder()

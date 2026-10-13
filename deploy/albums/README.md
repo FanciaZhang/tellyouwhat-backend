@@ -162,3 +162,11 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 `ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED=false` 与派生临时清理独立；启用需要迁移 0057。调度只处理已受理注销且全部写入已收敛的账户，复用固定版本/分片计划，最后重新列举六个区域并结算媒体索引和额度。调度期限持久化，错误退避，崩溃可重领；已有对象操作租约仍约束每个删除动作。日志只有计数，没有账户、对象键或供应商错误内容。
 
 当前测试环境没有对象永久删除权限，不应打开此开关。开放前仍须完成受限删除身份及实际权限验收、最终身份与订阅恢复规则、备份删除、HTTP/UI 和完整流程；媒体结算不表示账户删除完成。本轮隔离验证见 `docs/evidence/albums-account-media-erasure-worker-2026-10-13.json`，没有部署或真实删除。
+
+### 订阅身份与媒体账户分离
+
+迁移 0058 为 Apple 登录身份生成独立的 StoreKit UUIDv5，命名空间为 URL、名称为相册专用前缀和已验证身份的 SHA-256。数据库生成列不可由客户端赋值，并建立唯一索引。订阅响应提供 `appAccountToken`；原生新购买使用该字段，服务端交易核验、通知归属、后台刷新和到期前全部购买记录核对同时接受它。媒体账户 ID 仍为独立随机 UUID；相同 Apple 身份重新注册时能重算订阅标识，不复用媒体目录或缓存标识。
+
+已有账户 UUID 绑定的旧交易仍仅属于其原账户，不接受客户端转移。旧式交易的 Apple 重新绑定、最终身份/订阅/备份擦除尚未完成，完整账户注销不得开放。本阶段测试通过直接清除隔离数据库中的合成账户模拟“旧记录已不存在”的边界，不能替代注销执行器或真实 Sandbox 恢复购买验收。旧 App 仍可能使用旧字段；发布前必须完成客户端/服务端协同升级。
+
+Apple 字段与绑定规则依据：[appAccountToken](https://developer.apple.com/documentation/appstoreserverapi/appaccounttoken)、[Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token)。本轮未调用重新绑定接口，也没有部署或修改真实订阅。

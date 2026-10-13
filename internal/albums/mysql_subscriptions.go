@@ -38,8 +38,8 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 		return result, ErrOwner
 	}
 	var rawLimit int64
-	if err := tx.QueryRowContext(ctx, `SELECT quota_bytes,used_bytes,reserved_bytes,subscription_revision FROM album_storage_accounts WHERE owner_id=?`, owner).
-		Scan(&rawLimit, &result.UsedBytes, &result.ReservedBytes, &result.Revision); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT s.quota_bytes,s.used_bytes,s.reserved_bytes,s.subscription_revision,COALESCE(a.storekit_account_token,s.owner_id) FROM album_storage_accounts s LEFT JOIN album_accounts a ON a.account_id=s.owner_id WHERE s.owner_id=?`, owner).
+		Scan(&rawLimit, &result.UsedBytes, &result.ReservedBytes, &result.Revision, &result.AppAccountToken); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return result, ErrOwner
 		}
@@ -244,7 +244,7 @@ func (r *MySQLUploads) applySubscriptionInTransaction(ctx context.Context, tx *s
 }
 
 func (r *MySQLUploads) CheckSubscriptionSchema(ctx context.Context) error {
-	for _, query := range []string{`SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + objectPurgeColumns + ` FROM album_object_purges LIMIT 0`, `SELECT ` + reminderColumns + `,delivered_at FROM album_retention_reminders LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + `,next_check_at,refresh_token,refresh_until,refresh_failures FROM album_cloud_subscriptions LIMIT 0`, `SELECT environment,notification_id,payload_digest,owner_id,original_transaction_id,signed_at,processed_at FROM album_subscription_notifications LIMIT 0`} {
+	for _, query := range []string{`SELECT storekit_account_token FROM album_accounts LIMIT 0`, `SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + objectPurgeColumns + ` FROM album_object_purges LIMIT 0`, `SELECT ` + reminderColumns + `,delivered_at FROM album_retention_reminders LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + `,next_check_at,refresh_token,refresh_until,refresh_failures FROM album_cloud_subscriptions LIMIT 0`, `SELECT environment,notification_id,payload_digest,owner_id,original_transaction_id,signed_at,processed_at FROM album_subscription_notifications LIMIT 0`} {
 		rows, err := r.db.QueryContext(ctx, query)
 		if err != nil {
 			return err
@@ -254,4 +254,33 @@ func (r *MySQLUploads) CheckSubscriptionSchema(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// The caller supplies a token from a verified Apple JWS, never a client owner ID.
+// Legacy purchases use their original account UUID until explicitly migrated.
+func (r *MySQLUploads) SubscriptionOwner(ctx context.Context, token string) (string, error) {
+	if !validOwner(token) {
+		return "", ErrSubscriptionBinding
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT owner_id FROM album_storage_accounts WHERE owner_id=? UNION SELECT s.owner_id FROM album_accounts a JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.storekit_account_token=? LIMIT 2`, token, token)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var owner string
+	for rows.Next() {
+		if owner != "" {
+			return "", ErrSubscriptionBinding
+		}
+		if err = rows.Scan(&owner); err != nil {
+			return "", err
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return "", err
+	}
+	if !validOwner(owner) {
+		return "", ErrSubscriptionBinding
+	}
+	return owner, nil
 }

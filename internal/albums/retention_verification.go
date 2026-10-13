@@ -138,6 +138,10 @@ func (r *MySQLUploads) commitReminderVerification(ctx context.Context, claim alb
 
 // Query all known purchase chains and merge overlapping provider responses.
 func (s *AlbumSubscriptionService) resolveKnownSubscriptions(ctx context.Context, owner string, anchors []reminderSubscriptionAnchor) ([]VerifiedAlbumSubscription, error) {
+	account, err := s.repository.CloudAccount(ctx, owner, s.now().UTC())
+	if err != nil {
+		return nil, err
+	}
 	known := make(map[string]bool, len(anchors))
 	for _, anchor := range anchors {
 		known[anchor.Original] = true
@@ -155,21 +159,21 @@ func (s *AlbumSubscriptionService) resolveKnownSubscriptions(ctx context.Context
 			}
 			// A newly discovered purchase belonging to this owner must be reconciled
 			// before an old account snapshot can authorize retention work.
-			if !known[transaction.OriginalTransactionID] && transactionBelongsToAccount(transaction, owner, s.resolver.environment) {
+			if !known[transaction.OriginalTransactionID] && transactionBelongsToAccount(transaction, owner, s.resolver.environment, account.AppAccountToken) {
 				return nil, ErrSubscriptionConflict
 			}
 			if known[transaction.OriginalTransactionID] {
 				byChain[transaction.OriginalTransactionID] = append(byChain[transaction.OriginalTransactionID], status)
 			}
 		}
-		if _, err := s.resolver.resolveStatuses(owner, anchor.Original, statuses); err != nil {
+		if _, err := s.resolver.resolveStatuses(owner, anchor.Original, statuses, account.AppAccountToken); err != nil {
 			return nil, err
 		}
 	}
 	// A later response may reveal a renewal of an earlier queried chain.
 	verified := make([]VerifiedAlbumSubscription, 0, len(anchors))
 	for _, anchor := range anchors {
-		proof, err := s.resolver.resolveStatuses(owner, anchor.Original, byChain[anchor.Original])
+		proof, err := s.resolver.resolveStatuses(owner, anchor.Original, byChain[anchor.Original], account.AppAccountToken)
 		if err != nil {
 			return nil, err
 		}

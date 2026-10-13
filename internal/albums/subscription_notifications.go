@@ -54,7 +54,11 @@ func (s *AlbumSubscriptionService) receiveNotification(ctx context.Context, sign
 		if err != nil || !validOwner(token.String()) || !transactionBelongsToAccount(t, token.String(), s.resolver.environment) {
 			return ErrSubscriptionBinding
 		}
-		receipt.Owner, receipt.Original, transactionID = token.String(), t.OriginalTransactionID, t.TransactionID
+		receipt.Owner, err = s.repository.SubscriptionOwner(ctx, token.String())
+		if err != nil {
+			return err
+		}
+		receipt.Original, transactionID = t.OriginalTransactionID, t.TransactionID
 		var revokedAt int64
 		if t.RevokedAt != nil {
 			revokedAt = t.RevokedAt.UnixMilli()
@@ -80,7 +84,7 @@ func (s *AlbumSubscriptionService) receiveNotification(ctx context.Context, sign
 		if err != nil {
 			return err
 		}
-		v, err := s.resolver.resolveCurrent(ctx, receipt.Owner, receipt.Original, transactionID)
+		v, err := s.resolver.resolveCurrent(ctx, receipt.Owner, receipt.Original, transactionID, before.AppAccountToken)
 		if err != nil {
 			return err
 		}
