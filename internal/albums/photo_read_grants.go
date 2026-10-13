@@ -2,6 +2,7 @@ package albums
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -47,6 +48,11 @@ func (s *UploadService) PhotoPreviewReadGrant(ctx context.Context, owner, versio
 		return PhotoPreviewReadGrant{}, ErrNotFound
 	}
 	record, err := repository.PhotoWrite(ctx, owner, versionID, preset)
+	// Publication precedes preview rendering. The owned original exists even
+	// when the worker has not created its derivative receipt yet.
+	if errors.Is(err, ErrNotFound) {
+		return PhotoPreviewReadGrant{}, ErrPhotoWriteUncertain
+	}
 	if err != nil {
 		return PhotoPreviewReadGrant{}, err
 	}

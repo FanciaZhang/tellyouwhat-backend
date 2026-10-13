@@ -18,11 +18,12 @@ import (
 
 type previewReadRepository struct {
 	*readRepository
-	record PhotoWriteRecord
+	record  PhotoWriteRecord
+	missing bool
 }
 
 func (r *previewReadRepository) PhotoWrite(_ context.Context, owner, version string, preset PhotoPreset) (PhotoWriteRecord, error) {
-	if owner != r.owner || version != r.version.VersionID || preset != PhotoDailyJPEG {
+	if r.missing || owner != r.owner || version != r.version.VersionID || preset != PhotoDailyJPEG {
 		return PhotoWriteRecord{}, ErrNotFound
 	}
 	return r.record, nil
@@ -50,7 +51,7 @@ func previewReadFixture(t *testing.T) (*UploadService, *previewReadRepository, *
 	t.Helper()
 	service, repo, signer := readFixture(t)
 	record := PhotoWriteRecord{VersionID: repo.version.VersionID, ManifestDigest: repo.version.ManifestDigest, Spec: PhotoWriteSpec{OwnerID: repo.owner, AttemptID: uuid.NewString(), Preset: PhotoDailyJPEG, SizeBytes: 123, SHA256: strings.Repeat("a", 64), Width: 800, Height: 600}, ObjectVersion: "preview+/=version"}
-	r := &previewReadRepository{repo, record}
+	r := &previewReadRepository{readRepository: repo, record: record}
 	s := &previewReadSigner{readSigner: signer}
 	service.repository = r
 	service.objects = s
@@ -238,5 +239,35 @@ func TestPhotoPreviewLiveStillNeverAuthorizesReplacementAndVideoIsRejected(t *te
 				}
 			}
 		})
+	}
+}
+
+func TestPhotoPreviewPendingDoesNotHideMissingOriginal(t *testing.T) {
+	s, r, signer := previewReadFixture(t)
+	r.missing = true
+	router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", r.owner}}, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		version string
+		status  int
+		code    string
+	}{
+		{r.version.VersionID, 409, "photo_preview_not_ready"},
+		{uuid.NewString(), 404, "asset_version_not_found"},
+	} {
+		response := httptest.NewRecorder()
+		path := "https://albums.example/v1/albums/library/versions/" + tc.version + "/photo-previews/daily_jpeg_v1/read-grant"
+		router.ServeHTTP(response, httptest.NewRequest("POST", path, nil))
+		var body struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(response.Body.Bytes(), &body) != nil || response.Code != tc.status || body.Code != tc.code {
+			t.Fatal("incorrect preview availability", response.Code, body.Code)
+		}
+	}
+	if signer.calls != 0 {
+		t.Fatal("unready preview signed")
 	}
 }

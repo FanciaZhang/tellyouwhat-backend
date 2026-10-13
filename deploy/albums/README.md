@@ -258,4 +258,9 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 受理与撤回共享身份/账户锁；撤回仅吊销原会话和该会话推送，不关闭其他设备。原会话消失时核对独立删除日志，匹配已受理记录则仍返回受理回执，不把访问记录擦除误认为尚未受理。Gateway 两个入口继续关闭，无新增迁移、权限或部署。隔离数据库竞态/回滚和 19 项 Swift 合约通过，见 `docs/evidence/albums-deletion-withdrawal-backend-2026-10-14.json`。
 
-原生两进程联调：相册仓库 `scripts/test-deletion-roundtrip.py` 启动隔离 MySQL/Redis，并显式运行 `TestMySQLAccountDeletionNativeBridge`。该测试专用 loopback HTTP 服务复用真实路由与账户事务，合成凭据只写私有目录；在提交前后注入 503，让原生 App 用真实钥匙串跨进程恢复。iOS 26.5、18.6 分别通过两个独立进程及后端 race 状态核对，确认受理重放、撤回重放、迟到请求拒绝及其他设备访问不变。仅路由适配在测试端，不修改生产 TLS 或 Gateway 开关；没有部署、真实 Apple 登录或最终身份/媒体/备份擦除。结果见 `docs/evidence/albums-deletion-native-roundtrip-2026-10-14.json`。
+原生两进程联调：相册仓库 `scripts/test-native-roundtrip.py` 启动隔离 MySQL/Redis，并显式运行 `TestMySQLAccountDeletionNativeBridge`。该测试专用 loopback HTTP 服务复用真实路由与账户事务，合成凭据只写私有目录；在提交前后注入 503，让原生 App 用真实钥匙串跨进程恢复。iOS 26.5、18.6 分别通过两个独立进程及后端 race 状态核对，确认受理重放、撤回重放、迟到请求拒绝及其他设备访问不变。仅路由适配在测试端，不修改生产 TLS 或 Gateway 开关；没有部署、真实 Apple 登录或最终身份/媒体/备份擦除。结果见 `docs/evidence/albums-deletion-native-roundtrip-2026-10-14.json`。
+
+
+照片原生往返：同一脚本显式选择 `--scenario cloud-photo`，以 `albums_live` 构建标签运行 `TestLiveCOSNativePhotoPipeline`。它只对新生成的合成 JPEG 使用真实 COS/CI，控制服务、账户与权益在隔离 MySQL 中；不调用媒体删除或改变部署开关。固定版本原件全量回读、两个预览任务与额度结算均须通过，同时验证原生写入系统副本、原件恢复和重开不重复创建。失败先检查运行目录 intent 与进度，避免盲目重复上传。测试对象保留。
+
+照片发布早于预览完成：原件存在但尚无预览记录时返回 `409 photo_preview_not_ready`，不再误报 `404 asset_version_not_found`；原件缺失、跨账户读取仍拒绝。原生生成客户端需接受 RFC 3339 的可选小数秒。验证及范围见 `docs/evidence/albums-native-cloud-photo-2026-10-14.json`；不代表真实 Apple 登录/购买、远端控制 API 或原件删除验收。

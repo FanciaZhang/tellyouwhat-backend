@@ -1,0 +1,573 @@
+{
+  "date": "2026-10-14",
+  "scope": "Native JPEG pipeline with actual COS/CI; isolated local MySQL, synthetic accounts and subscription entitlement; no deletion",
+  "changes": [
+    "Accept whole and fractional RFC 3339 timestamps in generated native API clients.",
+    "Return explicit preview-not-ready for owned original without derivative receipt; retain restore queue with retry guidance.",
+    "Generalize test harness for real photo pipeline and existing deletion recovery scenario."
+  ],
+  "cloudRoundtrip": {
+    "success": true,
+    "phases": [
+      {
+        "name": "native-1",
+        "exitCode": 0,
+        "summary": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                "deviceName": "告你相册 批量挑片 20261013",
+                "modelName": "iPhone 17",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "Albums · Built with macOS 27.0",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791911468.992,
+          "passedTests": 1,
+          "result": "Passed",
+          "runtimeWarnings": [],
+          "skippedTests": 0,
+          "startTime": 1791911456.719,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - Albums",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      },
+      {
+        "name": "native-2",
+        "exitCode": 0,
+        "summary": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                "deviceName": "告你相册 批量挑片 20261013",
+                "modelName": "iPhone 17",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "Albums · Built with macOS 27.0",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791911472.364,
+          "passedTests": 1,
+          "result": "Passed",
+          "runtimeWarnings": [],
+          "skippedTests": 0,
+          "startTime": 1791911469.671,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - Albums",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    ],
+    "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+    "scenario": "cloud-photo",
+    "backend": {
+      "exitCode": 0,
+      "passed": true
+    },
+    "servicesStopped": true
+  },
+  "backendVerification": {
+    "counts": {
+      "originalsVerified": 1,
+      "previewsStored": 2
+    },
+    "original": {
+      "resourceID": "resource_0",
+      "key": "albums/originals/42d19c75-28c7-4bdc-9668-86cc82713509/1acc90f3-1fb5-48c4-b6d2-7b68d5722c1f/resource_0",
+      "versionID": "MTg0NDQ5NTIxNjIyNDcyNzQyOTc",
+      "sizeBytes": 1735889,
+      "sha256": "ff2dd347af598ba72d65fb19b2db063e92f6c0314632d3b1b1ff1e433df2e473"
+    },
+    "passed": true,
+    "reservedBytes": 0,
+    "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+    "usedBytes": 2524322,
+    "versionID": "1acc90f3-1fb5-48c4-b6d2-7b68d5722c1f"
+  },
+  "nativeVerification": {
+    "duplicatesAfterRestart": 0,
+    "originalBytes": 1735889,
+    "originalSHA256": "ff2dd347af598ba72d65fb19b2db063e92f6c0314632d3b1b1ff1e433df2e473",
+    "passed": true,
+    "sourceRetained": true,
+    "systemAssetsAdded": 3,
+    "versionID": "1acc90f3-1fb5-48c4-b6d2-7b68d5722c1f"
+  },
+  "appProcessIDs": {
+    "native-1": [
+      "95945"
+    ],
+    "native-2": [
+      "96015"
+    ]
+  },
+  "deletionHarnessRegression": {
+    "success": true,
+    "phases": [
+      {
+        "name": "native-1",
+        "exitCode": 0,
+        "summary": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                "deviceName": "告你相册 批量挑片 20261013",
+                "modelName": "iPhone 17",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "Albums · Built with macOS 27.0",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791911516.97,
+          "passedTests": 1,
+          "result": "Passed",
+          "runtimeWarnings": [],
+          "skippedTests": 0,
+          "startTime": 1791911514.617,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - Albums",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      },
+      {
+        "name": "native-2",
+        "exitCode": 0,
+        "summary": {
+          "devicesAndConfigurations": [
+            {
+              "device": {
+                "architecture": "arm64",
+                "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                "deviceName": "告你相册 批量挑片 20261013",
+                "modelName": "iPhone 17",
+                "osBuildNumber": "23F77",
+                "osVersion": "26.5",
+                "platform": "iOS Simulator"
+              },
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "passedTests": 1,
+              "skippedTests": 0,
+              "testPlanConfiguration": {
+                "configurationId": "1",
+                "configurationName": "Test Scheme Action"
+              }
+            }
+          ],
+          "environmentDescription": "Albums · Built with macOS 27.0",
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "finishTime": 1791911519.671,
+          "passedTests": 1,
+          "result": "Passed",
+          "runtimeWarnings": [],
+          "skippedTests": 0,
+          "startTime": 1791911517.605,
+          "statistics": [],
+          "testFailures": [],
+          "title": "Test - Albums",
+          "topInsights": [],
+          "totalTestCount": 1
+        }
+      }
+    ],
+    "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+    "scenario": "deletion",
+    "backend": {
+      "exitCode": 0,
+      "passed": true
+    },
+    "servicesStopped": true
+  },
+  "nativeRegressions": {
+    "18": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+            "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+            "modelName": "iPhone 16",
+            "osBuildNumber": "22G86",
+            "osVersion": "18.6",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 50,
+          "skippedTests": 1,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1791911473.215,
+      "passedTests": 50,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 1,
+      "startTime": 1791911466.568,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "57% of duration",
+          "text": "3 longest test runs with outlier durations exceeding 0.40s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 51
+    },
+    "26": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+            "deviceName": "告你相册 批量挑片 20261013",
+            "modelName": "iPhone 17",
+            "osBuildNumber": "23F77",
+            "osVersion": "26.5",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 50,
+          "skippedTests": 1,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1791911605.708,
+      "passedTests": 50,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 1,
+      "startTime": 1791911601.182,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "60% of duration",
+          "text": "2 longest test runs with outlier durations exceeding 0.47s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 51
+    }
+  },
+  "skipReason": "Existing real deployed-server account probe requires separate explicit opt-in; not attempted in this isolated run.",
+  "goRegression": {
+    "race": true,
+    "topLevelPassed": 4,
+    "passedEvents": 15,
+    "failed": 0,
+    "vetPassed": true
+  },
+  "failedProbeAttempts": [
+    {
+      "run": "roundtrip-ifhm86wh",
+      "cause": "Initial library list decoding failed on fractional publication time.",
+      "result": {
+        "success": false,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 65,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 1,
+                  "passedTests": 0,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "finishTime": 1791910732.269,
+              "passedTests": 0,
+              "result": "Failed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791910710.994,
+              "statistics": [],
+              "testFailures": [
+                {
+                  "failureText": "failed: caught error: \"invalidResponse\"",
+                  "targetName": "AlbumsTests",
+                  "testIdentifier": 1,
+                  "testIdentifierString": "AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies()",
+                  "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies",
+                  "testName": "testUploadProcessPublishesAndSavesSystemCopies()"
+                }
+              ],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+        "scenario": "cloud-photo",
+        "servicesStopped": true
+      },
+      "retainedSyntheticOwner": "01eedb4c-5d51-4417-bbc1-4d033f06d1c5",
+      "retainedUploadVersion": "909e4597-6cbc-4e70-8cfa-5f83561c3fa2",
+      "lastUploadReceipt": "originals_verified",
+      "cloudAndSystemSourceNotDeleted": true
+    },
+    {
+      "run": "roundtrip-4p93skmf",
+      "cause": "Second diagnostic run captured the actual synthetic library JSON and confirmed fractional date decoding failure.",
+      "result": {
+        "success": false,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 65,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 1,
+                  "passedTests": 0,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "finishTime": 1791911105.309,
+              "passedTests": 0,
+              "result": "Failed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791911086.951,
+              "statistics": [],
+              "testFailures": [
+                {
+                  "failureText": "failed: caught error: \"invalidResponse\"",
+                  "targetName": "AlbumsTests",
+                  "testIdentifier": 1,
+                  "testIdentifierString": "AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies()",
+                  "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies",
+                  "testName": "testUploadProcessPublishesAndSavesSystemCopies()"
+                }
+              ],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+        "scenario": "cloud-photo",
+        "servicesStopped": true
+      },
+      "retainedSyntheticOwner": "6ea539df-3e2b-4799-870c-c0374b5eddbf",
+      "retainedUploadVersion": "17fbf438-ae38-452d-bfc4-cf9a7e422dc8",
+      "lastUploadReceipt": "originals_verified",
+      "cloudAndSystemSourceNotDeleted": true
+    },
+    {
+      "run": "roundtrip-j6_3z30k",
+      "cause": "Date fix passed; unrendered preview incorrectly returned asset_version_not_found.",
+      "result": {
+        "success": false,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 65,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 1,
+                  "passedTests": 0,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 1,
+              "finishTime": 1791911234.198,
+              "passedTests": 0,
+              "result": "Failed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791911214.573,
+              "statistics": [],
+              "testFailures": [
+                {
+                  "failureText": "failed: caught error: \"assetVersionNotFound\"",
+                  "targetName": "AlbumsTests",
+                  "testIdentifier": 1,
+                  "testIdentifierString": "AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies()",
+                  "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumCloudPhotoIntegrationTests/testUploadProcessPublishesAndSavesSystemCopies",
+                  "testName": "testUploadProcessPublishesAndSavesSystemCopies()"
+                }
+              ],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+        "scenario": "cloud-photo",
+        "servicesStopped": true
+      },
+      "retainedSyntheticOwner": "d6bb39f7-758e-4c84-9713-509693d9d278",
+      "retainedUploadVersion": "0fe7669e-f451-44a6-9135-0e4b896706ac",
+      "lastUploadReceipt": "originals_verified",
+      "cloudAndSystemSourceNotDeleted": true
+    }
+  ],
+  "otherFailures": [
+    {
+      "phase": "initial pending-regression",
+      "cause": "Test-only message assertion inserted in the wrong existing test; moved into pending-preview queue test. Final suites passed on both runtimes."
+    }
+  ],
+  "logSHA256": {
+    "roundtrip-jzmlecdj/backend.log": "3adfa249b0bdb4ed4f0c91f34ef9ac4c83216766e703b3c611c536258492066c",
+    "roundtrip-jzmlecdj/native-1.log": "beab669520547da18fca06785492a6598cdb9d7bcd28434e45d9a0b95d73a138",
+    "roundtrip-jzmlecdj/native-2.log": "cdb4d27f2dba0a43e27c0451b1ec81dff59a08483253d4d726c05a33621bbc87",
+    "roundtrip-_5pi93gj/backend.log": "b91b8b790be499b44bcae1f3764e8a3190c19283e8aad5283f950f423d8b2321",
+    "roundtrip-_5pi93gj/native-1.log": "d1edb3cff0f6e94d57c9d2f043765c93bbc4e97b0ebb90ce2c77992512bff4d4",
+    "roundtrip-_5pi93gj/native-2.log": "f990c75eede15f2c7ba4c7267db5883b3b98d5250f14f7188789aa4ae8bcc2bd",
+    "final-regression-18.log": "e765d261542bc38bdb27cb0b293f843c6d8c953e7b0c675a870263997c773946",
+    "final-regression-26.log": "636f8aae048a8b52def83d0d690f8eceb1b6e8111778f952a33a24d677a11f14",
+    "build-final.log": "537fe2e4aa1ea0752ccc929556068769882d08136b0b9a1ff5498605051f51e9"
+  },
+  "sourceSHA256": {
+    "app": {
+      "Albums.xcodeproj/project.pbxproj": "6182e6a672b974533d98429106855288a923333dd5604b4989ad043efbc8e406",
+      "Albums/Services/AlbumAccountAPI.swift": "6d2405eaf7c18eaa195a4ed81bb0c2fea35649863220d337f90d2f49e89e4c21",
+      "Albums/Services/AlbumLibraryAPI.swift": "f229338db17213514137e6b683d900044f037ce1f1eca250b911b9f64893b86b",
+      "Albums/Services/AlbumPushAPI.swift": "d0460fbbddfcad66a06c26b869ce2e1978d20de574d74cf67ad05f24832d0d43",
+      "Albums/Services/AlbumRestoreCoordinator.swift": "42daa67c7208642924d4b7c612f06fa1d03c205bd168a5a2b40f913a1aba6e11",
+      "Albums/Services/AlbumUploadFailure.swift": "88ed9be5a8b8e89d19db526a8721f63bb670cd8e10ef75b7b891773a550bb3db",
+      "AlbumsTests/AlbumCloudPhotoIntegrationTests.swift": "4b49cabcda4bf628227ee778ba8ef0e2b8743fac05d6ef913ae193566e187bf1",
+      "AlbumsTests/AlbumDeletionIntegrationTests.swift": "b0206ec2d17a8683199045c29eb35970c74b85c222098995fe7111a15fbaf4c4",
+      "AlbumsTests/AlbumLibraryAPITests.swift": "e5c1dc11c881b56db5ce9bc91af99ea1a01b4b5a853ab92f8ab86e349632b37d",
+      "AlbumsTests/AlbumRestoreCoordinatorTests.swift": "4302179093fbac1d506196af89d71fdd919d91427df6095a31bc2a2cfdd4f392",
+      "scripts/test-native-roundtrip.py": "6c37eef415c576168e17ca6ab2c8b596de63e1ae7025650413f9b6725011b31d"
+    },
+    "backend": {
+      "internal/albums/cos_native_pipeline_test.go": "fe89a4b4aff7ccee53b6cc717592f998c3d5cbfc12b86185ff609f27719f634e",
+      "internal/albums/photo_read_grants.go": "678fb855eabb91ecfa0aeb883e7d9146f33f1db677c4c55883f3c8d1bc3d0f0e",
+      "internal/albums/photo_read_grants_test.go": "ddc2f402d4546e10722568b0bfac88d7161abc24e7663c377fc304b256d445ca"
+    }
+  },
+  "limits": [
+    "Control requests use test-only loopback routing; COS media transfers use real HTTPS.",
+    "No real Apple authentication, StoreKit purchase, annual conversion, renewal or refund.",
+    "Only synthetic JPEG full pipeline; mixed video/Live Photo pipeline and physical-device behavior remain unverified.",
+    "No system original deletion, cloud object deletion, deployment, permission change or sales activation.",
+    "Synthetic media from successful and failed probes remain; temporary databases, fixture credentials and owned services were cleaned up.",
+    "Does not establish complete product, UI interaction, performance or six-month retention acceptance."
+  ]
+}
