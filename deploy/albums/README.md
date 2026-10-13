@@ -186,3 +186,18 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 最后一条待改绑回执提交前，新版会重新查询该账户的每一条已知购买链，核对当前签名交易全部使用稳定标识。查询遗漏、仍有旧标识、异常签名或新发现购买链都会保留待处理状态；新链先原子入队。最终事务重新核对账户订阅 revision、购买链集合、交易锚点、签名时间及任务回执；一分钟内的核验结果才可提交。两个执行者同时完成不同任务时，后完成者也必须满足完整核验条件，不能凭此前的局部快照结束最后一项。此检查复用现有默认关闭的改绑队列，不增加迁移、权限或进程。
 
 该检查证明改绑队列本次收尾所见的已知购买链一致，不构成最终身份/灾备擦除许可；之后收到通知仍会重新打开对应任务。完整账户注销仍须完成最终事务与备份策略，不能把旧回执长期作为删除依据。证据：`docs/evidence/albums-subscription-completion-2026-10-13.json`。
+
+
+### 相册加密快照与隔离恢复演练（未部署）
+
+通用 `deploy/tencent/ops_backup.py` 保持原控制数据白名单，不保存相册数据。新增 `deploy/albums/backup.py` 只导出经审核的 34 张 `album_*` 表，涵盖媒体索引、固定对象版本、账户关系、订阅、删除意图及未决写入。登录授权的加密字段、会话哈希等恢复所需状态也在加密快照内；明文运行配置、加密密钥和其他 App 表不进入快照。发现缺表、新增相册表或非 InnoDB 表时停止，不能静默丢失新业务数据。
+
+使用单次 `mysqldump --single-transaction` 导出，复用现有 AES-256-CBC/PBKDF2 加密与 HMAC 清单认证，在解密前核对密文摘要、数据库、相册专用范围及生成时间。采用独立 `ALBUM_BACKUP_ENCRYPTION_KEY` 和 0700 目录，真实配置参照 `backup.env.example`，文件权限 0600；独立密钥和原有凭据加密密钥仍需另行异地托管。不会因共享服务切换部署版本而替换显式指定的相册数据库配置。共享控制备份拒绝导入相册范围快照。
+
+命令接口：`backup.py backup|drill|prune --backend-dir <operations-root> --environment-file <private-albums-backup.env> --backup-dir <private-albums-vault> --mysql-bin-dir <MySQL-8.4-bin>`。`drill` 另需 `--backup <filename>`；只接受本工具的文件名，不接受线上恢复目标。共享主机执行须遵守仓库 `AGENTS.md` 的 ubuntu 所有者、受登记 producer 和操作锁要求，本文不表示已登记、部署或启用定时任务。
+
+演练在新建私有临时目录启动仅有 Unix socket 的 MySQL，恢复后比较各表行数及按主键顺序重新导出的行内容 SHA-256，包括 JSON 和二进制字段；然后停用恢复出的活动账户、会话、分享和推送。删除中的账户保持 deleting。全过程不启动 API/worker、不更改源库，结束后停止临时 MySQL 并删除临时数据。演练解压上限 32 GiB，超过时失败，不截断。
+
+本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照；损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。还未实现异地上传、独立删除日志、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
+
+验证见 `docs/evidence/albums-recovery-backup-2026-10-13.json`。
