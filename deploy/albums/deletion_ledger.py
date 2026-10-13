@@ -83,7 +83,7 @@ def restore_fences(runtime, sql, entries):
     batches = []
     for start in range(0, len(entries), 500):
         values = ",".join("('%s','%s',UNHEX('%s'),'%s')" % (a, r, h, d.replace("T", " ").removesuffix("Z")) for a, r, h, d in entries[start:start + 500])
-        batches.append("INSERT INTO recovery_deletions VALUES " + values + ";")
+        batches.append("INSERT INTO recovery_deletions(account_id,request_id,authorizing_session_sha256,requested_at) VALUES " + values + ";")
     insert = "\n".join(batches)
     script = """
 CREATE TEMPORARY TABLE recovery_deletions LIKE album_deletion_ledger;
@@ -100,7 +100,7 @@ INSERT INTO recovery_guard SELECT IF(EXISTS (
 ),0,1);
 INSERT INTO album_deletion_ledger SELECT n.* FROM recovery_deletions n LEFT JOIN album_deletion_ledger old ON old.account_id=n.account_id WHERE old.account_id IS NULL;
 INSERT INTO album_account_deletions(account_id,request_id,authorizing_session_sha256,requested_at)
- SELECT n.* FROM recovery_deletions n JOIN album_accounts a ON a.account_id=n.account_id LEFT JOIN album_account_deletions old ON old.account_id=n.account_id WHERE old.account_id IS NULL;
+ SELECT n.account_id,n.request_id,n.authorizing_session_sha256,n.requested_at FROM recovery_deletions n JOIN album_accounts a ON a.account_id=n.account_id LEFT JOIN album_account_deletions old ON old.account_id=n.account_id WHERE old.account_id IS NULL;
 UPDATE album_accounts a JOIN recovery_deletions n ON n.account_id=a.account_id SET a.state='deleting';
 -- Reopening binding jobs invalidates the full-set receipt in the same transaction.
 -- A restored receipt cannot authorize later erasure before Apple is rechecked.

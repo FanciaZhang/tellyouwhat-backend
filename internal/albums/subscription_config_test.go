@@ -29,7 +29,7 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 	keyFile := privateFile("album.p8", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
 	rootsFile := privateFile("test-root.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fixture.rootDER}))
 	baseline := map[string]string{"ALBUM_SUBSCRIPTIONS_ENABLED": "true", "ALBUM_APP_STORE_ISSUER_ID": uuid.NewString(), "ALBUM_APP_STORE_KEY_ID": "ALBUMSKEY1", "ALBUM_APP_STORE_KEY_FILE": keyFile, "ALBUM_APP_STORE_ROOTS_FILE": rootsFile}
-	for _, name := range []string{"disabled", "rebinding", "rebinding-invalid", "rebinding-without-verification", "test", "production", "production-id-missing", "flag-invalid", "issuer-invalid", "key-id-invalid", "key-unavailable", "key-oversized", "roots-invalid", "invalid-deployment"} {
+	for _, name := range []string{"disabled", "erasure", "erasure-invalid", "erasure-without-rebinding", "erasure-without-verification", "rebinding", "rebinding-invalid", "rebinding-without-verification", "test", "production", "production-id-missing", "flag-invalid", "issuer-invalid", "key-id-invalid", "key-unavailable", "key-oversized", "roots-invalid", "invalid-deployment"} {
 		t.Run(name, func(t *testing.T) {
 			values := map[string]string{}
 			for k, v := range baseline {
@@ -37,6 +37,20 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 			}
 			deployment, wantEnvironment, rejected := "test", "Sandbox", false
 			switch name {
+			case "erasure":
+				values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] = "true"
+				values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] = "true"
+			case "erasure-invalid":
+				values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] = "yes"
+				rejected = true
+			case "erasure-without-rebinding":
+				values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] = "true"
+				rejected = true
+			case "erasure-without-verification":
+				values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] = "true"
+				values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] = "true"
+				values["ALBUM_SUBSCRIPTIONS_ENABLED"] = "false"
+				rejected = true
 			case "rebinding":
 				values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] = "true"
 			case "rebinding-invalid":
@@ -91,7 +105,7 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 				}
 				return
 			}
-			if err != nil || config == nil || config.RebindingEnabled != (name == "rebinding") || config.Environment != wantEnvironment || config.SigningKey == nil || config.Roots == nil {
+			if err != nil || config == nil || config.RebindingEnabled != (name == "rebinding" || name == "erasure") || config.RecordErasureEnabled != (name == "erasure") || config.Environment != wantEnvironment || config.SigningKey == nil || config.Roots == nil {
 				t.Fatal("realm selection", err)
 			}
 			if value := fmt.Sprintf("%v %#v", *config, *config); strings.Contains(value, config.IssuerID) || strings.Contains(value, config.KeyID) || !strings.Contains(value, "redacted") {

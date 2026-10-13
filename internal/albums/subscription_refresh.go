@@ -59,6 +59,15 @@ func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, re
 				if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
 					slog.Info("album subscription rebinding batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
 				}
+				if err == nil && service.recordErasureEnabled {
+					erased, eraseErr := repository.runAccountRecordErasureBatch(ctx, 10, service.now)
+					if eraseErr != nil && ctx.Err() == nil {
+						slog.Warn("album account record erasure queue unavailable")
+					}
+					if erased > 0 {
+						slog.Info("album account records erased", "accounts", erased)
+					}
+				}
 				timer := time.NewTimer(5 * time.Second)
 				select {
 				case <-ctx.Done():

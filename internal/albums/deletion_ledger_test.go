@@ -64,7 +64,7 @@ func TestMySQLAccountDeletionLedgerMigrationBackfillsAndHasNoAccountFK(t *testin
 
 func TestGatewayAccountDeletionLedgerMissingSchemaRejectsStartup(t *testing.T) {
 	f := newAppleGatewayFixture(t)
-	if _, err := f.db.Exec(`ALTER TABLE album_deletion_ledger RENAME COLUMN requested_at TO hidden_requested_at`); err != nil {
+	if _, err := f.db.Exec(`ALTER TABLE album_deletion_ledger DROP CHECK album_records_erased_after_request, RENAME COLUMN requested_at TO hidden_requested_at`); err != nil {
 		t.Fatal(err)
 	}
 	g, err := NewGateway(context.Background(), f.config, nil)

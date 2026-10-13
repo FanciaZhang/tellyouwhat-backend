@@ -231,10 +231,11 @@ type AlbumSubscriptionRepository interface {
 }
 
 type AlbumSubscriptionService struct {
-	rebindingEnabled bool
-	repository       AlbumSubscriptionRepository
-	resolver         *AlbumSubscriptionResolver
-	now              func() time.Time
+	rebindingEnabled     bool
+	recordErasureEnabled bool
+	repository           AlbumSubscriptionRepository
+	resolver             *AlbumSubscriptionResolver
+	now                  func() time.Time
 }
 
 func NewAlbumSubscriptionService(repository AlbumSubscriptionRepository, resolver *AlbumSubscriptionResolver, now func() time.Time) (*AlbumSubscriptionService, error) {

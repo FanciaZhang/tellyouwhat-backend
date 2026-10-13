@@ -16,6 +16,7 @@ import (
 
 type AlbumSubscriptionConfig struct {
 	RebindingEnabled             bool
+	RecordErasureEnabled         bool
 	Environment, IssuerID, KeyID string
 	AppAppleID                   int64
 	SigningKey                   *ecdsa.PrivateKey
@@ -42,6 +43,13 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 	if rebinding != "" && rebinding != "false" && rebinding != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTION_REBINDING_ENABLED")
 	}
+	erasure := strings.TrimSpace(getenv("ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"))
+	if erasure != "" && erasure != "false" && erasure != "true" {
+		return nil, errors.New("invalid ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED")
+	}
+	if erasure == "true" && rebinding != "true" {
+		return nil, errors.New("album record erasure requires subscription rebinding")
+	}
 	enabled := strings.TrimSpace(getenv("ALBUM_SUBSCRIPTIONS_ENABLED"))
 	if enabled == "" || enabled == "false" {
 		if rebinding == "true" {
@@ -52,7 +60,7 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 	if enabled != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTIONS_ENABLED")
 	}
-	c := &AlbumSubscriptionConfig{RebindingEnabled: rebinding == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
+	c := &AlbumSubscriptionConfig{RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
 	issuer, err := uuid.Parse(c.IssuerID)
 	if err != nil || issuer.String() != c.IssuerID || !regexp.MustCompile(`^[A-Z0-9]{10}$`).MatchString(c.KeyID) || c.Environment == "" {
 		return nil, errors.New("invalid album App Store identity")
@@ -89,7 +97,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	if c == nil {
 		return nil, nil
 	}
-	if repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil ||
+	if repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil || (c.RecordErasureEnabled && !c.RebindingEnabled) ||
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
 		return nil, ErrSubscriptionUnavailable
 	}
@@ -112,6 +120,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	service, err := NewAlbumSubscriptionService(repository, resolver, time.Now)
 	if err == nil {
 		service.rebindingEnabled = c.RebindingEnabled
+		service.recordErasureEnabled = c.RecordErasureEnabled
 	}
 	return service, err
 }
