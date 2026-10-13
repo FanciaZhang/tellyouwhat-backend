@@ -26,6 +26,8 @@
 
 `python3 deploy/albums/cam_policy_test.py` 的 3 项检查只验证本地简单 allow-list 范围及 PassRole 目标，不模拟腾讯 CAM。真实探针通过 `ALBUM_CI_ROLE_PROBE=1 go run deploy/albums/ci_role_probe.go <合成小MP4> <输出目录>` 手动执行；固定测试桶和队列、每次随机键、不删除数据，不纳入自动测试。它仅使用后端测试身份，结果代表该身份与当前服务角色的组合权限。
 
+正式视频适配器另用显式付费测试验证：`ALBUM_CI_ADAPTER_PROBE=1 ALBUM_CI_ADAPTER_DIRECTORY=<合成素材目录> go test -tags albums_live ./internal/albums -run '^TestLiveCOSVideoAdapter$' -count=1 -v`。目录内必须有不超过 16 MiB 的合成 `source.mp4`；结果为固定版本下载的 `output.mp4` 和不含凭据的 `adapter-evidence.json`。测试只用固定开发桶、随机原件/输出键，读取已授权的本机两份凭据，不删除云对象，也不启用 worker。2026-10-13 已覆盖 29.97 fps 无声、60 fps 无声及 90° 旋转的 30 fps 双声道素材，正式 Inspect/Submit/Poll/Find/Verify 全部通过，详细范围与首次失败见 `docs/evidence/albums-ci-video-adapter-2026-10-13.json`。这不替代 App 登录、上传、系统写回和原件删除的端到端验收。
+
 权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；2026-10-12 已用合成字节验证真实暂存上传、普通 COPY 的固定版本归档/读取及哈希、分片初始化/上传/列举/合并；上传读暂存/写归档、后端越出相册前缀写入/读取桶 ACL 均返回 403。跨桶与分片复制仍待单独验证；永久删除拒绝及 CI 同桶目录边界的后续实测见本文对应记录。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
 
 ## 构建与接入

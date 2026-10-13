@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -44,10 +45,27 @@ func (s *COSObjects) InspectVideoSource(ctx context.Context, source SealedObject
 
 func (s *COSObjects) videoInfo(ctx context.Context, key, version string, size int64, output bool) (VideoProfile, error) {
 	result, response, err := s.client.CI.GetMediaInfo(ctx, key, nil, url.QueryEscape(version))
-	if err != nil || response == nil || response.StatusCode != http.StatusOK || response.Header.Get("x-cos-version-id") != version || result == nil || result.MediaInfo == nil {
+	if err != nil || response == nil || response.StatusCode != http.StatusOK || result == nil || result.MediaInfo == nil {
 		return VideoProfile{}, ErrVideoProcessing
 	}
-	return parseVideoInfo(result.MediaInfo, size, output)
+	// CI videoinfo can omit the object version header. Both callers HEAD the
+	// latest immutable key before this request; recheck after it as well. Keep
+	// the explicit versionId query and reject a contradictory header if present.
+	if observed := response.Header.Get("x-cos-version-id"); observed != "" && observed != version {
+		return VideoProfile{}, ErrVideoProcessing
+	}
+	profile, err := parseVideoInfo(result.MediaInfo, size, output)
+	if err != nil {
+		return VideoProfile{}, err
+	}
+	head, err := s.client.Object.Head(ctx, key, nil)
+	if head != nil && head.Body != nil {
+		defer head.Body.Close()
+	}
+	if err != nil || head == nil || head.StatusCode != http.StatusOK || head.Header.Get("x-cos-version-id") != version || head.ContentLength != size {
+		return VideoProfile{}, ErrVideoProcessing
+	}
+	return profile, nil
 }
 
 func ciNumber(value string) (float64, error) {
@@ -119,10 +137,12 @@ func parseVideoInfo(info *cos.MediaInfo, size int64, output bool) (VideoProfile,
 		width, height = height, width
 	}
 	p := VideoProfile{Width: width, Height: height, DurationMilliseconds: int64(math.Round(duration * 1000)), FrameRate: fps}
-	if len(info.Stream.Audio) == 1 {
+	// CI represents a silent movie as <Audio/> rather than omitting the node.
+	// Only the completely empty SDK record means no audio; partial records fail.
+	if len(info.Stream.Audio) == 1 && !reflect.ValueOf(info.Stream.Audio[0]).IsZero() {
 		audio := info.Stream.Audio[0]
 		p.AudioChannels, err = strconv.Atoi(audio.Channel)
-		if err != nil || p.AudioChannels < 1 || (output && audio.CodecName != "aac") {
+		if err != nil || p.AudioChannels < 1 || audio.CodecName == "" || (output && audio.CodecName != "aac") {
 			return VideoProfile{}, ErrVideoUnsupported
 		}
 	}
@@ -144,9 +164,12 @@ func (s *COSObjects) SubmitVideoOnce(ctx context.Context, j VideoJob) (string, e
 	}
 	bitrate := videoBitrate(j.Spec.Profile)
 	width, height := videoCanvas(j.Spec.Profile)
+	// Leave Fps unset to retain the input rate. CI rejects decimal strings
+	// (including 30.000000); rounding fractional rates would change the video.
+	// validateResult still requires the observed output rate to match the source.
 	transcode := &cos.Transcode{Container: &cos.Container{Format: "mp4"},
 		Video: &cos.Video{Codec: "H.264", Profile: "high", Width: strconv.Itoa(max(width, height)), Height: strconv.Itoa(min(width, height)), LongShortMode: "true",
-			Fps: strconv.FormatFloat(j.Spec.Profile.FrameRate, 'f', 6, 64), Pixfmt: "yuv420p", Bitrate: strconv.FormatInt(bitrate, 10),
+			Pixfmt: "yuv420p", Bitrate: strconv.FormatInt(bitrate, 10),
 			Maxrate: strconv.FormatInt(bitrate*3/2, 10), Bufsize: strconv.FormatInt(bitrate*2, 10)},
 		TransConfig: &cos.TransConfig{IsCheckReso: "true", ResoAdjMethod: "0", IsCheckVideoBitrate: "true", VideoBitrateAdjMethod: "0", IsCheckAudioBitrate: "true", AudioBitrateAdjMethod: "0", IsHdr2Sdr: "false"}}
 	if j.Spec.Profile.AudioChannels > 0 {
@@ -183,7 +206,7 @@ func (s *COSObjects) FindVideoSubmission(ctx context.Context, j VideoJob) (strin
 	seen := make(map[string]bool)
 	for range 5 {
 		result, response, err := s.client.CI.DescribeMediaJobs(ctx, &cos.DescribeMediaJobsOptions{QueueId: j.Spec.QueueID, Tag: "Transcode", Size: 100, NextToken: next,
-			StartCreationTime: j.SubmittedAt.Add(-2 * time.Minute).UTC().Format(time.RFC3339), EndCreationTime: j.SubmittedAt.Add(15 * time.Minute).UTC().Format(time.RFC3339)})
+			StartCreationTime: j.SubmittedAt.Add(-2 * time.Minute).UTC().Format("2006-01-02T15:04:05-0700"), EndCreationTime: j.SubmittedAt.Add(15 * time.Minute).UTC().Format("2006-01-02T15:04:05-0700")})
 		if err != nil || response == nil || response.StatusCode != http.StatusOK || result == nil || len(result.JobsDetail) > 100 {
 			return "", ErrVideoProcessing
 		}

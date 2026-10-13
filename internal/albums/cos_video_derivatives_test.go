@@ -78,16 +78,21 @@ func fakeMP4() []byte {
 
 func TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR(t *testing.T) {
 	j := videoJobFixture()
-	for _, bad := range []string{"", "source-version", "header-version", "hdr", "multi", "rate"} {
+	for _, bad := range []string{"", "no-header", "source-version", "changed-during-info", "size-changed-during-info", "header-version", "hdr", "multi", "rate"} {
 		t.Run(bad, func(t *testing.T) {
+			heads := 0
 			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
 				if r.Method == http.MethodHead {
+					heads++
 					v := j.Spec.Source.VersionID
-					if bad == "source-version" {
+					if bad == "source-version" || (bad == "changed-during-info" && heads > 1) {
 						v = "new-latest"
 					}
 					response := cosResponse(r, "", v)
 					response.ContentLength = j.Spec.Source.SizeBytes
+					if bad == "size-changed-during-info" && heads > 1 {
+						response.ContentLength++
+					}
 					return response, nil
 				}
 				if r.Method != "GET" || r.URL.Query().Get("versionId") != j.Spec.Source.VersionID || r.URL.Query().Get("ci-process") != "videoinfo" {
@@ -96,6 +101,8 @@ func TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR(t *testing.T) {
 				info := mediaInfoFixture(t, j.Spec.Source.SizeBytes, j.Spec.Profile)
 				v := j.Spec.Source.VersionID
 				switch bad {
+				case "no-header", "changed-during-info", "size-changed-during-info":
+					v = ""
 				case "header-version":
 					v = "other"
 				case "hdr":
@@ -109,8 +116,8 @@ func TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR(t *testing.T) {
 				return cosResponse(r, string(body), v), nil
 			})
 			profile, err := s.InspectVideoSource(context.Background(), j.Spec.Source)
-			if bad == "" {
-				if err != nil || profile != j.Spec.Profile {
+			if bad == "" || bad == "no-header" {
+				if err != nil || profile != j.Spec.Profile || heads != 2 {
 					t.Fatal("valid source rejected", err)
 				}
 			} else if err == nil {
@@ -142,7 +149,7 @@ func TestCOSVideoSubmitPreservesFPSAspectAndNeverRetriesLostPOST(t *testing.T) {
 			v := request.Operation.Transcode.Video
 			w, h := videoCanvas(profile)
 			if request.QueueId != j.Spec.QueueID || request.CallBack != "no" || request.Input.Object != j.Spec.Source.Key || request.Input.Url != "" ||
-				request.Operation.UserData != videoUserData(j) || v.Fps != fmt.Sprintf("%.6f", profile.FrameRate) || v.Width != fmt.Sprint(max(w, h)) || v.Height != fmt.Sprint(min(w, h)) ||
+				request.Operation.UserData != videoUserData(j) || v.Fps != "" || v.Width != fmt.Sprint(max(w, h)) || v.Height != fmt.Sprint(min(w, h)) ||
 				v.LongShortMode != "true" || v.Codec != "H.264" || request.Operation.Transcode.TransConfig.ResoAdjMethod != "0" || request.Operation.Transcode.TransConfig.IsHdr2Sdr != "false" ||
 				(profile.AudioChannels == 0) != (request.Operation.Transcode.Audio == nil) {
 				t.Fatal("unbounded or destructive transcode parameters")
@@ -164,6 +171,12 @@ func TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch(t *testing.T) 
 				reads++
 				if r.Method != "GET" || r.URL.Path != "/jobs" || r.URL.Query().Get("queueId") != j.Spec.QueueID {
 					t.Fatal("recovery performed a mutation")
+				}
+				for name, expected := range map[string]time.Time{"startCreationTime": j.SubmittedAt.Add(-2 * time.Minute), "endCreationTime": j.SubmittedAt.Add(15 * time.Minute)} {
+					parsed, err := time.Parse("2006-01-02T15:04:05-0700", r.URL.Query().Get(name))
+					if err != nil || !parsed.Equal(expected.Truncate(time.Second)) {
+						t.Fatal("invalid CI time filter", name)
+					}
 				}
 				detail := *videoDetail(j, "Submitted")
 				result := cos.DescribeMediaJobsResult{JobsDetail: []cos.MediaProcessJobDetail{detail}}
@@ -219,13 +232,14 @@ func TestCOSVideoPollingRejectsForeignAndFailedTasks(t *testing.T) {
 }
 
 func TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource(t *testing.T) {
-	for _, scenario := range []string{"valid", "truncated", "long", "wrong-version", "range", "compressed", "container", "fps", "duration", "audio", "source-changed"} {
+	for _, scenario := range []string{"valid", "no-info-header", "output-changed-during-info", "truncated", "long", "wrong-version", "range", "compressed", "container", "fps", "duration", "audio", "source-changed"} {
 		t.Run(scenario, func(t *testing.T) {
 			j := videoJobFixture()
 			data := fakeMP4()
 			key, _ := j.outputKey()
 			version := "output+version&/=#?"
 			heads := 0
+			outputHeads := 0
 			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
 				if r.Method == "HEAD" {
 					if r.URL.Path == "/"+j.Spec.Source.Key {
@@ -238,7 +252,12 @@ func TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource(t *testing.T) 
 						response.ContentLength = j.Spec.Source.SizeBytes
 						return response, nil
 					}
-					response := cosResponse(r, "", version)
+					outputHeads++
+					observed := version
+					if scenario == "output-changed-during-info" && outputHeads > 1 {
+						observed = "new-output"
+					}
+					response := cosResponse(r, "", observed)
 					response.ContentLength = int64(len(data))
 					return response, nil
 				}
@@ -255,7 +274,11 @@ func TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource(t *testing.T) 
 					case "audio":
 						profile.AudioChannels = 0
 					}
-					return mediaInfoResponse(t, r, int64(len(data)), profile, version), nil
+					observed := version
+					if scenario == "no-info-header" || scenario == "output-changed-during-info" {
+						observed = ""
+					}
+					return mediaInfoResponse(t, r, int64(len(data)), profile, observed), nil
 				}
 				body := append([]byte(nil), data...)
 				switch scenario {
@@ -279,14 +302,14 @@ func TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource(t *testing.T) 
 				return response, nil
 			})
 			result, err := s.VerifyVideoResult(context.Background(), j)
-			if scenario != "valid" {
+			if scenario != "valid" && scenario != "no-info-header" {
 				if err == nil || result.Object.Key != "" {
 					t.Fatal("invalid media published")
 				}
 				return
 			}
 			digest := sha256.Sum256(data)
-			if err != nil || result.Object.VersionID != version || result.Object.SizeBytes != int64(len(data)) || result.Object.SHA256 != hex.EncodeToString(digest[:]) || result.Profile != j.Spec.Profile || heads != 2 {
+			if err != nil || result.Object.VersionID != version || result.Object.SizeBytes != int64(len(data)) || result.Object.SHA256 != hex.EncodeToString(digest[:]) || result.Profile != j.Spec.Profile || heads != 2 || outputHeads != 2 {
 				t.Fatal("wrong verified result", err)
 			}
 		})
@@ -309,6 +332,31 @@ func TestVideoProfileRejectsNonFiniteAndExtremeCanvasAndPreservesRotation(t *tes
 	profile, err := parseVideoInfo(info, 4000, false)
 	if err != nil || profile.Width != 1080 || profile.Height != 1920 {
 		t.Fatal("rotation discarded", err)
+	}
+}
+
+func TestCOSVideoInfoEmptyAudioIsSilentButPartialAudioIsRejected(t *testing.T) {
+	base := mediaInfoFixture(t, 4000, VideoProfile{1920, 1080, 1000, 30, 0})
+	encoded, err := xml.Marshal(cos.GetMediaInfoResult{MediaInfo: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, audio := range []string{"<Audio/>", "<Audio><CodecName>aac</CodecName></Audio>", "<Audio><Channel>2</Channel></Audio>"} {
+		var result cos.GetMediaInfoResult
+		body := strings.Replace(string(encoded), "</Stream>", audio+"</Stream>", 1)
+		if err := xml.Unmarshal([]byte(body), &result); err != nil {
+			t.Fatal(err)
+		}
+		for _, output := range []bool{false, true} {
+			profile, err := parseVideoInfo(result.MediaInfo, 4000, output)
+			if audio == "<Audio/>" {
+				if err != nil || profile.AudioChannels != 0 {
+					t.Fatal("silent movie rejected", err)
+				}
+			} else if err == nil {
+				t.Fatal("partial audio admitted")
+			}
+		}
 	}
 }
 
