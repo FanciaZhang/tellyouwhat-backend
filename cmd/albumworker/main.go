@@ -89,6 +89,10 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err != nil {
 		return errors.New("multipart service configuration")
 	}
+	liveMultipart, err := albums.NewLivePairMultipartWorker(repository, objects, config.BatchSize, time.Now)
+	if err != nil {
+		return errors.New("live pair multipart worker configuration")
+	}
 	reconciler, err := albums.NewReconciliationWorker(repository, multipart, config.BatchSize)
 	if err != nil {
 		return errors.New("reconciliation worker configuration")
@@ -120,7 +124,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	defer stopWorkers()
-	workerCount := 5
+	workerCount := 6
 	if config.PhotoProcessing {
 		workerCount++
 	}
@@ -131,6 +135,16 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 		workerCount++
 	}
 	finished := make(chan error, workerCount)
+	go func() {
+		finished <- liveMultipart.Run(runCtx, config.PollInterval, func(batch albums.LivePairMultipartBatch, available bool) {
+			if !available {
+				logger.Error("album live multipart queue unavailable")
+			}
+			if batch.Resolved+batch.Deferred+batch.Contended > 0 {
+				logger.Info("album live multipart batch", "resolved", batch.Resolved, "deferred", batch.Deferred, "contended", batch.Contended)
+			}
+		})
+	}()
 	go func() {
 		finished <- deletionObservations.Run(runCtx, config.PollInterval, func(batch albums.AccountMediaObservationBatch, available bool) {
 			if !available {

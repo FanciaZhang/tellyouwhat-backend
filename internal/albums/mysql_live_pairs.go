@@ -53,7 +53,7 @@ func scanLivePair(row rowScanner) (LivePairUpload, error) {
 	return u, nil
 }
 func (r *MySQLUploads) CheckLivePairSchema(ctx context.Context) error {
-	multipart, err := r.db.QueryContext(ctx, `SELECT `+liveMultipartColumns+` FROM album_live_pair_multiparts LIMIT 0`)
+	multipart, err := r.db.QueryContext(ctx, `SELECT `+liveMultipartColumns+`,check_after,check_attempts,check_token,check_until FROM album_live_pair_multiparts LIMIT 0`)
 	if err != nil {
 		return err
 	}

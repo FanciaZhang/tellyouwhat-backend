@@ -21,6 +21,8 @@ type liveMultipartProviderFixture struct {
 	initiate                                               func(context.Context, string) (string, error)
 	complete                                               func(context.Context, string, string, int64) (string, error)
 	abort                                                  func(context.Context) error
+	find                                                   func(context.Context, string) (string, error)
+	verify                                                 func(context.Context, string, Resource) (string, error)
 }
 
 func (p *liveMultipartProviderFixture) InitiateStagingMultipart(ctx context.Context, key string) (string, error) {
@@ -37,12 +39,18 @@ func (p *liveMultipartProviderFixture) CompleteStagingMultipart(ctx context.Cont
 	}
 	return "version-" + id, nil
 }
-func (p *liveMultipartProviderFixture) FindStagingMultipart(_ context.Context, key string) (string, error) {
+func (p *liveMultipartProviderFixture) FindStagingMultipart(ctx context.Context, key string) (string, error) {
 	p.finds.Add(1)
+	if p.find != nil {
+		return p.find(ctx, key)
+	}
 	return "provider-" + key[strings.LastIndex(key, "/")+1:], nil
 }
-func (p *liveMultipartProviderFixture) VerifyStagingResource(_ context.Context, _ string, r Resource) (string, error) {
+func (p *liveMultipartProviderFixture) VerifyStagingResource(ctx context.Context, key string, r Resource) (string, error) {
 	p.verifications.Add(1)
+	if p.verify != nil {
+		return p.verify(ctx, key, r)
+	}
 	return "version-provider-" + r.ID, nil
 }
 func (p *liveMultipartProviderFixture) ListStagingMultipartParts(_ context.Context, _ string, _ string, size int64) ([]MultipartUploadedPart, error) {
