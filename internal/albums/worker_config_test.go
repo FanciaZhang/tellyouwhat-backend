@@ -22,7 +22,7 @@ func TestAlbumWorkerConfigurationNeedsNoAISettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.PhotoProcessing || config.VideoProcessing || config.DerivedCleanup || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
+	if config.PhotoProcessing || config.VideoProcessing || config.DerivedCleanup || config.AccountMediaErasure || config.Policy.MaxOriginalBytes != 107374182400 || config.Policy.MaxDerivedBytes != 4294967296 || config.Policy.VerificationLease != 30*time.Minute || config.COS.UploadSecretID == config.COS.SecretID {
 		t.Fatal("invalid worker settings")
 	}
 }
@@ -92,6 +92,23 @@ func TestDerivedCleanupRequiresExplicitEnable(t *testing.T) {
 		values["ALBUM_DERIVED_CLEANUP_ENABLED"] = value
 		if _, err := LoadWorkerConfig(func(key string) string { return values[key] }); err == nil {
 			t.Fatal("invalid cleanup toggle accepted")
+		}
+	}
+}
+
+func TestAccountMediaErasureRequiresExplicitEnable(t *testing.T) {
+	values := workerEnvironment()
+	for _, value := range []string{"", "false", "true", "1", "yes", "True"} {
+		values["ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED"] = value
+		config, err := LoadWorkerConfig(func(key string) string { return values[key] })
+		if value != "" && value != "false" && value != "true" {
+			if err == nil {
+				t.Fatal("invalid permanent erasure toggle accepted")
+			}
+			continue
+		}
+		if err != nil || config.AccountMediaErasure != (value == "true") || config.DerivedCleanup {
+			t.Fatal(config.AccountMediaErasure, err)
 		}
 	}
 }

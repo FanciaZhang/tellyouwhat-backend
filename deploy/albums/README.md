@@ -156,3 +156,9 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 迁移 0050 与新版 gateway 必须一起使用。已有 Multipart 配置启用时，新增 `/v1/albums/live-pair-uploads/{pairUploadID}/resources/{resourceID}/multipart` 初始化/查询、`/parts/{partNumber}/grant` 签名和 `/complete` 合并接口；只接受 photo/motion。普通 PUT 路径与分片路径互斥，不能把旧记录的 direct_upload_issued 改成 FALSE。缺失会话表时启动检查失败。
 
 内部服务提供只读核对及注销后终止会话，但后台调度和 iOS 接入尚未完成，不能据此打开永久清理。真实终止探针 `TestLiveCOSLivePairMultipartAbortInFlight` 使用既有 `ALBUM_CI_LIVE_PROBE=1` 和全新私有 `ALBUM_CI_LIVE_DIRECTORY`，创建一份合成分片并 Abort 本次会话；不执行 Complete 或删除对象版本。同目录存在 intent 标记时拒绝再次初始化，未知结果须保留已写入的意图和会话记录。证据见 `docs/evidence/albums-live-pair-multipart-2026-10-13.json`。
+
+### 账户媒体清理调度（默认关闭）
+
+`ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED=false` 与派生临时清理独立；启用需要迁移 0057。调度只处理已受理注销且全部写入已收敛的账户，复用固定版本/分片计划，最后重新列举六个区域并结算媒体索引和额度。调度期限持久化，错误退避，崩溃可重领；已有对象操作租约仍约束每个删除动作。日志只有计数，没有账户、对象键或供应商错误内容。
+
+当前测试环境没有对象永久删除权限，不应打开此开关。开放前仍须完成受限删除身份及实际权限验收、最终身份与订阅恢复规则、备份删除、HTTP/UI 和完整流程；媒体结算不表示账户删除完成。本轮隔离验证见 `docs/evidence/albums-account-media-erasure-worker-2026-10-13.json`，没有部署或真实删除。

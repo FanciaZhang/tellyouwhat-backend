@@ -73,6 +73,16 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := deletionObservations.Check(startup); err != nil {
 		return errors.New("account media convergence schema")
 	}
+	var accountErasure *albums.AccountMediaErasureWorker
+	if config.AccountMediaErasure {
+		accountErasure, err = albums.NewAccountMediaErasureWorker(repository, objects, config.BatchSize, time.Now)
+		if err != nil {
+			return errors.New("account media erasure configuration")
+		}
+		if err = accountErasure.Check(startup); err != nil {
+			return errors.New("account media erasure schema")
+		}
+	}
 	service, err := albums.NewUploadService(repository, objects, config.Policy, time.Now)
 	if err != nil {
 		return errors.New("upload policy")
@@ -134,7 +144,22 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if cleanup != nil {
 		workerCount++
 	}
+	if accountErasure != nil {
+		workerCount++
+	}
 	finished := make(chan error, workerCount)
+	if accountErasure != nil {
+		go func() {
+			finished <- accountErasure.Run(runCtx, config.PollInterval, func(batch albums.AccountMediaErasureBatch, available bool) {
+				if !available {
+					logger.Error("album account media erasure unavailable")
+				}
+				if batch.Advanced+batch.Settled+batch.Deferred+batch.Contended > 0 {
+					logger.Info("album account media erasure batch", "advanced", batch.Advanced, "settled", batch.Settled, "deferred", batch.Deferred, "contended", batch.Contended)
+				}
+			})
+		}()
+	}
 	go func() {
 		finished <- liveMultipart.Run(runCtx, config.PollInterval, func(batch albums.LivePairMultipartBatch, available bool) {
 			if !available {
@@ -221,7 +246,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			}
 		})
 	}()
-	logger.Info("album workers started", "photo_processing", config.PhotoProcessing, "video_processing", config.VideoProcessing, "derived_cleanup", config.DerivedCleanup)
+	logger.Info("album workers started", "photo_processing", config.PhotoProcessing, "video_processing", config.VideoProcessing, "derived_cleanup", config.DerivedCleanup, "account_media_erasure", config.AccountMediaErasure)
 	available := true
 	go func() {
 		finished <- worker.Run(runCtx, func(batch albums.VerificationBatch, queueAvailable bool) {

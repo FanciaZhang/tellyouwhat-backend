@@ -231,8 +231,8 @@ func accountPrefixEmpty(ctx context.Context, s accountPurgeStorage, owner, area 
 	return len(u) == 0 && len(v) == 0, nil
 }
 
-// Internal executor only. Activation still requires metadata/backup erasure,
-// restricted deletion credentials and end-to-end acceptance. No HTTP entrypoint.
+// Invoked by the explicitly enabled media-erasure worker. Deployment still
+// requires restricted deletion credentials and full erasure acceptance.
 func (r *MySQLUploads) runAccountObjectPurgeStep(ctx context.Context, owner, request string, s accountPurgeStorage, now func() time.Time) error {
 	if s == nil || now == nil {
 		return ErrInvalidManifest

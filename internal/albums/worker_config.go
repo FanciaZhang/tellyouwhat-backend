@@ -11,15 +11,16 @@ import (
 // WorkerConfig is deliberately separate from the managed-AI worker settings.
 // No AI product, provider key, or device identity is required for album storage.
 type WorkerConfig struct {
-	DatabaseDSN     string
-	COS             COSConfig
-	Policy          UploadPolicy
-	BatchSize       int
-	PollInterval    time.Duration
-	PhotoProcessing bool
-	VideoProcessing bool
-	DerivedCleanup  bool
-	VideoQueueID    string
+	DatabaseDSN         string
+	COS                 COSConfig
+	Policy              UploadPolicy
+	BatchSize           int
+	PollInterval        time.Duration
+	PhotoProcessing     bool
+	VideoProcessing     bool
+	DerivedCleanup      bool
+	AccountMediaErasure bool
+	VideoQueueID        string
 }
 
 func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
@@ -90,6 +91,13 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 		c.DerivedCleanup = true
 	default:
 		return WorkerConfig{}, errors.New("invalid ALBUM_DERIVED_CLEANUP_ENABLED")
+	}
+	switch strings.TrimSpace(getenv("ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED")) {
+	case "", "false":
+	case "true":
+		c.AccountMediaErasure = true
+	default:
+		return WorkerConfig{}, errors.New("invalid ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED")
 	}
 	c.Policy.UploadTTL = 24 * time.Hour
 	c.Policy.VerificationLease = 30 * time.Minute

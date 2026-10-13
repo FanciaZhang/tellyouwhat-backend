@@ -28,8 +28,8 @@ func lockAccountMediaSettlement(ctx context.Context, tx *sql.Tx, owner, request 
 	return p, settled, err
 }
 
-// Called only after account object removal. No scheduler/HTTP entrypoint is
-// enabled yet. Keeps identity, Apple revocation and billing records for their
+// Called only after account object removal by the explicitly enabled erasure
+// worker. Keeps identity, Apple revocation and billing records for their
 // separate erasure stages; this receipt never means complete account deletion.
 func (r *MySQLUploads) settleAccountMediaPurge(ctx context.Context, owner, request string, storage accountPurgeStorage, now func() time.Time) (time.Time, error) {
 	if storage == nil || now == nil || now().IsZero() {
