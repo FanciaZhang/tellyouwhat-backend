@@ -218,7 +218,7 @@ func TestMySQLAppleDeletionMigrationBackfillsAcceptedRequests(t *testing.T) {
 
 func TestAppleDeletionRetryIsBounded(t *testing.T) {
 	for attempt, want := range map[int]time.Duration{0: time.Minute, 1: time.Minute, 2: 2 * time.Minute, 9: 256 * time.Minute, 10: 6 * time.Hour, 1000000: 6 * time.Hour} {
-		if got := appleDeletionRetry(attempt); got != want {
+		if got := accountDeletionRetry(attempt); got != want {
 			t.Fatal(attempt, got, want)
 		}
 	}

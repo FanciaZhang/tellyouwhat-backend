@@ -91,6 +91,9 @@ func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, reque
 	if _, err = tx.ExecContext(ctx, `INSERT INTO album_deletion_apple_jobs(grant_id,account_id,request_id,available_at) SELECT grant_id,account_id,?,? FROM album_apple_grants WHERE account_id=?`, requestID, at, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO album_deletion_video_jobs(job_id,account_id,request_id,available_at) SELECT job_id,owner_id,?,? FROM album_video_jobs WHERE owner_id=? AND spec_json IS NOT NULL`, requestID, at, owner); err != nil {
+		return accountDeletionRequest{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE album_share_links SET revoked_at=COALESCE(revoked_at,?) WHERE owner_id=?`, at, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}

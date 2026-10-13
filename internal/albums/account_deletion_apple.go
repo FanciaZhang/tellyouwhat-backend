@@ -87,15 +87,15 @@ func (r *MySQLAccounts) runAppleDeletionBatch(ctx context.Context, revoke func(c
 	return result, nil
 }
 
-func lockAppleDeletionAccount(ctx context.Context, tx *sql.Tx, job appleDeletionJob) error {
+func lockDeletingAccount(ctx context.Context, tx *sql.Tx, account, expectedRequest string) error {
 	var state, request string
-	if err := tx.QueryRowContext(ctx, `SELECT state FROM album_accounts WHERE account_id=? FOR UPDATE`, job.account).Scan(&state); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM album_accounts WHERE account_id=? FOR UPDATE`, account).Scan(&state); err != nil {
 		return err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT request_id FROM album_account_deletions WHERE account_id=?`, job.account).Scan(&request); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT request_id FROM album_account_deletions WHERE account_id=?`, account).Scan(&request); err != nil {
 		return err
 	}
-	if state != "deleting" || request != job.request {
+	if state != "deleting" || request != expectedRequest {
 		return ErrConflict
 	}
 	return nil
@@ -107,7 +107,7 @@ func (r *MySQLAccounts) claimAppleDeletion(ctx context.Context, job appleDeletio
 		return job, err
 	}
 	defer tx.Rollback()
-	if err = lockAppleDeletionAccount(ctx, tx, job); err != nil {
+	if err = lockDeletingAccount(ctx, tx, job.account, job.request); err != nil {
 		return job, err
 	}
 	job.lease = uuid.NewString()
@@ -124,7 +124,7 @@ func (r *MySQLAccounts) claimAppleDeletion(ctx context.Context, job appleDeletio
 	return job, tx.Commit()
 }
 
-func appleDeletionRetry(attempts int) time.Duration {
+func accountDeletionRetry(attempts int) time.Duration {
 	return min(time.Minute*time.Duration(1<<min(max(attempts-1, 0), 9)), 6*time.Hour)
 }
 
@@ -134,14 +134,14 @@ func (r *MySQLAccounts) finishAppleDeletion(ctx context.Context, job appleDeleti
 		return err
 	}
 	defer tx.Rollback()
-	if err = lockAppleDeletionAccount(ctx, tx, job); err != nil {
+	if err = lockDeletingAccount(ctx, tx, job.account, job.request); err != nil {
 		return err
 	}
 	var receipt any
 	if acknowledged {
 		receipt = at
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE album_deletion_apple_jobs SET acknowledged_at=?,available_at=?,lease_token=NULL,lease_until=NULL WHERE account_id=? AND request_id=? AND grant_id=? AND lease_token=? AND lease_until>? AND acknowledged_at IS NULL`, receipt, at.Add(appleDeletionRetry(job.attempts)), job.account, job.request, job.grant, job.lease, at)
+	result, err := tx.ExecContext(ctx, `UPDATE album_deletion_apple_jobs SET acknowledged_at=?,available_at=?,lease_token=NULL,lease_until=NULL WHERE account_id=? AND request_id=? AND grant_id=? AND lease_token=? AND lease_until>? AND acknowledged_at IS NULL`, receipt, at.Add(accountDeletionRetry(job.attempts)), job.account, job.request, job.grant, job.lease, at)
 	if err != nil {
 		return err
 	}
