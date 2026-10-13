@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Encrypted Albums snapshots and quarantined, disposable MySQL restore drills."""
 import argparse
+import copy
 import gzip
 import hashlib
 import hmac
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -99,12 +101,72 @@ def verify(runtime, path):
         raise OperationError("Albums backup is missing or invalid") from error
 
 
+def prune_recovered(runtime, cutoff):
+    from deletion_ledger import verify as verify_ledger
+    removed = 0
+    for folder in sorted(runtime.backups.glob("albums-recovered-*")):
+        if (not re.fullmatch(r"albums-recovered-[a-z0-9_]{8}", folder.name)
+                or folder.is_symlink() or not folder.is_dir() or folder.stat().st_mode & 0o077):
+            raise OperationError("invalid private recovered backup directory")
+        paths = list(folder.iterdir())
+        # A crash after removing the authenticated cleanup receipt can leave an empty directory.
+        if not paths:
+            folder.rmdir()
+            removed += 1
+            continue
+        for path in paths:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1:
+                raise OperationError("recovered backup contains nonprivate or linked files")
+        receipt = folder / ".expiry.json"
+        if not receipt.exists():
+            snapshots = [p for p in paths if re.fullmatch(r"albums-[0-9a-f]{32}\.sql\.gz\.enc", p.name)]
+            ledgers = [p for p in paths if re.fullmatch(r"albums-deletions-[0-9a-f]{32}\.json", p.name)]
+            if len(snapshots) != 1 or len(ledgers) != 1 or set(paths) != {snapshots[0], Path(str(snapshots[0]) + ".json"), ledgers[0]}:
+                raise OperationError("unexpected recovered backup files; preserved for review")
+            stage = copy.copy(runtime)
+            stage.backups = folder
+            m = verify(stage, snapshots[0])
+            verify_ledger(stage, ledgers[0], file_digest(ledgers[0]), m["created_at"])
+            if m["created_at"] > cutoff:
+                continue
+            plan = {"scope": "albums-recovered-expiry-v1", "database": runtime.config["MYSQL_DATABASE"],
+                    "created_at": m["created_at"], "files": {p.name: file_digest(p) for p in paths}}
+            # Keep an authenticated inventory until all members are gone, so partial removal is retryable.
+            atomic_json(receipt, {"plan": plan, "hmac_sha256": manifest_signature(backup_secret(runtime), plan)})
+        try:
+            if receipt.stat().st_size > 65536:
+                raise OperationError("oversized recovered backup cleanup receipt")
+            envelope = json.loads(receipt.read_text())
+            plan = envelope["plan"]
+            files = plan["files"]
+            if (not hmac.compare_digest(manifest_signature(backup_secret(runtime), plan), envelope["hmac_sha256"])
+                    or plan["scope"] != "albums-recovered-expiry-v1" or plan["database"] != runtime.config["MYSQL_DATABASE"]
+                    or type(plan["created_at"]) is not int or not 0 < plan["created_at"] <= cutoff
+                    or not isinstance(files, dict) or len(files) != 3
+                    or any(not re.fullmatch(r"albums-(?:[0-9a-f]{32}\.sql\.gz\.enc(?:\.json)?|deletions-[0-9a-f]{32}\.json)", n)
+                           or not isinstance(d, str) or not re.fullmatch(r"[0-9a-f]{64}", d) for n, d in files.items())):
+                raise OperationError("invalid recovered backup cleanup receipt")
+            remaining = [p for p in folder.iterdir() if p != receipt]
+            if any(p.name not in files or file_digest(p) != files[p.name] for p in remaining):
+                raise OperationError("recovered backup changed during cleanup; preserved for review")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise OperationError("invalid recovered backup cleanup receipt") from error
+        for path in remaining:
+            path.unlink()
+        receipt.unlink()
+        folder.rmdir()
+        removed += 1
+    return removed
+
+
 def prune(runtime):
     configure(runtime)
-    removed = 0
+    cutoff = time.time() - RETENTION
+    removed = prune_recovered(runtime, cutoff)
     for path in sorted(runtime.backups.glob("albums-*.sql.gz.enc")):
         m = verify(runtime, path)
-        if m["created_at"] <= time.time() - RETENTION:
+        if m["created_at"] <= cutoff:
             path.unlink()
             Path(str(path) + ".json").unlink()
             removed += 1

@@ -7,7 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from backup import Runtime, TABLES, SCOPE, configure, OperationError
+from backup import Runtime, TABLES, SCOPE, RETENTION, configure, prune, OperationError
 from deletion_ledger import SCOPE as LEDGER_SCOPE
 from offsite import publish, fetch, read_receipt, publish_receipt
 from ops_backup import file_digest, manifest_signature, backup_secret
@@ -126,6 +126,84 @@ class OffsiteTests(unittest.TestCase):
         path = Path(receipt["receipt"])
         path.chmod(0o644)
         with self.assertRaises(OperationError): read_receipt(self.runtime, path, receipt["receipt_sha256"])
+
+    def recovered(self):
+        with patch("offsite.move", side_effect=self.move):
+            receipt = self.publish()
+            result = fetch(self.runtime, "bin", "config", receipt["receipt"], receipt["receipt_sha256"])
+        return Path(result["directory"])
+
+    def test_recovered_expiry_uses_original_age_and_preserves_independent_ledger(self):
+        folder = self.recovered()
+        deadline = self.manifest["created_at"] + RETENTION
+        with patch("backup.time.time", return_value=deadline - 1):
+            self.assertEqual(prune(self.runtime), 0)
+        self.assertTrue(folder.exists())
+        with patch("backup.time.time", return_value=deadline):
+            self.assertEqual(prune(self.runtime), 2)
+            self.assertEqual(prune(self.runtime), 0)
+        self.assertFalse(folder.exists())
+        self.assertTrue(self.ledger.exists())
+        self.assertTrue(self.remote.exists())
+
+    def test_recovered_cleanup_resumes_after_partial_unlink(self):
+        folder = self.recovered()
+        original = Path.unlink
+        deleted = []
+        def interrupted(path, *args, **kwargs):
+            if path.parent == folder:
+                if deleted:
+                    raise OSError("controlled interrupted cleanup")
+                deleted.append(path.name)
+            return original(path, *args, **kwargs)
+        with patch("backup.time.time", return_value=self.manifest["created_at"] + RETENTION):
+            with patch.object(Path, "unlink", interrupted):
+                with self.assertRaises(OSError): prune(self.runtime)
+            self.assertEqual(len(deleted), 1)
+            self.assertTrue((folder / ".expiry.json").exists())
+            self.assertEqual(prune(self.runtime), 2)
+        self.assertFalse(folder.exists())
+
+    def test_recovered_unknown_files_and_corruption_are_preserved(self):
+        folder = self.recovered()
+        unknown = folder / "keep.txt"
+        unknown.write_text("user deliverable")
+        unknown.chmod(0o600)
+        with patch("backup.time.time", return_value=self.manifest["created_at"] + RETENTION):
+            with self.assertRaises(OperationError): prune(self.runtime)
+            self.assertTrue(unknown.exists())
+            unknown.unlink()
+            (folder / self.ledger.name).write_text("corrupted ledger")
+            with self.assertRaises(OperationError): prune(self.runtime)
+        self.assertTrue(self.snapshot.exists())
+        self.assertTrue((folder / self.snapshot.name).exists())
+
+    def test_recovered_symlink_cannot_remove_external_files(self):
+        folder = self.recovered()
+        member = folder / self.ledger.name
+        member.unlink()
+        member.symlink_to(self.ledger)
+        with patch("backup.time.time", return_value=self.manifest["created_at"] + RETENTION):
+            with self.assertRaises(OperationError): prune(self.runtime)
+        self.assertTrue(self.ledger.exists())
+        self.assertTrue(self.snapshot.exists())
+
+    def test_recovered_cleanup_receipt_tampering_rejected_on_retry(self):
+        folder = self.recovered()
+        original = Path.unlink
+        def interrupted(path, *args, **kwargs):
+            if path.parent == folder:
+                raise OSError("controlled interruption")
+            return original(path, *args, **kwargs)
+        with patch("backup.time.time", return_value=self.manifest["created_at"] + RETENTION):
+            with patch.object(Path, "unlink", interrupted):
+                with self.assertRaises(OSError): prune(self.runtime)
+            receipt = folder / ".expiry.json"
+            envelope = json.loads(receipt.read_text())
+            envelope["plan"]["database"] = "another_app"
+            atomic_json(receipt, envelope)
+            with self.assertRaises(OperationError): prune(self.runtime)
+        self.assertEqual(len(list(folder.iterdir())), 4)
 
 
 if __name__ == "__main__": unittest.main()
