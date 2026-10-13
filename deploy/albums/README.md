@@ -187,6 +187,10 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 该检查证明改绑队列本次收尾所见的已知购买链一致，不构成最终身份/灾备擦除许可；之后收到通知仍会重新打开对应任务。完整账户注销仍须完成最终事务与备份策略，不能把旧回执长期作为删除依据。证据：`docs/evidence/albums-subscription-completion-2026-10-13.json`。
 
+迁移 0062 在存储账户上保存全链核验的 `subscription_checked_revision` 与 `subscription_checked_at`。只有最后一个任务在有效租约内通过同一版本的完整复查，才与该任务回执一起提交。订阅版本更新时在同一行同时清除核验标记；数据库约束也拒绝保留与当前版本不符的标记。迁移不推断旧结果，会重新排队已确认的改绑任务以重新读取 Apple；已绑定的交易不因此重复发送改绑请求。升级前排空旧相册 API/worker，完成迁移后同时启用新版；不可混跑或回退至不认识这些字段的版本。启动检查拒绝缺失字段的数据库。
+
+标记只是核验时刻的全部已知购买链证据，不能代替最终事务中的当前请求、版本、时效和其他清理条件，也没有证明发现全部从未同步的购买记录。它不表示身份或备份已经擦除，不启用任何删除入口。隔离事务、迁移与恢复验证见 `docs/evidence/albums-subscription-completion-receipt-2026-10-14.json`。
+
 
 ### 相册加密快照与隔离恢复演练（未部署）
 

@@ -107,6 +107,7 @@ func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscrip
 		return err
 	}
 	var receipt, transaction, signed any
+	var finalCompletion *bindingCompletionProof
 	if proof != nil {
 		snapshot, last, err := r.bindingCompletionSnapshot(ctx, tx, j)
 		if err != nil {
@@ -114,6 +115,9 @@ func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscrip
 		}
 		if last && !matchingBindingCompletion(snapshot, completion, at) {
 			return ErrSubscriptionConflict
+		}
+		if last {
+			finalCompletion = completion
 		}
 		var currentOwner string
 		var currentSigned time.Time
@@ -139,6 +143,17 @@ func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscrip
 	}
 	if n != 1 {
 		return ErrLease
+	}
+	if finalCompletion != nil {
+		result, err = tx.ExecContext(ctx, `UPDATE album_storage_accounts SET subscription_checked_revision=?,subscription_checked_at=? WHERE owner_id=? AND subscription_revision=?`, finalCompletion.Revision, finalCompletion.CheckedAt, j.Account, finalCompletion.Revision)
+		if err != nil {
+			return err
+		}
+		if n, err = result.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			return ErrSubscriptionConflict
+		}
 	}
 	return tx.Commit()
 }

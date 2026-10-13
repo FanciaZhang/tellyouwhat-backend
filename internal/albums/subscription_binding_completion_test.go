@@ -76,6 +76,9 @@ func TestMySQLSubscriptionBindingCompletionRejectsChangedOrMissingEvidence(t *te
 			if err = f.r.db.QueryRow(`SELECT acknowledged_at FROM album_deletion_subscription_jobs WHERE account_id=? AND original_transaction_id='1000000000000001'`, d.AccountID).Scan(&ack); err != nil || ack.Valid {
 				t.Fatal("stale completion committed", err)
 			}
+			if revision, checked, _ := readCompletionReceipt(t, f, d.AccountID); revision.Valid || checked.Valid {
+				t.Fatal("incomplete verification left a full-set receipt")
+			}
 			if mode == "new-chain" || mode == "conflicting-discovery" {
 				want := 1
 				if mode == "conflicting-discovery" {
@@ -116,6 +119,11 @@ func TestMySQLSubscriptionBindingCompletionRejectsConcurrentPartialPasses(t *tes
 		err = r.finishSubscriptionBinding(ctx, j, &proof, nil, f.now)
 		if i == 0 && err != nil {
 			t.Fatal(err)
+		}
+		if i == 0 {
+			if revision, checked, _ := readCompletionReceipt(t, f, d.AccountID); revision.Valid || checked.Valid {
+				t.Fatal("partial pass persisted a complete receipt")
+			}
 		}
 		if i == 1 && !errors.Is(err, ErrSubscriptionConflict) {
 			t.Fatal("last partial pass acknowledged without complete evidence", err)

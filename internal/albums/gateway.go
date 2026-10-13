@@ -194,7 +194,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 		`SELECT registration_id,session_id,environment,state,revision,token_sha256,encrypted_token,token_nonce,registered_at,request_id,request_sha256 FROM album_push_registrations LIMIT 0`,
 		`SELECT delivery_id,reminder_id,registration_id,registration_revision,state,available_at,lease_token,accepted_at FROM album_retention_deliveries LIMIT 0`,
 		`SELECT challenge_id,proof_sha256,apple_nonce,expires_at,consumed_at FROM album_login_challenges LIMIT 0`,
-		`SELECT owner_id,quota_bytes,used_bytes,reserved_bytes FROM album_storage_accounts LIMIT 0`,
+		`SELECT owner_id,quota_bytes,used_bytes,reserved_bytes,subscription_checked_revision,subscription_checked_at FROM album_storage_accounts LIMIT 0`,
 		`SELECT ` + uploadColumns + ` FROM album_uploads LIMIT 0`,
 		`SELECT upload_id,resource_id,intent_id,state,provider_upload_id,reconcile_attempts,reconcile_token,reconcile_until,reconcile_after FROM album_multipart_intents LIMIT 0`,
 		`SELECT upload_id,resource_id,operation_id,state,object_version,reconcile_attempts,reconcile_token,reconcile_until,reconcile_after FROM album_multipart_completions LIMIT 0`,
