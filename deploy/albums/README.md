@@ -127,3 +127,9 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 
 2026-10-13 订阅定价更新：中国大陆年付 50 GB 228 元、500 GB 1,998 元，均配置两周免费试用，未开放销售。现有服务端以 Apple 当前签名交易 expiresDate 和订阅状态发放权益，不要求正数价格，也不把年度 SKU 固定授权一年；新增零元两周有效/已过期交易回归，两项父测试（含子用例）通过。试用结束未付费仍适用六个自然月保留。真实 Sandbox 免费领取、取消、转付费与通知尚待验证；本次无服务端运行逻辑或数据库变更。
+
+2026-10-13 Sandbox 实测更新：相册内购密钥 `Albums Test Backend` 已配置至隔离测试 API，启用订阅核验；现有 c8760dc 镜像及数据库结构未变。ASC 仅设置 Sandbox 通知 URL。Apple TEST 通知送达状态为 SUCCESS，服务端验签并入库；重复投递两次仍只有一条记录，账户和订阅数均为零，无效签名返回 422。此结果不证明真实购买、续订、退款或账户联调已通过；正式销售、照片/视频处理及永久回收继续关闭。证据见 `docs/evidence/albums-sandbox-notifications-2026-10-13.json`。
+
+配置更新使用 `configure_sandbox.py prepare` 保存私有 before/after 配置和镜像/密钥引用，再通过 `deploy/tencent/ops_artifacts.py --apply --register --owner albums-test ... --run python3 .../configure_sandbox.py apply ...` 激活。该流程只重建相册 API，失败时恢复旧配置。共享运维检查为相册增加正确 Host 和 `{code:ok}` 检查，生日服务仍使用原协议。不要直接运行 apply 绕过注册和锁。
+
+本次独立探针：`go run deploy/albums/appstore_probe.go request`（只允许一次 POST），随后 `go run deploy/albums/appstore_probe.go status`；固定相册 Sandbox、密钥 ID 与本次私有证据目录，不用于生产。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针私有文件边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
