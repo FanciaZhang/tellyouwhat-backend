@@ -66,6 +66,13 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	if err := objects.Check(startup); err != nil {
 		return errors.New("object storage versioning check")
 	}
+	deletionObservations, err := albums.NewAccountMediaObservationWorker(repository, objects, config.BatchSize, time.Now)
+	if err != nil {
+		return errors.New("account media observation configuration")
+	}
+	if err := deletionObservations.Check(startup); err != nil {
+		return errors.New("account media observation schema")
+	}
 	service, err := albums.NewUploadService(repository, objects, config.Policy, time.Now)
 	if err != nil {
 		return errors.New("upload policy")
@@ -113,7 +120,7 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	defer stopWorkers()
-	workerCount := 4
+	workerCount := 5
 	if config.PhotoProcessing {
 		workerCount++
 	}
@@ -124,6 +131,16 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 		workerCount++
 	}
 	finished := make(chan error, workerCount)
+	go func() {
+		finished <- deletionObservations.Run(runCtx, config.PollInterval, func(batch albums.AccountMediaObservationBatch, available bool) {
+			if !available {
+				logger.Error("album account media observation unavailable")
+			}
+			if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
+				logger.Info("album account media observation batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
+			}
+		})
+	}()
 	go func() {
 		finished <- livePairs.Run(runCtx, config.PollInterval, func(batch albums.LivePairBatch, available bool) {
 			if !available {

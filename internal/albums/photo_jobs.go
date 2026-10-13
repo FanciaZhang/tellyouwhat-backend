@@ -165,7 +165,7 @@ func (r *MySQLUploads) FinishPhotoJob(ctx context.Context, j PhotoJob, success, 
 	return nil
 }
 func (r *MySQLUploads) CheckPhotoSchema(ctx context.Context) error {
-	for _, query := range []string{`SELECT ` + photoJobColumns + ` FROM album_photo_jobs LIMIT 0`, `SELECT ` + photoWriteColumns + ` FROM album_photo_writes LIMIT 0`} {
+	for _, query := range []string{`SELECT ` + photoJobColumns + ` FROM album_photo_jobs LIMIT 0`, `SELECT ` + photoWriteColumns + `,deletion_object_version,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_photo_writes LIMIT 0`} {
 		rows, err := r.db.QueryContext(ctx, query)
 		if err != nil {
 			return err

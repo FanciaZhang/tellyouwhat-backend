@@ -117,3 +117,20 @@ func (s *COSObjects) verifyPhotoWrite(ctx context.Context, spec PhotoWriteSpec, 
 	}
 	return SealedObject{ResourceID: string(spec.Preset), Key: key, VersionID: version, SizeBytes: spec.SizeBytes, SHA256: spec.SHA256}, nil
 }
+
+// A committed version is sufficient to observe a finished PUT for deletion,
+// including an invalid preview. No bytes are read or published by this query.
+func (s *COSObjects) observePhotoDeletion(ctx context.Context, spec PhotoWriteSpec) (string, error) {
+	key, err := spec.key()
+	if err != nil {
+		return "", err
+	}
+	response, err := s.client.Object.Head(ctx, key, nil)
+	if response != nil && response.Body != nil {
+		response.Body.Close()
+	}
+	if err != nil || response == nil || response.StatusCode != http.StatusOK || response.ContentLength < 0 || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
+		return "", ErrPhotoWriteUncertain
+	}
+	return response.Header.Get("x-cos-version-id"), nil
+}

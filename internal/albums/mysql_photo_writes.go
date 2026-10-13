@@ -129,6 +129,13 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 	if old.Spec != expected.Spec || old.ManifestDigest != expected.ManifestDigest {
 		return PhotoWriteRecord{}, ErrConflict
 	}
+	var observed sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT deletion_object_version FROM album_photo_writes WHERE attempt_id=?`, old.Spec.AttemptID).Scan(&observed); err != nil {
+		return PhotoWriteRecord{}, err
+	}
+	if observed.Valid && observed.String != receipt.VersionID {
+		return PhotoWriteRecord{}, ErrConflict
+	}
 	if !old.RetirementStartedAt.IsZero() || !old.RetiredAt.IsZero() {
 		return PhotoWriteRecord{}, ErrDerivedRetired
 	}
