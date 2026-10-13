@@ -27,9 +27,10 @@ type bindingProvider struct {
 	extra       []appstore.SubscriptionStatus
 	beforePut   func()
 	afterPut    func()
+	afterRead   func(string)
 }
 
-func (p *bindingProvider) AllSubscriptionStatuses(context.Context, string) ([]appstore.SubscriptionStatus, error) {
+func (p *bindingProvider) AllSubscriptionStatuses(_ context.Context, transaction string) ([]appstore.SubscriptionStatus, error) {
 	p.calls++
 	if p.mode == "read-error" {
 		return nil, ErrSubscriptionUnavailable
@@ -42,6 +43,9 @@ func (p *bindingProvider) AllSubscriptionStatuses(context.Context, string) ([]ap
 		f := p.beforePut
 		p.beforePut = nil
 		f()
+	}
+	if p.afterRead != nil {
+		p.afterRead(transaction)
 	}
 	return append([]appstore.SubscriptionStatus{{Status: 1, SignedTransaction: signed}}, p.extra...), nil
 }
@@ -169,7 +173,7 @@ func TestMySQLSubscriptionBindingFencesLateWorkerAndRollsBackReceipt(t *testing.
 				if err != nil || b.Contended != 1 || p.puts != 0 {
 					t.Fatal(b, err, p.puts)
 				}
-			} else if err == nil {
+			} else if err == nil && !(mode == "newer-proof" && b.Deferred == 1) {
 				t.Fatal("interrupted/failed acknowledgement succeeded")
 			}
 			if bindingAcknowledged(t, f.r.db, d.AccountID) {
@@ -254,6 +258,7 @@ func TestMySQLSubscriptionBindingEnqueuesLaterVerifiedChain(t *testing.T) {
 	if b, err := s.runSubscriptionBindingBatch(context.Background(), r, 10); err != nil || b.Acknowledged != 1 {
 		t.Fatal(b, err)
 	}
+	p.extra = []appstore.SubscriptionStatus{extraBindingStatus(t, p, "1000000000000001", p.target)}
 	p.payload["originalTransactionId"] = "new-original"
 	p.payload["transactionId"] = "new-transaction"
 	if err := s.receiveNotification(context.Background(), p.fixture.notification(t, uuid.NewString(), "DID_RENEW", p.payload)); err != nil {

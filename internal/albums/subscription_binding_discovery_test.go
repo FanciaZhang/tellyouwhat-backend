@@ -53,6 +53,9 @@ func TestMySQLSubscriptionBindingDiscoversRelatedChainsAndResumes(t *testing.T) 
 			p.payload["appAccountToken"] = p.target
 		}
 		p.extra = []appstore.SubscriptionStatus{extraBindingStatus(t, p, "1000000000000001", p.target)}
+		if original == "new-stable" {
+			p.extra = append(p.extra, extraBindingStatus(t, p, "new-legacy", p.target))
+		}
 		if b, err := s.runSubscriptionBindingBatch(ctx, r, 1); err != nil || b.Acknowledged != 1 {
 			t.Fatal("restart could not reconcile discovered chain", original, b, err)
 		}

@@ -96,7 +96,7 @@ func (r *MySQLUploads) claimSubscriptionBinding(ctx context.Context, j subscript
 	return j, tx.Commit()
 }
 
-func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscriptionBindingJob, proof *VerifiedAlbumSubscription, at time.Time) error {
+func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscriptionBindingJob, proof *VerifiedAlbumSubscription, completion *bindingCompletionProof, at time.Time) error {
 	at = at.UTC().Truncate(time.Microsecond)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -108,6 +108,13 @@ func (r *MySQLUploads) finishSubscriptionBinding(ctx context.Context, j subscrip
 	}
 	var receipt, transaction, signed any
 	if proof != nil {
+		snapshot, last, err := r.bindingCompletionSnapshot(ctx, tx, j)
+		if err != nil {
+			return err
+		}
+		if last && !matchingBindingCompletion(snapshot, completion, at) {
+			return ErrSubscriptionConflict
+		}
 		var currentOwner string
 		var currentSigned time.Time
 		if err = tx.QueryRowContext(ctx, `SELECT owner_id,signed_at FROM album_cloud_subscriptions WHERE environment=? AND original_transaction_id=? FOR UPDATE`, j.Environment, j.Original).Scan(&currentOwner, &currentSigned); err != nil {
@@ -319,6 +326,10 @@ func (s *AlbumSubscriptionService) runSubscriptionBindingBatch(ctx context.Conte
 				proof, bound, e = s.observeSubscriptionBinding(call, r, j)
 			}
 		}
+		var completion *bindingCompletionProof
+		if e == nil && bound {
+			completion, e = s.verifyBindingCompletion(call, r, j)
+		}
 		cancel()
 		if ctx.Err() != nil {
 			return b, ctx.Err()
@@ -327,7 +338,7 @@ func (s *AlbumSubscriptionService) runSubscriptionBindingBatch(ctx context.Conte
 		if e == nil && bound {
 			confirmed = &proof
 		}
-		err = r.finishSubscriptionBinding(ctx, j, confirmed, s.now())
+		err = r.finishSubscriptionBinding(ctx, j, confirmed, completion, s.now())
 		if errors.Is(err, ErrLease) {
 			b.Contended++
 			continue
