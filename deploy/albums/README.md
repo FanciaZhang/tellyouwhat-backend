@@ -267,3 +267,6 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 
 视频原生往返使用同一脚本 `--scenario cloud-video` 与 `TestLiveCOSNativeVideoPipeline`。共享测试桥按类型运行正式原件核验、预览 worker 和额度结算；视频由本机 ffmpeg 合成四秒 2304×1296 H.264/AAC，原生从系统图库读取，经三个 COS 分片上传，等待真实 CI 转码完成后写入系统日常版并恢复原件。两个独立 App 进程核对副本复用和账户隔离；原生额外解码系统视频帧与 PCM 音频。新测试不会删除媒体或改变线上开关。结果见 `docs/evidence/albums-native-cloud-video-2026-10-14.json`。
+
+
+实况原生往返使用 `--scenario cloud-live` 与 `TestLiveCOSNativeLivePhotoPipeline`。从原生合成的两秒实况导入系统图库开始，完整上传原始双文件，运行照片/视频 worker，原生重建日常配对后走正式分片与配对核验 worker；第二进程优先读取云端固定配对，核对本机已保存副本。原始双文件分别全量回读验哈希，系统日常版与恢复原件均等待 PHLivePhotoView 播放开始/结束。账户及控制服务仍隔离，所有合成媒体保留，无线上变更。见 `docs/evidence/albums-native-cloud-live-2026-10-14.json`。

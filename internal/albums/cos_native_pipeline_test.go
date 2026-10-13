@@ -16,15 +16,19 @@ import (
 
 // Explicit paid probes, one synthetic media item each. Real COS multipart/sealing/CI,
 // isolated database and synthetic login/subscription. Never deletes any media.
-func TestLiveCOSNativePhotoPipeline(t *testing.T) { liveNativePipeline(t, Photo) }
-func TestLiveCOSNativeVideoPipeline(t *testing.T) { liveNativePipeline(t, Video) }
+func TestLiveCOSNativePhotoPipeline(t *testing.T)     { liveNativePipeline(t, Photo) }
+func TestLiveCOSNativeVideoPipeline(t *testing.T)     { liveNativePipeline(t, Video) }
+func TestLiveCOSNativeLivePhotoPipeline(t *testing.T) { liveNativePipeline(t, LivePhoto) }
 
 func liveNativePipeline(t *testing.T, kind AssetKind) {
 	t.Helper()
 	prefix := "cloud-" + string(kind)
-	expectedPhotos, expectedVideos := 2, 0
+	expectedPhotos, expectedVideos, expectedPairs, expectedResources := 2, 0, 0, 1
 	if kind == Video {
 		expectedPhotos, expectedVideos = 0, 1
+	}
+	if kind == LivePhoto {
+		expectedVideos, expectedPairs, expectedResources = 1, 1, 2
 	}
 	objects, root, ctx := liveRoundtripFixture(t)
 	marker, err := os.OpenFile(filepath.Join(root, prefix+"-intent.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
@@ -86,8 +90,9 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 	verify, _ := NewVerificationWorker(r, service, 1, time.Second)
 	photos, _ := NewPhotoWorker(r, service, 2)
 	videos, _ := NewVideoWorker(r, service, "p543daa336f7a4d4b896654b933f8881b", 1)
+	pairs, _ := NewLivePairWorker(r, service, 1)
 	finalize, _ := NewDerivedFinalizationWorker(r, 1, time.Now)
-	counts := map[string]int{"originalsVerified": 0, "previewsStored": 0, "videosStored": 0}
+	counts := map[string]int{"originalsVerified": 0, "previewsStored": 0, "videosStored": 0, "pairsVerified": 0}
 	defer func() {
 		roundtripJSON(t, root, prefix+"-worker.json", map[string]any{"passed": !t.Failed(), "counts": counts})
 	}()
@@ -108,12 +113,19 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 				t.Fatal("photo processing failed; existing cloud objects retained")
 			}
 			counts["previewsStored"] += p.Stored
-			if kind == Video {
+			if kind == Video || kind == LivePhoto {
 				video, err := videos.RunOnce(ctx)
 				if err != nil || video.Failed != 0 {
 					t.Fatal("video processing failed; existing intent retained; do not repeat submission")
 				}
 				counts["videosStored"] += video.Stored
+			}
+			if kind == LivePhoto {
+				pair, err := pairs.RunOnce(ctx)
+				if err != nil || pair.Failed != 0 {
+					t.Fatal("live pair verification failed; retained objects require inspection")
+				}
+				counts["pairsVerified"] += pair.Verified
 			}
 			roundtripJSON(t, root, prefix+"-progress.json", counts)
 			closed, err := finalize.RunOnce(ctx)
@@ -127,29 +139,30 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 	}
 verifyResult:
 	page, err := r.AssetVersions(context.Background(), session.AccountID, 0, 10)
-	if err != nil || len(page.Versions) != 1 || counts["originalsVerified"] != 1 || counts["previewsStored"] != expectedPhotos || counts["videosStored"] != expectedVideos {
+	if err != nil || len(page.Versions) != 1 || counts["originalsVerified"] != 1 || counts["previewsStored"] != expectedPhotos || counts["videosStored"] != expectedVideos || counts["pairsVerified"] != expectedPairs {
 		t.Fatal("unexpected published media/job counts")
 	}
 	version := page.Versions[0]
 	if version.Manifest.Kind != kind {
 		t.Fatal("unexpected media kind")
 	}
-	if len(version.Objects) != 1 {
+	if len(version.Objects) != expectedResources {
 		t.Fatal("unexpected source resource count")
 	}
-	object := version.Objects[0]
-	reader, err := objects.OpenVersion(ctx, object.Key, object.VersionID)
-	if err != nil {
-		t.Fatal("sealed original unavailable")
-	}
-	data, err := io.ReadAll(io.LimitReader(reader, object.SizeBytes+1))
-	reader.Close()
-	if err != nil || int64(len(data)) != object.SizeBytes || roundtripHash(data) != object.SHA256 {
-		t.Fatal("archived original bytes changed")
+	for _, object := range version.Objects {
+		reader, err := objects.OpenVersion(ctx, object.Key, object.VersionID)
+		if err != nil {
+			t.Fatal("sealed original unavailable")
+		}
+		data, err := io.ReadAll(io.LimitReader(reader, object.SizeBytes+1))
+		reader.Close()
+		if err != nil || int64(len(data)) != object.SizeBytes || roundtripHash(data) != object.SHA256 {
+			t.Fatal("archived original bytes changed")
+		}
 	}
 	var used, reserved int64
-	if err := f.r.db.QueryRow(`SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, session.AccountID).Scan(&used, &reserved); err != nil || used < object.SizeBytes || reserved != 0 {
+	if err := f.r.db.QueryRow(`SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, session.AccountID).Scan(&used, &reserved); err != nil || used < version.OriginalBytes || reserved != 0 {
 		t.Fatal("quota settlement incomplete", err)
 	}
-	roundtripJSON(t, root, prefix+"-backend-evidence.json", map[string]any{"passed": true, "versionID": version.VersionID, "original": object, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"})
+	roundtripJSON(t, root, prefix+"-backend-evidence.json", map[string]any{"passed": true, "versionID": version.VersionID, "original": version.Objects[0], "originals": version.Objects, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"})
 }
