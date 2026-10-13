@@ -132,6 +132,8 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 配置更新使用 `configure_sandbox.py prepare` 保存私有 before/after 配置和镜像/密钥引用，再通过 `deploy/tencent/ops_artifacts.py --apply --register --owner albums-test ... --run python3 .../configure_sandbox.py apply ...` 激活。该流程只重建相册 API，失败时恢复旧配置。共享运维检查为相册增加正确 Host 和 `{code:ok}` 检查，生日服务仍使用原协议。不要直接运行 apply 绕过注册和锁。
 
+数据库跨版本升级先使用 `stage_test_upgrade.py --source <完整提交> --run albums-upgrade-<唯一名称>`，通过同一 `ops_artifacts.py --run` 包装运行。这个首次升级工具仅接受尚无账户和上传的独立测试栈；不用于已有用户的迁移。它短暂停止旧 API/worker，保存加密快照后恢复旧服务；在 `tellyouwhat-albums-test-next` 的独立 MySQL 卷、Redis、网络和 18091 本机端口恢复并逐字节核对数据库，再执行迁移和新版服务启动检查。原数据库卷、旧镜像、配置及密钥引用保留。失败停止候选 API/worker，保留数据和私有诊断，不删除卷或切换公网路由。成功只代表升级演练，不能宣称已部署公网；切换前必须重新冻结写入、同步最新快照并验证候选。备份密钥需单独保管，候选卷不替代离机灾备。包装器登记新旧镜像和 `.operations/<run>` 选择记录，健康检查仍指向旧栈 18090。验证：`python3 -m unittest discover -s deploy/albums -p 'stage_test_upgrade_test.py' -v`。
+
 本次独立探针：`go run deploy/albums/appstore_probe.go request`（只允许一次 POST），随后 `go run deploy/albums/appstore_probe.go status`；固定相册 Sandbox、密钥 ID 与本次私有证据目录，不用于生产。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针私有文件边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
 
 ### 账户注销清单权限（2026-10-13，待确认保存）
