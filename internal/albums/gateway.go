@@ -34,6 +34,10 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album database connection")
 	}
+	if err := CheckRecoveryState(ctx, db); err != nil {
+		db.Close()
+		return nil, errors.New("album recovery state unavailable or quarantined")
+	}
 	options, err := redis.ParseURL(config.RedisURL)
 	if err != nil {
 		db.Close()

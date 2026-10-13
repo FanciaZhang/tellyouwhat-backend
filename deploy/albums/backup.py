@@ -35,7 +35,7 @@ album_deletion_subscription_jobs album_deletion_ledger album_deletion_video_jobs
 album_derived_finalizations album_library_changes album_live_pair_multiparts album_live_pairs
 album_login_challenges album_multipart_completions album_multipart_intents album_object_purges
 album_original_seals album_photo_jobs album_photo_writes album_push_registrations
-album_retention_deliveries album_retention_reminders album_sessions album_share_claims
+album_retention_deliveries album_retention_reminders album_recovery_state album_sessions album_share_claims
 album_share_links album_storage_accounts album_subscription_notifications album_uploads
 album_video_jobs""".split())
 TABLES = tuple(sorted(TABLES))
@@ -236,6 +236,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                             hashes[row[1].decode()].update(line)
                 if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in TABLES):
                     raise OperationError("Albums restored content differs from snapshot")
+                runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
                 if entries is not None:
                     from deletion_ledger import restore_fences
                     restore_fences(runtime, sql, entries)
@@ -244,7 +245,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                     if restored_intents != str(len(entries)) or unblocked != "0":
                         raise OperationError("restored deletion intent or storage fence mismatch")
                 runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
-                exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT (SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
+                exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT IF((SELECT COUNT(*) FROM album_recovery_state WHERE singleton_id=1 AND quarantined=TRUE AND quarantined_at IS NOT NULL)=1,0,1)+(SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
                 if exposed != "0":
                     raise OperationError("Albums restore quarantine failed")
             finally:
@@ -255,7 +256,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=10)
-    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(TABLES), quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
+    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(TABLES), quarantined=True, recovery_quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
 
 
 def main():

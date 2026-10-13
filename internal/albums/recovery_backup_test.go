@@ -92,7 +92,7 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 		t.Fatal("plaintext backup")
 	}
 	restored := run("drill", "--backup", filename)
-	if restored["quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != float64(35) {
+	if restored["quarantined"] != true || restored["recovery_quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != float64(36) {
 		t.Fatal("incomplete drill")
 	}
 	folders, _ := filepath.Glob(filepath.Join(root, ".operations", "albums-restore-*"))
@@ -103,6 +103,9 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 		}
 	}
 	// The production-facing source was never quarantined or rewritten.
+	if err := CheckRecoveryState(context.Background(), f.db); err != nil {
+		t.Fatal("source recovery state changed", err)
+	}
 	var state string
 	if err = f.db.QueryRow(`SELECT state FROM album_accounts WHERE account_id=?`, f.login.AccountID).Scan(&state); err != nil || state != "active" {
 		t.Fatal("source was changed", err)

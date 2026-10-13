@@ -37,6 +37,9 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 		return errors.New("database connection")
 	}
 	defer db.Close()
+	if err := albums.CheckRecoveryState(startup, db); err != nil {
+		return errors.New("album recovery state unavailable or quarantined")
+	}
 	repository := albums.NewMySQLUploads(db)
 	if _, err := repository.Pending(startup, time.Now().UTC(), 1); err != nil {
 		return errors.New("album database schema")

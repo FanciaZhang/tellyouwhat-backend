@@ -190,13 +190,13 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 ### 相册加密快照与隔离恢复演练（未部署）
 
-通用 `deploy/tencent/ops_backup.py` 保持原控制数据白名单，不保存相册数据。新增 `deploy/albums/backup.py` 只导出经审核的 35 张 `album_*` 表，涵盖媒体索引、固定对象版本、账户关系、订阅、删除意图及未决写入。登录授权的加密字段、会话哈希等恢复所需状态也在加密快照内；明文运行配置、加密密钥和其他 App 表不进入快照。发现缺表、新增相册表或非 InnoDB 表时停止，不能静默丢失新业务数据。
+通用 `deploy/tencent/ops_backup.py` 保持原控制数据白名单，不保存相册数据。新增 `deploy/albums/backup.py` 只导出经审核的 36 张 `album_*` 表，涵盖媒体索引、固定对象版本、账户关系、订阅、删除意图及未决写入。登录授权的加密字段、会话哈希等恢复所需状态也在加密快照内；明文运行配置、加密密钥和其他 App 表不进入快照。发现缺表、新增相册表或非 InnoDB 表时停止，不能静默丢失新业务数据。
 
 使用单次 `mysqldump --single-transaction` 导出，复用现有 AES-256-CBC/PBKDF2 加密与 HMAC 清单认证，在解密前核对密文摘要、数据库、相册专用范围及生成时间。采用独立 `ALBUM_BACKUP_ENCRYPTION_KEY` 和 0700 目录，真实配置参照 `backup.env.example`，文件权限 0600；独立密钥和原有凭据加密密钥仍需另行异地托管。不会因共享服务切换部署版本而替换显式指定的相册数据库配置。共享控制备份拒绝导入相册范围快照。
 
 命令接口：`backup.py backup|drill|prune --backend-dir <operations-root> --environment-file <private-albums-backup.env> --backup-dir <private-albums-vault> --mysql-bin-dir <MySQL-8.4-bin>`。`drill` 另需 `--backup <filename>`；只接受本工具的文件名，不接受线上恢复目标。共享主机执行须遵守仓库 `AGENTS.md` 的 ubuntu 所有者、受登记 producer 和操作锁要求，本文不表示已登记、部署或启用定时任务。
 
-演练在新建私有临时目录启动仅有 Unix socket 的 MySQL，恢复后比较各表行数及按主键顺序重新导出的行内容 SHA-256，包括 JSON 和二进制字段；然后停用恢复出的活动账户、会话、分享和推送。删除中的账户保持 deleting。全过程不启动 API/worker、不更改源库，结束后停止临时 MySQL 并删除临时数据。演练解压上限 32 GiB，超过时失败，不截断。
+演练在新建私有临时目录启动仅有 Unix socket 的 MySQL，恢复后比较各表行数及按主键顺序重新导出的行内容 SHA-256，包括 JSON 和二进制字段；然后写入持久的数据库恢复隔离标记，并停用恢复出的活动账户、会话、分享和推送。删除中的账户保持 deleting。全过程不启动 API/worker、不更改源库，结束后停止临时 MySQL 并删除临时数据。演练解压上限 32 GiB，超过时失败，不截断。
 
 本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照；损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。还未实现异地上传、删除日志的异地发布与最新性证明、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
 
@@ -212,3 +212,10 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 恢复演练可显式提供 `--deletion-ledger <private-file> --deletion-ledger-sha256 <expected-sha256>`。核对同一批文件字节的摘要、签名、数据库、范围、记录格式及快照时间顺序后，逐项比较快照内已有日志和受理记录；缺项、改写或冲突会中止。匹配记录在隔离恢复库中重建注销受理、账户状态和存储禁写时间，补齐 Apple/媒体任务及订阅改绑队列，并使旧改绑回执失效。之后再检查意图数量和禁写状态，全部恢复账户仍处于隔离停用状态。不会启动 API/worker 或执行真实删除。
 
 指定摘要只能锁定这次演练的输入，不能证明它是云端最新清单。异地发布确认、故障切换时的最新检查点选择、快照生成后未知写入的核对及物理快照消除仍待实现；不提供清单的普通 `drill` 会明确输出 `deletion_ledger_applied=false`，不能据此进行线上接管。即便提供清单并演练成功，也不授权开放服务或永久清理。验证：`docs/evidence/albums-deletion-ledger-2026-10-13.json`。
+
+
+### 恢复库启动隔离（迁移 0061，未部署）
+
+仅停用账户不足以阻止旧媒体后台任务。恢复演练现在把 `album_recovery_state` 标记为隔离，API 和 worker 在 Redis、COS、Apple 客户端及后台调度启动前检查它；表或唯一状态行缺失也拒绝启动。媒体事务共用的存储账户锁及媒体权限检查使用当前共享锁读取，旧事务快照不能绕过隔离，不同账户不因该检查被全局串行化。新建数据库默认允许正常启动。
+
+这是离线恢复保护，不能用作运行中服务的紧急停止开关，也不能撤回已经发出的云请求。尚无解除隔离或线上接管入口；完整切换必须另外核对最新删除清单和快照之后的在途写入。升级须先排空旧相册 API/worker，运行迁移，再协同启用新版；旧二进制不识别该标记，不能混跑或用于恢复库。验证记录：`docs/evidence/albums-recovery-quarantine-2026-10-13.json`。

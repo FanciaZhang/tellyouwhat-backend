@@ -46,6 +46,9 @@ type quotaBalance struct {
 
 func lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, error) {
 	var b quotaBalance
+	if err := lockRecoveryState(ctx, tx); err != nil {
+		return b, err
+	}
 	err := tx.QueryRowContext(ctx, `SELECT quota_bytes, used_bytes, reserved_bytes FROM album_storage_accounts WHERE owner_id=? FOR UPDATE`, owner).Scan(&b.limit, &b.used, &b.reserved)
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, ErrOwner
