@@ -34,6 +34,20 @@ func Builtins() []Sample {
 	return append(out, RequiredQualitySamples()...)
 }
 
+// The fixed quality set covers Lite, Pro and illustrations; one voice case completes publication coverage.
+func RequiredPublicationSampleIDs() []string {
+	ids := []string{}
+	for _, sample := range RequiredQualitySamples() {
+		ids = append(ids, sample.ID)
+	}
+	for _, sample := range Builtins() {
+		if sample.Kind == "voice" {
+			return append(ids, sample.ID)
+		}
+	}
+	return ids
+}
+
 // These immutable synthetic cases are mandatory for publication; edited copies do not satisfy coverage.
 func RequiredQualitySamples() []Sample {
 	bookID := "00000000-0000-4000-8000-000000000001"

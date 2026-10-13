@@ -381,3 +381,34 @@ func TestMySQLFixedQualityPublicationGateRejectsRawFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestRequiredPublicationSelectionFitsWithExtrasAndSatisfiesGate(t *testing.T) {
+	ids := RequiredPublicationSampleIDs()
+	if len(ids) != 13 {
+		t.Fatalf("expected 13 required cases, got %d", len(ids))
+	}
+	selected := []Sample{}
+	kinds := map[string]bool{}
+	for _, id := range ids {
+		found := false
+		for _, sample := range Builtins() {
+			if sample.ID == id {
+				selected = append(selected, sample)
+				kinds[sample.Kind] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("unknown mandatory sample %s", id)
+		}
+	}
+	if blockers := requiredQualityCoverage(selected); len(blockers) > 0 {
+		t.Fatal(blockers)
+	}
+	for _, kind := range []string{"organize_lite", "organize_pro", "voice", "illustration_scene", "illustration_image"} {
+		if !kinds[kind] {
+			t.Fatalf("missing %s", kind)
+		}
+	}
+}
