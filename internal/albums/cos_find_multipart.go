@@ -10,7 +10,7 @@ import (
 // server-generated key. No match is not proof that initiation never succeeded.
 // Ambiguity is preserved instead of picking or aborting an arbitrary session.
 func (s *COSObjects) FindStagingMultipart(ctx context.Context, key string) (string, error) {
-	if !albumObjectKey(key, "staging") {
+	if !multipartStagingKey(key) {
 		return "", ErrInvalidManifest
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

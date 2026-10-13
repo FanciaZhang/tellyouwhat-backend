@@ -21,6 +21,9 @@ func livePairJournalFixture(t *testing.T, db *sql.DB) (Upload, LivePairDescripto
 	t.Helper()
 	u := liveJournalUpload(t, db, true)
 	t.Cleanup(func() {
+		if _, err := db.Exec(`DELETE m FROM album_live_pair_multiparts m JOIN album_live_pairs p ON p.pair_upload_id=m.pair_upload_id WHERE p.owner_id=?`, u.OwnerID); err != nil {
+			t.Error(err)
+		}
 		if _, err := db.Exec(`DELETE FROM album_live_pairs WHERE owner_id=?`, u.OwnerID); err != nil {
 			t.Error(err)
 		}

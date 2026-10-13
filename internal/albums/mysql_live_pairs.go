@@ -53,6 +53,14 @@ func scanLivePair(row rowScanner) (LivePairUpload, error) {
 	return u, nil
 }
 func (r *MySQLUploads) CheckLivePairSchema(ctx context.Context) error {
+	multipart, err := r.db.QueryContext(ctx, `SELECT `+liveMultipartColumns+` FROM album_live_pair_multiparts LIMIT 0`)
+	if err != nil {
+		return err
+	}
+	if err = multipart.Close(); err != nil {
+		return err
+	}
+
 	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+`,direct_upload_issued FROM album_live_pairs LIMIT 0`)
 	if err != nil {
 		return err
@@ -188,6 +196,13 @@ func (r *MySQLUploads) SubmitLivePair(ctx context.Context, owner, id string, now
 		}
 		if !u.ExpiresAt.After(now) {
 			return u, ErrExpired
+		}
+		var total, assembled int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(state='assembled'),0) FROM album_live_pair_multiparts WHERE pair_upload_id=?`, id).Scan(&total, &assembled); err != nil {
+			return u, err
+		}
+		if total > 0 && (total != 2 || assembled != 2) {
+			return u, ErrMultipartPending
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE album_live_pairs SET state='queued',available_at=?,updated_at=? WHERE pair_upload_id=?`, now, now, id)
 		u.State = "queued"
@@ -387,6 +402,13 @@ func (r *MySQLUploads) WithLivePairUploadGrant(ctx context.Context, expected Liv
 		}
 		if !currentTime().Before(expiry) {
 			return u, ErrExpired
+		}
+		var multipart int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_live_pair_multiparts WHERE pair_upload_id=?`, u.ID).Scan(&multipart); err != nil {
+			return u, err
+		}
+		if multipart != 0 {
+			return u, ErrConflict
 		}
 		if err := authorize(expiry); err != nil {
 			return u, err

@@ -14,7 +14,7 @@ import (
 // not ETags or client metadata. The GET is pinned to the version observed by HEAD.
 // Absence/mismatch does not prove that a concurrent completion cannot still win.
 func (s *COSObjects) VerifyStagingResource(ctx context.Context, key string, resource Resource) (string, error) {
-	if !albumObjectKey(key, "staging") || !strings.HasSuffix(key, "/"+resource.ID) {
+	if !multipartStagingKey(key) || !strings.HasSuffix(key, "/"+resource.ID) {
 		return "", ErrInvalidManifest
 	}
 	if _, err := NewMultipartLayout(resource.SizeBytes); err != nil {

@@ -66,7 +66,19 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 		c.Set("album.owner", principal.AccountID)
 		c.Next()
 	})
-	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service, login: login, multipart: multipart}, albumhttpapi.GinServerOptions{
+	var liveMultipart *LivePairMultipartService
+	if multipart != nil {
+		if repo, ok := service.repository.(*MySQLUploads); ok {
+			if provider, ok := service.objects.(livePairMultipartProvider); ok {
+				var err error
+				liveMultipart, err = newLivePairMultipartService(repo, provider, service.now)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	albumhttpapi.RegisterHandlersWithOptions(router, &uploadHTTP{service: service, login: login, multipart: multipart, liveMultipart: liveMultipart}, albumhttpapi.GinServerOptions{
 		ErrorHandler: func(c *gin.Context, _ error, status int) {
 			c.JSON(status, gin.H{"code": "invalid_upload_request"})
 		},
@@ -75,9 +87,10 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 }
 
 type uploadHTTP struct {
-	multipart *MultipartService
-	service   *UploadService
-	login     *LoginHTTPOptions
+	liveMultipart *LivePairMultipartService
+	multipart     *MultipartService
+	service       *UploadService
+	login         *LoginHTTPOptions
 }
 
 func (h *uploadHTTP) CreateAlbumUpload(c *gin.Context) {

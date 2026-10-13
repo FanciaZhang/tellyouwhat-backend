@@ -57,15 +57,22 @@ func validCOSMultipartID(id string) bool {
 	return len(id) <= 1024 && cosMultipartIDPattern.MatchString(id)
 }
 
+func multipartStagingKey(key string) bool {
+	if albumObjectKey(key, "staging") {
+		return true
+	}
+	p := strings.Split(key, "/")
+	return len(p) == 6 && p[0] == "albums" && p[1] == "staging" && p[2] == "live-pairs" && validOwner(p[3]) && validOwner(p[4]) && (p[5] == "photo" || p[5] == "motion")
+}
 func validMultipartTarget(key, id string) bool {
-	return albumObjectKey(key, "staging") && validCOSMultipartID(id)
+	return multipartStagingKey(key) && validCOSMultipartID(id)
 }
 
 // InitiateStagingMultipart returns a provider ID that the service must durably
 // bind to the account/upload/resource before issuing any client part grants.
 // Unknown outcomes need reconciliation/lifecycle cleanup, not blind initiation.
 func (s *COSObjects) InitiateStagingMultipart(ctx context.Context, key string) (string, error) {
-	if !albumObjectKey(key, "staging") {
+	if !multipartStagingKey(key) {
 		return "", ErrInvalidManifest
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

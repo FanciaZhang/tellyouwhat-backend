@@ -501,6 +501,55 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/MultipartAssembly'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/live-pair-uploads/{pairUploadID}/resources/{resourceID}/multipart:
+    parameters:
+      - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ResourceID'}
+    post:
+      operationId: initializeAlbumLivePairMultipart
+      responses:
+        '200':
+          description: Owned Live Photo component session; assembled is not a verified pair or deletion permission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartSession'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: getAlbumLivePairMultipart
+      responses:
+        '200':
+          description: Owned Live Photo component session; assembled is not a verified pair or deletion permission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartStatus'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/live-pair-uploads/{pairUploadID}/resources/{resourceID}/multipart/parts/{partNumber}/grant:
+    parameters:
+      - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ResourceID'}
+      - {name: partNumber, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+    post:
+      operationId: authorizeAlbumLivePairMultipartPart
+      responses:
+        '200':
+          description: Owned Live Photo component session; assembled is not a verified pair or deletion permission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartPartGrant'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/albums/live-pair-uploads/{pairUploadID}/resources/{resourceID}/multipart/complete:
+    parameters:
+      - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/ResourceID'}
+    post:
+      operationId: completeAlbumLivePairMultipart
+      responses:
+        '200':
+          description: Owned Live Photo component session; assembled is not a verified pair or deletion permission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MultipartAssembly'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/library/versions/{versionID}/share-links:
     parameters:
       - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}

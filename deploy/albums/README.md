@@ -143,9 +143,16 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 新版 `albumworker` 默认调度已受理注销账户的原件、照片、视频和实况观察任务；只读取对象 HEAD / CI 状态，不提交转码、上传或媒体删除。它不依赖照片/视频生成开关，也不需要 Apple 私钥。每类每轮使用现有 batch size 上限（最多 100），观察失败按各自记录退避；日志 acknowledged 指写入结果或任务终态核对，不是账户擦除完成。
 
-升级须停止并排空旧相册 API/worker，迁移至 **0049** 后同时启动新版，不能与旧版处理进程混跑；旧版不维护实况复制回执、照片注销版本约束或普通 PUT 授权记录。启动检查迁移缺失即失败。保留数据库、对象及可恢复部署材料，回退需重新验证写入协议兼容性，不能仅切回旧镜像继续处理。此处为部署要求，线上仍以最近部署证据为准。
+升级须停止并排空旧相册 API/worker，迁移至 **0050** 后同时启动新版，不能与旧版处理进程混跑；旧版不维护实况复制回执、照片注销版本约束或普通 PUT 授权记录。启动检查迁移缺失即失败。保留数据库、对象及可恢复部署材料，回退需重新验证写入协议兼容性，不能仅切回旧镜像继续处理。此处为部署要求，线上仍以最近部署证据为准。
 
 
 普通 PUT 清理保护需要迁移 0049。旧记录默认视为可能发出过普通 PUT；不能批量改成 FALSE 来解除清理限制。新 API 在返回地址前原子保存 TRUE；只使用受控分片的新原件记录保持 FALSE。旧 API 不得在迁移后继续签发地址，否则会漏记授权。实况普通 PUT 仍需迁移到可终止会话，相关永久清理继续关闭。
 
 真实跨到期探针：显式设置 `ALBUM_CI_LIVE_PROBE=1`、`ALBUM_CI_LIVE_DIRECTORY=<新建私有目录>` 后运行 `go test -tags albums_live ./internal/albums -run '^TestLiveCOSPresignedUploadExpiryInFlight$' -count=1 -v`。每次新增一个约 29 KB 的合成暂存对象，探针不删除它；返回值仅表示观察过程成功，具体行为以 JSON 中 `completed_after_expiry` 为准。2026-10-13 的一次实测为 true，不能依赖签名到期停止在途 PUT。证据见 `docs/evidence/albums-direct-upload-expiry-2026-10-13.json`。
+
+
+### 实况分片协议（2026-10-13，未部署）
+
+迁移 0050 与新版 gateway 必须一起使用。已有 Multipart 配置启用时，新增 `/v1/albums/live-pair-uploads/{pairUploadID}/resources/{resourceID}/multipart` 初始化/查询、`/parts/{partNumber}/grant` 签名和 `/complete` 合并接口；只接受 photo/motion。普通 PUT 路径与分片路径互斥，不能把旧记录的 direct_upload_issued 改成 FALSE。缺失会话表时启动检查失败。
+
+内部服务提供只读核对及注销后终止会话，但后台调度和 iOS 接入尚未完成，不能据此打开永久清理。真实终止探针 `TestLiveCOSLivePairMultipartAbortInFlight` 使用既有 `ALBUM_CI_LIVE_PROBE=1` 和全新私有 `ALBUM_CI_LIVE_DIRECTORY`，创建一份合成分片并 Abort 本次会话；不执行 Complete 或删除对象版本。同目录存在 intent 标记时拒绝再次初始化，未知结果须保留已写入的意图和会话记录。证据见 `docs/evidence/albums-live-pair-multipart-2026-10-13.json`。
