@@ -110,7 +110,7 @@ func TestLiveCOSPhotoAdapter(t *testing.T) {
 					t.Error("evidence write failed")
 				}
 			}()
-			put, err := s.client.Object.Put(ctx, source.Key, bytes.NewReader(payload), nil)
+			put, err := s.client.Object.Put(ctx, source.Key, bytes.NewReader(payload), liveOriginalPutOptions(t))
 			if err != nil || put == nil || put.StatusCode != 200 {
 				t.Fatal("fixture upload failed")
 			}
@@ -122,6 +122,8 @@ func TestLiveCOSPhotoAdapter(t *testing.T) {
 			if !concreteCOSVersion(source.VersionID) {
 				t.Fatal("source version missing")
 			}
+			verifyLiveLowFrequencyOriginal(t, ctx, s, source, payload)
+			evidence["sourceStorageClass"] = os.Getenv("ALBUM_COS_PROBE_STORAGE_CLASS")
 			results := []map[string]any{}
 			for _, preset := range presets {
 				candidate, err := s.RenderPhotoCandidate(ctx, source, preset)
@@ -175,6 +177,9 @@ func TestLiveCOSPhotoAdapter(t *testing.T) {
 				}
 				if os.WriteFile(filepath.Join(dir, string(preset)+"."+candidate.Format), candidate.Bytes, 0600) != nil {
 					t.Fatal("fixture result write failed")
+				}
+				if os.Getenv("ALBUM_COS_PROBE_STORAGE_CLASS") != "" {
+					assertLiveStorageClass(t, ctx, s, receipt, "MAZ_STANDARD")
 				}
 				results = append(results, map[string]any{"spec": spec, "receipt": receipt})
 				evidence["results"] = results

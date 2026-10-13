@@ -89,7 +89,7 @@ func TestLiveCOSVideoAdapter(t *testing.T) {
 	sum := sha256.Sum256(payload)
 	j.Spec.Source.SizeBytes = int64(len(payload))
 	j.Spec.Source.SHA256 = hex.EncodeToString(sum[:])
-	r, err := s.client.Object.Put(ctx, j.Spec.Source.Key, bytes.NewReader(payload), nil)
+	r, err := s.client.Object.Put(ctx, j.Spec.Source.Key, bytes.NewReader(payload), liveOriginalPutOptions(t))
 	if err != nil || r == nil || r.StatusCode != 200 {
 		t.Fatal("synthetic source upload failed")
 	}
@@ -112,6 +112,8 @@ func TestLiveCOSVideoAdapter(t *testing.T) {
 			t.Error("evidence persistence failed")
 		}
 	}()
+	verifyLiveLowFrequencyOriginal(t, ctx, s, j.Spec.Source, payload)
+	evidence["sourceStorageClass"] = os.Getenv("ALBUM_COS_PROBE_STORAGE_CLASS")
 	profile, err := s.InspectVideoSource(ctx, j.Spec.Source)
 	if err != nil {
 		// Safe diagnostics contain only synthetic metadata, never signed URLs.
@@ -161,6 +163,9 @@ func TestLiveCOSVideoAdapter(t *testing.T) {
 	if err != nil {
 		evidence["stage"] = "verify"
 		t.Fatal("production output verification failed")
+	}
+	if os.Getenv("ALBUM_COS_PROBE_STORAGE_CLASS") != "" {
+		assertLiveStorageClass(t, ctx, s, result.Object, "MAZ_STANDARD")
 	}
 	evidence["result"] = result
 	get, err := s.client.Object.Get(ctx, result.Object.Key, nil, url.QueryEscape(result.Object.VersionID))
