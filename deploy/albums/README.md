@@ -246,3 +246,10 @@ fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --t
 `POST /v1/albums/account/deletion` 只接受 `requestID` 和会话 Bearer；归属由数据库内的凭据决定。首次受理与撤销会话、关闭分享/推送及写入删除队列、独立删除日志同事务提交。`202` 只表示 accepted，不能显示“已删除完成”，也不取消 Apple 订阅或删除系统图库。客户端必须在发送前持久保存请求编号和原凭据；响应丢失后仅用完全相同的组合重试。普通认证中间件会拒绝已撤销会话，因此只有此 POST 交给事务内的首次/精确重放认证，其他路径照常认证。
 
 Gateway 保持未注入处理器，没有新增环境开关；当前请求返回 503。最终身份、订阅记录与灾备擦除及原生确认/重试状态尚未完成，不能据此启用用户入口。无数据库迁移或部署。验证包含真实隔离 MySQL/Redis 的 42 个顶层测试、104 个通过事件及 Swift 合约 18 项，零失败/跳过；见 `docs/evidence/albums-account-deletion-http-2026-10-13.json`。
+
+
+### 未受理注销的撤回（2026-10-14，保持关闭）
+
+`POST /v1/albums/account/deletion/withdrawal` 使用原会话 Bearer 和同一 `requestID`。200 的 `state=withdrawn` 表示尚未受理且原凭据不能再受理迟到请求，客户端需重新登录；`state=accepted` 带原始 `requestedAt`，表示已经受理、不能撤回。不得只看 HTTP 200 判断撤回成功。客户端必须先持久保存撤回意图，未知响应后只重试撤回，不能再发送原注销 POST。
+
+受理与撤回共享身份/账户锁；撤回仅吊销原会话和该会话推送，不关闭其他设备。原会话消失时核对独立删除日志，匹配已受理记录则仍返回受理回执，不把访问记录擦除误认为尚未受理。Gateway 两个入口继续关闭，无新增迁移、权限或部署。隔离数据库竞态/回滚和 19 项 Swift 合约通过，见 `docs/evidence/albums-deletion-withdrawal-backend-2026-10-14.json`。

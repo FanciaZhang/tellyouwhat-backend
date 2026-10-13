@@ -442,6 +442,31 @@ struct AlbumAPITransportTests {
         #expect(body == ["requestID": requestID])
     }
 
+    @Test("withdrawal keeps accepted deletion separate from a successful withdrawal")
+    func deletionWithdrawal() async throws {
+        for state in ["withdrawn", "accepted"] {
+            let recorder = AlbumRequestRecorder()
+            let requestID = "9987195d-bcd7-41f2-baa6-6a426cffea59"
+            let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+                await recorder.record(request)
+                var result = ["requestID": requestID, "state": state]
+                if state == "accepted" { result["requestedAt"] = "2026-10-13T02:00:00Z" }
+                return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
+                    body: .data(try JSONSerialization.data(withJSONObject: result)))
+            })
+            let response = try await client.withdrawAlbumAccountDeletion(body: .json(.init(requestID: requestID)))
+            if case .ok(let value) = response, case .json(let receipt) = value.body {
+                #expect(receipt.requestID == requestID)
+                #expect(receipt.state.rawValue == state)
+                #expect((receipt.requestedAt != nil) == (state == "accepted"))
+            } else { Issue.record("Missing withdrawal outcome") }
+            let request = try #require(await recorder.last)
+            #expect(request.method == "POST" && request.path == "/v1/albums/account/deletion/withdrawal")
+            let body = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: String])
+            #expect(body == ["requestID": requestID])
+        }
+    }
+
     @Test("multipart control preserves byte ranges and bodyless authority")
     func multipartControl() async throws {
         let recorder = AlbumRequestRecorder()

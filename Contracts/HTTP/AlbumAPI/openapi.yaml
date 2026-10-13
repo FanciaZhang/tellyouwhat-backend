@@ -133,6 +133,37 @@ paths:
         '429': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/account/deletion/withdrawal:
+    post:
+      operationId: withdrawAlbumAccountDeletion
+      description: Explicitly withdraw only an unaccepted request. Uses the same original bearer and requestID. In one transaction the server checks acceptance and revokes that credential, preventing delayed acceptance. The response state distinguishes an immutable accepted request from a confirmed withdrawal that requires new login. Persist withdrawal intent before sending and retry this operation after an unknown response; never resume the original deletion POST. Gateway leaves this disabled with deletion acceptance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestID]
+              properties:
+                requestID: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Resolved withdrawal attempt; accepted is never a cancellation acknowledgement
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [requestID, state]
+                properties:
+                  requestID: {type: string, format: uuid}
+                  state: {type: string, enum: [withdrawn, accepted]}
+                  requestedAt:
+                    type: string
+                    format: date-time
+                    description: Required only for accepted, absent for withdrawn; original acceptance time
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/subscription:
     get:
       operationId: getAlbumSubscription
