@@ -133,6 +133,9 @@ from ops_backup import file_digest
 import offsite
 r=Runtime(sys.argv[2],sys.argv[3],sys.argv[4]);configure(r)
 remote=Path(sys.argv[2])/"controlled-offsite.enc"
+credentials=Path(sys.argv[2])/"controlled-cos.json"
+credentials.write_text(json.dumps(dict(Bucket="fixture-1250000000",Region="ap-guangzhou")))
+credentials.chmod(0o600)
 def transfer(runtime,executable,credentials,operation,path,key,digest,size,**pinned):
     object_path=remote.with_name(Path(key).name)
     if operation=="put": shutil.copyfile(path,object_path)
@@ -141,7 +144,7 @@ def transfer(runtime,executable,credentials,operation,path,key,digest,size,**pin
     return dict(Key=key,SHA256=digest,Bytes=size,Version="fixture-version",Bucket="fixture-1250000000",Region="ap-guangzhou")
 offsite.move=transfer
 with r.lock():
-    receipt=offsite.publish(r,"controlled","controlled",sys.argv[5],sys.argv[6],sys.argv[7])
+    receipt=offsite.publish(r,"controlled",credentials,sys.argv[5],sys.argv[6],sys.argv[7])
     recovered=offsite.fetch(r,"controlled","controlled",receipt["receipt"],receipt["receipt_sha256"])
     restored=Runtime(sys.argv[2],recovered["directory"],sys.argv[4]);configure(restored)
     result=drill(restored,Path(sys.argv[8]),recovered["snapshot"],recovered["deletion_ledger"],recovered["deletion_ledger_sha256"])

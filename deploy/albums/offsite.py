@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import tarfile
 import tempfile
 import time
@@ -21,12 +22,27 @@ SCOPE = "albums-offsite-bundle-v1"
 MAX_BYTES = 1 << 30
 
 
+def destination(credentials):
+    try:
+        with os.fdopen(os.open(credentials, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 65536:
+                raise OperationError("offsite destination requires private configuration")
+            config = json.loads(source.read(65537))
+        if (not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,48}-[0-9]{5,20}", config["Bucket"])
+                or not re.fullmatch(r"[a-z]{2}-[a-z]+(?:-[a-z]+)?", config["Region"])):
+            raise OperationError("invalid offsite destination")
+        return {k: config[k] for k in ("Bucket", "Region")}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise OperationError("invalid private offsite configuration") from error
+
+
 def move(runtime, executable, credentials, operation, path, key, digest, size, **pinned):
     if not executable or not credentials:
         raise OperationError("offsite transfer requires an executable and dedicated private COS configuration")
     request = dict(Operation=operation, Path=str(path), Key=key, SHA256=digest, Bytes=size, **pinned)
     result = json.loads(runtime.execute("albums-backup-transfer", [str(executable), str(credentials)], input=json.dumps(request).encode(), timeout=960))
-    if (result.get("Key") != key or result.get("SHA256") != digest or result.get("Bytes") != size
+    if (not isinstance(result, dict) or result.get("Key") != key or result.get("SHA256") != digest or result.get("Bytes") != size
             or not isinstance(result.get("Version"), str) or result["Version"] == "null"
             or not re.fullmatch(r"[A-Za-z0-9_.~-]{1,1024}", result["Version"])
             or any(result.get(k) != v for k, v in pinned.items())):
@@ -43,6 +59,7 @@ def publish(runtime, executable, credentials, filename, ledger, ledger_digest):
     ledger_name = Path(ledger).name
     if not re.fullmatch(r"albums-deletions-[0-9a-f]{32}\.json", ledger_name):
         raise OperationError("invalid deletion ledger filename")
+    target = destination(credentials)
     names = (filename, filename + ".json", ledger_name)
     nonce = secrets.token_hex(16)
     with tempfile.TemporaryDirectory(prefix=".albums-offsite-", dir=runtime.backups) as directory:
@@ -65,12 +82,17 @@ def publish(runtime, executable, credentials, filename, ledger, ledger_digest):
         digest, size = file_digest(encrypted), encrypted.stat().st_size
         if size > MAX_BYTES:
             raise OperationError("encrypted offsite bundle exceeds the 1 GiB transfer limit")
-        remote = move(runtime, executable, credentials, "put", encrypted, "albums/recovery/" + nonce + ".enc", digest, size)
-    receipt = {"scope": SCOPE, "database": runtime.config["MYSQL_DATABASE"], "published_at": int(time.time()),
-               "snapshot": filename, "snapshot_created_at": m["created_at"], "ledger": ledger_name,
-               "ledger_sha256": ledger_digest, "remote": remote}
-    path = runtime.backups / ("albums-offsite-" + nonce + ".json")
-    atomic_json(path, {"receipt": receipt, "hmac_sha256": manifest_signature(backup_secret(runtime), receipt)})
+        key = "albums/recovery/" + nonce + ".enc"
+        receipt = {"scope": SCOPE, "database": runtime.config["MYSQL_DATABASE"], "published_at": int(time.time()),
+                   "snapshot": filename, "snapshot_created_at": m["created_at"], "ledger": ledger_name,
+                   "ledger_sha256": ledger_digest, "publication_confirmed": False,
+                   "remote": dict(Key=key, Version="", SHA256=digest, Bytes=size, **target)}
+        path = runtime.backups / ("albums-offsite-" + nonce + ".json")
+        # Persist the exact destination and ciphertext before a PUT can have an unknown outcome.
+        atomic_json(path, {"receipt": receipt, "hmac_sha256": manifest_signature(backup_secret(runtime), receipt)})
+        remote = move(runtime, executable, credentials, "put", encrypted, key, digest, size, **target)
+        receipt.update(remote=remote, publication_confirmed=True, published_at=int(time.time()))
+        atomic_json(path, {"receipt": receipt, "hmac_sha256": manifest_signature(backup_secret(runtime), receipt)})
     return publish_receipt(runtime, executable, credentials, path, file_digest(path))
 
 
@@ -94,6 +116,17 @@ def read_receipt(runtime, path, digest, *, expired=False):
                 or not 0 < r["snapshot_created_at"] <= r["published_at"] <= time.time() + 300
                 or (r["snapshot_created_at"] <= time.time() - RETENTION) != expired):
             raise OperationError("offsite receipt scope, age or filenames rejected")
+        remote = r["remote"]
+        confirmed = r.get("publication_confirmed", True)
+        if (type(confirmed) is not bool or not confirmed and not expired
+                or not re.fullmatch(r"albums/recovery/[0-9a-f]{32}\.enc", remote["Key"])
+                or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,48}-[0-9]{5,20}", remote["Bucket"])
+                or not re.fullmatch(r"[a-z]{2}-[a-z]+(?:-[a-z]+)?", remote["Region"])
+                or not re.fullmatch(r"[0-9a-f]{64}", remote["SHA256"])
+                or type(remote["Bytes"]) is not int or not 0 < remote["Bytes"] <= MAX_BYTES
+                or confirmed and (remote["Version"] == "null" or not re.fullmatch(r"[A-Za-z0-9_.~-]{1,1024}", remote["Version"]))
+                or not confirmed and remote["Version"] != ""):
+            raise OperationError("offsite receipt destination or confirmation rejected")
         return r
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("offsite receipt missing or invalid") from error

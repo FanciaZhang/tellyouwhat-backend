@@ -35,6 +35,9 @@ class OffsiteTests(unittest.TestCase):
         payload = dict(scope=LEDGER_SCOPE, database="albums_test", exported_at=int(time.time()), entries=[])
         atomic_json(self.ledger, dict(payload=payload, hmac_sha256=manifest_signature(backup_secret(self.runtime), payload)))
         self.remote = root / "controlled-transport.enc"
+        self.credentials = root / "controlled-cos.json"
+        atomic_json(self.credentials, dict(Bucket="test-1250000000", Region="ap-guangzhou",
+                                          SecretID="private-fixture-id", SecretKey="private-fixture-secret"))
         self.calls = []
 
     def move(self, runtime, executable, credentials, operation, path, key, digest, size, **pinned):
@@ -50,7 +53,7 @@ class OffsiteTests(unittest.TestCase):
         return result
 
     def publish(self):
-        return publish(self.runtime, "/controlled/bin", "/controlled/config", self.snapshot.name, self.ledger, file_digest(self.ledger))
+        return publish(self.runtime, "/controlled/bin", self.credentials, self.snapshot.name, self.ledger, file_digest(self.ledger))
 
     def test_real_encryption_pinned_roundtrip_and_isolated_outputs(self):
         with patch("offsite.move", side_effect=self.move):
@@ -68,11 +71,91 @@ class OffsiteTests(unittest.TestCase):
         self.assertEqual(folder.stat().st_mode & 0o077, 0)
         self.assertTrue(all(p.stat().st_mode & 0o077 == 0 for p in folder.iterdir()))
 
-    def test_upload_failure_never_issues_receipt(self):
+    def test_upload_failure_retains_only_unconfirmed_intent(self):
         with patch("offsite.move", side_effect=OperationError("uncertain upload")):
             with self.assertRaises(OperationError): self.publish()
-        self.assertEqual(list(self.runtime.backups.glob("albums-offsite-*.json")), [])
+        intents = list(self.runtime.backups.glob("albums-offsite-*.json"))
+        self.assertEqual(len(intents), 1)
+        intent = json.loads(intents[0].read_text())["receipt"]
+        self.assertFalse(intent["publication_confirmed"])
+        self.assertNotIn("private-fixture", intents[0].read_text())
+        self.assertEqual(intent["remote"]["Version"], "")
+        self.assertEqual(intents[0].stat().st_mode & 0o077, 0)
+        with patch("offsite.move") as transfer:
+            with self.assertRaises(OperationError): fetch(self.runtime, "bin", "config", intents[0], file_digest(intents[0]))
+            with self.assertRaises(OperationError): publish_receipt(self.runtime, "bin", "config", intents[0], file_digest(intents[0]))
+            transfer.assert_not_called()
         self.assertEqual(list(self.runtime.backups.glob(".albums-offsite-*")), [])
+
+    def test_intent_must_be_durable_before_upload(self):
+        with patch("offsite.atomic_json", side_effect=OSError("controlled disk full")), patch("offsite.move") as transfer:
+            with self.assertRaises(OSError): self.publish()
+            transfer.assert_not_called()
+
+    def test_confirmation_write_failure_preserves_preupload_intent(self):
+        writes = []
+        def persist(path, data):
+            writes.append(data["receipt"]["publication_confirmed"])
+            if len(writes) == 2:
+                raise OSError("controlled confirmation disk failure")
+            atomic_json(path, data)
+        with patch("offsite.atomic_json", side_effect=persist), patch("offsite.move", side_effect=self.move):
+            with self.assertRaises(OSError): self.publish()
+        self.assertEqual(writes, [False, True])
+        self.assertEqual(self.calls, ["put"])
+        path = next(self.runtime.backups.glob("albums-offsite-*.json"))
+        with patch("offsite.time.time", return_value=self.manifest["created_at"] + RETENTION):
+            pending = read_receipt(self.runtime, path, file_digest(path), expired=True)
+        self.assertFalse(pending["publication_confirmed"])
+        self.assertEqual(pending["remote"]["SHA256"], file_digest(self.remote))
+
+    def test_legacy_confirmed_receipt_remains_readable(self):
+        with patch("offsite.move", side_effect=self.move): result = self.publish()
+        path = Path(result["receipt"])
+        receipt = json.loads(path.read_text())["receipt"]
+        receipt.pop("publication_confirmed")
+        atomic_json(path, dict(receipt=receipt, hmac_sha256=manifest_signature(backup_secret(self.runtime), receipt)))
+        self.assertEqual(read_receipt(self.runtime, path, file_digest(path)), receipt)
+
+    def test_lost_upload_response_can_expire_using_exact_intent(self):
+        def uncertain(*args, **kwargs):
+            intents = list(self.runtime.backups.glob("albums-offsite-*.json"))
+            self.assertEqual(len(intents), 1)
+            plan = json.loads(intents[0].read_text())["receipt"]
+            self.assertFalse(plan["publication_confirmed"])
+            self.assertEqual(plan["remote"]["Key"], args[5])
+            self.assertEqual(plan["remote"]["SHA256"], file_digest(args[4]))
+            self.assertEqual(kwargs, {"Bucket": "test-1250000000", "Region": "ap-guangzhou"})
+            self.move(*args, **kwargs)
+            raise OperationError("controlled response lost after storage")
+        with patch("offsite.move", side_effect=uncertain):
+            with self.assertRaises(OperationError): self.publish()
+        path = next(self.runtime.backups.glob("albums-offsite-*.json"))
+        self.assertTrue(self.remote.exists())
+        self.assertFalse(self.remote.with_suffix(".receipt.json").exists())
+        def cleanup(name, command, *, input, timeout):
+            request = json.loads(input)
+            self.assertEqual(request["SHA256"], file_digest(self.remote))
+            self.assertEqual(request["Bytes"], self.remote.stat().st_size)
+            return json.dumps(dict(Empty=True, VersionsRemoved=1, **{k: request[k] for k in ("Key", "Bucket", "Region")})).encode()
+        with patch("offsite.time.time", return_value=self.manifest["created_at"] + RETENTION), patch.object(self.runtime, "execute", side_effect=cleanup):
+            self.assertFalse(expire(self.runtime, "bin", "cleanup-config", path, file_digest(path))["account_erasure_complete"])
+
+    def test_destination_must_be_private_and_regular(self):
+        original = self.credentials.read_bytes()
+        self.credentials.chmod(0o644)
+        with patch("offsite.move") as transfer:
+            with self.assertRaises(OperationError): self.publish()
+            self.credentials.chmod(0o600)
+            self.credentials.write_text('{"Bucket":"other/invalid","Region":"ap-guangzhou"}')
+            with self.assertRaises(OperationError): self.publish()
+            self.credentials.write_bytes(original)
+            linked = self.credentials.with_name("linked.json")
+            linked.symlink_to(self.credentials)
+            self.credentials = linked
+            with self.assertRaises(OperationError): self.publish()
+            transfer.assert_not_called()
+        self.assertEqual(list(self.runtime.backups.glob("albums-offsite-*.json")), [])
 
     def test_receipt_tampering_and_wrong_scope_rejected_before_transfer(self):
         with patch("offsite.move", side_effect=self.move): receipt = self.publish()
