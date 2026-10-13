@@ -27,7 +27,7 @@ func TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	owner := uuid.NewString()
 	fixture := newAlbumReceiptFixture(t, now)
-	for _, name := range []string{"active-50", "upgrade-500", "expired", "retrying", "grace", "revoked", "missing-token", "wrong-submitted-owner", "wrong-current-owner", "tampered", "health-bundle", "health-product", "wrong-environment", "family-shared", "missing-current", "provider-failure", "unknown-status", "future-expired-status", "wrong-renewal", "upgraded-old-transaction"} {
+	for _, name := range []string{"active-50", "free-trial-active", "free-trial-expired", "upgrade-500", "expired", "retrying", "grace", "revoked", "missing-token", "wrong-submitted-owner", "wrong-current-owner", "tampered", "health-bundle", "health-product", "wrong-environment", "family-shared", "missing-current", "provider-failure", "unknown-status", "future-expired-status", "wrong-renewal", "upgraded-old-transaction"} {
 		t.Run(name, func(t *testing.T) {
 			submitted, current := fixture.payload(owner), fixture.payload(owner)
 			status, renewal := 1, ""
@@ -36,6 +36,18 @@ func TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence(t *testing.T) {
 			active := true
 			expiry := now.AddDate(1, 0, 0)
 			switch name {
+			case "free-trial-active", "free-trial-expired":
+				expiry = now.Add(14 * 24 * time.Hour)
+				if name == "free-trial-expired" {
+					expiry, status, active = now.Add(-time.Hour), 2, false
+				}
+				for _, payload := range []map[string]any{submitted, current} {
+					payload["price"], payload["currency"] = int64(0), "CNY"
+					payload["offerType"], payload["offerDiscountType"] = 1, "FREE_TRIAL"
+					payload["originalPurchaseDate"] = expiry.Add(-14 * 24 * time.Hour).UnixMilli()
+					payload["purchaseDate"] = payload["originalPurchaseDate"]
+					payload["expiresDate"] = expiry.UnixMilli()
+				}
 			case "upgrade-500":
 				current["productId"] = Cloud500GBAnnualProduct
 				current["transactionId"] = "1000000000000003"
