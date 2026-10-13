@@ -110,3 +110,6 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 实况真实探针位于 `internal/albums/cos_live_roundtrip_test.go`，同样仅在 `albums_live` 与 `ALBUM_CI_LIVE_PROBE=1` 下执行。`ALBUM_CI_LIVE_DIRECTORY` 指向 Xcode 管理运行目录内的合成素材目录：先用 App 的 `testPrepareRealCILiveSource` 生成配对原件，再单独运行 `TestLiveCOSLiveComponents`，随后由 `testAssembleRealCIComponents` 重建配对，最后单独运行 `TestLiveCOSLivePair` 并由 `testRealCanonicalCIPairSystemSaveAndRecovery` 验证系统保存。每次 Go 测试使用精确 `^名称$`，不要一次运行所有阶段；原生阶段显式设置 `ALBUMS_PHOTOKIT_FIXTURES=1` 和 `ALBUMS_CI_LIVE_PATH`。
 
 结果未知时不重跑写入阶段。已记录任务可通过 `TestLiveCOSLiveResume` 只读核验，成品下载签名过期可通过 `TestLiveCOSLiveRefreshReadGrants` 重新读回并签名；两者不新建媒体任务或对象。目录中的 `read-grants.json` 含短期授权 URL，保持私有且不复制到仓库证据。独立 `version.json` 是 App 测试所需的受控目录夹具，绑定本次资源 hash、timing 与 versionID，不代表服务器已发布完整备份。测试不删除云端对象，也不授权原件释放。
+
+
+2026-10-13 App Store Connect 已创建相册 App `6822133304`，环境示例已填写该数字 ID。订阅群组 `22470252`，`albums.cloud.500gb.annual`（Apple ID `6822133711`，等级 1）和 `albums.cloud.50gb.annual`（`6822134191`，等级 2）均为未提交草案。尚无真实 StoreKit 购买、通知或权益核验验收，App Store Server API 凭据与商品可用性仍待配置。此次仅更新示例，不修改运行环境或开启订阅。
