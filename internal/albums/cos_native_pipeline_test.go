@@ -20,7 +20,7 @@ func TestLiveCOSNativePhotoPipeline(t *testing.T)     { liveNativePipeline(t, Ph
 func TestLiveCOSNativeVideoPipeline(t *testing.T)     { liveNativePipeline(t, Video) }
 func TestLiveCOSNativeLivePhotoPipeline(t *testing.T) { liveNativePipeline(t, LivePhoto) }
 
-func TestLiveCOSNativeMixedUploadPipeline(t *testing.T) { liveNativePipeline(t, AssetKind("mixed")) }
+func TestLiveCOSNativeMixedPipeline(t *testing.T) { liveNativePipeline(t, AssetKind("mixed")) }
 
 func liveNativePipeline(t *testing.T, kind AssetKind) {
 	t.Helper()
@@ -34,7 +34,7 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 	}
 	expectedVersions := 1
 	if kind == AssetKind("mixed") {
-		expectedPhotos, expectedVideos, expectedPairs, expectedVersions = 4, 2, 0, 3
+		expectedPhotos, expectedVideos, expectedPairs, expectedVersions = 4, 2, 1, 3
 	}
 	objects, root, ctx := liveRoundtripFixture(t)
 	if kind == AssetKind("mixed") {
@@ -131,7 +131,7 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 				}
 				counts["videosStored"] += video.Stored
 			}
-			if kind == LivePhoto {
+			if kind == LivePhoto || kind == AssetKind("mixed") {
 				pair, err := pairs.RunOnce(ctx)
 				if err != nil || pair.Failed != 0 {
 					t.Fatal("live pair verification failed; retained objects require inspection")
