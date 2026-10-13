@@ -111,6 +111,9 @@ func TestMySQLAccountDeletionFailureRollsBackAndRetrySucceeds(t *testing.T) {
 	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_account_deletions`).Scan(&count); err != nil || count != 0 {
 		t.Fatal("partial receipt survived", err)
 	}
+	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_deletion_apple_jobs`).Scan(&count); err != nil || count != 0 {
+		t.Fatal("failed request left provider work", err)
+	}
 	if !deletionAuthenticated(f, s.Token) {
 		t.Fatal("failed request revoked live account")
 	}
@@ -217,5 +220,8 @@ func TestMySQLAccountDeletionRacingLoginCannotLeaveUsableSession(t *testing.T) {
 	var active int
 	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_apple_grants WHERE account_id=? AND revoked_at IS NULL`, s.AccountID).Scan(&active); err != nil || active != 0 {
 		t.Fatal("grant escaped cutover", err)
+	}
+	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_apple_grants g LEFT JOIN album_deletion_apple_jobs j ON j.grant_id=g.grant_id WHERE g.account_id=? AND j.grant_id IS NULL`, s.AccountID).Scan(&active); err != nil || active != 0 {
+		t.Fatal("racing grant escaped provider cleanup", err)
 	}
 }
