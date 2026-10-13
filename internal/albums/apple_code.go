@@ -18,6 +18,7 @@ import (
 )
 
 var ErrAppleCode = errors.New("Apple authorization code could not be verified")
+var errAppleRevocation = errors.New("Apple credential revocation not confirmed")
 var appleIdentifierPattern = regexp.MustCompile(`^[A-Z0-9]{10}$`)
 
 type AppleCodeConfig struct {
@@ -118,4 +119,35 @@ func (e *AppleCodeExchanger) Exchange(ctx context.Context, code, identityToken, 
 		return AppleGrant{}, ErrAppleCode
 	}
 	return AppleGrant{Identity: verified, RefreshToken: result.RefreshToken}, nil
+}
+
+// Apple returns an empty 200 for both newly revoked and already invalidated
+// tokens. The deletion worker must persist its acknowledgement before erasure.
+func (e *AppleCodeExchanger) revokeRefreshCredential(ctx context.Context, token string) error {
+	if token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\r\n\x00") || ctx.Err() != nil {
+		return errAppleRevocation
+	}
+	secret, err := e.clientSecret()
+	if err != nil {
+		return errAppleRevocation
+	}
+	form := url.Values{"client_id": {albumAppleAudience}, "client_secret": {secret}, "token": {token}, "token_type_hint": {"refresh_token"}}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, appleIssuer+"/auth/revoke", strings.NewReader(form.Encode()))
+	if err != nil {
+		return errAppleRevocation
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := e.client.Do(request)
+	if err != nil {
+		return errAppleRevocation
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errAppleRevocation
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, 1))
+	if err != nil || len(data) != 0 {
+		return errAppleRevocation
+	}
+	return nil
 }
