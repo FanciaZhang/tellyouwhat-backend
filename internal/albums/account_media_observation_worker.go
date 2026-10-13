@@ -6,7 +6,10 @@ import (
 )
 
 // Counts media convergence jobs, not files erased or accounts completely deleted.
-type AccountMediaObservationBatch struct{ Acknowledged, Deferred, Contended int }
+type AccountMediaObservationBatch struct {
+	Acknowledged, Deferred, Contended int
+	AccountsQuiesced, AccountsWaiting int
+}
 
 type AccountMediaObservationWorker struct {
 	repository *MySQLUploads
@@ -24,7 +27,7 @@ func NewAccountMediaObservationWorker(repository *MySQLUploads, storage *COSObje
 
 func (w *AccountMediaObservationWorker) Check(ctx context.Context) error {
 	for _, query := range []string{
-		`SELECT d.account_id,d.request_id,d.requested_at,s.deletion_requested_at FROM album_account_deletions d JOIN album_storage_accounts s ON s.owner_id=d.account_id LIMIT 0`,
+		`SELECT d.media_quiesced_at,d.media_check_after,d.media_check_attempts,d.account_id,d.request_id,d.requested_at,s.deletion_requested_at FROM album_account_deletions d JOIN album_storage_accounts s ON s.owner_id=d.account_id LIMIT 0`,
 		`SELECT deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until,deletion_abort_id,deletion_aborted_at FROM album_multipart_intents LIMIT 0`,
 		`SELECT object_version,legacy,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_original_seals LIMIT 0`,
 		`SELECT deletion_object_version,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_photo_writes LIMIT 0`,
@@ -78,6 +81,10 @@ func (w *AccountMediaObservationWorker) RunOnce(ctx context.Context) (AccountMed
 	b.Acknowledged += multipart.Acknowledged
 	b.Deferred += multipart.Deferred
 	b.Contended += multipart.Contended
+	if err != nil {
+		return b, err
+	}
+	b.AccountsQuiesced, b.AccountsWaiting, err = w.repository.runAccountQuiescenceBatch(ctx, w.batchSize, w.now)
 	return b, err
 }
 

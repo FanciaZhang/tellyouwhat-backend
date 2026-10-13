@@ -101,7 +101,7 @@ func TestMySQLAccountMediaObservationWorkerRunsAllQueuesWithoutMutations(t *test
 	}
 	before, reservedBefore := photoJournalBalance(t, f.r.db, photo.account)
 	batch, err := worker.RunOnce(ctx)
-	if err != nil || batch != (AccountMediaObservationBatch{Acknowledged: 4}) || calls != 5 {
+	if err != nil || batch != (AccountMediaObservationBatch{Acknowledged: 4, AccountsQuiesced: 3}) || calls != 5 {
 		t.Fatal("queues not observed", batch, err, calls)
 	}
 	version, consumed, err := r.OriginalSeal(ctx, original, "photo")

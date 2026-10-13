@@ -150,8 +150,8 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 			if !available {
 				logger.Error("album account media convergence unavailable")
 			}
-			if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
-				logger.Info("album account media convergence batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
+			if batch.Acknowledged+batch.Deferred+batch.Contended+batch.AccountsQuiesced+batch.AccountsWaiting > 0 {
+				logger.Info("album account media convergence batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended, "accounts_quiesced", batch.AccountsQuiesced, "accounts_waiting", batch.AccountsWaiting)
 			}
 		})
 	}()
