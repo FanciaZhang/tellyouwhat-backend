@@ -235,8 +235,8 @@ func TestMySQLEngineTraceJudgeFailureAndPublicationGate(t *testing.T) {
 		}
 	}
 	blockers, err := s.PublicationBlockers(ctx, p.Candidates[0].Revision, time.Now())
-	if err != nil || len(blockers) != 0 {
-		t.Fatal("advisory judge blocks valid protocol", blockers, err)
+	if err != nil || len(blockers) == 0 {
+		t.Fatal("missing fixed quality cases must block publication", blockers, err)
 	}
 	var audience, env string
 	if err = s.DB.QueryRow(`SELECT audience,environment FROM ai_cost_attempts LIMIT 1`).Scan(&audience, &env); err != nil || audience != "admin_evaluation" || env != "management" {
@@ -286,5 +286,98 @@ func TestMySQLFailedOutputDiagnosticsAreEncrypted(t *testing.T) {
 	item, err := s.Result(ctx, run.ID, claim.Index, now)
 	if err != nil || item.Result.Outputs[0].DiagnosticOutput != diagnostic || item.Result.Judgment.DiagnosticOutput != diagnostic {
 		t.Fatal("diagnostic trace missing", err)
+	}
+}
+
+func TestPublicationRequiresUneditedQualitySamplesAndImageBudget(t *testing.T) {
+	samples := Builtins()
+	if len(samples) != 20 || len(requiredQualityCoverage(samples)) != 0 {
+		t.Fatal("fixed coverage missing")
+	}
+	for _, sample := range samples {
+		if err := sample.Validate(); err != nil {
+			t.Fatal(sample.Name, err)
+		}
+	}
+	if len(requiredQualityCoverage(samples[:len(samples)-1])) == 0 {
+		t.Fatal("missing image accepted")
+	}
+	samples[8].Expected = nil
+	if len(requiredQualityCoverage(samples)) == 0 {
+		t.Fatal("edited fixed sample accepted")
+	}
+	p := testPlan(t)
+	image := Builtins()[19]
+	plan, err := Prepare([]Sample{image}, p.Candidates, p.Judge, costcontrol.DurationPrice{NanosPerHour: 4500000000})
+	if err != nil || plan.ReservedNanos != ImageReservationNanos || plan.MaximumCalls != 1 {
+		t.Fatal("image not reserved exactly once", plan, err)
+	}
+}
+
+func TestRawBookFailureCannotBecomePassingEvaluationAfterCuration(t *testing.T) {
+	sample := RequiredQualitySamples()[1]
+	policy := promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]
+	price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 1e9, OutputNanosPerMillionTokens: 2e9}
+	policy.Journal.Organize.Lite.Price = &price
+	revision := promptconfig.Revision{ID: uuid.NewString(), Scope: "journal", Policy: policy}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		text := `{"tags":[{"name":"阳朔","type":"place"}],"existingBookRecommendations":[],"newBookSuggestions":[{"name":"情侣出游","description":"两个人的出游经历","reason":"持续旅行","relatedTags":["阳朔"]}]}`
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "lite", "output": []any{map[string]any{"type": "message", "content": []any{map[string]any{"type": "output_text", "text": text}}}}, "usage": map[string]int{"input_tokens": 100, "output_tokens": 100}})
+	}))
+	defer server.Close()
+	budget, _ := costcontrol.New(costcontrol.NewMemoryStore(), costcontrol.Limits{MonthlyBudgetNanos: 100e9, MaxConcurrent: 2, LeaseDuration: time.Minute}, time.Now)
+	e := Engine{Provider: provider.Config{BaseURL: server.URL, APIKey: "test", LiteModel: "lite", ProModel: "pro"}, Price: price}
+	out := e.execute(promptconfig.WithRevision(context.Background(), revision), budget, sample, Candidate{Revision: revision}, 0)
+	if out.Error != "" {
+		t.Fatal(out.Error)
+	}
+	failed, passed := false, false
+	for _, check := range out.Checks {
+		if strings.HasPrefix(check.Name, "原始输出") && !check.Passed {
+			failed = true
+		}
+		if check.Name == "过滤后结果质量" && check.Passed {
+			passed = true
+		}
+	}
+	if !failed || !passed || len(out.RawStructured) == 0 {
+		t.Fatal("curation hid Prompt failure", out)
+	}
+}
+
+func TestMySQLFixedQualityPublicationGateRejectsRawFailure(t *testing.T) {
+	s, m := testStore(t)
+	p := testPlan(t)
+	samples := append(RequiredQualitySamples(), Builtins()[2])
+	var err error
+	p, err = Prepare(samples, p.Candidates, p.Judge, costcontrol.DurationPrice{NanosPerHour: 4500000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fail := range []bool{false, true} {
+		m.Key = uuid.NewString()
+		run, err := s.Start(context.Background(), p, m, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range samples {
+			claim, err := s.Claim(context.Background(), time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checks := []CheckResult{{Name: "原始输出质量", Passed: !fail}, {Name: "过滤后结果质量", Passed: true}}
+			result := ItemResult{Outputs: []Output{{Candidate: 0, ConfigVersion: p.Candidates[0].Revision.ID, Checks: checks}}, Judgment: Judgment{Status: "incomplete"}}
+			if err = s.SaveResult(context.Background(), claim, result, true); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_ = run
+		if err = s.Recover(context.Background(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		blockers, err := s.PublicationBlockers(context.Background(), p.Candidates[0].Revision, time.Now())
+		if err != nil || (len(blockers) > 0) != fail {
+			t.Fatal("publication gate", fail, blockers, err)
+		}
 	}
 }

@@ -4,9 +4,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"log"
 	"log/slog"
 	"net/http"
@@ -37,6 +40,26 @@ func run() error {
 	if os.Getenv("DATABASE_DSN") != "" || os.Getenv("REDIS_URL") != "" || os.Getenv("APP_ENV") == "production" {
 		return errors.New("refusing production configuration in developer service")
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	policyDSN := os.Getenv("JOURNAL_PROMPT_DATABASE_DSN")
+	if policyDSN == "" {
+		return errors.New("missing read-only Journal Prompt database connection")
+	}
+	policyDB, err := sql.Open("mysql", policyDSN)
+	if err != nil {
+		return errors.New("invalid Journal Prompt database connection")
+	}
+	defer policyDB.Close()
+	policyDB.SetMaxOpenConns(1)
+	prompts := promptconfig.NewJournalCache(promptconfig.JournalLoader{Store: promptconfig.Store{DB: policyDB}})
+	refresh, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err = prompts.Refresh(refresh, time.Now())
+	cancel()
+	if err != nil {
+		return errors.New("published Journal Prompt configuration unavailable")
+	}
+	go prompts.Run(ctx, func(error) { logger.Error("Journal Prompt refresh failed; retaining last valid revision") })
 	base, key := os.Getenv("JOURNAL_ARK_BASE_URL"), os.Getenv("JOURNAL_ARK_API_KEY")
 	lite, pro, rewrite := os.Getenv("JOURNAL_ARK_LITE_MODEL"), os.Getenv("JOURNAL_ARK_PRO_MODEL"), os.Getenv("JOURNAL_VOICE_MODEL")
 	asr := voice.ASRConfig{StreamInsights: true, ObserveTrace: func(v []voice.StreamTrace) { data, _ := json.Marshal(v); log.Printf("journal_stream_trace=%s", data) }, ObserveSchema: func(v []voice.StreamSchema) { data, _ := json.Marshal(v); log.Printf("journal_stream_schema=%s", data) }, URL: os.Getenv("JOURNAL_VOICE_ASR_URL"), APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY"), ResourceID: os.Getenv("JOURNAL_VOICE_ASR_RESOURCE_ID")}
@@ -87,10 +110,11 @@ func run() error {
 		return errors.New("invalid Journal image enablement")
 	}
 	handler, err := development.New(development.Config{
+		Prompts:       prompts,
 		Token:         os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
 		Organizer:     provider.NewBudgetedClient(model, budget, "journal-development", price),
-		Speech:        voice.NewBudgetedSpeech(voice.ASR{Config: asr}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
-		Rewriter:      voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price),
+		Speech:        voice.NewBudgetedSpeech(voice.ASR{Config: asr, Prompts: prompts}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
+		Rewriter:      voice.ConfiguredRewriter{Next: voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price), Config: prompts},
 		Recording:     recording,
 		Illustrations: images,
 		Logger:        logger,
@@ -98,8 +122,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	if images != nil {
 		done := make(chan struct{})
 		go func() { defer close(done); images.Run(ctx) }()

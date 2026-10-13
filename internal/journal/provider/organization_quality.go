@@ -179,3 +179,24 @@ func conciseBookName(value string) string {
 	}
 	return name
 }
+
+// Evaluation checks raw and final outputs independently; sanitization is not a Prompt pass.
+func OrganizationQualityIssues(request contracts.OrganizeRequest, result contracts.ModelResult) []string {
+	issues := []string{}
+	curated := curateOrganization(request, result)
+	if len(curated.Tags) != len(result.Tags) {
+		issues = append(issues, "标签包含重复、空泛、被拒绝或原文未出现的实体")
+	}
+	if len(curated.ExistingBookRecommendations) != len(result.ExistingBookRecommendations) {
+		issues = append(issues, "重复推荐已收录书册")
+	}
+	if len(curated.NewBookSuggestions) != len(result.NewBookSuggestions) {
+		issues = append(issues, "新书册与已有书册重复")
+	}
+	for i, book := range result.NewBookSuggestions {
+		if i < len(curated.NewBookSuggestions) && book.Name != curated.NewBookSuggestions[i].Name {
+			issues = append(issues, "新书册名称包含冗余后缀")
+		}
+	}
+	return issues
+}

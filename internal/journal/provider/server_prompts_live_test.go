@@ -67,7 +67,7 @@ func TestLiveServerOwnedIllustrationPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image, err := generator.Generate(ctx, illustration.Input{Prompt: brief.Compile()})
+	image, err := generator.Generate(ctx, illustration.Input{Prompt: brief.Compile(ctx)})
 	if err != nil {
 		t.Fatal(err)
 	}

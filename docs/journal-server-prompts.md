@@ -7,8 +7,8 @@ Birthday contracts and business behavior are outside this change.
 | Endpoint | Responsibility | Instruction owner |
 | --- | --- | --- |
 | `POST /v1/journal/organization` | Tags and book recommendations | Published Journal organize policy |
-| `POST /v1/journal/illustration-suggestions` | Optional scene grounded in body text | Journal provider and shared scene contract |
-| `POST /v1/journal/illustrations` | Image job from a confirmed brief | `internal/journal/illustration/brief.go` |
+| `POST /v1/journal/illustration-suggestions` | Optional scene grounded in body text | Published Journal illustration suggestion policy |
+| `POST /v1/journal/illustrations` | Image job from a confirmed brief | Published Journal illustration generation policy |
 | Journal voice session API | Existing voice workflow | Existing Journal voice policy and schemas |
 
 Organization no longer includes an illustration switch or illustration result.
@@ -19,9 +19,9 @@ public generic AI endpoint. Voice behavior and protocol version are unchanged.
 
 Image admission validates `brief.title` and typed `brief.details`, compiles provider
 instructions once on the server and freezes them in the encrypted job for retries.
-Unknown caller `prompt`, `instructions` and `model` fields are rejected. Scene and
-image templates are source-owned server instructions; this change does not add
-admin editing controls for them.
+Unknown caller `prompt`, `instructions` and `model` fields are rejected. Scene and image instructions now share the published Journal configuration and
+admin versioning controls. See [quality and publication checks](journal-ai-quality.md)
+for the follow-up milestone, required fixed samples and deployment prerequisites.
 
 The canonical API is `Contracts/HTTP/JournalAPI/app.openapi.yaml`. Regenerate with
 `go generate ./internal/journalhttpapi` and synchronize the resulting Journal

@@ -42,6 +42,7 @@ func (s Store) Published(ctx context.Context) (map[string]Revision, error) {
 
 type cacheSnapshot struct{ revisions map[string]Revision }
 type Cache struct {
+	scopes      []string
 	loader      Loader
 	snapshot    atomic.Pointer[cacheSnapshot]
 	mu          sync.Mutex
@@ -51,7 +52,22 @@ type Cache struct {
 	inFlight    chan struct{}
 }
 
-func NewCache(loader Loader) *Cache { return &Cache{loader: loader} }
+func NewCache(loader Loader) *Cache { return &Cache{loader: loader, scopes: Scopes()} }
+
+// A private Journal runtime reads only its own published policy.
+func NewJournalCache(loader Loader) *Cache {
+	return &Cache{loader: loader, scopes: []string{"journal"}}
+}
+
+type JournalLoader struct{ Store Store }
+
+func (l JournalLoader) Published(ctx context.Context) (map[string]Revision, error) {
+	revision, err := l.Store.Current(ctx, "journal")
+	if err != nil {
+		return nil, err
+	}
+	return map[string]Revision{"journal": revision}, nil
+}
 
 // Current only reads memory. Return a private copy so callers cannot mutate the snapshot.
 func (c *Cache) Current(scope string) (Revision, error) {
@@ -93,7 +109,7 @@ func (c *Cache) Refresh(ctx context.Context, now time.Time) error {
 	c.mu.Unlock()
 	values, err := c.loader.Published(ctx)
 	if err == nil {
-		for _, scope := range Scopes() {
+		for _, scope := range c.scopes {
 			r, ok := values[scope]
 			if !ok || r.ID == "" || r.Scope != scope || r.PublishedAt == nil || r.Policy.Validate(scope) != nil {
 				err = ErrInvalid

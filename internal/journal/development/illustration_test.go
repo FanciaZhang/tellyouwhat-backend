@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
 type imageFixture struct {
@@ -317,5 +318,66 @@ func TestIllustrationDisabledRouteReportsUnavailable(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 503 || !strings.Contains(w.Body.String(), "not_ready") {
 		t.Fatalf("disabled %d %s", w.Code, w.Body)
+	}
+}
+
+type journalPromptLoader struct{ revision promptconfig.Revision }
+
+func (l *journalPromptLoader) Published(context.Context) (map[string]promptconfig.Revision, error) {
+	return map[string]promptconfig.Revision{"journal": l.revision}, nil
+}
+func TestImageAdmissionFreezesPublishedPromptAcrossRetryAndRollback(t *testing.T) {
+	now := time.Now()
+	policy := promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]
+	policy.Journal.IllustrationGenerationPrompt = "版本 A"
+	loader := &journalPromptLoader{promptconfig.Revision{ID: "version-a", Scope: "journal", Policy: policy, PublishedAt: &now}}
+	cache := promptconfig.NewJournalCache(loader)
+	if err := cache.Refresh(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewIllustrationRuntime(t.TempDir(), strings.Repeat("x", 43), &imageFixture{}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.prompts = cache
+	id := uuid.NewString()
+	confirmation := illustration.Confirmation{RequestID: id, VersionID: id, ConsentRevision: privacy.JournalIllustrationDocumentVersion, Brief: illustration.Brief{Title: "小狗", Details: []illustration.Detail{{Kind: "subject", Text: "小狗"}}}}
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	loader.revision.ID = "version-b"
+	loader.revision.Policy.Journal.IllustrationGenerationPrompt = "版本 B"
+	if err = cache.Refresh(context.Background(), now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := runtime.load("owner", id)
+	if err != nil || saved.ConfigVersion != "version-a" || !strings.HasPrefix(saved.Input.Prompt, "版本 A") {
+		t.Fatal("retry lost frozen configuration", err)
+	}
+	confirmation.RequestID = uuid.NewString()
+	confirmation.VersionID = confirmation.RequestID
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = runtime.load("owner", confirmation.RequestID)
+	if err != nil || saved.ConfigVersion != "version-b" || !strings.HasPrefix(saved.Input.Prompt, "版本 B") {
+		t.Fatal("new request ignored publication", err)
+	}
+	loader.revision.ID = "version-c-restoring-a"
+	loader.revision.Policy.Journal.IllustrationGenerationPrompt = "版本 A"
+	if err = cache.Refresh(context.Background(), now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	confirmation.RequestID = uuid.NewString()
+	confirmation.VersionID = confirmation.RequestID
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = runtime.load("owner", confirmation.RequestID)
+	if err != nil || saved.ConfigVersion != "version-c-restoring-a" || !strings.HasPrefix(saved.Input.Prompt, "版本 A") {
+		t.Fatal("new request ignored restored policy", err)
 	}
 }

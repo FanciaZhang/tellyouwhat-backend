@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -90,6 +92,15 @@ func run(logger *slog.Logger) error {
 	for _, app := range platform.Apps {
 		if app.Registry.ID == appregistry.Journal {
 			engine := &prompteval.Engine{Store: prompteval.Store{DB: database, Cipher: cipher, Limits: platform.AICost.Limits}, Provider: journalprovider.Config{BaseURL: app.JournalAI.BaseURL, APIKey: app.JournalAI.APIKey, LiteModel: app.JournalAI.LiteModel, ProModel: app.JournalAI.ProModel}, ASR: app.VoiceASR, Price: platform.AICost.JournalArk, SpeechPrice: platform.AICost.JournalSpeech}
+			if os.Getenv("JOURNAL_IMAGE_MODEL_ID") != "" {
+				images, imageErr := illustration.NewProvider(app.JournalAI.BaseURL, app.JournalAI.APIKey, os.Getenv("JOURNAL_IMAGE_MODEL_ID"), nil)
+				cost, costErr := strconv.ParseInt(os.Getenv("JOURNAL_IMAGE_MAX_COST_NANOS"), 10, 64)
+				if imageErr != nil || costErr != nil || cost <= 0 || cost > prompteval.ImageReservationNanos {
+					logger.Error("Journal image evaluation unavailable: invalid model or cost configuration")
+				} else {
+					engine.Images, engine.ImageCostNanos = images, cost
+				}
+			}
 			go engine.Run(ctx)
 		}
 		if app.Registry.ID != appregistry.Health {

@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -215,7 +216,7 @@ func polishSourceSentences(text string) []string {
 	return sentences
 }
 
-func preparePolish(p PolishRequest, style promptconfig.Style, words []string, parameters promptconfig.Parameters) (map[string]any, promptconfig.Parameters) {
+func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Style, words []string, parameters promptconfig.Parameters) (map[string]any, promptconfig.Parameters) {
 	targets := make([]map[string]any, 0, len(p.Targets))
 	for _, target := range p.Targets {
 		turns := []map[string]any{}
@@ -297,7 +298,7 @@ func preparePolish(p PolishRequest, style promptconfig.Style, words []string, pa
 	if len(currentSourceIDs) > 0 {
 		omissionSchema["items"].(map[string]any)["properties"].(map[string]any)["sourceID"] = map[string]any{"type": "string", "enum": currentSourceIDs}
 	}
-	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v36", "strict": true, "schema": schema}}}
+	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + promptconfig.ScenePrompt(ctx) + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v36", "strict": true, "schema": schema}}}
 	tokenLimit, timeout, effort := 2048, 25, "disabled"
 	if p.Narrator != nil && slices.ContainsFunc(p.Targets, func(target PolishTarget) bool {
 		return slices.ContainsFunc(target.Turns, func(turn SourceUtterance) bool {
