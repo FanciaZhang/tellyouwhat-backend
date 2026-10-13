@@ -4,10 +4,22 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from stage_test_upgrade import candidate_environment, check_empty, Stage, OperationError
+from stage_test_upgrade import candidate_environment, check_empty, signing_files, Stage, OperationError
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_only_enabled_features_require_signing_material(self):
+        config = {key: '/album-secrets/' + str(i) + '.p8' for i, key in enumerate(
+            ['ALBUM_APPLE_SIGN_IN_KEY_FILE', 'ALBUM_CREDENTIAL_KEY_FILE', 'ALBUM_LOGIN_LIMIT_KEY_FILE'])}
+        config.update(ALBUM_APNS_KEY_FILE='/album-secrets/missing-apns.p8', ALBUM_RETENTION_PUSH_ENABLED='false')
+        self.assertEqual(len(signing_files(config)), 3)
+        config['ALBUM_SUBSCRIPTIONS_ENABLED'] = 'true'
+        with self.assertRaises(OperationError): signing_files(config)
+        config.update(ALBUM_APP_STORE_KEY_FILE='/album-secrets/store.p8', ALBUM_APP_STORE_ROOTS_FILE='/album-secrets/roots.pem')
+        self.assertEqual(len(signing_files(config)), 5)
+        config['ALBUM_APP_STORE_KEY_FILE'] = '/album-secrets/../other.p8'
+        with self.assertRaises(OperationError): signing_files(config)
+
     def test_candidate_has_separate_endpoint_network_and_exact_revision(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'before.env'

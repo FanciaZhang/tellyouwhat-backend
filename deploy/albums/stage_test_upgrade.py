@@ -63,6 +63,25 @@ def check_empty(state):
         raise OperationError('test stack contains accounts or uploads; do not clone live user data')
 
 
+def signing_files(runtime):
+    names = ['ALBUM_APPLE_SIGN_IN_KEY_FILE', 'ALBUM_CREDENTIAL_KEY_FILE', 'ALBUM_LOGIN_LIMIT_KEY_FILE']
+    for enabled, fields in (
+        ('ALBUM_SUBSCRIPTIONS_ENABLED', ['ALBUM_APP_STORE_KEY_FILE', 'ALBUM_APP_STORE_ROOTS_FILE']),
+        ('ALBUM_RETENTION_PUSH_ENABLED', ['ALBUM_APNS_KEY_FILE']),
+        ('ALBUM_SHARING_ENABLED', ['ALBUM_SHARE_KEY_FILE']),
+    ):
+        if runtime.get(enabled) == 'true': names.extend(fields)
+    if runtime.get('ALBUM_SHARING_ENABLED') == 'true' and runtime.get('ALBUM_SHARE_PREVIOUS_KEY_FILE'):
+        names.append('ALBUM_SHARE_PREVIOUS_KEY_FILE')
+    values = []
+    for field in names:
+        value = runtime.get(field, '')
+        if not re.fullmatch('/album-secrets/[a-zA-Z0-9_.-]+', value):
+            raise OperationError('missing or invalid active signing material reference')
+        values.append(value.removeprefix('/album-secrets/'))
+    return sorted(set(values))
+
+
 def ready(port):
     request = urllib.request.Request(f'http://127.0.0.1:{port}/readyz',
                                      headers={'Host': 'api.albums.tellyouwhat.cn'})
@@ -173,14 +192,10 @@ class Stage:
         atomic_text(self.folder / 'active-runtime.env', (ROOT / '.env.albums-test').read_text())
         runtime = read_environment(ROOT / '.env.albums-test')
         signing = {}
-        for value in sorted(set(runtime.values())):
-            if value.startswith('/album-secrets/'):
-                name = value.removeprefix('/album-secrets/')
-                if not re.fullmatch('[a-zA-Z0-9_.-]+', name):
-                    raise OperationError('invalid signing material reference')
-                # Only the exact files referenced by the current runtime are read.
-                digest = self.execute('signing-digest', ['sudo', '-n', 'sha256sum', str(ROOT / 'secrets' / name)]).decode().split()[0]
-                signing[name] = digest
+        for name in signing_files(runtime):
+            # Disabled features can retain paths to keys that have not been created.
+            digest = self.execute('signing-digest', ['sudo', '-n', 'sha256sum', str(ROOT / 'secrets' / name)]).decode().split()[0]
+            signing[name] = digest
         recovery = dict(compose_sha256=hashlib.sha256((self.old_source / 'compose.albums-test.yaml').read_bytes()).hexdigest(),
                         runtime_sha256=hashlib.sha256((ROOT / '.env.albums-test').read_bytes()).hexdigest(),
                         signing_sha256=signing,
