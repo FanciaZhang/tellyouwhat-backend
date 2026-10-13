@@ -14,17 +14,26 @@ import (
 	"time"
 )
 
-// Explicit paid probe, one synthetic photo only. Real COS multipart/sealing/CI,
+// Explicit paid probes, one synthetic media item each. Real COS multipart/sealing/CI,
 // isolated database and synthetic login/subscription. Never deletes any media.
-func TestLiveCOSNativePhotoPipeline(t *testing.T) {
+func TestLiveCOSNativePhotoPipeline(t *testing.T) { liveNativePipeline(t, Photo) }
+func TestLiveCOSNativeVideoPipeline(t *testing.T) { liveNativePipeline(t, Video) }
+
+func liveNativePipeline(t *testing.T, kind AssetKind) {
+	t.Helper()
+	prefix := "cloud-" + string(kind)
+	expectedPhotos, expectedVideos := 2, 0
+	if kind == Video {
+		expectedPhotos, expectedVideos = 0, 1
+	}
 	objects, root, ctx := liveRoundtripFixture(t)
-	marker, err := os.OpenFile(filepath.Join(root, "cloud-photo-intent.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	marker, err := os.OpenFile(filepath.Join(root, prefix+"-intent.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal("fresh cloud probe directory required; do not repeat unknown writes")
 	}
 	marker.Close()
 	f := newPushFixture(t)
-	session, _ := f.login(t, "native-cloud-photo", f.now)
+	session, _ := f.login(t, "native-cloud-"+string(kind), f.now)
 	other, _ := f.login(t, "native-cloud-other", f.now)
 	r := NewMySQLUploads(f.r.db).WithSubscriptionEnvironment("Sandbox", time.Now)
 	_, err = r.ApplySubscription(ctx, session.AccountID, 0, VerifiedAlbumSubscription{
@@ -33,8 +42,8 @@ func TestLiveCOSNativePhotoPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal("isolated entitlement setup failed")
 	}
-	roundtripJSON(t, root, "cloud-photo-intent.json", map[string]any{"ownerID": session.AccountID, "scope": "new synthetic photo; no deletion; local database only"})
-	service, err := NewUploadService(r, objects, UploadPolicy{MaxOriginalBytes: 8 << 20, MaxDerivedBytes: 16 << 20, UploadTTL: time.Hour, VerificationLease: time.Minute}, time.Now)
+	roundtripJSON(t, root, prefix+"-intent.json", map[string]any{"ownerID": session.AccountID, "scope": "new synthetic " + string(kind) + "; no deletion; local database only"})
+	service, err := NewUploadService(r, objects, UploadPolicy{MaxOriginalBytes: 32 << 20, MaxDerivedBytes: 16 << 20, UploadTTL: time.Hour, VerificationLease: time.Minute}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,23 +79,24 @@ func TestLiveCOSNativePhotoPipeline(t *testing.T) {
 		router.ServeHTTP(w, request)
 	}))
 	defer server.Close()
-	roundtripJSON(t, root, "fixture.json.tmp", map[string]any{"loopback": server.URL, "session": session, "other": other})
+	roundtripJSON(t, root, "fixture.json.tmp", map[string]any{"loopback": server.URL, "session": session, "other": other, "kind": kind})
 	if err := os.Rename(filepath.Join(root, "fixture.json.tmp"), filepath.Join(root, "fixture.json")); err != nil {
 		t.Fatal(err)
 	}
 	verify, _ := NewVerificationWorker(r, service, 1, time.Second)
 	photos, _ := NewPhotoWorker(r, service, 2)
+	videos, _ := NewVideoWorker(r, service, "p543daa336f7a4d4b896654b933f8881b", 1)
 	finalize, _ := NewDerivedFinalizationWorker(r, 1, time.Now)
-	counts := map[string]int{"originalsVerified": 0, "previewsStored": 0}
+	counts := map[string]int{"originalsVerified": 0, "previewsStored": 0, "videosStored": 0}
 	defer func() {
-		roundtripJSON(t, root, "cloud-photo-worker.json", map[string]any{"passed": !t.Failed(), "counts": counts})
+		roundtripJSON(t, root, prefix+"-worker.json", map[string]any{"passed": !t.Failed(), "counts": counts})
 	}()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatal("cloud photo probe timed out; inspect existing intent, do not repeat uploads")
+			t.Fatal("cloud media probe timed out; inspect existing intent, do not repeat uploads")
 		case <-tick.C:
 			v, err := verify.RunOnce(ctx)
 			if err != nil || v.Failed != 0 {
@@ -98,7 +108,14 @@ func TestLiveCOSNativePhotoPipeline(t *testing.T) {
 				t.Fatal("photo processing failed; existing cloud objects retained")
 			}
 			counts["previewsStored"] += p.Stored
-			roundtripJSON(t, root, "cloud-photo-progress.json", counts)
+			if kind == Video {
+				video, err := videos.RunOnce(ctx)
+				if err != nil || video.Failed != 0 {
+					t.Fatal("video processing failed; existing intent retained; do not repeat submission")
+				}
+				counts["videosStored"] += video.Stored
+			}
+			roundtripJSON(t, root, prefix+"-progress.json", counts)
 			closed, err := finalize.RunOnce(ctx)
 			if err != nil || closed.Failed != 0 || closed.Held != 0 {
 				t.Fatal("derived quota finalization failed")
@@ -110,10 +127,13 @@ func TestLiveCOSNativePhotoPipeline(t *testing.T) {
 	}
 verifyResult:
 	page, err := r.AssetVersions(context.Background(), session.AccountID, 0, 10)
-	if err != nil || len(page.Versions) != 1 || counts["originalsVerified"] != 1 || counts["previewsStored"] != 2 {
+	if err != nil || len(page.Versions) != 1 || counts["originalsVerified"] != 1 || counts["previewsStored"] != expectedPhotos || counts["videosStored"] != expectedVideos {
 		t.Fatal("unexpected published media/job counts")
 	}
 	version := page.Versions[0]
+	if version.Manifest.Kind != kind {
+		t.Fatal("unexpected media kind")
+	}
 	if len(version.Objects) != 1 {
 		t.Fatal("unexpected source resource count")
 	}
@@ -131,5 +151,5 @@ verifyResult:
 	if err := f.r.db.QueryRow(`SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, session.AccountID).Scan(&used, &reserved); err != nil || used < object.SizeBytes || reserved != 0 {
 		t.Fatal("quota settlement incomplete", err)
 	}
-	roundtripJSON(t, root, "cloud-photo-backend-evidence.json", map[string]any{"passed": true, "versionID": version.VersionID, "original": object, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"})
+	roundtripJSON(t, root, prefix+"-backend-evidence.json", map[string]any{"passed": true, "versionID": version.VersionID, "original": object, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"})
 }

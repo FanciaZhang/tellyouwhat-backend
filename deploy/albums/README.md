@@ -264,3 +264,6 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 照片原生往返：同一脚本显式选择 `--scenario cloud-photo`，以 `albums_live` 构建标签运行 `TestLiveCOSNativePhotoPipeline`。它只对新生成的合成 JPEG 使用真实 COS/CI，控制服务、账户与权益在隔离 MySQL 中；不调用媒体删除或改变部署开关。固定版本原件全量回读、两个预览任务与额度结算均须通过，同时验证原生写入系统副本、原件恢复和重开不重复创建。失败先检查运行目录 intent 与进度，避免盲目重复上传。测试对象保留。
 
 照片发布早于预览完成：原件存在但尚无预览记录时返回 `409 photo_preview_not_ready`，不再误报 `404 asset_version_not_found`；原件缺失、跨账户读取仍拒绝。原生生成客户端需接受 RFC 3339 的可选小数秒。验证及范围见 `docs/evidence/albums-native-cloud-photo-2026-10-14.json`；不代表真实 Apple 登录/购买、远端控制 API 或原件删除验收。
+
+
+视频原生往返使用同一脚本 `--scenario cloud-video` 与 `TestLiveCOSNativeVideoPipeline`。共享测试桥按类型运行正式原件核验、预览 worker 和额度结算；视频由本机 ffmpeg 合成四秒 2304×1296 H.264/AAC，原生从系统图库读取，经三个 COS 分片上传，等待真实 CI 转码完成后写入系统日常版并恢复原件。两个独立 App 进程核对副本复用和账户隔离；原生额外解码系统视频帧与 PCM 音频。新测试不会删除媒体或改变线上开关。结果见 `docs/evidence/albums-native-cloud-video-2026-10-14.json`。
