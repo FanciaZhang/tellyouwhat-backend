@@ -159,6 +159,7 @@ func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
 	for _, query := range []string{
 		`SELECT deletion_requested_at FROM album_storage_accounts LIMIT 0`,
 		`SELECT media_quiesced_at,media_check_after,media_check_attempts FROM album_account_deletions LIMIT 0`,
+		`SELECT ` + accountPurgeColumns + `,updated_at FROM album_account_object_purges LIMIT 0`,
 		`SELECT direct_upload_issued FROM album_uploads LIMIT 0`,
 		`SELECT deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until,deletion_abort_id,deletion_aborted_at FROM album_multipart_intents LIMIT 0`,
 		`SELECT upload_id,resource_id,manifest_digest,consumed_at,object_version,legacy FROM album_original_seals LIMIT 0`,
