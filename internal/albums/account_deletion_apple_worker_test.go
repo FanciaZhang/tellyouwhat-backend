@@ -54,7 +54,7 @@ func newAppleGatewayFixture(t *testing.T) appleGatewayFixture {
 func (f appleGatewayFixture) login(t *testing.T, subject string) (AlbumSession, AccountLogin, string) {
 	t.Helper()
 	token := "synthetic-refresh-" + uuid.NewString()
-	grant, err := f.accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: AppleIdentity{Subject: subject}, RefreshToken: token})
+	grant, err := f.accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: freshAppleIdentity(subject), RefreshToken: token})
 	if err != nil {
 		t.Fatal(err)
 	}

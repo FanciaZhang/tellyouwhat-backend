@@ -20,6 +20,13 @@ import (
 const albumAppleAudience = "cn.tellyouwhat.albums"
 const appleIssuer = "https://appleid.apple.com"
 
+const appleIdentityMaxAge = 10 * time.Minute
+const appleIdentityClockSkew = 30 * time.Second
+
+func freshAppleIdentityAssertion(issued, now time.Time) bool {
+	return !issued.IsZero() && !now.IsZero() && !issued.Before(now.Add(-appleIdentityMaxAge)) && !issued.After(now.Add(appleIdentityClockSkew))
+}
+
 var ErrAppleIdentity = errors.New("Apple identity could not be verified")
 var errAppleKeyUnavailable = errors.New("Apple verification keys unavailable")
 var loginNoncePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -77,9 +84,9 @@ func (v *AppleIdentityVerifier) Verify(ctx context.Context, encoded, expectedNon
 		return v.key(ctx, kid)
 	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(appleIssuer),
 		jwt.WithAudience(albumAppleAudience), jwt.WithExpirationRequired(), jwt.WithIssuedAt(),
-		jwt.WithLeeway(30*time.Second), jwt.WithTimeFunc(func() time.Time { return now }))
+		jwt.WithLeeway(appleIdentityClockSkew), jwt.WithTimeFunc(func() time.Time { return now }))
 	if err != nil || token == nil || !token.Valid || claims.IssuedAt == nil || claims.ExpiresAt == nil ||
-		claims.IssuedAt.Time.Before(now.Add(-10*time.Minute)) || !claims.ExpiresAt.Time.After(claims.IssuedAt.Time) ||
+		!freshAppleIdentityAssertion(claims.IssuedAt.Time, now) || !claims.ExpiresAt.Time.After(claims.IssuedAt.Time) ||
 		len(claims.Audience) != 1 || claims.Subject == "" || len(claims.Subject) > 255 ||
 		subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(expectedNonce)) != 1 {
 		return AppleIdentity{}, ErrAppleIdentity

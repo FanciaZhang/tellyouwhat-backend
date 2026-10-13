@@ -482,7 +482,7 @@ func TestMySQLAccountDeletionStorageFenceMigrationBackfill(t *testing.T) {
 	s, _ := f.login(t, "delete", f.now)
 	other, _ := f.login(t, "keep", f.now)
 	acceptAppleDeletion(t, f, s.Token)
-	if _, err := f.r.db.Exec(`ALTER TABLE album_storage_accounts DROP COLUMN deletion_requested_at`); err != nil {
+	if _, err := f.r.db.Exec(`ALTER TABLE album_storage_accounts DROP CHECK album_subscription_completion_receipt, DROP COLUMN deletion_requested_at`); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile("../../migrations/0043_album_deletion_storage_fence.sql")

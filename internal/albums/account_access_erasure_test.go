@@ -123,7 +123,7 @@ func TestMySQLAccountAccessErasureRemovesCredentialsAndPreservesExactRequestRepl
 			t.Fatal("unrelated credential/request replay accepted")
 		}
 	}
-	if _, err = x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "erasure-owner"}, RefreshToken: "another-grant"}); !errors.Is(err, ErrOwner) {
+	if _, err = x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity("erasure-owner"), RefreshToken: "another-grant"}); !errors.Is(err, ErrOwner) {
 		t.Fatal("login reopened unfinished account deletion", err)
 	}
 	if _, err = x.f.sessions.Issue(ctx, x.grants[0]); !errors.Is(err, ErrSession) {

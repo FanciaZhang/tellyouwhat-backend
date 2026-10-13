@@ -67,6 +67,13 @@ func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, re
 					if erased > 0 {
 						slog.Info("album account records erased", "accounts", erased)
 					}
+					retired, retireErr := repository.runIdentityRetirementBatch(ctx, 10, service.now)
+					if retireErr != nil && ctx.Err() == nil {
+						slog.Warn("album identity retirement queue unavailable")
+					}
+					if retired > 0 {
+						slog.Info("album identity fences retired", "identities", retired)
+					}
 				}
 				timer := time.NewTimer(5 * time.Second)
 				select {

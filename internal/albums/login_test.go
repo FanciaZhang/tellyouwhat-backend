@@ -23,7 +23,7 @@ func (f *loginPipelineFixture) Exchange(_ context.Context, code, identity, nonce
 	if f.fail == "exchange" {
 		return AppleGrant{}, errors.New("private provider error")
 	}
-	return AppleGrant{Identity: AppleIdentity{Subject: "verified-subject"}, RefreshToken: "private-refresh"}, nil
+	return AppleGrant{Identity: freshAppleIdentity("verified-subject"), RefreshToken: "private-refresh"}, nil
 }
 func (f *loginPipelineFixture) RegisterAppleLogin(_ context.Context, grant AppleGrant) (AccountLogin, error) {
 	f.steps = append(f.steps, "account")

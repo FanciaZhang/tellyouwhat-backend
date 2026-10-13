@@ -74,7 +74,7 @@ func TestMySQLAccountDeletionRecordedAccessRevocationAndExactReplay(t *testing.T
 	if _, err := f.sessions.Issue(ctx, grant); !errors.Is(err, ErrSession) {
 		t.Fatal("new session issued during deletion", err)
 	}
-	if _, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "delete-owner"}, RefreshToken: "new-provider-grant"}); !errors.Is(err, ErrOwner) {
+	if _, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity("delete-owner"), RefreshToken: "new-provider-grant"}); !errors.Is(err, ErrOwner) {
 		t.Fatal("login revived deleting account", err)
 	}
 	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
@@ -187,7 +187,7 @@ func TestMySQLAccountDeletionRacingLoginCannotLeaveUsableSession(t *testing.T) {
 		go func() {
 			defer group.Done()
 			<-start
-			grant, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "racing-owner"}, RefreshToken: uuid.NewString()})
+			grant, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity("racing-owner"), RefreshToken: uuid.NewString()})
 			if errors.Is(err, ErrOwner) {
 				return
 			}

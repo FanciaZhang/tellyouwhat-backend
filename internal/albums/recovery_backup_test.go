@@ -32,7 +32,7 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: AppleIdentity{Subject: "recovery-deleting-fixture"}, RefreshToken: "synthetic-refresh"})
+	other, err := accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: freshAppleIdentity("recovery-deleting-fixture"), RefreshToken: "synthetic-refresh"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -84,7 +84,7 @@ func newSharingFixture(t *testing.T) sharingFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	login, err := accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: uuid.NewString()}, RefreshToken: uuid.NewString()})
+	login, err := accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity(uuid.NewString()), RefreshToken: uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -82,7 +82,7 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 			db.ExecContext(context.Background(), `DELETE FROM album_accounts WHERE account_id=?`, account)
 		}
 	}()
-	verified := AppleGrant{Identity: AppleIdentity{Subject: subject}, RefreshToken: "private-refresh-token"}
+	verified := AppleGrant{Identity: freshAppleIdentity(subject), RefreshToken: "private-refresh-token"}
 	var group sync.WaitGroup
 	logins := make(chan AccountLogin, 10)
 	for range 10 {
@@ -174,4 +174,8 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 	if _, err := repo.RegisterAppleLogin(ctx, verified); !errors.Is(err, ErrOwner) {
 		t.Fatal("disabled account reactivated")
 	}
+}
+
+func freshAppleIdentity(subject string) AppleIdentity {
+	return AppleIdentity{Subject: subject, IssuedAt: time.Now().UTC()}
 }

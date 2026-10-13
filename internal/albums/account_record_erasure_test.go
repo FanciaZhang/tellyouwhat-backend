@@ -192,6 +192,10 @@ func TestGatewayAccountRecordErasureRequiresExplicitEnablement(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := newAlbumReceiptFixture(t, now)
+			orphan := appleSubjectHash("retirement-worker-orphan")
+			if _, err = f.db.Exec(`INSERT INTO album_apple_identity_state(subject_sha256,revoked_before) VALUES (?,?)`, orphan, now.Add(-2*identityFenceRetention)); err != nil {
+				t.Fatal(err)
+			}
 			f.config.Subscriptions = &AlbumSubscriptionConfig{RebindingEnabled: true, RecordErasureEnabled: enabled, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 			g, err := NewGateway(context.Background(), f.config, f.transport(t, func(*http.Request) (*http.Response, error) { return appleResponse(""), nil }))
 			if err != nil {
@@ -201,15 +205,19 @@ func TestGatewayAccountRecordErasureRequiresExplicitEnablement(t *testing.T) {
 			deadline := time.Now().Add(12 * time.Second)
 			for {
 				var erased sql.NullTime
+				var remaining int
+				if err := f.db.QueryRow(`SELECT COUNT(*) FROM album_apple_identity_state WHERE subject_sha256=?`, orphan).Scan(&remaining); err != nil {
+					t.Fatal(err)
+				}
 				if err := f.db.QueryRow(`SELECT records_erased_at FROM album_deletion_ledger WHERE account_id=?`, deletion.AccountID).Scan(&erased); err != nil {
 					t.Fatal(err)
 				}
-				if enabled && erased.Valid {
+				if enabled && erased.Valid && remaining == 0 {
 					break
 				}
 				if !enabled {
 					var access sql.NullTime
-					if err := f.db.QueryRow(`SELECT access_erased_at FROM album_account_deletions WHERE account_id=?`, deletion.AccountID).Scan(&access); err != nil || erased.Valid {
+					if err := f.db.QueryRow(`SELECT access_erased_at FROM album_account_deletions WHERE account_id=?`, deletion.AccountID).Scan(&access); err != nil || erased.Valid || remaining != 1 {
 						t.Fatal("disabled worker erased account", err)
 					}
 					if access.Valid {

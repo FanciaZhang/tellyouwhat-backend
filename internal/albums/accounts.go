@@ -22,13 +22,14 @@ type AccountLogin struct{ AccountID, GrantID string }
 type MySQLAccounts struct {
 	db     *sql.DB
 	cipher AccountCipher
+	now    func() time.Time
 }
 
 func NewMySQLAccounts(db *sql.DB, cipher AccountCipher) (*MySQLAccounts, error) {
 	if db == nil || cipher == nil {
 		return nil, errors.New("album account database and credential cipher are required")
 	}
-	return &MySQLAccounts{db, cipher}, nil
+	return &MySQLAccounts{db: db, cipher: cipher, now: time.Now}, nil
 }
 func appleSubjectHash(subject string) string {
 	hash := sha256.Sum256([]byte(appleIssuer + "\x00" + albumAppleAudience + "\x00" + subject))
@@ -55,6 +56,11 @@ func (r *MySQLAccounts) RegisterAppleLogin(ctx context.Context, grant AppleGrant
 	revokedBefore, deleted, err := lockAppleIdentity(ctx, tx, subjectHash)
 	if err != nil {
 		return AccountLogin{}, err
+	}
+	// Verification/exchange may have finished before a lock wait or process pause.
+	// Recheck age here so retiring an old identity fence cannot revive that login.
+	if !freshAppleIdentityAssertion(grant.Identity.IssuedAt, r.now()) {
+		return AccountLogin{}, ErrAppleCode
 	}
 	if deleted.Valid || (revokedBefore.Valid && !grant.Identity.IssuedAt.Truncate(time.Second).After(revokedBefore.Time)) {
 		return AccountLogin{}, ErrAppleCode
