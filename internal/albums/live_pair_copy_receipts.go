@@ -20,7 +20,7 @@ func (r *MySQLUploads) RecordLivePairSeal(ctx context.Context, expected LivePair
 }
 
 func recordLivePairSeal(ctx context.Context, tx *sql.Tx, current, expected LivePairUpload, part, version string) (LivePairUpload, error) {
-	if current.ID != expected.ID || current.OwnerID != expected.OwnerID || current.VersionID != expected.VersionID || current.AssetID != expected.AssetID || current.ManifestDigest != expected.ManifestDigest || current.Descriptor != expected.Descriptor || current.SourcePhoto != expected.SourcePhoto || current.SourceVideo != expected.SourceVideo {
+	if !sameLivePairCopy(current, expected) {
 		return current, ErrConflict
 	}
 	column, stored, consumed := "photo_copy_version", current.PhotoCopyVersion, current.PhotoConsumed
@@ -44,4 +44,8 @@ func recordLivePairSeal(ctx context.Context, tx *sql.Tx, current, expected LiveP
 		current.MovieCopyVersion = version
 	}
 	return current, nil
+}
+
+func sameLivePairCopy(a, b LivePairUpload) bool {
+	return a.ID == b.ID && a.OwnerID == b.OwnerID && a.VersionID == b.VersionID && a.AssetID == b.AssetID && a.ManifestDigest == b.ManifestDigest && a.Descriptor == b.Descriptor && a.SourcePhoto == b.SourcePhoto && a.SourceVideo == b.SourceVideo
 }

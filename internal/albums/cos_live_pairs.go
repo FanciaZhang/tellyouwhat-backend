@@ -75,9 +75,17 @@ func (s *COSObjects) SealLivePairOnce(ctx context.Context, u LivePairUpload, par
 // A missing HEAD is uncertainty, never permission for another COPY. This also
 // covers process death between COPY success and the durable receipt commit.
 func (s *COSObjects) ReconcileLivePairSeal(ctx context.Context, u LivePairUpload, part string) (string, error) {
+	if u.State != "verifying" {
+		return "", ErrInvalidManifest
+	}
+	return s.observeLivePairCopy(ctx, u, part)
+}
+
+// Deletion may inspect an issued COPY after its verification worker has stopped.
+func (s *COSObjects) observeLivePairCopy(ctx context.Context, u LivePairUpload, part string) (string, error) {
 	key, err := u.key(part, false)
 	expected, resourceErr := u.resource(part)
-	if err != nil || resourceErr != nil || u.Descriptor.validate() != nil || u.State != "verifying" ||
+	if err != nil || resourceErr != nil || u.Descriptor.validate() != nil ||
 		(part == "photo" && !u.PhotoConsumed) || (part == "motion" && !u.MovieConsumed) {
 		return "", ErrInvalidManifest
 	}
