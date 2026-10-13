@@ -15,6 +15,7 @@ import (
 )
 
 type AlbumSubscriptionConfig struct {
+	RebindingEnabled             bool
 	Environment, IssuerID, KeyID string
 	AppAppleID                   int64
 	SigningKey                   *ecdsa.PrivateKey
@@ -37,14 +38,21 @@ func albumStoreEnvironment(deployment string) string {
 }
 
 func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) (*AlbumSubscriptionConfig, error) {
+	rebinding := strings.TrimSpace(getenv("ALBUM_SUBSCRIPTION_REBINDING_ENABLED"))
+	if rebinding != "" && rebinding != "false" && rebinding != "true" {
+		return nil, errors.New("invalid ALBUM_SUBSCRIPTION_REBINDING_ENABLED")
+	}
 	enabled := strings.TrimSpace(getenv("ALBUM_SUBSCRIPTIONS_ENABLED"))
 	if enabled == "" || enabled == "false" {
+		if rebinding == "true" {
+			return nil, errors.New("album subscription rebinding requires verification")
+		}
 		return nil, nil
 	}
 	if enabled != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTIONS_ENABLED")
 	}
-	c := &AlbumSubscriptionConfig{Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
+	c := &AlbumSubscriptionConfig{RebindingEnabled: rebinding == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
 	issuer, err := uuid.Parse(c.IssuerID)
 	if err != nil || issuer.String() != c.IssuerID || !regexp.MustCompile(`^[A-Z0-9]{10}$`).MatchString(c.KeyID) || c.Environment == "" {
 		return nil, errors.New("invalid album App Store identity")
@@ -85,9 +93,9 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
 		return nil, ErrSubscriptionUnavailable
 	}
-	base := "https://api.storekit.itunes.apple.com"
+	base := "https://api.storekit.apple.com"
 	if c.Environment == "Sandbox" {
-		base = "https://api.storekit-sandbox.itunes.apple.com"
+		base = "https://api.storekit-sandbox.apple.com"
 	} else if c.Environment != "Production" {
 		return nil, ErrSubscriptionUnavailable
 	}
@@ -101,5 +109,9 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	if err != nil {
 		return nil, err
 	}
-	return NewAlbumSubscriptionService(repository, resolver, time.Now)
+	service, err := NewAlbumSubscriptionService(repository, resolver, time.Now)
+	if err == nil {
+		service.rebindingEnabled = c.RebindingEnabled
+	}
+	return service, err
 }

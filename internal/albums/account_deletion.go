@@ -118,6 +118,9 @@ func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, reque
 	if _, err = tx.ExecContext(ctx, `UPDATE album_retention_reminders SET state='cancelled',lease_token=NULL,lease_until=NULL WHERE owner_id=? AND state='pending'`, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}
+	if err = enqueueSubscriptionBindings(ctx, tx, owner, "", "", at); err != nil {
+		return accountDeletionRequest{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return accountDeletionRequest{}, err
 	}

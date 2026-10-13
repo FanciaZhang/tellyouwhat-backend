@@ -64,7 +64,7 @@ func run() error {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
-	endpoint := "https://api.storekit-sandbox.itunes.apple.com/inApps/v1/notifications/test"
+	endpoint := "https://api.storekit-sandbox.apple.com/inApps/v1/notifications/test"
 	method := http.MethodPost
 	if os.Args[1] == "request" {
 		marker, err := os.OpenFile(filepath.Join(directory, "request-started"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)

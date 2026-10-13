@@ -65,7 +65,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 		if r.URL.Host == config.Worker.COS.Bucket+".cos."+config.Worker.COS.Region+".myqcloud.com" && r.URL.Query().Has("versioning") {
 			return cosResponse(r, `<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>`, ""), nil
 		}
-		if r.URL.Host == "api.storekit-sandbox.itunes.apple.com" && r.URL.Path == "/inApps/v1/subscriptions/1000000000000002" && r.URL.RawQuery == "" {
+		if r.URL.Host == "api.storekit-sandbox.apple.com" && r.URL.Path == "/inApps/v1/subscriptions/1000000000000002" && r.URL.RawQuery == "" {
 			calls.Add(1)
 			if unavailable.Load() {
 				return nil, errors.New("private-provider-details")

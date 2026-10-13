@@ -240,11 +240,14 @@ func (r *MySQLUploads) applySubscriptionInTransaction(ctx context.Context, tx *s
 	if err := r.cancelRenewedRetentionPurges(ctx, tx, result); err != nil {
 		return AlbumCloudAccount{}, err
 	}
+	if err := enqueueSubscriptionBindings(ctx, tx, owner, v.Environment, v.OriginalTransactionID, now); err != nil {
+		return AlbumCloudAccount{}, err
+	}
 	return result, nil
 }
 
 func (r *MySQLUploads) CheckSubscriptionSchema(ctx context.Context) error {
-	for _, query := range []string{`SELECT storekit_account_token FROM album_accounts LIMIT 0`, `SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + objectPurgeColumns + ` FROM album_object_purges LIMIT 0`, `SELECT ` + reminderColumns + `,delivered_at FROM album_retention_reminders LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + `,next_check_at,refresh_token,refresh_until,refresh_failures FROM album_cloud_subscriptions LIMIT 0`, `SELECT environment,notification_id,payload_digest,owner_id,original_transaction_id,signed_at,processed_at FROM album_subscription_notifications LIMIT 0`} {
+	for _, query := range []string{`SELECT account_id,request_id,target_token,available_at,attempts,lease_token,lease_until,acknowledged_at,verified_transaction_id,verified_signed_at FROM album_deletion_subscription_jobs LIMIT 0`, `SELECT storekit_account_token FROM album_accounts LIMIT 0`, `SELECT subscription_revision FROM album_storage_accounts LIMIT 0`, `SELECT ` + objectPurgeColumns + ` FROM album_object_purges LIMIT 0`, `SELECT ` + reminderColumns + `,delivered_at FROM album_retention_reminders LIMIT 0`, `SELECT ` + cloudSubscriptionColumns + `,next_check_at,refresh_token,refresh_until,refresh_failures FROM album_cloud_subscriptions LIMIT 0`, `SELECT environment,notification_id,payload_digest,owner_id,original_transaction_id,signed_at,processed_at FROM album_subscription_notifications LIMIT 0`} {
 		rows, err := r.db.QueryContext(ctx, query)
 		if err != nil {
 			return err

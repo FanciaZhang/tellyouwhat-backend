@@ -167,6 +167,14 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 迁移 0058 为 Apple 登录身份生成独立的 StoreKit UUIDv5，命名空间为 URL、名称为相册专用前缀和已验证身份的 SHA-256。数据库生成列不可由客户端赋值，并建立唯一索引。订阅响应提供 `appAccountToken`；原生新购买使用该字段，服务端交易核验、通知归属、后台刷新和到期前全部购买记录核对同时接受它。媒体账户 ID 仍为独立随机 UUID；相同 Apple 身份重新注册时能重算订阅标识，不复用媒体目录或缓存标识。
 
-已有账户 UUID 绑定的旧交易仍仅属于其原账户，不接受客户端转移。旧式交易的 Apple 重新绑定、最终身份/订阅/备份擦除尚未完成，完整账户注销不得开放。本阶段测试通过直接清除隔离数据库中的合成账户模拟“旧记录已不存在”的边界，不能替代注销执行器或真实 Sandbox 恢复购买验收。旧 App 仍可能使用旧字段；发布前必须完成客户端/服务端协同升级。
+已有账户 UUID 绑定的旧交易仍仅属于其原账户，不接受客户端转移。旧式交易的 Apple 重新绑定已实现默认关闭的后台队列，真实改绑及最终身份/订阅/备份擦除尚待验收，完整账户注销不得开放。本阶段测试通过直接清除隔离数据库中的合成账户模拟“旧记录已不存在”的边界，不能替代注销执行器或真实 Sandbox 恢复购买验收。旧 App 仍可能使用旧字段；发布前必须完成客户端/服务端协同升级。
 
 Apple 字段与绑定规则依据：[appAccountToken](https://developer.apple.com/documentation/appstoreserverapi/appaccounttoken)、[Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token)。本轮未调用重新绑定接口，也没有部署或修改真实订阅。
+
+### 注销前旧订阅改绑（默认关闭，未部署）
+
+迁移 0059 与 `ALBUM_SUBSCRIPTION_REBINDING_ENABLED=false` 配套。只有启用订阅验证且显式打开此开关，gateway 才运行改绑队列。注销受理事务保存已知购买链；后续已验证通知补充新链，并使对应链的旧回执失效。任务校对注销请求、账户状态、服务端生成标识、环境及租约；先读取 Apple 当前签名状态，仍为旧绑定时才调用 PUT，之后再次读取签名交易确认。HTTP 200 本身不构成改绑证据。响应丢失时退避，下一轮先读取，已改绑则不重复 PUT。
+
+Apple 的 [Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token) 只更改当前交易及未来续订的标识，历史交易不会改写，家庭共享交易不支持。最终身份擦除还须核对所有相关购买链及灾备；这里的回执不能单独授权最终擦除。真实 Sandbox 的历史交易恢复行为仍需设备验收。相册 API 已使用文档中的 `api.storekit-sandbox.apple.com` / `api.storekit.apple.com` 域名，Health 配置不变；仅对现有 TEST 通知做了真实只读查询，没有发送真实改绑请求。
+
+隔离测试覆盖租约、重启、撤销账户、签名与归属、后续通知、失败退避和事务回滚；证据见 `docs/evidence/albums-subscription-rebinding-2026-10-13.json`。升级前排空旧相册进程并迁移至 0059，不能混跑忽略队列维护的版本。没有部署或打开销售、永久清理及改绑开关。

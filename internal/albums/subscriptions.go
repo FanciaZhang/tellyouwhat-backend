@@ -231,9 +231,10 @@ type AlbumSubscriptionRepository interface {
 }
 
 type AlbumSubscriptionService struct {
-	repository AlbumSubscriptionRepository
-	resolver   *AlbumSubscriptionResolver
-	now        func() time.Time
+	rebindingEnabled bool
+	repository       AlbumSubscriptionRepository
+	resolver         *AlbumSubscriptionResolver
+	now              func() time.Time
 }
 
 func NewAlbumSubscriptionService(repository AlbumSubscriptionRepository, resolver *AlbumSubscriptionResolver, now func() time.Time) (*AlbumSubscriptionService, error) {
@@ -243,7 +244,7 @@ func NewAlbumSubscriptionService(repository AlbumSubscriptionRepository, resolve
 	if now == nil {
 		now = time.Now
 	}
-	return &AlbumSubscriptionService{repository, resolver, now}, nil
+	return &AlbumSubscriptionService{repository: repository, resolver: resolver, now: now}, nil
 }
 
 func (s *AlbumSubscriptionService) Sync(ctx context.Context, owner, signed string) (AlbumCloudAccount, error) {

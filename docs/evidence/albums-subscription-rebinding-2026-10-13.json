@@ -1,0 +1,92 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "isolated MySQL/Redis with controlled Apple transport and test-authority signatures; no real purchase or token mutation; no deployment",
+  "migration": "0059_album_deletion_subscription_jobs.sql",
+  "verification": {
+    "startedAt": "2026-10-13T13:22:22.607580+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-o6850uvr",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-o6850uvr/race.log",
+        "testCounts": {
+          "pass": 236
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-o6850uvr/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-o6850uvr/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T13:23:36.576253+00:00"
+  },
+  "top_level_tests": 75,
+  "passed_test_events": 236,
+  "failed_test_events": 0,
+  "skipped_test_events": 0,
+  "covered": [
+    "Exact Set App Account Token PUT, JWT scope, canonical UUID, HTTP failure and redirect rejection",
+    "Accepted deletion queues known chains; configured realm, server-derived identity, current deletion intent and lease verified before PUT",
+    "Fresh signed current transaction required after successful PUT; foreign, absent, family-shared, forged and stale evidence refused",
+    "Lost PUT response reconciled by read on retry, without repeating a successful mutation",
+    "Concurrent claims, expired worker, cancellation, receipt transaction rollback and newer notification races",
+    "Later verified notifications queue new chains and invalidate only the affected chain receipt",
+    "Real Gateway construction starts worker only with explicit flag; shutdown drains workers; missing migration fails schema check"
+  ],
+  "development_failures": [
+    "Initial synthetic fixtures stored microsecond signed_at while Apple JWS fixtures used milliseconds, correctly failing freshness guards. Normalized fixture to milliseconds, then reran final suite successfully."
+  ],
+  "live_read_only_check": {
+    "operation": "GET existing Sandbox TEST notification status using documented api.storekit-sandbox.apple.com host",
+    "http_status": 200,
+    "verified_test_notification_uuid": "41d1a46a-4187-45b5-9e8c-7f2536a8176b",
+    "delivery_status": "SUCCESS",
+    "signed_at": "2026-10-13T12:57:57.339+08:00",
+    "new_notification_or_purchase_mutation": false
+  },
+  "source_sha256": {
+    "deploy/albums/appstore_probe.go": "046b7c385e01ee1db232796408857826d2766b3746ca01187e7c5745b7ff61cd",
+    "deploy/albums/runtime.env.example": "75f7a311c318e2fcef79fadf7dc2c77c0f7ecfbf1f5c7922b546025e88a8dea7",
+    "deploy/albums/test.env.example": "140e432bde67c0dc35a5c363ca3a6b82a361233f1b1d7b58b5a750e4bab186d2",
+    "internal/albums/account_deletion.go": "53ec535128e2df29ff5b2ffab33f0d1e2a65f8088b23d4889aeaaab9052d43a9",
+    "internal/albums/gateway_integration_test.go": "597f83cf4aca59a977ce8cb80f4e627f1271c189b34d69de464c34150dac0545",
+    "internal/albums/mysql_subscriptions.go": "54f6045a65cfc061f328243c415ed47d2cad26bdaa8c6ad4ed57ef91bc7eb0de",
+    "internal/albums/subscription_config.go": "d92256d689c3e52927987450610d38fd4bc9dadc2ba7e9b5850cd56bb56cb156",
+    "internal/albums/subscription_config_test.go": "5c8474034c1ab7b2f28553b27e5c27293575b2d590c5ae9b90d6a22f884e67d0",
+    "internal/albums/subscription_rebinding.go": "a5b3fd15eee184af701486760f98f1ff00b0c96b4f1910f97fab32134186bc94",
+    "internal/albums/subscription_rebinding_test.go": "cade1d876e755e8e2cc2c7d6b1683baa4046e19318a7ab643973209fe3173a3d",
+    "internal/albums/subscription_reconciliation_integration_test.go": "f108d27cbecff926261eed10acec6f24cb103d2a332c5bb1ad02ae533054db87",
+    "internal/albums/subscription_refresh.go": "1ae258e5024e38ffd5c06744c8a8cdd01b1f923466894bda036fabd4244885f4",
+    "internal/albums/subscriptions.go": "106c8783d8fa95a6e25fd21c015d8b83ce594ce94d6a791598c25bd33d7df758",
+    "internal/appstore/account_token.go": "d9cb9ed8e61db55c886e444b72a95169ed7e570ebc977ae274da4fb6266303d3",
+    "internal/appstore/account_token_test.go": "0b8438bffa8d37c486ce1ea0e2171c27a2539d89e8a85f26c417c67e07c8b243",
+    "migrations/0059_album_deletion_subscription_jobs.sql": "830c3bbc7ed5a0f348d812147a6d5e5d28ca81cd051a708c93cd053a64802475",
+    "migrations/embed_test.go": "855d8e444560e368ae99106643d025fb45efbc345a07f7f28039b0a22c8b8123"
+  },
+  "log_sha256": {
+    "mysql-init.log": "2ae210c6613eb28b3b7ae7f0b7168da942aecd83a52ea6b7a531be3dc737c2e9",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mysql.log": "570e88f13d3e7ca26dccea3d21c7405ba04548f8062f1839168e1306c67a7deb",
+    "redis.log": "8c8b88149f464c9390dcda205849002835d89228fde0909bcaa01733777d31ea",
+    "race.log": "219770d10cb0202f8bd543dde6877b3d5e7a6e7ee16d2694f90d8a27855e1bb1",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "Real Sandbox legacy purchase rebinding, renewal, refund and account recreation restore acceptance",
+    "Discovery and handling of all previously unknown historical purchase chains before final erasure",
+    "Final identity, billing records and backup erasure; account deletion HTTP/UI",
+    "Deployment and activation; ALBUM_SUBSCRIPTION_REBINDING_ENABLED remains false",
+    "No iOS source changes or new Xcode run in this verification"
+  ]
+}

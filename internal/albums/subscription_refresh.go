@@ -3,6 +3,7 @@ package albums
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -43,6 +44,31 @@ func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, re
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	g.subscriptionCancel = cancel
+	if service.rebindingEnabled {
+		g.subscriptionWorkers.Add(1)
+		go func() {
+			defer g.subscriptionWorkers.Done()
+			for ctx.Err() == nil {
+				batch, err := service.runSubscriptionBindingBatch(ctx, repository, 10)
+				if ctx.Err() != nil {
+					return
+				}
+				if err != nil {
+					slog.Warn("album subscription rebinding queue unavailable")
+				}
+				if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
+					slog.Info("album subscription rebinding batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
+				}
+				timer := time.NewTimer(5 * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
 	// Bounded concurrency. Database leases fence multiple API instances and
 	// restart recovery; only this API holds the App Store private key.
 	for range 4 {

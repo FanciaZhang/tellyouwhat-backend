@@ -130,7 +130,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		if r.URL.String() == appleIssuer+"/auth/keys" {
 			return appleResponse(testAppleJWKS(appleKey, "gateway-fixture-key")), nil
 		}
-		if r.URL.Host == "api.storekit-sandbox.itunes.apple.com" && r.URL.Path == "/inApps/v1/subscriptions/1000000000000002" && r.Method == "GET" {
+		if r.URL.Host == "api.storekit-sandbox.apple.com" && r.URL.Path == "/inApps/v1/subscriptions/1000000000000002" && r.Method == "GET" {
 			subscriptionCalls.Add(1)
 			if r.URL.RawQuery != "" {
 				t.Error("inactive Apple status was excluded")
