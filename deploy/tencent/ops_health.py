@@ -7,6 +7,26 @@ import shutil
 import time
 
 from release import probe
+from ops_common import OperationError
+
+
+def backup_valid(runtime, record):
+    from ops_backup import verify_backup
+    from ops_offsite import config_path, enabled
+    filename = record["filename"]
+    if Path(filename).name != filename:
+        return False
+    manifest = verify_backup(runtime, runtime.backups / filename)
+    if manifest["sha256"] != record["sha256"]:
+        return False
+    if enabled(runtime):
+        if not config_path(runtime).is_file():
+            return False
+        remote = json.loads((runtime.state / "offsite.json").read_text())
+        return (remote.get("passed") is True and remote.get("filename") == filename
+                and remote.get("sha256") == manifest["sha256"] and remote.get("verified_objects") == 3
+                and remote.get("recovery_filename") == manifest.get("recovery_filename"))
+    return True
 
 
 def health(runtime):
@@ -41,11 +61,13 @@ def health(runtime):
             record = json.loads((runtime.state / (name + ".json")).read_text())
             age = int(now - record["completed_at"])
             valid = 0 <= age <= maximum_age and record.get("passed", True) is True
+            failure = runtime.state / (name + "-failure.json")
+            if failure.exists():
+                valid = valid and json.loads(failure.read_text())["completed_at"] < record["completed_at"]
             if name == "backup":
-                filename = record["filename"]
-                valid = valid and Path(filename).name == filename and (runtime.backups / filename).is_file()
-        except (OSError, ValueError, TypeError, KeyError):
-            pass
+                valid = valid and backup_valid(runtime, record)
+        except (OperationError, OSError, ValueError, TypeError, KeyError):
+            valid = False
         checks.append({"name": name + "_freshness", "passed": valid, "age_seconds": age})
     return runtime.record("health", passed=all(check["passed"] for check in checks), checks=checks)
 

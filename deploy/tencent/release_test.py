@@ -25,6 +25,11 @@ class ReleaseRecoveryTests(unittest.TestCase):
         for name in KEY_FILES:
             (self.root / "secrets" / name).write_text("old key")
         self.runtime = Runtime(self.root)
+        for target, value in (("release.create_backup", {"filename": "fixture.enc", "sha256": "fixture"}),
+                              ("release.verify_backup", {})):
+            mock = patch(target, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
         self.bundle = self.root / ".incoming-new"
         copy_runtime(self.root, self.bundle)
         (self.bundle / "deploy/tencent").mkdir(parents=True)
@@ -35,7 +40,8 @@ class ReleaseRecoveryTests(unittest.TestCase):
             (self.bundle / "secrets" / name).write_text("new key")
 
     def run_deploy(self):
-        return deploy(self.runtime, "new", "registry/app", "internal", self.bundle, 1)
+        with patch("release.require_disk_space"):
+            return deploy(self.runtime, "new", "registry/app", "internal", self.bundle, 1)
 
     def assert_old_runtime(self):
         self.assertEqual(read_environment(self.root / ".env.production")["RELEASE_VALUE"], "old")
@@ -55,7 +61,7 @@ class ReleaseRecoveryTests(unittest.TestCase):
                 rollback(self.runtime, 1)
             execute.assert_not_called()
         self.assertEqual(read_environment(self.root / ".env.production")["IMAGE_TAG"], "new")
-        with patch.object(self.runtime, "execute", return_value=b"<no value>\n" * 4) as execute:
+        with patch.object(self.runtime, "execute", return_value=b"<no value>\n" * 4) as execute, patch("release.require_disk_space"):
             with self.assertRaisesRegex(OperationError, "automatic protection"):
                 deploy(self.runtime, "legacy", "registry/app", "internal", None, 1)
             self.assertFalse(any(c.args[0] in ("release-migrate", "release-activate") for c in execute.call_args_list))
@@ -69,6 +75,28 @@ class ReleaseRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(OperationError, "migration unavailable"):
                 self.run_deploy()
         self.assert_old_runtime()
+
+    def test_failed_backup_blocks_pull_migration_and_activation(self):
+        with patch("release.create_backup", side_effect=OperationError("backup unavailable")), \
+                patch.object(self.runtime, "execute") as execute:
+            with self.assertRaisesRegex(OperationError, "backup unavailable"):
+                self.run_deploy()
+        execute.assert_not_called()
+        self.assert_old_runtime()
+
+    def test_backup_integrity_failure_blocks_migration(self):
+        with patch("release.verify_backup", side_effect=OperationError("content verification failed")), \
+                patch.object(self.runtime, "execute") as execute:
+            with self.assertRaisesRegex(OperationError, "content verification failed"):
+                self.run_deploy()
+        execute.assert_not_called()
+
+    def test_low_space_blocks_backup_and_deployment(self):
+        from release import require_disk_space
+        from types import SimpleNamespace
+        with patch("release.shutil.disk_usage", return_value=SimpleNamespace(free=7 * 1024**3, total=40 * 1024**3)):
+            with self.assertRaisesRegex(OperationError, "free disk"):
+                require_disk_space(self.runtime)
 
     def test_readiness_failure_restores_image_environment_and_keys(self):
         with patch.object(self.runtime, "execute", return_value=b"") as execute, \

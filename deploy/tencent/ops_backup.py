@@ -13,6 +13,7 @@ import tempfile
 import time
 
 from ops_common import OperationError, atomic_json
+import ops_offsite
 
 
 # App data is local-first. Disaster recovery retains only the backend control
@@ -100,6 +101,16 @@ def crypt(runtime, source, destination, *, decrypt=False):
 
 
 def create_backup(runtime):
+    try:
+        result = export_backup(runtime)
+    except (OperationError, OSError, subprocess.TimeoutExpired):
+        runtime.record("backup-failure", passed=False)
+        raise
+    (runtime.state / "backup-failure.json").unlink(missing_ok=True)
+    return result
+
+
+def export_backup(runtime):
     backup_secret(runtime)
     database = runtime.config.get("MYSQL_DATABASE", "")
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
@@ -178,14 +189,17 @@ def create_backup(runtime):
             raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
+        recovery = ops_offsite.create_recovery_bundle(runtime, destination.name) if ops_offsite.enabled(runtime) else {}
         manifest = {"version": 1, "created_at": int(time.time()), "database": database,
                     "filename": destination.name, "image": image, "table_rows": counts,
                     "included_data_tables": included_data_tables,
                     "excluded_data_tables": excluded_data_tables,
-                    "sha256": file_digest(encrypted)}
+                    "sha256": file_digest(encrypted), **recovery}
         signature = manifest_signature(backup_secret(runtime), manifest)
         os.replace(encrypted, destination)
         atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+    if ops_offsite.enabled(runtime):
+        ops_offsite.publish(runtime, destination, manifest)
     return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
 
 
@@ -199,6 +213,8 @@ def prune_backups(runtime):
             if manifest["created_at"] <= cutoff:
                 path.unlink()
                 Path(str(path) + ".json").unlink()
+                if manifest.get("recovery_filename"):
+                    (path.parent / manifest["recovery_filename"]).unlink()
                 removed += 1
         except (OperationError, OSError):
             failed += 1
@@ -219,6 +235,11 @@ def verify_backup(runtime, path):
             raise OperationError("backup manifest authentication failed")
         if manifest["filename"] != path.name or manifest["sha256"] != file_digest(path):
             raise OperationError("backup content verification failed")
+        if manifest.get("recovery_filename"):
+            name = manifest["recovery_filename"]
+            if (name != "recovery-" + path.name.replace(".sql.gz.enc", ".tar.gz.enc")
+                    or (path.parent / name).is_symlink() or file_digest(path.parent / name) != manifest["recovery_sha256"]):
+                raise OperationError("configuration recovery content verification failed")
         if manifest["database"] != runtime.config["MYSQL_DATABASE"]:
             raise OperationError("backup belongs to another application database")
         if type(manifest["created_at"]) is not int or manifest["created_at"] <= 0:
@@ -241,17 +262,25 @@ def verify_backup(runtime, path):
         raise OperationError("backup manifest is missing or invalid") from error
 
 
-def restore_drill(runtime, filename=None):
+def restore_drill(runtime, filename=None, *, source_directory=None):
+    if source_directory is None and ops_offsite.enabled(runtime):
+        filename = filename or json.loads((runtime.state / "backup.json").read_text())["filename"]
+        with tempfile.TemporaryDirectory(prefix="cos-restore-", dir=runtime.state) as directory:
+            ops_offsite.download(runtime, filename, directory)
+            result = restore_drill(runtime, filename, source_directory=Path(directory))
+        return runtime.record("restore", **{k: v for k, v in result.items() if k not in ("operation", "completed_at")}, source="cos")
     if filename:
         if Path(filename).name != filename:
             raise OperationError("restore drill accepts only a backup filename")
-        source = runtime.backups / filename
+        source = (source_directory or runtime.backups) / filename
     else:
         try:
             source = runtime.backups / json.loads((runtime.state / "backup.json").read_text())["filename"]
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
+    if manifest.get("recovery_filename"):
+        ops_offsite.verify_recovery_bundle(runtime, source, manifest)
     if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
         raise OperationError("backup is outside the retention period")
     container = "tellyouwhat-restore-" + secrets.token_hex(8)

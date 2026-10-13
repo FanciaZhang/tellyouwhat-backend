@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["cos:PutObject", "cos:GetObject", "cos:HeadObject"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-backups-1251995834/backups/*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:GetBucketLifecycle", "cos:GetBucketACL"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-backups-1251995834/*"]
+    }
+  ]
+}

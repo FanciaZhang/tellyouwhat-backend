@@ -24,6 +24,11 @@ class BackupSafetyTests(unittest.TestCase):
             "MYSQL_HOST=database.internal\nMYSQL_USER=application\nMYSQL_PASSWORD=secret\n"
             "MYSQL_DATABASE=tellyouwhat_test\nBACKUP_ENCRYPTION_KEY=" + "x" * 64 + "\n"
         )
+        from release import KEY_FILES
+        (self.backend / "compose.production.yaml").write_text("services: {}\n")
+        (self.backend / "secrets").mkdir()
+        for name in KEY_FILES:
+            (self.backend / "secrets" / name).write_text("fixture signing material")
         self.bin = self.root / "bin"
         self.bin.mkdir()
         docker = self.bin / "docker"
@@ -46,6 +51,9 @@ class BackupSafetyTests(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
         self.runtime = Runtime(self.backend, self.root / "backups")
+        cleanup = patch("operations.cleanup", return_value={"passed": True})
+        cleanup.start()
+        self.addCleanup(cleanup.stop)
 
     def test_failed_export_never_publishes_a_backup(self):
         with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
@@ -53,6 +61,38 @@ class BackupSafetyTests(unittest.TestCase):
                 create_backup(self.runtime)
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / "backup.json").exists())
+        self.assertFalse(json.loads((self.runtime.state / "backup-failure.json").read_text())["passed"])
+
+    def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
+        previous = create_backup(self.runtime)
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaises(OperationError):
+                create_backup(self.runtime)
+        self.assertEqual(json.loads((self.runtime.state / "backup.json").read_text())["filename"], previous["filename"])
+        self.assertTrue((self.runtime.state / "backup-failure.json").exists())
+        verify_backup(self.runtime, self.runtime.backups / previous["filename"])
+        create_backup(self.runtime)
+        self.assertFalse((self.runtime.state / "backup-failure.json").exists())
+
+    def test_offsite_failure_does_not_publish_a_success_record(self):
+        (self.runtime.state / "offsite-required").touch()
+        with patch("ops_offsite.publish", side_effect=OperationError("offsite unavailable")):
+            with self.assertRaisesRegex(OperationError, "offsite unavailable"):
+                create_backup(self.runtime)
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_authenticated_configuration_pair_is_verified_before_restore(self):
+        (self.runtime.state / "offsite-required").touch()
+        with patch("ops_offsite.publish"):
+            result = create_backup(self.runtime)
+        source = self.runtime.backups / result["filename"]
+        manifest = verify_backup(self.runtime, source)
+        from ops_offsite import verify_recovery_bundle
+        self.assertTrue(verify_recovery_bundle(self.runtime, source, manifest))
+        recovery = self.runtime.backups / manifest["recovery_filename"]
+        recovery.write_bytes(recovery.read_bytes() + b"tampered")
+        with self.assertRaisesRegex(OperationError, "configuration recovery content"):
+            verify_backup(self.runtime, source)
 
     def test_backup_age_uses_authenticated_creation_time_after_file_copy(self):
         now = int(time.time())
