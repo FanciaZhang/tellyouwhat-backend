@@ -76,6 +76,9 @@ func (r *MySQLUploads) lockObjectPurge(ctx context.Context, tx *sql.Tx, owner, a
 	if _, err := r.validatePurgeLifecycle(ctx, tx, p, now); err != nil {
 		return p, err
 	}
+	if err := requireNoDirectUploads(ctx, tx, owner, asset); err != nil {
+		return p, err
+	}
 	return p, nil
 }
 

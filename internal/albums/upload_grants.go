@@ -98,6 +98,10 @@ func (r *MySQLUploads) WithUploadGrant(ctx context.Context, expected Upload, res
 		if !currentTime().Before(expiry) {
 			return u, ErrExpired
 		}
+		if resource == "" {
+			_, err := tx.ExecContext(ctx, `UPDATE album_uploads SET direct_upload_issued=TRUE WHERE upload_id=?`, u.ID)
+			return u, err
+		}
 		return u, nil
 	})
 	return err

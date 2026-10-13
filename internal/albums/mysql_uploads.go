@@ -169,8 +169,8 @@ func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
 	if err != nil {
 		return Upload{}, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO album_uploads(upload_id,owner_id,request_id,manifest_json,manifest_digest,state,original_bytes,derived_budget,expires_at,lifecycle_epoch)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`, u.ID, u.OwnerID, u.RequestID, manifest, u.Digest, u.State, u.OriginalBytes, u.DerivedBudget, u.ExpiresAt, u.LifecycleEpoch)
+	_, err = tx.ExecContext(ctx, `INSERT INTO album_uploads(upload_id,owner_id,request_id,manifest_json,manifest_digest,state,original_bytes,derived_budget,expires_at,lifecycle_epoch,direct_upload_issued)
+		VALUES (?,?,?,?,?,?,?,?,?,?,FALSE)`, u.ID, u.OwnerID, u.RequestID, manifest, u.Digest, u.State, u.OriginalBytes, u.DerivedBudget, u.ExpiresAt, u.LifecycleEpoch)
 	if err != nil {
 		return Upload{}, err
 	}

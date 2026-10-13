@@ -53,7 +53,7 @@ func scanLivePair(row rowScanner) (LivePairUpload, error) {
 	return u, nil
 }
 func (r *MySQLUploads) CheckLivePairSchema(ctx context.Context) error {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs LIMIT 0`)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+`,direct_upload_issued FROM album_live_pairs LIMIT 0`)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, no
 	descriptor, _ := json.Marshal(u.Descriptor)
 	photo, _ := json.Marshal(u.SourcePhoto)
 	video, _ := json.Marshal(u.SourceVideo)
-	_, err = tx.ExecContext(ctx, `INSERT INTO album_live_pairs(pair_upload_id,owner_id,request_id,asset_id,version_id,manifest_digest,preset,active_preset,descriptor_json,source_photo_json,source_video_json,objects_json,size_bytes,state,expires_at,available_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'[]',?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO album_live_pairs(pair_upload_id,owner_id,request_id,asset_id,version_id,manifest_digest,preset,active_preset,descriptor_json,source_photo_json,source_video_json,objects_json,size_bytes,state,expires_at,available_at,created_at,updated_at,direct_upload_issued) VALUES(?,?,?,?,?,?,?,?,?,?,?,'[]',?,?,?,?,?,?,FALSE)`,
 		u.ID, u.OwnerID, u.RequestID, u.AssetID, u.VersionID, u.ManifestDigest, u.Preset, u.Preset, descriptor, photo, video, size, u.State, u.ExpiresAt, now, now, now)
 	if err != nil {
 		return LivePairUpload{}, err
@@ -394,7 +394,8 @@ func (r *MySQLUploads) WithLivePairUploadGrant(ctx context.Context, expected Liv
 		if !currentTime().Before(expiry) {
 			return u, ErrExpired
 		}
-		return u, nil
+		_, err := tx.ExecContext(ctx, `UPDATE album_live_pairs SET direct_upload_issued=TRUE WHERE pair_upload_id=?`, u.ID)
+		return u, err
 	})
 	return err
 }

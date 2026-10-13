@@ -21,6 +21,9 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 	if err != nil {
 		return objectPurge{}, err
 	}
+	if err := requireNoDirectUploads(ctx, tx, owner, asset); err != nil {
+		return objectPurge{}, err
+	}
 	old, err := scanObjectPurge(tx.QueryRowContext(ctx, `SELECT `+objectPurgeColumns+` FROM album_object_purges WHERE owner_id=? AND asset_id=? FOR UPDATE`, owner, asset))
 	if err == nil {
 		if old.Reason != "trash" || old.Revision != a.Revision || !old.ExpiresAt.Equal(*a.TrashExpiresAt) {
@@ -53,6 +56,9 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 // A timeout is not a terminal provider receipt. Defer any unresolved write,
 // open escrow or retirement; these can still create objects or change billing.
 func closedPurgeTargets(ctx context.Context, tx *sql.Tx, owner, asset string, now time.Time) ([]purgeTarget, error) {
+	if err := requireNoDirectUploads(ctx, tx, owner, asset); err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND asset_id=? ORDER BY version_id LIMIT 1001`, owner, asset)
 	if err != nil {
 		return nil, err
@@ -216,4 +222,24 @@ func closedDerivedPurgeTargets(ctx context.Context, tx *sql.Tx, owner string, v 
 	err = rows.Err()
 	rows.Close()
 	return targets, err
+}
+
+// Signed URL expiry prevents a new request, not a PUT that already started.
+// Until direct uploads have independent termination evidence, no empty listing
+// or elapsed retention deadline can authorize deletion or a completed receipt.
+func requireNoDirectUploads(ctx context.Context, tx *sql.Tx, owner, asset string) error {
+	for _, query := range []string{
+		`SELECT upload_id FROM album_uploads WHERE owner_id=? AND JSON_UNQUOTE(JSON_EXTRACT(manifest_json,'$.assetID'))=? AND direct_upload_issued=TRUE LIMIT 1 FOR UPDATE`,
+		`SELECT pair_upload_id FROM album_live_pairs WHERE owner_id=? AND asset_id=? AND direct_upload_issued=TRUE LIMIT 1 FOR UPDATE`,
+	} {
+		var id string
+		err := tx.QueryRowContext(ctx, query, owner, asset).Scan(&id)
+		if err == nil {
+			return ErrDerivedPending
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	return nil
 }
