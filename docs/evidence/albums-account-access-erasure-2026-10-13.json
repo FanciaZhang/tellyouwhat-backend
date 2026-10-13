@@ -1,0 +1,62 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Atomic erasure of acknowledged Apple grants, sessions, push registrations and delivery/reminder records, with exact deletion-request replay preserved",
+  "regression": {
+    "race": true,
+    "top_level_passed": 49,
+    "passed_events": 127,
+    "failed": 0,
+    "skipped": 0,
+    "new_top_level_tests": 5,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "601f2f37ab7b4cf4eeae7c1b22ec3dc1a3523953b71db9f4aae568169da8cc9f",
+    "result_sha256": "5c05ea6b683abee6fe806207f12c332054b3bfb3361e99d02701d12dd6eb6aea"
+  },
+  "coverage": [
+    "every original Apple grant must have the matching request acknowledgement and zeroed recoverable credential",
+    "missing acknowledgement, nonempty ciphertext/nonce, unsettled media, wrong request and changed storage fence block erasure",
+    "sessions, push registrations, reminder/delivery records and acknowledged Apple jobs/grants erased in one transaction",
+    "injected final receipt failure rolls back all access-record removal",
+    "concurrent and restarted erasure remains idempotent",
+    "authorizing token hash plus exact request recovers original acceptance receipt after session removal",
+    "different token or request rejected; erased token cannot authenticate normal APIs",
+    "unrelated account credentials and session remain usable",
+    "account remains deleting and cannot issue new sessions or accept login",
+    "real Gateway starts access erasure after controlled signed Apple revocation and media settlement",
+    "missing migration rejects Gateway startup"
+  ],
+  "corrected_attempts": [
+    {
+      "phase": "first integration run",
+      "cause": "New fixture used duplicate reminder identity for two sessions of one account; corrected fixture deadlines without changing product constraints",
+      "passed_events": 117,
+      "failed_events_including_parent": 10,
+      "race_log_sha256": "c8d004940fe1f1fc83e44a0eee8b06a91a7fd7975ae0934743d5645358b39359",
+      "product_guard_weakened": false
+    }
+  ],
+  "boundaries": {
+    "required_migration": "0056_album_account_access_erasure.sql",
+    "runtime_wired": true,
+    "deployed": false,
+    "provider_transport_controlled": true,
+    "real_apple_revocation": false,
+    "real_user_records_modified": false,
+    "new_keys_or_permissions": false,
+    "complete_account_identity_billing_and_backup_erasure": false,
+    "account_deletion_http_ui_complete": false,
+    "cloud_and_sales_gates_changed": false
+  },
+  "source_sha256": {
+    "internal/albums/account_access_erasure.go": "3c802f22023c64198306dd75825098088fcc23ea80d55ed40621b358735ba601",
+    "internal/albums/account_access_erasure_test.go": "77e0ac6573928481d1a9e86cb6dadd732b18b8760b04f06ed97a94e455b1e101",
+    "internal/albums/account_deletion.go": "746c5267a63c0c73e0691be105e2384a55c359eb18d2d7ab4b9b272e6cdd3a60",
+    "internal/albums/account_deletion_apple_worker.go": "1befbfbdcdf3b7a8f29221543fa0c7f28962427eeb4db16eb990d1199f79a8e0",
+    "internal/albums/gateway.go": "6ec22a85be54f9cac7682df9bdd985f400e6d76f7a26a6c0f90aa79459fd03fc",
+    "migrations/0056_album_account_access_erasure.sql": "fdf0d4e2e3c5e8bde9cd49d90707c49b2bdfc14508cf932474dfb1c6abad5a63",
+    "migrations/embed_test.go": "94f299178223afa17c26defcb0a4bcf87045d800f7ab7b08f22813fa0aae7ad5"
+  }
+}

@@ -25,7 +25,22 @@ func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, reque
 	var owner, subject string
 	err = r.db.QueryRowContext(ctx, `SELECT a.account_id,a.apple_subject_sha256 FROM album_sessions s JOIN album_accounts a ON a.account_id=s.account_id WHERE s.token_sha256=?`, digest[:]).Scan(&owner, &subject)
 	if errors.Is(err, sql.ErrNoRows) {
-		return receipt, ErrSession
+		// Access records may already be erased. The accepted request retains only
+		// the authorizing token hash, valid solely for this exact request replay.
+		var acceptedDigest []byte
+		err = r.db.QueryRowContext(ctx, `SELECT d.account_id,d.request_id,d.requested_at,d.authorizing_session_sha256
+ FROM album_account_deletions d JOIN album_accounts a ON a.account_id=d.account_id
+ WHERE d.request_id=? AND d.access_erased_at IS NOT NULL AND a.state='deleting'`, requestID).Scan(&receipt.AccountID, &receipt.RequestID, &receipt.RequestedAt, &acceptedDigest)
+		if errors.Is(err, sql.ErrNoRows) {
+			return accountDeletionRequest{}, ErrSession
+		}
+		if err != nil {
+			return accountDeletionRequest{}, err
+		}
+		if subtle.ConstantTimeCompare(digest[:], acceptedDigest) != 1 {
+			return accountDeletionRequest{}, ErrSession
+		}
+		return receipt, nil
 	}
 	if err != nil {
 		return receipt, err

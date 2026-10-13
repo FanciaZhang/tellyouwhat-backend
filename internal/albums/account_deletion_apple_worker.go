@@ -28,6 +28,18 @@ func (g *Gateway) startAppleDeletion(accounts *MySQLAccounts, exchanger *AppleCo
 			if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
 				slog.Info("album Apple deletion batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
 			}
+			if err == nil {
+				erased, eraseErr := accounts.runAccessErasureBatch(ctx, batchSize, time.Now)
+				if ctx.Err() != nil {
+					return
+				}
+				if eraseErr != nil {
+					slog.Warn("album access erasure queue unavailable")
+				}
+				if erased > 0 {
+					slog.Info("album access erasure batch", "accounts", erased)
+				}
+			}
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():

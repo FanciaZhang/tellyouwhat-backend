@@ -180,7 +180,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 	// challenges or uploads; this process never applies migrations itself.
 	for _, query := range []string{
 		`SELECT subject_sha256,revoked_before,deleted_at FROM album_apple_identity_state LIMIT 0`,
-		`SELECT account_id,request_id,requested_at FROM album_account_deletions LIMIT 0`,
+		`SELECT account_id,request_id,requested_at,access_erased_at FROM album_account_deletions LIMIT 0`,
 		`SELECT account_id,request_id,grant_id,available_at,attempts,lease_token,lease_until,acknowledged_at FROM album_deletion_apple_jobs LIMIT 0`,
 		`SELECT identity_issued_at FROM album_apple_grants LIMIT 0`,
 		`SELECT account_id,apple_subject_sha256,state FROM album_accounts LIMIT 0`,
