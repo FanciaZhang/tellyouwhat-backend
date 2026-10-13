@@ -104,7 +104,11 @@ func TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead(t *testing
 		t.Fatal("original signer widened")
 	}
 	u.State, u.PhotoConsumed = "verifying", true
-	version, err := s.SealLivePairOnce(context.Background(), u, "photo")
+	source, err := s.PrepareLivePairSeal(context.Background(), u, "photo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := s.SealLivePairOnce(context.Background(), u, "photo", source)
 	if err != nil || copies != 1 || heads != 1 {
 		t.Fatal("seal", err)
 	}
@@ -146,6 +150,43 @@ func TestCOSLivePairOpenRejectsChangedVersionPartialAndEncodedResponses(t *testi
 		})
 		if _, err := s.OpenLivePairVersion(context.Background(), u, "photo", "pair-v1"); !errors.Is(err, ErrIncompleteBackup) {
 			t.Fatal("invalid response accepted", err)
+		}
+	}
+}
+
+func TestCOSLivePairPreflightRejectsUnusableSourceBeforeCopy(t *testing.T) {
+	for _, mode := range []string{"missing-version", "wrong-size", "provider-error"} {
+		t.Run(mode, func(t *testing.T) {
+			u := pairUploadFixture(t)
+			u.State = "verifying"
+			s := cosFixture(t, func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodHead {
+					t.Fatal("preflight wrote an object")
+				}
+				if mode == "provider-error" {
+					return nil, io.ErrUnexpectedEOF
+				}
+				response := cosResponse(req, "", "staging-version")
+				response.ContentLength = u.Descriptor.Photo.SizeBytes
+				if mode == "missing-version" {
+					response.Header.Del("x-cos-version-id")
+				}
+				if mode == "wrong-size" {
+					response.ContentLength++
+				}
+				return response, nil
+			})
+			if _, err := s.PrepareLivePairSeal(context.Background(), u, "photo"); !errors.Is(err, ErrLivePairNotReady) {
+				t.Fatal("unusable source accepted", err)
+			}
+		})
+	}
+	u := pairUploadFixture(t)
+	u.State, u.PhotoConsumed = "verifying", true
+	s := cosFixture(t, func(*http.Request) (*http.Response, error) { t.Fatal("invalid source copied"); return nil, nil })
+	for _, source := range []OriginalSealSource{{}, {"null", u.Descriptor.Photo.SizeBytes}, {"source", u.Descriptor.Photo.SizeBytes + 1}} {
+		if _, err := s.SealLivePairOnce(context.Background(), u, "photo", source); !errors.Is(err, ErrInvalidManifest) {
+			t.Fatal("unusable COPY source accepted", err)
 		}
 	}
 }

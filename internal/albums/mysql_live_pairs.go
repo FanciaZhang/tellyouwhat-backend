@@ -8,16 +8,16 @@ import (
 	"time"
 )
 
-const livePairColumns = `pair_upload_id,owner_id,request_id,asset_id,version_id,manifest_digest,preset,descriptor_json,source_photo_json,source_video_json,objects_json,size_bytes,state,photo_consumed,movie_consumed,expires_at,lease_token,lease_until,attempts`
+const livePairColumns = `pair_upload_id,owner_id,request_id,asset_id,version_id,manifest_digest,preset,descriptor_json,source_photo_json,source_video_json,objects_json,size_bytes,state,photo_consumed,movie_consumed,expires_at,lease_token,lease_until,attempts,photo_copy_version,movie_copy_version`
 
 func scanLivePair(row rowScanner) (LivePairUpload, error) {
 	var u LivePairUpload
 	var descriptor, photo, video, objects []byte
 	var size int64
-	var token sql.NullString
+	var token, photoCopy, movieCopy sql.NullString
 	var lease sql.NullTime
 	err := row.Scan(&u.ID, &u.OwnerID, &u.RequestID, &u.AssetID, &u.VersionID, &u.ManifestDigest, &u.Preset, &descriptor, &photo, &video, &objects, &size,
-		&u.State, &u.PhotoConsumed, &u.MovieConsumed, &u.ExpiresAt, &token, &lease, &u.Attempts)
+		&u.State, &u.PhotoConsumed, &u.MovieConsumed, &u.ExpiresAt, &token, &lease, &u.Attempts, &photoCopy, &movieCopy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -25,6 +25,10 @@ func scanLivePair(row rowScanner) (LivePairUpload, error) {
 		return u, err
 	}
 	u.LeaseToken, u.LeaseUntil = token.String, lease.Time
+	u.PhotoCopyVersion, u.MovieCopyVersion = photoCopy.String, movieCopy.String
+	if photoCopy.Valid && (!concreteCOSVersion(photoCopy.String) || !u.PhotoConsumed) || movieCopy.Valid && (!concreteCOSVersion(movieCopy.String) || !u.MovieConsumed) {
+		return LivePairUpload{}, ErrConflict
+	}
 	if len(descriptor) > 16384 || len(photo) > 8192 || len(video) > 8192 || len(objects) > 16384 ||
 		json.Unmarshal(descriptor, &u.Descriptor) != nil || json.Unmarshal(photo, &u.SourcePhoto) != nil || json.Unmarshal(video, &u.SourceVideo) != nil || json.Unmarshal(objects, &u.Objects) != nil ||
 		!validOwner(u.ID) || !validOwner(u.OwnerID) || !validOwner(u.RequestID) || !validOwner(u.VersionID) || !resourceIDPattern.MatchString(u.AssetID) || !validSHA256(u.ManifestDigest) ||
@@ -36,6 +40,9 @@ func scanLivePair(row rowScanner) (LivePairUpload, error) {
 	seen := map[string]bool{}
 	for _, object := range u.Objects {
 		if u.validateReceipt(object) != nil || seen[object.ResourceID] || (object.ResourceID == "photo" && !u.PhotoConsumed) || (object.ResourceID == "motion" && !u.MovieConsumed) {
+			return LivePairUpload{}, ErrConflict
+		}
+		if object.ResourceID == "photo" && object.VersionID != u.PhotoCopyVersion || object.ResourceID == "motion" && object.VersionID != u.MovieCopyVersion {
 			return LivePairUpload{}, ErrConflict
 		}
 		seen[object.ResourceID] = true
@@ -66,7 +73,7 @@ func (r *MySQLUploads) LivePairByID(ctx context.Context, owner, id string) (Live
 }
 func (r *MySQLUploads) ReserveLivePair(ctx context.Context, u LivePairUpload, now time.Time) (LivePairUpload, error) {
 	if !validOwner(u.ID) || !validOwner(u.OwnerID) || !validOwner(u.VersionID) || !validOwner(u.RequestID) || u.Preset != DailyLivePair || u.State != "uploading" ||
-		u.Descriptor.validate() != nil || !u.ExpiresAt.After(now) || u.ExpiresAt.After(now.Add(24*time.Hour)) || len(u.Objects) != 0 || u.PhotoConsumed || u.MovieConsumed {
+		u.Descriptor.validate() != nil || !u.ExpiresAt.After(now) || u.ExpiresAt.After(now.Add(24*time.Hour)) || len(u.Objects) != 0 || u.PhotoConsumed || u.MovieConsumed || u.PhotoCopyVersion != "" || u.MovieCopyVersion != "" {
 		return LivePairUpload{}, ErrInvalidManifest
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -283,6 +290,11 @@ func (r *MySQLUploads) CompleteLivePairPart(ctx context.Context, expected LivePa
 		if !pairLease(u, expected, now) || (object.ResourceID == "photo" && !u.PhotoConsumed) || (object.ResourceID == "motion" && !u.MovieConsumed) {
 			return u, ErrLease
 		}
+		var err error
+		u, err = recordLivePairSeal(ctx, tx, u, expected, object.ResourceID, object.VersionID)
+		if err != nil {
+			return u, err
+		}
 		for _, old := range u.Objects {
 			if old.ResourceID == object.ResourceID {
 				if old != object {
@@ -293,7 +305,7 @@ func (r *MySQLUploads) CompleteLivePairPart(ctx context.Context, expected LivePa
 		}
 		u.Objects = append(u.Objects, object)
 		encoded, _ := json.Marshal(u.Objects)
-		_, err := tx.ExecContext(ctx, `UPDATE album_live_pairs SET objects_json=?,updated_at=? WHERE pair_upload_id=?`, encoded, now, u.ID)
+		_, err = tx.ExecContext(ctx, `UPDATE album_live_pairs SET objects_json=?,updated_at=? WHERE pair_upload_id=?`, encoded, now, u.ID)
 		return u, err
 	})
 }

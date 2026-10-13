@@ -1,0 +1,87 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Preflight Live Photo COPY before consuming its one-shot intent and persist raw COPY versions before byte verification",
+  "migration": "0046_album_live_pair_copy_receipts.sql",
+  "checks": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 37,
+    "passed_events": 75,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "4526dea31fe2788abfc091b0dc3d63aac3f99a53ea919fb4defa9d09ffdfd638"
+  },
+  "supplementary_checks": [
+    {
+      "command": "go test -race ./internal/albums -run 'TestCOSLivePair' -count=1",
+      "exit": 0,
+      "note": "After adding invalid preflight/source cases; overlaps database regression unit cases."
+    },
+    {
+      "command": "go test -tags albums_live ./internal/albums -run '^$'",
+      "exit": 0,
+      "note": "Compilation only; no live tests executed."
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "coverage": [
+    "transient staging HEAD failure leaves COPY unconsumed and retryable",
+    "COPY pins the source version observed in preflight",
+    "successful COPY is saved with independent bounded persistence after caller cancellation",
+    "download failure cannot lose COPY version or settle quota",
+    "retry reads saved exact version without another HEAD or COPY",
+    "late receipt survives lease replacement and account deletion acceptance",
+    "account, asset, source version, manifest, descriptor and component receipt binding",
+    "unissued component and conflicting version rejected",
+    "stale worker cannot complete verification",
+    "raw receipt does not publish objects, replace lease or change quota",
+    "completion transaction failure rolls raw receipt back",
+    "migration recovers historical verified photo version and leaves uncertain consumed motion without a fabricated receipt"
+  ],
+  "boundaries": {
+    "provider_transport": "mock",
+    "deployed": false,
+    "runtime_live_pair_deletion_observer_connected": false,
+    "live_media_requests": false,
+    "physical_media_deleted": false,
+    "account_erasure_complete": false,
+    "ios_changed": false
+  },
+  "source_sha256": {
+    "internal/albums/cos_live_pairs.go": "27ef78b1fea5924d27587140ce63f1fcf7208892c14791c83ec804f66d232224",
+    "internal/albums/cos_live_roundtrip_test.go": "be43b00062bca4d4fc957add7cc55d548a39888cbdccdc181287fb479982a0a8",
+    "internal/albums/live_pairs.go": "6dcabf1540b8d4346a3375059567312eb00178203043d728a21ecaba1a7f6154",
+    "internal/albums/live_pairs_test.go": "99d855fb6551d89d5357bf4a8c75568b9c94c3a00c44bf86cf959e8c7e3d04ee",
+    "internal/albums/mysql_live_pairs.go": "7f0d57ea10e1afc749f9b865493fcf547814d314223b68867ec07078060734bc",
+    "internal/albums/live_pair_copy_receipts.go": "f7526c8dd6450cb5c21948da40c3e56ffeddfb2b5851b1eed72b186b695efd7a",
+    "internal/albums/live_pair_copy_receipts_integration_test.go": "809905d4c84fb03597e2b6842c3d849fb110d34684c835d0ae373e33f6e7e236",
+    "migrations/0046_album_live_pair_copy_receipts.sql": "46fe4a7df6b38e3c10bfaebdfbc89aaaae2ae59486b781856a259030600a81f0",
+    "migrations/embed_test.go": "af944604ba385e73059ad9ba57b92ab2aa820c6a6a6e089a5e1773ccedff2bb0"
+  }
+}

@@ -75,24 +75,26 @@ func (d LivePairDescriptor) validate() error {
 }
 
 type LivePairUpload struct {
-	ID             string             `json:"id"`
-	OwnerID        string             `json:"-"`
-	RequestID      string             `json:"requestID"`
-	AssetID        string             `json:"assetID"`
-	VersionID      string             `json:"versionID"`
-	ManifestDigest string             `json:"manifestDigest"`
-	Preset         string             `json:"preset"`
-	Descriptor     LivePairDescriptor `json:"descriptor"`
-	State          string             `json:"state"`
-	ExpiresAt      time.Time          `json:"expiresAt"`
-	SourcePhoto    SealedObject       `json:"-"`
-	SourceVideo    SealedObject       `json:"-"`
-	Objects        []SealedObject     `json:"-"`
-	PhotoConsumed  bool               `json:"-"`
-	MovieConsumed  bool               `json:"-"`
-	LeaseToken     string             `json:"-"`
-	LeaseUntil     time.Time          `json:"-"`
-	Attempts       int                `json:"-"`
+	ID               string             `json:"id"`
+	OwnerID          string             `json:"-"`
+	RequestID        string             `json:"requestID"`
+	AssetID          string             `json:"assetID"`
+	VersionID        string             `json:"versionID"`
+	ManifestDigest   string             `json:"manifestDigest"`
+	Preset           string             `json:"preset"`
+	Descriptor       LivePairDescriptor `json:"descriptor"`
+	State            string             `json:"state"`
+	ExpiresAt        time.Time          `json:"expiresAt"`
+	SourcePhoto      SealedObject       `json:"-"`
+	SourceVideo      SealedObject       `json:"-"`
+	Objects          []SealedObject     `json:"-"`
+	PhotoCopyVersion string             `json:"-"`
+	MovieCopyVersion string             `json:"-"`
+	PhotoConsumed    bool               `json:"-"`
+	MovieConsumed    bool               `json:"-"`
+	LeaseToken       string             `json:"-"`
+	LeaseUntil       time.Time          `json:"-"`
+	Attempts         int                `json:"-"`
 }
 
 func (u LivePairUpload) resource(id string) (LivePairResource, error) {
@@ -138,13 +140,15 @@ type LivePairRepository interface {
 	PendingLivePairs(context.Context, time.Time, int) ([]LivePairUpload, error)
 	ClaimLivePair(context.Context, string, string, string, time.Time, time.Duration) (LivePairUpload, error)
 	BeginLivePairSeal(context.Context, LivePairUpload, string, time.Time) (LivePairUpload, bool, error)
+	RecordLivePairSeal(context.Context, LivePairUpload, string, string) (LivePairUpload, error)
 	CompleteLivePairPart(context.Context, LivePairUpload, SealedObject, time.Time) (LivePairUpload, error)
 	CompleteLivePair(context.Context, LivePairUpload, time.Time) (LivePairUpload, error)
 	DeferLivePair(context.Context, LivePairUpload, time.Time) error
 }
 type LivePairStorage interface {
 	AuthorizeLivePairPut(context.Context, LivePairUpload, string, time.Time) (PutGrant, error)
-	SealLivePairOnce(context.Context, LivePairUpload, string) (string, error)
+	PrepareLivePairSeal(context.Context, LivePairUpload, string) (OriginalSealSource, error)
+	SealLivePairOnce(context.Context, LivePairUpload, string, OriginalSealSource) (string, error)
 	ReconcileLivePairSeal(context.Context, LivePairUpload, string) (string, error)
 	OpenLivePairVersion(context.Context, LivePairUpload, string, string) (io.ReadCloser, error)
 	AuthorizeLivePairRead(context.Context, LivePairUpload, SealedObject, time.Time) (string, error)
@@ -344,19 +348,43 @@ func (s *UploadService) VerifyLivePair(ctx context.Context, owner, id string) (L
 		if found {
 			continue
 		}
-		var fresh bool
-		u, fresh, err = r.BeginLivePairSeal(ctx, u, part, s.now().UTC())
-		if err != nil {
-			return LivePairUpload{}, err
+		consumed, version := u.PhotoConsumed, u.PhotoCopyVersion
+		if part == "motion" {
+			consumed, version = u.MovieConsumed, u.MovieCopyVersion
 		}
-		var version string
-		if fresh {
-			version, err = storage.SealLivePairOnce(ctx, u, part)
-		} else {
-			version, err = storage.ReconcileLivePairSeal(ctx, u, part)
-		}
-		if err != nil || !concreteCOSVersion(version) {
-			return LivePairUpload{}, ErrLivePairNotReady
+		if version == "" {
+			var source OriginalSealSource
+			if !consumed {
+				source, err = storage.PrepareLivePairSeal(ctx, u, part)
+				if err != nil {
+					return LivePairUpload{}, err
+				}
+			}
+			var fresh bool
+			u, fresh, err = r.BeginLivePairSeal(ctx, u, part, s.now().UTC())
+			if err != nil {
+				return LivePairUpload{}, err
+			}
+			version = u.PhotoCopyVersion
+			if part == "motion" {
+				version = u.MovieCopyVersion
+			}
+			if version == "" {
+				if fresh {
+					version, err = storage.SealLivePairOnce(ctx, u, part, source)
+				} else {
+					version, err = storage.ReconcileLivePairSeal(ctx, u, part)
+				}
+			}
+			if err != nil || !concreteCOSVersion(version) {
+				return LivePairUpload{}, ErrLivePairNotReady
+			}
+			persist, finish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_, err = r.RecordLivePairSeal(persist, u, part, version)
+			finish()
+			if err != nil {
+				return LivePairUpload{}, err
+			}
 		}
 		body, err := storage.OpenLivePairVersion(ctx, u, part, version)
 		if err != nil {

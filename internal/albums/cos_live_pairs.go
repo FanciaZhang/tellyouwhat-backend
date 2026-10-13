@@ -38,24 +38,34 @@ func (s *COSObjects) AuthorizeLivePairPut(ctx context.Context, u LivePairUpload,
 	return PutGrant{ResourceID: part, URL: signed.String(), Headers: map[string]string{"Content-Type": livePairContentType(part), "Content-Length": strconv.FormatInt(resource.SizeBytes, 10)}, ExpiresAt: expiry}, nil
 }
 
-// Caller has committed exactly one consumed COPY intent. No archive PUT/COPY
-// URL is ever given to a client, and the SDK is configured for one attempt.
-func (s *COSObjects) SealLivePairOnce(ctx context.Context, u LivePairUpload, part string) (string, error) {
+// Preflight must finish before consuming the one-shot COPY intent.
+func (s *COSObjects) PrepareLivePairSeal(ctx context.Context, u LivePairUpload, part string) (OriginalSealSource, error) {
 	from, err := u.key(part, true)
-	to, targetErr := u.key(part, false)
 	expected, resourceErr := u.resource(part)
-	consumed := (part == "photo" && u.PhotoConsumed) || (part == "motion" && u.MovieConsumed)
-	if err != nil || targetErr != nil || resourceErr != nil || !consumed || u.Descriptor.validate() != nil || u.State != "verifying" {
-		return "", ErrInvalidManifest
+	if err != nil || resourceErr != nil || u.Descriptor.validate() != nil || u.State != "verifying" {
+		return OriginalSealSource{}, ErrInvalidManifest
 	}
 	response, err := s.client.Object.Head(ctx, from, nil)
 	if response != nil && response.Body != nil {
 		response.Body.Close()
 	}
 	if err != nil || response == nil || response.StatusCode != http.StatusOK || response.ContentLength != expected.SizeBytes || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
-		return "", ErrLivePairNotReady
+		return OriginalSealSource{}, ErrLivePairNotReady
 	}
-	archived, err := s.copyVersion(ctx, from, to, response.Header.Get("x-cos-version-id"), expected.SizeBytes)
+	return OriginalSealSource{response.Header.Get("x-cos-version-id"), response.ContentLength}, nil
+}
+
+// Caller has committed exactly one consumed COPY intent after preflight. COPY
+// reads that exact source version, even if a client subsequently replaces staging.
+func (s *COSObjects) SealLivePairOnce(ctx context.Context, u LivePairUpload, part string, source OriginalSealSource) (string, error) {
+	from, err := u.key(part, true)
+	to, targetErr := u.key(part, false)
+	expected, resourceErr := u.resource(part)
+	consumed := (part == "photo" && u.PhotoConsumed) || (part == "motion" && u.MovieConsumed)
+	if err != nil || targetErr != nil || resourceErr != nil || !consumed || u.Descriptor.validate() != nil || u.State != "verifying" || !concreteCOSVersion(source.VersionID) || source.SizeBytes != expected.SizeBytes {
+		return "", ErrInvalidManifest
+	}
+	archived, err := s.copyVersion(ctx, from, to, source.VersionID, source.SizeBytes)
 	if err != nil || !concreteCOSVersion(archived) {
 		return "", ErrLivePairNotReady
 	}

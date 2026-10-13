@@ -237,7 +237,11 @@ func TestLiveCOSLivePair(t *testing.T) {
 	u.PhotoConsumed = true
 	u.MovieConsumed = true
 	for _, part := range []string{"photo", "motion"} {
-		v, err := s.SealLivePairOnce(ctx, u, part)
+		source, err := s.PrepareLivePairSeal(ctx, u, part)
+		if err != nil {
+			t.Fatal("pair preflight failed")
+		}
+		v, err := s.SealLivePairOnce(ctx, u, part, source)
 		if err != nil {
 			t.Fatal("pair seal failed/unknown; no retry")
 		}
