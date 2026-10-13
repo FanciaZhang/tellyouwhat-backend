@@ -324,7 +324,7 @@ func (r *MySQLUploads) runAccountObjectPurgeStep(ctx context.Context, owner, req
 		current.Area = next
 		current.State, current.Token, current.Until = "queued", "", time.Time{}
 		if next == len(accountPurgeAreas) {
-			current.State, current.RemovedAt = "objects_removed", now().UTC()
+			current.State, current.RemovedAt = "objects_removed", now().UTC().Truncate(time.Microsecond)
 		}
 		return nil
 	})
