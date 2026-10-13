@@ -69,7 +69,7 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 	var liveMultipart *LivePairMultipartService
 	if multipart != nil {
 		if repo, ok := service.repository.(*MySQLUploads); ok {
-			if provider, ok := service.objects.(livePairMultipartProvider); ok {
+			if provider, ok := service.objects.(multipartRecoveryProvider); ok {
 				var err error
 				liveMultipart, err = newLivePairMultipartService(repo, provider, service.now)
 				if err != nil {

@@ -68,10 +68,10 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	}
 	deletionObservations, err := albums.NewAccountMediaObservationWorker(repository, objects, config.BatchSize, time.Now)
 	if err != nil {
-		return errors.New("account media observation configuration")
+		return errors.New("account media convergence configuration")
 	}
 	if err := deletionObservations.Check(startup); err != nil {
-		return errors.New("account media observation schema")
+		return errors.New("account media convergence schema")
 	}
 	service, err := albums.NewUploadService(repository, objects, config.Policy, time.Now)
 	if err != nil {
@@ -148,10 +148,10 @@ func run(ctx context.Context, config albums.WorkerConfig, logger *slog.Logger) e
 	go func() {
 		finished <- deletionObservations.Run(runCtx, config.PollInterval, func(batch albums.AccountMediaObservationBatch, available bool) {
 			if !available {
-				logger.Error("album account media observation unavailable")
+				logger.Error("album account media convergence unavailable")
 			}
 			if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
-				logger.Info("album account media observation batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
+				logger.Info("album account media convergence batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
 			}
 		})
 	}()

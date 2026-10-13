@@ -227,11 +227,12 @@ func closedDerivedPurgeTargets(ctx context.Context, tx *sql.Tx, owner string, v 
 // Signed URL expiry prevents a new request, not a PUT that already started.
 // Until direct uploads have independent termination evidence, no empty listing
 // or elapsed retention deadline can authorize deletion or a completed receipt.
-// New Live Photo multipart operations must also have a terminal receipt.
+// Original and Live Photo multipart operations also need a terminal receipt.
 func requireNoDirectUploads(ctx context.Context, tx *sql.Tx, owner, asset string) error {
 	for _, query := range []string{
 		`SELECT upload_id FROM album_uploads WHERE owner_id=? AND JSON_UNQUOTE(JSON_EXTRACT(manifest_json,'$.assetID'))=? AND direct_upload_issued=TRUE LIMIT 1 FOR UPDATE`,
 		`SELECT pair_upload_id FROM album_live_pairs WHERE owner_id=? AND asset_id=? AND direct_upload_issued=TRUE LIMIT 1 FOR UPDATE`,
+		`SELECT i.upload_id FROM album_multipart_intents i JOIN album_uploads u ON u.upload_id=i.upload_id LEFT JOIN album_multipart_completions c ON c.upload_id=i.upload_id AND c.resource_id=i.resource_id WHERE u.owner_id=? AND JSON_UNQUOTE(JSON_EXTRACT(u.manifest_json,'$.assetID'))=? AND i.deletion_aborted_at IS NULL AND (c.state IS NULL OR c.state<>'assembled') LIMIT 1 FOR UPDATE`,
 		`SELECT m.pair_upload_id FROM album_live_pair_multiparts m JOIN album_live_pairs p ON p.pair_upload_id=m.pair_upload_id WHERE p.owner_id=? AND p.asset_id=? AND m.state NOT IN ('assembled','aborted') LIMIT 1 FOR UPDATE`,
 	} {
 		var id string

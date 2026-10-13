@@ -38,12 +38,12 @@ func (r *MySQLUploads) PendingReconciliations(ctx context.Context, now time.Time
 	rows, err := r.db.QueryContext(ctx, `SELECT owner_id,upload_id,resource_id,operation_id,kind FROM (
  SELECT u.owner_id,c.upload_id,c.resource_id,c.operation_id,'completion' AS kind,COALESCE(c.reconcile_after,c.updated_at) AS available
  FROM album_multipart_completions c JOIN album_uploads u ON u.upload_id=c.upload_id
- WHERE c.state IN ('completing','unknown') AND c.reconcile_attempts<? AND c.updated_at<=?
+ WHERE NOT EXISTS (SELECT 1 FROM album_storage_accounts a WHERE a.owner_id=u.owner_id AND a.deletion_requested_at IS NOT NULL) AND c.state IN ('completing','unknown') AND c.reconcile_attempts<? AND c.updated_at<=?
  AND (c.reconcile_after IS NULL OR c.reconcile_after<=?) AND (c.reconcile_until IS NULL OR c.reconcile_until<=?)
  UNION ALL
  SELECT u.owner_id,i.upload_id,i.resource_id,i.intent_id,'initialization',COALESCE(i.reconcile_after,i.updated_at)
  FROM album_multipart_intents i JOIN album_uploads u ON u.upload_id=i.upload_id
- WHERE i.state IN ('initiating','unknown') AND i.reconcile_attempts<? AND i.updated_at<=?
+ WHERE NOT EXISTS (SELECT 1 FROM album_storage_accounts a WHERE a.owner_id=u.owner_id AND a.deletion_requested_at IS NOT NULL) AND i.state IN ('initiating','unknown') AND i.reconcile_attempts<? AND i.updated_at<=?
  AND (i.reconcile_after IS NULL OR i.reconcile_after<=?) AND (i.reconcile_until IS NULL OR i.reconcile_until<=?)
  ) jobs ORDER BY available,upload_id,resource_id,kind LIMIT ?`, reconciliationAttempts, now.Add(-2*time.Minute), now, now, reconciliationAttempts, now.Add(-2*time.Minute), now, now, limit)
 	if err != nil {
@@ -73,6 +73,12 @@ func (r *MySQLUploads) ClaimReconciliation(ctx context.Context, job Reconciliati
 	}
 	var result ReconciliationJob
 	_, err = r.mutate(ctx, job.OwnerID, job.UploadID, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireMediaAccount(ctx, tx, job.OwnerID); err != nil {
+			if errors.Is(err, ErrOwner) {
+				return u, ErrLease
+			}
+			return u, err
+		}
 		var operation, state string
 		var attempt int
 		var updated time.Time

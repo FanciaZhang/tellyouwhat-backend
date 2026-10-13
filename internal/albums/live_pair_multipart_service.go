@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type livePairMultipartProvider interface {
+type multipartRecoveryProvider interface {
 	MultipartProvider
 	abortPurgeUpload(context.Context, string, purgeTarget, string) error
 }
@@ -16,11 +16,11 @@ type livePairMultipartProvider interface {
 // representing derived pairs as original backups or reserving quota twice.
 type LivePairMultipartService struct {
 	repository *MySQLUploads
-	provider   livePairMultipartProvider
+	provider   multipartRecoveryProvider
 	now        func() time.Time
 }
 
-func newLivePairMultipartService(r *MySQLUploads, p livePairMultipartProvider, now func() time.Time) (*LivePairMultipartService, error) {
+func newLivePairMultipartService(r *MySQLUploads, p multipartRecoveryProvider, now func() time.Time) (*LivePairMultipartService, error) {
 	if r == nil || p == nil || now == nil {
 		return nil, ErrInvalidManifest
 	}
