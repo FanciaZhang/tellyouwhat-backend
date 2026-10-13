@@ -215,7 +215,13 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
     return result
 
 
+def require_operator(root):
+    if os.geteuid() != Path(root).stat().st_uid:
+        raise OperationError("artifact operations must run as the backend directory owner; do not use sudo root")
+
+
 def register(runtime, owner, paths=(), images=(), source="", source_run=""):
+    require_operator(runtime.root)
     if owner not in OWNERS or not source:
         raise OperationError("an artifact owner and source revision are required")
     path = runtime.state / "artifact-owners" / (owner + ".json")
@@ -237,6 +243,7 @@ def register(runtime, owner, paths=(), images=(), source="", source_run=""):
 
 
 def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url):
+    require_operator(runtime.root)
     url = urlsplit(verify_url)
     if (owner not in ("birthday-development", "albums-test") or not source or not images or not command
             or url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.query
@@ -278,6 +285,7 @@ def main():
     parser.add_argument("--run", nargs=argparse.REMAINDER, help="run an owned development producer under both locks, verify it, then register and clean")
     args = parser.parse_args()
     os.umask(0o077)
+    require_operator(args.backend_dir)
     runtime = Runtime(args.backend_dir)
     if args.run:
         if not args.apply or not args.register:

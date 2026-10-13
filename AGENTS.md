@@ -2,6 +2,8 @@
 
 For `/opt/tellyouwhat` on the shared production host, the producer owns cleanup of its disposable artifacts. Do not deploy through an unregistered ad hoc Docker/SSH command.
 
+Run artifact registration and its deployment wrapper as the owner of `/opt/tellyouwhat/backend` (`ubuntu` on the current host). Do not run them through `sudo root`: private registration files must remain readable by scheduled operations. Restrict any required sudo use to the individual privileged action inside the producer.
+
 - Production releases use `deploy/tencent/release.py deploy`. Its operations lock spans authenticated backup and migration, and its deployment lock spans activation. Do not run an independent migration or substitute a mutable image tag.
 - Journal private development uses JournalApp's `scripts/journal-development.py`. It verifies the authenticated contract, keeps the stopped previous service, records binary hash/source, and invokes scoped cleanup.
 - Birthday development and Albums test producers run through `deploy/tencent/ops_artifacts.py --apply --register --owner ... --source ... --source-run ... --image ... --verify-url ... --run <producer command>`. The producer command must perform its own failure recovery and must not include unrelated production changes. See `docs/host-artifact-lifecycle.md` for examples.
