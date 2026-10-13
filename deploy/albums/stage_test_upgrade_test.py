@@ -43,6 +43,20 @@ class UpgradeTests(unittest.TestCase):
         for value in (dict(accounts=1, uploads=0), dict(accounts=0, uploads=1)):
             with self.assertRaises(OperationError): check_empty(value)
 
+    def test_orphaned_candidate_volume_is_not_overwritten(self):
+        stage = Stage.__new__(Stage)
+        stage.active_env = Path('/unused')
+        stage.source = 'a' * 40
+        calls = []
+        def execute(label, *args, **kwargs):
+            calls.append(label)
+            return b'existing-volume\n' if label == 'existing-volume' else b''
+        with patch('stage_test_upgrade.candidate_environment', return_value=''), \
+                patch('stage_test_upgrade.ready'), patch.object(stage, 'state', return_value=dict(accounts=0, uploads=0)), \
+                patch.object(stage, 'execute', side_effect=execute):
+            with self.assertRaisesRegex(OperationError, 'volume already exists'): stage.run()
+        self.assertEqual(calls, ['existing-candidate', 'existing-volume'])
+
     def test_failed_snapshot_resumes_untouched_active_stack(self):
         stage = Stage.__new__(Stage)
         for fail in ('state', 'dump', 'drained', 'drain'):

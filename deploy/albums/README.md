@@ -134,6 +134,8 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 数据库跨版本升级先使用 `stage_test_upgrade.py --source <完整提交> --run albums-upgrade-<唯一名称>`，通过同一 `ops_artifacts.py --run` 包装运行。这个首次升级工具仅接受尚无账户和上传的独立测试栈；不用于已有用户的迁移。它短暂停止旧 API/worker，保存加密快照后恢复旧服务；在 `tellyouwhat-albums-test-next` 的独立 MySQL 卷、Redis、网络和 18091 本机端口恢复并逐字节核对数据库，再执行迁移和新版服务启动检查。原数据库卷、旧镜像、配置及密钥引用保留。失败停止候选 API/worker，保留数据和私有诊断，不删除卷或切换公网路由。成功只代表升级演练，不能宣称已部署公网；切换前必须重新冻结写入、同步最新快照并验证候选。备份密钥需单独保管，候选卷不替代离机灾备。包装器登记新旧镜像和 `.operations/<run>` 选择记录，健康检查仍指向旧栈 18090。验证：`python3 -m unittest discover -s deploy/albums -p 'stage_test_upgrade_test.py' -v`。
 
+演练通过并在本机另存验证过的加密快照后，`promote_test_upgrade.py --source <演练镜像的完整提交> --run <同一演练>` 在包装器内执行切换，包装器检查地址改为 `http://127.0.0.1:18091/readyz`。它核对配置、密钥和候选镜像，停止旧写入后重新导出旧库；若与演练快照不一致则恢复旧服务并拒绝切换。数据未变时只修改 `/etc/caddy/albums-test.caddy` 的上游，验证配置、reload 后读取 Caddy 实际载入配置并检查公网。reload 开始前失败可恢复旧服务；reload 结果未知或之后失败时保留候选服务供向前修复，不自动回退数据库而丢失新写入。`promotion-started` 防止未知结果被重复执行。旧数据库卷和二进制仅作为旧快照恢复材料，不能在新服务已接受写入后直接切回。此工具仍不开放销售、媒体处理或物理删除。
+
 本次独立探针：`go run deploy/albums/appstore_probe.go request`（只允许一次 POST），随后 `go run deploy/albums/appstore_probe.go status`；固定相册 Sandbox、密钥 ID 与本次私有证据目录，不用于生产。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针私有文件边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
 
 ### 账户注销清单权限（2026-10-13，待确认保存）

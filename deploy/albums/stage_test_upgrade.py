@@ -187,6 +187,8 @@ class Stage:
         check_empty(self.state(False))
         if self.execute('existing-candidate', ['docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + PROJECT]).strip():
             raise OperationError('candidate already exists; inspect it rather than repeat staging')
+        if self.execute('existing-volume', ['docker', 'volume', 'ls', '-q', '--filter', 'name=' + PROJECT + '_albums-test-mysql']).strip():
+            raise OperationError('candidate database volume already exists; preserve it for inspection')
         atomic_text(self.new_env, candidate)
         atomic_text(self.folder / 'active-compose.env', self.active_env.read_text())
         atomic_text(self.folder / 'active-runtime.env', (ROOT / '.env.albums-test').read_text())
