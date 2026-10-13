@@ -421,6 +421,27 @@ struct AlbumAPITransportTests {
         #expect(request.body.isEmpty)
     }
 
+    @Test("account deletion serializes only a request ID and returns acceptance, not completion")
+    func accountDeletion() async throws {
+        let recorder = AlbumRequestRecorder()
+        let requestID = "9987195d-bcd7-41f2-baa6-6a426cffea59"
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 202,
+                headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(#"{"requestID":"\#(requestID)","requestedAt":"2026-10-13T02:00:00Z","state":"accepted"}"#.utf8)))
+        })
+        let response = try await client.requestAlbumAccountDeletion(body: .json(.init(requestID: requestID)))
+        if case .accepted(let value) = response, case .json(let receipt) = value.body {
+            #expect(receipt.requestID == requestID)
+            #expect(receipt.state == .accepted)
+        } else { Issue.record("Missing durable acceptance") }
+        let request = try #require(await recorder.last)
+        #expect(request.method == "POST" && request.path == "/v1/albums/account/deletion")
+        let body = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: String])
+        #expect(body == ["requestID": requestID])
+    }
+
     @Test("multipart control preserves byte ranges and bodyless authority")
     func multipartControl() async throws {
         let recorder = AlbumRequestRecorder()

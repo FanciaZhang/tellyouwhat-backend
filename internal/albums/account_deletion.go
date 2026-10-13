@@ -13,8 +13,8 @@ type accountDeletionRequest struct {
 	RequestedAt          time.Time
 }
 
-// Durable access cutover, not evidence of erasure. No HTTP route is exposed
-// until media quiescence, provider revocation and physical cleanup are wired.
+// Durable access cutover, not evidence of erasure. Gateway leaves the HTTP
+// adapter disabled until complete physical cleanup is deployable.
 // The owner is derived from the credential, never a caller-supplied account ID.
 func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, requestID string, now func() time.Time) (accountDeletionRequest, error) {
 	var receipt accountDeletionRequest

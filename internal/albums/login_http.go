@@ -17,6 +17,7 @@ type SessionRevoker interface {
 	Revoke(context.Context, string) error
 }
 type LoginHTTPOptions struct {
+	AccountDeletion     *accountDeletionHTTP
 	AppleNotifications  *appleAccountNotifications
 	TrashEnabled        bool
 	LibraryLimiter      LoginRateLimiter
@@ -36,6 +37,9 @@ type LoginHTTPOptions struct {
 }
 
 func NewHTTPRouterWithLogin(host string, auth AccountAuthenticator, uploads *UploadService, options LoginHTTPOptions) (*gin.Engine, error) {
+	if d := options.AccountDeletion; d != nil && (d.accounts == nil || d.now == nil) {
+		return nil, errors.New("album account deletion dependencies are required")
+	}
 	if options.AppleNotifications != nil && (options.AppleNotifications.verifier == nil || options.AppleNotifications.accounts == nil) {
 		return nil, errors.New("album Apple notification dependencies are required")
 	}

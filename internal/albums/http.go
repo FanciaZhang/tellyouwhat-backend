@@ -49,6 +49,12 @@ func newHTTPRouter(host string, auth AccountAuthenticator, service *UploadServic
 			}
 			return
 		}
+		// Exact deletion retries use the originally accepted credential after
+		// revocation. The handler authenticates it inside the deletion transaction.
+		if c.Request.Method == http.MethodPost && c.Request.URL.Path == "/v1/albums/account/deletion" {
+			c.Next()
+			return
+		}
 		// Logout validates and revokes only the presented credential, even after expiry.
 		if login != nil && c.Request.Method == http.MethodPost && (c.Request.URL.Path == "/v1/albums/auth/apple/notifications" || c.Request.URL.Path == "/v1/albums/auth/challenges" || c.Request.URL.Path == "/v1/albums/auth/apple" || c.Request.URL.Path == "/v1/albums/auth/logout" || c.Request.URL.Path == "/v1/albums/subscription/notifications") {
 			c.Next()

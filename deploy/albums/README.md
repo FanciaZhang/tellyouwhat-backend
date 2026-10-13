@@ -239,3 +239,10 @@ fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --t
 
 
 备份资源核对（2026-10-13）：控制台显示现有 `tellyouwhat-backups-1251995834` 为广州、多 AZ，版本控制未开启，已有 `backups/` 目录。未修改该桶。已填写独立 `tellyouwhat-albums-backups-1251995834` 的私有、多 AZ、版本控制配置，但尚未提交；专用 `albums-test-backup` 身份及 `cam-test-backup.policy.json` 权限待用户确认后创建。此策略只含新桶的版本状态查询和 `albums/recovery/*` 的读写，不含删除、其他 App/媒体目录或桶管理。截图仅证明待提交配置，不能作为资源创建证据。签名回执的受控验证见 `docs/evidence/albums-offsite-receipt-2026-10-13.json`。
+
+
+### 注销受理 HTTP 合约（保持关闭）
+
+`POST /v1/albums/account/deletion` 只接受 `requestID` 和会话 Bearer；归属由数据库内的凭据决定。首次受理与撤销会话、关闭分享/推送及写入删除队列、独立删除日志同事务提交。`202` 只表示 accepted，不能显示“已删除完成”，也不取消 Apple 订阅或删除系统图库。客户端必须在发送前持久保存请求编号和原凭据；响应丢失后仅用完全相同的组合重试。普通认证中间件会拒绝已撤销会话，因此只有此 POST 交给事务内的首次/精确重放认证，其他路径照常认证。
+
+Gateway 保持未注入处理器，没有新增环境开关；当前请求返回 503。最终身份、订阅记录与灾备擦除及原生确认/重试状态尚未完成，不能据此启用用户入口。无数据库迁移或部署。验证包含真实隔离 MySQL/Redis 的 42 个顶层测试、104 个通过事件及 Swift 合约 18 项，零失败/跳过；见 `docs/evidence/albums-account-deletion-http-2026-10-13.json`。

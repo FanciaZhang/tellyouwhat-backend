@@ -102,6 +102,37 @@ paths:
                 properties:
                   accountID: {type: string, format: uuid}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/account/deletion:
+    post:
+      operationId: requestAlbumAccountDeletion
+      description: Disabled in deployed Gateway until complete erasure is available. Accepts a user-confirmed deletion request and revokes account access atomically. A 202 receipt means accepted, never completed. Persist requestID before sending; retry with the same original bearer credential and requestID after a lost response, even if that credential is now revoked or expired. No account ID is accepted. This does not cancel an Apple subscription or delete system Photos assets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestID]
+              properties:
+                requestID: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Durable acceptance or exact replay of the same accepted request
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [requestID, requestedAt, state]
+                properties:
+                  requestID: {type: string, format: uuid}
+                  requestedAt: {type: string, format: date-time}
+                  state: {type: string, enum: [accepted]}
+        '401': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/subscription:
     get:
       operationId: getAlbumSubscription
