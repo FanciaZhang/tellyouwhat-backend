@@ -100,5 +100,21 @@
     "retention_push",
     "derived_cleanup",
     "permanent_original_purge"
-  ]
+  ],
+  "read_only_recheck_2026_10_14": {
+    "apple_test_status": "SUCCESS",
+    "apple_status_http": 200,
+    "notification_uuid": "41d1a46a-4187-45b5-9e8c-7f2536a8176b",
+    "public_readyz": {
+      "code": "ok"
+    },
+    "gateway_running": true,
+    "deployment_environment": "test",
+    "subscriptions_enabled": true,
+    "configured_key_id": "YTX5GYG2Z5",
+    "local_key_mode": "0600",
+    "server_key_mode": "0440 root:65532",
+    "new_key_or_notification_created": false,
+    "purchase_verified": false
+  }
 }

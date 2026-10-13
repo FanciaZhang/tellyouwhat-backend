@@ -14,11 +14,13 @@ import (
 	"time"
 )
 
-// Explicit paid probes, one synthetic media item each. Real COS multipart/sealing/CI,
+// Explicit paid probes, one synthetic media item or one mixed batch. Real COS multipart/sealing/CI,
 // isolated database and synthetic login/subscription. Never deletes any media.
 func TestLiveCOSNativePhotoPipeline(t *testing.T)     { liveNativePipeline(t, Photo) }
 func TestLiveCOSNativeVideoPipeline(t *testing.T)     { liveNativePipeline(t, Video) }
 func TestLiveCOSNativeLivePhotoPipeline(t *testing.T) { liveNativePipeline(t, LivePhoto) }
+
+func TestLiveCOSNativeMixedUploadPipeline(t *testing.T) { liveNativePipeline(t, AssetKind("mixed")) }
 
 func liveNativePipeline(t *testing.T, kind AssetKind) {
 	t.Helper()
@@ -30,7 +32,16 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 	if kind == LivePhoto {
 		expectedVideos, expectedPairs, expectedResources = 1, 1, 2
 	}
+	expectedVersions := 1
+	if kind == AssetKind("mixed") {
+		expectedPhotos, expectedVideos, expectedPairs, expectedVersions = 4, 2, 0, 3
+	}
 	objects, root, ctx := liveRoundtripFixture(t)
+	if kind == AssetKind("mixed") {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
+		t.Cleanup(cancel)
+	}
 	marker, err := os.OpenFile(filepath.Join(root, prefix+"-intent.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal("fresh cloud probe directory required; do not repeat unknown writes")
@@ -113,7 +124,7 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 				t.Fatal("photo processing failed; existing cloud objects retained")
 			}
 			counts["previewsStored"] += p.Stored
-			if kind == Video || kind == LivePhoto {
+			if kind == Video || kind == LivePhoto || kind == AssetKind("mixed") {
 				video, err := videos.RunOnce(ctx)
 				if err != nil || video.Failed != 0 {
 					t.Fatal("video processing failed; existing intent retained; do not repeat submission")
@@ -132,37 +143,57 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 			if err != nil || closed.Failed != 0 || closed.Held != 0 {
 				t.Fatal("derived quota finalization failed")
 			}
-			if _, err := os.Stat(filepath.Join(root, "done")); err == nil {
+			if _, err := os.Stat(filepath.Join(root, "done")); err == nil && (kind != AssetKind("mixed") || counts["previewsStored"] == expectedPhotos && counts["videosStored"] == expectedVideos) {
 				goto verifyResult
 			}
 		}
 	}
 verifyResult:
 	page, err := r.AssetVersions(context.Background(), session.AccountID, 0, 10)
-	if err != nil || len(page.Versions) != 1 || counts["originalsVerified"] != 1 || counts["previewsStored"] != expectedPhotos || counts["videosStored"] != expectedVideos || counts["pairsVerified"] != expectedPairs {
+	if err != nil || len(page.Versions) != expectedVersions || counts["originalsVerified"] != expectedVersions || counts["previewsStored"] != expectedPhotos || counts["videosStored"] != expectedVideos || counts["pairsVerified"] != expectedPairs {
 		t.Fatal("unexpected published media/job counts")
 	}
-	version := page.Versions[0]
-	if version.Manifest.Kind != kind {
-		t.Fatal("unexpected media kind")
-	}
-	if len(version.Objects) != expectedResources {
-		t.Fatal("unexpected source resource count")
-	}
-	for _, object := range version.Objects {
-		reader, err := objects.OpenVersion(ctx, object.Key, object.VersionID)
-		if err != nil {
-			t.Fatal("sealed original unavailable")
+	var totalOriginals int64
+	kinds := map[AssetKind]int{}
+	for _, version := range page.Versions {
+		totalOriginals += version.OriginalBytes
+		kinds[version.Manifest.Kind]++
+		if kind != AssetKind("mixed") && version.Manifest.Kind != kind {
+			t.Fatal("unexpected media kind")
 		}
-		data, err := io.ReadAll(io.LimitReader(reader, object.SizeBytes+1))
-		reader.Close()
-		if err != nil || int64(len(data)) != object.SizeBytes || roundtripHash(data) != object.SHA256 {
-			t.Fatal("archived original bytes changed")
+		resources := expectedResources
+		if kind == AssetKind("mixed") {
+			resources = 1
+			if version.Manifest.Kind == LivePhoto {
+				resources = 2
+			}
 		}
+		if len(version.Objects) != resources {
+			t.Fatal("unexpected source resource count")
+		}
+		for _, object := range version.Objects {
+			reader, err := objects.OpenVersion(ctx, object.Key, object.VersionID)
+			if err != nil {
+				t.Fatal("sealed original unavailable")
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, object.SizeBytes+1))
+			reader.Close()
+			if err != nil || int64(len(data)) != object.SizeBytes || roundtripHash(data) != object.SHA256 {
+				t.Fatal("archived original bytes changed")
+			}
+		}
+	}
+	if kind == AssetKind("mixed") && (kinds[Photo] != 1 || kinds[Video] != 1 || kinds[LivePhoto] != 1) {
+		t.Fatal("mixed batch lost or duplicated a media kind")
 	}
 	var used, reserved int64
-	if err := f.r.db.QueryRow(`SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, session.AccountID).Scan(&used, &reserved); err != nil || used < version.OriginalBytes || reserved != 0 {
+	if err := f.r.db.QueryRow(`SELECT used_bytes,reserved_bytes FROM album_storage_accounts WHERE owner_id=?`, session.AccountID).Scan(&used, &reserved); err != nil || used < totalOriginals || reserved != 0 {
 		t.Fatal("quota settlement incomplete", err)
 	}
-	roundtripJSON(t, root, prefix+"-backend-evidence.json", map[string]any{"passed": true, "versionID": version.VersionID, "original": version.Objects[0], "originals": version.Objects, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"})
+	evidence := map[string]any{"passed": true, "versions": page.Versions, "originalBytes": totalOriginals, "usedBytes": used, "reservedBytes": reserved, "counts": counts, "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL"}
+	if kind != AssetKind("mixed") {
+		version := page.Versions[0]
+		evidence["versionID"], evidence["original"], evidence["originals"] = version.VersionID, version.Objects[0], version.Objects
+	}
+	roundtripJSON(t, root, prefix+"-backend-evidence.json", evidence)
 }
