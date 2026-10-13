@@ -53,7 +53,7 @@ func TestIllustrationProviderFailureReportsUnavailableWithoutRedispatch(t *testi
 			}
 			runtime.authorize = func(context.Context, string) bool { return true }
 			id := uuid.NewString()
-			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Prompt: "Synthetic tree", ConsentRevision: "2026-09-27"}, nil)
+			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -113,13 +113,19 @@ func TestIllustrationHTTPConsentDurabilityIsolationAndExpiry(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
-	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","prompt":"Synthetic dog by the river","consentRevision":"2026-09-27"}`
+	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","brief":{"title":"Synthetic dog by the river","details":[{"kind":"other","text":"Synthetic dog by the river"}]},"consentRevision":"2026-09-27"}`
 	if w := request("POST", illustrationPrefix, body); w.Code != 403 {
 		t.Fatalf("missing consent: %d %s", w.Code, w.Body)
 	}
 	grant := `{"consents":[{"scope":"journal_illustration","documentVersion":"2026-09-27","granted":true}]}`
 	if w := request("POST", "/v1/privacy/consents", grant); w.Code != 200 {
 		t.Fatalf("grant: %d %s", w.Code, w.Body)
+	}
+	for _, field := range []string{`"prompt":"override"`, `"model":"override"`, `"instructions":"override"`} {
+		invalid := strings.TrimSuffix(body, "}") + "," + field + "}"
+		if w := request("POST", illustrationPrefix, invalid); w.Code != 422 {
+			t.Fatalf("accepted provider field: %d", w.Code)
+		}
 	}
 	var accepted imageTaskResponse
 	w := request("POST", illustrationPrefix, body)
@@ -250,7 +256,7 @@ func TestIllustrationRunningRestartAndCancellationFence(t *testing.T) {
 	runtime.authorize = func(context.Context, string) bool { return true }
 	owner := uuid.NewString()
 	id := uuid.NewString()
-	c := illustration.Confirmation{RequestID: id, VersionID: id, Prompt: "Synthetic tree", ConsentRevision: "2026-09-27"}
+	c := illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}
 	_, err = runtime.create(owner, c, nil)
 	if err != nil {
 		t.Fatal(err)

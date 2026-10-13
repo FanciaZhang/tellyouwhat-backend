@@ -252,7 +252,7 @@ func (h *IllustrationRuntime) create(owner string, c illustration.Confirmation, 
 	if !errors.Is(err, os.ErrNotExist) {
 		return next, err
 	}
-	job := imageJob{Task: next, Input: &illustration.Input{Prompt: c.Prompt, Reference: reference}}
+	job := imageJob{Task: next, Input: &illustration.Input{Prompt: c.Brief.Compile(), Reference: reference}}
 	return next, h.write(job)
 }
 
@@ -420,12 +420,12 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	var problem string
 	if r.URL.Path == illustrationPrefix {
 		var body struct {
-			RequestID       string `json:"requestID"`
-			VersionID       string `json:"versionID"`
-			Prompt          string `json:"prompt"`
-			ConsentRevision string `json:"consentRevision"`
-			ReferenceSHA256 string `json:"referenceSHA256"`
-			Reference       []byte `json:"reference"`
+			RequestID       string             `json:"requestID"`
+			VersionID       string             `json:"versionID"`
+			Brief           illustration.Brief `json:"brief"`
+			ConsentRevision string             `json:"consentRevision"`
+			ReferenceSHA256 string             `json:"referenceSHA256"`
+			Reference       []byte             `json:"reference"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 34_000_000))
 		decoder.DisallowUnknownFields()
@@ -433,7 +433,7 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			deny(w, 422, "contract_violation")
 			return
 		}
-		c := illustration.Confirmation{RequestID: body.RequestID, VersionID: body.VersionID, Prompt: body.Prompt, ConsentRevision: body.ConsentRevision, ReferenceSHA256: body.ReferenceSHA256}
+		c := illustration.Confirmation{RequestID: body.RequestID, VersionID: body.VersionID, Brief: body.Brief, ConsentRevision: body.ConsentRevision, ReferenceSHA256: body.ReferenceSHA256}
 		var err error
 		task, err = h.create(p.KeyID, c, body.Reference)
 		if err != nil {

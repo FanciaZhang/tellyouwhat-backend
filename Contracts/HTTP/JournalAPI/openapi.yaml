@@ -437,7 +437,7 @@ paths:
           description: WebSocket upgrade accepted.
         default:
           "$ref": "#/components/responses/Error"
-  "/v1/ai/operations/journal.organize/responses":
+  "/v1/journal/organization":
     post:
       operationId: organizeJournal
       tags:
@@ -480,6 +480,31 @@ paths:
           "$ref": "#/components/responses/BadGateway"
         '503':
           "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/illustration-suggestions":
+    post:
+      operationId: suggestJournalIllustration
+      tags: [Journal, AI]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref": "#/components/schemas/IllustrationSuggestionRequest"}
+      responses:
+        '200':
+          description: Optional scene grounded in the supplied journal text.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/IllustrationSuggestionResponse"}
         default:
           "$ref": "#/components/responses/Error"
   "/v1/journal/illustrations":
@@ -1041,9 +1066,7 @@ components:
         - existingTags
         - rejectedTagNames
         - books
-        - illustrationSuggestionsEnabled
       properties:
-        illustrationSuggestionsEnabled: {type: boolean}
         requestID:
           type: string
           format: uuid
@@ -1113,8 +1136,6 @@ components:
         - newBookSuggestions
         - quota
       properties:
-        illustrationSuggestion:
-          "$ref": "#/components/schemas/IllustrationSuggestion"
         requestID:
           type: string
           format: uuid
@@ -1221,17 +1242,54 @@ components:
           minimum: 0
         available:
           type: boolean
+    IllustrationSuggestionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, contentHash, title, body]
+      properties:
+        requestID: {type: string, format: uuid}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        title: {type: string, maxLength: 120}
+        body: {type: string, minLength: 1, maxLength: 60000}
+    IllustrationSuggestionResponse:
+      type: object
+      additionalProperties: false
+      required: [requestID, contentHash, analysisVersion, quota]
+      properties:
+        requestID: {type: string, format: uuid}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        analysisVersion: {type: string, minLength: 1, maxLength: 128}
+        suggestion: {"$ref": "#/components/schemas/IllustrationSuggestion"}
+        quota: {"$ref": "#/components/schemas/OrganizeQuota"}
     IllustrationRequest:
       type: object
       additionalProperties: false
-      required: [requestID, versionID, prompt, consentRevision]
+      required: [requestID, versionID, brief, consentRevision]
       properties:
         requestID: {type: string, format: uuid}
         versionID: {type: string, format: uuid}
-        prompt: {type: string, minLength: 1, maxLength: 20000}
+        brief: {"$ref": "#/components/schemas/IllustrationBrief"}
         consentRevision: {type: string, minLength: 1, maxLength: 128}
         referenceSHA256: {type: string, pattern: '^[a-f0-9]{64}$'}
         reference: {type: string, format: byte, maxLength: 33333336}
+    IllustrationBrief:
+      type: object
+      additionalProperties: false
+      required: [title, details]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 300}
+        details:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: {"$ref": "#/components/schemas/IllustrationDetail"}
+    IllustrationDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, text]
+      properties:
+        kind: {type: string, enum: [subject, setting, composition, style, other]}
+        text: {type: string, minLength: 1, maxLength: 8000}
     IllustrationCancellation:
       type: object
       additionalProperties: false

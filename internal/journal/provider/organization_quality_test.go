@@ -157,7 +157,7 @@ func TestProviderReturnsCuratedCompatibleOutputAndKeepsUsage(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if payload["instructions"] != promptconfig.OrganizePrompt+contracts.IllustrationSuggestionInstructions {
+		if payload["instructions"] != promptconfig.OrganizePrompt {
 			t.Error("provider did not receive the quality instructions")
 		}
 		schema := payload["text"].(map[string]any)["format"].(map[string]any)["schema"].(map[string]any)
