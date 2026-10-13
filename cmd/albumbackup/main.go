@@ -1,4 +1,4 @@
-// albumbackup moves encrypted bundles and signed receipts; it never lists or deletes media.
+// albumbackup manages encrypted recovery bundles; it never lists or deletes media.
 package main
 
 import (
@@ -28,6 +28,8 @@ type config struct{ Bucket, Region, SecretID, SecretKey string }
 type request struct {
 	Operation, Path, Key, Version, SHA256, Bucket, Region string
 	Bytes                                                 int64
+	ReceiptSHA256                                         string
+	ReceiptBytes                                          int64
 }
 type receipt struct {
 	Key, Version, SHA256, Bucket, Region string
@@ -180,7 +182,12 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	result, err := transfer(ctx, c, r, nil)
+	var result any
+	if r.Operation == "expire" {
+		result, err = expire(ctx, c, r, nil)
+	} else {
+		result, err = transfer(ctx, c, r, nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -188,7 +195,7 @@ func run() error {
 }
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "Albums encrypted backup transfer failed; no publication receipt issued.")
+		fmt.Fprintln(os.Stderr, "Albums encrypted backup operation failed; no completion receipt issued.")
 		os.Exit(1)
 	}
 }

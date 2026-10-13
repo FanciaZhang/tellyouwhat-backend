@@ -324,7 +324,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch", "publish-receipt"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch", "publish-receipt", "expire-offsite"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
@@ -359,6 +359,9 @@ def main():
             elif args.operation == "fetch":
                 from offsite import fetch
                 result = fetch(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)
+            elif args.operation == "expire-offsite":
+                from offsite import expire
+                result = expire(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)
             elif not args.backup: raise OperationError("drill requires a backup filename")
             else: result = drill(runtime, binaries, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
         print(json.dumps({"passed": True, **result}, sort_keys=True))

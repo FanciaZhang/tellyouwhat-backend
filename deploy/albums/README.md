@@ -243,7 +243,17 @@ fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --t
 
 `fetch` 先认证固定摘要的回执，核对配置中的桶与地域，仅下载回执中的固定对象版本；再次验字节摘要后解密，只接受指定的三个普通文件，拒绝重复项、路径穿越和链接。不覆盖现有备份，输出到新的 0700 目录，各文件 0600。输出的快照、删除清单及摘要可用于现有 `drill`，恢复仍被隔离；不会启动服务。源快照超过 14 天时拒绝发布/下载。当前每个加密包最多 1 GiB，超限直接失败，扩大前须实现分片传输；不压缩或截断数据。
 
-发布回执保存在本机及备份桶的 `albums/recovery/<同一随机ID>.receipt.json`，其中不含解密密钥或原始凭据。若回执上传失败，本机签名文件保留；使用 `publish-receipt --receipt <file> --receipt-sha256 <sha256>` 及同样的传输参数只重发回执，不重传备份包。失败或未知响应不宣称发布成功。灾后可从 COS 控制台取回该回执，计算文件摘要后交给 `fetch`；仍须通过独立密钥的 HMAC 认证。密钥须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。因此该阶段尚无自动故障切换、最新检查点发现、远端保留期清理或按账户擦除能力，也未验证真实 COS 权限与恢复往返。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。
+发布回执保存在本机及备份桶的 `albums/recovery/<同一随机ID>.receipt.json`，其中不含解密密钥或原始凭据。若回执上传失败，本机签名文件保留；使用 `publish-receipt --receipt <file> --receipt-sha256 <sha256>` 及同样的传输参数只重发回执，不重传备份包。失败或未知响应不宣称发布成功。灾后可从 COS 控制台取回该回执，计算文件摘要后交给 `fetch`；仍须通过独立密钥的 HMAC 认证。密钥须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。自动故障切换、最新检查点发现和按账户擦除仍未完成，也未验证真实 COS 权限与恢复往返。远端到期清理的实现与限制见下节。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。
+
+### 云端恢复包到期清理（未部署）
+
+`expire-offsite --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --transfer-bin <albumbackup> --cos-config <private-expiry-cos.json>` 复用 `backup.py` 的私有配置及操作锁，必须指定已认证且源快照到期 14 天的发布回执。未到期、错误数据库或被修改的回执不能进入传输工具。操作只处理回执对应的一个恢复包及同名云端回执，不扫描媒体，不自动清除本地回执或独立注销日志。
+
+工具先完整分页列举这两个精确键的当前/历史版本和删除标记（最多 10 页、10000 个版本）；逐个固定版本下载，核对长度与 SHA-256 后才开始删除。陌生键、分页异常或内容差异会在删除前停止。删除始终携带小写 `versionId` 参数。末尾再次列举，只有完整结果为空才记录成功；未知删除响应、权限错误或清理期间出现新版本均报错，可使用同一签名回执重试。不同内容的历史版本保留并要求排查。验证下载会产生备份读取流量；当前 1 GiB 单包上限保持不变，单次所有版本核验总量超过 4 GiB 时在读取对象前停止，需另行评估处理成本。
+
+权限草案为 `cam-test-backup-expiry.policy.json`：仅指定备份桶恢复前缀的列版本、读取和删除；无上传、媒体访问或桶管理权限。应使用独立清理身份，不能给现有上传身份追加该策略。文件仅为待审批配置，没有创建身份、绑定权限或部署定时清理。新命令需要显式调用，普通 `backup`、`prune` 和 `fetch` 不会触发云端删除。
+
+依据：[COS 版本删除](https://intl.cloud.tencent.com/document/product/436/7743)、[列举版本](https://www.tencentcloud.com/document/product/436/31551)、[前缀及版本条件](https://cloud.tencent.com/document/product/436/71306)。清理回执只证明本次查询时该包的版本为空，不证明整个账户的所有历史数据已消除；丢失回执的孤立上传、其他包、独立删除日志和按账户擦除仍需处理。
 
 
 备份资源核对（2026-10-13）：控制台显示现有 `tellyouwhat-backups-1251995834` 为广州、多 AZ，版本控制未开启，已有 `backups/` 目录。未修改该桶。已填写独立 `tellyouwhat-albums-backups-1251995834` 的私有、多 AZ、版本控制配置，但尚未提交；专用 `albums-test-backup` 身份及 `cam-test-backup.policy.json` 权限待用户确认后创建。此策略只含新桶的版本状态查询和 `albums/recovery/*` 的读写，不含删除、其他 App/媒体目录或桶管理。截图仅证明待提交配置，不能作为资源创建证据。签名回执的受控验证见 `docs/evidence/albums-offsite-receipt-2026-10-13.json`。

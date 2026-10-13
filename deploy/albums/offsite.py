@@ -74,7 +74,7 @@ def publish(runtime, executable, credentials, filename, ledger, ledger_digest):
     return publish_receipt(runtime, executable, credentials, path, file_digest(path))
 
 
-def read_receipt(runtime, path, digest):
+def read_receipt(runtime, path, digest, *, expired=False):
     try:
         path = Path(path)
         if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077 or path.stat().st_size > 65536:
@@ -91,11 +91,32 @@ def read_receipt(runtime, path, digest):
                 or not re.fullmatch(r"albums-[0-9a-f]{32}\.sql\.gz\.enc", r["snapshot"])
                 or not re.fullmatch(r"albums-deletions-[0-9a-f]{32}\.json", r["ledger"])
                 or type(r["snapshot_created_at"]) is not int or type(r["published_at"]) is not int
-                or not time.time() - RETENTION < r["snapshot_created_at"] <= r["published_at"] <= time.time() + 300):
+                or not 0 < r["snapshot_created_at"] <= r["published_at"] <= time.time() + 300
+                or (r["snapshot_created_at"] <= time.time() - RETENTION) != expired):
             raise OperationError("offsite receipt scope, age or filenames rejected")
         return r
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("offsite receipt missing or invalid") from error
+
+
+def expire(runtime, executable, credentials, path, digest):
+    configure(runtime)
+    r = read_receipt(runtime, path, digest, expired=True)
+    if not executable or not credentials:
+        raise OperationError("offsite expiry requires a transfer executable and dedicated cleanup credentials")
+    remote = r["remote"]
+    request = {k: remote[k] for k in ("Key", "Bucket", "Region", "Bytes", "SHA256")}
+    request.update(Operation="expire", ReceiptSHA256=digest, ReceiptBytes=Path(path).stat().st_size)
+    result = json.loads(runtime.execute("albums-backup-expire", [str(executable), str(credentials)],
+                                       input=json.dumps(request).encode(), timeout=960))
+    if (not isinstance(result, dict) or result.get("Empty") is not True or type(result.get("VersionsRemoved")) is not int
+            or not 0 <= result["VersionsRemoved"] <= 10000
+            or any(result.get(k) != remote[k] for k in ("Key", "Bucket", "Region"))):
+        raise OperationError("offsite expiry did not prove an empty version inventory")
+    # Retain the authenticated local receipt for retries and audit. This does not
+    # prove absence of other bundles, snapshots or an account's historical data.
+    return runtime.record("albums-offsite-expire", receipt=str(path), receipt_sha256=digest,
+                          remote=result, account_erasure_complete=False)
 
 
 def publish_receipt(runtime, executable, credentials, path, digest):

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from backup import Runtime, TABLES, SCOPE, RETENTION, configure, prune, OperationError
 from deletion_ledger import SCOPE as LEDGER_SCOPE
-from offsite import publish, fetch, read_receipt, publish_receipt
+from offsite import publish, fetch, read_receipt, publish_receipt, expire
 from ops_backup import file_digest, manifest_signature, backup_secret
 from ops_common import atomic_json
 
@@ -132,6 +132,46 @@ class OffsiteTests(unittest.TestCase):
             receipt = self.publish()
             result = fetch(self.runtime, "bin", "config", receipt["receipt"], receipt["receipt_sha256"])
         return Path(result["directory"])
+
+    def test_offsite_expiry_requires_authenticated_expired_receipt(self):
+        with patch("offsite.move", side_effect=self.move): receipt = self.publish()
+        path = Path(receipt["receipt"])
+        with patch.object(self.runtime, "execute") as execute:
+            with self.assertRaises(OperationError):
+                expire(self.runtime, "bin", "cleanup-config", path, receipt["receipt_sha256"])
+            with patch("offsite.time.time", return_value=self.manifest["created_at"] + RETENTION):
+                with self.assertRaises(OperationError):
+                    expire(self.runtime, "bin", "cleanup-config", path, "0" * 64)
+                with self.assertRaises(OperationError):
+                    fetch(self.runtime, "bin", "config", path, receipt["receipt_sha256"])
+            execute.assert_not_called()
+
+    def test_offsite_expiry_checks_transport_completion_and_retains_receipt(self):
+        with patch("offsite.move", side_effect=self.move): receipt = self.publish()
+        path = Path(receipt["receipt"])
+        remote = receipt["remote"]
+        result = {k: remote[k] for k in ("Key", "Bucket", "Region")}
+        result.update(Empty=True, VersionsRemoved=4)
+        def execute(name, command, *, input, timeout):
+            request = json.loads(input)
+            self.assertEqual(name, "albums-backup-expire")
+            self.assertEqual(command, ["bin", "cleanup-config"])
+            self.assertEqual(request, dict(Operation="expire", ReceiptSHA256=receipt["receipt_sha256"],
+                                          ReceiptBytes=path.stat().st_size,
+                                          **{k: remote[k] for k in ("Key", "Bucket", "Region", "Bytes", "SHA256")}))
+            return json.dumps(result).encode()
+        with patch("offsite.time.time", return_value=self.manifest["created_at"] + RETENTION), patch.object(self.runtime, "execute", side_effect=execute):
+            completed = expire(self.runtime, "bin", "cleanup-config", path, receipt["receipt_sha256"])
+            self.assertFalse(completed["account_erasure_complete"])
+            for key, value in (("Empty", False), ("VersionsRemoved", True), ("VersionsRemoved", 10001), ("Bucket", "other")):
+                previous = result[key]
+                result[key] = value
+                with self.assertRaises(OperationError):
+                    expire(self.runtime, "bin", "cleanup-config", path, receipt["receipt_sha256"])
+                result[key] = previous
+        self.assertTrue(path.exists())
+        self.assertTrue(self.snapshot.exists())
+        self.assertTrue(self.ledger.exists())
 
     def test_recovered_expiry_uses_original_age_and_preserves_independent_ledger(self):
         folder = self.recovered()
