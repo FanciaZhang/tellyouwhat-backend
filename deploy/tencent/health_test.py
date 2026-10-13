@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from ops_common import Runtime
 from ops_health import health, report_health
+from ops_backup import file_digest, manifest_signature
 
 
 class OperationalHealthTests(unittest.TestCase):
@@ -17,10 +18,16 @@ class OperationalHealthTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / ".env.production").write_text(
             "HEALTH_API_DOMAIN=health.example\nJOURNAL_API_DOMAIN=journal.example\nADMIN_DOMAIN=admin.example\n"
+            "MYSQL_DATABASE=fixture\nBACKUP_ENCRYPTION_KEY=" + "x" * 43 + "\n"
         )
         self.runtime = Runtime(self.root, self.root)
         (self.root / "backup.enc").touch()
-        self.runtime.record("backup", filename="backup.enc")
+        digest = file_digest(self.root / "backup.enc")
+        manifest = {"filename": "backup.enc", "sha256": digest, "created_at": int(time.time()),
+                    "database": "fixture", "table_rows": {"apps": 0}}
+        (self.root / "backup.enc.json").write_text(json.dumps({"manifest": manifest,
+                    "hmac_sha256": manifest_signature("x" * 43, manifest)}))
+        self.runtime.record("backup", filename="backup.enc", sha256=digest)
         self.runtime.record("restore")
         self.runtime.record("maintenance")
         disk = patch("ops_health.shutil.disk_usage", return_value=SimpleNamespace(total=100 * 1024**3, free=50 * 1024**3))

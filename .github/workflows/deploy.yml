@@ -27,7 +27,7 @@ jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     environment: production
     concurrency:
       group: backend-production
@@ -111,12 +111,6 @@ jobs:
           sudo -n chmod 2750 "$backend_dir/secrets"
           python3 "$stage/deploy/tencent/ark_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
           REMOTE
-      - name: Back up database before migration
-        env:
-          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
-          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
-        run: |
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" python3 "/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}/deploy/tencent/operations.py" backup
       - name: Deploy and verify internal services
         env:
           DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}

@@ -148,6 +148,24 @@ class BlueGreenTests(unittest.TestCase):
         self.assertEqual(config.read_text(), original)
         self.assertEqual(read_environment(self.root / ".env.production")["IMAGE_TAG"], "old")
 
+    def test_candidate_startup_is_ready_before_lifecycle_status_is_queried(self):
+        ready_slots = {"legacy"}
+        original = self.execute
+
+        def readiness(runtime, slot, attempts):
+            ready_slots.add(slot["slot"])
+
+        def execute(label, command, **kwargs):
+            if label == "slot-status":
+                cfg = read_environment(command[command.index("--env-file") + 1])
+                if cfg.get("TELLYOUWHAT_DEPLOYMENT_SLOT", "legacy") not in ready_slots:
+                    raise OperationError("lifecycle listener unavailable during startup")
+            return original(label, command, **kwargs)
+
+        with patch.object(bg, "require_ready", readiness), patch.object(self.runtime, "execute", execute):
+            self.deploy()
+        self.assertEqual(self.route, "green")
+
     def test_failed_migration_restores_old_without_starting_candidate(self):
         self.fail = "slot-migrate"
         with self.assertRaisesRegex(OperationError, "previous route restored"):

@@ -1,0 +1,10 @@
+# Shared Tencent host operations
+
+For `/opt/tellyouwhat` on the shared production host, the producer owns cleanup of its disposable artifacts. Do not deploy through an unregistered ad hoc Docker/SSH command.
+
+- Production releases use `deploy/tencent/release.py deploy`. Its operations lock spans authenticated backup and migration, and its deployment lock spans activation. Do not run an independent migration or substitute a mutable image tag.
+- Journal private development uses JournalApp's `scripts/journal-development.py`. It verifies the authenticated contract, keeps the stopped previous service, records binary hash/source, and invokes scoped cleanup.
+- Birthday development and Albums test producers run through `deploy/tencent/ops_artifacts.py --apply --register --owner ... --source ... --source-run ... --image ... --verify-url ... --run <producer command>`. The producer command must perform its own failure recovery and must not include unrelated production changes. See `docs/host-artifact-lifecycle.md` for examples.
+- Retain the active version, the verified rollback version, and any running/referenced candidate. A new deployment must include the correct image/configuration/signing material as one recovery selection. A stored older image is not evidence of schema-compatible rollback.
+- Delete only scoped, regenerable binaries, retired image tags and build caches. Preserve databases, Docker volumes, development state, credentials, and evidence requested by the user. Never use global `docker system prune --volumes`, image removal with force, or volume deletion as a cleanup shortcut.
+- A service can be healthy while cleanup or offsite backup has failed. Record and report those failures; do not declare the deployment complete until its required cleanup and backup checks pass.
