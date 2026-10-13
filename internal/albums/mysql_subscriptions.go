@@ -163,6 +163,9 @@ func (r *MySQLUploads) ApplySubscription(ctx context.Context, owner string, revi
 		return AlbumCloudAccount{}, err
 	}
 	defer tx.Rollback()
+	if err := requireMediaAccount(ctx, tx, owner); err != nil {
+		return AlbumCloudAccount{}, err
+	}
 	result, err := r.applySubscriptionInTransaction(ctx, tx, owner, revision, v, now)
 	if err != nil {
 		return result, err

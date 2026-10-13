@@ -77,6 +77,9 @@ func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, reque
 	if _, err = tx.ExecContext(ctx, `UPDATE album_accounts SET state='deleting' WHERE account_id=?`, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}
+	if _, err = tx.ExecContext(ctx, `UPDATE album_storage_accounts SET deletion_requested_at=? WHERE owner_id=?`, at, owner); err != nil {
+		return accountDeletionRequest{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE album_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE account_id=?`, at, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}

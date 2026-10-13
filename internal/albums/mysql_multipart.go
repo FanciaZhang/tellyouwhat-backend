@@ -61,6 +61,9 @@ func (r *MySQLUploads) BeginMultipart(ctx context.Context, owner, uploadID, reso
 	var intent MultipartIntent
 	created := false
 	_, err := r.mutate(ctx, owner, uploadID, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return u, err
+		}
 		if err := checkMultipartParent(u, resourceID, now); err != nil {
 			return u, err
 		}

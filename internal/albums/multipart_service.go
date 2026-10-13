@@ -164,11 +164,16 @@ func (s *MultipartService) Part(ctx context.Context, owner, uploadID, resourceID
 	if err := readyMultipart(intent, uploadID, resourceID); err != nil {
 		return MultipartPartGrant{}, err
 	}
-	expiry, err := cloudMediaGrantExpiry(ctx, s.repository, owner, s.now(), minTime(u.ExpiresAt, s.now().Add(10*time.Minute)))
+	var grant MultipartPartGrant
+	err = authorizeUploadGrant(ctx, s.repository, u, resourceID, intent.ProviderUploadID, s.now, minTime(u.ExpiresAt, s.now().Add(10*time.Minute)), func(expiry time.Time) error {
+		var err error
+		grant, err = s.provider.AuthorizePart(ctx, stagingKey(u, resourceID), intent.ProviderUploadID, resource, number, expiry)
+		return err
+	})
 	if err != nil {
 		return MultipartPartGrant{}, err
 	}
-	return s.provider.AuthorizePart(ctx, stagingKey(u, resourceID), intent.ProviderUploadID, resource, number, expiry)
+	return grant, nil
 }
 
 func (s *MultipartService) Progress(ctx context.Context, owner, uploadID, resourceID string) ([]MultipartUploadedPart, error) {

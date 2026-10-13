@@ -93,6 +93,12 @@ func (r *MySQLUploads) shareByRequest(ctx context.Context, owner, request string
 // Lock ordering is account -> share -> claim. Signing is local and uses this
 // transaction's immutable version, never a nested pool connection.
 func (r *MySQLUploads) shareRetentionInTransaction(ctx context.Context, tx *sql.Tx, owner string, now time.Time) (time.Time, error) {
+	if err := requireMediaAccount(ctx, tx, owner); err != nil {
+		if errors.Is(err, ErrOwner) {
+			return time.Time{}, ErrShareNotAvailable
+		}
+		return time.Time{}, err
+	}
 	if r.billingEnvironment != "Sandbox" && r.billingEnvironment != "Production" {
 		return time.Time{}, ErrShareUnavailable
 	}

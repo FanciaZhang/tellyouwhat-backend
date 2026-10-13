@@ -41,6 +41,9 @@ func (r *MySQLUploads) ClaimMultipartCompletion(ctx context.Context, owner, uplo
 	var result MultipartCompletion
 	claimed := false
 	_, err := r.mutate(ctx, owner, uploadID, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return u, err
+		}
 		if err := checkMultipartParent(u, resourceID, now); err != nil {
 			return u, err
 		}

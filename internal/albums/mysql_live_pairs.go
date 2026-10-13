@@ -191,7 +191,7 @@ func (r *MySQLUploads) PendingLivePairs(ctx context.Context, now time.Time, limi
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs p WHERE ((state='queued' AND available_at<=?) OR (state='verifying' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=p.owner_id AND a.asset_id=p.asset_id AND a.state='active') ORDER BY available_at,pair_upload_id LIMIT ?`, now, now, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+livePairColumns+` FROM album_live_pairs p WHERE EXISTS(SELECT 1 FROM album_storage_accounts s WHERE s.owner_id=p.owner_id AND s.deletion_requested_at IS NULL) AND ((state='queued' AND available_at<=?) OR (state='verifying' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=p.owner_id AND a.asset_id=p.asset_id AND a.state='active') ORDER BY available_at,pair_upload_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err
 	}

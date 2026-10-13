@@ -94,7 +94,7 @@ func (r *MySQLUploads) PendingVideoJobs(ctx context.Context, now time.Time, limi
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidManifest
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+videoJobColumns+` FROM album_video_jobs j WHERE ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_versions v JOIN album_asset_lifecycle a ON a.owner_id=v.owner_id AND a.asset_id=v.asset_id WHERE v.owner_id=j.owner_id AND v.version_id=j.version_id AND a.state='active') ORDER BY available_at,job_id LIMIT ?`, now, now, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+videoJobColumns+` FROM album_video_jobs j WHERE EXISTS(SELECT 1 FROM album_storage_accounts s WHERE s.owner_id=j.owner_id AND s.deletion_requested_at IS NULL) AND ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) AND EXISTS(SELECT 1 FROM album_asset_versions v JOIN album_asset_lifecycle a ON a.owner_id=v.owner_id AND a.asset_id=v.asset_id WHERE v.owner_id=j.owner_id AND v.version_id=j.version_id AND a.state='active') ORDER BY available_at,job_id LIMIT ?`, now, now, limit)
 	if err != nil {
 		return nil, err
 	}

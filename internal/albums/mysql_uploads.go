@@ -300,7 +300,7 @@ func (r *MySQLUploads) Pending(ctx context.Context, now time.Time, limit int) ([
 	if limit < 1 || limit > 100 {
 		return nil, ErrConflict
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads u WHERE expires_at>? AND
+	rows, err := r.db.QueryContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads u WHERE EXISTS(SELECT 1 FROM album_storage_accounts s WHERE s.owner_id=u.owner_id AND s.deletion_requested_at IS NULL) AND expires_at>? AND
         EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=u.owner_id AND a.asset_id=JSON_UNQUOTE(JSON_EXTRACT(u.manifest_json,'$.assetID')) AND a.state='active' AND a.lifecycle_epoch=u.lifecycle_epoch) AND
 		(state='queued' OR (state='verifying' AND lease_until<=?)) ORDER BY created_at,upload_id LIMIT ?`, now, now, limit)
 	if err != nil {

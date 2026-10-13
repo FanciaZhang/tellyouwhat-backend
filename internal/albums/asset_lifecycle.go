@@ -48,6 +48,9 @@ func scanAssetState(row rowScanner) (CloudAssetState, error) {
 
 // Call only under the owner storage lock, including first upload reservation.
 func ensureActiveAsset(ctx context.Context, tx *sql.Tx, owner, asset string) (CloudAssetState, error) {
+	if err := requireMediaAccount(ctx, tx, owner); err != nil {
+		return CloudAssetState{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO album_asset_lifecycle(owner_id,asset_id) VALUES(?,?) ON DUPLICATE KEY UPDATE asset_id=asset_id`, owner, asset); err != nil {
 		return CloudAssetState{}, err
 	}
@@ -62,6 +65,9 @@ func ensureActiveAsset(ctx context.Context, tx *sql.Tx, owner, asset string) (Cl
 }
 
 func requireVisibleVersion(ctx context.Context, tx *sql.Tx, owner, version string) error {
+	if err := requireMediaAccount(ctx, tx, owner); err != nil {
+		return err
+	}
 	var state string
 	err := tx.QueryRowContext(ctx, `SELECT a.state FROM album_asset_lifecycle a JOIN album_asset_versions v ON v.owner_id=a.owner_id AND v.asset_id=a.asset_id WHERE v.owner_id=? AND v.version_id=?`, owner, version).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && state != "active" {

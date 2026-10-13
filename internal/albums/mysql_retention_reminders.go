@@ -45,6 +45,12 @@ func (r *MySQLUploads) syncRetentionReminders(ctx context.Context, tx *sql.Tx, a
 	if r.billingEnvironment == "" {
 		return nil
 	}
+	if err := requireMediaAccount(ctx, tx, a.AccountID); err != nil {
+		if errors.Is(err, ErrOwner) {
+			return nil
+		}
+		return err
+	}
 	var deadline time.Time
 	if a.RetentionDeadline != nil {
 		deadline = *a.RetentionDeadline

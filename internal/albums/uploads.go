@@ -178,22 +178,24 @@ func (s *UploadService) Grants(ctx context.Context, owner, id string) ([]PutGran
 	if upload.State != Uploading {
 		return nil, ErrConflict
 	}
-	expiry, err := cloudMediaGrantExpiry(ctx, s.repository, owner, s.now(), minTime(upload.ExpiresAt, s.now().Add(10*time.Minute)))
+	grants := make([]PutGrant, 0, len(upload.Manifest.Resources))
+	err = authorizeUploadGrant(ctx, s.repository, upload, "", "", s.now, minTime(upload.ExpiresAt, s.now().Add(10*time.Minute)), func(expiry time.Time) error {
+		for _, resource := range upload.Manifest.Resources {
+			grant, err := s.objects.AuthorizePut(ctx, stagingKey(upload, resource.ID), resource, expiry)
+			if err != nil {
+				return err
+			}
+			grant.ResourceID = resource.ID
+			grant.ExpiresAt = expiry
+			if grant.Headers == nil {
+				grant.Headers = map[string]string{}
+			}
+			grants = append(grants, grant)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	grants := make([]PutGrant, 0, len(upload.Manifest.Resources))
-	for _, resource := range upload.Manifest.Resources {
-		grant, err := s.objects.AuthorizePut(ctx, stagingKey(upload, resource.ID), resource, expiry)
-		if err != nil {
-			return nil, err
-		}
-		grant.ResourceID = resource.ID
-		grant.ExpiresAt = expiry
-		if grant.Headers == nil {
-			grant.Headers = map[string]string{}
-		}
-		grants = append(grants, grant)
 	}
 	return grants, nil
 }
