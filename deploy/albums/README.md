@@ -253,3 +253,5 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 `POST /v1/albums/account/deletion/withdrawal` 使用原会话 Bearer 和同一 `requestID`。200 的 `state=withdrawn` 表示尚未受理且原凭据不能再受理迟到请求，客户端需重新登录；`state=accepted` 带原始 `requestedAt`，表示已经受理、不能撤回。不得只看 HTTP 200 判断撤回成功。客户端必须先持久保存撤回意图，未知响应后只重试撤回，不能再发送原注销 POST。
 
 受理与撤回共享身份/账户锁；撤回仅吊销原会话和该会话推送，不关闭其他设备。原会话消失时核对独立删除日志，匹配已受理记录则仍返回受理回执，不把访问记录擦除误认为尚未受理。Gateway 两个入口继续关闭，无新增迁移、权限或部署。隔离数据库竞态/回滚和 19 项 Swift 合约通过，见 `docs/evidence/albums-deletion-withdrawal-backend-2026-10-14.json`。
+
+原生两进程联调：相册仓库 `scripts/test-deletion-roundtrip.py` 启动隔离 MySQL/Redis，并显式运行 `TestMySQLAccountDeletionNativeBridge`。该测试专用 loopback HTTP 服务复用真实路由与账户事务，合成凭据只写私有目录；在提交前后注入 503，让原生 App 用真实钥匙串跨进程恢复。iOS 26.5、18.6 分别通过两个独立进程及后端 race 状态核对，确认受理重放、撤回重放、迟到请求拒绝及其他设备访问不变。仅路由适配在测试端，不修改生产 TLS 或 Gateway 开关；没有部署、真实 Apple 登录或最终身份/媒体/备份擦除。结果见 `docs/evidence/albums-deletion-native-roundtrip-2026-10-14.json`。
