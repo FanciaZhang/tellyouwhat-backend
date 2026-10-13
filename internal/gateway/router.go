@@ -152,7 +152,7 @@ func requestBodyLimit(method, path string) int64 {
 		return 64 << 10
 	case "POST /v1/ai/requests", "POST /v1/ai/streams", "POST /v1/ai/job-capabilities", "POST /v1/ai/jobs":
 		return contracts.DefaultBodyLimit
-	case "POST /v1/ai/operations/journal.organize/responses":
+	case "POST /v1/journal/organization", "POST /v1/journal/illustration-suggestions":
 		return journalcontracts.MaxBodyBytes
 	default:
 		return 0

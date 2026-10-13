@@ -62,3 +62,5 @@ only synthetic audio unless the user explicitly tests their own recording.
 新开发服务返回 `X-Journal-Development-Protocol: subscription-v1`。客户端和连接脚本拒绝把旧临时服务的 HTTP 200 当作长期开发连接；升级服务前不会报告长期能力已验证。
 
 费用存储由一个独立开发进程独占。重启时，旧进程未完成的请求保留预留费用，但立即释放旧并发名额；恢复结果持久化，避免录音和整理各占一个名额时重启后仍需等待租约到期。
+
+Prompt configuration and the private runtime's required read-only database account are documented in [Journal AI quality](journal-ai-quality.md). Deployment now stops if `prompt-reader.env` is missing; there is no second private-service copy of the published Prompt policy.

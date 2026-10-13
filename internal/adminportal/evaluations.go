@@ -76,7 +76,7 @@ func (s *Server) ListEvaluationSamples(c *gin.Context) {
 	for _, v := range prompteval.Builtins() {
 		builtins = append(builtins, prompteval.Sample{ID: v.ID, Name: v.Name, Kind: v.Kind})
 	}
-	writeJSON(c.Writer, 200, map[string]any{"builtins": builtins, "samples": items, "retentionDays": 7})
+	writeJSON(c.Writer, 200, map[string]any{"builtins": builtins, "samples": items, "retentionDays": 7, "requiredSampleIDs": prompteval.RequiredPublicationSampleIDs()})
 }
 func (s *Server) GetEvaluationSample(c *gin.Context, id uuid.UUID) {
 	if _, ok := s.evaluationAccess(c, false); !ok {

@@ -22,3 +22,11 @@ func Freeze(ctx context.Context, c *Cache) (context.Context, error) {
 	}
 	return WithRevision(ctx, r), nil
 }
+
+// Scene instructions are shared by dedicated scene requests and voice suggestions.
+func ScenePrompt(ctx context.Context) string {
+	if r, ok := FromContext(ctx); ok && r.Policy.Journal != nil {
+		return r.Policy.Journal.IllustrationSuggestionPrompt
+	}
+	return IllustrationSuggestionPrompt
+}

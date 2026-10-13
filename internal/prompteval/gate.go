@@ -1,8 +1,10 @@
 package prompteval
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"time"
@@ -17,7 +19,7 @@ func (s Store) PublicationBlockers(ctx context.Context, r promptconfig.Revision,
 	var id string
 	err := s.DB.QueryRowContext(ctx, `SELECT id FROM prompt_eval_runs WHERE JSON_CONTAINS(candidate_revisions,JSON_QUOTE(?)) AND expires_at>? ORDER BY created_at DESC,id DESC LIMIT 1`, r.ID, now).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return []string{"请先评测这个草稿，覆盖智能整理 Lite、Pro 与语音整理"}, nil
+		return []string{"请先评测这个草稿，覆盖智能整理 Lite、Pro、语音整理和固定质量样例"}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -38,6 +40,9 @@ func (s Store) PublicationBlockers(ctx context.Context, r promptconfig.Revision,
 	}
 	if candidate < 0 {
 		return []string{"未找到对应配置的评测结果"}, nil
+	}
+	if blockers := requiredQualityCoverage(run.Plan.Samples); len(blockers) > 0 {
+		return blockers, nil
 	}
 	coverage := map[string]bool{}
 	for _, entry := range run.Items {
@@ -70,8 +75,26 @@ func (s Store) PublicationBlockers(ctx context.Context, r promptconfig.Revision,
 	}
 	for _, kind := range []string{"organize_lite", "organize_pro", "voice"} {
 		if !coverage[kind] {
-			return []string{"评测需要覆盖智能整理 Lite、Pro 与语音整理"}, nil
+			return []string{"评测需要覆盖智能整理 Lite、Pro、语音整理和固定质量样例"}, nil
 		}
 	}
 	return []string{}, nil
+}
+
+func requiredQualityCoverage(samples []Sample) []string {
+	for _, required := range RequiredQualitySamples() {
+		found := false
+		expected, _ := json.Marshal(required)
+		for _, sample := range samples {
+			if sample.ID != required.ID {
+				continue
+			}
+			raw, _ := json.Marshal(sample)
+			found = bytes.Equal(raw, expected)
+		}
+		if !found {
+			return []string{"评测缺少固定质量样例：" + required.Name}
+		}
+	}
+	return nil
 }

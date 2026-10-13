@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
 type imageFixture struct {
@@ -53,7 +54,7 @@ func TestIllustrationProviderFailureReportsUnavailableWithoutRedispatch(t *testi
 			}
 			runtime.authorize = func(context.Context, string) bool { return true }
 			id := uuid.NewString()
-			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Prompt: "Synthetic tree", ConsentRevision: "2026-09-27"}, nil)
+			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -113,13 +114,19 @@ func TestIllustrationHTTPConsentDurabilityIsolationAndExpiry(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
-	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","prompt":"Synthetic dog by the river","consentRevision":"2026-09-27"}`
+	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","brief":{"title":"Synthetic dog by the river","details":[{"kind":"other","text":"Synthetic dog by the river"}]},"consentRevision":"2026-09-27"}`
 	if w := request("POST", illustrationPrefix, body); w.Code != 403 {
 		t.Fatalf("missing consent: %d %s", w.Code, w.Body)
 	}
 	grant := `{"consents":[{"scope":"journal_illustration","documentVersion":"2026-09-27","granted":true}]}`
 	if w := request("POST", "/v1/privacy/consents", grant); w.Code != 200 {
 		t.Fatalf("grant: %d %s", w.Code, w.Body)
+	}
+	for _, field := range []string{`"prompt":"override"`, `"model":"override"`, `"instructions":"override"`} {
+		invalid := strings.TrimSuffix(body, "}") + "," + field + "}"
+		if w := request("POST", illustrationPrefix, invalid); w.Code != 422 {
+			t.Fatalf("accepted provider field: %d", w.Code)
+		}
 	}
 	var accepted imageTaskResponse
 	w := request("POST", illustrationPrefix, body)
@@ -250,7 +257,7 @@ func TestIllustrationRunningRestartAndCancellationFence(t *testing.T) {
 	runtime.authorize = func(context.Context, string) bool { return true }
 	owner := uuid.NewString()
 	id := uuid.NewString()
-	c := illustration.Confirmation{RequestID: id, VersionID: id, Prompt: "Synthetic tree", ConsentRevision: "2026-09-27"}
+	c := illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}
 	_, err = runtime.create(owner, c, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -311,5 +318,66 @@ func TestIllustrationDisabledRouteReportsUnavailable(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 503 || !strings.Contains(w.Body.String(), "not_ready") {
 		t.Fatalf("disabled %d %s", w.Code, w.Body)
+	}
+}
+
+type journalPromptLoader struct{ revision promptconfig.Revision }
+
+func (l *journalPromptLoader) Published(context.Context) (map[string]promptconfig.Revision, error) {
+	return map[string]promptconfig.Revision{"journal": l.revision}, nil
+}
+func TestImageAdmissionFreezesPublishedPromptAcrossRetryAndRollback(t *testing.T) {
+	now := time.Now()
+	policy := promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]
+	policy.Journal.IllustrationGenerationPrompt = "版本 A"
+	loader := &journalPromptLoader{promptconfig.Revision{ID: "version-a", Scope: "journal", Policy: policy, PublishedAt: &now}}
+	cache := promptconfig.NewJournalCache(loader)
+	if err := cache.Refresh(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewIllustrationRuntime(t.TempDir(), strings.Repeat("x", 43), &imageFixture{}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.prompts = cache
+	id := uuid.NewString()
+	confirmation := illustration.Confirmation{RequestID: id, VersionID: id, ConsentRevision: privacy.JournalIllustrationDocumentVersion, Brief: illustration.Brief{Title: "小狗", Details: []illustration.Detail{{Kind: "subject", Text: "小狗"}}}}
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	loader.revision.ID = "version-b"
+	loader.revision.Policy.Journal.IllustrationGenerationPrompt = "版本 B"
+	if err = cache.Refresh(context.Background(), now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := runtime.load("owner", id)
+	if err != nil || saved.ConfigVersion != "version-a" || !strings.HasPrefix(saved.Input.Prompt, "版本 A") {
+		t.Fatal("retry lost frozen configuration", err)
+	}
+	confirmation.RequestID = uuid.NewString()
+	confirmation.VersionID = confirmation.RequestID
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = runtime.load("owner", confirmation.RequestID)
+	if err != nil || saved.ConfigVersion != "version-b" || !strings.HasPrefix(saved.Input.Prompt, "版本 B") {
+		t.Fatal("new request ignored publication", err)
+	}
+	loader.revision.ID = "version-c-restoring-a"
+	loader.revision.Policy.Journal.IllustrationGenerationPrompt = "版本 A"
+	if err = cache.Refresh(context.Background(), now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	confirmation.RequestID = uuid.NewString()
+	confirmation.VersionID = confirmation.RequestID
+	if _, err = runtime.create("owner", confirmation, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = runtime.load("owner", confirmation.RequestID)
+	if err != nil || saved.ConfigVersion != "version-c-restoring-a" || !strings.HasPrefix(saved.Input.Prompt, "版本 A") {
+		t.Fatal("new request ignored restored policy", err)
 	}
 }

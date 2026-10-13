@@ -23,6 +23,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
 const illustrationPrefix = "/v1/journal/illustrations"
@@ -38,10 +39,11 @@ func illustrationRoute(r *http.Request) bool {
 }
 
 type imageJob struct {
-	Task    illustration.Task
-	Input   *illustration.Input  `json:",omitempty"`
-	Result  *illustration.Result `json:",omitempty"`
-	Problem string               `json:",omitempty"`
+	Task          illustration.Task
+	Input         *illustration.Input  `json:",omitempty"`
+	Result        *illustration.Result `json:",omitempty"`
+	ConfigVersion string               `json:",omitempty"`
+	Problem       string               `json:",omitempty"`
 }
 
 // One private developer process owns this encrypted temporary store. Task
@@ -54,6 +56,7 @@ type IllustrationRuntime struct {
 	now       func() time.Time
 	authorize func(context.Context, string) bool
 	index     map[string]illustration.Task
+	prompts   *promptconfig.Cache
 }
 
 func NewIllustrationRuntime(root, token string, generator illustration.ImageGenerator, now func() time.Time) (*IllustrationRuntime, error) {
@@ -252,7 +255,21 @@ func (h *IllustrationRuntime) create(owner string, c illustration.Confirmation, 
 	if !errors.Is(err, os.ErrNotExist) {
 		return next, err
 	}
-	job := imageJob{Task: next, Input: &illustration.Input{Prompt: c.Prompt, Reference: reference}}
+	ctx := context.Background()
+	version := "seed"
+	if h.prompts != nil {
+		revision, err := h.prompts.Current("journal")
+		if err != nil {
+			return next, err
+		}
+		ctx = promptconfig.WithRevision(ctx, revision)
+		version = revision.ID
+	}
+	compiled := c.Brief.Compile(ctx)
+	if len([]rune(compiled)) > 20000 {
+		return next, illustration.ErrInput
+	}
+	job := imageJob{Task: next, ConfigVersion: version, Input: &illustration.Input{Prompt: compiled, Reference: reference}}
 	return next, h.write(job)
 }
 
@@ -420,12 +437,12 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	var problem string
 	if r.URL.Path == illustrationPrefix {
 		var body struct {
-			RequestID       string `json:"requestID"`
-			VersionID       string `json:"versionID"`
-			Prompt          string `json:"prompt"`
-			ConsentRevision string `json:"consentRevision"`
-			ReferenceSHA256 string `json:"referenceSHA256"`
-			Reference       []byte `json:"reference"`
+			RequestID       string             `json:"requestID"`
+			VersionID       string             `json:"versionID"`
+			Brief           illustration.Brief `json:"brief"`
+			ConsentRevision string             `json:"consentRevision"`
+			ReferenceSHA256 string             `json:"referenceSHA256"`
+			Reference       []byte             `json:"reference"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 34_000_000))
 		decoder.DisallowUnknownFields()
@@ -433,7 +450,7 @@ func (h *IllustrationRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			deny(w, 422, "contract_violation")
 			return
 		}
-		c := illustration.Confirmation{RequestID: body.RequestID, VersionID: body.VersionID, Prompt: body.Prompt, ConsentRevision: body.ConsentRevision, ReferenceSHA256: body.ReferenceSHA256}
+		c := illustration.Confirmation{RequestID: body.RequestID, VersionID: body.VersionID, Brief: body.Brief, ConsentRevision: body.ConsentRevision, ReferenceSHA256: body.ReferenceSHA256}
 		var err error
 		task, err = h.create(p.KeyID, c, body.Reference)
 		if err != nil {

@@ -45,7 +45,7 @@ func ReservationTokens(input OrganizeRequest) int {
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type OrganizeRequest struct {
-	IllustrationSuggestionsEnabled bool          `json:"illustrationSuggestionsEnabled"`
+	IllustrationSuggestionsEnabled bool          `json:"-"` // set only by the dedicated scene handler
 	RequestID                      string        `json:"requestID"`
 	ContractVersion                string        `json:"contractVersion"`
 	ContentHash                    string        `json:"contentHash"`
@@ -264,9 +264,8 @@ func ResponseSchema() map[string]any {
 	}
 	return map[string]any{
 		"type": "object", "additionalProperties": false,
-		"required": []string{"tags", "existingBookRecommendations", "newBookSuggestions", "illustrationSuggestion"},
+		"required": []string{"tags", "existingBookRecommendations", "newBookSuggestions"},
 		"properties": map[string]any{
-			"illustrationSuggestion":      IllustrationSuggestionSchema(),
 			"tags":                        map[string]any{"type": "array", "maxItems": 8, "items": tagItem},
 			"existingBookRecommendations": map[string]any{"type": "array", "maxItems": 3, "items": bookItem},
 			"newBookSuggestions":          map[string]any{"type": "array", "maxItems": 2, "items": newBookItem},

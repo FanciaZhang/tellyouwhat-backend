@@ -24,6 +24,33 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for IllustrationDetailKind.
+const (
+	IllustrationDetailKindComposition IllustrationDetailKind = "composition"
+	IllustrationDetailKindOther       IllustrationDetailKind = "other"
+	IllustrationDetailKindSetting     IllustrationDetailKind = "setting"
+	IllustrationDetailKindStyle       IllustrationDetailKind = "style"
+	IllustrationDetailKindSubject     IllustrationDetailKind = "subject"
+)
+
+// Valid indicates whether the value is a known member of the IllustrationDetailKind enum.
+func (e IllustrationDetailKind) Valid() bool {
+	switch e {
+	case IllustrationDetailKindComposition:
+		return true
+	case IllustrationDetailKindOther:
+		return true
+	case IllustrationDetailKindSetting:
+		return true
+	case IllustrationDetailKindStyle:
+		return true
+	case IllustrationDetailKindSubject:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IllustrationResultMime.
 const (
 	Imagejpeg IllustrationResultMime = "image/jpeg"
@@ -116,31 +143,31 @@ func (e OrganizeRequestContractVersion) Valid() bool {
 
 // Defines values for TagType.
 const (
-	Event        TagType = "event"
-	Mood         TagType = "mood"
-	Organization TagType = "organization"
-	Other        TagType = "other"
-	Person       TagType = "person"
-	Place        TagType = "place"
-	Topic        TagType = "topic"
+	TagTypeEvent        TagType = "event"
+	TagTypeMood         TagType = "mood"
+	TagTypeOrganization TagType = "organization"
+	TagTypeOther        TagType = "other"
+	TagTypePerson       TagType = "person"
+	TagTypePlace        TagType = "place"
+	TagTypeTopic        TagType = "topic"
 )
 
 // Valid indicates whether the value is a known member of the TagType enum.
 func (e TagType) Valid() bool {
 	switch e {
-	case Event:
+	case TagTypeEvent:
 		return true
-	case Mood:
+	case TagTypeMood:
 		return true
-	case Organization:
+	case TagTypeOrganization:
 		return true
-	case Other:
+	case TagTypeOther:
 		return true
-	case Person:
+	case TagTypePerson:
 		return true
-	case Place:
+	case TagTypePlace:
 		return true
-	case Topic:
+	case TagTypeTopic:
 		return true
 	default:
 		return false
@@ -173,15 +200,30 @@ type ExistingBookRecommendation struct {
 	Reason string             `json:"reason"`
 }
 
+// IllustrationBrief defines model for IllustrationBrief.
+type IllustrationBrief struct {
+	Details []IllustrationDetail `json:"details"`
+	Title   string               `json:"title"`
+}
+
 // IllustrationCancellation defines model for IllustrationCancellation.
 type IllustrationCancellation struct {
 	Revision int64 `json:"revision"`
 }
 
+// IllustrationDetail defines model for IllustrationDetail.
+type IllustrationDetail struct {
+	Kind IllustrationDetailKind `json:"kind"`
+	Text string                 `json:"text"`
+}
+
+// IllustrationDetailKind defines model for IllustrationDetail.Kind.
+type IllustrationDetailKind string
+
 // IllustrationRequest defines model for IllustrationRequest.
 type IllustrationRequest struct {
+	Brief           IllustrationBrief  `json:"brief"`
 	ConsentRevision string             `json:"consentRevision"`
-	Prompt          string             `json:"prompt"`
 	Reference       *[]byte            `json:"reference,omitempty"`
 	ReferenceSHA256 *string            `json:"referenceSHA256,omitempty"`
 	RequestID       openapi_types.UUID `json:"requestID"`
@@ -208,6 +250,23 @@ type IllustrationSuggestion struct {
 	Style        string   `json:"style"`
 	Subject      string   `json:"subject"`
 	Summary      string   `json:"summary"`
+}
+
+// IllustrationSuggestionRequest defines model for IllustrationSuggestionRequest.
+type IllustrationSuggestionRequest struct {
+	Body        string             `json:"body"`
+	ContentHash string             `json:"contentHash"`
+	RequestID   openapi_types.UUID `json:"requestID"`
+	Title       string             `json:"title"`
+}
+
+// IllustrationSuggestionResponse defines model for IllustrationSuggestionResponse.
+type IllustrationSuggestionResponse struct {
+	AnalysisVersion string                  `json:"analysisVersion"`
+	ContentHash     string                  `json:"contentHash"`
+	Quota           OrganizeQuota           `json:"quota"`
+	RequestID       openapi_types.UUID      `json:"requestID"`
+	Suggestion      *IllustrationSuggestion `json:"suggestion,omitempty"`
 }
 
 // IllustrationTask defines model for IllustrationTask.
@@ -243,15 +302,14 @@ type OrganizeQuota struct {
 
 // OrganizeRequest defines model for OrganizeRequest.
 type OrganizeRequest struct {
-	Body                           string                         `json:"body"`
-	Books                          []BookContext                  `json:"books"`
-	ContentHash                    string                         `json:"contentHash"`
-	ContractVersion                OrganizeRequestContractVersion `json:"contractVersion"`
-	ExistingTags                   []string                       `json:"existingTags"`
-	IllustrationSuggestionsEnabled bool                           `json:"illustrationSuggestionsEnabled"`
-	RejectedTagNames               []string                       `json:"rejectedTagNames"`
-	RequestID                      openapi_types.UUID             `json:"requestID"`
-	Title                          string                         `json:"title"`
+	Body             string                         `json:"body"`
+	Books            []BookContext                  `json:"books"`
+	ContentHash      string                         `json:"contentHash"`
+	ContractVersion  OrganizeRequestContractVersion `json:"contractVersion"`
+	ExistingTags     []string                       `json:"existingTags"`
+	RejectedTagNames []string                       `json:"rejectedTagNames"`
+	RequestID        openapi_types.UUID             `json:"requestID"`
+	Title            string                         `json:"title"`
 }
 
 // OrganizeRequestContractVersion defines model for OrganizeRequest.ContractVersion.
@@ -262,7 +320,6 @@ type OrganizeResponse struct {
 	AnalysisVersion             string                       `json:"analysisVersion"`
 	ContentHash                 string                       `json:"contentHash"`
 	ExistingBookRecommendations []ExistingBookRecommendation `json:"existingBookRecommendations"`
-	IllustrationSuggestion      *IllustrationSuggestion      `json:"illustrationSuggestion,omitempty"`
 	NewBookSuggestions          []NewBookSuggestion          `json:"newBookSuggestions"`
 	Quota                       OrganizeQuota                `json:"quota"`
 	RequestID                   openapi_types.UUID           `json:"requestID"`
@@ -340,8 +397,8 @@ type Unauthorized = ErrorResponse
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = ErrorResponse
 
-// OrganizeJournalParams defines parameters for OrganizeJournal.
-type OrganizeJournalParams struct {
+// SuggestJournalIllustrationParams defines parameters for SuggestJournalIllustration.
+type SuggestJournalIllustrationParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
@@ -365,6 +422,11 @@ type GetJournalIllustrationResultParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// OrganizeJournalParams defines parameters for OrganizeJournal.
+type OrganizeJournalParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
 // CreateJournalVoiceSessionParams defines parameters for CreateJournalVoiceSession.
 type CreateJournalVoiceSessionParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
@@ -375,8 +437,8 @@ type GetJournalWritingStylesParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
-// OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
-type OrganizeJournalJSONRequestBody = OrganizeRequest
+// SuggestJournalIllustrationJSONRequestBody defines body for SuggestJournalIllustration for application/json ContentType.
+type SuggestJournalIllustrationJSONRequestBody = IllustrationSuggestionRequest
 
 // CreateJournalIllustrationJSONRequestBody defines body for CreateJournalIllustration for application/json ContentType.
 type CreateJournalIllustrationJSONRequestBody = IllustrationRequest
@@ -384,14 +446,17 @@ type CreateJournalIllustrationJSONRequestBody = IllustrationRequest
 // CancelJournalIllustrationJSONRequestBody defines body for CancelJournalIllustration for application/json ContentType.
 type CancelJournalIllustrationJSONRequestBody = IllustrationCancellation
 
+// OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
+type OrganizeJournalJSONRequestBody = OrganizeRequest
+
 // CreateJournalVoiceSessionJSONRequestBody defines body for CreateJournalVoiceSession for application/json ContentType.
 type CreateJournalVoiceSessionJSONRequestBody = VoiceSessionRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
-	// (POST /v1/ai/operations/journal.organize/responses)
-	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
+	// (POST /v1/journal/illustration-suggestions)
+	SuggestJournalIllustration(c *gin.Context, params SuggestJournalIllustrationParams)
 
 	// (POST /v1/journal/illustrations)
 	CreateJournalIllustration(c *gin.Context, params CreateJournalIllustrationParams)
@@ -404,6 +469,9 @@ type ServerInterface interface {
 
 	// (GET /v1/journal/illustrations/{taskID}/result)
 	GetJournalIllustrationResult(c *gin.Context, taskID openapi_types.UUID, params GetJournalIllustrationResultParams)
+
+	// (POST /v1/journal/organization)
+	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(c *gin.Context, params CreateJournalVoiceSessionParams)
@@ -424,14 +492,14 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(c *gin.Context)
 
-// OrganizeJournal operation middleware
-func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
+// SuggestJournalIllustration operation middleware
+func (siw *ServerInterfaceWrapper) SuggestJournalIllustration(c *gin.Context) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params OrganizeJournalParams
+	var params SuggestJournalIllustrationParams
 
 	headers := c.Request.Header
 
@@ -464,7 +532,7 @@ func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.OrganizeJournal(c, params)
+	siw.Handler.SuggestJournalIllustration(c, params)
 }
 
 // CreateJournalIllustration operation middleware
@@ -666,6 +734,49 @@ func (siw *ServerInterfaceWrapper) GetJournalIllustrationResult(c *gin.Context) 
 	siw.Handler.GetJournalIllustrationResult(c, taskID, params)
 }
 
+// OrganizeJournal operation middleware
+func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params OrganizeJournalParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.OrganizeJournal(c, params)
+}
+
 // CreateJournalVoiceSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateJournalVoiceSession(c *gin.Context) {
 
@@ -804,7 +915,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/v1/journal/writing-styles", wrapper.GetJournalWritingStyles)
 	router.POST(options.BaseURL+"/v1/journal/voice/sessions", wrapper.CreateJournalVoiceSession)
 	router.GET(options.BaseURL+"/v1/journal/voice/sessions/:sessionID/stream", wrapper.StreamJournalVoiceSession)
-	router.POST(options.BaseURL+"/v1/ai/operations/journal.organize/responses", wrapper.OrganizeJournal)
+	router.POST(options.BaseURL+"/v1/journal/organization", wrapper.OrganizeJournal)
+	router.POST(options.BaseURL+"/v1/journal/illustration-suggestions", wrapper.SuggestJournalIllustration)
 	router.POST(options.BaseURL+"/v1/journal/illustrations", wrapper.CreateJournalIllustration)
 	router.GET(options.BaseURL+"/v1/journal/illustrations/:taskID", wrapper.GetJournalIllustration)
 	router.POST(options.BaseURL+"/v1/journal/illustrations/:taskID/cancel", wrapper.CancelJournalIllustration)
@@ -829,18 +941,18 @@ type UnauthorizedJSONResponse ErrorResponse
 
 type UnprocessableEntityJSONResponse ErrorResponse
 
-type OrganizeJournalRequestObject struct {
-	Params OrganizeJournalParams
-	Body   *OrganizeJournalJSONRequestBody
+type SuggestJournalIllustrationRequestObject struct {
+	Params SuggestJournalIllustrationParams
+	Body   *SuggestJournalIllustrationJSONRequestBody
 }
 
-type OrganizeJournalResponseObject interface {
-	VisitOrganizeJournalResponse(w http.ResponseWriter) error
+type SuggestJournalIllustrationResponseObject interface {
+	VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error
 }
 
-type OrganizeJournal200JSONResponse OrganizeResponse
+type SuggestJournalIllustration200JSONResponse IllustrationSuggestionResponse
 
-func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+func (response SuggestJournalIllustration200JSONResponse) VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -852,126 +964,12 @@ func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w ht
 	return err
 }
 
-type OrganizeJournal401JSONResponse struct{ UnauthorizedJSONResponse }
-
-func (response OrganizeJournal401JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal403JSONResponse struct{ ForbiddenJSONResponse }
-
-func (response OrganizeJournal403JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal409JSONResponse struct{ ConflictJSONResponse }
-
-func (response OrganizeJournal409JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal413JSONResponse struct{ PayloadTooLargeJSONResponse }
-
-func (response OrganizeJournal413JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal422JSONResponse struct {
-	UnprocessableEntityJSONResponse
-}
-
-func (response OrganizeJournal422JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal429JSONResponse struct{ TooManyRequestsJSONResponse }
-
-func (response OrganizeJournal429JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(429)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal502JSONResponse struct{ BadGatewayJSONResponse }
-
-func (response OrganizeJournal502JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal503JSONResponse struct{ ServiceUnavailableJSONResponse }
-
-func (response OrganizeJournal503JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournaldefaultJSONResponse struct {
+type SuggestJournalIllustrationdefaultJSONResponse struct {
 	Body       ErrorResponse
 	StatusCode int
 }
 
-func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+func (response SuggestJournalIllustrationdefaultJSONResponse) VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1144,6 +1142,160 @@ func (response GetJournalIllustrationResultdefaultJSONResponse) VisitGetJournalI
 	return err
 }
 
+type OrganizeJournalRequestObject struct {
+	Params OrganizeJournalParams
+	Body   *OrganizeJournalJSONRequestBody
+}
+
+type OrganizeJournalResponseObject interface {
+	VisitOrganizeJournalResponse(w http.ResponseWriter) error
+}
+
+type OrganizeJournal200JSONResponse OrganizeResponse
+
+func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response OrganizeJournal401JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response OrganizeJournal403JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal409JSONResponse struct{ ConflictJSONResponse }
+
+func (response OrganizeJournal409JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal413JSONResponse struct{ PayloadTooLargeJSONResponse }
+
+func (response OrganizeJournal413JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal422JSONResponse struct {
+	UnprocessableEntityJSONResponse
+}
+
+func (response OrganizeJournal422JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal429JSONResponse struct{ TooManyRequestsJSONResponse }
+
+func (response OrganizeJournal429JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal502JSONResponse struct{ BadGatewayJSONResponse }
+
+func (response OrganizeJournal502JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response OrganizeJournal503JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournaldefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateJournalVoiceSessionRequestObject struct {
 	Params CreateJournalVoiceSessionParams
 	Body   *CreateJournalVoiceSessionJSONRequestBody
@@ -1285,8 +1437,8 @@ func (response GetJournalWritingStylesdefaultJSONResponse) VisitGetJournalWritin
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
-	// (POST /v1/ai/operations/journal.organize/responses)
-	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
+	// (POST /v1/journal/illustration-suggestions)
+	SuggestJournalIllustration(ctx context.Context, request SuggestJournalIllustrationRequestObject) (SuggestJournalIllustrationResponseObject, error)
 
 	// (POST /v1/journal/illustrations)
 	CreateJournalIllustration(ctx context.Context, request CreateJournalIllustrationRequestObject) (CreateJournalIllustrationResponseObject, error)
@@ -1299,6 +1451,9 @@ type StrictServerInterface interface {
 
 	// (GET /v1/journal/illustrations/{taskID}/result)
 	GetJournalIllustrationResult(ctx context.Context, request GetJournalIllustrationResultRequestObject) (GetJournalIllustrationResultResponseObject, error)
+
+	// (POST /v1/journal/organization)
+	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(ctx context.Context, request CreateJournalVoiceSessionRequestObject) (CreateJournalVoiceSessionResponseObject, error)
@@ -1367,13 +1522,13 @@ type strictHandler struct {
 	options     StrictGinServerOptions
 }
 
-// OrganizeJournal operation middleware
-func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJournalParams) {
-	var request OrganizeJournalRequestObject
+// SuggestJournalIllustration operation middleware
+func (sh *strictHandler) SuggestJournalIllustration(ctx *gin.Context, params SuggestJournalIllustrationParams) {
+	var request SuggestJournalIllustrationRequestObject
 
 	request.Params = params
 
-	var body OrganizeJournalJSONRequestBody
+	var body SuggestJournalIllustrationJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(ctx, err)
 		return
@@ -1381,18 +1536,18 @@ func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJourna
 	request.Body = &body
 
 	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.OrganizeJournal(ctx, request.(OrganizeJournalRequestObject))
+		return sh.ssi.SuggestJournalIllustration(ctx, request.(SuggestJournalIllustrationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "OrganizeJournal")
+		handler = middleware(handler, "SuggestJournalIllustration")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(OrganizeJournalResponseObject); ok {
-		if err := validResponse.VisitOrganizeJournalResponse(ctx.Writer); err != nil {
+	} else if validResponse, ok := response.(SuggestJournalIllustrationResponseObject); ok {
+		if err := validResponse.VisitSuggestJournalIllustrationResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -1521,6 +1676,39 @@ func (sh *strictHandler) GetJournalIllustrationResult(ctx *gin.Context, taskID o
 	}
 }
 
+// OrganizeJournal operation middleware
+func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJournalParams) {
+	var request OrganizeJournalRequestObject
+
+	request.Params = params
+
+	var body OrganizeJournalJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.OrganizeJournal(ctx, request.(OrganizeJournalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OrganizeJournal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(OrganizeJournalResponseObject); ok {
+		if err := validResponse.VisitOrganizeJournalResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateJournalVoiceSession operation middleware
 func (sh *strictHandler) CreateJournalVoiceSession(ctx *gin.Context, params CreateJournalVoiceSessionParams) {
 	var request CreateJournalVoiceSessionRequestObject
@@ -1611,58 +1799,60 @@ func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJou
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7FtdctvItd5KF+48ggT1Y10P3ziSZ4Z3bI+uJM/cKpVu1SFwSLYFdMPdDUq0igtI8pQdZAWpbCC7SVJZ",
-	"Rqp/8EuQBCVbM66ynywAffo7/6dPHz54IU9SzpAp6Q0fvBQEJKhQmL8u8EOGUo3PfkSIUOhHlHlDb27/",
-	"9D0GCXpD7/96VxjHS57dzUH13Kre+MzzPYEfMiow8oZKZOh7MpxjAprSlIsElDf0soxGnu+pZappSSUo",
-	"m3mr1UovlilnEg2Y7yD6ARTewVL/FXKmkCn9X0jTmIagKGfBe8mZflZu843AqTf0/isoGQ3sWxm8EoKL",
-	"C7eJ3TJCGQqaamLe0DsXfEEjFGQKNMaIcEEEqkwwjAgwQtkCYhoRgTKLVd9b+d4pZ9OYhur5MI6IwDSG",
-	"pU9ohEnKFbJw6WuoUoFCEjpEhIdhJgRGBqch+4wgGUH9DclVakB8z8WERhGy5wNyNUcSQhyjIFQSyNQc",
-	"mdJ7YUQmmSIxhLeSqDmS3HKJ/kDFmCCzKj6HZcwhuuL8NYgZPi92YZ2L4H2IGElthTxFYfbryRRDOqUh",
-	"kfQjkpgm1CK+RLGgIb5jsAAawyTG5zVPJ0hpYZAIU2SRNlOtg6xEZcBecf4G2NJFEfl8SP834wq034Sc",
-	"GU/RAI0QiUAI585z3jFtNVzQjzqqPZsYS0ulnGmUnGFP0USbcwoTGlO1JCYc2S9sxHKIU8FDlFLL+JW2",
-	"5uVvY7QLymNQaP0rAQYz43WSMpRSi10JCLXJrvJEYSM/57enGuy9BRtFVBOH+Fxo21dUJ4gpxBJ9L608",
-	"siwCZfIVU8Lw7JLMhPMYgXlNtA9eAvevkc3U3BueDAZrWcn3aNQheeWZsUbv4HDgewllxd/rOa+aL689",
-	"Q9kQqsP0G3zdFIT45D2GqojvZ6iAxnvLLMKKqEqWEm1Bs/Z3Iq8UWt42uDL0S2rVtRsZKQxsP1YwT3I7",
-	"LdhJqonVEmiFdU+lomymbfMCQ54kyKzn7YlxwvmtFdtOmxIIcs1KD4/3tCq3YUGujbtxHGdS2axyCizE",
-	"OH4MbwIXVLplBXeUqZNjz2CmSZZUEVOmcIZiDXJBZxdWlzT2jxISmbqooK257csdAjb0klQ1NTMYDAY7",
-	"lwqcok41WBPSZKmMk5TUjuy/k20kLn8cHb44sXW8Uih0/P3/a+hNB71vbx5OjlfftJtVxXd3GuEChRZS",
-	"p6/X1JhvVCVTSM9fU8Rudeu6e09tz5HO5rmunAWe5JraaJG+RxMX/B6npITahIBM73BtyQUpm3mOdPA+",
-	"xVmF5XLpHY008f0AN3NJYoOtgZGT9HNh7BL0ZTaboXxEBDDxVtKW7PqiNbs+MsT5nkSlw3GnTSTPRIi6",
-	"3LMgqcJEtiX/HXsmcD+2S4/Mt+6P8lMQApae72WMfsjQvdbnYA1CLePWCmEdbmZ10sLaLqFkSQK28HlK",
-	"HZKTKaGU8vZrKs7Zasi4c665Anm7b46/T6lAOVI114xA2erYe3wJlwo+iTGpOi1DdcfFrVFpeZbyvQ/6",
-	"6GDY1FyhJud6A2Pjdzetpv7I5KiFDKoWTD5kmJldRcaYVYvMQn1CtE9LWBkLUejaUWvOZnaMWvE9IdCb",
-	"T6oR3gKu8OxX9NZmFG/xTldWj447+1b1jyrXnxCuBOqDUHQFs40R6HifAPSyQ8xpKKn1YOEYqgNsU9DP",
-	"YgaMfjQeDnsqp9aFaDmRAY2XV/wWmbzABCjL43ruE4M2n0g4U/O91zVk0rr1Rtp+hZNtMnpcVTrh0XLd",
-	"dlutV5f0dTvaduCpHqdrRmQq3ZoZrfy8S/AjyPm+hWV+oP/FRoK81NZh5D3PBIO4x52IeouDNgroTlmf",
-	"zE9eHBx2ys60tfiRr5hWdtRut3mUvYLZW0jweQHvV8SbhmaH4mNLAd9Ubt1S8i18a8YNTbbIKjfinaLf",
-	"7miPahMAg3gpqazY6Z7nvyc4CW5sJHT36C3NiGaZ2nRvurHK37bhhrOBTqTNxN2di/WcXwN/uA7+Q558",
-	"tpGtZ6r9XaUZerbtdQU78vIujyr9p2mUDsl2g2mVfy6nNs/RgPdzlpZKqUNAsw/KgjVFYeuMNIZQhwmX",
-	"CMDVIbhApo8Ziqc0NBmYa+1wNUfRUq22lzbmozauf+E0xEuU8qkto0rEaDmRysfWz+VSv7nTLnauaHiL",
-	"+3Lj+gpvaBxTiSFnkaywVCmyRF77dPlUotrrWLaPwLRl3CLb3W2uitIu2cSF3yqGCiNtov9VUO2Ll/rU",
-	"ewoKYj7b+6QyhSxWl3k7YF0s+k33EFRF9AYVRGCjXjN2LjaabkOCiyIA1aAWwHaJpQDxpBPcet7cVorh",
-	"PSTpBnnSqPVxHtfWXnDhRh92ddg23tbkaHJaJfh12Rk/CDNB1fJSa9QKY5SmI6VQqpGUWkRWJvWLtu9A",
-	"4slxD1nII4zIKE2JXUMgX0SmXJi7txAYZzSEuLiam1AWUTbrm87FzhGPEkZpWCn9CY1lFWB/wqV15jrQ",
-	"C5xRqVDUQd7iktAImaJTiqIjjp9wacdMNoN4y11vvQ7i5+L2dA5xjGyGZAFxhh03tlS37XtRrTLqe7/m",
-	"dyhCkEjevRufkQnPWEQoU9zoptBWRyi1cZvNeK5oglJBkrYo5PtTcnR09G3FUFT+dUcQJfUWDGe4wJin",
-	"CTI1ChVdFFdJHQif4aJXWdRCvT37mXBoogKCMOTdwrlSqb2npmzK14VxWrjGKE3LiYpiyEIWTvTPP//x",
-	"H3//y7/+8Kd///Vv+W12bzQmMzul1CdXcyQzZHohRiTNJjENi1tuArHkhLIwziJ3Iy7noJ3iPAal09/o",
-	"fNwvDlJD73/skZm8cffmozEZnY+9SiT3DvqD/sDErBQZpNQbekf9g/5A11mg5iaUBHOEWM0/esOHle8F",
-	"AiFa5n8sDgKgQclq4I7p/fyYHtQmslJu66ZiwTjSnuW+dXjN3uVQ2XV79io/CZpDZ6ubomT/zrVEPsnk",
-	"QrM7s6oH9OJcXWH4cDD4DNtvm51xAx1meEYRPiX6EECARUQfl4ksy3wz6XE8ONi0b8FIUBtgMYuOdi8q",
-	"R7XMim93rygm4fSCgw5bNOeq9LrDwy78rI+3mLUdQDaHjVa+92LQYc/KMKJZ0oG9liGsVVFT7V5uB/aq",
-	"9YFxprbK4PpmPQnXnrmcWHtWyVe155W8cX2jfdEeiK+90r9HY+9mVcaP/FSeP9FhVHGBAeM6uYdFcyP/",
-	"wOwTFIl4/dUtLisPI1wElZk8GYDND1h+UnutBDCpv6nt6kJbUG2AbIlqpwJB5TGt2v743ca3trmIZ45x",
-	"a1d72wfbMCJVbZQ5tzpg++U7TOErrSYYPCiQt+OzleZwhi2m+AOqz2KHvivIdKlQlmMWzZMmuW++mtjv",
-	"08QCewO8JeqZ91+gtX3ecFobifsaU78ggxfFxNgeodWNmX0NsE4QXy2uzeIWnIYYuH5z10qy2rz43VaS",
-	"bdclnaLewWeB4Jo8redlOedC9WK60CdmymYx9jKJ5FecXHK9iiiz+Au1wWKezxtFCVUEWOMXTDKbaHlM",
-	"UBDFCRiPS/RRkxjrJM46+97e9hw8FDcpq0AqgZBUomgzGESUmyZFPu9FptpoJQGBxH470WGCkYiHRZep",
-	"Z3bsJ5HtnFlNESoJwwUKAmGIqbLLgLy7eK25qLvWpcHVybVaAnH1qujTxeID6wV1CZX2mKUzAREW3H0S",
-	"y2xriTYt6J3b2HWdrX2kgise8pjcUTUnUHUh20ct/KeDAd3ZS6BeeYG1I+dWb43kBpU1u8Xjae8tZ9h7",
-	"AyrUuiwV9ZxJsu0acNOPD80vyxRx0iFGOiS0i/pmJFtzaCCeQjjH3ilnSvDY/qBik1mu3+G9cnf73dfo",
-	"VUeD43VztT+aDOcY5UC1WzpOfnvMT3OXmlec2yZ9XTmJu8Hsk7ec2B8rSMKF/q/9dbAbhpZb3SIVdAHh",
-	"MnAX+pVWVP7G3ZIWT3mUhUoG+dUCUP3SgBeL3CnWfq+s19iIl4nY3XfIYRBASvt5O1+VFyz9kJnCtHlD",
-	"FUJMovLepkZuGAQHh//dH/QH/YPhy8HLgVcpkPIJES+/xjDk3TPXA60+cpBl9ZlNf/kAU/H4VaWrVydh",
-	"5FejkKZxbZtcHdVvxt7qZvWfAAAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

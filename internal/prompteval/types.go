@@ -9,30 +9,34 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	journal "github.com/tellyouwhat/backend/internal/journal/contracts"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const Retention = 7 * 24 * time.Hour
-const RubricVersion = "journal-fidelity-2026-09-08"
+const RubricVersion = "journal-quality-2026-10-13"
+const ImageReservationNanos int64 = 1_000_000_000
 
 var ErrInvalid = errors.New("invalid evaluation")
 var ErrConflict = errors.New("evaluation command conflict")
 var ErrNotFound = errors.New("evaluation not found")
 
 type Sample struct {
-	ID       string                   `json:"id"`
-	Name     string                   `json:"name"`
-	Kind     string                   `json:"kind"`
-	Organize *journal.OrganizeRequest `json:"organize,omitempty"`
-	Voice    *voice.Snapshot          `json:"voice,omitempty"`
-	Audio    []byte                   `json:"audio,omitempty"`
-	Expected []Check                  `json:"expected"`
+	Illustration *illustration.Brief      `json:"illustration,omitempty"`
+	ID           string                   `json:"id"`
+	Name         string                   `json:"name"`
+	Kind         string                   `json:"kind"`
+	Organize     *journal.OrganizeRequest `json:"organize,omitempty"`
+	Voice        *voice.Snapshot          `json:"voice,omitempty"`
+	Audio        []byte                   `json:"audio,omitempty"`
+	Expected     []Check                  `json:"expected"`
 }
 type Check struct {
 	Kind    string `json:"kind"`
@@ -45,18 +49,29 @@ func (s Sample) Validate() error {
 		return ErrInvalid
 	}
 	switch s.Kind {
-	case "organize_lite", "organize_pro":
-		if s.Organize == nil || s.Organize.Validate() != nil || s.Voice != nil || len(s.Audio) > 0 {
+	case "organize_lite", "organize_pro", "illustration_scene":
+		if s.Illustration != nil || s.Organize == nil || s.Organize.Validate() != nil || s.Voice != nil || len(s.Audio) > 0 {
+			return ErrInvalid
+		}
+	case "illustration_image":
+		if s.Illustration == nil || s.Illustration.Validate() != nil || s.Organize != nil || s.Voice != nil || len(s.Audio) > 0 {
 			return ErrInvalid
 		}
 	case "voice":
-		if s.Voice == nil || s.Voice.Validate() != nil || s.Organize != nil || len(s.Audio) > voice.MaxSegmentBytes || len(s.Audio)%2 != 0 {
+		if s.Illustration != nil || s.Voice == nil || s.Voice.Validate() != nil || s.Organize != nil || len(s.Audio) > voice.MaxSegmentBytes || len(s.Audio)%2 != 0 {
 			return ErrInvalid
 		}
 	default:
 		return ErrInvalid
 	}
 	for _, c := range s.Expected {
+		if c.Kind == "tag_limit" || c.Kind == "new_book_count" || c.Kind == "existing_book_count" {
+			n, err := strconv.Atoi(c.Text)
+			if err != nil || n < 0 || n > 8 || s.Organize == nil || c.BlockID != "" {
+				return ErrInvalid
+			}
+			continue
+		}
 		if c.Kind != "contains" && c.Kind != "excludes" && c.Kind != "unchanged" {
 			return ErrInvalid
 		}
@@ -96,6 +111,9 @@ type Plan struct {
 	Requests      []json.RawMessage       `json:"requests"`
 }
 type Output struct {
+	RawStructured      json.RawMessage `json:"rawStructured,omitempty"`
+	Image              []byte          `json:"image,omitempty"`
+	ImageMIME          string          `json:"imageMIME,omitempty"`
 	DiagnosticOutput   string          `json:"diagnosticOutput,omitempty"`
 	SpeechCostNanos    int64           `json:"speechCostNanos"`
 	SpeechMilliseconds int             `json:"speechMilliseconds"`
@@ -180,14 +198,26 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			ctx := promptconfig.WithRevision(context.Background(), r)
 			var raw json.RawMessage
 			var parameters promptconfig.Parameters
-			if s.Kind == "voice" {
+			if s.Kind == "illustration_image" {
+				raw, _ = json.Marshal(map[string]any{"prompt": s.Illustration.Compile(ctx)})
+				if len([]rune(s.Illustration.Compile(ctx))) > 20000 {
+					return p, ErrInvalid
+				}
+				p.Requests = append(p.Requests, raw)
+				if ImageReservationNanos > math.MaxInt64-p.ReservedNanos {
+					return p, ErrInvalid
+				}
+				p.ReservedNanos += ImageReservationNanos
+				p.MaximumCalls++
+				continue
+			} else if s.Kind == "voice" {
 				v, err := voice.PrepareRewrite(ctx, *s.Voice, 1, "")
 				if err != nil {
 					return p, err
 				}
 				raw, parameters = v.Body, v.Parameters
 			} else {
-				v, _, err := provider.PrepareOrganize(ctx, *s.Organize, s.Kind == "organize_pro", provider.Config{})
+				v, _, err := provider.PrepareOrganize(ctx, s.organizeRequest(), s.Kind == "organize_pro", provider.Config{})
 				if err != nil {
 					return p, err
 				}
@@ -221,6 +251,9 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 			}
 			judgeInputBytes += 2*len(raw) + 8*outputCharacters + 8*styleBytes + 2*extra
 			p.Requests = append(p.Requests, raw)
+		}
+		if s.Kind == "illustration_image" {
+			continue
 		}
 		if len(s.Audio) > 0 {
 			cost, err := speechPrice.Cost(voice.MaxSegmentBytes / 32)
@@ -260,4 +293,10 @@ func (c *Criterion) UnmarshalJSON(raw []byte) error {
 	c.Score = *v.Score
 	c.Evidence = *v.Evidence
 	return nil
+}
+
+func (s Sample) organizeRequest() journal.OrganizeRequest {
+	request := *s.Organize
+	request.IllustrationSuggestionsEnabled = s.Kind == "illustration_scene"
+	return request
 }

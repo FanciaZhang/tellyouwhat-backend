@@ -148,7 +148,7 @@ func editorialDocument(s Snapshot) rewriteDocument {
 
 // Shared by request construction and conservative preflight cost reservation.
 // Snapshot validation checks the selected writing style before either call.
-func rewriteInstructionText(s Snapshot, voice promptconfig.Voice, style promptconfig.Style) string {
+func rewriteInstructionText(s Snapshot, voice promptconfig.Voice, style promptconfig.Style, scenePrompt string) string {
 	instructions := voice.Prompt
 	if instructions == promptconfig.VoicePrompt && voice.RemoveRepetition {
 		instructions = rewriteInstructions
@@ -169,7 +169,7 @@ func rewriteInstructionText(s Snapshot, voice promptconfig.Voice, style promptco
 	if incrementalTranscriptStart(s) > 0 || (s.RecordingContext == nil && s.rewriteAcknowledged != "") {
 		instructions += incrementalWindowInstructions
 	}
-	return instructions + contracts.IllustrationSuggestionInstructions + faithfulNarrativeInstructions + "\n本次写作风格（仅作用于需要整理的部分）：" + style.Prompt + faithfulNarrativeExamples
+	return instructions + scenePrompt + faithfulNarrativeInstructions + "\n本次写作风格（仅作用于需要整理的部分）：" + style.Prompt + faithfulNarrativeExamples
 }
 
 func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result RewriteResult, returnedErr error) {
@@ -426,7 +426,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	}}
 	body := map[string]any{
 		"store":        false,
-		"instructions": rewriteInstructionText(s, settings.Voice, style),
+		"instructions": rewriteInstructionText(s, settings.Voice, style, promptconfig.ScenePrompt(ctx)),
 		"input":        string(input),
 		"text":         map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_revision", "strict": true, "schema": schema}},
 	}
@@ -436,7 +436,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 			return PreparedRewrite{}, err
 		}
 		body["input"] = string(input)
-		body["instructions"] = incrementalRewriteInstructions + narratorInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + contracts.IllustrationSuggestionInstructions + "\n本次写作风格：" + style.Prompt
+		body["instructions"] = incrementalRewriteInstructions + narratorInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + promptconfig.ScenePrompt(ctx) + "\n本次写作风格：" + style.Prompt
 		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
 	}
 	if compactTableCommand(s) {
@@ -450,7 +450,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	if s.Polish != nil {
 		request := *s.Polish
 		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
-		body, parameters = preparePolish(request, style, s.Words, parameters)
+		body, parameters = preparePolish(ctx, request, style, s.Words, parameters)
 	}
 	parameters.Apply(body)
 	payload, _ := json.Marshal(body)

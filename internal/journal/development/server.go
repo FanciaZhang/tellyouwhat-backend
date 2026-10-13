@@ -25,6 +25,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
 )
@@ -33,6 +34,7 @@ import (
 const ProtocolVersion = "subscription-v2"
 
 type Config struct {
+	Prompts       *promptconfig.Cache
 	Token         string
 	Organizer     provider.Organizer
 	Speech        voice.Speech
@@ -79,6 +81,7 @@ func New(c Config) (http.Handler, error) {
 	}
 	consent := privacy.NewService(consentRepository, nil, nil, c.Now)
 	if c.Illustrations != nil {
+		c.Illustrations.prompts = c.Prompts
 		c.Illustrations.authorize = func(ctx context.Context, owner string) bool {
 			record, found, err := store.Get(ctx, owner)
 			if err != nil || !found || !record.ExpiresAt.After(c.Now()) {
@@ -112,7 +115,7 @@ func New(c Config) (http.Handler, error) {
 		recording := c.Recording != nil && recordingRoute(r)
 		image := illustrationRoute(r)
 		allowed := stream || recording || image || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
-			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/ai/operations/journal.organize/responses"))
+			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/journal/organization" || r.URL.Path == "/v1/journal/illustration-suggestions"))
 		if !allowed {
 			g.Abort()
 			deny(w, 404, "not_found")
@@ -171,6 +174,7 @@ func New(c Config) (http.Handler, error) {
 		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
 		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: provider.OrganizationAnalysisVersion},
 		JournalAnalysisVersion: provider.OrganizationAnalysisVersion,
+		PromptConfig:           c.Prompts,
 		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000, Logger: c.Logger}, VoiceEntitlements: store,
 		Now: c.Now,
 	})

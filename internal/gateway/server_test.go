@@ -107,7 +107,7 @@ func TestJournalOrganizeUsesServerOwnedOperationAndReturnsTagsAndBooks(t *testin
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"今天去了西湖","existingTags":[],"rejectedTagNames":[],"books":[{"id":"8d43cd74-5652-4412-b097-303f563e673a","name":"杭州","description":"城市生活","containsEntry":false}]}`
 	response := httptest.NewRecorder()
-	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
 		!strings.Contains(response.Body.String(), `"bookID":"8d43cd74-5652-4412-b097-303f563e673a"`) ||
 		!strings.Contains(response.Body.String(), `"dailyTokensRemaining"`) {
@@ -132,7 +132,7 @@ func TestJournalOrganizeRejectsMissingConsentBeforeProviderCall(t *testing.T) {
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
-	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if response.Code != http.StatusForbidden || organizer.calls != 0 {
 		t.Fatalf("consent was not enforced: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
 	}
@@ -160,9 +160,9 @@ func TestJournalOrganizeRejectsIdempotentReplayBeforeSecondProviderCall(t *testi
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	first := httptest.NewRecorder()
-	server.Router().ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(first, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	second := httptest.NewRecorder()
-	server.Router().ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(second, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if first.Code != http.StatusOK || second.Code != http.StatusConflict || organizer.calls != 1 {
 		t.Fatalf("journal request was not idempotently committed: first=%d second=%d calls=%d body=%s", first.Code, second.Code, organizer.calls, second.Body.String())
 	}
@@ -193,7 +193,7 @@ func TestJournalOrganizeReturnsResultWhenQuotaSnapshotIsUnavailable(t *testing.T
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
-	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"西湖"`) ||
 		!strings.Contains(response.Body.String(), `"available":false`) {
 		t.Fatalf("successful model result was discarded after quota snapshot failure: %d %s", response.Code, response.Body.String())
@@ -221,7 +221,7 @@ func TestJournalOrganizeRetainsMeteredQuotaWhenProviderResultFails(t *testing.T)
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[]}`
 	response := httptest.NewRecorder()
-	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if response.Code != http.StatusBadGateway || lease.actualTokens != 25 {
 		t.Fatalf("status=%d quota=%d body=%s", response.Code, lease.actualTokens, response.Body.String())
 	}
@@ -240,7 +240,7 @@ func TestJournalStrictRouterRejectsUnknownRequestFields(t *testing.T) {
 	})
 	body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contractVersion":"journal-organize-v1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"周末","body":"正文","existingTags":[],"rejectedTagNames":[],"books":[],"unexpected":true}`
 	response := httptest.NewRecorder()
-	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+	server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/organization", body))
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"contract_violation"`) || organizer.calls != 0 {
 		t.Fatalf("unknown field reached Journal handler: %d %s calls=%d", response.Code, response.Body.String(), organizer.calls)
 	}
@@ -1477,4 +1477,40 @@ func (value recordingQuota) PrepareJob(ctx context.Context, identity quotaapi.Id
 		lease.Release(0)
 	}
 	return err
+}
+
+func TestJournalSceneEndpointIsTypedAndRetainsConsentGate(t *testing.T) {
+	for _, consent := range []bool{false, true} {
+		limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1000000, MonthlyTokensPerTransaction: 2000000})
+		organizer := &fakeJournalOrganizer{result: journalprovider.Result{InputTokens: 10, OutputTokens: 5}}
+		server := New(Dependencies{
+			App:           appregistry.App{ID: appregistry.Journal, DisplayName: "Journal", Hosts: []string{"api.journal.test"}, TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly", AllowedOperationPrefix: "journal."},
+			Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true}, Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(), JournalOrganizer: organizer, JournalAnalysisVersion: "test",
+			Consent: fakeConsentGate{granted: consent}, RequiredConsentScopes: []string{privacy.ManagedAIScope}, Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
+		})
+		body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"河边","body":"小狗在河边散步。"}`
+		response := httptest.NewRecorder()
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/illustration-suggestions", body))
+		if !consent {
+			if response.Code != 403 || organizer.calls != 0 {
+				t.Fatalf("consent bypass: %d", response.Code)
+			}
+			continue
+		}
+		if response.Code != 200 || !organizer.request.IllustrationSuggestionsEnabled || strings.Contains(response.Body.String(), `"tags"`) {
+			t.Fatalf("mixed scene response: %d %s", response.Code, response.Body)
+		}
+		for _, field := range []string{`"prompt":"override"`, `"model":"override"`, `"books":[]`} {
+			response = httptest.NewRecorder()
+			server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/illustration-suggestions", strings.TrimSuffix(body, "}")+","+field+"}"))
+			if response.Code != 422 || organizer.calls != 1 {
+				t.Fatalf("accepted unrelated field %s: %d", field, response.Code)
+			}
+		}
+		response = httptest.NewRecorder()
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/ai/operations/journal.organize/responses", body))
+		if response.Code == 200 || organizer.calls != 1 {
+			t.Fatalf("legacy endpoint retained: %d", response.Code)
+		}
+	}
 }
