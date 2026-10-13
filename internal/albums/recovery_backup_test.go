@@ -123,6 +123,38 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	if reconciled["deletion_ledger_applied"] != true || reconciled["deletion_intents"] != float64(2) {
 		t.Fatal("post-snapshot deletion not restored")
 	}
+	// Controlled object transport, real OpenSSL bundle encryption and native
+	// MySQL restore. This proves the pipeline, not a live COS publication.
+	offsiteRoundtrip := `import sys,json,shutil
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from backup import Runtime,configure,drill
+from ops_backup import file_digest
+import offsite
+r=Runtime(sys.argv[2],sys.argv[3],sys.argv[4]);configure(r)
+remote=Path(sys.argv[2])/"controlled-offsite.enc"
+def transfer(runtime,executable,credentials,operation,path,key,digest,size,**pinned):
+    if operation=="put": shutil.copyfile(path,remote)
+    else: shutil.copyfile(remote,path)
+    assert file_digest(path)==digest and Path(path).stat().st_size==size
+    return dict(Key=key,SHA256=digest,Bytes=size,Version="fixture-version",Bucket="fixture-1250000000",Region="ap-guangzhou")
+offsite.move=transfer
+with r.lock():
+    receipt=offsite.publish(r,"controlled","controlled",sys.argv[5],sys.argv[6],sys.argv[7])
+    recovered=offsite.fetch(r,"controlled","controlled",receipt["receipt"],receipt["receipt_sha256"])
+    restored=Runtime(sys.argv[2],recovered["directory"],sys.argv[4]);configure(restored)
+    result=drill(restored,Path(sys.argv[8]),recovered["snapshot"],recovered["deletion_ledger"],recovered["deletion_ledger_sha256"])
+    assert result["recovery_quarantined"] and result["deletion_intents"]==2 and result["tables"]==36
+print(json.dumps(dict(passed=True,quarantined=True,live_cos=False)))
+`
+	offsiteOutput, offsiteErr := exec.Command("python3", "-c", offsiteRoundtrip, filepath.Dir(script), root, filepath.Join(root, "vault"), envPath, filename, ledgerPath, currentLedger["sha256"].(string), binaries).CombinedOutput()
+	if offsiteErr != nil {
+		t.Fatalf("controlled encrypted offsite restore failed: %v %s", offsiteErr, offsiteOutput)
+	}
+	var offsiteResult map[string]any
+	if json.Unmarshal(offsiteOutput, &offsiteResult) != nil || offsiteResult["passed"] != true {
+		t.Fatal("invalid offsite restore result")
+	}
 	newSnapshot := run("backup")
 	oldLedgerPath := filepath.Join(root, "vault", oldLedger["filename"].(string))
 	// Re-sign the older synthetic checkpoint with a current clock to exercise

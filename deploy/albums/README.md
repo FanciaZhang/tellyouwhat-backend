@@ -198,7 +198,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 演练在新建私有临时目录启动仅有 Unix socket 的 MySQL，恢复后比较各表行数及按主键顺序重新导出的行内容 SHA-256，包括 JSON 和二进制字段；然后写入持久的数据库恢复隔离标记，并停用恢复出的活动账户、会话、分享和推送。删除中的账户保持 deleting。全过程不启动 API/worker、不更改源库，结束后停止临时 MySQL 并删除临时数据。演练解压上限 32 GiB，超过时失败，不截断。
 
-本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照；损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。还未实现异地上传、删除日志的异地发布与最新性证明、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
+本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照；损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。加密恢复包的异地传输已实现但未部署，删除日志的独立异地发布与最新性证明、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
 
 验证见 `docs/evidence/albums-recovery-backup-2026-10-13.json`。
 
@@ -219,3 +219,20 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 仅停用账户不足以阻止旧媒体后台任务。恢复演练现在把 `album_recovery_state` 标记为隔离，API 和 worker 在 Redis、COS、Apple 客户端及后台调度启动前检查它；表或唯一状态行缺失也拒绝启动。媒体事务共用的存储账户锁及媒体权限检查使用当前共享锁读取，旧事务快照不能绕过隔离，不同账户不因该检查被全局串行化。新建数据库默认允许正常启动。
 
 这是离线恢复保护，不能用作运行中服务的紧急停止开关，也不能撤回已经发出的云请求。尚无解除隔离或线上接管入口；完整切换必须另外核对最新删除清单和快照之后的在途写入。升级须先排空旧相册 API/worker，运行迁移，再协同启用新版；旧二进制不识别该标记，不能混跑或用于恢复库。验证记录：`docs/evidence/albums-recovery-quarantine-2026-10-13.json`。
+
+### 加密恢复包的 COS 传输（未部署）
+
+`backup.py publish` 把已认证快照、快照清单和显式指定的删除清单复制核验后打包，再整体加密。删除清单不会以明文上传。`cmd/albumbackup` 复用现有 COS SDK，只处理 `albums/recovery/<随机ID>.enc`：先检查版本控制已启用，上传后按返回版本完整读回并比较字节数与 SHA-256，成功才写本机 HMAC 签名发布回执。ETag、上传成功响应或 HEAD 均不能代替回读。拒绝 HTTP 重定向，未知 PUT 结果不自动重试；失败可能留下未确认对象，不能记为可用备份。
+
+构建 `go build -o <受管理输出目录>/albumbackup ./cmd/albumbackup`。使用单独的私有版本化备份桶和受限身份；配置格式见 `backup-cos.example.json`，真实文件 0600，密钥不得进入仓库。`cam-backup.policy.template.json` 仅为待填写模板，要求查询版本控制和备份前缀的读写，不含媒体读取、删除或桶管理权限；尚未创建或绑定这份策略。备份与媒体身份分开，不能把备份文件放进用户原件目录来绕过权限。
+
+在已有 `backup.py` 私有配置参数后使用：
+
+```text
+publish --backup <snapshot.enc> --deletion-ledger <private-ledger.json> --deletion-ledger-sha256 <sha256> --transfer-bin <albumbackup> --cos-config <private-backup-cos.json>
+fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --transfer-bin <albumbackup> --cos-config <private-backup-cos.json>
+```
+
+`fetch` 先认证固定摘要的回执，核对配置中的桶与地域，仅下载回执中的固定对象版本；再次验字节摘要后解密，只接受指定的三个普通文件，拒绝重复项、路径穿越和链接。不覆盖现有备份，输出到新的 0700 目录，各文件 0600。输出的快照、删除清单及摘要可用于现有 `drill`，恢复仍被隔离；不会启动服务。源快照超过 14 天时拒绝发布/下载。当前每个加密包最多 1 GiB，超限直接失败，扩大前须实现分片传输；不压缩或截断数据。
+
+发布回执当前只保存在本机，须连同其摘要另行异地保存；密钥也须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。因此该阶段尚无自动故障切换、最新检查点发现、远端保留期清理或按账户擦除能力，也未验证真实 COS 权限与恢复往返。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。

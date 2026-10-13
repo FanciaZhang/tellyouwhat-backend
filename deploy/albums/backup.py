@@ -12,6 +12,7 @@ import secrets
 import subprocess
 import sys
 import tempfile
+import tarfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tencent"))
@@ -261,7 +262,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
@@ -269,6 +270,10 @@ def main():
     parser.add_argument("--backup")
     parser.add_argument("--deletion-ledger")
     parser.add_argument("--deletion-ledger-sha256")
+    parser.add_argument("--transfer-bin")
+    parser.add_argument("--cos-config")
+    parser.add_argument("--receipt")
+    parser.add_argument("--receipt-sha256")
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -282,6 +287,13 @@ def main():
                 from deletion_ledger import publish
                 sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + runtime.config["MYSQL_DATABASE"], "--batch", "--skip-column-names"]
                 result = publish(runtime, sql, {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")})
+            elif args.operation == "publish":
+                from offsite import publish
+                if not args.backup: raise OperationError("publish requires a backup filename")
+                result = publish(runtime, args.transfer_bin, args.cos_config, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
+            elif args.operation == "fetch":
+                from offsite import fetch
+                result = fetch(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)
             elif not args.backup: raise OperationError("drill requires a backup filename")
             else: result = drill(runtime, binaries, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
         print(json.dumps({"passed": True, **result}, sort_keys=True))
@@ -289,7 +301,7 @@ def main():
     except OperationError as error:
         print(json.dumps({"passed": False, "error": str(error)}))
         return 1
-    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, subprocess.TimeoutExpired):
         # Never expose a provider diagnostic, SQL content or credential value.
         print(json.dumps({"passed": False, "error": "Albums backup operation failed; no recovery readiness claimed"}))
         return 1
