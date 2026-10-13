@@ -102,3 +102,5 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 待相册 HTTPS API 可用并验证请求边界后，在相册主 App ID 配置服务器通知地址 `https://api.albums.tellyouwhat.cn/v1/albums/auth/apple/notifications`。此公开入口使用 Apple 签名验证，不接受 App bearer 作为真实性证据。只有提交撤销状态后返回 200，依赖不可用返回 503 供重试；重复事件安全。通知撤销账户会话与后续推送查询，不撤回已经签发的下载地址或在途推送；`account-deleted` 当前停用访问，完整物理删除仍须独立实现。当前尚未登记通知地址或收到真实事件。
 
 2026-10-13 删除权限实测：`ALBUM_COS_PERMISSION_PROBE=1 go run deploy/albums/cos_delete_denial_probe.go` 只在固定测试桶的原件前缀创建一个随机名称的 48 字节合成对象。后端删除指定版本、上传身份删除同一版本、后端无版本删除三项均返回 403 AccessDenied；随后精确版本读取与字节校验通过。对象保留，不接触既有媒体。此结果覆盖这两个身份对本次对象的直接 COS 删除请求，不覆盖其他前缀、跨桶或 CI 角色间接权限。证据：`docs/evidence/albums-cos-delete-denial-2026-10-13.json`。
+
+照片适配器的真实付费探针独立于普通测试：显式设置 `ALBUM_CI_PHOTO_PROBE=1` 和 `ALBUM_CI_PHOTO_DIRECTORY=<新建证据目录>`，运行 `go test -tags albums_live ./internal/albums -run '^TestLiveCOSPhotoAdapter$' -count=1 -v`。仅使用批准的本机测试凭据与固定开发桶，生成三类合成图并保存六个预览，不读取用户图库、不删除对象；写入结果未知时不自动重复 PUT。重复运行会增加对象和处理费用。处理响应可缺版本头，但固定版本请求及前后原件 HEAD 核对不可省略；最终验收记录见 `docs/evidence/albums-ci-photo-adapter-2026-10-13.json`。

@@ -64,6 +64,9 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	if !s.photoSourceUnchanged(ctx, source) {
+		return PhotoCandidate{}, ErrPhotoCandidate
+	}
 	// CI.Get interpolates VersionId without escaping in SDK v0.7.75. Escape it
 	// here so opaque versions containing &, +, # or = cannot change the query.
 	response, err := s.client.CI.Get(ctx, source.Key, rule, nil, url.QueryEscape(source.VersionID))
@@ -77,7 +80,7 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.Header.Get("x-cos-version-id") != source.VersionID || response.Header.Get("Content-Range") != "" ||
+	if response.StatusCode != http.StatusOK || (response.Header.Get("x-cos-version-id") != "" && response.Header.Get("x-cos-version-id") != source.VersionID) || response.Header.Get("Content-Range") != "" ||
 		(response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity") || response.ContentLength > limit {
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
@@ -86,10 +89,21 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
 	candidate, err := inspectPhotoCandidate(data, preset)
-	if ctx.Err() != nil {
+	if err != nil || ctx.Err() != nil || !s.photoSourceUnchanged(ctx, source) {
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
 	return candidate, err
+}
+
+// Processed image responses can omit x-cos-version-id. Keep the fixed-version
+// request and bracket it with HEAD checks on the server-only immutable key.
+func (s *COSObjects) photoSourceUnchanged(ctx context.Context, source SealedObject) bool {
+	response, err := s.client.Object.Head(ctx, source.Key, nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	return err == nil && response != nil && response.StatusCode == http.StatusOK &&
+		response.Header.Get("x-cos-version-id") == source.VersionID && response.ContentLength == source.SizeBytes
 }
 
 func inspectPhotoCandidate(data []byte, preset PhotoPreset) (PhotoCandidate, error) {

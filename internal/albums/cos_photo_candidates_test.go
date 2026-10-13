@@ -38,6 +38,20 @@ func candidateImage(t *testing.T, format string, width int) []byte {
 	return out.Bytes()
 }
 
+func photoCandidateFixture(t *testing.T, source SealedObject, get cosTestTransport) *COSObjects {
+	return cosFixture(t, func(r *http.Request) (*http.Response, error) {
+		if r.Method == "HEAD" {
+			if r.URL.Path != "/"+source.Key || r.URL.RawQuery != "" {
+				t.Fatal("incorrect source HEAD")
+			}
+			response := cosResponse(r, "", source.VersionID)
+			response.ContentLength = source.SizeBytes
+			return response, nil
+		}
+		return get(r)
+	})
+}
+
 func TestCOSPhotoCandidatePinsVersionAndFixedPreset(t *testing.T) {
 	source := candidateSource()
 	for _, preset := range []PhotoPreset{PhotoGridJPEG, PhotoDailyJPEG, PhotoGridPNG, PhotoDailyPNG} {
@@ -45,7 +59,7 @@ func TestCOSPhotoCandidatePinsVersionAndFixedPreset(t *testing.T) {
 			rule, format, _, _ := photoPresetRule(preset)
 			payload := candidateImage(t, format, 11)
 			requests := 0
-			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+			s := photoCandidateFixture(t, source, func(r *http.Request) (*http.Response, error) {
 				requests++
 				if r.Method != "GET" || r.URL.Path != "/"+source.Key || r.URL.Query().Get("versionId") != source.VersionID || len(r.URL.Query()) != 2 || !r.URL.Query().Has(rule) || r.URL.Fragment != "" || r.Header.Get("Authorization") == "" {
 					t.Fatalf("incorrect processing request: %s", r.URL.Redacted())
@@ -94,7 +108,7 @@ func TestCOSPhotoCandidateRejectsInvalidResponseAndCloses(t *testing.T) {
 				payload = []byte("<html>error</html>")
 			}
 			body := &candidateTrackedBody{Reader: bytes.NewReader(payload)}
-			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+			s := photoCandidateFixture(t, source, func(r *http.Request) (*http.Response, error) {
 				res := cosResponse(r, string(payload), source.VersionID)
 				res.Body = body
 				switch scenario {
@@ -133,7 +147,7 @@ func TestCOSPhotoCandidateRejectsUnboundedChunkedResponse(t *testing.T) {
 	source := candidateSource()
 	reader := &repeatedCandidateReader{}
 	body := &candidateTrackedBody{Reader: io.LimitReader(reader, 16<<20)}
-	s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+	s := photoCandidateFixture(t, source, func(r *http.Request) (*http.Response, error) {
 		res := cosResponse(r, "", source.VersionID)
 		res.ContentLength = -1
 		res.Body = body
@@ -141,6 +155,46 @@ func TestCOSPhotoCandidateRejectsUnboundedChunkedResponse(t *testing.T) {
 	})
 	if _, err := s.RenderPhotoCandidate(context.Background(), source, PhotoGridJPEG); !errors.Is(err, ErrPhotoCandidate) || !body.closed || reader.read > (2<<20)+1 {
 		t.Fatalf("unbounded candidate: %v", err)
+	}
+}
+
+func TestCOSPhotoMissingVersionHeaderRequiresStableSource(t *testing.T) {
+	for _, scenario := range []string{"stable", "before-version", "after-version", "after-size", "after-error"} {
+		t.Run(scenario, func(t *testing.T) {
+			source := candidateSource()
+			heads, gets := 0, 0
+			s := cosFixture(t, func(r *http.Request) (*http.Response, error) {
+				if r.Method == "HEAD" {
+					heads++
+					version := source.VersionID
+					if scenario == "before-version" || (scenario == "after-version" && heads == 2) {
+						version = "changed"
+					}
+					res := cosResponse(r, "", version)
+					res.ContentLength = source.SizeBytes
+					if scenario == "after-size" && heads == 2 {
+						res.ContentLength++
+					}
+					if scenario == "after-error" && heads == 2 {
+						return nil, io.ErrUnexpectedEOF
+					}
+					return res, nil
+				}
+				gets++
+				return cosResponse(r, string(candidateImage(t, "jpeg", 11)), ""), nil
+			})
+			candidate, err := s.RenderPhotoCandidate(context.Background(), source, PhotoGridJPEG)
+			if scenario == "stable" {
+				if err != nil || len(candidate.Bytes) == 0 || heads != 2 || gets != 1 {
+					t.Fatal("stable source rejected", err)
+				}
+			} else if err == nil || candidate.Bytes != nil {
+				t.Fatal("changed/unverified source accepted")
+			}
+			if scenario == "before-version" && gets != 0 {
+				t.Fatal("processed stale source")
+			}
+		})
 	}
 }
 
