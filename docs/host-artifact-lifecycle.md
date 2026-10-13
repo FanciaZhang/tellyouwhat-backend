@@ -19,6 +19,8 @@ Each producer must finish its own cleanup before claiming completion. Nightly ma
 
 For Birthday and Albums, first register the already verified current selection. Subsequent producers use the shared lock order and register only after readiness succeeds:
 
+Run the wrapper and registration as the backend directory owner (`ubuntu`), including when calling the Python functions directly. A different effective user is rejected before the producer runs or any recovery registration is replaced. Root-owned mode-600 records prevent the scheduled operator from reading the protected selections.
+
 ```sh
 python3 /opt/tellyouwhat/backend/deploy/tencent/ops_artifacts.py \
   --apply --register --owner albums-test --source "$SOURCE_SHA" --source-run "$RUN_ID" \

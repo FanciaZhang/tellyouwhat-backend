@@ -7,7 +7,7 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from ops_artifacts import GRACE_SECONDS, development_deploy, plan_cleanup
+from ops_artifacts import GRACE_SECONDS, development_deploy, plan_cleanup, register
 from ops_common import OperationError
 
 
@@ -87,6 +87,8 @@ class ArtifactRetentionTests(unittest.TestCase):
 
     def deployment_runtime(self):
         runtime = Mock()
+        runtime.root = self.root
+        runtime.state = self.root / ".operations"
         events = []
 
         @contextmanager
@@ -97,6 +99,20 @@ class ArtifactRetentionTests(unittest.TestCase):
 
         runtime.lock.side_effect = lock
         return runtime, events
+
+    def test_wrong_operator_cannot_replace_recovery_registration_or_run_producer(self):
+        runtime, events = self.deployment_runtime()
+        register(runtime, "albums-test", images=["albums:previous"], source="previous")
+        record = runtime.state / "artifact-owners/albums-test.json"
+        before = record.read_bytes()
+        with patch("ops_artifacts.os.geteuid", return_value=self.root.stat().st_uid + 1):
+            with self.assertRaisesRegex(OperationError, "backend directory owner"):
+                register(runtime, "albums-test", images=["albums:new"], source="new")
+            with self.assertRaisesRegex(OperationError, "backend directory owner"):
+                development_deploy(runtime, "albums-test", [], ["albums:new"], "new", "run", ["producer"], "http://127.0.0.1:18090/readyz")
+        self.assertEqual(record.read_bytes(), before)
+        runtime.execute.assert_not_called()
+        self.assertEqual(events, [])
 
     def test_development_registers_only_after_readiness_under_both_locks(self):
         runtime, events = self.deployment_runtime()
