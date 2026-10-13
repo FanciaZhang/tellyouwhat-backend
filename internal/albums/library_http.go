@@ -68,6 +68,22 @@ func (h *uploadHTTP) GetAlbumAssetVersion(c *gin.Context, versionID uuid.UUID) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (h *uploadHTTP) CheckAlbumOriginalAvailability(c *gin.Context, versionID uuid.UUID) {
+	if !emptyAlbumBody(c) {
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		writeAlbumError(c, ErrInvalidManifest)
+		return
+	}
+	result, err := h.service.CheckOriginalAvailability(c.Request.Context(), c.GetString("album.owner"), versionID.String())
+	if err != nil {
+		writeLibraryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *uploadHTTP) AuthorizeAlbumOriginalRead(c *gin.Context, versionID uuid.UUID, resourceID albumhttpapi.ResourceID) {
 	if !emptyAlbumBody(c) {
 		return

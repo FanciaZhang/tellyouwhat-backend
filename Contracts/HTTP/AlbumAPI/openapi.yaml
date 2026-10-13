@@ -322,6 +322,19 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AssetVersion'}
         default: {$ref: '#/components/responses/Error'}
+  /v1/albums/library/versions/{versionID}/original-availability:
+    post:
+      operationId: checkAlbumOriginalAvailability
+      description: Empty body. Checks every previously byte-verified immutable original against online storage and rechecks account, lifecycle and retention. Point-in-time result only; does not reserve objects or authorize system-original deletion.
+      parameters:
+        - {name: versionID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: All sealed original resources were available during this bounded check; no storage URLs or keys
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OriginalAvailability'}
+        default: {$ref: '#/components/responses/Error'}
   /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant:
     post:
       operationId: authorizeAlbumOriginalRead
@@ -1036,6 +1049,19 @@ components:
           minItems: 1
           maxItems: 32
           items: {$ref: '#/components/schemas/Resource'}
+    OriginalAvailability:
+      type: object
+      additionalProperties: false
+      required: [assetID, versionID, manifestDigest, sourceRevision, originalBytes, resourceCount, startedAt, checkedAt]
+      properties:
+        assetID: {type: string, pattern: '^[A-Za-z0-9_-]{1,96}$'}
+        versionID: {type: string, format: uuid}
+        manifestDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        sourceRevision: {type: string, minLength: 1, maxLength: 256}
+        originalBytes: {type: integer, format: int64, minimum: 1}
+        resourceCount: {type: integer, minimum: 1, maximum: 32}
+        startedAt: {type: string, format: date-time}
+        checkedAt: {type: string, format: date-time}
     AssetVersion:
       type: object
       additionalProperties: false
