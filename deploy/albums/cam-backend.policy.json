@@ -19,6 +19,11 @@
     },
     {
       "effect": "allow",
+      "action": ["cos:UploadPart"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]
+    },
+    {
+      "effect": "allow",
       "action": ["ci:GenerateMediaInfo", "ci:CreateMediaJobs", "ci:DescribeMediaJob", "ci:DescribeMediaJobs"],
       "resource": ["qcs::ci:ap-guangzhou:uid/1251995834:bucket/tellyouwhat-albums-1251995834/*"]
     }

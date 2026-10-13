@@ -16,15 +16,17 @@
 
 数据万象[异步任务接口](https://cloud.tencent.com/document/product/460/84789)还要求 `cam:PassRole`。`cam-media-role.policy.json` 只允许后端传递 `CI_QCSRole`；它不限制该角色本身可访问的 COS 数据，因此不能单独绑定来解锁处理。
 
-2026-10-13 控制台只列出相册这一个 CI 桶，但共享 `CI_QCSRole` 自 2018 年存在，仍关联 `QcloudPartAccessForCIRole`、`QcloudAccessForCIRole` 和 `QcloudCOSDataFullControl`，没有权限边界。桶列表不能证明所有旧业务都不依赖此角色。公开提交任务说明及当前 SDK `CreateMediaJobsOptions` 未提供可确认的自定义角色参数；不要编造一个独立角色并宣称任务会使用它。
+2026-10-13 控制台只列出相册这一个 CI 桶，但共享 `CI_QCSRole` 自 2018 年存在，调整前关联 `QcloudPartAccessForCIRole`、`QcloudAccessForCIRole` 和 `QcloudCOSDataFullControl`，没有权限边界。桶列表不能证明所有旧业务都不依赖此角色。公开提交任务说明及当前 SDK `CreateMediaJobsOptions` 未提供可确认的自定义角色参数；不要编造一个独立角色并宣称任务会使用它。
 
-**待用户明确确认、尚未应用的方案**：把这三条共享角色策略替换为 `cam-ci-service.policy.json`，再将既有 `cam-media-role.policy.json` 绑定到 `albums-test-backend`。新服务策略只允许读取相册测试桶的 `albums/originals/*` 和 `albums/video-previews/*`，写入及分片管理仅限 `albums/video-previews/*`。当前视频及实况动态派生由 `SubmitVideoOnce` 使用此输出目录；静态图片仍通过现有同步图片适配器处理。没有对象删除、原件写入、桶管理、跨桶、CAM 或其他云服务权限。此替换会限制整个共享 CI 角色，旧业务若依赖它可能停止处理；不能仅增加受限策略却保留原来的宽泛策略。
+**用户明确确认后已应用**：共享角色只绑定 `AlbumsTestCIMediaService`（289600252，版本 2），原三条策略已解除；`AlbumsTestCIMediaPassRole`（289601206）只关联 `albums-test-backend`。新服务策略只允许读取相册测试桶的 `albums/originals/*` 和 `albums/video-previews/*`，写入及分片管理仅限 `albums/video-previews/*`。当前视频及实况动态派生由 `SubmitVideoOnce` 使用此输出目录；静态图片仍通过现有同步图片适配器处理。没有对象删除、原件写入、桶管理、跨桶、CAM 或其他云服务权限。此替换限制整个共享 CI 角色，旧业务若依赖它可能停止处理；不能仅增加受限策略却保留原来的宽泛策略。
 
 执行顺序：记录原关联策略 ID，创建并绑定 `AlbumsTestCIMediaService`，移除原三条策略并核对只剩新策略，然后创建/绑定 `AlbumsTestCIMediaPassRole` 到后端身份。以合成短视频验证当前桶内读取与派生输出，并验证越出目录/跨桶/写原件的任务失败，核对精确对象版本及大小；错误按最小所需权限定位，不能扩大为 `cos:*` 或 `cam:*`。自动处理仍保持关闭直到真实媒体链路通过。若需回滚，先撤销新增 PassRole，再恢复之前的角色关联，避免后端重新获得宽泛间接访问。角色会话与权限变更可能有传播延迟，必须重新验证，不能把控制台绑定成功当作隔离已通过。
 
-`python3 deploy/albums/cam_policy_test.py` 只检查本地简单 allow-list 的范围及 PassRole 目标，不模拟腾讯 CAM、不证明服务可用，也不证明云端实际拒绝。当前两份策略均未配置到云端。
+首次真实任务在写 COS 时返回 `ResourceAccessDenied`，已先撤销 PassRole、再恢复原角色三条策略。对照[腾讯持久化权限说明](https://cloud.tencent.com/document/product/460/36239)，在服务策略及后端策略中补齐仅限预览目录的 `cos:UploadPart` 后重新应用；后端策略 289454608 当前为版本 2。第二次真实任务成功，输出 H.264/AAC 可完整解码；读取 staging、写入 originals、写入 derivatives 三项任务均以 `ResourceAccessDenied` 失败，源对象最新版本和字节未变。探针视频 89,230 字节、输出 93,014 字节，本次验证权限和处理连通，不证明压缩收益。跨桶、真实实况、完整应用及并发/大文件仍未验证，自动处理保持关闭。详见 `docs/evidence/albums-ci-role-change-2026-10-13.json`。
 
-权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；2026-10-12 已用合成字节验证真实暂存上传、普通 COPY 的固定版本归档/读取及哈希、分片初始化/上传/列举/合并；上传读暂存/写归档、后端越出相册前缀写入/读取桶 ACL 均返回 403。跨桶、永久删除拒绝、分片复制及 CI 服务角色范围仍待单独验证。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
+`python3 deploy/albums/cam_policy_test.py` 的 3 项检查只验证本地简单 allow-list 范围及 PassRole 目标，不模拟腾讯 CAM。真实探针通过 `ALBUM_CI_ROLE_PROBE=1 go run deploy/albums/ci_role_probe.go <合成小MP4> <输出目录>` 手动执行；固定测试桶和队列、每次随机键、不删除数据，不纳入自动测试。它仅使用后端测试身份，结果代表该身份与当前服务角色的组合权限。
+
+权限格式及操作依据：[COS 分片上传](https://cloud.tencent.com/document/product/436/65644)、[COS 复制](https://intl.cloud.tencent.com/zh/document/product/436/78078)、[CI 授权粒度](https://cloud.tencent.com/document/product/460/41741)。CAM 文件通过静态范围检查也不证明真实服务会允许/拒绝；2026-10-12 已用合成字节验证真实暂存上传、普通 COPY 的固定版本归档/读取及哈希、分片初始化/上传/列举/合并；上传读暂存/写归档、后端越出相册前缀写入/读取桶 ACL 均返回 403。跨桶与分片复制仍待单独验证；永久删除拒绝及 CI 同桶目录边界的后续实测见本文对应记录。派生回收保持关闭，所需版本列举/永久删除权限后续单独配置和验收。
 
 ## 构建与接入
 

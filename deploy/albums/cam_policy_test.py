@@ -27,6 +27,8 @@ class CIMediaPolicyTests(unittest.TestCase):
             ("cos:GetObject", original, True),
             ("cos:HeadObject", original, True),
             ("cos:PutObject", output, True),
+            ("cos:UploadPart", output, True),
+            ("cos:UploadPart", original, False),
             ("cos:CompleteMultipartUpload", output, True),
             ("cos:AbortMultipartUpload", output, True),
             ("cos:PutObject", original, False),
@@ -50,6 +52,12 @@ class CIMediaPolicyTests(unittest.TestCase):
             "effect": "allow", "action": ["cam:PassRole"],
             "resource": ["qcs::cam::uin/757772438:roleName/CI_QCSRole"],
         }]})
+
+    def test_backend_upload_part_is_limited_to_video_previews(self):
+        policy = json.loads(Path(__file__).with_name("cam-backend.policy.json").read_text())
+        matches = [entry for entry in policy["statement"] if "cos:UploadPart" in entry["action"]]
+        self.assertEqual(matches, [{"effect": "allow", "action": ["cos:UploadPart"],
+            "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]}])
 
 
 if __name__ == "__main__":

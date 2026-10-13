@@ -528,3 +528,9 @@ HTTP 合约与 Swift 未变，不重复构建 iOS。未部署迁移、未调用�
 隔离 MySQL 8.4/Redis 专项 **32 passed**，相关 race **697 passed / 0 failed / 0 skipped**（两组有重叠），全仓 vet/build 通过。Swift HTTP 合约三个套件共 **24 passed**，OpenAPI 生成可重复。覆盖签名与用途混淆、HTTP 输入/代理/限流、数据库回滚、跨设备与账户隔离、重复/乱序和并发登录。[源码及验证证据](evidence/albums-apple-notifications-2026-10-12.json)。临时数据库服务已停止；首次触发器故障注入权限不足后改为测试表改名，没有扩大数据库权限；两处旧测试预期已同步并重跑通过。
 
 当前测试服务器仍为 6f6ec95、39 项迁移。本次没有部署 API、登记真实 Apple 通知地址或接收真实事件；私钥安装、真实登录与跨设备撤销仍待验收。
+
+## 2026-10-13 CI 服务角色收紧与真实任务验证
+
+用户明确确认共享角色影响及 PassRole 后，按部署说明替换角色策略、绑定专用 PassRole。首次任务写 COS 被拒绝，先撤销 PassRole 后恢复旧角色；补齐仅预览前缀的 UploadPart 后再次收紧，真实转码成功。H.264/AAC 输出已按精确版本下载、校验大小/SHA-256并完整解码。读取 staging、写 originals、写 derivatives 的任务均返回 ResourceAccessDenied，源版本及字节不变。最终角色只保留 AlbumsTestCIMediaService v2，PassRole 只关联 albums-test-backend；后端基础策略 v2仅增加预览目录 UploadPart。
+
+此探针使用后端测试凭据和当前服务角色的组合权限，只覆盖合成短视频与同桶三个越界用例；不覆盖跨桶、大文件、实况、应用登录到系统副本的完整链路。输出略大于输入，不作为压缩收益证据。没有删除对象、没有开放自动处理或派生回收。详见[配置、两次任务和回滚证据](evidence/albums-ci-role-change-2026-10-13.json)。
