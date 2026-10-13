@@ -242,7 +242,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                     from deletion_ledger import restore_fences
                     restore_fences(runtime, sql, entries)
                     restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
-                    unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at"]).decode().strip()
+                    unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at OR s.subscription_checked_revision IS NOT NULL OR s.subscription_checked_at IS NOT NULL"]).decode().strip()
                     if restored_intents != str(len(entries)) or unblocked != "0":
                         raise OperationError("restored deletion intent or storage fence mismatch")
                 runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())

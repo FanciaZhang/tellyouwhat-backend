@@ -102,7 +102,10 @@ INSERT INTO album_deletion_ledger SELECT n.* FROM recovery_deletions n LEFT JOIN
 INSERT INTO album_account_deletions(account_id,request_id,authorizing_session_sha256,requested_at)
  SELECT n.* FROM recovery_deletions n JOIN album_accounts a ON a.account_id=n.account_id LEFT JOIN album_account_deletions old ON old.account_id=n.account_id WHERE old.account_id IS NULL;
 UPDATE album_accounts a JOIN recovery_deletions n ON n.account_id=a.account_id SET a.state='deleting';
-UPDATE album_storage_accounts a JOIN recovery_deletions n ON n.account_id=a.owner_id SET a.deletion_requested_at=n.requested_at;
+-- Reopening binding jobs invalidates the full-set receipt in the same transaction.
+-- A restored receipt cannot authorize later erasure before Apple is rechecked.
+UPDATE album_storage_accounts a JOIN recovery_deletions n ON n.account_id=a.owner_id
+ SET a.deletion_requested_at=n.requested_at,a.subscription_checked_revision=NULL,a.subscription_checked_at=NULL;
 UPDATE album_apple_grants g JOIN recovery_deletions n ON n.account_id=g.account_id SET g.revoked_at=COALESCE(g.revoked_at,n.requested_at);
 UPDATE album_retention_reminders m JOIN recovery_deletions n ON n.account_id=m.owner_id SET m.state='cancelled',m.lease_token=NULL,m.lease_until=NULL WHERE m.state='pending';
 INSERT INTO album_deletion_apple_jobs(grant_id,account_id,request_id,available_at)

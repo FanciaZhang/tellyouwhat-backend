@@ -274,3 +274,6 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 
 实况原生往返使用 `--scenario cloud-live` 与 `TestLiveCOSNativeLivePhotoPipeline`。从原生合成的两秒实况导入系统图库开始，完整上传原始双文件，运行照片/视频 worker，原生重建日常配对后走正式分片与配对核验 worker；第二进程优先读取云端固定配对，核对本机已保存副本。原始双文件分别全量回读验哈希，系统日常版与恢复原件均等待 PHLivePhotoView 播放开始/结束。账户及控制服务仍隔离，所有合成媒体保留，无线上变更。见 `docs/evidence/albums-native-cloud-live-2026-10-14.json`。
+
+
+恢复删除日志时，整体订阅核验记录与各购买链回执在同一事务清除；旧备份中的完成记录不能用于注销收尾。演练会检查清除结果；回滚、重放、其他账户隔离及重新核验均经隔离 MySQL 验证。见 `docs/evidence/albums-recovery-subscription-receipt-2026-10-14.json`。尚未部署，不代表最终身份或灾备擦除完成。
