@@ -2,6 +2,7 @@
 """Deploy verified images and restore the previous runtime after activation failure."""
 
 import argparse
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -14,11 +15,19 @@ import tempfile
 import time
 
 from ops_common import OperationError, Runtime, read_environment, compose_command
+from ops_backup import create_backup, verify_backup
+from ops_artifacts import cleanup
 
 
 RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
+
+
+def require_disk_space(runtime):
+    disk = shutil.disk_usage(runtime.root)
+    if disk.free < max(8 * 1024**3, disk.total * 0.2):
+        raise OperationError("release requires at least 8 GiB and 20 percent free disk space")
 
 
 def copy_runtime(source, destination):
@@ -145,6 +154,15 @@ def require_automation_compatibility(current, target):
 
 
 def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-green", source_run="", confirmation=""):
+    if strategy not in ("blue-green", "disruptive"):
+        raise OperationError("unsupported release strategy")
+    source = Path(bundle).resolve() if bundle else runtime.root
+    validate(source, tag, registry, acceptance)
+    require_disk_space(runtime)
+    backup = create_backup(runtime)
+    verify_backup(runtime, runtime.backups / backup["filename"])
+    runtime.record("release_backup", tag=tag, registry=registry, source_run=source_run,
+                   filename=backup["filename"], sha256=backup["sha256"])
     if strategy == "disruptive":
         from disruptive_release import deploy as disruptive_deploy
         return disruptive_deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, confirmation)
@@ -243,20 +261,28 @@ def main():
         if attempts < 1:
             raise OperationError("READINESS_ATTEMPTS must be positive")
         runtime = Runtime(args.backend_dir)
-        lock_wait = 0 if args.action == "maintain" else 30
-        with runtime.lock("deployment", wait_seconds=lock_wait), runtime.lock(wait_seconds=lock_wait):
+        lock_wait = 0 if args.action == "maintain" else 600
+        # Reconciliation never migrates data; it must continue during backups and cleanup.
+        operations_lock = contextlib.nullcontext() if args.action == "maintain" else runtime.lock(wait_seconds=lock_wait)
+        with operations_lock, runtime.lock("deployment", wait_seconds=lock_wait):
             runtime.refresh()
             if args.action == "deploy":
                 if not args.tag or not args.registry:
                     raise OperationError("image tag and registry are required")
                 result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
+                try:
+                    receipt = cleanup(runtime, "production")
+                    result["cleanup"] = {"passed": True, "completed_at": receipt["completed_at"]}
+                except (OperationError, OSError) as error:
+                    result["cleanup"] = {"passed": False, "error": str(error)}
+                    runtime.record("release_cleanup", passed=False, tag=args.tag, error=str(error))
             elif args.action == "rollback":
                 result = rollback(runtime, attempts)
             else:
                 import blue_green
                 result = blue_green.adopt(runtime) if args.action == "bootstrap" else getattr(blue_green, args.action)(runtime, attempts)
         print(json.dumps(result, sort_keys=True))
-        return 0
+        return 0 if result.get("cleanup", {}).get("passed", True) else 1
     except OperationError as error:
         from disruptive_release import ConfirmationRequired
         if isinstance(error, ConfirmationRequired):

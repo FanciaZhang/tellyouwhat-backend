@@ -352,10 +352,10 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run=""):
         validate_slot_config(runtime, candidate)
         runtime.execute("slot-migrate", compose(runtime, candidate, "run", "--rm", "--no-deps", "migrate"), timeout=300)
         runtime.execute("slot-start", compose(runtime, candidate, "up", "-d", "--no-build", *SERVICES), timeout=180)
+        require_ready(runtime, candidate, attempts)
         values = statuses(runtime, candidate)
         if any(v["backgroundEnabled"] or v["httpEnabled"] for v in values.values()):
             raise OperationError("candidate did not start in standby")
-        require_ready(runtime, candidate, attempts)
         candidate["healthy"] = True
         write_state(runtime, state, phase="READY")
         activate(runtime, state, candidate, attempts)

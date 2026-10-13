@@ -14,6 +14,7 @@ done
 
 backend_dir="$test_dir/backend"
 fake_bin="$test_dir/bin"
+real_python=$(command -v python3)
 command_log="$test_dir/commands.log"
 mkdir -p "$backend_dir/secrets" "$fake_bin"
 reset_environment() {
@@ -59,10 +60,30 @@ printf '200'
 SCRIPT
 chmod +x "$fake_bin/docker" "$fake_bin/curl"
 
+# This shell fixture checks deployment commands; backup and retention have their own real integration/tests.
+cat > "$fake_bin/python3" <<'SCRIPT'
+#!/usr/bin/env bash
+exec "$DEPLOY_TEST_REAL_PYTHON" - "$@" <<'PY'
+import sys
+from pathlib import Path
+from unittest.mock import patch
+sys.argv = sys.argv[1:]
+sys.path.insert(0, str(Path(sys.argv[0]).parent))
+import release
+with patch('release.require_disk_space'), \
+     patch('release.create_backup', return_value={'filename':'fixture.enc','sha256':'fixture'}), \
+     patch('release.verify_backup'), \
+     patch('release.cleanup', return_value={'passed':True,'completed_at':0}):
+    raise SystemExit(release.main())
+PY
+SCRIPT
+chmod +x "$fake_bin/python3"
+
 run_deploy() {
   : > "$command_log"
   PATH="$fake_bin:$PATH" READINESS_ATTEMPTS=1 \
     DEPLOY_TEST_COMMAND_LOG="$command_log" DEPLOY_TEST_FAILURE="${2:-}" \
+    DEPLOY_TEST_REAL_PYTHON="$real_python" \
     TELLYOUWHAT_BACKEND_DIR="$backend_dir" \
     bash "$script_dir/deploy-production.sh" test-tag test-prefix "$1"
 }
