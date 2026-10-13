@@ -89,6 +89,9 @@ func (r *MySQLAccounts) requestAccountDeletion(ctx context.Context, token, reque
 	if _, err = tx.ExecContext(ctx, `INSERT INTO album_account_deletions(account_id,request_id,authorizing_session_sha256,requested_at) VALUES (?,?,?,?)`, owner, requestID, digest[:], at); err != nil {
 		return accountDeletionRequest{}, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO album_deletion_ledger(account_id,request_id,authorizing_session_sha256,requested_at) VALUES (?,?,?,?)`, owner, requestID, digest[:], at); err != nil {
+		return accountDeletionRequest{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE album_accounts SET state='deleting' WHERE account_id=?`, owner); err != nil {
 		return accountDeletionRequest{}, err
 	}

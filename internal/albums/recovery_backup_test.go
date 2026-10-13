@@ -71,6 +71,9 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 		args = append(args, extra...)
 		data, err := exec.Command("python3", args...).CombinedOutput()
 		if err != nil {
+			if diagnostic, readErr := os.ReadFile(filepath.Join(root, ".operations", "albums-restore-deletion-fences.stderr")); readErr == nil {
+				t.Logf("isolated synthetic fixture diagnostic: %s", diagnostic)
+			}
 			t.Fatalf("backup command failed: %v %s", err, data)
 		}
 		var result map[string]any
@@ -89,7 +92,7 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 		t.Fatal("plaintext backup")
 	}
 	restored := run("drill", "--backup", filename)
-	if restored["quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != float64(34) {
+	if restored["quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != float64(35) {
 		t.Fatal("incomplete drill")
 	}
 	folders, _ := filepath.Glob(filepath.Join(root, ".operations", "albums-restore-*"))
@@ -106,6 +109,45 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	}
 	if _, err = f.repo.AssetVersion(context.Background(), f.login.AccountID, f.version.VersionID); err != nil {
 		t.Fatal("source media missing", err)
+	}
+	oldLedger := run("ledger")
+	if _, err = accounts.requestAccountDeletion(context.Background(), f.session.Token, "10000000-0000-4000-8000-000000000098", sessions.now); err != nil {
+		t.Fatal(err)
+	}
+	currentLedger := run("ledger")
+	ledgerPath := filepath.Join(root, "vault", currentLedger["filename"].(string))
+	reconciled := run("drill", "--backup", filename, "--deletion-ledger", ledgerPath, "--deletion-ledger-sha256", currentLedger["sha256"].(string))
+	if reconciled["deletion_ledger_applied"] != true || reconciled["deletion_intents"] != float64(2) {
+		t.Fatal("post-snapshot deletion not restored")
+	}
+	newSnapshot := run("backup")
+	oldLedgerPath := filepath.Join(root, "vault", oldLedger["filename"].(string))
+	// Re-sign the older synthetic checkpoint with a current clock to exercise
+	// missing-intent detection in SQL, independently of the age check.
+	restamp := `import sys,json,time
+sys.path.insert(0,sys.argv[1])
+from backup import Runtime,configure
+from ops_backup import backup_secret,manifest_signature,file_digest
+from ops_common import atomic_json
+r=Runtime(sys.argv[2],sys.argv[3],sys.argv[4]);configure(r)
+e=json.load(open(sys.argv[5]));e["payload"]["exported_at"]=int(time.time());e["hmac_sha256"]=manifest_signature(backup_secret(r),e["payload"])
+atomic_json(sys.argv[5],e);print(file_digest(sys.argv[5]))
+`
+	restamped, restampErr := exec.Command("python3", "-c", restamp, filepath.Dir(script), root, filepath.Join(root, "vault"), envPath, oldLedgerPath).Output()
+	if restampErr != nil {
+		t.Fatal("synthetic checkpoint restamp", restampErr)
+	}
+	oldLedger["sha256"] = strings.TrimSpace(string(restamped))
+	badArgs := []string{script, "drill", "--backend-dir", root, "--environment-file", envPath, "--backup-dir", filepath.Join(root, "vault"), "--mysql-bin-dir", binaries, "--backup", newSnapshot["filename"].(string), "--deletion-ledger", oldLedgerPath, "--deletion-ledger-sha256", oldLedger["sha256"].(string)}
+	if exec.Command("python3", badArgs...).Run() == nil {
+		t.Fatal("older ledger removed a deletion present in snapshot")
+	}
+	if _, err = f.db.Exec(`DELETE FROM album_deletion_ledger WHERE account_id=?`, f.login.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	badExport := []string{script, "ledger", "--backend-dir", root, "--environment-file", envPath, "--backup-dir", filepath.Join(root, "vault"), "--mysql-bin-dir", binaries}
+	if exec.Command("python3", badExport...).Run() == nil {
+		t.Fatal("export hid a missing deletion intent")
 	}
 	if _, err = f.db.Exec(`CREATE TABLE album_future_private (id INT PRIMARY KEY)`); err != nil {
 		t.Fatal(err)

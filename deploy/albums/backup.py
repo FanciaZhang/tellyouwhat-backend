@@ -31,7 +31,7 @@ RETENTION = 14 * 86400
 TABLES = tuple("""album_account_deletions album_account_object_purges album_accounts
 album_apple_grants album_apple_identity_state album_asset_lifecycle album_asset_operations
 album_asset_versions album_cloud_subscriptions album_deletion_apple_jobs
-album_deletion_subscription_jobs album_deletion_video_jobs album_derived_cleanups
+album_deletion_subscription_jobs album_deletion_ledger album_deletion_video_jobs album_derived_cleanups
 album_derived_finalizations album_library_changes album_live_pair_multiparts album_live_pairs
 album_login_challenges album_multipart_completions album_multipart_intents album_object_purges
 album_original_seals album_photo_jobs album_photo_writes album_push_registrations
@@ -166,10 +166,14 @@ def create(runtime, binaries):
     return runtime.record("albums-backup", filename=filename, sha256=m["sha256"], tables=len(counts))
 
 
-def drill(runtime, binaries, filename):
+def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
     m = verify(runtime, runtime.backups / filename)
     if m["created_at"] <= time.time() - RETENTION:
         raise OperationError("Albums backup is outside retention")
+    entries = None
+    if ledger_path is not None or ledger_digest is not None:
+        from deletion_ledger import verify as verify_ledger
+        entries = verify_ledger(runtime, ledger_path, ledger_digest, m["created_at"])
     # No live restore target is accepted. Only this newly created, socket-only
     # server receives SQL; quarantine never substitutes for a deletion ledger.
     with tempfile.TemporaryDirectory(prefix="albums-restore-", dir=runtime.state) as directory:
@@ -232,6 +236,13 @@ def drill(runtime, binaries, filename):
                             hashes[row[1].decode()].update(line)
                 if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in TABLES):
                     raise OperationError("Albums restored content differs from snapshot")
+                if entries is not None:
+                    from deletion_ledger import restore_fences
+                    restore_fences(runtime, sql, entries)
+                    restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
+                    unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at"]).decode().strip()
+                    if restored_intents != str(len(entries)) or unblocked != "0":
+                        raise OperationError("restored deletion intent or storage fence mismatch")
                 runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
                 exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT (SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
                 if exposed != "0":
@@ -244,17 +255,19 @@ def drill(runtime, binaries, filename):
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=10)
-    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(TABLES), quarantined=True, disposable_database_removed=True)
+    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(TABLES), quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
     parser.add_argument("--mysql-bin-dir", default="/usr/bin")
     parser.add_argument("--backup")
+    parser.add_argument("--deletion-ledger")
+    parser.add_argument("--deletion-ledger-sha256")
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -264,8 +277,12 @@ def main():
             binaries = Path(args.mysql_bin_dir)
             if args.operation == "backup": result = create(runtime, binaries)
             elif args.operation == "prune": result = {"removed": prune(runtime)}
+            elif args.operation == "ledger":
+                from deletion_ledger import publish
+                sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + runtime.config["MYSQL_DATABASE"], "--batch", "--skip-column-names"]
+                result = publish(runtime, sql, {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")})
             elif not args.backup: raise OperationError("drill requires a backup filename")
-            else: result = drill(runtime, binaries, args.backup)
+            else: result = drill(runtime, binaries, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
         print(json.dumps({"passed": True, **result}, sort_keys=True))
         return 0
     except OperationError as error:
