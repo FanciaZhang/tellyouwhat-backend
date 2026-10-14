@@ -37,7 +37,7 @@ func liveNativePipeline(t *testing.T, kind AssetKind) {
 		expectedPhotos, expectedVideos, expectedPairs, expectedVersions = 4, 2, 1, 3
 	}
 	objects, root, ctx := liveRoundtripFixture(t)
-	if kind == AssetKind("mixed") {
+	if kind == AssetKind("mixed") || os.Getenv("ALBUMS_NATIVE_SYSTEM_RELEASE") == "1" {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
 		t.Cleanup(cancel)
