@@ -27,7 +27,7 @@ func TestProductionCloudRightsAreUnaffectedBySandboxLifecycle(t *testing.T) {
 			production.add(paid, now)
 			baseline := AlbumCloudAccount{State: "none"}
 			applyProductionCloudEntitlements(&baseline, production, cloudSubscriptionSummary{}, now, 1_000_000_000)
-			if baseline.State != paidState {
+			if baseline.State != paidState || baseline.QuotaKind != "subscription" {
 				t.Fatal("wrong paid fixture state", baseline.State)
 			}
 			for _, expiry := range []time.Time{now.Add(time.Minute), now.Add(-time.Minute), now.AddDate(0, -12, 0)} {
@@ -51,7 +51,7 @@ func TestSandboxCapacityIsCappedAndExpiryNeverProducesDeletionDeadline(t *testin
 			sandbox.add(cloudSubscriptionRow{Environment: "Sandbox", Product: Cloud500GBAnnualProduct, Quota: 500_000_000_000, Active: true, Expiry: now.Add(-elapsed), VerifiedAt: now}, now)
 			a := AlbumCloudAccount{State: "none", UsedBytes: 500_000_000}
 			applyProductionCloudEntitlements(&a, cloudSubscriptionSummary{}, sandbox, now, 1_000_000_000)
-			if a.RetentionDeadline != nil || a.State == "retention_due" || retentionDue(a, now) {
+			if a.QuotaKind != "sandbox" || a.RetentionDeadline != nil || a.State == "retention_due" || retentionDue(a, now) {
 				t.Fatal("Sandbox expiry authorized retention cleanup")
 			}
 			if elapsed < 0 {

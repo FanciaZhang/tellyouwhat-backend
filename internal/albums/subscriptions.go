@@ -211,6 +211,7 @@ type AlbumCloudAccount struct {
 	AppAccountToken       string     `json:"appAccountToken"`
 	AccountID             string     `json:"accountID"`
 	State                 string     `json:"state"`
+	QuotaKind             string     `json:"quotaKind,omitempty"`
 	ProductID             string     `json:"productID,omitempty"`
 	QuotaBytes            int64      `json:"quotaBytes"`
 	UsedBytes             int64      `json:"usedBytes"`

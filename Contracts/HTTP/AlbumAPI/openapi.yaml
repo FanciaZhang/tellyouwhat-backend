@@ -848,6 +848,10 @@ components:
       properties:
         accountID: {type: string, format: uuid}
         state: {type: string, enum: [none, active, expired, retention_due]}
+        quotaKind:
+          type: string
+          enum: [subscription, sandbox]
+          description: Server-selected quota policy. Omitted responses retain subscription rules. Sandbox capacity is capped, expiry blocks new uploads without creating a retention deletion deadline.
         productID: {type: string, enum: [albums.cloud.50gb.annual, albums.cloud.500gb.annual]}
         quotaBytes: {type: integer, format: int64, minimum: 0}
         usedBytes: {type: integer, format: int64, minimum: 0}

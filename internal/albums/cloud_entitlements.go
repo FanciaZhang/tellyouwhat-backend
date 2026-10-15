@@ -54,9 +54,13 @@ func applyProductionCloudEntitlements(a *AlbumCloudAccount, production, sandbox 
 	// Sandbox cannot replace paid rights, renew a paid retention deadline, or
 	// turn a paid cancellation into free storage, even after that purchase expires.
 	if production.seen {
+		a.QuotaKind = "subscription"
 		production.apply(a, now, true, true, 0)
 		return
 	}
 	// Accelerated Sandbox expiry stops new uploads, never authorizes deletion.
+	if sandbox.seen {
+		a.QuotaKind = "sandbox"
+	}
 	sandbox.apply(a, now, true, false, sandboxLimit)
 }
