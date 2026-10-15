@@ -344,6 +344,10 @@ func (config PlatformConfig) Validate() error {
 	return err
 }
 
+func (config AppConfig) RequiresActivationSecret(environment string) bool {
+	return environment == "development" && config.Registry.ID != appregistry.Birthday
+}
+
 func (config AppConfig) Validate(environment string) error {
 	if err := config.Registry.Validate(); err != nil {
 		return err
@@ -376,8 +380,11 @@ func (config AppConfig) Validate(environment string) error {
 	if environment == "production" && config.AttestationEnvironment != attestation.EnvironmentProduction {
 		return errors.New("production requires production App Attest")
 	}
-	if environment == "development" && (config.DevelopmentSecret == "" || len(config.AllowedBuilds) == 0) {
-		return errors.New("DEV_ACTIVATION_SECRET and ALLOWED_APP_BUILDS are required in development")
+	if environment == "development" && len(config.AllowedBuilds) == 0 {
+		return errors.New("ALLOWED_APP_BUILDS is required in development")
+	}
+	if config.RequiresActivationSecret(environment) && config.DevelopmentSecret == "" {
+		return errors.New("DEV_ACTIVATION_SECRET is required for this development App")
 	}
 	if environment == "production" && config.Registry.ID != appregistry.Birthday {
 		if err := config.AppStore.validate(); err != nil {

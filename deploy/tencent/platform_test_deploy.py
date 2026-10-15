@@ -1,4 +1,4 @@
-"""Bootstrap the independent platform test database and Birthday development API."""
+"""Deploy the independent platform test database and Birthday development API."""
 
 import argparse
 import fcntl
@@ -59,7 +59,7 @@ def selection(runtime, source):
                 'BIRTHDAY_API_HOSTS': HOST, 'BIRTHDAY_APP_ATTEST_ENV': 'production',
                 'AI_PROJECT_MONTHLY_BUDGET_CNY': '10'}
     if (any(app.get(k) != v for k, v in required.items())
-            or not re.fullmatch('[a-f0-9]{64}', app.get('BIRTHDAY_DEV_ACTIVATION_SECRET', ''))
+            or (app.get('BIRTHDAY_DEV_ACTIVATION_SECRET') and not re.fullmatch('[a-f0-9]{64}', app['BIRTHDAY_DEV_ACTIVATION_SECRET']))
             or not re.fullmatch(r'\d+(,\d+)*', app.get('BIRTHDAY_ALLOWED_APP_BUILDS', ''))
             or any(k.startswith(('HEALTH_', 'JOURNAL_', 'TOS_', 'ARK_MANAGEMENT_')) for k in app)
             or any(k in app for k in ('DATABASE_DSN', 'REDIS_URL', 'MYSQL_ROOT_PASSWORD'))
@@ -100,26 +100,7 @@ def ready():
     raise OperationError('platform test readiness failed')
 
 
-def activate(runtime, source):
-    require_operator(runtime.root)
-    for name in ('operations', 'deployment'):
-        with (runtime.state / (name + '.lock')).open('r') as handle:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                continue
-            raise OperationError('platform test bootstrap requires both owner locks')
-    folder, record, migrations = selection(runtime, source)
-    stable = json.loads((runtime.state / 'blue-green.json').read_text())
-    if stable.get('phase') != 'STABLE':
-        raise OperationError('wait for a stable production release')
-    assert_route(stable['current'])
-    # shortcut: initial Birthday-only stack; data-bearing upgrades need a verified backup and compatible rollback.
-    if ((runtime.state / 'platform-test.json').exists() or runtime.execute('platform-test-existing', [
-            'docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + PROJECT]).strip()
-            or runtime.execute('platform-test-volumes', ['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + PROJECT + '_']).strip()):
-        raise OperationError('platform test data already exists; do not repeat bootstrap')
-    runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
+def build_images(runtime, folder, record, source):
     for service in SERVICES:
         image = PROJECT + '-' + service + ':' + source
         existing = runtime.execute('platform-test-image-existing', ['docker', 'image', 'ls', '-q', image]).strip()
@@ -134,6 +115,86 @@ def activate(runtime, source):
             '-f', 'deploy/tencent/platform-test.Dockerfile', '--label', 'org.opencontainers.image.revision=' + source,
             '--label', 'cn.tellyouwhat.source-tar-sha256=' + record['files']['source.tar'], '-t', image, '-'],
             input=(folder / 'source.tar').read_bytes(), timeout=700)
+
+
+def update_enrollment(runtime, source, previous_source, folder, record):
+    state_path = runtime.state / 'platform-test.json'
+    previous = json.loads(private_file(runtime, state_path, 16384))
+    owner = json.loads(private_file(runtime, runtime.state / 'artifact-owners/platform-test.json', 16384))
+    old, _, _ = selection(runtime, previous_source)
+    if (source == previous_source or previous.get('source') != previous_source or previous.get('release') != str(old)
+            or owner.get('current', {}).get('source') != previous_source
+            or str(old) not in owner['current'].get('paths', [])):
+        raise OperationError('platform test update does not match the registered running release')
+    # shortcut: only enrollment policy changes; schema, infrastructure and other credentials need a separate upgrade path.
+    if (folder / 'compose.platform-test.yaml').read_bytes() != (old / 'compose.platform-test.yaml').read_bytes():
+        raise OperationError('enrollment update cannot change the platform test topology')
+    for filename, allowed in [('compose.env', {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}),
+                              ('runtime.env', {'BIRTHDAY_DEV_ACTIVATION_SECRET', 'BIRTHDAY_ALLOWED_APP_BUILDS'})]:
+        before, after = read_environment(old / filename), read_environment(folder / filename)
+        if {k: v for k, v in before.items() if k not in allowed} != {k: v for k, v in after.items() if k not in allowed}:
+            raise OperationError('enrollment update cannot replace unrelated configuration or credentials')
+    with tarfile.open(old / 'source.tar') as before, tarfile.open(folder / 'source.tar') as after:
+        def schemas(archive):
+            return {m.name: hashlib.sha256(archive.extractfile(m).read()).hexdigest() for m in archive.getmembers()
+                    if m.isfile() and m.name.startswith('migrations/')}
+        if schemas(before) != schemas(after):
+            raise OperationError('enrollment update cannot migrate or roll back database schemas')
+    container = json.loads(runtime.execute('platform-test-update-running', ['docker', 'inspect', PROJECT + '-gateway-1']))[0]
+    if not container['State']['Running'] or container['Config']['Image'] != PROJECT + '-gateway:' + previous_source:
+        raise OperationError('platform test running image differs from the rollback selection')
+    rows = runtime.execute('platform-test-update-schema', ['docker', 'exec', PROJECT + '-mysql-1', 'sh', '-c',
+        'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --database=platform_test --batch --skip-column-names '
+        '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations;"']).decode().strip()
+    if rows != str(previous['migrations']) + '\t' + previous['latest_migration']:
+        raise OperationError('platform test applied schema differs from the rollback selection')
+    from ops_backup import create_backup, verify_backup
+    snapshot = create_backup(runtime)
+    manifest = verify_backup(runtime, runtime.backups / snapshot['filename'])
+    if not manifest.get('recovery_platform_test'):
+        raise OperationError('platform test update requires an authenticated offsite recovery selection')
+    runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
+    build_images(runtime, folder, record, source)
+    try:
+        runtime.execute('platform-test-update-start', compose(folder, 'up', '-d', '--no-build', '--no-deps', 'gateway'), timeout=120)
+        ready()
+        running = json.loads(runtime.execute('platform-test-update-check', ['docker', 'inspect', PROJECT + '-gateway-1']))[0]
+        if (running['Config']['Image'] != PROJECT + '-gateway:' + source or not running['State']['Running']
+                or running['State'].get('OOMKilled') or running.get('RestartCount')):
+            raise OperationError('updated platform test gateway did not start cleanly')
+        result = {**previous, 'source': source, 'release': str(folder), 'files': record['files'],
+                  'previous': {k: v for k, v in previous.items() if k != 'previous'},
+                  'pre_update_backup': snapshot['filename'], 'real_app_attest_verified': False}
+        atomic_json(state_path, result)
+        return result
+    except Exception:
+        runtime.execute('platform-test-update-rollback', compose(old, 'up', '-d', '--no-build', '--no-deps', 'gateway'), timeout=120)
+        ready()
+        raise
+
+
+def activate(runtime, source, update_from=None):
+    require_operator(runtime.root)
+    for name in ('operations', 'deployment'):
+        with (runtime.state / (name + '.lock')).open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                continue
+            raise OperationError('platform test bootstrap requires both owner locks')
+    folder, record, migrations = selection(runtime, source)
+    stable = json.loads((runtime.state / 'blue-green.json').read_text())
+    if stable.get('phase') != 'STABLE':
+        raise OperationError('wait for a stable production release')
+    assert_route(stable['current'])
+    if update_from:
+        return update_enrollment(runtime, source, update_from, folder, record)
+    if ((runtime.state / 'platform-test.json').exists() or runtime.execute('platform-test-existing', [
+            'docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + PROJECT]).strip()
+            or runtime.execute('platform-test-volumes', ['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + PROJECT + '_']).strip()):
+        raise OperationError('platform test data already exists; do not repeat bootstrap')
+    runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
+    build_images(runtime, folder, record, source)
     try:
         runtime.execute('platform-test-databases', compose(folder, 'up', '-d', '--wait', '--wait-timeout', '120', 'mysql', 'redis'), timeout=180)
         runtime.execute('platform-test-migrate', compose(folder, 'run', '--rm', '--no-deps', 'migrate'), timeout=180)
@@ -164,15 +225,18 @@ def main():
     parser.add_argument('--backend-dir', default='/opt/tellyouwhat/backend')
     parser.add_argument('--source', required=True)
     parser.add_argument('--source-run', default='platform-test-bootstrap')
+    parser.add_argument('--update-from', help='exact current source; only same-schema enrollment updates are supported')
     parser.add_argument('--activate', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     os.umask(0o077)
     runtime = Runtime(args.backend_dir)
     folder, _, _ = selection(runtime, args.source)
     if args.activate:
-        activate(runtime, args.source)
+        activate(runtime, args.source, args.update_from)
         return
     command = [sys.executable, str(Path(__file__).resolve()), '--backend-dir', str(runtime.root), '--source', args.source, '--activate']
+    if args.update_from:
+        command += ['--update-from', args.update_from]
     result = development_deploy(runtime, 'platform-test', [str(folder)], [PROJECT + '-' + s + ':' + args.source for s in SERVICES],
                                args.source, args.source_run, command, 'http://127.0.0.1:18790/readyz', verify_host=HOST)
     print(json.dumps(result, sort_keys=True))

@@ -6,7 +6,9 @@
 
 ## 2026-10-16 独立开发环境
 
-当前开发身份为 `cn.tellyouwhat.birthday.dev`，API 为 `https://api-test.birthday.tellyouwhat.cn/`，production App Attest，允许构建号 3。源码 `833b81d` 的平台测试项目已运行独立 MySQL/Redis/网络、数据库账号及载荷/会话密钥；仅启用生日，服务端项目成本上限为每月 10 元。Debug 1.0 (3) 在开发者设置保存单独受限交付的激活码，不内置到 IPA；Release 不编译此入口，也不读取开发激活码。
+开发身份为 `cn.tellyouwhat.birthday.dev`，API 为 `https://api-test.birthday.tellyouwhat.cn/`，使用 production App Attest。生日改为自动设备注册，不再要求输入激活码；注册仍验证 Apple 签名、团队、Bundle ID、挑战和构建白名单，调用仍受单设备限额与每月 10 元服务端成本限制。健康、手记的既有注册策略保持原样。
+
+本次代码已提供同 schema 的注册策略升级：先制作并验证包含测试配置及 SQL 的 COS 备份，保持 MySQL、Redis、其他凭据及 Compose 拓扑，失败切回匹配的旧网关/配置。未运行迁移，也不重建数据卷。发布及真机结果分别记录在证据中。
 
 专属只读备份、独立 SQL 密钥、统一 COS 传输及隔离恢复已实际检查：93 张表及 73 条控制记录行数一致，设备登录、购买和 AI 请求行按既有规则不恢复。DNS/TLS、无有效证明的业务请求拒绝、公开挑战接口通过；真实手机 App Attest/推理和定时任务仍待验收。旧开发/外测服务当前仍在运行，后续迁到目标服务后下线，不再作为旧包兼容要求；旧 TestFlight 仍共享生日开发推理身份，正式资源隔离未完成。证据见 `docs/evidence/platform-test-runtime-2026-10-16.json`。
 
@@ -43,7 +45,7 @@
 | BIRTHDAY_APPLE_BUNDLE_ID | cn.tellyouwhat.birthday |
 | BIRTHDAY_APP_ATTEST_ENV | 与签名环境一致；生产必须 production |
 | BIRTHDAY_ALLOWED_APP_BUILDS | 开发设备允许注册的构建号 |
-| BIRTHDAY_DEV_ACTIVATION_SECRET | 仅开发注册使用的专用凭据 |
+| BIRTHDAY_DEV_ACTIVATION_SECRET | 已停用；生日自动验证真实设备，不要求口令 |
 | BIRTHDAY_ARK_BASE_URL | Ark Responses API 根地址 |
 | BIRTHDAY_ARK_API_KEY | 服务端推理凭据，不放进 App 或 Git |
 | BIRTHDAY_ARK_MODEL_ID | 支持结构化输出的专用模型配置 |

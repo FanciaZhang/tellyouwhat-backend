@@ -58,11 +58,24 @@ func TestBirthdayOnlyRuntimeKeepsOtherAppCredentialsOut(t *testing.T) {
 	app := &platform.Apps[0]
 	app.Registry.TeamID = "SYNTHETIC"
 	app.AttestationEnvironment = "development"
-	app.DevelopmentSecret = "synthetic-development-secret"
+	app.DevelopmentSecret = ""
 	app.AllowedBuilds = map[string]struct{}{"1": {}}
 	app.JournalAI.APIKey, app.JournalAI.LiteModel = "synthetic-key", "synthetic-model"
 	app.BirthdayPrice = platform.AICost.JournalArk
 	if err := platform.Validate(); err != nil {
 		t.Fatalf("text-only birthday still requires another App or media credentials: %v", err)
+	}
+	app.AllowedBuilds = nil
+	if err := platform.Validate(); err == nil {
+		t.Fatal("Birthday development must still restrict approved builds")
+	}
+}
+
+func TestBirthdayAutomaticEnrollmentKeepsOtherAppActivationRequirements(t *testing.T) {
+	for _, id := range []appregistry.AppID{appregistry.Birthday, appregistry.Health, appregistry.Journal} {
+		app := AppConfig{Registry: appregistry.App{ID: id}}
+		if app.RequiresActivationSecret("development") != (id != appregistry.Birthday) || app.RequiresActivationSecret("production") {
+			t.Fatalf("activation requirement incorrect for %s", id)
+		}
 	}
 }

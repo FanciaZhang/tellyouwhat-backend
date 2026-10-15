@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import shutil
 from pathlib import Path
 import tarfile
 import tempfile
@@ -85,6 +86,15 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'Compose differs'):
             dev.selection(self.runtime, self.source)
 
+    def test_automatic_enrollment_still_requires_approved_builds(self):
+        self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET')
+        self.save()
+        dev.selection(self.runtime, self.source)
+        self.app['BIRTHDAY_ALLOWED_APP_BUILDS'] = ''
+        self.save()
+        with self.assertRaises(OperationError):
+            dev.selection(self.runtime, self.source)
+
     def execute(self, label, command, **kwargs):
         if label == 'platform-test-schema':
             return b'1\t0001_example.sql\n1\n0\n'
@@ -124,6 +134,72 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'already exists'):
             self.activate()
         self.assertFalse(any(c.args[0].startswith('platform-test-build') for c in self.runtime.execute.call_args_list))
+
+    def prepare_update(self):
+        self.old_source, self.old_folder = self.source, self.folder
+        self.previous = {'source': self.source, 'release': str(self.folder), 'migrations': 1, 'latest_migration': '0001_example.sql'}
+        (self.runtime.state / 'platform-test.json').write_text(json.dumps(self.previous))
+        (self.runtime.state / 'platform-test.json').chmod(0o600)
+        owner = self.runtime.state / 'artifact-owners/platform-test.json'
+        owner.parent.mkdir()
+        owner.write_text(json.dumps({'current': {'source': self.source, 'paths': [str(self.folder)]}}))
+        owner.chmod(0o600)
+        self.source = 'b' * 40
+        self.folder = self.old_folder.parent / self.source
+        shutil.copytree(self.old_folder, self.folder)
+        self.compose.update(PLATFORM_TEST_ENV_FILE=str(self.folder / 'runtime.env'), PLATFORM_TEST_IMAGE_TAG=self.source)
+        self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET')
+        self.app['BIRTHDAY_ALLOWED_APP_BUILDS'] = '4'
+        self.save()
+        self.runtime.backups = self.root / 'backups'
+        def execute(label, command, **kwargs):
+            if label in ('platform-test-update-running', 'platform-test-update-check'):
+                source = self.old_source if label.endswith('running') else self.source
+                return json.dumps([{'State': {'Running': True}, 'RestartCount': 0,
+                                    'Config': {'Image': dev.PROJECT + '-gateway:' + source}}]).encode()
+            if label == 'platform-test-update-schema':
+                return b'1\t0001_example.sql\n'
+            return b''
+        self.runtime.execute.side_effect = execute
+
+    def update(self, *, ready_error=None, backup_error=None):
+        with patch.object(dev.fcntl, 'flock', side_effect=BlockingIOError), patch.object(dev, 'assert_route'), \
+                patch.object(dev, 'ready', side_effect=ready_error), \
+                patch('ops_backup.create_backup', return_value={'filename': 'verified-checkpoint'}, side_effect=backup_error), \
+                patch('ops_backup.verify_backup', return_value={'recovery_platform_test': {'state.json': 'verified'}}):
+            return dev.activate(self.runtime, self.source, self.old_source)
+
+    def test_enrollment_update_backs_up_and_preserves_database_and_matched_rollback(self):
+        self.prepare_update()
+        result = self.update()
+        self.assertEqual(result['previous'], self.previous)
+        self.assertEqual(result['pre_update_backup'], 'verified-checkpoint')
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list]
+        starts = [c for c in commands if 'up' in c]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0][-4:], ['-d', '--no-build', '--no-deps', 'gateway'])
+        self.assertFalse(any('down' in c or '--volumes' in c or 'run' in c for c in commands))
+
+    def test_update_rejects_changed_credentials_and_backup_failure_before_build(self):
+        self.prepare_update()
+        self.app['BIRTHDAY_ARK_API_KEY'] = 'changed-provider'
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'unrelated configuration'):
+            self.update()
+        self.app.pop('BIRTHDAY_ARK_API_KEY')
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'backup failed'):
+            self.update(backup_error=OperationError('backup failed'))
+        self.assertFalse(any(c.args[0].startswith('platform-test-build') for c in self.runtime.execute.call_args_list))
+
+    def test_failed_update_restores_old_configuration_without_replacing_state(self):
+        self.prepare_update()
+        with self.assertRaisesRegex(OperationError, 'not ready'):
+            self.update(ready_error=[OperationError('not ready'), None])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+        rollback = self.runtime.execute.call_args.args[1]
+        self.assertIn(str(self.old_folder / 'compose.env'), rollback)
+        self.assertEqual(rollback[-4:], ['-d', '--no-build', '--no-deps', 'gateway'])
 
 
 if __name__ == '__main__':

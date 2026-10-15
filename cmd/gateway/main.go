@@ -375,7 +375,7 @@ func buildAppHandler(
 	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
 		AppID: string(app.ID), Environment: appConfig.AttestationEnvironment,
 		DevelopmentSecret: appConfig.DevelopmentSecret, AllowedBuilds: appConfig.AllowedBuilds,
-		RequireActivationSecret: platform.Environment == "development",
+		RequireActivationSecret: appConfig.RequiresActivationSecret(platform.Environment),
 	}, storage.nonces, storage.keys, attestationVerifier, time.Now)
 	authenticator := attestation.NewService(
 		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
