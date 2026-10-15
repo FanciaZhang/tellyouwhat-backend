@@ -39,6 +39,8 @@ The independent `compose.platform-test.yaml` stack uses owner `platform-test` an
 
 Apple development delivery uses owner `apple-development`, readiness `http://127.0.0.1:18791/readyz`, and private data at `.apple-delivery/data`. Its recovery state must bind the cleanup image to the current owner registration. Scheduled operations report expired lease/package cleanup failures; dry-run remains read-only. Installation links are credentials and must not appear in proxy logs. See [Apple development delivery](apple-development-delivery.md) for the supported transport and remaining deployment acceptance.
 
+Its `apple_delivery_deploy.py` entry point invokes that same owner wrapper, checks file hashes and operator ownership, and restores the prior image/configuration if activation fails. Retired source-bound directories under `.apple-delivery/releases/<40-hex-source>` are collected after 48 hours unless protected by current/previous or a live container reference. The private data directory and unknown files are excluded. Encrypted offsite configuration snapshots include both protected service binaries and their matched configurations; authenticated per-file hashes are verified before recovery.
+
 ## Backups and deployment
 
 The release entry point holds the operations lock across backup authentication and migration and records backup filename/hash against the exact release and source run. A failed export, authentication, COS upload or readback blocks migration. The lightweight slot reconciler uses only the deployment lock, so it can continue during a scheduled backup. Backup, maintenance and restore jobs wait up to 10 minutes and retry bounded failures twice at two-minute intervals.

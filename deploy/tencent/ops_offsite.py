@@ -77,6 +77,8 @@ def create_recovery_bundle(runtime, filename):
                 shutil.copy2(path, scripts / path.name)
         from test_routes import backup_configuration
         test_routing = backup_configuration(runtime, bundle / 'test-routing')
+        from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
+        apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
@@ -84,7 +86,8 @@ def create_recovery_bundle(runtime, filename):
         crypt(runtime, compressed, encrypted)
         os.replace(encrypted, destination)
     return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
-            "recovery_images": images, "recovery_test_routing": test_routing}
+            "recovery_images": images, "recovery_test_routing": test_routing,
+            "recovery_apple_delivery": apple_delivery}
 
 
 def publish(runtime, source, manifest):
@@ -137,6 +140,10 @@ def verify_recovery_bundle(runtime, source, manifest):
             images = {k: v.get("images", {}) for k, v in selection["slots"].items()}
             if images != manifest["recovery_images"]:
                 raise OperationError("configuration recovery images differ from the authenticated manifest")
+            apple_delivery = manifest.get('recovery_apple_delivery', {})
+            if apple_delivery:
+                from apple_delivery_artifacts import verify_recovery
+                verify_recovery(archive, apple_delivery)
             test_routing = manifest.get('recovery_test_routing', {})
             if test_routing:
                 import hashlib

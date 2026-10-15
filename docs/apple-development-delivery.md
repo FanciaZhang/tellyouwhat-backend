@@ -14,7 +14,26 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o appledelivery ./cmd/
 
 Linux 构建只依赖标准库。现有 Dockerfile 也支持 `SERVICE=appledelivery`；`compose.apple-delivery.yaml` 将 HTTP 绑定到 `127.0.0.1:18791`。服务以宿主操作员身份读取只读私有挂载，无出网权限；清理容器单独获得该目录的写权限且不联网。
 
-存储目录必须由操作员所有，权限 0700。首次启动只读服务前，先通过同一镜像执行 `cleanup --data /data` 初始化目录和锁文件。不要以 root 初始化后再改变服务用户。
+存储目录必须由操作员所有，权限 0700。部署入口会先通过同一镜像执行清理命令初始化目录和锁文件，再启动只读服务。不要以 root 初始化后再改变服务用户。
+
+## 服务部署
+
+操作员从准确提交的干净源码构建 Linux/amd64 静态二进制。将以下文件放入宿主 `.apple-delivery/releases/<完整源码 SHA>/`，父目录均为操作员所有、0700，文件均为 0600：
+
+- `service`：该提交的 `cmd/appledelivery` 构建结果。
+- `Dockerfile`：该提交的 `deploy/tencent/apple-delivery.Dockerfile`；镜像仅复制此二进制，不联网构建。
+- `compose.apple-delivery.yaml`、`apple-delivery.caddy`、`apple-delivery-logging.caddy`：原样复制对应源码文件。
+- `selection.json`：`source` 为完整提交，`image` 为 `tellyouwhat-apple-development:<提交>`，`origin` 为安装域名；`files` 将上述五个文件名映射到各自 SHA-256。
+
+安装已审阅的运维脚本后，使用：
+
+```sh
+python3 deploy/tencent/apple_delivery_deploy.py --source <完整源码 SHA> --source-run <本次运行标识>
+```
+
+入口通过现有 owner wrapper 取得 operations/deployment 双锁，检查原生产路由和自身回滚登记，构建/检查不可混用的镜像，生成匹配配置，初始化存储并检查就绪，随后登记和清理。服务启动或状态写入失败会恢复前一镜像及对应配置；首次失败仅移除自身 Compose 项目，不删除存储卷或数据。清理或备份失败仍需处理，不能因服务健康就宣称部署完成。
+
+当前及上一版的二进制、镜像构建文件、Compose、运行配置、摘要清单、owner 登记和恢复状态均纳入加密配置备份，恢复验证按认证清单逐文件核对。安装包与临时访问凭证可重新生成，不纳入该备份。服务部署本身不会配置公开路由或发布 IPA。
 
 ## 候选和受限链接
 
@@ -76,4 +95,4 @@ import /etc/caddy/apple-delivery.caddy
 
 以下都完成后才可报告远程安装可用：已登记部署及回滚、完整配置的加密异地备份、DNS/TLS、日志失败对照、真实 IPA 的 HTTPS 摘要读回、链接到期、计划任务自动清理，以及 iPhone 从外网安装/启动和双版数据隔离。签名材料不得进入安装服务。
 
-当前只完成服务实现、Compose 解析、本机检查、服务器 Linux 的八项实际测试和原生 Caddy 日志对照；未部署、未发布任何 IPA。Mac 端项目门禁/签名验证后的发布入口、手记连接文件的受限交付、回滚配置备份及以上手机旅程仍待接通。
+服务实现、部署/恢复与备份入口已经过本机检查，另有服务器 Linux 的八项实际测试和原生 Caddy 日志对照。是否实际部署和备份须以最新运行证据为准，不能从脚本存在推断。Mac 端项目门禁/签名验证后的发布入口、手记连接文件的受限交付及以上手机旅程仍待接通。

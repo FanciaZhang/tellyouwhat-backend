@@ -112,6 +112,13 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(i["Id"] for i in sorted(versions, key=lambda i: timestamp(i["Created"]), reverse=True)[:2])
 
     files = []
+    if 'apple-development' in owners:
+        base = root / '.apple-delivery'
+        releases = base / 'releases'
+        if base.is_symlink() or releases.is_symlink():
+            raise OperationError('Apple delivery artifact directory is a symlink')
+        files.extend(('apple-development', p) for p in releases.glob('*')
+                     if p.is_dir() and re.fullmatch(r'[0-9a-f]{40}', p.name))
     if "journal-development" in owners:
         directory = root.parent / "journal-development/bin"
         if directory.is_symlink():

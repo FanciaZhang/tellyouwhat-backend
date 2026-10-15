@@ -94,6 +94,38 @@ class BackupSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, "configuration recovery content"):
             verify_backup(self.runtime, source)
 
+    def test_authenticated_backup_includes_registered_apple_service_binary_and_configuration(self):
+        import hashlib
+        from apple_delivery_deploy import FILES, IMAGE, ORIGIN, environment
+        from ops_common import atomic_json, atomic_text
+        from ops_artifacts import register
+        from ops_offsite import verify_recovery_bundle
+        source = 'a' * 40
+        folder = self.runtime.root / '.apple-delivery/releases' / source
+        folder.mkdir(mode=0o700, parents=True)
+        folder.parent.chmod(0o700)
+        folder.parent.parent.chmod(0o700)
+        files = {}
+        for name in FILES:
+            content = 'synthetic backup fixture for ' + name
+            atomic_text(folder / name, content)
+            files[name] = hashlib.sha256(content.encode()).hexdigest()
+        atomic_json(folder / 'selection.json', {'source': source, 'image': IMAGE + source, 'origin': ORIGIN, 'files': files})
+        atomic_text(folder / '.env', ''.join(key + '=' + val + '\n' for key, val in environment(self.runtime, source).items()))
+        atomic_json(self.runtime.state / 'apple-delivery.json', {'source': source, 'image': IMAGE + source,
+                    'origin': ORIGIN, 'release': str(folder), 'previous': None})
+        register(self.runtime, 'apple-development', [str(folder)], [IMAGE + source], source)
+        (self.runtime.state / 'offsite-required').touch()
+        with patch('ops_offsite.publish'), patch('apple_delivery_artifacts.CADDY_ROOT', self.root / 'inactive-Caddyfile'), \
+                patch('apple_delivery_artifacts.CADDY_FILES', {'delivery.caddy': self.root / 'inactive-delivery.caddy',
+                                                            'logging.caddy': self.root / 'inactive-logging.caddy'}):
+            result = create_backup(self.runtime)
+        encrypted = self.runtime.backups / result['filename']
+        manifest = verify_backup(self.runtime, encrypted)
+        self.assertIn('current/service', manifest['recovery_apple_delivery'])
+        self.assertIn('current/.env', manifest['recovery_apple_delivery'])
+        self.assertTrue(verify_recovery_bundle(self.runtime, encrypted, manifest))
+
     def test_backup_age_uses_authenticated_creation_time_after_file_copy(self):
         now = int(time.time())
         with patch("ops_backup.time.time", return_value=now - 15 * 86400):
