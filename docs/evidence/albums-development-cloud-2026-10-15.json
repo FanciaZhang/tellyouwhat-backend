@@ -29,5 +29,5 @@
   "initial_test_compile_failure": "New integration test referenced a nonexistent candidate-list helper; replaced with the actual deletion-capability guard and reverified.",
   "runtime_deployed": false,
   "cloud_policies_provisioned": false,
-  "client_acceptance": "Debug passed; Release rejection test still running at evidence creation."
+  "client_acceptance": "Client 2164291: Debug 42 passed / 1 live-service check skipped; Release 2 runtime rejection checks passed (test visibility enabled, no DEBUG)."
 }
