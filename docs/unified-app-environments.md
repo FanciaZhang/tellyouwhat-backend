@@ -18,7 +18,7 @@ MySQL 模式在打开连接前检查：数据库与账号非空、不得使用 r
 
 根目录 `.env.example` 与 `compose.yaml` 现在创建 `tellyouwhat_test` 库及账号，使用新的测试数据卷。已有旧本地卷保持原样；不会自动搬迁或清空。迁移前先确认是否需要保留其中的数据。共享 `cmd/migrate` 仍供平台与相册使用，本次没有把平台运行时命名检查冒充迁移器的权限保证；迁移必须由绑定环境的部署流程和受限账号执行。
 
-`APP_ATTEST_ENV` 与 API 环境独立。开发身份的 Ad Hoc 产物可以需要 production App Attest，不能仅因 Apple 认证环境是 production 就连接生产 API。平台开发权益按 API 环境开通；正式服务继续验证 Apple 交易并区分 Sandbox/Production。
+`APP_ATTEST_ENV` 在两套 API 环境中均默认 production，与同一 `.dev` 身份的 Xcode 直装和 Ad Hoc 配置一致。设备证明仍校验实际 Bundle ID 和证明环境。注册时是否要求开发激活口令由 API 环境独立决定；开发服务同时保留构建白名单，首次注册及注册重试均执行访问校验。平台开发权益按 API 环境开通；正式服务继续验证 Apple 交易并区分 Sandbox/Production。已有部署的显式 development 配置不会被默认值自动切换，迁移需核对客户端和已存设备密钥，保留正式数据。
 
 ## 集成来源
 

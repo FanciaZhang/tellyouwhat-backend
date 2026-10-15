@@ -201,7 +201,7 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		defaults.BundleID += ".dev"
 		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
 	}
-	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", environment))
+	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", string(attestation.EnvironmentProduction)))
 	defaultTimeout := 90
 	if defaults.ID == appregistry.Birthday {
 		defaultTimeout = 70

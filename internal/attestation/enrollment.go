@@ -17,10 +17,11 @@ const registrationChallengeTTL = 5 * time.Minute
 var ErrEnrollmentDenied = errors.New("app attest enrollment denied")
 
 type EnrollmentConfig struct {
-	AppID             string
-	Environment       Environment
-	DevelopmentSecret string
-	AllowedBuilds     map[string]struct{}
+	AppID                   string
+	Environment             Environment
+	DevelopmentSecret       string
+	RequireActivationSecret bool
+	AllowedBuilds           map[string]struct{}
 }
 
 type Challenge struct {
@@ -96,7 +97,7 @@ func (service *EnrollmentService) Register(
 			return Principal{}, diagnosticFailure(stageEnrollmentPolicy, ErrEnrollmentDenied)
 		}
 	}
-	if service.config.Environment == EnvironmentDevelopment {
+	if service.config.RequireActivationSecret {
 		expected := []byte(service.config.DevelopmentSecret)
 		provided := []byte(request.ActivationSecret)
 		if len(expected) == 0 || len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {

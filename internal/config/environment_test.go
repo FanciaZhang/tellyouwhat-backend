@@ -14,6 +14,7 @@ func TestPlatformDefaultsSeparateDevelopmentAndProductionIdentities(t *testing.T
 	for _, prefix := range []string{"HEALTH", "JOURNAL", "BIRTHDAY"} {
 		t.Setenv(prefix+"_APPLE_BUNDLE_ID", "")
 		t.Setenv(prefix+"_API_HOSTS", "")
+		t.Setenv(prefix+"_APP_ATTEST_ENV", "")
 	}
 	for _, environment := range []string{"development", "production"} {
 		t.Run(environment, func(t *testing.T) {
@@ -28,6 +29,9 @@ func TestPlatformDefaultsSeparateDevelopmentAndProductionIdentities(t *testing.T
 				t.Fatalf("expected all three platform apps, got %d", len(platform.Apps))
 			}
 			for i, app := range platform.Apps {
+				if app.AttestationEnvironment != attestation.EnvironmentProduction {
+					t.Fatalf("%s proof realm = %s, want production for both install methods", environment, app.AttestationEnvironment)
+				}
 				bundle, host := bundles[i], "api."+names[i]+".tellyouwhat.cn"
 				if environment == "development" {
 					bundle += ".dev"

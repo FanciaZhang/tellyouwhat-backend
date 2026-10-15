@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-15",
+  "tests": {
+    "packages_skip": 13,
+    "cases_pass": 2171,
+    "topLevel_pass": 956,
+    "packages_pass": 56,
+    "cases_skip": 635,
+    "topLevel_skip": 325
+  },
+  "targetedRacePassed": [
+    "internal/attestation",
+    "internal/config",
+    "cmd/gateway"
+  ],
+  "proofFixture": "synthetic Apple-format certificates with private test CA; actual verifier exercised",
+  "sourceSHA256": {
+    "internal/attestation/enrollment.go": "92e078cbde4a3334e47f9ddec9738a7e173cf52c5e978288f779becf59d2999f",
+    "internal/attestation/enrollment_policy_test.go": "0737ef4f139f331943242735db86425823afc0f2180ec376dd4ac8bd43018be1",
+    "internal/attestation/enrollment_test.go": "2237745a742ad38459021ba73b80574378c97c35b22463d4ce3dd3f623bae623",
+    "cmd/gateway/main.go": "0216f4c366b5116bc5a6132670f8ba798c3d22c65597a11b52694e5f7e9ff1c1",
+    "internal/config/platform.go": "429099ffcc58aeb00bb26e74dd7aec94f22b61280f011acf73efe9dfbd6bb7e7",
+    "internal/config/environment_test.go": "0d12db724b5623e82f8a1f1a110915055f0626df0d030cd1e88a0693b71752ef",
+    ".env.example": "e7c34368d5406bc1403760b949758c7b4bb15ce65bbdabd67f5201d3ca0552b7"
+  },
+  "limitations": [
+    "no deployment",
+    "no real Apple attestation",
+    "conditional database/cloud tests skipped",
+    "APNs supports one configured realm per service; mixed installation support remains pending"
+  ]
+}
