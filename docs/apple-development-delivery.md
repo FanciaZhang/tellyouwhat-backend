@@ -12,7 +12,7 @@ python3 -m unittest discover -s deploy/tencent -p '*test.py'
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o appledelivery ./cmd/appledelivery
 ```
 
-Linux 构建只依赖标准库。现有 Dockerfile 也支持 `SERVICE=appledelivery`；`compose.apple-delivery.yaml` 将 HTTP 绑定到 `127.0.0.1:18791`。服务以宿主操作员身份读取只读私有挂载，无出网权限；清理容器单独获得该目录的写权限且不联网。
+Linux 构建只依赖标准库。现有 Dockerfile 也支持 `SERVICE=appledelivery`；`compose.apple-delivery.yaml` 将 HTTP 绑定到 `127.0.0.1:18791`。服务以宿主操作员身份读取只读私有挂载，使用专用 bridge 网络；应用不发起外部请求，该网络不提供出站防火墙。清理容器单独获得该目录的写权限且不联网。当前主机的 internal 网络不会生效主机端口映射，不能用配置解析通过代替实际连通性。
 
 存储目录必须由操作员所有，权限 0700。部署入口会先通过同一镜像执行清理命令初始化目录和锁文件，再启动只读服务。不要以 root 初始化后再改变服务用户。
 

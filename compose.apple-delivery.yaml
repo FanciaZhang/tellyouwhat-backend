@@ -36,4 +36,4 @@ services:
     mem_limit: 64m
 
 networks:
-  delivery: {internal: true}
+  delivery: {driver: bridge}
