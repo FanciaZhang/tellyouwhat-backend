@@ -1,0 +1,506 @@
+{
+  "date": "2026-10-14",
+  "scope": "Real native video upload, COS multipart, CI preview, PhotoKit daily copy, byte-preserving restore, separate-process recovery; photo regression on minimum iOS runtime",
+  "changes": "Shared existing native photo fixture and Go bridge with explicit video scenario; local ffmpeg generates four seconds of H.264/AAC. No production implementation changes.",
+  "cases": [
+    {
+      "kind": "video",
+      "runtime": "26.5",
+      "results": {
+        "success": true,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912202.197,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912125.993,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          },
+          {
+            "name": "native-2",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912206.238,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912203.185,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+        "scenario": "cloud-video",
+        "backend": {
+          "exitCode": 0,
+          "passed": true
+        },
+        "servicesStopped": true
+      },
+      "backend": {
+        "counts": {
+          "originalsVerified": 1,
+          "previewsStored": 0,
+          "videosStored": 1
+        },
+        "original": {
+          "resourceID": "resource_0",
+          "key": "albums/originals/c9e76857-84b3-4f87-9402-1daae7b4cf38/8d6aca97-0bab-4640-9d5a-b782280ac903/resource_0",
+          "versionID": "MTg0NDQ5NTIxNjE1NzYyOTg5OTA",
+          "sizeBytes": 17120178,
+          "sha256": "b80793a282834ad3e32cc80d120fed0a3b5ad68f23dd193790c4ee2e651c92f7"
+        },
+        "passed": true,
+        "reservedBytes": 0,
+        "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+        "usedBytes": 18881474,
+        "versionID": "8d6aca97-0bab-4640-9d5a-b782280ac903"
+      },
+      "native": {
+        "duplicatesAfterRestart": 0,
+        "mediaKind": "video",
+        "originalBytes": 17120178,
+        "originalSHA256": "b80793a282834ad3e32cc80d120fed0a3b5ad68f23dd193790c4ee2e651c92f7",
+        "passed": true,
+        "sourceRetained": true,
+        "systemAssetsAdded": 3,
+        "versionID": "8d6aca97-0bab-4640-9d5a-b782280ac903"
+      },
+      "appProcessIDs": {
+        "native-1": [
+          "1223"
+        ],
+        "native-2": [
+          "1586"
+        ]
+      },
+      "uploadedParts": {
+        "resource_0": [
+          1,
+          2,
+          3
+        ]
+      },
+      "logSHA256": {
+        "native-1.log": "40ae5eafa54d7848894fb1c82910ee1ec5017b631c7fd8539c1dad42666f1cff",
+        "native-2.log": "f51b7b2df4e0c175d2824e476ab6ab4f4bd2032d319e9a8f5bc82415e274ef86",
+        "backend.log": "5b4116abed899ddf19b885a944d41e87576ff14e4938ccbd295c55b8dbe51014"
+      },
+      "dailyVideo": {
+        "sizeBytes": 1761296,
+        "durationMilliseconds": 4011,
+        "audioChannels": 1,
+        "height": 1080,
+        "frameRate": 30,
+        "width": 1920,
+        "sha256": "f068078d7268e7223972bd7e935213ae04fd273243a8d731211ab4f57a96de3e",
+        "preset": "daily_mp4_1080_v1"
+      },
+      "independentPlaybackChecks": [
+        "PhotoKit original AVAsset is playable for both daily and restored versions",
+        "Duration within 150ms of 4 seconds",
+        "Video frame decoded at 1 second",
+        "PCM audio buffer decodes to finite nonzero samples"
+      ]
+    },
+    {
+      "kind": "photo",
+      "runtime": "18.6",
+      "results": {
+        "success": true,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912212.404,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912198.452,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          },
+          {
+            "name": "native-2",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912215.029,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912213.066,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+        "scenario": "cloud-photo",
+        "backend": {
+          "exitCode": 0,
+          "passed": true
+        },
+        "servicesStopped": true
+      },
+      "backend": {
+        "counts": {
+          "originalsVerified": 1,
+          "previewsStored": 2,
+          "videosStored": 0
+        },
+        "original": {
+          "resourceID": "resource_0",
+          "key": "albums/originals/6119b266-25b8-4c31-b66c-620a6ccb79f5/30edbb98-1da6-4bb0-aeae-1d1a4c5f6461/resource_0",
+          "versionID": "MTg0NDQ5NTIxNjE1MDM3MDUwODY",
+          "sizeBytes": 1735889,
+          "sha256": "ff2dd347af598ba72d65fb19b2db063e92f6c0314632d3b1b1ff1e433df2e473"
+        },
+        "passed": true,
+        "reservedBytes": 0,
+        "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+        "usedBytes": 2524322,
+        "versionID": "30edbb98-1da6-4bb0-aeae-1d1a4c5f6461"
+      },
+      "native": {
+        "duplicatesAfterRestart": 0,
+        "mediaKind": "photo",
+        "originalBytes": 1735889,
+        "originalSHA256": "ff2dd347af598ba72d65fb19b2db063e92f6c0314632d3b1b1ff1e433df2e473",
+        "passed": true,
+        "sourceRetained": true,
+        "systemAssetsAdded": 3,
+        "versionID": "30edbb98-1da6-4bb0-aeae-1d1a4c5f6461"
+      },
+      "appProcessIDs": {
+        "native-1": [
+          "1557"
+        ],
+        "native-2": [
+          "1641"
+        ]
+      },
+      "uploadedParts": {
+        "resource_0": [
+          1
+        ]
+      },
+      "logSHA256": {
+        "native-1.log": "dfe7f9e9b61f97034996c7536d9ba2748497cb9488651e6ebd5c17c1b6697b6b",
+        "native-2.log": "22ac474339a074e32f749630d5acbb7cd7111a2bcb84fa6dbaaf59237daf8f00",
+        "backend.log": "a86aeb0797052fc443cdcaa3ed90c76ceff2e55b590dd5c6cb031721f98bdfc5"
+      }
+    },
+    {
+      "kind": "video",
+      "runtime": "18.6",
+      "results": {
+        "success": true,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912336.821,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912262.871,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          },
+          {
+            "name": "native-2",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912340.253,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912337.587,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+        "scenario": "cloud-video",
+        "backend": {
+          "exitCode": 0,
+          "passed": true
+        },
+        "servicesStopped": true
+      },
+      "backend": {
+        "counts": {
+          "originalsVerified": 1,
+          "previewsStored": 0,
+          "videosStored": 1
+        },
+        "original": {
+          "resourceID": "resource_0",
+          "key": "albums/originals/05ab2704-e504-4c13-a752-e2a08ee37a85/98a96cfc-83e4-495f-966d-3b312b3604d3/resource_0",
+          "versionID": "MTg0NDQ5NTIxNjE0NDAzMjA4MTk",
+          "sizeBytes": 17120178,
+          "sha256": "b80793a282834ad3e32cc80d120fed0a3b5ad68f23dd193790c4ee2e651c92f7"
+        },
+        "passed": true,
+        "reservedBytes": 0,
+        "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+        "usedBytes": 18895096,
+        "versionID": "98a96cfc-83e4-495f-966d-3b312b3604d3"
+      },
+      "native": {
+        "duplicatesAfterRestart": 0,
+        "mediaKind": "video",
+        "originalBytes": 17120178,
+        "originalSHA256": "b80793a282834ad3e32cc80d120fed0a3b5ad68f23dd193790c4ee2e651c92f7",
+        "passed": true,
+        "sourceRetained": true,
+        "systemAssetsAdded": 3,
+        "versionID": "98a96cfc-83e4-495f-966d-3b312b3604d3"
+      },
+      "appProcessIDs": {
+        "native-1": [
+          "1900"
+        ],
+        "native-2": [
+          "2214"
+        ]
+      },
+      "uploadedParts": {
+        "resource_0": [
+          3,
+          1,
+          2
+        ]
+      },
+      "logSHA256": {
+        "native-1.log": "9a479590b59e7a59241fa312b7aa8152ec0ee9e3f335ddb857f5893527ded364",
+        "native-2.log": "01fb77415ee9086205c58da5706ffd52d09927fafb4b25df8bebb99c141ded8a",
+        "backend.log": "5596ea79f98941f5fae018e485b449d8d339c9d626b4b0227e1063220c7880fe"
+      },
+      "dailyVideo": {
+        "sizeBytes": 1774918,
+        "preset": "daily_mp4_1080_v1",
+        "durationMilliseconds": 4011,
+        "width": 1920,
+        "frameRate": 30,
+        "audioChannels": 1,
+        "sha256": "2cd6435408e04321394c61ba3e92f52d6515637b3f597d1c8119558b286838ea",
+        "height": 1080
+      },
+      "independentPlaybackChecks": [
+        "PhotoKit original AVAsset is playable for both daily and restored versions",
+        "Duration within 150ms of 4 seconds",
+        "Video frame decoded at 1 second",
+        "PCM audio buffer decodes to finite nonzero samples"
+      ]
+    }
+  ],
+  "totalNativeStagesPassed": 6,
+  "backendRaceRunsPassed": 3,
+  "failures": [],
+  "skippedLiveStages": 0,
+  "goVetPassed": true,
+  "buildLogs": {
+    "build.log": "3a2c7dab49a21cd2d884c36d8e1b9c3dd30e224f5de781c7ad67b28356f3df29",
+    "build-final.log": "b14798d0812b411e6225260215a0c42b939391a59004e14520f8af1479267da2"
+  },
+  "sourceSHA256": {
+    "app": {
+      "Albums.xcodeproj/project.pbxproj": "60faf08c2fef4e332efbf5800a19eaa13e4393ac1fe8db75f7d5c14992ac210e",
+      "AlbumsTests/AlbumCloudMediaIntegrationTests.swift": "9b59c28c8c650a8c9faed69391b040970d8565a798e3380816ade641b5d87353",
+      "scripts/test-native-roundtrip.py": "3e0999356508b84a9c33bdded98a5d7245b1e0aabf99bc075a07e6b3b2425e3a"
+    },
+    "backend": {
+      "internal/albums/cos_native_pipeline_test.go": "2e07a65973d709e62d9364fdae52bdeaa7bd5947b9bfa21339ac6233f39ae1cd"
+    }
+  },
+  "limits": [
+    "Isolated local MySQL, synthetic login and subscription; no real Apple sign-in or Sandbox purchase.",
+    "Test-only control API loopback routing; actual HTTPS COS media transfers and real CI processing.",
+    "No deployed service change or sales activation.",
+    "No system-original or cloud-object deletion; synthetic staging, originals and previews remain for inspection. Account quota settlement is not a measurement of total physical COS storage charges.",
+    "Four-second synthetic ordinary SDR H.264/AAC sample, not HDR, slow motion, spatial or edited video acceptance.",
+    "No physical-device, WeChat/SMS selection, background/low-space, long-duration or mixed-media batch acceptance.",
+    "Live Photo full native upload/CI/system pair/restoration remains a separate pending requirement."
+  ]
+}

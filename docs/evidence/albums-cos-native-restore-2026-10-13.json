@@ -1,0 +1,195 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Real fixed-version COS MAZ_STANDARD_IA originals through production native downloader and PhotoKit restorer, with synthetic per-owner manifests and sessions",
+  "source_evidence": {
+    "passed": true,
+    "scope": "read-only existing synthetic IA originals; no database, uploads, deletion or account authentication",
+    "sources": [
+      {
+        "bytesVerified": true,
+        "name": "jpeg",
+        "source": {
+          "resourceID": "photo",
+          "key": "albums/originals/a9f96467-d9bc-4c63-a8a6-5c8b1681de97/df6348d3-afcd-4de3-98b7-e12270c7ff72/photo",
+          "versionID": "MTg0NDQ5NTIyMTAwMDE0MjQyNjA",
+          "sizeBytes": 102810,
+          "sha256": "4d22c36aa2472bb4222f30ec963905a06e77ce6653fa0cb9d87101f440aa55ef"
+        },
+        "storageClass": "MAZ_STANDARD_IA"
+      },
+      {
+        "bytesVerified": true,
+        "name": "oriented-jpeg",
+        "source": {
+          "resourceID": "photo",
+          "key": "albums/originals/7cbdfd0e-6d2c-4ab8-867e-60a12775573e/67732bcd-427b-4a6b-91b9-a5245d10d2c9/photo",
+          "versionID": "MTg0NDQ5NTIyMDk5OTM3NDQ4MDI",
+          "sizeBytes": 102846,
+          "sha256": "282befa533c8557eed34f839dd6967a4d2899e8d4d8e6477689443301d8fcbda"
+        },
+        "storageClass": "MAZ_STANDARD_IA"
+      },
+      {
+        "bytesVerified": true,
+        "name": "transparent-png",
+        "source": {
+          "resourceID": "photo",
+          "key": "albums/originals/edcd7daf-ed8c-496f-9e91-dc319be5b1b0/1fca383c-181b-48a1-8e5a-28b8b0dd0387/photo",
+          "versionID": "MTg0NDQ5NTIyMDk5ODg4MzgxNTQ",
+          "sizeBytes": 28277,
+          "sha256": "23e49ccf4bb6a5fcca17303125fef8635512bb3c52e9745b0708326cb0404527"
+        },
+        "storageClass": "MAZ_STANDARD_IA"
+      },
+      {
+        "bytesVerified": true,
+        "name": "video",
+        "source": {
+          "resourceID": "movie",
+          "key": "albums/originals/51407af5-1ab9-4497-892c-501bc6d7fa3c/a88af538-8002-4e8a-93fb-a838bff68a42/movie",
+          "versionID": "MTg0NDQ5NTIyMDk5NTUxNzIyOTM",
+          "sizeBytes": 1206440,
+          "sha256": "479e1e0104eaeffd075637ab255546fefc5c0d00405bb9b083842b0b51aafab0"
+        },
+        "storageClass": "MAZ_STANDARD_IA"
+      }
+    ]
+  },
+  "native_result": {
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "479DD8BD-0D02-4D59-A52B-E8319C3B30CC",
+          "deviceName": "告你相册 iPhone 17",
+          "modelName": "iPhone 17",
+          "osBuildNumber": "23F77",
+          "osVersion": "26.5",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 1,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ],
+    "environmentDescription": "Albums · Built with macOS 27.0",
+    "expectedFailures": 0,
+    "failedTests": 0,
+    "finishTime": 1791870309.175,
+    "passedTests": 1,
+    "result": "Passed",
+    "runtimeWarnings": [],
+    "skippedTests": 0,
+    "startTime": 1791870304.923,
+    "statistics": [],
+    "testFailures": [],
+    "title": "Test - Albums",
+    "topInsights": [],
+    "totalTestCount": 1
+  },
+  "native_assertions": {
+    "fixtures": [
+      {
+        "height": 2000,
+        "name": "jpeg",
+        "systemResourceBytes": 102810,
+        "systemResourceSHA256": "4d22c36aa2472bb4222f30ec963905a06e77ce6653fa0cb9d87101f440aa55ef",
+        "verified": true,
+        "width": 3000
+      },
+      {
+        "height": 3000,
+        "name": "oriented-jpeg",
+        "systemResourceBytes": 102846,
+        "systemResourceSHA256": "282befa533c8557eed34f839dd6967a4d2899e8d4d8e6477689443301d8fcbda",
+        "verified": true,
+        "width": 2000
+      },
+      {
+        "height": 2000,
+        "name": "transparent-png",
+        "systemResourceBytes": 28277,
+        "systemResourceSHA256": "23e49ccf4bb6a5fcca17303125fef8635512bb3c52e9745b0708326cb0404527",
+        "verified": true,
+        "width": 3000
+      },
+      {
+        "height": 720,
+        "name": "video",
+        "systemResourceBytes": 1206440,
+        "systemResourceSHA256": "479e1e0104eaeffd075637ab255546fefc5c0d00405bb9b083842b0b51aafab0",
+        "verified": true,
+        "width": 1280
+      }
+    ],
+    "reopenGrantCalls": 0,
+    "scope": "real COS and PhotoKit; synthetic manifests and per-owner sessions; no deployed authentication or purchase",
+    "systemAssetsAdded": 4
+  },
+  "additional_assertions": {
+    "photo_orientation_checked": true,
+    "png_alpha_channel_checked": true,
+    "video_audio_track_count": 1,
+    "video_duration_seconds": 2,
+    "video_duration_tolerance_seconds": 0.1,
+    "reopen_rechecks_system_bytes": true,
+    "originals_deleted": false,
+    "cloud_objects_written": false,
+    "deployed_flags_changed": false
+  },
+  "backend_probe": {
+    "name": "TestLiveCOSNativeOriginalGrants",
+    "passed": true,
+    "runs": 2,
+    "requires_explicit_opt_in": true
+  },
+  "first_attempt": {
+    "result": "Failed",
+    "reason": "AVFoundation could not inspect the extensionless video test export, after all four COS downloads and PhotoKit byte checks passed",
+    "repair": "Test export preserves the PhotoKit resource filename extension",
+    "collection": "Result collection did not exit; SIGINT ineffective, SIGTERM ended xcodebuild with 143",
+    "synthetic_system_assets_left": 4
+  },
+  "final_attempt": {
+    "result": "Passed",
+    "xcodebuild_exit": 0,
+    "synthetic_system_assets_added": 4,
+    "runtime_warnings": []
+  },
+  "source_sha256": {
+    "AlbumsTests/AlbumPhotoRestorerTests.swift": "84292da5d7ebc219e23f94d49ba29ef7d5a2fcf9c5589dd0b3de1b3cfd4ae5e2",
+    "Albums/Services/AlbumOriginalRestorePipeline.swift": "52bb0b0092318bb19fb3e9381bee0a89ae55551317c4d830eabe9a99b697dfb3",
+    "Albums/Services/AlbumOriginalDownloadService.swift": "b0e077be551f0cb115f4571e72eeb026ea5b5554d4edae1060e511ad2d189503",
+    "Albums/Services/AlbumPhotoRestorer.swift": "55d6894d71d05c136b9f9ff1f11f0d4700ce90d0551dc112eb6b189a826df9e4",
+    "Packages/AlbumsCore/Sources/AlbumsCore/OriginalDownloader.swift": "d1482e9acb7a6dc22b4236e9d4569927a3ff84c86ab35a1c801dfaf7c6be668e",
+    "internal/albums/cos_native_restore_live_test.go": "b9f4664ae79ec627ac9b86900532b21151428947b04899c0670f0b27482f83a0",
+    "internal/albums/cos_objects.go": "4fcb6e471199cdcf3e761e22add1f3964dcef616e9e35e3c3ede8f5a42799a8a"
+  },
+  "logs_sha256": {
+    "build.log": "ce5aba8233959f0fce9b66fb642426a735bea0187c9fd9eb610639cfd316a74c",
+    "rebuild.log": "c852fed9d70cd9376f4e55702b0f2b018eb339e24490ec070c4e3d01bfa27f5c",
+    "grants.log": "070c53cd3a5db5afb15deb05bab9834472773e612b25f81de88f8f73b116ec66",
+    "grants-final.log": "702d3809204d3525233c4f814f0320396bb07bbd088703aa73b171c63fb8065a",
+    "cos-restore.log": "155f7d21f5b37dd3d3f9c6744ea1a4e28f46c6fce23a886e3c6c34b0e1d1fa03",
+    "cos-restore-final.log": "c9ca232f4ecc95b379b17fe287a3bb31c62c278d948e7b8cb4875270c1d6584a"
+  },
+  "reproduction": [
+    "Build the iOS test bundle first using the managed Xcode run directory",
+    "Set ALBUM_CI_LIVE_PROBE=1 and ALBUM_CI_LIVE_DIRECTORY to a private 0700 directory; run the named Go test with albums_live build tag",
+    "Set AlbumsTests xctestrun environment ALBUMS_PHOTOKIT_FIXTURES=1 and ALBUMS_COS_ORIGINAL_PATH to that private directory",
+    "Run only AlbumPhotoRestorerTests/testRealCOSOriginalsRestoreAndReopenWithoutDuplicates on the owned full-Photos-access simulator, within the four-minute grant lifetime"
+  ],
+  "limitations": [
+    "Synthetic media, not natural camera or user-library quality acceptance",
+    "Four separate object owners; not a single real-account batch",
+    "No deployed login, catalogue, database subscription or authorization API exercised",
+    "No physical iPhone, iCloud, minimum-iOS runtime, HDR, HEIC, RAW or IA Live Photo restoration in this run",
+    "No deletion or space reclamation proof"
+  ],
+  "run_cleanup_status": "success"
+}

@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T06:51:12.712803+00:00",
+  "baselineCommit": "c5eab064bf230d27aca273a3ee874b81e5c5f16c",
+  "scope": "direct original/photo/video/Live Photo read authorizations share final retention checks; expired subscribers retain exports before the deadline",
+  "sourceSHA256": {
+    "internal/albums/read_retention.go": "c6a79fb65dc554f20b52368d905cd641612319f2af874a4f94e1d5f8360d7889",
+    "internal/albums/read_retention_test.go": "9194ba5b8c58b8bcb6afeb8c29d47910cae2092dadc2615eaa65c7deedbad348",
+    "internal/albums/read_retention_integration_test.go": "954dd18b394ff51d8286932f3eee43add1afffb456ea611ae7aef22f4e695216",
+    "internal/albums/read_grants.go": "7f6d57c366f7becefea064bf086f5f87a2c768bbee2eb91c3d727216069fa932",
+    "internal/albums/photo_read_grants.go": "e8127925a837494b507a4a6a53d4d06dbfee3c9cd37118510dac2f06ffb59785",
+    "internal/albums/video_read_grants.go": "01bd11e12ad3f37cbac4892b753e650c7a95e7bd908b8045a7588adb34cf10da",
+    "internal/albums/live_pairs.go": "67a9ae916b8721861cdfc99a03bd75f3607798ca3330b2ad76dd685b6fb212e0",
+    "internal/albums/live_photo_read_grants.go": "97998b2fd14573a501ddfab07458722c58e064df0e582da8091427dad0093dfb",
+    "internal/albums/library.go": "b20db49cd8156496d20582dd1a8163160348f748f9f0434490d5b1cd0d54fe43",
+    "internal/albums/mysql_sharing.go": "d3e5a9ec6a9ffefd7daf0159f3eb89d626ba3e9629f23ca032ce4e23a681c40f",
+    "internal/albums/mysql_subscriptions.go": "7708afb6a0bc77733be92afbd8c9d35e479acb61cb0b555015c539eed649d21d"
+  },
+  "validation": {
+    "commands": [
+      {
+        "name": "race",
+        "exitCode": 0
+      },
+      {
+        "name": "vet",
+        "exitCode": 0
+      },
+      {
+        "name": "build",
+        "exitCode": 0
+      }
+    ],
+    "counts": {
+      "pass": 565,
+      "fail": 0,
+      "skip": 0
+    },
+    "logsSHA256": {
+      "race.log": "8c639461722538be83961bf3d6611de6f43a720c8d2538b74767fb6976eb5778",
+      "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "packages": [
+      {
+        "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+        "Action": "pass",
+        "Elapsed": 1.6760000000000002
+      },
+      {
+        "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+        "Action": "pass",
+        "Elapsed": 1.759
+      },
+      {
+        "Package": "github.com/tellyouwhat/backend/migrations",
+        "Action": "pass",
+        "Elapsed": 3.433
+      },
+      {
+        "Package": "github.com/tellyouwhat/backend/internal/albums",
+        "Action": "pass",
+        "Elapsed": 30.57
+      }
+    ],
+    "focusedTests": [
+      {
+        "Test": "TestMySQLCloudReadsStopAtRetentionWithoutBlockingExpiredExports",
+        "Action": "pass",
+        "Elapsed": 0.3
+      },
+      {
+        "Test": "TestMySQLCloudReadGrantSerializesEntitlementChanges",
+        "Action": "pass",
+        "Elapsed": 0.42
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/foreign-owner",
+        "Action": "pass",
+        "Elapsed": 0.32
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/foreign-version",
+        "Action": "pass",
+        "Elapsed": 0.36
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/changed-manifest",
+        "Action": "pass",
+        "Elapsed": 0.59
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/disabled-account",
+        "Action": "pass",
+        "Elapsed": 0.3
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/signing-error",
+        "Action": "pass",
+        "Elapsed": 0.3
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure/cancelled",
+        "Action": "pass",
+        "Elapsed": 0.32
+      },
+      {
+        "Test": "TestMySQLCloudReadRejectsScopeStateAndSigningFailure",
+        "Action": "pass",
+        "Elapsed": 2.18
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/original",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/original-expired",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/photo",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/photo-expired",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/video",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/video-expired",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/live-components",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/live-components-expired",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/live-pair",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead/live-pair-expired",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudRetentionBoundsEveryDirectMediaRead",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudReadSigningRejectsDeadlineCrossedWhileWaiting/before",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudReadSigningRejectsDeadlineCrossedWhileWaiting/during",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Test": "TestCloudReadSigningRejectsDeadlineCrossedWhileWaiting",
+        "Action": "pass",
+        "Elapsed": 0
+      }
+    ]
+  },
+  "environment": "isolated localhost MySQL 8.4 and Redis; restricted per-test schemas/users; synthetic media; no cloud provider requests; services stopped and disposable databases removed",
+  "verified": [
+    "Each direct media read passes owner/version/digest scope to retention authorization; signer receives the bounded expiry, not just the response field",
+    "Expired paid capacity rejects new media writes while allowing original exports during the remaining retention period",
+    "Final deadline refuses new signing; renewal restores read eligibility without deleting media or changing usage",
+    "Account lock serializes read authorization with subscription mutation; callback does no database IO and works with one connection",
+    "Cross-account/version access, changed manifest, disabled account, canceled request and signer errors fail closed",
+    "Deadline reached while waiting for authorization or during signing never returns a successful grant"
+  ],
+  "limits": [
+    "No actual COS signed-URL expiry or device journey verified",
+    "Previously returned COS URLs cannot be recalled by this change; they expire according to the signed grant",
+    "Cloud recycle bin, tombstone sync, account removal and full-version permanent deletion remain incomplete",
+    "No schema/HTTP contract/native production source changes; no new iOS build performed"
+  ]
+}

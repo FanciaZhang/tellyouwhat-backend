@@ -1,0 +1,64 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Isolated MySQL 8.4 and Redis, test-authority signed Apple transactions, controlled provider transport. No real purchase, cloud mutation or deployment.",
+  "verification": {
+    "startedAt": "2026-10-13T13:37:21.723515+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-tg00tddt",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-tg00tddt/race.log",
+        "testCounts": {
+          "pass": 247
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-tg00tddt/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-tg00tddt/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T13:38:40.650746+00:00"
+  },
+  "top_level_tests": 77,
+  "passed_test_events": 247,
+  "failed_test_events": 0,
+  "skipped_test_events": 0,
+  "covered": [
+    "Related current purchase chains belonging to either legacy account token or stable token are persisted with binding jobs atomically",
+    "Foreign account chains not imported; database ownership conflicts reject all discoveries before Apple mutation",
+    "All entries of a selected chain participate in resolution, including conflicting ownership; invalid renewal, forged signature, impossible status and future signed date rejected",
+    "Discovery is fenced by current deletion identity and live job lease; write failure rolls back earlier discoveries",
+    "More than 128 related chains rejected without truncation",
+    "Overlapping responses do not duplicate jobs or invalidate already acknowledged chains; pending discoveries subsequently reconcile",
+    "Account remains deleting and real Apple mutations are not exercised"
+  ],
+  "source_sha256": {
+    "internal/albums/subscription_rebinding.go": "12c300dddfc34660323a9fc68ad27c936ff4e9d2d62dccfd4d7a30d02ccd22ba",
+    "internal/albums/subscription_rebinding_test.go": "95c4e31ae479ad4a1818241ad05557b9bb339d238fe3de91ac93290a53224b36",
+    "internal/albums/subscription_binding_discovery_test.go": "15e9e833534b6ff2c9714e67e29884d49329f94cdb05ea8fd97a2df426f9df4f"
+  },
+  "log_sha256": {
+    "race.log": "a3013b207cc8aac2dcef6cf2a56650275cb7fa1be8ddd92fa7ffbdde2177d83b",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "This discovers only records actually returned by current status queries; it does not prove exhaustive historical purchase discovery",
+    "Final revalidation of all relevant purchase chains before identity erasure",
+    "Final identity, billing and backup erasure; account deletion HTTP/UI",
+    "Real Sandbox purchase, renewal, refund, legacy rebinding and account recreation restore acceptance",
+    "Deployment and feature activation; rebinding remains disabled by default",
+    "No new iOS source changes or Xcode execution"
+  ]
+}

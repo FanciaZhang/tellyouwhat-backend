@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-11",
+  "baseHead": "6b550ffb2160b1c8a11318f7adcb66ab32f63239",
+  "validation": {
+    "command": "go test -race -json ./internal/albums ./cmd/albumworker",
+    "commandExitCode": 0,
+    "passed": 323,
+    "failed": 0,
+    "skipped": 34,
+    "skips": "MySQL and Redis integration dependencies were not started for this signer-only change",
+    "vet": {
+      "command": "go vet ./internal/albums ./cmd/albumworker ./cmd/gateway",
+      "commandExitCode": 0
+    },
+    "logSHA256": "0649f58251c8951df7e39115ba20b9df435f787c8564d0f857010e8a4bc2b54a"
+  },
+  "checks": [
+    "Real COS SDK uses the injected frozen clock and exact JSON deadline for q-sign-time and q-key-time",
+    "Signed headers are exactly content-length;content-type;host and staging has no versionId",
+    "Archive namespace and pinned original reads remain separate"
+  ],
+  "limits": [
+    "No real COS request or production activation",
+    "Media quality, native upload completion and retirement require separate acceptance"
+  ],
+  "sourceSHA256": {
+    "internal/albums/cos_live_pairs.go": "eb60b8a9d8e9d2b581d2b692c268ba982103d4692d6f86975e44628c5d5152b5",
+    "internal/albums/live_pairs_test.go": "7f40fc9435ed9ee9a973ffc09a0ebb97b257db9f79faa6c49118e982842782d5",
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "bd09ab59a92bdb5e735e51cb879be8a8dc46f31e7b1e5ead974087babd6773b2"
+  }
+}

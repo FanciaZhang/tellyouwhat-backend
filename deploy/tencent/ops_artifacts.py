@@ -253,11 +253,15 @@ def development_deploy(runtime, owner, paths, images, source, source_run, comman
         with runtime.lock("deployment", wait_seconds=600):
             runtime.refresh()
             runtime.execute("artifact-producer-" + owner, command, timeout=900)
+            # Albums validates Host and returns its API envelope for readiness.
+            headers = {"Host": "api.albums.tellyouwhat.cn"} if owner == "albums-test" else {}
+            readiness = urllib.request.Request(verify_url, headers=headers)
             for attempt in range(30):
                 try:
-                    with urllib.request.urlopen(verify_url, timeout=2) as response:
+                    with urllib.request.urlopen(readiness, timeout=2) as response:
                         if (response.geturl() == verify_url and response.status == 200
-                                and json.load(response).get("status") in ("ready", "ok")):
+                                and (json.load(response).get("code") == "ok" if owner == "albums-test"
+                                     else json.load(response).get("status") in ("ready", "ok"))):
                             break
                 except (OSError, ValueError):
                     pass

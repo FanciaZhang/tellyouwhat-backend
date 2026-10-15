@@ -107,6 +107,16 @@ jobs:
           MYSQL_PASSWORD: placeholder
           MYSQL_DATABASE: app
           REDIS_PASSWORD: placeholder
+      - name: Validate isolated album test stack
+        run: |
+          cp deploy/albums/runtime.env.example "$RUNNER_TEMP/albums-test.env"
+          docker compose --env-file deploy/albums/test.env.example -f compose.albums-test.yaml config --quiet
+        env:
+          ALBUM_TEST_ENV_FILE: ${{ runner.temp }}/albums-test.env
+          ALBUM_TEST_IMAGE_TAG: ${{ github.sha }}
+          ALBUM_TEST_MYSQL_PASSWORD: ci-placeholder
+          ALBUM_TEST_MYSQL_ROOT_PASSWORD: ci-root-placeholder
+          ALBUM_TEST_REDIS_PASSWORD: ci-placeholder
       - name: Validate Caddy configuration
         run: |
           for config in Caddyfile Caddyfile.external; do
@@ -118,6 +128,11 @@ jobs:
               -v "${{ github.workspace }}/deploy/single-server/$config:/etc/caddy/Caddyfile:ro" \
               caddy:2-alpine validate --config /etc/caddy/Caddyfile
           done
+          docker run --rm --entrypoint caddy \
+            -e ALBUM_API_DOMAIN=api.albums.example \
+            -e ALBUM_TEST_API_PORT=18090 \
+            -v "${{ github.workspace }}/deploy/albums/Caddyfile.external:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine validate --config /etc/caddy/Caddyfile
 
   container:
     needs: verify
@@ -126,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [gateway, worker, admin, adminctl, migrate, maintenance]
+        service: [gateway, worker, admin, adminctl, migrate, maintenance, albumgateway, albumworker]
     permissions:
       contents: read
       packages: write

@@ -1,0 +1,109 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Controlled COS HTTP, real OpenSSL and isolated MySQL/Redis; no real cloud writes, credential creation or deployment.",
+  "verification": {
+    "startedAt": "2026-10-13T15:06:57.860694+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/race.log",
+        "testCounts": {
+          "pass": 72
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/build.log"
+      },
+      {
+        "name": "backup-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/backup-unit.log"
+      },
+      {
+        "name": "offsite-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/offsite-unit.log"
+      },
+      {
+        "name": "deletion-ledger-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/deletion-ledger-unit.log"
+      },
+      {
+        "name": "control-backup-regression",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-receipt-vk96n8yo/control-backup-regression.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T15:07:44.744562+00:00"
+  },
+  "go_top_level_tests": 30,
+  "go_passed_test_events": 72,
+  "python_tests": {
+    "backup_safety": 10,
+    "offsite_bundle_and_receipt": 7,
+    "deletion_ledger": 5,
+    "control_backup_regression": 16,
+    "cam_policy_static": 5
+  },
+  "failed_tests": 0,
+  "skipped_tests": 0,
+  "covered": [
+    "Signed publication receipt uploaded to same configured bucket and random bundle key with .receipt.json suffix; exact version read back and hashed before overall success",
+    "Receipt response loss preserves local authenticated receipt; explicit publish-receipt retry uploads only receipt, not encrypted bundle",
+    "Receipt transfer rejects over 64 KiB and different bucket before provider requests",
+    "Controlled encrypted publish/fetch plus real 36-table isolated MySQL restore preserves snapshot-later deletion intents and recovery quarantine",
+    "Dedicated backup policy is exactly bucket version-state query plus recovery-prefix read/write; no deletion, media prefix or bucket administration"
+  ],
+  "cloud_inspection": {
+    "existing_backup_bucket": "tellyouwhat-backups-1251995834",
+    "region": "ap-guangzhou",
+    "multi_az": true,
+    "versioning": "not_enabled",
+    "existing_prefix": "backups/",
+    "source": "Live Chrome COS console accessibility state",
+    "existing_bucket_modified": false,
+    "proposed_bucket": "tellyouwhat-albums-backups-1251995834",
+    "creation_submitted": false,
+    "proposed_identity": "albums-test-backup",
+    "authorization": "pending explicit user confirmation"
+  },
+  "source_sha256": {
+    "cmd/albumbackup/main.go": "21afe40f5d86f7a3fbc7fa3535ac8da1b7846b57b5d835983c4996bb6cfcd231",
+    "cmd/albumbackup/main_test.go": "be7725ad3aca4f2bbd3e6802e328897d7879e280b7b65c7fad9f607d7ca99b72",
+    "deploy/albums/offsite.py": "e4e08159e118b4b110ff25f79d8ffed65f0e408c6acf638409db60c083b3623b",
+    "deploy/albums/offsite_test.py": "1cfd1e87e1b4de72e5fcc031a18e6fd5f1feba63ec281015c045d9074d230362",
+    "deploy/albums/backup.py": "98580d3080ce229f55f1a079df8b39ad9b0896126853f728b1ba1ed3091f0613",
+    "deploy/albums/cam-test-backup.policy.json": "f830d778a72d02c32b65c1e4bc6d2faf2af03f5fc93af2251560c6bdeaa9cf52",
+    "deploy/albums/cam_policy_test.py": "c6bd934576fd1c7bd8812f323e44c6a03271859dd01c9afa4c029ee91615f6a1",
+    "internal/albums/recovery_backup_test.go": "9d929c0e0b9887dbf2ce687ddc7abf77eee5e41c00995b46ddca322e113773db"
+  },
+  "log_sha256": {
+    "race.log": "a78fa465d68542d3b7a6bb272b3cb32a6a60490a95f27bc693accf5dae7d8a60",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backup-unit.log": "6ebfdfd4b3c00fc8d529c9d9843a65a06a2c956847a10a8789c0a9c804012d92",
+    "offsite-unit.log": "3e91a912d1cae54ab3d4e42a03804d3c7e79038d3da545c50286a0c54e015b6c",
+    "deletion-ledger-unit.log": "533131dad8973c589ae697ab1dd346cc55caa134cd1e536cedf26f1b057c0f1f",
+    "control-backup-regression.log": "2fc37aa7a55948ad878b43a683f307517ddbc998a26c434feb90ecf74d906a7d"
+  },
+  "not_completed": [
+    "Backup bucket/identity creation, real COS permission and upload/restore verification",
+    "Independent encryption-key escrow and authoritative newest deletion checkpoint",
+    "Automatic receipt discovery, remote retention/per-account erasure, post-snapshot provider-write reconciliation and recovery cutover",
+    "Final account deletion and real StoreKit/device end-to-end acceptance"
+  ]
+}

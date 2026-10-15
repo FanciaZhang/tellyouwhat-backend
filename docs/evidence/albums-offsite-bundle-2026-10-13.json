@@ -1,0 +1,101 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Controlled COS SDK HTTP transport, real OpenSSL encryption and isolated native MySQL restore; synthetic records only. No live COS publication, permission changes or deployment.",
+  "verification": {
+    "startedAt": "2026-10-13T14:54:27.795566+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/race.log",
+        "testCounts": {
+          "pass": 71
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/build.log"
+      },
+      {
+        "name": "backup-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/backup-unit.log"
+      },
+      {
+        "name": "offsite-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/offsite-unit.log"
+      },
+      {
+        "name": "deletion-ledger-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/deletion-ledger-unit.log"
+      },
+      {
+        "name": "control-backup-regression",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-offsite-v2dqmrx7/control-backup-regression.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T14:55:17.667113+00:00"
+  },
+  "go_top_level_tests": 29,
+  "go_passed_test_events": 71,
+  "python_tests": {
+    "backup_safety": 10,
+    "offsite_bundle": 6,
+    "deletion_ledger": 5,
+    "control_backup_regression": 16
+  },
+  "failed_tests": 0,
+  "skipped_tests": 0,
+  "covered": [
+    "SDK requests signed for fixed COS host; versioning required before upload; exact returned version fully read and hashed before publication acknowledgement",
+    "Unversioned bucket, null version, mismatched version, corrupt/short/long response, redirect and lost PUT response produce no success receipt; uncertain PUT is not retried",
+    "Media keys, path traversal, oversized requests, incorrect digests and wrong target buckets rejected; partial downloads removed and existing files not overwritten",
+    "Snapshot and deletion checkpoint copied and authenticated, tar bundle encrypted using real OpenSSL, then retrieved to private fresh directory and independently verified",
+    "Publication receipt HMAC and pinned digest enforced; wrong scope, tampering, expired source snapshot, private-file violations and corrupted download fail closed",
+    "Real 36-table MySQL snapshot restored after controlled publish/fetch, with two deletion intents including one accepted after original snapshot; database remains quarantined and temporary services removed"
+  ],
+  "development_failures": [
+    "Go regexp rejected a repeat upper bound above 1000; replaced it with an explicit length check plus character validation.",
+    "Initial controlled upload fixture omitted COS CRC64 acknowledgement; corrected the provider fixture without disabling production SDK CRC verification."
+  ],
+  "source_sha256": {
+    "cmd/albumbackup/main.go": "faa380f1623261d87d4c4eb98d9044b0d9d3fe78c21aa7daf134bda306ef06fb",
+    "cmd/albumbackup/main_test.go": "48d730ee26e5794442e3eef317e44edf028c70022a7f627c0aab1f9b0def8f1e",
+    "deploy/albums/offsite.py": "cd88cdd5d6b362e1ebd9c71165f0f26b0cf0fd4ec07d9da7c2ac702da18ee4c2",
+    "deploy/albums/offsite_test.py": "9150ccb03c4e3576feb17ab43816b6861cd1fdd0f5410712f144ac5945007fa3",
+    "deploy/albums/backup.py": "941cd66036b0a985bc2031a15e82aaba3190a953a5ffeef3251d434386cf2bd7",
+    "deploy/albums/backup-cos.example.json": "6259908f9b209af7ef695a02252d0c85a13a5ee7b33408e0cbf24994745083e2",
+    "deploy/albums/cam-backup.policy.template.json": "0bcfbe437eae7b2438f42cb3683bfbb0c77c55ae00f6cc1a7d059391b5997dc6",
+    "internal/albums/recovery_backup_test.go": "51aff38942ef3197fe8db2225a7da5645a1910bb893e3ef142f301a02d65ca7b"
+  },
+  "log_sha256": {
+    "race.log": "050f1c07d4dd9d19c4806ce62bb978bbbf778b3ba6dabe2ef7ac34284eeb342f",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backup-unit.log": "c0a234441cecc9937a09c7cbc31cee2a9774cd3f1dce8048b17104e7e417c7f1",
+    "offsite-unit.log": "e096b1180b8db62c2320535db3edefb91855f982b7301833ad20278d1f8331f3",
+    "deletion-ledger-unit.log": "533131dad8973c589ae697ab1dd346cc55caa134cd1e536cedf26f1b057c0f1f",
+    "control-backup-regression.log": "29f1c5272d117171d2f5746cd576d8a768871e59b69bf1260d6748ad32156156"
+  },
+  "limitations": [
+    "1 GiB encrypted bundle limit; larger bundles require multipart transport",
+    "Publication receipts currently local and must be independently retained; keys need independent escrow",
+    "No authoritative newest deletion checkpoint, post-snapshot provider-write reconciliation or live cutover",
+    "Remote retention/per-account historical backup erasure not implemented; uncertain uploads may leave unconfirmed objects",
+    "No real COS credentials/policy acceptance, Sandbox purchase/rebinding or device acceptance in this change"
+  ]
+}

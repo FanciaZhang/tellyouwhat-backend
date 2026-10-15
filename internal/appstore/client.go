@@ -96,6 +96,18 @@ func (client *APIClient) CurrentTransactions(
 	ctx context.Context,
 	transactionID string,
 ) ([]SubscriptionStatus, error) {
+	return client.subscriptionStatuses(ctx, transactionID, false)
+}
+
+// AllSubscriptionStatuses includes expired, retrying, and revoked subscriptions.
+// Callers must verify each signed transaction and account binding before changing
+// durable capacity or a retention deadline. Existing active-only callers retain
+// their original query and filtering behavior.
+func (client *APIClient) AllSubscriptionStatuses(ctx context.Context, transactionID string) ([]SubscriptionStatus, error) {
+	return client.subscriptionStatuses(ctx, transactionID, true)
+}
+
+func (client *APIClient) subscriptionStatuses(ctx context.Context, transactionID string, all bool) ([]SubscriptionStatus, error) {
 	if client == nil || !client.validConfig() || transactionID == "" || len(transactionID) > 128 {
 		return nil, ErrStatusUnavailable
 	}
@@ -104,7 +116,10 @@ func (client *APIClient) CurrentTransactions(
 		return nil, fmt.Errorf("%w: create authorization token", ErrStatusUnavailable)
 	}
 	endpoint := strings.TrimRight(client.config.BaseURL, "/") +
-		"/inApps/v1/subscriptions/" + url.PathEscape(transactionID) + "?status=1&status=4"
+		"/inApps/v1/subscriptions/" + url.PathEscape(transactionID)
+	if !all {
+		endpoint += "?status=1&status=4"
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create status request", ErrStatusUnavailable)
@@ -138,7 +153,10 @@ func (client *APIClient) CurrentTransactions(
 	statuses := make([]SubscriptionStatus, 0)
 	for _, group := range payload.Data {
 		for _, transaction := range group.LastTransactions {
-			if (transaction.Status != statusActive && transaction.Status != statusGracePeriod) ||
+			if all && (transaction.Status < 1 || transaction.Status > 5 || transaction.SignedTransactionInfo == "") {
+				return nil, ErrInvalidAPIResponse
+			}
+			if (!all && transaction.Status != statusActive && transaction.Status != statusGracePeriod) ||
 				transaction.SignedTransactionInfo == "" {
 				continue
 			}

@@ -1,0 +1,135 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Durable read-only observation of CI video submissions after account deletion acceptance",
+  "migration": "0044_album_deletion_video_jobs.sql",
+  "behavior": {
+    "atomic_queue_at_acceptance": true,
+    "backfill_existing_deletions": true,
+    "only_consumed_submission_intents": true,
+    "max_batch_size": 100,
+    "lease_seconds": 120,
+    "provider_timeout_seconds": 30,
+    "retry_initial_seconds": 60,
+    "retry_max_seconds": 21600,
+    "success_failed_cancel_are_terminal": true,
+    "running_paused_missing_or_unknown_are_not_terminal": true,
+    "terminal_receipt_and_discovered_provider_id_commit_together": true,
+    "account_request_source_and_submission_revalidated": true,
+    "expired_or_superseded_leases_rejected": true,
+    "no_new_transcode_or_cancellation_or_media_delete": true
+  },
+  "checks": [
+    {
+      "phases": [
+        {
+          "phase": "mysql-init.log",
+          "exit": 0
+        },
+        {
+          "phase": "create.log",
+          "exit": 0
+        },
+        {
+          "phase": "targeted.jsonl",
+          "exit": 0
+        },
+        {
+          "phase": "vet.log",
+          "exit": 0
+        },
+        {
+          "phase": "build.log",
+          "exit": 0
+        }
+      ],
+      "servicesStopped": true,
+      "run": "albums-deletion-video-f1y23v4m",
+      "race": true,
+      "top_level_passed": 25,
+      "passed_events": 61,
+      "failed": 0,
+      "skipped": 0,
+      "database_directory_removed": true,
+      "test_log_sha256": "c0d914a220d88817d849e449b585884dc8f5b9cdec53068671efa2cdbeb17641"
+    },
+    {
+      "phases": [
+        {
+          "phase": "mysql-init.log",
+          "exit": 0
+        },
+        {
+          "phase": "create.log",
+          "exit": 0
+        },
+        {
+          "phase": "targeted.jsonl",
+          "exit": 0
+        },
+        {
+          "phase": "vet.log",
+          "exit": 0
+        },
+        {
+          "phase": "build.log",
+          "exit": 0
+        }
+      ],
+      "servicesStopped": true,
+      "run": "albums-deletion-video-final-mmf2rarh",
+      "race": true,
+      "top_level_passed": 11,
+      "passed_events": 34,
+      "failed": 0,
+      "skipped": 0,
+      "database_directory_removed": true,
+      "test_log_sha256": "30cd99906603486065143f8f0536ada831aabdb7ef7c7e48fbd151a56ef191eb"
+    }
+  ],
+  "checks_overlap": true,
+  "final_run_includes_added_acceptance_and_receipt_rollback_tests": true,
+  "coverage": [
+    "consumed vs unissued intents",
+    "active unrelated owners untouched",
+    "source version and manifest binding",
+    "missing provider ID discovered and bound atomically",
+    "nonterminal, missing, malformed, foreign and failed HTTP observations remain pending",
+    "backoff and restart recovery",
+    "bounded batches do not revisit an outstanding lease",
+    "late provider binding mismatch rejected",
+    "cancellation retains unfinished work",
+    "stale or expired lease rejected",
+    "missing deletion fence and wrong request rejected",
+    "failure after queue insertion rolls back acceptance",
+    "failure after receipt update rolls back acknowledgement",
+    "migration backfill and migration replay",
+    "existing COS adapter accepts only matched terminal provider states"
+  ],
+  "boundaries": {
+    "isolated_real_mysql_and_redis": true,
+    "provider_transports_mocked": true,
+    "live_cloud_calls": false,
+    "live_deletion": false,
+    "production_deployed": false,
+    "runtime_scheduler_connected": false,
+    "http_ui_deletion_entry_exposed": false,
+    "full_account_erasure_complete": false
+  },
+  "next_required": [
+    "quiescence for upload URLs, multipart writes, original copies, photos and Live Photo component copies",
+    "account-wide version and unfinished-upload removal with durable receipts",
+    "metadata and backup erasure",
+    "wire and verify full deletion orchestrator and native UI"
+  ],
+  "source_sha256": {
+    "internal/albums/account_deletion.go": "68f1ddf9ff5e1680e9e7bcb5d9cc8d4599319cfb7133bf032c6475de3035e3e1",
+    "internal/albums/account_deletion_apple.go": "6810b46d31187365eac9a7a11ca7c6b4c781aa72b4a9c9fe162b28e9a75d353e",
+    "internal/albums/account_deletion_apple_test.go": "d2720b87654edbe453b10a4285f08f272a107998d362d8f6aafb60a9ee2ac347",
+    "internal/albums/account_deletion_video.go": "d6ed4faf4dbd102d93b6ece97c5949889346fc2cd8efbf36b10e3ca68a7d93fd",
+    "internal/albums/account_deletion_video_test.go": "deab9df27365f651f78d18adf839b8ccbf257ff38fe9f4a680a086bc2c800c13",
+    "internal/albums/cos_derived_cleanup.go": "deaa2743d0d874df77757f45e489d801fa4990507c4003c6797b49f08d2c20ee",
+    "internal/albums/cos_derived_cleanup_test.go": "5cf6ffefb9731d98dbb5fbbe3fb58508fa46429125d64bb90f75275fef644b4e",
+    "migrations/0044_album_deletion_video_jobs.sql": "88f1ab187e3b9fa0044823c45d8a0b568c2f605596c6859efccbe8ea2a645ca9",
+    "migrations/embed_test.go": "2dfdc8b7c6201bc9f276a131dfc7165c08e25a910b783a2ca90852e51e811886"
+  }
+}

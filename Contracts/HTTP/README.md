@@ -60,3 +60,49 @@ Repeat the command with `JournalAPI/openapi.yaml` and a `JournalAPI` output
 directory for Journal Web surfaces. Generated TypeScript belongs to the future
 Web target and should be regenerated in CI. Do not introduce a second
 hand-maintained Web schema.
+
+## Album storage client
+
+`AlbumAPI/openapi.yaml` is the canonical album account-storage contract. The
+`AlbumAPI` Swift product is generated from it by the same pinned build plugin.
+`AlbumAPITransport` supplies the exact serialized control request to an
+app-owned sender; the sender must supply verified account authentication and
+bounded responses. It must not substitute an App Attest device ID for an account.
+Media bytes are uploaded separately through file-backed transfer tasks using
+server-issued object grants. No production album endpoint is embedded in this
+package.
+
+Album resource manifests optionally carry `descriptor` with the original
+PhotoKit resource type, filename, and uniform type identifier. New iOS uploads
+send descriptors for every resource, including opaque companions. The server
+validates type/role agreement and requires all-or-none descriptors; they are
+part of the immutable manifest digest and persisted JSON. Filenames remain
+untrusted descriptive metadata, never object keys or filesystem destinations.
+Descriptor-less legacy manifests retain their exact digest/serialization for
+idempotent recovery. They must not be treated as proof of full PhotoKit restore
+capability. Optional manifest `metadata` additionally preserves capture time (UTC integer
+milliseconds), dimensions, duration, media subtype flags, favorite, and valid
+location/altitude. It participates in the immutable digest; absent metadata
+keeps legacy identities unchanged. These snapshots do not yet implement an
+editable cloud index, album membership, or a restore endpoint. Deploy this accepting backend before
+clients start sending descriptors; older strict decoders reject the new field.
+
+Verified immutable album versions are available at
+`GET /v1/albums/library/versions?after=<sequence>&limit=<1...100>` and
+`GET /v1/albums/library/versions/{versionID}`. The authenticated account supplies
+ownership; query/body owner injection is rejected. Pages use publication order,
+not capture-date gallery order, and may be shorter than the requested count to
+keep JSON below 1 MiB. Advance only to `nextSequence`; `hasMore` covers both
+count and byte truncation. Provider locations are omitted. Versions require
+subsequent logical-asset grouping, deletion/change handling and scoped media
+read authorization before they form the complete cloud gallery experience.
+
+
+`POST /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant`
+is bodyless and accepts no query. It authorizes the authenticated account's
+published immutable resource for five minutes. The response binds asset,
+manifest digest, version, resource, provider object version, byte count and
+SHA-256 to a signed COS GET. The app must validate those bindings, its configured
+storage host allowlist, the version query/response and downloaded bytes before
+restoring. Do not log or persist the signed URL. It is not a public share link,
+a download-count limit, immediate revocation mechanism, or deletion proof.

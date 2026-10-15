@@ -118,17 +118,41 @@ class ArtifactRetentionTests(unittest.TestCase):
         runtime, events = self.deployment_runtime()
         response = Mock(status=200)
         response.geturl.return_value = "http://127.0.0.1:18090/readyz"
-        response.read.return_value = b'{"status":"ready"}'
+        response.read.return_value = b'{"code":"ok"}'
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
-        with patch("ops_artifacts.urllib.request.urlopen", return_value=response), \
+        with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
                 patch("ops_artifacts.register") as register, patch("ops_artifacts.cleanup", return_value={"passed": True}) as cleanup:
             result = development_deploy(runtime, "albums-test", [], ["albums:test"], "revision", "run", ["producer"], response.geturl())
         self.assertTrue(result["passed"])
+        self.assertEqual(open_url.call_args.args[0].get_header("Host"), "api.albums.tellyouwhat.cn")
         self.assertEqual(events, [("enter", "operations", 600), ("enter", "deployment", 600),
                                   ("exit", "deployment"), ("exit", "operations")])
         register.assert_called_once_with(runtime, "albums-test", [], ["albums:test"], "revision", "run")
         cleanup.assert_called_once_with(runtime, "albums-test")
+
+    def test_readiness_keeps_each_owners_protocol(self):
+        for owner, body, accepted in [("birthday-development", b'{"status":"ready"}', True),
+                                       ("birthday-development", b'{"code":"ok"}', False),
+                                       ("albums-test", b'{"code":"unavailable"}', False)]:
+            with self.subTest(owner=owner, body=body):
+                runtime, _ = self.deployment_runtime()
+                response = Mock(status=200)
+                response.geturl.return_value = "http://127.0.0.1:18090/readyz"
+                response.read.return_value = body
+                response.__enter__ = Mock(return_value=response)
+                response.__exit__ = Mock(return_value=False)
+                with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
+                        patch("ops_artifacts.time.sleep"), patch("ops_artifacts.register") as register, \
+                        patch("ops_artifacts.cleanup", return_value={"passed": True}):
+                    if accepted:
+                        development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"], response.geturl())
+                        register.assert_called_once()
+                        self.assertIsNone(open_url.call_args.args[0].get_header("Host"))
+                    else:
+                        with self.assertRaises(OperationError):
+                            development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"], response.geturl())
+                        register.assert_not_called()
 
     def test_failed_readiness_retains_previous_registration_and_skips_cleanup(self):
         runtime, _ = self.deployment_runtime()

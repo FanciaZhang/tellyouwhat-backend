@@ -1,0 +1,31 @@
+{
+  "bucket": "tellyouwhat-albums-1251995834",
+  "bytes": 48,
+  "checks": [
+    {
+      "name": "backend_version_delete_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "upload_version_delete_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "backend_delete_marker_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    }
+  ],
+  "exactVersionIntact": true,
+  "key": "albums/originals/permission-probe-3e84047a46aa6a9dca607d1a1af235d1/probe.txt",
+  "passed": true,
+  "scope": "Only the newly created synthetic object; no permission changes or existing media touched.",
+  "sha256": "ece94c86afc504a5f411d0fdcfdd06d1f693e094125e5297a6d470e20f40b9ae",
+  "time": "2026-10-12T17:33:33Z",
+  "version": "MTg0NDQ5NTIyNDcyOTY1MTkxOTM"
+}

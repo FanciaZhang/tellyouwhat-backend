@@ -1,0 +1,148 @@
+{
+  "active_port": 18091,
+  "after": {
+    "accounts": 0,
+    "latest": "0062_album_subscription_completion_receipt.sql",
+    "migrations": 62,
+    "notifications": 1,
+    "uploads": 0
+  },
+  "baseline_source": "c8760dc190ea6e00071842ed7682c385986ebfdc",
+  "before": {
+    "accounts": 0,
+    "latest": "0040_album_apple_revocation.sql",
+    "migrations": 40,
+    "notifications": 1,
+    "uploads": 0
+  },
+  "candidate_port": 18091,
+  "candidate_project": "tellyouwhat-albums-test-next",
+  "candidate_services": {
+    "albumgateway": {
+      "id": "29441b4c4053bbdb3f9bb272169b404854aa42ea9c57bad42c58159098b88c88",
+      "image": "sha256:6979fc78cf0237798afa350ac5b6631cf50f0ab1ebf2d0ccf3169289bcfb1e35",
+      "started_at": "2026-10-13T18:02:01.88924744Z"
+    },
+    "albumworker": {
+      "id": "a091a562492d522cc39d4e7eaf8701bbc1f4fc73ff93265d33cb9f545c2ca8f1",
+      "image": "sha256:018ec92b3045b49f51e47dff37d33ac3444a72b402ea570bebeed7765eb20454",
+      "started_at": "2026-10-13T18:02:01.890697413Z"
+    }
+  },
+  "completed_at": 1791914528,
+  "loaded_caddy_upstream": "127.0.0.1:18091",
+  "original_writers_stopped": true,
+  "previous_port": 18090,
+  "public_route_changed": true,
+  "recovery": {
+    "compose_sha256": "257bfcea0fcfa576751bc18e7f32339b4eff24ff64c5f091664a27dab907f666",
+    "database_mounts": [
+      {
+        "Destination": "/var/lib/mysql",
+        "Driver": "local",
+        "Mode": "rw",
+        "Name": "tellyouwhat-albums-test_albums-test-mysql",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/tellyouwhat-albums-test_albums-test-mysql/_data",
+        "Type": "volume"
+      }
+    ],
+    "runtime_sha256": "26f29099d21cc31d89dff5af92734629c3e53b19ce09d1af0c0fc9709fbb29cc",
+    "signing_sha256": {
+      "album-app-store.p8": "5e1b447cd5f1151d8491a7a221ee29a96b36d62d3fa25ec0253aebb093aa2c87",
+      "apple-app-store-roots.pem": "c704ce9bc7d65280e2893c2235c2434dba8cbce00f659787492714ca441b1e93",
+      "apple-sign-in.p8": "9752b4677d705dbde1ecc3e72afc44482c1e7d94678cffb3f99f74f33c7aed7c",
+      "credential-key.base64": "64ea38ab08f5d9beae9534f54913c60d4ca0d4564d833296803f87e66673dd5c",
+      "login-limit-key.base64": "d940f33a2c877984bcbb884a04f8a5d320ae5571ec2d47a5bcebf9a52bfd140c"
+    }
+  },
+  "restore_identical": true,
+  "snapshot_encrypted": true,
+  "source": "fb2cf960651c58bf84d7697b8dc57e2001a8be17",
+  "cleanup": {
+    "completed_at": 1791914865,
+    "errors": [],
+    "free_bytes_after": 22705074176,
+    "free_bytes_before": 22705078272,
+    "operation": "artifacts-albums-test",
+    "passed": true,
+    "reclaimed_bytes": -4096,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "configured_runtime_flags": {
+    "ALBUM_SHARING_ENABLED": "false",
+    "ALBUM_RETENTION_PUSH_ENABLED": "false",
+    "ALBUM_DEPLOYMENT_ENVIRONMENT": "test",
+    "ALBUM_DERIVED_CLEANUP_ENABLED": "false",
+    "ALBUM_VIDEO_PROCESSING_ENABLED": "false",
+    "ALBUM_SUBSCRIPTIONS_ENABLED": "true",
+    "ALBUM_TRASH_ENABLED": "false",
+    "ALBUM_PHOTO_PROCESSING_ENABLED": "false"
+  },
+  "post_notification_replay_database_rows": [
+    "62\t0062_album_subscription_completion_receipt.sql",
+    "0",
+    "0",
+    "1"
+  ],
+  "verified_at": "2026-10-14",
+  "scope": "isolated Albums test service upgrade; no production sales or user media",
+  "deployment_producer_source": "90c5be0c37d4620be24241fd87127be3f0cf82aa",
+  "stage_producer_source": "fb2cf960651c58bf84d7697b8dc57e2001a8be17",
+  "local_recovery_copy": {
+    "encrypted_snapshot_authenticated": true,
+    "decrypted_bytes_hash_verified": true,
+    "directory_mode": "0700",
+    "file_mode": "0600",
+    "plaintext_saved": false
+  },
+  "public_checks": {
+    "readyz": 200,
+    "signed_out_library": 401,
+    "signed_out_subscription": 401,
+    "existing_Apple_TEST_replay": 200,
+    "cache_control": "no-store"
+  },
+  "python_tests": {
+    "passed": 37,
+    "failed": 0
+  },
+  "development_failures": [
+    "First preflight incorrectly required disabled APNs key; fixed active-key selection before any build or service stop.",
+    "Initial local test runner assumed xctestrun TestConfigurations format; adjusted to inspected target-key format before any test executed. Build was reused."
+  ],
+  "not_verified": [
+    "Real Apple sign-in and Sandbox purchase/trial/renewal/refund",
+    "Final account erasure, permanent deletion permissions and offsite COS backup",
+    "Physical device and mixed-media batch acceptance"
+  ],
+  "native_validation": {
+    "app_source": "cf3cb22",
+    "os": "iOS 26.5",
+    "device": "iPhone 17 Simulator",
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "build_configuration": "Config/AlbumsTest.xcconfig",
+    "build_exit_code": 0,
+    "run_directory": "/Users/harborzeng/Library/Caches/XcodeMaintenance/Runs/albums-upgraded-api.c3gwdn",
+    "tests": [
+      "AlbumAccountAPITests/testLiveTestDeploymentChallengeAndSignedOutAccess",
+      "AlbumsUITests/testConfiguredTestAccountKeepsLocalLibraryAccessible"
+    ],
+    "screenshot": "preserved in native App repository",
+    "logs_sha256": {
+      "build.log": "204314cb8d62aa7d273ebb2dcc07ce228ad0e58a549f78a3059d11cfe0313272",
+      "test.log": "626289e2d59ccb66c0590c7c44eead3d8d98d7d85b79e1ddcb99282fbb10f048"
+    },
+    "scope": "real HTTPS challenge, signed-out denial, enabled Apple login entry and local library navigation; no Apple authorization or purchase"
+  },
+  "source_sha256": {
+    "deploy/albums/stage_test_upgrade.py": "14422a55a87056c41f9645b53bb4f0f54d67d73ae56fb85faf1dec7b13cbeeee",
+    "deploy/albums/stage_test_upgrade_test.py": "9dbbc6df8384378668273c9b5578da4a49805ebebb63cf25ab0dd1cba98a3971",
+    "deploy/albums/promote_test_upgrade.py": "e94924e83a066cb6f15abc279ef5236a5437b3e1d4a9730b8de81bc69841952b",
+    "deploy/albums/promote_test_upgrade_test.py": "aef3ac23b718d34c61c57b852326233172ca15623ebbe27be9dd70ec19f0e44f"
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "date": "2026-10-14",
+  "appBase": "2cee8c8",
+  "backendBase": "6b174fc",
+  "scope": "Controlled loopback integration: native API/store/real simulator Keychain to Go router/isolated MySQL, two actual app processes per OS. No production source behavior changes.",
+  "runs": [
+    {
+      "success": true,
+      "phases": [
+        {
+          "name": "native-1",
+          "exitCode": 0,
+          "summary": {
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "environmentDescription": "Albums · Built with macOS 27.0",
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "finishTime": 1791908728.626,
+            "passedTests": 1,
+            "result": "Passed",
+            "runtimeWarnings": [],
+            "skippedTests": 0,
+            "startTime": 1791908724.203,
+            "statistics": [],
+            "testFailures": [],
+            "title": "Test - Albums",
+            "topInsights": [],
+            "totalTestCount": 1
+          }
+        },
+        {
+          "name": "native-2",
+          "exitCode": 0,
+          "summary": {
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "environmentDescription": "Albums · Built with macOS 27.0",
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "finishTime": 1791908731.355,
+            "passedTests": 1,
+            "result": "Passed",
+            "runtimeWarnings": [],
+            "skippedTests": 0,
+            "startTime": 1791908729.322,
+            "statistics": [],
+            "testFailures": [],
+            "title": "Test - Albums",
+            "topInsights": [],
+            "totalTestCount": 1
+          }
+        }
+      ],
+      "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+      "backend": {
+        "exitCode": 0,
+        "passed": true
+      },
+      "servicesStopped": true,
+      "nativeProcessIDs": [
+        80331,
+        80375
+      ],
+      "logSHA256": {
+        "mysql-init.log": "5ad5d44568bae22199b161eb75879d50854d7c6b84e5655f1164b9c3ffcfe6ee",
+        "backend.log": "823f4bfe54fa15d1f4833e8a8cc0f445b7368d362ebe3928859069ef34755c2e",
+        "native-1.log": "65c4f2c481ab6eb54c54ddecf5dedb5036aa761412dc9231f3f0348148c352cb",
+        "mysql.log": "f6af11500e505e3524910036a8463cf4c68abd62c1e830fd76c1506d3e42bcb1",
+        "native-2.log": "c36220b3062f9b4b2d17199420a38d83163937de647f28086c25059a7cddb1cb",
+        "redis.log": "f0ad72d1574e0179b18a1d288b2746d904463cdbc83828aa186f5fc894557615"
+      }
+    },
+    {
+      "success": true,
+      "phases": [
+        {
+          "name": "native-1",
+          "exitCode": 0,
+          "summary": {
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "environmentDescription": "Albums · Built with macOS 27.0",
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "finishTime": 1791908771.444,
+            "passedTests": 1,
+            "result": "Passed",
+            "runtimeWarnings": [],
+            "skippedTests": 0,
+            "startTime": 1791908766.809,
+            "statistics": [],
+            "testFailures": [],
+            "title": "Test - Albums",
+            "topInsights": [],
+            "totalTestCount": 1
+          }
+        },
+        {
+          "name": "native-2",
+          "exitCode": 0,
+          "summary": {
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "environmentDescription": "Albums · Built with macOS 27.0",
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "finishTime": 1791908773.953,
+            "passedTests": 1,
+            "result": "Passed",
+            "runtimeWarnings": [],
+            "skippedTests": 0,
+            "startTime": 1791908772.158,
+            "statistics": [],
+            "testFailures": [],
+            "title": "Test - Albums",
+            "topInsights": [],
+            "totalTestCount": 1
+          }
+        }
+      ],
+      "device": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+      "backend": {
+        "exitCode": 0,
+        "passed": true
+      },
+      "servicesStopped": true,
+      "nativeProcessIDs": [
+        80545,
+        80585
+      ],
+      "logSHA256": {
+        "mysql-init.log": "3831021274900e8d9fd59e103a794c114e1361b647c204da7da78ebe80f9e27d",
+        "backend.log": "88e24ed109eb425db1962dcabb0d682823ce720b46da1b1b8044685cac28d1b5",
+        "native-1.log": "075357897f11603eb7a4a4f975f3cc83c365baf21ba6aa4bb7eb23d30c5c2290",
+        "mysql.log": "1c9479d9aece546c1adb8b22d8347ea22033983bdec54c39c4d0a15402a6ecf4",
+        "native-2.log": "890318811e58e0b70c96f28e65f8812db975b0be1cd7810cc791793261c10478",
+        "redis.log": "b25b06ba9fee9daa0e5834909f26c873a5afae35a588cbe7415925432318c931"
+      }
+    }
+  ],
+  "sourceSHA256": {
+    "AlbumsTests/AlbumDeletionIntegrationTests.swift": "de405f86ce211a8c7059e524940ab5282c83ebbfc1d553e9498f54f9f5e94655",
+    "scripts/test-deletion-roundtrip.py": "8c6488fb41abcd1ba2932cf5dce03c3fe89a52e7e3d3231db27fb5eb8ea22660",
+    "Albums.xcodeproj/project.pbxproj": "ebc456ce9d3db8fd9c6df352862926f8df56f79d23f8b45401ad2bec6d94e577",
+    "internal/albums/account_deletion_native_test.go": "541486e963a655251cef01d410e9da201dba361be0fbe3eba21b2fd5cfde434d"
+  },
+  "injections": [
+    "Acceptance committed, then HTTP 503 replaces its success response",
+    "Second account acceptance blocked before transaction, then withdrawal committed and HTTP 503 replaces its success response"
+  ],
+  "verified": [
+    "Accepted exact request replayed after process restart, original receipt retained and credential removed",
+    "Withdrawal intent persisted; restarted process sends withdrawal only until it confirms",
+    "Late original deletion after withdrawal rejected with 401",
+    "Already accepted withdrawal returns accepted receipt, never false cancellation",
+    "Exactly one deletion ledger row, withdrawn account has none, other-device session remains valid"
+  ],
+  "initialFailures": [
+    "Test forwarding task property collided with URLProtocol.task; renamed before successful build",
+    "Runner expected xctestrun format 2, current Xcode emitted format 1; supported both before integration runs"
+  ],
+  "notVerified": [
+    "Production HTTPS, DNS and remote deployment",
+    "Real Apple login, subscription purchase, refund or rebinding",
+    "UI confirmation-dialog taps",
+    "Physical media/identity/backup erasure",
+    "Real-device behavior"
+  ],
+  "routing": "Test-only URLProtocol forwards original method/body/credential to a loopback HTTP server and maps the response URL back to albums.example; no response payload is fabricated by native code. Backend uses injected HTTP 503 failures around actual transactions."
+}

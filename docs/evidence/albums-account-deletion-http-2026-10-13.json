@@ -1,0 +1,76 @@
+{
+  "verified_at": "2026-10-13T15:35:33.037515+00:00",
+  "scope": "isolated MySQL/Redis and real handler assembly; no deployment or real user deletion",
+  "verification": {
+    "startedAt": "2026-10-13T15:31:38.852445+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-tly5zn46",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-tly5zn46/race.log",
+        "testCounts": {
+          "pass": 104
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-tly5zn46/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-tly5zn46/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T15:32:18.333039+00:00"
+  },
+  "top_level_go_tests": 42,
+  "go_pass_events": 104,
+  "go_failed_events": 0,
+  "go_skipped_events": 0,
+  "swift_contract_tests": {
+    "passed": 18,
+    "failed": 0,
+    "log_sha256": "d6b058c7139151ed9e7b6a1059db4c381af92bbec918af37d58450d8d1c2f3e4"
+  },
+  "covered": [
+    "Exact request replay after account access and session records are erased, including expired original credentials",
+    "Acceptance revokes only the authenticated account and does not imply completion",
+    "Other credentials and colliding request IDs cannot authorize another deletion or disclose its receipt",
+    "Strict bounded JSON, duplicate keys, supplied owner, invalid IDs, query injection, host and method boundaries",
+    "Rate limiting and limiter failure precede mutation; transaction failure preserves active session and allows exact retry",
+    "Actual Gateway keeps endpoint disabled; no environment knob enables it",
+    "Generated Swift request sends only request ID and decodes accepted state"
+  ],
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "285fbbeed97527bf6619bf9cee9a3b18a59c49688a9c1aae15233c59a9073fdb",
+    "Contracts/HTTP/Tests/AlbumAPITests/AlbumAPITransportTests.swift": "072e967ffa74e495d3153c21f976a488e83576133fcae7f3a178a628f5b3637b",
+    "internal/albumhttpapi/generated.go": "3ffe2ff2f975b4b7d53c421500527ceddfa3cd118f9bbc058e7a53859332c550",
+    "internal/albums/account_deletion.go": "1b2d356eb2327fbe943dc2e49e192614c2ae6ca9753ba6651be90b5809b0cb8e",
+    "internal/albums/account_deletion_http.go": "09e0636e35485ae72d9242deddb636112b4bd1cb6c1e69f5049288a0e9daf1a7",
+    "internal/albums/account_deletion_http_test.go": "6f2ed2ac1982cfb970b8d69a14d458765f9ed63f9896243a75c25507b9a92b51",
+    "internal/albums/http.go": "525ef9144ed120ca88897e56c926888493d1d35f8d2d0788298a82c5e93fc8a5",
+    "internal/albums/login_http.go": "eef78ba84a5fbca4e3d39679db2d4aa1cefa0767b8bc76c68b8edbf1e173ce82",
+    "internal/albums/login_limit.go": "d0879b25a497d57024432cdd511dd8e198d292eb81964d59b78b43a9b8c43dcb"
+  },
+  "log_sha256": {
+    "mysql-init.log": "95734c01c5e0b996d67a4f57356515c951dcfd881f70d6c710819c824adfdb10",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mysql.log": "72c02c6aea37e87881381d5c08bb5b8b2bd34a4fac426008f2aaa376ddfdc7b2",
+    "redis.log": "70e8f99d6aef660928761008cbb350dc9c0d746561042ff4167818b40108ffa8",
+    "race.log": "0aa36b801b7d669d0d7a63427c1c11d2c5d5fbec5458ce4c2ba2582d5846524c",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "Final identity, billing records and backup erasure",
+    "Native durable deletion request state, confirmation UI and end-to-end acceptance",
+    "Deployment or activation of account deletion endpoint",
+    "Real Sandbox purchase, refund, rebinding and recreated-account restore"
+  ]
+}

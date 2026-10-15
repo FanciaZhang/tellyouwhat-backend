@@ -1,0 +1,6 @@
+{
+  "Bucket": "replace-with-private-backup-bucket-1250000000",
+  "Region": "ap-guangzhou",
+  "SecretID": "replace-with-dedicated-backup-identity",
+  "SecretKey": "replace-with-private-credential"
+}

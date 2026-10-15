@@ -1,0 +1,106 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Recover missing original COPY receipts for deleting accounts without repeating COPY or publishing backups",
+  "migration": "0045_album_deletion_original_checks.sql",
+  "implementation": {
+    "reuses_original_seal_journal": true,
+    "positive_existing_receipts_not_queried": true,
+    "unissued_and_legacy_intents_not_queried": true,
+    "legacy_intents_remain_unproven": true,
+    "lease_seconds": 120,
+    "head_timeout_seconds": 30,
+    "max_batch": 100,
+    "retry_initial_seconds": 60,
+    "retry_max_seconds": 21600,
+    "absence_timeout_and_error_never_mean_terminated": true,
+    "late_positive_receipt_preserved": true,
+    "conflicting_observation_rejected": true,
+    "receipt_update_and_lease_release_atomic": true
+  },
+  "checks": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 33,
+    "passed_events": 99,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "6f6401086198c3925b05c0dbfdb35c63c799f64e4997dcff70c2f00b23ebc68f"
+  },
+  "live_read_only": {
+    "all_versions_match_saved_receipts": true,
+    "database_receipts_written": false,
+    "fixtures": [
+      "jpeg",
+      "oriented-jpeg",
+      "transparent-png",
+      "video"
+    ],
+    "media_content_downloaded": false,
+    "method": "HEAD",
+    "mutations_allowed": false,
+    "passed": true,
+    "requests": 4
+  },
+  "coverage": [
+    "existing pending intent after migration",
+    "account, request, resource, digest, consumed time and deletion fence binding",
+    "reopening repository after backoff",
+    "no repeat of acknowledged observations",
+    "null, oversized, empty and errored version observations",
+    "lease expiry and takeover",
+    "concurrent late positive receipt with same or different observed version",
+    "late positive receipt survives query failure",
+    "cancelled query cannot commit receipt",
+    "legacy single-submission uncertainty is retained",
+    "no upload publication from an observed COPY version"
+  ],
+  "boundaries": {
+    "database_tests_use_mock_provider": true,
+    "live_probe_uses_only_previously_saved_synthetic_originals": true,
+    "live_head_not_full_deletion_acceptance": true,
+    "media_downloaded_or_deleted": false,
+    "runtime_scheduler_connected": false,
+    "deployed": false,
+    "account_erasure_complete": false
+  },
+  "remaining": [
+    "client PUT URL and multipart operation quiescence",
+    "photo and Live Photo derived copy quiescence",
+    "account-wide version and unfinished upload erasure",
+    "metadata and backup erasure",
+    "runtime orchestration and HTTP/native deletion UI"
+  ],
+  "source_sha256": {
+    "internal/albums/account_deletion_originals.go": "c3a274ef65e1c48c08defe8b8e572ef5d8141e54f3a7591aaf33ddb149ecd0e4",
+    "internal/albums/account_deletion_originals_test.go": "9f96637ca99c383a2c21cc99acc89180074cccc7a7978aee99959afceee02f5b",
+    "internal/albums/cos_deletion_originals_live_test.go": "74e2a33264b5e7c7efe83d1c308925111de87a837cff4bf21b7c210019dfe982",
+    "internal/albums/original_seals.go": "6bb449f002cf79510bf4b60dfe9d69348cc8ab38d44ac26a5284865714fba1fb",
+    "internal/albums/original_seals_test.go": "c3827079f7dbecf6b4709bc5d2c1286eec855af32bf01d0c559889ddeaaffc0b",
+    "internal/albums/cos_objects.go": "5178ca0fd23cef8a59d074ad1109c7f04fa10ae961768c629ed777bf26576709",
+    "migrations/0045_album_deletion_original_checks.sql": "cd8fb5cb111f281b6231f86aa5aa542b67b9cf36e1672b166397e8d5d34abab8",
+    "migrations/embed_test.go": "84d5917c39f34ca94b3cc665a7dab13c20bf309e47e16f308c151313bdb44950"
+  }
+}

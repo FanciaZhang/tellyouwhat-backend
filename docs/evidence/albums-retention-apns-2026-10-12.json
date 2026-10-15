@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T05:26:53.459224+00:00",
+  "baselineCommit": "64198dc8a4692707054cc2e39c20587605831350",
+  "scope": "APNs retention reminder transport only; no runtime worker, device registration or real push",
+  "sourceSHA256": {
+    "internal/albums/retention_apns.go": "8c28a941bcca991c08eb5a6353fc90f26192d5472d6853a904dcb2449b0b5657",
+    "internal/albums/retention_apns_test.go": "c071efe5de5c5bfb167b647d95aa5cb2dc89aaf355e86f3680bed29048dc6f2c",
+    "internal/albums/mysql_retention_reminders.go": "55923533c344ef44aaf5b07cc10620c5774b5d020f16556a72a904bfaeddd6c2",
+    "internal/albums/apple_code.go": "b17f22a9dd3b7e37c98112a680092d4a88d059a712458386aac867c16ce608a7",
+    "internal/appstore/client.go": "c99a249bfd33b111827da20b47b187580364e92dddebedbb99b49824d6f15452",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b"
+  },
+  "validation": [
+    {
+      "name": "apns-race",
+      "exitCode": 0,
+      "logSHA256": "60a2d375d491f47c6e4a0461d5de5b5893b5932b425ceeded1b1c91e1979a5fa",
+      "counts": {
+        "pass": 21
+      },
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 1.807
+        }
+      ],
+      "tests": [
+        {
+          "Test": "TestAlbumAPNSRealHTTP2RequestAndSignature",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSTokenCacheConcurrentRotationAndClockRollback",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/accepted",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/unregistered",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/expired-token",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/no-invalidation-time",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/future-invalidation",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/bad-device",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/wrong-topic",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/expired-provider",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/provider-rotation",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/throttled",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/server-error",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/unavailable",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/malformed",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/oversize",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/body-on-success",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/redirect",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSValidationAndUnknownOutcomes",
+          "Action": "pass"
+        },
+        {
+          "Test": "TestAlbumAPNSStageWindowAndRequestCancellation",
+          "Action": "pass"
+        }
+      ]
+    },
+    {
+      "name": "regression-race",
+      "exitCode": 0,
+      "logSHA256": "b1f05c8cfa0fbb2258b78c3adfdc05f40d8da1f4c012401a65e4a8854d19b511",
+      "counts": {
+        "pass": 421,
+        "skip": 51
+      },
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+          "Action": "pass",
+          "Elapsed": 1.492
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Action": "pass",
+          "Elapsed": 1.577
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 2.8890000000000002
+        }
+      ],
+      "tests": [
+        {
+          "Test": "TestMySQLAppleAccountStableAcrossConcurrentLogins",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedFinalizationClosesOnceAcrossConcurrentWorkers",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedFinalizationPendingAndUnspentBudget",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedFinalizationQuotaMismatchRollsBack",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupFailedVideoLostDeleteReopensAndRefundsOnce",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/unknown",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/running",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/network",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/success-unverified",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupRecoversDiscoveredVideoAndProtectsReceipt",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupPhotoRecoveryFencesConcurrentRetirement",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupClaimsAndExpiryFenceConcurrentWorkers",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupInvalidPhotoCannotPublishAfterRetirement",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/missing-receipt",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/changed-receipt-size",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/unplanned-version",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestGatewayMySQLRedisAppleLoginAndSessionLifecycle",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLLiveMovieWaitsForStillsAndFinalizesAllThreeComponents",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLLoginChallengeConsumedOnceAcrossServiceInstances",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestRedisAlbumLoginLimitAcrossInstances",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLLivePairReservesOnceAfterComponentFinalizationAndFencesEverySeal",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLLivePairRecoversLostCopyResponseWithoutRepeatingAndPublishesPinnedRead",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLLivePairRejectsSourceReceiptSubstitutionAndRetainsEscrowOnHashMismatch",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoWriteOnlyOneWriterAndSingleQuotaTransfer",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoWriteQuotaFailureRollsBackReceipt",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoDerivativeResumesAcrossServiceAndDatabaseReopen",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoPreviewGrantOnlyAfterReceiptAndQuotaCommit",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSubscriptionsAdmissionDowngradeAndRetention",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSubscriptionChainCanBelongToOnlyOneAccount",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumReservationAndVerificationTransactions",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoQueuePublishesOnceClaimsAndFencesLeases",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoWorkersSerializeGenerationAndResumeLostWrites",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLPhotoWorkerCrashLimitDoesNotLoopForever",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderWindowsRetryAndRestart",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderRenewalInvalidatesClaim",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderDowntimeAndConcurrentClaim",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderSchedulingRollsBackSubscription",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSharingLastClaimConcurrencyAndPoolBoundedGrants",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSharingLeaseExpiryCannotBeReplayedForFree",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSharingLiveBundleRejectsIncompleteEvidence",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSubscriptionRefreshClockExpiryKeepsSameSignedTransaction",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSubscriptionRefreshFreshnessFailureAndRecovery",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLAlbumSubscriptionRefreshLeaseFencesCrashAndClientChange",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLVideoPublicationClaimAndSubmissionAreOnceAndLeaseFenced",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLVideoLostPOSTResumesAfterDatabaseReopenAndChargesOnce",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLVideoWaitingDoesNotExhaustRetriesAndHasDeadline",
+          "Action": "skip"
+        },
+        {
+          "Test": "TestMySQLVideoBudgetBeforePaidSubmissionAndReceiptQuotaRollback",
+          "Action": "skip"
+        }
+      ]
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "countsOverlap": true,
+  "environment": "real local TLS/HTTP2 server with isolated test certificate trust and fixed-destination dial override; locally generated P-256 key; additional controlled HTTP responses; no MySQL/Redis",
+  "verified": [
+    "ES256 signature and Team ID / Key ID / iat binding",
+    "fixed Apple APNs hosts and fixed cn.tellyouwhat.albums topic",
+    "explicit APNs environment independent of receipt environment",
+    "generic bounded lock-screen payload without account/media/token/deadline",
+    "50-minute JWT cache, 20 concurrent callers and clock rollback rejection",
+    "24-hour maximum provider storage bounded by reminder stage cutoff",
+    "request cancellation bounded by remaining reminder lease",
+    "410 invalidation timestamps returned without deleting registration",
+    "429 and 5xx retry classification with 15-minute floor and Retry-After",
+    "no application-level immediate retry after ambiguous network failure",
+    "redirect refusal, HTTP/1 refusal and mismatched receipt rejection",
+    "oversized/malformed response, expired lease and invalid token rejection",
+    "secret and URL/token-bearing provider error redaction"
+  ],
+  "runtimeEnabled": false,
+  "liveAPNSAcceptance": false,
+  "unverified": [
+    "account-bound encrypted device registration, notification consent and logout invalidation",
+    "periodic dispatch, fresh Apple entitlement check, retry scheduling and acceptance receipts",
+    "production credentials and key rotation / connection lifecycle",
+    "physical-device and TestFlight APNs delivery and settings navigation",
+    "six-month all-version permanent purge"
+  ],
+  "sources": [
+    "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns",
+    "https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns",
+    "https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns"
+  ]
+}

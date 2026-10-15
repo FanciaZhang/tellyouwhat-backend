@@ -1,0 +1,112 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Account-scoped COS inventory and shared multipart XML parsing; no live deletion",
+  "implementation": {
+    "areas": [
+      "staging",
+      "originals",
+      "derivatives",
+      "video-previews",
+      "live-pairs",
+      "staging/live-pairs"
+    ],
+    "max_entries_per_request": 1000,
+    "max_response_bytes": 4194304,
+    "request_timeout_seconds": 30,
+    "relist_after_acknowledged_removal": true,
+    "empty_result_requires_explicit_nontruncated_response": true,
+    "unknown_keys_or_foreign_owners_rejected": true,
+    "sdk_version": "v0.7.75",
+    "sdk_issue": "ListMultipartUploadsResult uses CommonPrefixs and lowercase delimiter; shared direct XML parser now uses documented names in all three callers"
+  },
+  "checks": {
+    "tests": {
+      "exit": 0,
+      "passed": 258,
+      "top_level_passed": 51,
+      "failed": 0,
+      "skipped": 0
+    },
+    "vet": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "policy": {
+      "exit": 0
+    }
+  },
+  "mocked_cases": [
+    "six media namespaces",
+    "1003 versions and multipart sessions drain as 1000 + 3 + fresh empty list",
+    "historical versions and delete markers",
+    "documented key-only version continuation",
+    "bucket, prefix and owner binding",
+    "missing truncation, grouped results, duplicate entries and unrequested markers",
+    "oversized body or page, invalid XML root and trailing root",
+    "redirect, transport and access errors",
+    "exact object purge and ambiguous multipart recovery regression"
+  ],
+  "live_versions_before_permission_change": {
+    "lastCode": "AccessDenied",
+    "lastStatus": 403,
+    "mutationsAllowed": false,
+    "passed": false,
+    "requests": 1
+  },
+  "live_multipart_after_shared_parser_change": {
+    "counts": {
+      "derivatives": 0,
+      "live-pairs": 0,
+      "originals": 0,
+      "staging": 0,
+      "staging/live-pairs": 0,
+      "video-previews": 0
+    },
+    "lastCode": "",
+    "lastStatus": 200,
+    "passed": true,
+    "requests": 6,
+    "scope": "read-only six prefixes of the synthetic JPEG fixture account; no mutations"
+  },
+  "permission_proposal": {
+    "policy": "AlbumsTestBackend",
+    "policy_id": 289454608,
+    "only_attached_identity_observed": "albums-test-backend",
+    "action_added": "cos:GetBucketObjectVersions",
+    "bucket": "tellyouwhat-albums-1251995834",
+    "region": "ap-guangzhou",
+    "condition": "string_like cos:prefix for existing five album media prefixes; staging includes staging/live-pairs",
+    "browser_form_prepared": true,
+    "saved": false,
+    "confirmation_pending": true,
+    "delete_permission_added": false
+  },
+  "not_verified": [
+    "live version listing still fails with 403 AccessDenied until permission is approved and saved",
+    "no positive real multipart upload inventory in this probe; six live prefixes were empty",
+    "provider quiescence and account deletion orchestration",
+    "live deletion, metadata and backup erasure, HTTP/UI account deletion"
+  ],
+  "deployed": false,
+  "live_storage_mutations": false,
+  "references": [
+    "https://cloud.tencent.com/document/product/436/35521",
+    "https://cloud.tencent.com.cn/document/api/436/7736",
+    "https://cloud.tencent.com/document/product/436/71306"
+  ],
+  "source_sha256": {
+    "internal/albums/cos_objects.go": "5178ca0fd23cef8a59d074ad1109c7f04fa10ae961768c629ed777bf26576709",
+    "internal/albums/cos_inventory.go": "b5fc60abdbd945466358b89e7d0f32088096f46a5aba94a3fc438191cee4d267",
+    "internal/albums/cos_account_purge.go": "e718004e9615687edc333d06779ee39a4a7ed79c5b54a05c49467a4c3b0e4044",
+    "internal/albums/cos_account_purge_test.go": "bb89fbcfdb999d3b5a3788062b55b1dc5f1a9bf2a2bc8e9d07296d3328bfcbe1",
+    "internal/albums/cos_account_purge_live_test.go": "d6bc058f8ae22b1e55bd92a6fb055a31c891b5220e718476b23f6d12378f4a32",
+    "internal/albums/cos_object_purge.go": "95b372fd4d150ec91b12c9688ddf272946cae53a4f7d4d7bb5f6820b7bcf3f99",
+    "internal/albums/cos_object_purge_test.go": "5e4ad952473db1fd7c7cd0114c5756b2cf29726eb8cc455758ee51cc178020b0",
+    "internal/albums/cos_find_multipart.go": "c548f71362ac451a7a12617c0ac6d1486a613785abb1b5e98ef41f432ff876eb",
+    "internal/albums/cos_find_multipart_test.go": "8a9ded625029032813e53b218f22008dce00d361eec3414a73aa517f0418c391",
+    "deploy/albums/cam-backend.policy.json": "e6649627a41b1088da3765eeb4aaa6bf28a7da542c65a52ee73db12fdfd4f9ea",
+    "deploy/albums/cam_policy_test.py": "c19bcc272fbfa666d8c6dad379469e3a597d85baba458b8ec7c42d89e9619c47"
+  }
+}

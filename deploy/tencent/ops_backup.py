@@ -230,6 +230,8 @@ def verify_backup(runtime, path):
             raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
+        if manifest.get("scope") not in (None, "control-plane"):
+            raise OperationError("backup belongs to a different recovery scope")
         expected = manifest_signature(backup_secret(runtime), manifest)
         if not hmac.compare_digest(expected, envelope["hmac_sha256"]):
             raise OperationError("backup manifest authentication failed")

@@ -1,0 +1,88 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Reject purge based only on direct PUT URL expiry; record authorization exposure before returning URLs",
+  "live_probe": {
+    "cloud_objects_deleted": false,
+    "completed_after_expiry": true,
+    "exact_bytes_match": true,
+    "headers_sent_at": "2026-10-13T09:35:29.823384Z",
+    "key": "albums/staging/d2788f15-a291-4a80-a1a1-1ef9538b0b53/ba69277d-91dd-494e-bf0c-c99dc4efa7f5/photo",
+    "observed": true,
+    "prefix_written_at": "2026-10-13T09:35:29.823473Z",
+    "response_at": "2026-10-13T09:35:40.122596Z",
+    "response_server_date": "Tue, 13 Oct 2026 09:35:40 GMT",
+    "response_status": 200,
+    "sha256": "0832bb75b46d96debd317e31ab2415b6055426f367775c83e991e257a179a963",
+    "signature_expiry": "2026-10-13T09:35:37Z",
+    "size_bytes": 29696,
+    "stored_complete_object": true,
+    "tail_started_at": "2026-10-13T09:35:40.002076Z",
+    "transport_error": false,
+    "version_id": "MTg0NDQ5NTIxODk1Njk1MjMyNzk"
+  },
+  "regression": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 58,
+    "passed_events": 141,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "7c6c87b58682449d93980b5df566f594a2d965686fda1676006c82fc0ae9b5d8"
+  },
+  "coverage": [
+    "new multipart-only reservations do not acquire direct PUT exposure",
+    "failed signing does not set exposure",
+    "failed database exposure write prevents successful authorization",
+    "Live Photo pair grants commit exposure",
+    "migration conservatively marks existing rows and legacy inserts",
+    "old purge plans cannot claim, authorize, acknowledge or replay after exposure",
+    "elapsed time cannot close direct uploads",
+    "exposure is scoped to the matching account and asset"
+  ],
+  "boundaries": {
+    "deployed": false,
+    "ios_changed": false,
+    "cloud_objects_deleted": false,
+    "synthetic_staging_object_created": true,
+    "probe_bytes": 29696,
+    "account_erasure_complete": false,
+    "live_pair_multipart_migration_complete": false,
+    "direct_uploads_require_independent_termination_evidence": true,
+    "counterexample_not_general_provider_timing_guarantee": true
+  },
+  "source_sha256": {
+    "internal/albums/library.go": "de633fa365c2de7b0890a7d01ccdb2d8ee8e73bac4c8444745df8aec0a8ae896",
+    "internal/albums/mysql_live_pairs.go": "a61721506bfab479e9e0fccd1652b23dc792068adea1755b34a57454974d245a",
+    "internal/albums/mysql_object_purge.go": "5b68d541443acb84ebf0dede0aff0dfba5116886f7441ef5e9ee90368d4bf373",
+    "internal/albums/mysql_uploads.go": "9e7ff7b72923188e8992bd852d2bcaad350382bdc9cff3435659ee4057f7a166",
+    "internal/albums/object_purge_admission.go": "7875fd948d650780595337b39e230242aee598304268e55448d56a474eb3cfaf",
+    "internal/albums/upload_grants.go": "c8c7ea3a167577432376c557e935a96b0fb263ed27d532a615ced99b4d7d6f43",
+    "internal/albums/cos_upload_expiry_live_test.go": "958f8c169876f7ed2b899b44dde1a349a3e544e4d3253a6369c736080e814d56",
+    "internal/albums/direct_upload_evidence_test.go": "31c838425ec457f67d1526673f72db6e660cc0f4f66a7a2b446ca9397b74f04a",
+    "migrations/0049_album_direct_upload_evidence.sql": "2d8452ba38d89391fabf42fb4f190e8d7722af12250455fc22dd6258f7b4a6a1",
+    "migrations/embed_test.go": "0591ba77b0befca88338e18ed1679389eb08b545f461bccb5f310f0056f7c13a"
+  }
+}
