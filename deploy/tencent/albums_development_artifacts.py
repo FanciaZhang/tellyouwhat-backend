@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 
 from ops_common import OperationError
+from albums_development_checkpoint import checkpoint
 
 FILES = ('source.tar', 'compose.albums-test.yaml', 'runtime.env', 'compose.env', 'selection.json')
 KEYS = ('apple-sign-in.p8', 'credential-key.base64', 'login-limit-key.base64')
@@ -53,6 +54,7 @@ def backup_configuration(runtime, destination):
                 or path.stat().st_mode & 0o777 != 0o440 or not 0 < path.stat().st_size <= 16384):
             raise OperationError('unsafe Albums development recovery credential')
         data['secrets/' + name] = runtime.execute('backup-albums-development-key', ['sudo', '-n', 'cat', '--', str(path)])
+    data.update(checkpoint(runtime, folder))
     destination.mkdir(mode=0o700)
     for name, content in data.items():
         path = destination / name
@@ -64,9 +66,13 @@ def backup_configuration(runtime, destination):
 
 
 def verify_recovery(archive, manifest):
-    expected = {'state.json', 'owner.json', 'database.env',
+    expected = {'state.json', 'owner.json', 'database.env', 'backup.env',
                 *('current/' + name for name in FILES), *('secrets/' + name for name in KEYS)}
-    if set(manifest) != expected:
+    extra = set(manifest) - expected
+    snapshots = [name for name in extra if re.fullmatch(r'checkpoint/albums-[a-f0-9]{32}\.sql\.gz\.enc', name)]
+    ledgers = [name for name in extra if re.fullmatch(r'checkpoint/albums-deletions-[a-f0-9]{32}\.json', name)]
+    if (not expected <= set(manifest) or len(extra) != 3 or len(snapshots) != 1 or len(ledgers) != 1
+            or snapshots[0] + '.json' not in extra):
         raise OperationError('Albums development recovery files are incomplete')
     for name, digest in manifest.items():
         try:

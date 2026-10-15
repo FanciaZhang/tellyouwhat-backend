@@ -7,12 +7,14 @@
     "deploy/tencent/ops_artifacts.py": "f50f1b6a1c8e3857b94921b3260ee7899a4cff196617175660e2f513b5200b0d",
     "deploy/tencent/artifacts_test.py": "bddce0bf9cf5fb7fe98d8865df3842542169d50743f007d05290d9dd30b340f7",
     "deploy/tencent/ops_offsite.py": "4e6ce20e91253bd133f6caf69b8064d2b59a2f8f75815a608f5a84e6d87822b1",
-    "deploy/tencent/albums_development_artifacts.py": "73a1103f587475120664b66b8ec599121c48e8712255b4531fa0d244c2499323",
-    "deploy/tencent/albums_development_artifacts_test.py": "b633a90852ecfb77a33a25d4192233f3c09769d2e850db9a9897bba0269e16f5",
-    "deploy/albums/development.Dockerfile": "0b3395488a5b9d99fbc5291e2f9f118aad3049782ec3906e69ac5db1105d0cfb"
+    "deploy/tencent/albums_development_artifacts.py": "18c0b87c2464225f6a8aa36a9cca2a432ea3257961fdc77d8fc6c41f0793aa15",
+    "deploy/tencent/albums_development_artifacts_test.py": "f8de3ba91cc1e90adcae03024b6bf6242221f2d175907789b91a4bac753a92b0",
+    "deploy/albums/development.Dockerfile": "0b3395488a5b9d99fbc5291e2f9f118aad3049782ec3906e69ac5db1105d0cfb",
+    "deploy/tencent/albums_development_checkpoint.py": "c31af6c620370ba1f8fe9755edc5d9908d7381c7b7c18e4cbe79df0ac9e00ecc",
+    "deploy/tencent/albums_development_checkpoint_test.py": "e8a8b8ab57048ccb414eb3a984663f14f636f20249dbe9f82ebccc161990929a"
   },
   "python_operations_tests": {
-    "total": 141,
+    "total": 144,
     "failed": 0,
     "skipped": 1,
     "skip_reason": "Mac has no standalone Caddy binary; existing real host proxy proof is separate"
@@ -29,7 +31,7 @@
   ],
   "go_build_only_package": "cmd/migrate",
   "go_live_external_conditions_not_claimed": true,
-  "new_deployment_verified": false,
+  "new_deployment_verified": true,
   "database_sql_restore_verified": false,
   "real_apple_login_verified": false,
   "initial_live_build": {
@@ -38,5 +40,10 @@
     "kernel_evidence": "Memory cgroup killed a Go compile process inside the 1 GiB build container",
     "host_services_not_used_for_build": "separate Docker build cgroup",
     "correction": "dedicated development Dockerfile sets GOMAXPROCS=1, GOFLAGS=-p=1 and GOMEMLIMIT=512MiB; shared build stage compiles three servers once"
-  }
+  },
+  "deployed_application_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "checkpoint_test_fixture_corrections": [
+    "mocked backup engine connection must return argument list",
+    "synthetic snapshot files must preserve actual private file modes"
+  ]
 }

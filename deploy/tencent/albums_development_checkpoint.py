@@ -1,0 +1,77 @@
+"""Reuse Albums' full snapshot and deletion fences with a test-only read account."""
+
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import tarfile
+import tempfile
+
+from ops_common import OperationError, read_environment
+
+
+def wrapper(name):
+    if name not in ('mysql', 'mysqldump'):
+        raise OperationError('unknown Albums backup client')
+    return ('#!/bin/sh\nset -eu\nexec docker exec --env MYSQL_PWD '
+            'tellyouwhat-albums-development-mysql-1 ' + name + ' "$@"\n').encode()
+
+
+def private(path, maximum):
+    if (path.is_symlink() or not path.is_file() or path.stat().st_uid != os.getuid()
+            or path.stat().st_mode & 0o077 or not 0 < path.stat().st_size <= maximum):
+        raise OperationError('Albums checkpoint requires private operator-owned inputs')
+    return path.read_bytes()
+
+
+def checkpoint(runtime, folder):
+    app = runtime.root.parent / 'albums-development'
+    settings = app / 'backup.env'
+    private(settings, 8192)
+    config = read_environment(settings)
+    required = {'MYSQL_HOST': '127.0.0.1', 'MYSQL_PORT': '3306', 'MYSQL_DATABASE': 'albums_test',
+                'MYSQL_USER': 'albums_development_backup_test'}
+    if (set(config) != set(required) | {'MYSQL_PASSWORD', 'ALBUM_BACKUP_ENCRYPTION_KEY'}
+            or any(config.get(k) != v for k, v in required.items())
+            or any(not re.fullmatch('[a-f0-9]{64}', config.get(k, '')) for k in ('MYSQL_PASSWORD', 'ALBUM_BACKUP_ENCRYPTION_KEY'))
+            or config['MYSQL_PASSWORD'] == config['ALBUM_BACKUP_ENCRYPTION_KEY']):
+        raise OperationError('Albums checkpoint database/key isolation is invalid')
+    for name in ('backups', 'operations', 'backup-bin'):
+        path = app / name
+        path.mkdir(mode=0o700, exist_ok=True)
+        if path.is_symlink() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+            raise OperationError('Albums checkpoint directories must be private')
+    binaries = app / 'backup-bin'
+    for name in ('mysql', 'mysqldump'):
+        path = binaries / name
+        if private(path, 1024) != wrapper(name) or not path.stat().st_mode & 0o100:
+            raise OperationError('Albums backup client must target only the dedicated test container')
+    with tempfile.TemporaryDirectory(prefix='.albums-checkpoint-', dir=runtime.state) as temporary:
+        modules = {}
+        with tarfile.open(folder / 'source.tar') as archive:
+            for name in ('backup', 'deletion_ledger'):
+                member = archive.getmember('deploy/albums/' + name + '.py')
+                if not member.isfile() or not 0 < member.size < 65536:
+                    raise OperationError('Albums snapshot implementation is unavailable')
+                path = Path(temporary) / (name + '.py')
+                path.write_bytes(archive.extractfile(member).read())
+                spec = importlib.util.spec_from_file_location('albums_checkpoint_' + name, path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                modules[name] = module
+        backup = modules['backup']
+        child = backup.Runtime(runtime.root, app / 'backups', settings)
+        child.state = app / 'operations'
+        backup.configure(child)
+        snapshot = backup.create(child, binaries)
+        sql = [str(binaries / 'mysql'), '--no-defaults', *backup.connection(child),
+               '--database=albums_test', '--batch', '--skip-column-names']
+        ledger = modules['deletion_ledger'].publish(child, sql, {'MYSQL_PWD': config['MYSQL_PASSWORD']})
+        manifest = backup.verify(child, child.backups / snapshot['filename'])
+        modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
+        names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
+        result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
+    # Keep the independent decryption key in its separate local escrow, outside this bundle.
+    result['backup.env'] = ''.join(k + '=' + v + '\n' for k, v in config.items() if k != 'ALBUM_BACKUP_ENCRYPTION_KEY').encode()
+    return result

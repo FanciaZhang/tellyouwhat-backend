@@ -54,7 +54,10 @@ class AlbumsDevelopmentRecoveryTests(unittest.TestCase):
                 fields[0], fields[4], fields[5] = stat.S_IFREG | 0o440, 0, 65532
                 return os.stat_result(fields)
             return value
-        with patch.object(Path, 'stat', metadata):
+        snapshot = 'checkpoint/albums-' + 'a' * 32 + '.sql.gz.enc'
+        ledger = 'checkpoint/albums-deletions-' + 'b' * 32 + '.json'
+        with patch.object(Path, 'stat', metadata), patch.object(artifacts, 'checkpoint', return_value={
+                'backup.env': b'no decryption key', snapshot: b'encrypted SQL', snapshot + '.json': b'authenticated manifest', ledger: b'deletion fences'}):
             return artifacts.backup_configuration(self.runtime, self.base / 'output')
 
     def test_unused_deployment_needs_no_new_backup_files(self):
@@ -64,7 +67,7 @@ class AlbumsDevelopmentRecoveryTests(unittest.TestCase):
     def test_selected_configuration_and_keys_are_verified_after_archive_roundtrip(self):
         self.prepare()
         manifest = self.backup()
-        self.assertEqual(len(manifest), 11)
+        self.assertEqual(len(manifest), 15)
         self.assertEqual(self.runtime.execute.call_count, 3)
         archive_path = self.base / 'recovery.tar'
         with tarfile.open(archive_path, 'w') as archive:
