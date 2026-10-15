@@ -1,0 +1,12 @@
+package: birthdayhttpapi
+output: generated.go
+generate:
+  models: true
+  gin-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  exclude-tags:
+    - Platform
+  user-templates:
+    imports.tmpl: ../journalhttpapi/templates/imports.tmpl

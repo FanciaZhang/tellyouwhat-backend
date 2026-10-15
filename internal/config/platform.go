@@ -58,6 +58,7 @@ type AppConfig struct {
 	SchemaManifestPath     string
 	Ark                    ark.Config
 	JournalAI              JournalAIConfig
+	BirthdayPrice          costcontrol.TokenPrice
 	VoiceEnabled           bool
 	VoiceASR               voice.ASRConfig
 	VoiceModel             string
@@ -154,6 +155,29 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 		return PlatformConfig{}, err
 	}
 	result.Apps = []AppConfig{health, journal}
+	enabled := value("BIRTHDAY_AI_ENABLED", "false")
+	only := value("BIRTHDAY_AI_ONLY", "false")
+	if (only != "true" && only != "false") || (only == "true" && enabled != "true") {
+		return PlatformConfig{}, errors.New("BIRTHDAY_AI_ONLY requires the enabled birthday service")
+	}
+	if enabled != "true" && enabled != "false" {
+		return PlatformConfig{}, errors.New("BIRTHDAY_AI_ENABLED must be true or false")
+	}
+	if enabled == "true" {
+		birthday, err := loadPlatformApp("BIRTHDAY", appDefaults{
+			ID: appregistry.Birthday, DisplayName: "告你生日", Host: "api.birthday.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.birthday", ProductID: "birthday.assistant", ProductIDs: []string{"birthday.assistant"},
+			AllowedOperations: []string{"birthday.propose", "birthday.revise"}, PrivacyBaseURL: "https://birthday.tellyouwhat.cn",
+		}, environment, commonTeamID)
+		if err != nil {
+			return PlatformConfig{}, err
+		}
+		if only == "true" {
+			result.Apps = []AppConfig{birthday}
+		} else {
+			result.Apps = append(result.Apps, birthday)
+		}
+	}
 	return result, nil
 }
 
@@ -171,7 +195,11 @@ type appDefaults struct {
 
 func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
 	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", environment))
-	timeout, err := prefixedInt(prefix, "ARK_TIMEOUT_SECONDS", 90)
+	defaultTimeout := 90
+	if defaults.ID == appregistry.Birthday {
+		defaultTimeout = 70
+	}
+	timeout, err := prefixedInt(prefix, "ARK_TIMEOUT_SECONDS", defaultTimeout)
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -247,6 +275,18 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 			TimeoutSeconds: timeout,
 		}
 	}
+	if defaults.ID == appregistry.Birthday {
+		config.JournalAI = JournalAIConfig{BaseURL: prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"), APIKey: prefixedValue(prefix, "ARK_API_KEY", ""), LiteModel: prefixedValue(prefix, "ARK_MODEL_ID", ""), TimeoutSeconds: timeout}
+		input, err := parseOptionalCNYNanos("BIRTHDAY_ARK_INPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_INPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		output, err := parseOptionalCNYNanos("BIRTHDAY_ARK_OUTPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_OUTPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		config.BirthdayPrice = costcontrol.TokenPrice{InputNanosPerMillionTokens: input, OutputNanosPerMillionTokens: output}
+	}
 	return config, nil
 }
 
@@ -278,7 +318,7 @@ func (config PlatformConfig) Validate() error {
 	if len(config.JobCapabilitySecret) < 32 {
 		return errors.New("JOB_CAPABILITY_SECRET must be at least 32 bytes")
 	}
-	if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
+	if (len(config.Apps) != 1 || config.Apps[0].Registry.ID != appregistry.Birthday) && (config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "") {
 		return errors.New("TOS bucket credentials are required")
 	}
 	registryEntries := make([]appregistry.App, 0, len(config.Apps))
@@ -324,12 +364,22 @@ func (config AppConfig) Validate(environment string) error {
 	if environment == "development" && (config.DevelopmentSecret == "" || len(config.AllowedBuilds) == 0) {
 		return errors.New("DEV_ACTIVATION_SECRET and ALLOWED_APP_BUILDS are required in development")
 	}
-	if environment == "production" {
+	if environment == "production" && config.Registry.ID != appregistry.Birthday {
 		if err := config.AppStore.validate(); err != nil {
 			return err
 		}
 	}
 	switch config.Registry.ID {
+	case appregistry.Birthday:
+		if config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.TimeoutSeconds <= 0 || config.JournalAI.TimeoutSeconds > 75 {
+			return errors.New("birthday requires an explicit Ark key/model and a timeout between 1 and 75 seconds")
+		}
+		if !strings.HasPrefix(config.JournalAI.BaseURL, "https://") {
+			return errors.New("birthday Ark endpoint must use HTTPS")
+		}
+		if !config.BirthdayPrice.Valid() {
+			return errors.New("birthday requires provider token prices")
+		}
 	case appregistry.Health:
 		if config.SchemaManifestPath == "" {
 			return errors.New("SCHEMA_MANIFEST_PATH is required")

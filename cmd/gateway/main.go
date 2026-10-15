@@ -25,6 +25,7 @@ import (
 
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -106,6 +107,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	birthdayOnly := len(platform.Apps) == 1 && platform.Apps[0].Registry.ID == appregistry.Birthday
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
@@ -122,16 +124,19 @@ func run(logger *slog.Logger) error {
 	if !attestationRoots.AppendCertsFromPEM(rootPEM) {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH contains no certificates")
 	}
-	tosStore, err := media.NewTOSStore(platform.TOS)
-	if err != nil {
-		return err
+	var tosStore *media.TOSStore
+	if !birthdayOnly {
+		tosStore, err = media.NewTOSStore(platform.TOS)
+		if err != nil {
+			return err
+		}
 	}
 	shared, closeStorage, err := openSharedStorage(ctx, platform)
 	if err != nil {
 		return err
 	}
 	defer closeStorage()
-	if platform.StorageMode == "mysql" {
+	if platform.StorageMode == "mysql" && !birthdayOnly {
 		defaults, err := config.LoadOperationsDefaults()
 		if err != nil {
 			return err
@@ -314,7 +319,9 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	ops := platformops.Store{DB: shared.database}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
-	limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	if appConfig.Registry.ID != appregistry.Birthday {
+		limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
 		operations:        ops,
@@ -408,6 +415,12 @@ func buildAppHandler(
 	}
 
 	switch app.ID {
+	case appregistry.Birthday:
+		if costController == nil {
+			return nil, errors.New("birthday requires project cost controls")
+		}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		dependencies.BirthdayAssistant = birthday.New(birthday.Config{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.JournalAI.LiteModel}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second}, costController, appConfig.BirthdayPrice)
 	case appregistry.Health:
 		dependencies.ExecutionPolicies = storage.executionPolicies
 		configureHealthConsents(&dependencies)
@@ -514,6 +527,9 @@ func commerceServices(
 	keys keyRepository,
 	store entitlementRepository,
 ) (gateway.EntitlementActivator, gateway.ProductionEntitlementSync, gateway.AppStoreNotificationProcessor, error) {
+	if appConfig.Registry.ID == appregistry.Birthday {
+		return nil, nil, nil, nil
+	}
 	if environment == "development" {
 		return entitlement.NewDevelopmentService(store, appConfig.DevelopmentSecret, 30*24*time.Hour, time.Now), nil, nil, nil
 	}

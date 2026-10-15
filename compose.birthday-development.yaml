@@ -1,0 +1,20 @@
+services:
+  gateway:
+    image: ${BIRTHDAY_DEVELOPMENT_IMAGE:?set the immutable Birthday development image}
+    container_name: birthday-private-development
+    env_file: .birthday-development/development.env
+    ports:
+      - "127.0.0.1:18788:8080"
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    pids_limit: 100
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

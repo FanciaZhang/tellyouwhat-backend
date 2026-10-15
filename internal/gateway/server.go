@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
@@ -134,6 +135,7 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	BirthdayAssistant          birthday.Assistant
 	Operations                 platformops.Reader
 	ExecutionPolicies          PolicyResolver
 	PromptConfig               *promptconfig.Cache
@@ -172,6 +174,7 @@ type Dependencies struct {
 }
 
 type Server struct {
+	birthdayAssistant          birthday.Assistant
 	operations                 platformops.Reader
 	executionPolicies          PolicyResolver
 	promptConfig               *promptconfig.Cache
@@ -237,6 +240,7 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		birthdayAssistant: dependencies.BirthdayAssistant,
 		operations:        dependencies.Operations,
 		executionPolicies: dependencies.ExecutionPolicies,
 		promptConfig:      dependencies.PromptConfig,

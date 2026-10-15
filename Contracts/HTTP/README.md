@@ -1,10 +1,10 @@
 # Tellyouwhat HTTP contracts
 
 `PlatformAPI/openapi.yaml` is the canonical contract for capabilities shared
-by every App. `HealthAPI/app.openapi.yaml` and `JournalAPI/app.openapi.yaml`
+by every App. `HealthAPI/app.openapi.yaml`, `JournalAPI/app.openapi.yaml` and `BirthdayAPI/app.openapi.yaml`
 contain only App-specific operations. The `openapi-compose` build tool merges
 those sources into the generated, self-contained `HealthAPI/openapi.yaml` and
-`JournalAPI/openapi.yaml` public client contracts. Never edit those two bundles
+`JournalAPI/openapi.yaml` and `BirthdayAPI/openapi.yaml` public client contracts. Never edit these bundles
 directly.
 
 `AdminAPI/openapi.yaml` and `WorkerAPI/openapi.yaml` are server-only contracts
