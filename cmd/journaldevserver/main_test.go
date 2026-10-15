@@ -19,3 +19,20 @@ func TestRefusesProductionStorageOrEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoveryVerificationCannotOpenLiveStateOrUseConnectionCredentials(t *testing.T) {
+	for _, path := range []string{"", "/state", "/opt/tellyouwhat/journal-development/state"} {
+		t.Setenv("JOURNAL_DEVELOPMENT_STATE_DIR", path)
+		if err := verifyRecovery(); err == nil || !strings.Contains(err.Error(), "isolated copy") {
+			t.Fatal("recovery verification accepted live or unspecified state")
+		}
+	}
+	t.Setenv("JOURNAL_DEVELOPMENT_STATE_DIR", "/restore/state")
+	t.Setenv("JOURNAL_PROMPT_FILE", "/restore/config/prompt.json")
+	for _, key := range []string{"JOURNAL_DEVELOPMENT_TOKEN", "JOURNAL_PROMPT_DATABASE_DSN", "DATABASE_DSN", "REDIS_URL"} {
+		t.Setenv(key, "never-use-live-access")
+		if err := verifyRecovery(); err == nil || !strings.Contains(err.Error(), "without connection credentials") {
+			t.Fatal("recovery verification accepted live credentials")
+		}
+	}
+}

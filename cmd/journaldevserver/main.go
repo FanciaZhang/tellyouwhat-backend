@@ -26,7 +26,11 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	action := run
+	if len(os.Args) == 2 && os.Args[1] == "verify-recovery" {
+		action = verifyRecovery
+	}
+	if err := action(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
