@@ -56,6 +56,20 @@ def active_configuration():
         return json.loads(data)
 
 
+def difference_paths(expected, actual, path=''):
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        result = []
+        for key in sorted(set(expected) | set(actual)):
+            child = path + '/' + key
+            result.extend([child] if key not in expected or key not in actual
+                          else difference_paths(expected[key], actual[key], child))
+        return result
+    if isinstance(expected, list) and isinstance(actual, list) and len(expected) == len(actual):
+        return [child for index, (left, right) in enumerate(zip(expected, actual))
+                for child in difference_paths(left, right, path + '/' + str(index))]
+    return [] if expected == actual else [path]
+
+
 def configure(runtime, source):
     require_operator(runtime.root)
     files = artifacts.recovery_files(runtime)
@@ -116,7 +130,7 @@ def configure(runtime, source):
             runtime.execute('apple-route-reload', ['sudo', '-n', 'systemctl', 'reload', 'caddy'])
             actual = active_configuration()
             if actual != expected:
-                raise OperationError('running Caddy does not match the validated proxy configuration')
+                raise OperationError('running Caddy differs at ' + ', '.join(difference_paths(expected, actual)[:12]))
             assert_logging(actual)
             ready()
             assert_route(stable['current'])
@@ -143,7 +157,7 @@ def configure(runtime, source):
                 assert_route(stable['current'])
             except Exception as recovery:
                 raise OperationError('OTA proxy activation and recovery failed; operator recovery required') from recovery
-            raise OperationError('OTA proxy activation failed; previous configuration restored') from error
+            raise OperationError('OTA proxy activation failed: ' + str(error) + '; previous configuration restored') from error
     return {'passed': True, 'changed': True}
 
 

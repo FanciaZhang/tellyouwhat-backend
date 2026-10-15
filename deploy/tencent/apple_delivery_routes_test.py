@@ -111,6 +111,12 @@ class AppleDeliveryRouteTests(unittest.TestCase):
         self.assertEqual(self.events.count('apple-route-reload'), 1)
         self.assertFalse(list((self.root / '.apple-delivery/releases' / self.source).glob('.routing-*')))
 
+    def test_mismatch_diagnostics_include_paths_without_configuration_values(self):
+        paths = routes.difference_paths({'private': {'credential': 'synthetic-before'}, 'nullable': None},
+                                       {'private': {'credential': 'synthetic-after'}})
+        self.assertEqual(paths, ['/nullable', '/private/credential'])
+        self.assertNotIn('synthetic', json.dumps(paths))
+
     def test_unsafe_logging_is_rejected_before_active_files_change(self):
         variants = []
         value = configuration();value['logging']['logs']['default']['level'] = 'DEBUG';variants.append(value)
