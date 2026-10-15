@@ -15,7 +15,7 @@
 
 正式身份为对应 Bundle ID 去掉 `.dev`，目标域名为 `api.<app>.tellyouwhat.cn`。现有健康/手记正式服务仍为 18180；正式相册域名仍指向旧测试栈，不能据域名宣称已具备生产环境。生日正式域名及推理身份仍需迁移。未上线 App 的旧路径不作为兼容交付要求。
 
-`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `44dea10`、1.0 (3)，包含 Debug 专用钥匙串激活设置，不内置激活码；Release 没有该入口/符号。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-development-access-ota-2026-10-16.json`。
+`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `3354a9a`、1.0 (4)，已取消手输激活码，首次使用自动验证设备；测试后端 `fb5cd0b` 保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
 
 ## 隔离和部署
 
