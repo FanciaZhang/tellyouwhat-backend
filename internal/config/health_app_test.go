@@ -71,6 +71,7 @@ func TestProductionAppRequiresAppStoreServerCredentials(t *testing.T) {
 	t.Parallel()
 
 	app := validHealthAppConfig()
+	app.Registry.BundleID = "health.bundle"
 	app.AttestationEnvironment = attestation.EnvironmentProduction
 	app.DevelopmentSecret = ""
 	app.AllowedBuilds = nil
@@ -87,6 +88,7 @@ func TestProductionAppAcceptsBothAppStoreEnvironments(t *testing.T) {
 	t.Parallel()
 
 	app := validHealthAppConfig()
+	app.Registry.BundleID = "health.bundle"
 	app.AttestationEnvironment = attestation.EnvironmentProduction
 	app.DevelopmentSecret = ""
 	app.AllowedBuilds = nil
@@ -111,7 +113,7 @@ func validHealthAppConfig() AppConfig {
 	return AppConfig{
 		Registry: appregistry.App{
 			ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"},
-			TeamID: "TEAM", BundleID: "health.bundle", ManagedAIProductID: "health.premium.subscription.monthly",
+			TeamID: "TEAM", BundleID: "health.bundle.dev", ManagedAIProductID: "health.premium.subscription.monthly",
 			AllowedOperations: allowedOperations,
 		},
 		AttestationEnvironment: attestation.EnvironmentDevelopment,

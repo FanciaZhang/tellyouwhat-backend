@@ -6,6 +6,7 @@ import (
 )
 
 func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
 	t.Setenv("BIRTHDAY_AI_ONLY", "false")
 	t.Setenv("BIRTHDAY_AI_ENABLED", "false")
 	platform, err := loadPlatformUnchecked()
@@ -24,7 +25,7 @@ func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) 
 		t.Fatal(err)
 	}
 	app := platform.Apps[2]
-	if app.Registry.ID != appregistry.Birthday || app.Registry.BundleID != "cn.tellyouwhat.birthday" || app.JournalAI.APIKey != "" || app.JournalAI.TimeoutSeconds != 70 {
+	if app.Registry.ID != appregistry.Birthday || app.Registry.BundleID != "cn.tellyouwhat.birthday.dev" || app.JournalAI.APIKey != "" || app.JournalAI.TimeoutSeconds != 70 {
 		t.Fatal("birthday identity, credential isolation or deadline is incorrect")
 	}
 	if app.Registry.AllowsOperation("journal.organize") || app.Registry.AllowsOperation("birthday.reflection") || !app.Registry.AllowsOperation("birthday.revise") {
@@ -36,6 +37,7 @@ func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) 
 }
 
 func TestBirthdayOnlyRuntimeKeepsOtherAppCredentialsOut(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
 	t.Setenv("BIRTHDAY_AI_ONLY", "true")
 	t.Setenv("BIRTHDAY_AI_ENABLED", "false")
 	if _, err := loadPlatformUnchecked(); err == nil {

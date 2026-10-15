@@ -60,7 +60,7 @@ func TestFreeRecognitionConfigurationCoversBoundedOutputReservations(t *testing.
 	}
 	app := AppConfig{
 		Registry: appregistry.App{ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"},
-			TeamID: "TEAM", BundleID: "health.bundle", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
+			TeamID: "TEAM", BundleID: "health.bundle.dev", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
 		AttestationEnvironment: attestation.EnvironmentDevelopment, DevelopmentSecret: "fixture-development-secret",
 		AllowedBuilds: map[string]struct{}{"100": {}}, ManagedAIProductIDs: []string{"health.ai.monthly"},
 		SchemaManifestPath: "fixture-manifest", Ark: ark.Config{BaseURL: "https://ark.test", APIKey: "fixture", Routes: routes},
@@ -119,7 +119,7 @@ func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {
 	app := AppConfig{
 		Registry: appregistry.App{
 			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
-			TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly",
+			TeamID: "TEAM", BundleID: "journal.bundle.dev", ManagedAIProductID: "journal.ai.monthly",
 			AllowedOperationPrefix: "journal.",
 		},
 		AttestationEnvironment: attestation.EnvironmentDevelopment,

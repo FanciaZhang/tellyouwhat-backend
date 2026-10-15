@@ -50,6 +50,10 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 Health 方舟推理请求在普通与流式路径均显式发送 `store: false` 和 `caching.type: disabled`，关闭可供后续请求使用的响应保存和上下文缓存。这些请求参数不证明供应商整体零留存，也不代替其服务政策或本后端数据库、媒体及备份的保留期核验。
 
+## 环境隔离
+
+正式域名对应 `APP_ENV=production`。开发服务使用 `APP_ENV=development`，默认 Bundle ID 为正式 ID 加 `.dev`，域名为 `api-test.<app>.tellyouwhat.cn`。配置了相反环境的身份或域名时，gateway/worker 在启动前拒绝运行。详细迁移与验收边界见[统一环境与交付](docs/unified-app-environments.md)。
+
 ## 本地运行
 
 ```sh
@@ -60,7 +64,7 @@ go run ./cmd/migrate
 go run ./cmd/gateway
 ```
 
-本地请求仍需 Development App Attest。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
+本地默认使用 Development App Attest；Ad Hoc 导出若使用 production App Attest，须显式配置对应 App 的 `APP_ATTEST_ENV`，并核对签名产物。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
 
 ## 生产部署
 

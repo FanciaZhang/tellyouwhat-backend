@@ -3,10 +3,13 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -194,6 +197,10 @@ type appDefaults struct {
 }
 
 func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
+	if environment == "development" {
+		defaults.BundleID += ".dev"
+		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
+	}
 	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", environment))
 	defaultTimeout := 90
 	if defaults.ID == appregistry.Birthday {
@@ -306,6 +313,11 @@ func (config PlatformConfig) Validate() error {
 	if config.StorageMode == "mysql" && (config.DatabaseDSN == "" || config.RedisURL == "" || config.PayloadEncryptionKey == "") {
 		return errors.New("DATABASE_DSN, REDIS_URL, and PAYLOAD_ENCRYPTION_KEY are required")
 	}
+	if config.StorageMode == "mysql" {
+		if err := validateDatabaseEnvironment(config.DatabaseDSN, config.Environment); err != nil {
+			return err
+		}
+	}
 	if config.AppAttestRootPEMPath == "" {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH is required")
 	}
@@ -334,6 +346,9 @@ func (config PlatformConfig) Validate() error {
 
 func (config AppConfig) Validate(environment string) error {
 	if err := config.Registry.Validate(); err != nil {
+		return err
+	}
+	if err := config.validateEnvironmentIdentity(environment); err != nil {
 		return err
 	}
 	if len(config.ManagedAIProductIDs) == 0 {
@@ -403,6 +418,46 @@ func (config AppConfig) Validate(environment string) error {
 		}
 	default:
 		return errors.New("unsupported app")
+	}
+	return nil
+}
+
+// Naming catches copied production configuration before opening a connection;
+// deployment must also verify the database user's grants and isolated resources.
+func validateDatabaseEnvironment(dsn, environment string) error {
+	database, err := mysql.ParseDSN(dsn)
+	if err != nil || database.DBName == "" || database.User == "" || strings.EqualFold(database.User, "root") {
+		return errors.New("DATABASE_DSN requires a named database and a non-root account")
+	}
+	testDatabase := strings.HasSuffix(strings.ToLower(database.DBName), "_test")
+	testUser := strings.HasSuffix(strings.ToLower(database.User), "_test")
+	if (environment == "development" && (!testDatabase || !testUser)) ||
+		(environment == "production" && (testDatabase || testUser)) {
+		return errors.New("DATABASE_DSN database and account must end in _test only in development")
+	}
+	return nil
+}
+
+// App Attest and StoreKit environments are independent of the API environment.
+func (config AppConfig) validateEnvironmentIdentity(environment string) error {
+	if environment != "development" && environment != "production" {
+		return errors.New("APP_ENV must be development or production")
+	}
+	development := environment == "development"
+	if strings.HasSuffix(config.Registry.BundleID, ".dev") != development {
+		return errors.New("APPLE_BUNDLE_ID must end in .dev only in development")
+	}
+	for _, rawHost := range config.Registry.Hosts {
+		host := strings.ToLower(strings.TrimSpace(rawHost))
+		if name, _, err := net.SplitHostPort(host); err == nil {
+			host = name
+		}
+		host = strings.TrimSuffix(host, ".")
+		if strings.HasSuffix(host, ".tellyouwhat.cn") &&
+			((development && strings.HasPrefix(host, "api.")) ||
+				(!development && strings.HasPrefix(host, "api-test."))) {
+			return errors.New("API_HOSTS belongs to the opposite application environment")
+		}
 	}
 	return nil
 }
