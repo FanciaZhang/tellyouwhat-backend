@@ -144,7 +144,7 @@ func TestMySQLSubscriptionBindingCompletionRejectsConcurrentPartialPasses(t *tes
 
 func TestBindingCompletionProofIsBoundedAndExact(t *testing.T) {
 	now := time.Now().UTC()
-	a := bindingCompletionProof{Revision: 2, CheckedAt: now, Anchors: []bindingCompletionAnchor{{"original", "transaction", now}}}
+	a := bindingCompletionProof{Revision: 2, CheckedAt: now, Anchors: []bindingCompletionAnchor{{"Sandbox", "original", "transaction", now}}}
 	if !matchingBindingCompletion(a, &a, now) {
 		t.Fatal("fresh proof rejected")
 	}
@@ -159,7 +159,12 @@ func TestBindingCompletionProofIsBoundedAndExact(t *testing.T) {
 		t.Fatal("mismatched proof accepted")
 	}
 	b = a
-	b.Anchors = []bindingCompletionAnchor{{"other", "transaction", now}}
+	b.Anchors = []bindingCompletionAnchor{{"Production", "original", "transaction", now}}
+	if matchingBindingCompletion(b, &a, now) {
+		t.Fatal("wrong environment proof accepted")
+	}
+	b = a
+	b.Anchors = []bindingCompletionAnchor{{"Sandbox", "other", "transaction", now}}
 	if matchingBindingCompletion(b, &a, now) {
 		t.Fatal("wrong purchase set accepted")
 	}

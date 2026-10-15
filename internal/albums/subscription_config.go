@@ -72,9 +72,6 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 				return nil, errors.New("ALBUM_SANDBOX_QUOTA_BYTES must be between 1 and 50000000000")
 			}
 		}
-		if c.RebindingEnabled || c.RecordErasureEnabled {
-			return nil, errors.New("dual-environment subscription erasure requires cross-environment completion support")
-		}
 	}
 	issuer, err := uuid.Parse(c.IssuerID)
 	if err != nil || issuer.String() != c.IssuerID || !regexp.MustCompile(`^[A-Z0-9]{10}$`).MatchString(c.KeyID) || c.Environment == "" {
@@ -114,7 +111,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	}
 	if c.Environment == "Both" {
 		if repository == nil || repository.billingEnvironment != "Production" || c.BundleID != albumAppleAudience || c.AppAppleID <= 0 ||
-			c.SandboxQuotaBytes <= 0 || c.SandboxQuotaBytes > 50_000_000_000 || c.RebindingEnabled || c.RecordErasureEnabled {
+			c.SandboxQuotaBytes <= 0 || c.SandboxQuotaBytes > 50_000_000_000 {
 			return nil, ErrSubscriptionUnavailable
 		}
 		productionConfig, sandboxConfig := *c, *c
@@ -130,6 +127,8 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 		if err != nil {
 			return nil, err
 		}
+		service.bindingPeer = service.sandbox.resolver
+		service.sandbox.bindingPeer = service.resolver
 		repository.productionSandboxQuota = c.SandboxQuotaBytes
 		return service, nil
 	}

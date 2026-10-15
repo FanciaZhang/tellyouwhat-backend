@@ -204,7 +204,7 @@ func (r *MySQLUploads) discoverSubscriptionBindings(ctx context.Context, j subsc
 		return err
 	}
 	for _, v := range proofs {
-		if v.Environment != j.Environment || v.OriginalTransactionID == j.Original {
+		if !r.acceptsBindingEnvironment(v.Environment) || (v.Environment == j.Environment && v.OriginalTransactionID == j.Original) {
 			return ErrSubscriptionVerification
 		}
 		var owner string
@@ -218,7 +218,11 @@ func (r *MySQLUploads) discoverSubscriptionBindings(ctx context.Context, j subsc
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		account, err = r.applySubscriptionInTransaction(ctx, tx, j.Account, account.Revision, v, at)
+		// Completion can discover a chain in the peer environment. Its write still
+		// uses that environment's scope while the current job's lease stays locked.
+		writer := *r
+		writer.billingEnvironment = v.Environment
+		account, err = writer.applySubscriptionInTransaction(ctx, tx, j.Account, account.Revision, v, at)
 		if err != nil {
 			return err
 		}

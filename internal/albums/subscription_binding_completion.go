@@ -9,9 +9,10 @@ import (
 )
 
 type bindingCompletionAnchor struct {
-	Original, Transaction string
-	SignedAt              time.Time
+	Environment, Original, Transaction string
+	SignedAt                           time.Time
 }
+type bindingChain struct{ Environment, Original string }
 type bindingCompletionProof struct {
 	Revision  int64
 	Anchors   []bindingCompletionAnchor
@@ -35,16 +36,15 @@ func (r *MySQLUploads) bindingCompletionSnapshot(ctx context.Context, tx *sql.Tx
 	ready, found := true, false
 	for rows.Next() {
 		var a bindingCompletionAnchor
-		var env string
 		var owner, request, target sql.NullString
 		var ack, signed sql.NullTime
-		if err = rows.Scan(&env, &a.Original, &a.Transaction, &a.SignedAt, &owner, &request, &target, &ack, &signed); err != nil {
+		if err = rows.Scan(&a.Environment, &a.Original, &a.Transaction, &a.SignedAt, &owner, &request, &target, &ack, &signed); err != nil {
 			return p, false, err
 		}
-		if env != j.Environment || owner.String != j.Account || request.String != j.Request || target.String != j.Target {
+		if !r.acceptsBindingEnvironment(a.Environment) || owner.String != j.Account || request.String != j.Request || target.String != j.Target {
 			return p, false, ErrSubscriptionBinding
 		}
-		if a.Original == j.Original {
+		if a.Environment == j.Environment && a.Original == j.Original {
 			found = true
 		} else if !ack.Valid || !signed.Valid || signed.Time.Before(a.SignedAt) {
 			ready = false
@@ -82,41 +82,46 @@ func (s *AlbumSubscriptionService) verifyBindingCompletion(ctx context.Context, 
 	if !ready {
 		return nil, nil
 	}
-	known := map[string]bool{}
+	known := map[bindingChain]bool{}
 	for _, a := range p.Anchors {
-		known[a.Original] = true
+		known[bindingChain{a.Environment, a.Original}] = true
 	}
-	byChain := map[string][]appstore.SubscriptionStatus{}
-	related := map[string]bool{}
+	byChain := map[bindingChain][]appstore.SubscriptionStatus{}
+	related := map[bindingChain]bool{}
 	var discoveries []VerifiedAlbumSubscription
 	for _, a := range p.Anchors {
-		states, err := s.resolver.client.AllSubscriptionStatuses(ctx, a.Transaction)
+		resolver := s.bindingResolver(a.Environment)
+		if resolver == nil {
+			return nil, ErrSubscriptionUnavailable
+		}
+		states, err := resolver.client.AllSubscriptionStatuses(ctx, a.Transaction)
 		if err != nil {
 			return nil, ErrSubscriptionUnavailable
 		}
 		for _, state := range states {
-			t, e := s.resolver.verifier.VerifyTransaction(state.SignedTransaction)
+			t, e := resolver.verifier.VerifyTransaction(state.SignedTransaction)
 			if e != nil {
 				return nil, ErrSubscriptionVerification
 			}
-			byChain[t.OriginalTransactionID] = append(byChain[t.OriginalTransactionID], state)
-			if known[t.OriginalTransactionID] || transactionBelongsToAccount(t, j.Account, j.Environment, j.Target) {
-				related[t.OriginalTransactionID] = true
+			key := bindingChain{a.Environment, t.OriginalTransactionID}
+			byChain[key] = append(byChain[key], state)
+			if known[key] || transactionBelongsToAccount(t, j.Account, a.Environment, j.Target) {
+				related[key] = true
 			}
 		}
 		// Each requested chain must actually be present, even if another response
 		// happened to include it earlier.
-		if _, err = s.resolver.resolveStatuses(j.Account, a.Original, states, j.Target); err != nil {
+		if _, err = resolver.resolveStatuses(j.Account, a.Original, states, j.Target); err != nil {
 			return nil, err
 		}
 	}
 	if len(related) > 128 {
 		return nil, ErrSubscriptionUnavailable
 	}
-	for original := range related {
-		states := byChain[original]
-		if !known[original] {
-			v, err := s.resolver.resolveStatuses(j.Account, original, states, j.Target)
+	for key := range related {
+		states := byChain[key]
+		if !known[key] {
+			v, err := s.bindingResolver(key.Environment).resolveStatuses(j.Account, key.Original, states, j.Target)
 			if err != nil {
 				return nil, err
 			}
@@ -130,8 +135,9 @@ func (s *AlbumSubscriptionService) verifyBindingCompletion(ctx context.Context, 
 		return nil, ErrSubscriptionConflict
 	}
 	for _, a := range p.Anchors {
-		states := byChain[a.Original]
-		v, err := s.resolver.resolveStatuses(j.Account, a.Original, states, j.Target)
+		resolver := s.bindingResolver(a.Environment)
+		states := byChain[bindingChain{a.Environment, a.Original}]
+		v, err := resolver.resolveStatuses(j.Account, a.Original, states, j.Target)
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +145,7 @@ func (s *AlbumSubscriptionService) verifyBindingCompletion(ctx context.Context, 
 			return nil, ErrSubscriptionConflict
 		}
 		for _, state := range states {
-			t, err := s.resolver.verifier.VerifyTransaction(state.SignedTransaction)
+			t, err := resolver.verifier.VerifyTransaction(state.SignedTransaction)
 			if err != nil {
 				return nil, ErrSubscriptionVerification
 			}
@@ -158,9 +164,24 @@ func matchingBindingCompletion(current bindingCompletionProof, verified *binding
 	}
 	for i, a := range current.Anchors {
 		b := verified.Anchors[i]
-		if a.Original != b.Original || a.Transaction != b.Transaction || !a.SignedAt.Equal(b.SignedAt) {
+		if a.Environment != b.Environment || a.Original != b.Original || a.Transaction != b.Transaction || !a.SignedAt.Equal(b.SignedAt) {
 			return false
 		}
 	}
 	return true
+}
+
+func (r *MySQLUploads) acceptsBindingEnvironment(environment string) bool {
+	return (environment == "Production" || environment == "Sandbox") &&
+		(environment == r.billingEnvironment || r.productionSandboxQuota > 0)
+}
+
+func (s *AlbumSubscriptionService) bindingResolver(environment string) *AlbumSubscriptionResolver {
+	if s.resolver.environment == environment {
+		return s.resolver
+	}
+	if s.bindingPeer != nil && s.bindingPeer.environment == environment {
+		return s.bindingPeer
+	}
+	return nil
 }

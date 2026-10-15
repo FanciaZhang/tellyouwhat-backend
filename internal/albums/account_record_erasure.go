@@ -62,9 +62,9 @@ func (r *MySQLUploads) eraseAccountRecords(ctx context.Context, owner, request s
 		return time.Time{}, ErrDerivedPending
 	}
 	var chains, unresolved int
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(c.environment<>? OR b.account_id IS NULL OR b.account_id<>c.owner_id OR b.request_id<>? OR b.target_token<>a.storekit_account_token OR b.acknowledged_at IS NULL OR b.verified_signed_at<c.signed_at),0)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM((c.environment<>? AND NOT (? AND c.environment IN ('Production','Sandbox'))) OR b.account_id IS NULL OR b.account_id<>c.owner_id OR b.request_id<>? OR b.target_token<>a.storekit_account_token OR b.acknowledged_at IS NULL OR b.verified_signed_at IS NULL OR b.verified_signed_at<c.signed_at),0)
  FROM album_cloud_subscriptions c JOIN album_accounts a ON a.account_id=c.owner_id
- LEFT JOIN album_deletion_subscription_jobs b ON b.environment=c.environment AND b.original_transaction_id=c.original_transaction_id WHERE c.owner_id=?`, r.billingEnvironment, request, owner).Scan(&chains, &unresolved)
+ LEFT JOIN album_deletion_subscription_jobs b ON b.environment=c.environment AND b.original_transaction_id=c.original_transaction_id WHERE c.owner_id=?`, r.billingEnvironment, r.productionSandboxQuota > 0, request, owner).Scan(&chains, &unresolved)
 	if err != nil {
 		return time.Time{}, err
 	}

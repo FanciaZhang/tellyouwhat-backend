@@ -232,6 +232,7 @@ type AlbumSubscriptionRepository interface {
 
 type AlbumSubscriptionService struct {
 	sandbox              *AlbumSubscriptionService
+	bindingPeer          *AlbumSubscriptionResolver
 	rebindingEnabled     bool
 	recordErasureEnabled bool
 	repository           AlbumSubscriptionRepository
