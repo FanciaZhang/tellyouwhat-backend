@@ -116,6 +116,6 @@ services:
 networks:
   platform-test:
     ipam:
-      config: [{subnet: "${PLATFORM_TEST_NETWORK_CIDR:-172.29.92.0/24}"}]
+      config: [{subnet: "${PLATFORM_TEST_NETWORK_CIDR:-172.29.93.0/24}"}]
 volumes:
   platform-test-mysql:

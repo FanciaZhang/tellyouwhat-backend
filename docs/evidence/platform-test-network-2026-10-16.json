@@ -1,0 +1,1 @@
+{"compose_sha256": "3edfa37c3390db93caf84cc3ea907e3a229b0489db93033319b75a83fe33b34b", "actual_host_compose_parse_passed": true, "default_subnet": "172.29.93.0/24", "compared_with_all_existing_host_networks": true, "no_overlap": true, "test_stack_started": false, "runtime_configuration": "synthetic; no service credentials used"}
