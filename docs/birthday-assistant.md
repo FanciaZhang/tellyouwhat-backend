@@ -4,7 +4,13 @@
 
 默认 `BIRTHDAY_AI_ENABLED=false`，已有服务的部署配置继续只启用原来的 App。生日需显式配置自己的 Bundle ID、Apple Team、Ark 凭据／模型和成本预留价格；配置不会隐式取健康或手记的值。
 
-## 2026-10-12 开发接入
+## 2026-10-16 独立开发环境
+
+当前开发身份为 `cn.tellyouwhat.birthday.dev`，API 为 `https://api-test.birthday.tellyouwhat.cn/`，production App Attest，允许构建号 3。源码 `833b81d` 的平台测试项目已运行独立 MySQL/Redis/网络、数据库账号及载荷/会话密钥；仅启用生日，服务端项目成本上限为每月 10 元。Debug 1.0 (3) 在开发者设置保存单独受限交付的激活码，不内置到 IPA；Release 不编译此入口，也不读取开发激活码。
+
+专属只读备份、独立 SQL 密钥、统一 COS 传输及隔离恢复已实际检查：93 张表及 73 条控制记录行数一致，设备登录、购买和 AI 请求行按既有规则不恢复。DNS/TLS、无有效证明的业务请求拒绝、公开挑战接口通过；真实手机 App Attest/推理和定时任务仍待验收。旧开发/外测服务保留过渡；旧 TestFlight 仍共享生日开发推理身份，正式资源隔离未完成。证据见 `docs/evidence/platform-test-runtime-2026-10-16.json`。
+
+## 2026-10-12 历史接入（保留旧包过渡）
 
 开发服务使用 `https://api.journal.tellyouwhat.cn/_development/birthday/`，由现有可信 HTTPS 站点转发到独立生日进程的回环端口 `18788`。代理删除入口前缀，内部 Host 固定为 `birthday.development`；签名仍使用 `/v2/birthday/assist` 等业务路径。只开放就绪、App Attest 注册与生日决策接口。直接检查回环端口的 `/readyz` 时也必须发送 `Host: birthday.development`。
 

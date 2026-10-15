@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "service_source": "833b81de4b8a370c99ff3b1d0c409d5083b4e6af",
+  "apps": [
+    "birthday"
+  ],
+  "migrations": 66,
+  "dedicated_mysql_redis_network_and_volume": true,
+  "application_non_root_read_only": true,
+  "mysql_redis_not_published": true,
+  "only_api_published_on_loopback": 18790,
+  "database_account_and_session_keys_differ_from_legacy": true,
+  "mysql_root_credential_not_in_application": true,
+  "other_environment_hosts_rejected": 421,
+  "legacy_services_retained": [
+    {
+      "name": "birthday-private-development",
+      "started_at": "2026-10-13T08:11:34.261542947Z"
+    },
+    {
+      "name": "birthday-private-testflight",
+      "started_at": "2026-10-13T11:58:49.720353823Z"
+    }
+  ],
+  "birthday_development_inference_identity_reused": true,
+  "legacy_testflight_still_uses_same_inference_identity": true,
+  "public_route_verified": true,
+  "proxy_log_guard_verified": true,
+  "backup_filename": "mysql-20261015T224856Z-de003d.sql.gz.enc",
+  "recovery_sha256": "23fd7309d05ed8ba6f93cbf2ba5b89efd51b839430b99e223f09ac02d9a35565",
+  "cos_download_authenticated": true,
+  "cos_objects_readback": 3,
+  "independent_inner_key_source": "restricted test backup.env; separate Mac escrow",
+  "wrong_inner_key_rejected_before_restore": true,
+  "control_plane_tables_restored": 93,
+  "retained_control_plane_rows": 73,
+  "excluded_app_rows_restored": 0,
+  "temporary_restore_container_removed": true,
+  "live_database_or_volumes_restored_over": false,
+  "real_app_attest_verified": false,
+  "real_model_inference_verified": false,
+  "scheduled_execution_verified": false
+}
