@@ -61,8 +61,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) != 4 || parts[0] != "" || parts[1] != "d" || !tokenPattern.MatchString(parts[2]) ||
-		(parts[3] != "" && parts[3] != "manifest.plist" && parts[3] != "app.ipa") {
+	connection := len(parts) == 5 && parts[0] == "" && parts[1] == "d" && parts[2] == "connection" &&
+		len(parts[3]) <= 2048 && sealedConnectionPattern.MatchString(parts[3]) && parts[4] == "connection.json"
+	if !connection && (len(parts) != 4 || parts[0] != "" || parts[1] != "d" || !tokenPattern.MatchString(parts[2]) ||
+		(parts[3] != "" && parts[3] != "manifest.plist" && parts[3] != "app.ipa")) {
 		http.NotFound(w, r)
 		return
 	}
@@ -72,6 +74,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Try again shortly", 503)
+		return
+	}
+	if connection {
+		data, err := h.store.openConnection(parts[3], h.origin, h.now())
+		if err != nil {
+			if errors.Is(err, errConnectionExpired) {
+				http.Error(w, "Connection link expired", http.StatusGone)
+			} else {
+				http.NotFound(w, r)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="journal-development-connection.json"`)
+		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(data)
+		}
 		return
 	}
 	key := sha256.Sum256([]byte(parts[2]))

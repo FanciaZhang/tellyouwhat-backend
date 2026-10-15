@@ -69,6 +69,20 @@ appledelivery publish --data /private/store \
 
 请求 Host 接受配置域名的大小写等价形式和显式 HTTPS 默认端口 443；其他域名及端口仍拒绝。Manifest 和下载地址始终使用配置中的规范 HTTPS 源，不能由请求 Host 改写。
 
+手记的首次开发连接独立交付，不进入 IPA 或安装页。先用当前手记源码的 `journal-development.py export-profile` 在线验证并生成私有连接文件，再对已经上传且摘要匹配的手记开发候选执行：
+
+```sh
+appledelivery journal-connection --data /private/store \
+  --candidate /private/verified-journal-candidate \
+  --journal-connection /private/connection.json \
+  --origin https://install.tellyouwhat.cn \
+  --ttl 15m --receipt /private/receipts/connection-link.json
+```
+
+仅接受本人所有、0600、最多 1 KiB 的固定测试域名连接文件，链接最长 15 分钟。连接内容通过 AES-256-GCM 封装在单独下载凭据中，绑定安装源、候选摘要及有效期；回执仍只写受限文件。HTTP 仅返回带下载文件名和禁止缓存响应头的 JSON，安装页面不显示这条链接或其中令牌。客户端继续校验域名、当前协议及在线权限，成功后才存入独立钥匙串。
+
+服务器只在私有安装缓存保存一份 0600 的封装密钥 `.journal-connection-key`，不保存连接文件正文，也不把密钥挂入其他服务。链接到期直接失效，不产生需要回收的连接文件。密钥和短时链接与安装缓存一起可再生，不属于业务数据备份；丢失缓存后重新发放链接。已有安装授权格式保持兼容，旧服务对连接下载路径返回 404，恢复当前服务后可继续解封尚未到期的链接。兼容性已用实际旧版和当前二进制、合成传输数据验证，见 `evidence/apple-delivery-connection-compatibility-2026-10-16.json`；真实公网连接文件与手机导入仍须单独验收。
+
 ## HTTPS 与日志
 
 采用以下两个 Caddy 片段：

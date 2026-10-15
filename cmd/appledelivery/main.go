@@ -19,13 +19,14 @@ import (
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("select serve, publish or cleanup")
+		return fmt.Errorf("select serve, publish, journal-connection or cleanup")
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	data := flags.String("data", "", "private installation store")
 	origin := flags.String("origin", "", "public HTTPS origin")
 	listen := flags.String("listen", "127.0.0.1:18791", "HTTP listener behind the TLS proxy")
 	candidate := flags.String("candidate", "", "directory containing verified candidate.json and development.ipa")
+	connection := flags.String("journal-connection", "", "private connection file for journal-connection only; use a lease of at most 15m")
 	receipt := flags.String("receipt", "", "private output file; installation capabilities are never printed")
 	ttl := flags.Duration("ttl", appledelivery.MaxTTL, "installation link lifetime, at most 24h")
 	if err := flags.Parse(args[1:]); err != nil {
@@ -34,13 +35,16 @@ func run(args []string) error {
 	if *data == "" || flags.NArg() != 0 {
 		return fmt.Errorf("a private --data directory is required")
 	}
+	if (*connection != "") != (args[0] == "journal-connection") {
+		return fmt.Errorf("journal-connection requires its private connection file")
+	}
 	s, err := appledelivery.Open(*data)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
 	switch args[0] {
-	case "publish":
+	case "publish", "journal-connection":
 		if *candidate == "" || *receipt == "" {
 			return fmt.Errorf("publish requires --candidate and --receipt")
 		}
@@ -56,17 +60,26 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		ipa := filepath.Join(*candidate, "development.ipa")
-		info, err := os.Lstat(ipa)
-		if err != nil || !info.Mode().IsRegular() {
-			return fmt.Errorf("candidate IPA must be a regular file")
+		var r appledelivery.Receipt
+		if args[0] == "journal-connection" {
+			private, readErr := appledelivery.ReadJournalConnection(*connection)
+			if readErr != nil {
+				return readErr
+			}
+			r, err = s.JournalConnection(c, private, *origin, *ttl, time.Now())
+		} else {
+			ipa := filepath.Join(*candidate, "development.ipa")
+			info, err := os.Lstat(ipa)
+			if err != nil || !info.Mode().IsRegular() {
+				return fmt.Errorf("candidate IPA must be a regular file")
+			}
+			f, openErr := os.Open(ipa)
+			if openErr != nil {
+				return openErr
+			}
+			defer f.Close()
+			r, err = s.Publish(c, f, *origin, *ttl, time.Now())
 		}
-		f, err := os.Open(ipa)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		r, err := s.Publish(c, f, *origin, *ttl, time.Now())
 		if err != nil {
 			return err
 		}
@@ -117,7 +130,7 @@ func run(args []string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("select serve, publish or cleanup")
+		return fmt.Errorf("select serve, publish, journal-connection or cleanup")
 	}
 }
 
