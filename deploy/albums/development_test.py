@@ -42,7 +42,7 @@ class DevelopmentBootstrapTests(unittest.TestCase):
                             ALBUM_TEST_MYSQL_PASSWORD='1' * 64, ALBUM_TEST_MYSQL_ROOT_PASSWORD='2' * 64,
                             ALBUM_TEST_REDIS_PASSWORD='3' * 64)
         with tarfile.open(self.folder / 'source.tar', 'w') as archive:
-            for name in ('Dockerfile', 'go.mod', 'go.sum', 'cmd/albumgateway/main.go', 'cmd/albumworker/main.go',
+            for name in ('deploy/albums/development.Dockerfile', 'go.mod', 'go.sum', 'cmd/albumgateway/main.go', 'cmd/albumworker/main.go',
                          'cmd/migrate/main.go', 'migrations/0001_example.sql'):
                 item = tarfile.TarInfo(name)
                 item.size = 1
@@ -97,7 +97,17 @@ class DevelopmentBootstrapTests(unittest.TestCase):
     def execute(self, label, command, **kwargs):
         if label == 'albums-development-schema':
             return b'1\t0001_example.sql\n0\n0\n'
+        if label == 'albums-development-running':
+            service = command[-1].removeprefix(dev.PROJECT + '-').removesuffix('-1')
+            return json.dumps([{'State': {'Running': True, 'OOMKilled': False}, 'RestartCount': 0,
+                                'Config': {'Image': dev.IMAGE_PREFIX + service + ':' + self.source}}]).encode()
         return b''
+
+    def test_unhealthy_worker_stops_the_unpublished_stack(self):
+        self.runtime.execute.side_effect = lambda label, *args, **kwargs: b'[{"State":{"Running":false}}]' if label == 'albums-development-running' else self.execute(label, *args, **kwargs)
+        with self.assertRaisesRegex(OperationError, 'did not start cleanly'):
+            self.activate()
+        self.assertEqual(self.runtime.execute.call_args.args[1][-5:], ['stop', '-t', '40', 'albumgateway', 'albumworker'])
 
     def activate(self):
         with patch.object(dev.fcntl, 'flock', side_effect=BlockingIOError), patch.object(dev, 'assert_route'), patch.object(dev, 'ready'):
@@ -113,6 +123,9 @@ class DevelopmentBootstrapTests(unittest.TestCase):
         commands = [call.args[1] for call in self.runtime.execute.call_args_list]
         self.assertFalse(any('tellyouwhat-albums-test-next' in part for cmd in commands for part in cmd))
         self.assertFalse(any('down' in cmd or '--volumes' in cmd for cmd in commands))
+        builds = [cmd for cmd in commands if cmd[:2] == ['docker', 'build']]
+        self.assertEqual({cmd[cmd.index('--target') + 1] for cmd in builds}, set(dev.SERVICES))
+        self.assertTrue(all('deploy/albums/development.Dockerfile' in cmd and '--memory=1024m' in cmd for cmd in builds))
         with self.assertRaisesRegex(OperationError, 'already exists'):
             self.activate()
 

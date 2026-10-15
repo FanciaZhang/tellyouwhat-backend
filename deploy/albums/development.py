@@ -76,7 +76,7 @@ def selection(runtime, source):
                 Path(m.name).is_absolute() or '..' in Path(m.name).parts or not (m.isfile() or m.isdir()) for m in members)):
             raise OperationError('unsafe Albums source archive')
         names = {m.name for m in members if m.isfile()}
-        if not {'Dockerfile', 'go.mod', 'go.sum', 'cmd/albumgateway/main.go', 'cmd/albumworker/main.go', 'cmd/migrate/main.go'} <= names:
+        if not {'deploy/albums/development.Dockerfile', 'go.mod', 'go.sum', 'cmd/albumgateway/main.go', 'cmd/albumworker/main.go', 'cmd/migrate/main.go'} <= names:
             raise OperationError('Albums build source is incomplete')
         migrations = sorted(name.split('/')[-1] for name in names if re.fullmatch(r'migrations/\d{4}_[^/]+\.sql', name))
         if not migrations:
@@ -134,7 +134,8 @@ def activate(runtime, source):
             continue
         runtime.execute('albums-development-build-' + service, ['docker', 'build', '--network=default',
             '--memory=1024m', '--memory-swap=1536m', '--cpu-quota=100000',
-            '--build-arg', 'GOPROXY=https://goproxy.cn,direct', '--build-arg', 'SERVICE=' + service,
+            '--build-arg', 'GOPROXY=https://goproxy.cn,direct', '--target', service,
+            '-f', 'deploy/albums/development.Dockerfile',
             '--label', 'org.opencontainers.image.revision=' + source,
             '--label', 'cn.tellyouwhat.source-tar-sha256=' + record['files']['source.tar'], '-t', image, '-'],
             input=(folder / 'source.tar').read_bytes(), timeout=700)
@@ -143,6 +144,11 @@ def activate(runtime, source):
         runtime.execute('albums-development-migrate', compose(folder, 'run', '--rm', '--no-deps', 'migrate'), timeout=180)
         runtime.execute('albums-development-start', compose(folder, 'up', '-d', '--no-build', '--no-deps', 'albumgateway', 'albumworker'), timeout=120)
         ready()
+        for service in ('albumgateway', 'albumworker'):
+            container = json.loads(runtime.execute('albums-development-running', ['docker', 'inspect', PROJECT + '-' + service + '-1']))[0]
+            if (not container.get('State', {}).get('Running') or container['State'].get('OOMKilled')
+                    or container.get('RestartCount') or container.get('Config', {}).get('Image') != IMAGE_PREFIX + service + ':' + source):
+                raise OperationError('Albums development process did not start cleanly')
         rows = runtime.execute('albums-development-schema', ['docker', 'exec', PROJECT + '-mysql-1', 'sh', '-c',
             'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --database=albums_test --batch --skip-column-names '
             '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations; SELECT COUNT(*) FROM album_accounts; SELECT COUNT(*) FROM album_uploads;"']).decode().splitlines()
