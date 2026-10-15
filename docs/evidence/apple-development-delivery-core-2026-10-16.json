@@ -1,5 +1,6 @@
 {
   "date": "2026-10-16",
+  "implementation_commit": "248c8ce",
   "scope": "private Apple development installation transport and scheduled artifact cleanup integration",
   "checks": {
     "go_race": {
@@ -33,7 +34,14 @@
       "cleanup_network": "none",
       "capabilities_dropped": "ALL"
     },
-    "linux_cross_compile": {"passed": true, "target": "linux/amd64", "static": true}
+    "linux_cross_compile": {"passed": true, "target": "linux/amd64", "static": true},
+    "native_linux_tests": {
+      "tests_passed": 8,
+      "race_detector": false,
+      "scope": "same internal/appledelivery source cross-compiled on Mac and executed on the target Linux host",
+      "isolated_temporary_directory_removed": true,
+      "active_services_modified": false
+    }
   },
   "boundaries": {
     "signing_validated_by_this_service": false,
