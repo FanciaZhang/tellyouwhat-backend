@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "filename": "mysql-20261015T222412Z-5169f4.sql.gz.enc",
+  "recovery_filename": "recovery-mysql-20261015T222412Z-5169f4.tar.gz.enc",
+  "recovery_sha256": "5cebea723a18e54ca7cf169e24cfe201165fa8ca5d0f1af9a8596b880f8250b6",
+  "ota_recovery_files": 20,
+  "albums_recovery_files": 15,
+  "outer_manifest_authenticated": true,
+  "encrypted_recovery_decrypted_and_verified": true,
+  "cos_objects_readback_verified": 3,
+  "current_ota_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "previous_ota_source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+  "scheduled_execution": false,
+  "verified_at_utc": "2026-10-15T22:24:21.840822+00:00"
+}
