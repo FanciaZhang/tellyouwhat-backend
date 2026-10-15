@@ -45,7 +45,8 @@ class AppleDeliveryProxyTests(unittest.TestCase):
 ''')
                 source = folder / 'Caddyfile'
                 source.write_text(config)
-                token = 'synthetic-installation-capability-for-log-test'
+                tokens = {host: 'synthetic-installation-capability-' + str(index) for index, host in enumerate(
+                    ('install.example', 'INSTALL.EXAMPLE', 'install.example:' + str(port)))}
                 control = 'synthetic-control-request-for-log-test'
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -71,7 +72,8 @@ class AppleDeliveryProxyTests(unittest.TestCase):
                                 time.sleep(0.05)
                         else:
                             self.fail('temporary Caddy did not become ready')
-                        self.assertEqual(request('install.example', '/d/' + token + '/app.ipa'), 502)
+                        for host, token in tokens.items():
+                            self.assertEqual(request(host, '/d/' + token + '/app.ipa'), 502)
                         self.assertEqual(request('control.example', '/' + control), 502)
                     finally:
                         process.terminate()
@@ -82,7 +84,8 @@ class AppleDeliveryProxyTests(unittest.TestCase):
                             process.wait(timeout=5)
                 logs = (folder / 'proxy.log').read_text()
                 self.assertIn(control, logs, 'other sites must retain their error logs')
-                self.assertEqual(token in logs, not enabled, 'installation capability leaked or negative control failed')
+                for token in tokens.values():
+                    self.assertEqual(token in logs, not enabled, 'installation capability leaked or negative control failed')
 
 
 if __name__ == '__main__':

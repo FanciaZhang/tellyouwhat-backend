@@ -38,6 +38,14 @@ def assert_logging(configuration):
             matched.append(server)
     if len(matched) != 1:
         raise OperationError('OTA host logger mapping is missing or ambiguous')
+    site = [route for route in matched[0].get('routes', []) if route.get('match') == [{'host': [host]}]]
+    if len(site) != 1:
+        raise OperationError('OTA requires a dedicated host route')
+    handlers = site[0].get('handle', [])
+    pipeline = handlers[0].get('routes', []) if len(handlers) == 1 and handlers[0].get('handler') == 'subroute' else []
+    if (not pipeline or set(pipeline[0]) != {'handle'} or not pipeline[0]['handle']
+            or pipeline[0]['handle'][0] != {'handler': 'vars', 'access_logger_names': ['apple_delivery']}):
+        raise OperationError('OTA must bind its logger before all request handlers, including mixed-case hosts')
 
 
 def read_caddy(path):

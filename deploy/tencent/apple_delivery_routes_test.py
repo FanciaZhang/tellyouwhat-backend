@@ -19,7 +19,10 @@ def configuration():
     return {'logging': {'logs': {
         'default': {'exclude': ['http.log.access.apple_delivery', 'http.log.error.apple_delivery']},
         'apple_delivery': {'writer': {'output': 'discard'}, 'include': ['http.log.access.apple_delivery']}}},
-        'apps': {'http': {'servers': {'srv0': {'logs': {'logger_names': {'install.tellyouwhat.cn': ['apple_delivery']}}}}}}}
+        'apps': {'http': {'servers': {'srv0': {
+            'logs': {'logger_names': {'install.tellyouwhat.cn': ['apple_delivery']}},
+            'routes': [{'match': [{'host': ['install.tellyouwhat.cn']}], 'handle': [{'handler': 'subroute', 'routes': [
+                {'handle': [{'handler': 'vars', 'access_logger_names': ['apple_delivery']}]}]}]}]}}}}}
 
 
 class AppleDeliveryRouteTests(unittest.TestCase):
@@ -135,6 +138,9 @@ class AppleDeliveryRouteTests(unittest.TestCase):
         value = configuration();value['apps']['http']['servers']['srv0']['logs']['logger_names']['install.tellyouwhat.cn'] = ['other'];variants.append(value)
         value = configuration();value['apps']['http']['servers']['srv0']['logs']['skip_hosts'] = ['install.tellyouwhat.cn'];variants.append(value)
         value = configuration();value['apps']['http']['servers']['srv0']['trace'] = True;variants.append(value)
+        value = configuration();value['apps']['http']['servers']['srv0']['routes'][0]['handle'][0]['routes'][0]['handle'].clear();variants.append(value)
+        value = configuration();value['apps']['http']['servers']['srv0']['routes'][0]['handle'][0]['routes'][0]['match'] = [{'path': ['/only-some-paths']}];variants.append(value)
+        value = configuration();value['apps']['http']['servers']['srv0']['routes'][0]['handle'][0]['routes'][0]['handle'].insert(0, {'handler': 'static_response'});variants.append(value)
         for adapted in variants:
             with self.subTest(adapted=adapted):
                 self.adapted = adapted

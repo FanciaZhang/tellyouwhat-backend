@@ -56,7 +56,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if r.Host != h.host || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" {
+	if (!strings.EqualFold(r.Host, h.host) && !strings.EqualFold(r.Host, h.host+":443")) || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" {
 		http.NotFound(w, r)
 		return
 	}

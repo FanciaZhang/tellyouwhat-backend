@@ -2,6 +2,7 @@ install.tellyouwhat.cn {
     log apple_delivery {
         output discard
     }
+    log_name apple_delivery
     header {
         Strict-Transport-Security "max-age=31536000"
         Cache-Control "no-store"

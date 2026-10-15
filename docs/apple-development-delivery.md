@@ -67,11 +67,13 @@ appledelivery publish --data /private/store \
 
 回执必须存入 0700 目录，文件为 0600，且不覆盖现有回执。安装地址本身就是访问凭证，只向获准设备的用户交付；不写入公开报告、日志或源码。服务仅保存凭证的摘要，链接最长 24 小时，支持 HEAD 和 Range 下载，单次传输上限 15 分钟且不越过链接有效期。原有 Ad Hoc 描述文件仍限制可安装设备。
 
+请求 Host 接受配置域名的大小写等价形式和显式 HTTPS 默认端口 443；其他域名及端口仍拒绝。Manifest 和下载地址始终使用配置中的规范 HTTPS 源，不能由请求 Host 改写。
+
 ## HTTPS 与日志
 
 采用以下两个 Caddy 片段：
 
-- `deploy/tencent/apple-delivery.caddy`：独立安装站点；请求日志丢弃，仅代理 `/d/*`，其他路径返回 404。
+- `deploy/tencent/apple-delivery.caddy`：独立安装站点；请求日志丢弃，站点级 `log_name apple_delivery` 在所有处理器前固定日志名称，仅代理 `/d/*`，其他路径返回 404。
 - `deploy/tencent/apple-delivery-logging.caddy`：在根 Caddyfile 的全局选项块内导入，排除该站点的错误日志命名空间。仅关闭 access log 不足以保护反向代理失败时的安装链接。
 
 ```caddyfile
@@ -83,7 +85,7 @@ appledelivery publish --data /private/store \
 import /etc/caddy/apple-delivery.caddy
 ```
 
-先适配并验证完整配置，确认该站点的日志名称为 `apple_delivery`、默认日志排除 `http.log.error.apple_delivery`，且没有 DEBUG/trace 或其他捕获安装请求的日志器，再激活。不要覆盖已有全局日志规则；存在冲突时先合并并重新验收。
+先适配并验证完整配置，确认该站点的日志名称为 `apple_delivery`、所有站点请求在处理前无条件绑定该名称、默认日志排除 `http.log.error.apple_delivery`，且没有 DEBUG/trace 或其他捕获安装请求的日志器，再激活。当前 Caddy 的域名日志映射按原始 Host 大小写匹配，单靠该映射会让大写 Host 落入默认日志；必须保留路由级绑定，并分别检查普通、大写和带端口的 Host。不要覆盖已有全局日志规则；存在冲突时先合并并重新验收。
 
 已登记服务后，使用 `python3 deploy/tencent/apple_delivery_routes.py --source <实际部署的服务源码 SHA>` 配置路由。入口沿用 owner wrapper 和双锁，先确认活动 Caddy 与磁盘配置一致，再校验完整新配置；重载后读回活动配置，与已验证内容逐项比对。验证、安装、重载或状态写入失败时恢复原配置；失败的原子安装也会移除自身 pending 文件。当前共享主机没有其他命名日志器或全局日志覆盖，出现这类变更会拒绝自动修改，需先审阅兼容方案。
 
@@ -91,7 +93,7 @@ Caddy 的 [`file_server` 会自动隐藏输入配置文件](https://caddyserver.
 
 DNS 通过既有 Netlify 账号配置独立安装域名，指向当前主机。路由激活不等于公网 TLS 可用；仍须从外网检查证书和实际请求，验证失败请求不泄漏合成 URL，然后将完整代理配置加入新一份加密异地备份。
 
-依据：[Caddy 全局日志规则](https://caddyserver.com/docs/caddyfile/options#log)、[请求日志规则](https://caddyserver.com/docs/caddyfile/directives/log) 和服务器当前使用的 [v2.11.4 日志实现](https://github.com/caddyserver/caddy/blob/v2.11.4/modules/caddyhttp/logging.go)。`apple_delivery_proxy_test.py` 使用真实 Caddy 和合成 URL 验证失败请求不泄漏，并用其他站点作为日志仍可用的对照。测试绑定临时回环端口，不修改活动配置；本机缺少 Caddy 时明确跳过，不能据此声称代理已验收。
+依据：[Caddy 全局日志规则](https://caddyserver.com/docs/caddyfile/options#log)、[请求日志规则](https://caddyserver.com/docs/caddyfile/directives/log)、[请求日志名称绑定](https://caddyserver.com/docs/caddyfile/directives/log_name) 和服务器当前使用的 [v2.11.4 日志实现](https://github.com/caddyserver/caddy/blob/v2.11.4/modules/caddyhttp/logging.go)。`apple_delivery_proxy_test.py` 使用真实 Caddy 和合成 URL 验证三种 Host 的失败请求不泄漏，并用其他站点作为日志仍可用的对照。测试绑定临时回环端口，不修改活动配置；本机缺少 Caddy 时明确跳过，不能据此声称代理已验收。
 
 ## 清理、回滚和完成条件
 

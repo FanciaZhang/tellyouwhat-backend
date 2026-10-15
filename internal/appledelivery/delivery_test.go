@@ -63,12 +63,15 @@ func TestPrivateManifestPageAndExpiry(t *testing.T) {
 			t.Fatalf("unsafe path accepted: %s status %d", path, got)
 		}
 	}
-	w := httptest.NewRecorder()
-	badHost := httptest.NewRequest("GET", r.URL, nil)
-	badHost.Host = "evil.example"
-	h.ServeHTTP(w, badHost)
-	if w.Code != 404 {
-		t.Fatal("wrong host accepted")
+	for host, want := range map[string]int{"install.example": 200, "INSTALL.EXAMPLE": 200, "install.example:443": 200,
+		"evil.example": 404, "install.example:80": 404, "install.example:444": 404} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", r.URL, nil)
+		req.Host = host
+		h.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Fatalf("host %s: status %d, want %d", host, w.Code, want)
+		}
 	}
 	if request(t, h, u.Path, "POST").Code != 405 {
 		t.Fatal("unexpected write API")
