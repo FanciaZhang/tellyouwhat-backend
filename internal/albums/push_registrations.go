@@ -46,16 +46,37 @@ func (albumPushTarget) String() string   { return "[redacted album push target]"
 func (albumPushTarget) GoString() string { return "[redacted album push target]" }
 
 type albumPushRegistrations struct {
-	db          *sql.DB
-	cipher      AccountCipher
-	environment string
+	db               *sql.DB
+	cipher           AccountCipher
+	environment      string
+	allowDevelopment bool
 }
 
 func newAlbumPushRegistrations(db *sql.DB, cipher AccountCipher, environment string) (*albumPushRegistrations, error) {
 	if db == nil || cipher == nil || (environment != "development" && environment != "production") {
 		return nil, errPushRegistration
 	}
-	return &albumPushRegistrations{db, cipher, environment}, nil
+	return &albumPushRegistrations{db: db, cipher: cipher, environment: environment}, nil
+}
+
+// The client selects a registered APNs realm, never a topic, host or account.
+func (r *albumPushRegistrations) forEnvironment(environment string) (*albumPushRegistrations, error) {
+	if environment == "" {
+		environment = r.environment
+	}
+	if environment != r.environment && !(r.allowDevelopment && (environment == "development" || environment == "production")) {
+		return nil, errPushRegistration
+	}
+	copy := *r
+	copy.environment = environment
+	return &copy, nil
+}
+
+func (r *albumPushRegistrations) environments() []string {
+	if r.allowDevelopment {
+		return []string{"production", "development"}
+	}
+	return []string{r.environment}
 }
 
 func pushTokenDigest(token string) ([]byte, error) {
@@ -167,6 +188,13 @@ func (r *albumPushRegistrations) update(ctx context.Context, credential string, 
 	}
 	if current.Revision != u.ExpectedRevision {
 		return current, errPushRegistrationConflict
+	}
+	// Re-signing the same installation changes APNs realm but retains its session.
+	// Fence late requests and remove the previous realm's token in this transaction.
+	if r.allowDevelopment {
+		if _, err := tx.ExecContext(ctx, `UPDATE album_push_registrations SET state='disabled',revision=revision+1,encrypted_token=NULL,token_nonce=NULL,registered_at=NULL,request_id=NULL,request_sha256=NULL WHERE session_id=? AND environment<>? AND state='enabled'`, session, r.environment); err != nil {
+			return current, errPushRegistration
+		}
 	}
 	if u.Enabled {
 		var other, otherSession string

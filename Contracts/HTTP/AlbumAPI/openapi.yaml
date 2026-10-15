@@ -49,6 +49,12 @@ paths:
         '204': {description: Current session revoked}
         default: {$ref: '#/components/responses/Error'}
   /v1/albums/notifications/registration:
+    parameters:
+      - name: X-Album-Push-Environment
+        in: header
+        required: false
+        description: APNs realm from the installed app's signed aps-environment. Missing uses the server default for older clients. The server permits only configured realms; this never selects an account, APNs topic, API deployment or purchase environment.
+        schema: {type: string, enum: [development, production]}
     get:
       operationId: getAlbumPushRegistration
       responses:
@@ -60,7 +66,7 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     put:
       operationId: updateAlbumPushRegistration
-      description: Explicit notification preference for the authenticated session. Environment is server configured. A conflict requires rereading state; never silently overwrite it.
+      description: Explicit notification preference for the authenticated session and allowed APNs realm. A successful change disables the other realm of this session when dual registration is enabled. A conflict requires rereading state; never silently overwrite it.
       requestBody:
         required: true
         content:

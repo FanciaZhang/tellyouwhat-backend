@@ -65,7 +65,7 @@ func newRetentionDispatchFixture(t *testing.T, devices int) *retentionDispatchFi
 	service := reminderVerificationService(t, r, f.receipt, client, func() time.Time { return f.clock })
 	f.d = &albumRetentionDispatcher{r, service, p.r, retentionSendFunc(func(context.Context, string, albumRetentionReminder, string) (albumAPNSResult, error) {
 		return albumAPNSResult{Status: "accepted"}, nil
-	}), func() time.Time { return f.clock }}
+	}), func() time.Time { return f.clock }, nil}
 	return f
 }
 func (f *retentionDispatchFixture) reminder(t *testing.T) albumRetentionReminder {
@@ -279,7 +279,7 @@ func TestMySQLRetentionDispatchConcurrentWorkersAndLateReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, found, err := f.d.repository.nextRetentionDelivery(context.Background(), claim, revision, "production", f.clock)
+	old, found, err := f.d.repository.nextRetentionDelivery(context.Background(), claim, revision, []string{"production"}, f.clock)
 	if err != nil || !found {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestMySQLRetentionDispatchConcurrentWorkersAndLateReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, found, err := f.d.repository.nextRetentionDelivery(context.Background(), newer, revision, "production", f.clock)
+	current, found, err := f.d.repository.nextRetentionDelivery(context.Background(), newer, revision, []string{"production"}, f.clock)
 	if err != nil || !found || current.ID != old.ID {
 		t.Fatal("restart identity", err)
 	}

@@ -83,6 +83,49 @@ func TestAlbumRetentionPushConfigFailClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestAlbumDualPushSigningKeysAreExplicit(t *testing.T) {
+	values := gatewayEnvironment(t)
+	fixture, _, _, _ := apnsFixture(t)
+	receipt := newAlbumReceiptFixture(t, time.Now().UTC())
+	for name, data := range map[string][]byte{
+		"ALBUM_APNS_KEY_FILE":             fixture.PrivateKeyPEM,
+		"ALBUM_APNS_DEVELOPMENT_KEY_FILE": fixture.PrivateKeyPEM,
+		"ALBUM_APP_STORE_KEY_FILE":        fixture.PrivateKeyPEM,
+		"ALBUM_APP_STORE_ROOTS_FILE":      pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: receipt.rootDER}),
+	} {
+		path := filepath.Join(t.TempDir(), "secret")
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		values[name] = path
+	}
+	values["ALBUM_SUBSCRIPTIONS_ENABLED"] = "true"
+	values["ALBUM_APP_STORE_ISSUER_ID"] = uuid.NewString()
+	values["ALBUM_APP_STORE_KEY_ID"] = "STOREKEY01"
+	values["ALBUM_RETENTION_PUSH_ENABLED"] = "true"
+	values["ALBUM_PUSH_ENVIRONMENT"] = "production"
+	values["ALBUM_PUSH_ALLOW_DEVELOPMENT"] = "true"
+	values["ALBUM_APNS_KEY_ID"] = fixture.KeyID
+	values["ALBUM_APNS_DEVELOPMENT_KEY_ID"] = "DEVKEY0001"
+	config, err := LoadGatewayConfig(func(k string) string { return values[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.RetentionAPNS.Environment != "production" || config.RetentionAPNS.KeyID != fixture.KeyID ||
+		config.DevelopmentRetentionAPNS == nil || config.DevelopmentRetentionAPNS.Environment != "development" || config.DevelopmentRetentionAPNS.KeyID != "DEVKEY0001" {
+		t.Fatal("APNs realm key selection")
+	}
+	for _, pair := range [][2]string{{"ALBUM_APNS_DEVELOPMENT_KEY_ID", ""}, {"ALBUM_APNS_DEVELOPMENT_KEY_FILE", ""}, {"ALBUM_APNS_DEVELOPMENT_KEY_ID", "STOREKEY01"}, {"ALBUM_APNS_DEVELOPMENT_KEY_ID", values["ALBUM_APPLE_SIGN_IN_KEY_ID"]}} {
+		original := values[pair[0]]
+		values[pair[0]] = pair[1]
+		if _, err := LoadGatewayConfig(func(k string) string { return values[k] }); err == nil {
+			t.Fatal("missing or inappropriate development key accepted")
+		}
+		values[pair[0]] = original
+	}
+}
+
 func TestGatewayRetentionDispatcherAssemblyAndDrain(t *testing.T) {
 	f := newPushFixture(t)
 	values := gatewayEnvironment(t)
@@ -143,5 +186,17 @@ func TestGatewayRetentionDispatcherAssemblyAndDrain(t *testing.T) {
 	}
 	if requests.Load() != 1 {
 		t.Fatal("unexpected provider calls", requests.Load())
+	}
+	config.PushAllowDevelopment = true
+	development := *config.RetentionAPNS
+	development.Environment, development.KeyID = "development", "DEVKEY0001"
+	config.DevelopmentRetentionAPNS = &development
+	dual, err := NewGateway(context.Background(), config, transport)
+	if err != nil {
+		t.Fatal("dual APNs gateway assembly", err)
+	}
+	dual.Close()
+	if requests.Load() != 2 {
+		t.Fatal("empty dual APNs gateway contacted Apple")
 	}
 }

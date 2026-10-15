@@ -20,6 +20,12 @@ MySQL 模式在打开连接前检查：数据库与账号非空、不得使用 r
 
 `APP_ATTEST_ENV` 在两套 API 环境中均默认 production，与同一 `.dev` 身份的 Xcode 直装和 Ad Hoc 配置一致。设备证明仍校验实际 Bundle ID 和证明环境。注册时是否要求开发激活口令由 API 环境独立决定；开发服务同时保留构建白名单，首次注册及注册重试均执行访问校验。平台开发权益按 API 环境开通；正式服务继续验证 Apple 交易并区分 Sandbox/Production。已有部署的显式 development 配置不会被默认值自动切换，迁移需核对客户端和已存设备密钥，保留正式数据。
 
+## 相册推送
+
+相册推送登记使用最终安装包的 APNs 环境，独立于 API 环境、Debug 编译条件和 StoreKit。测试服务默认 `ALBUM_PUSH_ENVIRONMENT=production` 供 Ad Hoc 使用；需要同时支持 Xcode Development 安装时，显式开启 `ALBUM_PUSH_ALLOW_DEVELOPMENT=true`，并分别提供两种 APNs 环境的签名 key。正式部署拒绝 development 默认值和双通道开关。
+
+`X-Album-Push-Environment` 只是通道路由信息，不能授权访问、指定 topic 或选择其他服务。服务端仍使用登录会话确定账号。切换同一会话的签名通道时，旧注册增加 revision 并清除令牌；已被 APNs 接受的提醒按会话去重，避免重签安装后重复发送。多设备、不同通道的待发送项全部处理后才结算提醒。原有表已保存环境，不需要新增迁移。旧客户端省略 header 时沿用服务端默认值。
+
 ## 集成来源
 
 统一分支从共享主干 `da7c981` 开始，合并相册 `79ba5db` 与生日 `e581c28`。保留主干最新手记业务、清理操作用户检查，以及相册就绪检查协议。迁移按完整文件名记账，历史 SQL 不重命名。

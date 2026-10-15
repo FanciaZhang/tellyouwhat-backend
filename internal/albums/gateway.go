@@ -134,11 +134,15 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 		return nil, ErrShareUnavailable
 	}
 	var push *albumPushRegistrations
+	if err := config.validatePushEnvironment(); err != nil {
+		return nil, err
+	}
 	if config.PushEnvironment != "" {
 		push, err = newAlbumPushRegistrations(db, cipher, config.PushEnvironment)
 		if err != nil {
 			return nil, errPushRegistration
 		}
+		push.allowDevelopment = config.PushAllowDevelopment
 	}
 	pushLimiter, err := NewRedisLoginLimiter(g.redis, config.LoginLimitKey, 60, time.Minute)
 	if err != nil {
@@ -165,7 +169,17 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 		if senderErr != nil {
 			return nil, senderErr
 		}
-		dispatcher = &albumRetentionDispatcher{repository, subscriptions, push, sender, time.Now}
+		dispatcher = &albumRetentionDispatcher{repository: repository, subscriptions: subscriptions, registrations: push, sender: sender, now: time.Now}
+		if push.allowDevelopment {
+			development := config.DevelopmentRetentionAPNS
+			if development == nil || development.Environment != "development" || development.BundleID != config.AppleCode.BundleID || development.TeamID != config.AppleCode.TeamID {
+				return nil, errAlbumAPNS
+			}
+			dispatcher.developmentSender, err = newAlbumAPNS(*development, transport)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := g.startAppleDeletion(accounts, exchanger, config.Worker.BatchSize, config.Worker.PollInterval); err != nil {
 		return nil, errors.New("album Apple deletion worker configuration")

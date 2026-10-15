@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-15",
+  "base_commit": "cbb9be23a77b2e4ecc253ee2d8d727e2349df6d5",
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "5c57a136d8920213214b319b5c870a9a97d7ecc5b692b1ac5d2404edf9469ea7",
+    "deploy/albums/runtime.env.example": "e8d6d3d74a6edbcfba559beaa8f381a74fdddac95287d703c9012d702a574da6",
+    "internal/albumhttpapi/generated.go": "28be63d56e01ef916c0a8ad6278d28ea0fc09ccf3191fe2c518d693f91e15cfa",
+    "internal/albums/gateway.go": "6a59a9a4e132b8c414f68860d419a6eaca7f45afbe1a9599cdf36ded38cb0a34",
+    "internal/albums/gateway_config.go": "d16a39d6fa6b79431d78b1e248881b07d70e0ca944394baf2389840e620f851a",
+    "internal/albums/push_http.go": "77ac4b67ac3e2a73197db62f91f177c179c4611b0accdbfd20fbae6eeb182cbb",
+    "internal/albums/push_registrations.go": "c1ff75cba2c7155ce942eaa518637f4c6d9e9dc85f68777ea1b82ce979a3389d",
+    "internal/albums/retention_config_test.go": "e305ab203cd1d5cd38ba767397c11ad12fc8732173ac7c09c237c7a0ae63cb68",
+    "internal/albums/retention_deliveries.go": "7f732d489e19673b846333c89c91f46324fdb929b8f0343dba00534f0a90b7aa",
+    "internal/albums/retention_dispatch.go": "8b296ef368c32ec29c170d2578d812e2a173272236b1318cd4fd8768dd2fd9fb",
+    "internal/albums/retention_dispatch_integration_test.go": "c369ca471cccd11e1586db69cf51b27c46e95a222bcfb2247b2b64ee8aaee302",
+    "internal/albums/push_environments_test.go": "69290659bd8dd2a7bfd86df6f76164cdaf14beb252db5dbc69eb319f60ba1324"
+  },
+  "go_full_suite": {
+    "packages_skip": 13,
+    "top_level_tests_pass": 959,
+    "subtests_pass": 1215,
+    "packages_pass": 56,
+    "top_level_tests_skip": 329,
+    "subtests_skip": 310
+  },
+  "go_full_log": "/tmp/albums-push-realm-go-full-20261015.jsonl",
+  "isolated_mysql_runs": [
+    {
+      "run": "ab26a40b",
+      "status": "timeout_after_12_minutes",
+      "race_detector": false,
+      "log": "/tmp/albums-push-realms-20261015.log",
+      "log_sha256": "ab766f767056d7e86984980497a644332ab452da9cf29316852d7d6845dabad1",
+      "passed_top_level": [
+        "TestMySQLAlbumPushSwitchRealmFencesOldRequests",
+        "TestMySQLRetentionDispatchBothRealmsWaitsForBothReceipts",
+        "TestMySQLAlbumPushHTTPSelectsRealm",
+        "TestGatewayAlbumPushRegistrationHTTPAndRevocation",
+        "TestMySQLAlbumPushEncryptionReplayExpiryAndLogout",
+        "TestMySQLAlbumPushAccountSwitchFencesOldSession",
+        "TestMySQLAlbumPushRotationPermissionAndLateInvalidation",
+        "TestMySQLAlbumPushConcurrentCASAndEnvironmentIsolation",
+        "TestMySQLAlbumPushTransferFailureRollsBackOldBinding",
+        "TestGatewayRetentionDispatcherAssemblyAndDrain",
+        "TestMySQLRetentionDispatchPartialRetryAndRestart",
+        "TestMySQLRetentionDispatchFencesChanges"
+      ],
+      "remaining_test_schemas": 0,
+      "remaining_test_users": 0
+    },
+    {
+      "run": "0b3e3d01",
+      "status": "passed",
+      "race_detector": true,
+      "log": "/tmp/albums-push-realms-race-20261015.log",
+      "log_sha256": "9cf2107368aca8d1b55fcd7aa76ca219cfb20e9e747739b23b6f01e377e24c8f",
+      "passed_top_level": [
+        "TestAlbumPushRealmSelectionAndHeader",
+        "TestAlbumDualPushConfigRequiresIsolatedDevelopmentIdentity",
+        "TestMySQLAlbumPushSwitchRealmFencesOldRequests",
+        "TestMySQLRetentionDispatchBothRealmsWaitsForBothReceipts",
+        "TestMySQLAlbumPushHTTPSelectsRealm",
+        "TestAlbumDualPushSigningKeysAreExplicit",
+        "TestGatewayRetentionDispatcherAssemblyAndDrain"
+      ],
+      "remaining_test_schemas": 0,
+      "remaining_test_users": 0
+    },
+    {
+      "run": "e66541cc",
+      "status": "passed",
+      "race_detector": true,
+      "log": "/tmp/albums-push-realms-final-dispatch-20261015.log",
+      "log_sha256": "eedc21493e88d884c4f39acb14d9adb24f6de62519805a0d37aca69dd37abd20",
+      "passed_top_level": [
+        "TestMySQLRetentionDispatchBothRealmsWaitsForBothReceipts",
+        "TestMySQLRetentionDispatchRealmSwitchAfterAcceptance",
+        "TestMySQLRetentionDispatchPartialRetryAndRestart",
+        "TestMySQLRetentionDispatchConcurrentWorkersAndLateReceipt",
+        "TestMySQLRetentionDispatchStopsBetweenDevicesOnRenewal",
+        "TestMySQLRetentionDispatchRuntimeUsesAPNSAdapter",
+        "TestMySQLRetentionDispatchShutdownPreservesKnownAcceptance"
+      ],
+      "remaining_test_schemas": 0,
+      "remaining_test_users": 0
+    },
+    {
+      "run": "f6952157",
+      "status": "passed",
+      "race_detector": true,
+      "log": "/tmp/albums-push-realms-ambiguous-20261015.log",
+      "log_sha256": "ee64ed2c58b9681d9985288248e29828e6b0833289b8277c2b3936e527e40b7d",
+      "passed_top_level": [
+        "TestMySQLRetentionDispatchAmbiguousAndRejected"
+      ],
+      "remaining_test_schemas": 0,
+      "remaining_test_users": 0
+    }
+  ],
+  "unique_mysql_top_level_scenarios": 18,
+  "config_race": "passed",
+  "production_services_changed": false,
+  "apns_keys_created": false,
+  "real_apns_delivery_verified": false,
+  "notes": [
+    "The first broad batch timed out while the fourth ambiguous-response subcase was running. That complete test and remaining dispatch tests passed in bounded follow-up runs.",
+    "The generated header adapter, dual sender assembly and new routing cases passed in a separate real-MySQL race run.",
+    "Final session-level deduplication passed with both-realms, restart, concurrent receipt, renewal, APNs adapter and shutdown tests under the race detector.",
+    "Provider responses are test doubles; database transactions and encryption use actual isolated MySQL databases.",
+    "All four temporary schema/user prefixes and local Redis/tunnel processes were cleaned up. No active album database was used as a test fixture."
+  ]
+}

@@ -52,6 +52,10 @@ API 内四个工作协程核验持久订阅链：有效订阅每 5 分钟，失�
 
 迁移必须包含 0033。`ALBUM_PUSH_ENVIRONMENT` 控制设备注册，`ALBUM_RETENTION_PUSH_ENABLED=false` 独立关闭发送；打开前要求订阅核验启用、推送环境与 App 的实际 aps-environment 一致，以及独立 `ALBUM_APNS_KEY_ID` / `ALBUM_APNS_KEY_FILE`。P8 文件只放 API 的私有 `/album-secrets` 挂载，不复用登录或 App Store key，不进入 App/worker。完成真机验收前保持关闭。
 
+同一 `.dev` 测试服务同时支持 Ad Hoc 与 Xcode 直装时，设置 `ALBUM_PUSH_ENVIRONMENT=production` 和 `ALBUM_PUSH_ALLOW_DEVELOPMENT=true`。客户端通过 `X-Album-Push-Environment` 指定最终签名的通道；省略时兼容旧客户端，使用服务端默认值。只有 test 部署、`.dev` 身份和 production 默认值能启用双通道；正式服务保持单一 production。注册仍绑定已认证会话，切换通道会递增另一侧 revision 并清除令牌，旧请求不能重新激活它。提醒只有两侧待发送项均处理后才完成；已接受项不会因另一侧重试而重复发送。
+
+双通道发送还必须显式配置 `ALBUM_APNS_DEVELOPMENT_KEY_ID` / `ALBUM_APNS_DEVELOPMENT_KEY_FILE`，不自动复用 production key。优先使用仅关联相册对应 Bundle ID 的独立环境 key；Apple 的新 topic-specific key 仅用于一个 APNs 环境，参见 [Apple token-based APNs](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns)。这些代码和配置不代表已创建推送 key 或已通过真机收件验收。
+
 每次领取都重新查询所有已知购买链，再逐设备复核账户修订和注册资格。新发现的账户所属购买链需完成权益对账后才能发送旧提醒。单次最多 16 个设备，未结束部分通过租约和逐设备回执续做。APNs 接收不代表设备显示，网络结果不明时可能重复，已经接收的通知无法撤回。
 
 排查使用 `album_retention_deliveries.state`：accepted 表示 APNs 接收，pending 按 available_at 重试，rejected 表示当前注册代次的本阶段尝试已停止。父任务 delivered 仅表示阶段结束且至少一台设备被 APNs 接收。运行日志只记录通用延后事件，禁止记录设备令牌、密钥或完整 provider URL。没有可用设备时保留重查机会；自然登录会话到期不撤销已授权提醒，显式退出与已记录的授权撤销会阻止后续目标读取。

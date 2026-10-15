@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tellyouwhat/backend/internal/albumhttpapi"
 )
 
 func (h *uploadHTTP) allowPushRegistration(c *gin.Context) bool {
@@ -45,7 +46,21 @@ func writePushError(c *gin.Context, err error) {
 	c.JSON(status, gin.H{"code": code})
 }
 
-func (h *uploadHTTP) GetAlbumPushRegistration(c *gin.Context) {
+func (h *uploadHTTP) pushRegistrationStore(c *gin.Context) (*albumPushRegistrations, bool) {
+	values := c.Request.Header.Values("X-Album-Push-Environment")
+	if len(values) > 1 || len(values) == 1 && values[0] != "development" && values[0] != "production" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "push_registration_invalid"})
+		return nil, false
+	}
+	store, err := h.login.PushRegistrations.forEnvironment(c.GetHeader("X-Album-Push-Environment"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "push_registration_invalid"})
+		return nil, false
+	}
+	return store, true
+}
+
+func (h *uploadHTTP) GetAlbumPushRegistration(c *gin.Context, _ albumhttpapi.GetAlbumPushRegistrationParams) {
 	if !h.allowPushRegistration(c) {
 		return
 	}
@@ -58,7 +73,11 @@ func (h *uploadHTTP) GetAlbumPushRegistration(c *gin.Context) {
 		writePushError(c, err)
 		return
 	}
-	current, err := h.login.PushRegistrations.current(c.Request.Context(), credential, time.Now().UTC())
+	store, ok := h.pushRegistrationStore(c)
+	if !ok {
+		return
+	}
+	current, err := store.current(c.Request.Context(), credential, time.Now().UTC())
 	if err != nil {
 		writePushError(c, err)
 		return
@@ -66,7 +85,7 @@ func (h *uploadHTTP) GetAlbumPushRegistration(c *gin.Context) {
 	c.JSON(http.StatusOK, current)
 }
 
-func (h *uploadHTTP) UpdateAlbumPushRegistration(c *gin.Context) {
+func (h *uploadHTTP) UpdateAlbumPushRegistration(c *gin.Context, _ albumhttpapi.UpdateAlbumPushRegistrationParams) {
 	if !h.allowPushRegistration(c) {
 		return
 	}
@@ -80,7 +99,11 @@ func (h *uploadHTTP) UpdateAlbumPushRegistration(c *gin.Context) {
 		writePushError(c, err)
 		return
 	}
-	current, err := h.login.PushRegistrations.update(c.Request.Context(), credential, u, time.Now().UTC())
+	store, ok := h.pushRegistrationStore(c)
+	if !ok {
+		return
+	}
+	current, err := store.update(c.Request.Context(), credential, u, time.Now().UTC())
 	if err != nil {
 		writePushError(c, err)
 		return

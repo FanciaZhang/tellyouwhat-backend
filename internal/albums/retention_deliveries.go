@@ -12,19 +12,33 @@ import (
 type albumRetentionDelivery struct {
 	ID           string
 	Registration albumPushRegistration
+	Environment  string
 }
 
 const reminderTargetsSQL = ` FROM album_push_registrations p JOIN album_sessions s ON s.session_id=p.session_id JOIN album_accounts a ON a.account_id=s.account_id JOIN album_apple_grants g ON g.grant_id=s.grant_id AND g.account_id=a.account_id
  LEFT JOIN album_retention_deliveries d ON d.reminder_id=? AND d.registration_id=p.registration_id AND d.registration_revision=p.revision
- WHERE a.account_id=? AND p.environment=? AND p.state='enabled' AND s.revoked_at IS NULL AND a.state='active' AND g.revoked_at IS NULL
- AND NOT EXISTS (SELECT 1 FROM album_retention_deliveries accepted WHERE accepted.reminder_id=? AND accepted.registration_id=p.registration_id AND accepted.state='accepted')
+ WHERE a.account_id=? AND p.environment IN (?,?) AND p.state='enabled' AND s.revoked_at IS NULL AND a.state='active' AND g.revoked_at IS NULL
+ AND NOT EXISTS (SELECT 1 FROM album_retention_deliveries accepted JOIN album_push_registrations sent ON sent.registration_id=accepted.registration_id WHERE accepted.reminder_id=? AND sent.session_id=p.session_id AND accepted.state='accepted')
  AND (d.state IS NULL OR d.state='pending')`
 
 // All provider calls happen after releasing database locks. The exact revision
 // returned by the all-chain verification fences concurrent entitlement changes.
-func (r *MySQLUploads) nextRetentionDelivery(ctx context.Context, claim albumRetentionReminder, revision int64, environment string, now time.Time) (albumRetentionDelivery, bool, error) {
+func pushEnvironmentPair(environments []string) (string, string, error) {
+	if len(environments) < 1 || len(environments) > 2 {
+		return "", "", ErrLease
+	}
+	for _, value := range environments {
+		if value != "development" && value != "production" {
+			return "", "", ErrLease
+		}
+	}
+	return environments[0], environments[len(environments)-1], nil
+}
+
+func (r *MySQLUploads) nextRetentionDelivery(ctx context.Context, claim albumRetentionReminder, revision int64, environments []string, now time.Time) (albumRetentionDelivery, bool, error) {
 	var delivery albumRetentionDelivery
-	if revision < 1 || (environment != "development" && environment != "production") {
+	first, second, err := pushEnvironmentPair(environments)
+	if revision < 1 || err != nil {
 		return delivery, false, ErrLease
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -42,7 +56,7 @@ func (r *MySQLUploads) nextRetentionDelivery(ctx context.Context, claim albumRet
 	if account.Revision != revision || !reminderAccountEligible(account, claim.Deadline) {
 		return delivery, false, ErrLease
 	}
-	err = tx.QueryRowContext(ctx, `SELECT p.registration_id,p.revision`+reminderTargetsSQL+` AND (d.available_at IS NULL OR d.available_at<=?) ORDER BY p.registration_id LIMIT 1`, claim.ID, claim.Owner, environment, claim.ID, now).Scan(&delivery.Registration.ID, &delivery.Registration.Revision)
+	err = tx.QueryRowContext(ctx, `SELECT p.registration_id,p.revision,p.environment`+reminderTargetsSQL+` AND (d.available_at IS NULL OR d.available_at<=?) ORDER BY p.registration_id LIMIT 1`, claim.ID, claim.Owner, first, second, claim.ID, now).Scan(&delivery.Registration.ID, &delivery.Registration.Revision, &delivery.Environment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return delivery, false, tx.Commit()
 	}
@@ -101,7 +115,11 @@ func (r *MySQLUploads) recordRetentionDelivery(ctx context.Context, claim albumR
 	return nil
 }
 
-func (r *MySQLUploads) settleRetentionDispatch(ctx context.Context, claim albumRetentionReminder, environment string, now time.Time) error {
+func (r *MySQLUploads) settleRetentionDispatch(ctx context.Context, claim albumRetentionReminder, environments []string, now time.Time) error {
+	first, second, err := pushEnvironmentPair(environments)
+	if err != nil {
+		return err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -119,7 +137,7 @@ func (r *MySQLUploads) settleRetentionDispatch(ctx context.Context, claim albumR
 	}
 	var pending, accepted int
 	var available sql.NullTime
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),MIN(COALESCE(d.available_at,?))`+reminderTargetsSQL, now, claim.ID, claim.Owner, environment, claim.ID).Scan(&pending, &available)
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),MIN(COALESCE(d.available_at,?))`+reminderTargetsSQL, now, claim.ID, claim.Owner, first, second, claim.ID).Scan(&pending, &available)
 	if err != nil {
 		return err
 	}

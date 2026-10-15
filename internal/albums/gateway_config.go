@@ -20,20 +20,22 @@ import (
 // GatewayConfig is independent of Health/Journal/TOS and has no debug owner,
 // identity-cipher, or free-quota fallback. Secret files are server-only.
 type GatewayConfig struct {
-	TrashEnabled    bool
-	Worker          WorkerConfig
-	Environment     string
-	APIHost         string
-	ListenAddress   string
-	RedisURL        string
-	TrustedProxies  []string
-	AppleCode       AppleCodeConfig
-	CredentialKey   string
-	LoginLimitKey   []byte
-	Subscriptions   *AlbumSubscriptionConfig
-	Sharing         *AlbumShareConfig
-	PushEnvironment string
-	RetentionAPNS   *albumAPNSConfig
+	TrashEnabled             bool
+	Worker                   WorkerConfig
+	Environment              string
+	APIHost                  string
+	ListenAddress            string
+	RedisURL                 string
+	TrustedProxies           []string
+	AppleCode                AppleCodeConfig
+	CredentialKey            string
+	LoginLimitKey            []byte
+	Subscriptions            *AlbumSubscriptionConfig
+	Sharing                  *AlbumShareConfig
+	PushEnvironment          string
+	PushAllowDevelopment     bool
+	RetentionAPNS            *albumAPNSConfig
+	DevelopmentRetentionAPNS *albumAPNSConfig
 }
 
 func (GatewayConfig) String() string   { return "[redacted album gateway configuration]" }
@@ -142,11 +144,48 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	if c.PushEnvironment != "" && c.PushEnvironment != "development" && c.PushEnvironment != "production" {
 		return GatewayConfig{}, errors.New("invalid ALBUM_PUSH_ENVIRONMENT")
 	}
+	switch strings.TrimSpace(getenv("ALBUM_PUSH_ALLOW_DEVELOPMENT")) {
+	case "", "false":
+	case "true":
+		c.PushAllowDevelopment = true
+	default:
+		return GatewayConfig{}, errors.New("invalid ALBUM_PUSH_ALLOW_DEVELOPMENT")
+	}
+	if err := c.validatePushEnvironment(); err != nil {
+		return GatewayConfig{}, err
+	}
 	c.RetentionAPNS, err = loadRetentionAPNSConfig(getenv, c)
 	if err != nil {
 		return GatewayConfig{}, err
 	}
+	if c.RetentionAPNS != nil && c.PushAllowDevelopment {
+		development := c
+		development.PushEnvironment = "development"
+		c.DevelopmentRetentionAPNS, err = loadRetentionAPNSConfig(func(key string) string {
+			switch key {
+			case "ALBUM_APNS_KEY_ID":
+				return getenv("ALBUM_APNS_DEVELOPMENT_KEY_ID")
+			case "ALBUM_APNS_KEY_FILE":
+				return getenv("ALBUM_APNS_DEVELOPMENT_KEY_FILE")
+			default:
+				return getenv(key)
+			}
+		}, development)
+		if err != nil {
+			return GatewayConfig{}, err
+		}
+	}
 	return c, nil
+}
+
+func (c GatewayConfig) validatePushEnvironment() error {
+	if c.Environment == "production" && c.PushEnvironment == "development" {
+		return errors.New("production deployment requires production APNs")
+	}
+	if c.PushAllowDevelopment && (c.Environment != "test" || c.AppleCode.BundleID != albumDevelopmentAudience || c.PushEnvironment != "production") {
+		return errors.New("development APNs requires the isolated development app and production Ad Hoc default")
+	}
+	return nil
 }
 
 func readAlbumSecretFile(path string, max int64) ([]byte, error) {
