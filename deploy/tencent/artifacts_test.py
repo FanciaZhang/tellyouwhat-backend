@@ -66,6 +66,14 @@ class ArtifactRetentionTests(unittest.TestCase):
         plan = plan_cleanup(self.root, self.state, [], images, now=self.now)
         self.assertEqual([i["id"] for i in plan["images"]], ["sha256:2", "sha256:3"])
 
+    def test_platform_test_cleanup_does_not_select_production_or_other_apps(self):
+        images = [self.image(str(i), ["tellyouwhat-platform-test-gateway:" + str(i)]) for i in range(4)]
+        for i, image in enumerate(images):
+            image["Created"] = datetime.fromtimestamp(self.now - GRACE_SECONDS - 10 - i, timezone.utc).isoformat()
+        images += [self.image("production"), self.image("albums", ["tellyouwhat-albums-test-albumgateway:old"])]
+        plan = plan_cleanup(self.root, self.state, [], images, owners=["platform-test"], now=self.now)
+        self.assertEqual([i["id"] for i in plan["images"]], ["sha256:2", "sha256:3"])
+
     def test_symlink_directory_and_escape_fail_closed(self):
         directory = self.root.parent / "journal-development"
         directory.mkdir()
@@ -133,6 +141,8 @@ class ArtifactRetentionTests(unittest.TestCase):
 
     def test_readiness_keeps_each_owners_protocol(self):
         for owner, body, accepted in [("birthday-development", b'{"status":"ready"}', True),
+                                       ("platform-test", b'{"status":"ready"}', True),
+                                       ("platform-test", b'{"code":"ok"}', False),
                                        ("birthday-development", b'{"code":"ok"}', False),
                                        ("albums-test", b'{"code":"unavailable"}', False)]:
             with self.subTest(owner=owner, body=body):

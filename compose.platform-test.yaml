@@ -1,0 +1,121 @@
+# Independent test stack. Never merge with compose.production.yaml.
+name: tellyouwhat-platform-test
+
+x-app: &app
+  restart: unless-stopped
+  init: true
+  user: "65532:65532"
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  env_file: ["${PLATFORM_TEST_ENV_FILE:?Set the private platform test configuration}"]
+  environment: &environment
+    APP_ENV: development
+    STORAGE_MODE: mysql
+    DATABASE_DSN: "platform_test:${PLATFORM_TEST_MYSQL_PASSWORD:?Set a test-only database password}@tcp(mysql:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true"
+    REDIS_URL: "redis://:${PLATFORM_TEST_REDIS_PASSWORD:?Set a test-only URL-safe Redis password}@redis:6379/0"
+    WORKER_ASYNC_URL: http://worker:8081/internal/jobs/process
+  networks: [platform-test]
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+
+services:
+  gateway:
+    <<: *app
+    image: "tellyouwhat-platform-test-gateway:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
+    build:
+      context: .
+      args: {SERVICE: gateway}
+    environment:
+      <<: *environment
+      PORT: "8080"
+      TRUSTED_CLIENT_IP_HEADER: X-Real-IP
+      GOMEMLIMIT: "180MiB"
+    ports: ["127.0.0.1:${PLATFORM_TEST_API_PORT:-18790}:8080/tcp"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    stop_grace_period: 25s
+    mem_limit: 256m
+    pids_limit: 100
+
+  worker:
+    <<: *app
+    image: "tellyouwhat-platform-test-worker:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
+    build:
+      context: .
+      args: {SERVICE: worker}
+    environment:
+      <<: *environment
+      PORT: "8081"
+      GOMEMLIMIT: "280MiB"
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    stop_grace_period: 30s
+    mem_limit: 384m
+    pids_limit: 100
+
+  migrate:
+    <<: *app
+    restart: "no"
+    image: "tellyouwhat-platform-test-migrate:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
+    build:
+      context: .
+      args: {SERVICE: migrate}
+    depends_on:
+      mysql: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 50
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: platform_test
+      MYSQL_USER: platform_test
+      MYSQL_PASSWORD: "${PLATFORM_TEST_MYSQL_PASSWORD:?Set a test-only database password}"
+      MYSQL_ROOT_PASSWORD: "${PLATFORM_TEST_MYSQL_ROOT_PASSWORD:?Set a different test-only root password}"
+    command: [--performance-schema=OFF, --innodb-buffer-pool-size=134217728, --max-connections=30]
+    volumes: [platform-test-mysql:/var/lib/mysql]
+    networks: [platform-test]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, localhost, --silent]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    pids_limit: 150
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${PLATFORM_TEST_REDIS_PASSWORD:?Set a test-only URL-safe Redis password}"
+    command: [sh, -ec, 'exec redis-server --requirepass "$${REDIS_PASSWORD}" --maxmemory 64mb --maxmemory-policy noeviction --appendonly no --save ""']
+    networks: [platform-test]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 96m
+    pids_limit: 50
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+
+networks:
+  platform-test:
+    ipam:
+      config: [{subnet: "${PLATFORM_TEST_NETWORK_CIDR:-172.29.92.0/24}"}]
+volumes:
+  platform-test-mysql:

@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-15",
+  "compose": "compose.platform-test.yaml",
+  "compose_sha256": "7aad64d7fcd474f5284799b8ba498b4d38495a1b03276688339a3ebba62bbc22",
+  "host_parser": "actual shared-host Docker Compose config; synthetic values and /dev/null env file only",
+  "parse_passed": true,
+  "isolated_project_network_volume": true,
+  "non_root_test_database_account": true,
+  "only_gateway_published_on_loopback": true,
+  "required_configuration_failures_verified": 5,
+  "artifact_tests_passed": 12,
+  "runtime_deployed": false,
+  "database_grants_verified": false,
+  "dns_tls_verified": false,
+  "backup_verified": false,
+  "related_operations_tests_passed": 42,
+  "related_operations_scope": [
+    "artifacts_test",
+    "operations_test",
+    "scheduling_test",
+    "health_test"
+  ]
+}

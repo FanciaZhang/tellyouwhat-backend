@@ -16,6 +16,12 @@ Health、Journal、Birthday 的 `APP_ENV=development` 默认解析为：
 
 MySQL 模式在打开连接前检查：数据库与账号非空、不得使用 root；开发数据库和账号均以 `_test` 结尾；生产两者均不得以 `_test` 结尾。错误不回显 DSN。命名检查只能拦截复制错配置，不能证明 MySQL grants 隔离。部署必须验证测试账号只能访问测试库，Redis/队列、对象存储、加密密钥和备份也须独立。
 
+服务器测试栈配置为 `compose.platform-test.yaml`，独立项目、网络及数据卷，不作为生产 Compose 的 override。使用 `platform_test` 库/账号，Redis 不与生产共享，仅 gateway 的 18790 端口绑定回环地址；数据库、Redis 和 worker 不发布主机端口。健康等平台业务可使用此栈；手记新开发协议仍由其专用服务承接，不能把域名直接接到此 gateway 冒充协议兼容。
+
+启动前提供 `PLATFORM_TEST_ENV_FILE`（受限运行配置）、`PLATFORM_TEST_IMAGE_TAG`（准确提交）、三个独立的 `PLATFORM_TEST_MYSQL_PASSWORD` / `PLATFORM_TEST_MYSQL_ROOT_PASSWORD` / `PLATFORM_TEST_REDIS_PASSWORD`。运行配置须另行生成加密/内部授权/开发激活密钥，配置真实 `.dev` 身份与构建白名单、开发对象存储及供应商凭据，不复制生产运行配置。发布使用 `platform-test` 清理归属，保护当前/前一版镜像和配置；数据库授权、备份、模型请求及公网 HTTPS 验收通过后再切换测试域名。
+
+实际主机 Compose 解析器已用合成配置验证独立资源和端口限制，并验证缺少五项必要配置时拒绝；清理/注册等相关 42 项运维测试通过。见 `evidence/platform-test-configuration-2026-10-15.json`。当前未部署此栈、创建运行凭据或切换任何路由。
+
 根目录 `.env.example` 与 `compose.yaml` 现在创建 `tellyouwhat_test` 库及账号，使用新的测试数据卷。已有旧本地卷保持原样；不会自动搬迁或清空。迁移前先确认是否需要保留其中的数据。共享 `cmd/migrate` 仍供平台与相册使用，本次没有把平台运行时命名检查冒充迁移器的权限保证；迁移必须由绑定环境的部署流程和受限账号执行。
 
 `APP_ATTEST_ENV` 在两套 API 环境中均默认 production，与同一 `.dev` 身份的 Xcode 直装和 Ad Hoc 配置一致。设备证明仍校验实际 Bundle ID 和证明环境。注册时是否要求开发激活口令由 API 环境独立决定；开发服务同时保留构建白名单，首次注册及注册重试均执行访问校验。平台开发权益按 API 环境开通；正式服务继续验证 Apple 交易并区分 Sandbox/Production。已有部署的显式 development 配置不会被默认值自动切换，迁移需核对客户端和已存设备密钥，保留正式数据。
