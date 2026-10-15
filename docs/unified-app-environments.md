@@ -2,7 +2,7 @@
 
 客户端约定：Debug 编译、Ad Hoc 分发、正式 Bundle ID 加 `.dev` 使用测试服务；Release TestFlight 与 App Store 使用正式身份和生产服务。只维护测试与生产两套，不通过客户端自报环境授权。
 
-私有 OTA 服务、限时授权和清理归属见 [Apple 开发版 OTA](apple-development-delivery.md)。独立服务已通过 `install.tellyouwhat.cn` 提供 HTTPS 入口，真实代理故障的三种 Host 日志保护及服务恢复、手动加密异地备份已验证。当前无已发布安装包；原生签名/源码门禁后的交付、到期、定时运行和手机安装仍待验收，不能把传输入口可达当成这些结果。
+私有 OTA 服务、限时授权和清理归属见 [Apple 开发版 OTA](apple-development-delivery.md)。独立服务已通过 `install.tellyouwhat.cn` 提供 HTTPS 入口，真实代理故障的三种 Host 日志保护及服务恢复、手动加密异地备份已验证。生日 1.0 (2) 已完成源码开发门禁和原生签名复核，实际 HTTPS 下载/摘要、断点下载与一分钟过期 410 均已验证；受限安装链接已交付用户。定时清理、手机安装与完整回滚仍待验收。证据为 `evidence/birthday-ota-delivery-2026-10-16.json`。
 
 ## 平台 gateway/worker
 
