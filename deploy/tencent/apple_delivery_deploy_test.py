@@ -95,6 +95,7 @@ class AppleDeliveryDeploymentTests(unittest.TestCase):
         self.assertIn('tellyouwhat-apple-delivery', call.args[1])
         self.assertEqual(call.args[1][-1], 'down')
         self.assertNotIn('--volumes', call.args[1])
+        self.assertLess(self.calls().index('apple-delivery-failure-inspect'), self.calls().index('apple-delivery-remove-failed'))
 
     def test_failed_recovery_is_visible(self):
         self.prior()

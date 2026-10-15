@@ -140,6 +140,14 @@ def activate(runtime, source):
         atomic_json(state_file, current)
     except Exception as error:
         try:
+            diagnostic = runtime.execute('apple-delivery-failure-logs', compose(runtime, folder, 'logs', '--no-color', '--tail', '50', 'server'), env=env, timeout=15)
+            atomic_text(folder / 'activation-failure.log', diagnostic.decode(errors='replace'))
+            inspect = runtime.execute('apple-delivery-failure-inspect', ['docker', 'inspect', 'tellyouwhat-apple-delivery-server-1'], timeout=15)
+            atomic_text(folder / 'activation-failure.json', inspect.decode(errors='replace'))
+        except Exception:
+            # Diagnostics must not prevent recovery when the new container is unavailable.
+            pass
+        try:
             if old_folder:
                 runtime.execute('apple-delivery-restore', compose(runtime, old_folder, 'up', '--no-build', '-d', 'server'),
                                 env=environment(runtime, previous['source']), timeout=120)
