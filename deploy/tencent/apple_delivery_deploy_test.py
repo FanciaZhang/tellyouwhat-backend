@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,11 @@ class AppleDeliveryDeploymentTests(unittest.TestCase):
         self.assertLess(initialize, start)
         self.ready.assert_called_once()
         self.assertEqual(self.assert_route.call_count, 2)
+        build = next(c for c in self.runtime.execute.call_args_list if c.args[0] == 'apple-delivery-build')
+        with tarfile.open(fileobj=io.BytesIO(build.kwargs['input'])) as archive:
+            self.assertEqual(set(archive.getnames()), {'Dockerfile', 'service'})
+            self.assertEqual(archive.getmember('service').mode, 0o555)
+        self.assertEqual((self.folder / 'service').stat().st_mode & 0o777, 0o600)
 
     def test_activation_failure_restores_previous_image_and_matching_configuration(self):
         old_folder, previous = self.prior()

@@ -2,11 +2,13 @@
 
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import sys
+import tarfile
 import time
 import urllib.request
 
@@ -104,10 +106,19 @@ def activate(runtime, source):
         if labels.get('org.opencontainers.image.revision') != source or labels.get('cn.tellyouwhat.binary-sha256') != value['files']['service']:
             raise OperationError('Apple delivery image tag already identifies different bytes')
     else:
+        # Archive permissions work with the host's legacy builder without exposing the private source file.
+        context = io.BytesIO()
+        with tarfile.open(fileobj=context, mode='w') as archive:
+            for name in ('Dockerfile', 'service'):
+                content = (folder / name).read_bytes()
+                entry = tarfile.TarInfo(name)
+                entry.size = len(content)
+                entry.mode = 0o555 if name == 'service' else 0o444
+                archive.addfile(entry, io.BytesIO(content))
         runtime.execute('apple-delivery-build', ['docker', 'build', '--network=none',
             '--label', 'org.opencontainers.image.revision=' + source,
             '--label', 'cn.tellyouwhat.binary-sha256=' + value['files']['service'],
-            '-t', value['image'], '-f', str(folder / 'Dockerfile'), str(folder)], timeout=180)
+            '-t', value['image'], '-f', 'Dockerfile', '-'], input=context.getvalue(), timeout=180)
     env = environment(runtime, source)
     atomic_text(folder / '.env', ''.join(key + '=' + val + '\n' for key, val in env.items()))
     data = runtime.root / '.apple-delivery/data'

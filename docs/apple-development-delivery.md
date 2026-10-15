@@ -31,7 +31,7 @@ Linux 构建只依赖标准库。现有 Dockerfile 也支持 `SERVICE=appledeliv
 python3 deploy/tencent/apple_delivery_deploy.py --source <完整源码 SHA> --source-run <本次运行标识>
 ```
 
-入口通过现有 owner wrapper 取得 operations/deployment 双锁，检查原生产路由和自身回滚登记，构建/检查不可混用的镜像，生成匹配配置，初始化存储并检查就绪，随后登记和清理。服务启动或状态写入失败会恢复前一镜像及对应配置；首次失败仅移除自身 Compose 项目，不删除存储卷或数据。清理或备份失败仍需处理，不能因服务健康就宣称部署完成。
+入口通过现有 owner wrapper 取得 operations/deployment 双锁，检查原生产路由和自身回滚登记，构建/检查不可混用的镜像，生成匹配配置，初始化存储并检查就绪，随后登记和清理。构建输入的 tar 中将二进制权限设为 0555，宿主原文件保持 0600，兼容当前 legacy builder，无需 BuildKit。服务启动或状态写入失败会恢复前一镜像及对应配置；首次失败仅移除自身 Compose 项目，不删除存储卷或数据。清理或备份失败仍需处理，不能因服务健康就宣称部署完成。
 
 当前及上一版的二进制、镜像构建文件、Compose、运行配置、摘要清单、owner 登记和恢复状态均纳入加密配置备份，恢复验证按认证清单逐文件核对。安装包与临时访问凭证可重新生成，不纳入该备份。服务部署本身不会配置公开路由或发布 IPA。
 
