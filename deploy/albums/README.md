@@ -1,6 +1,6 @@
 # 相册独立测试环境
 
-`cmd/albumgateway` 装配 MySQL 账户、加密 Apple refresh grant、单次登录挑战、可撤销会话、Redis 限流、上传/分片/图库/日常副本和订阅接口。`cmd/albumworker` 执行归档验证和媒体处理。新登录账户容量为零；必须启用并验证相册订阅才允许新增云备份。
+`cmd/albumgateway` 装配 MySQL 账户、加密 Apple refresh grant、单次登录挑战、可撤销会话、Redis 限流、上传/分片/图库/日常副本和订阅接口。`cmd/albumworker` 执行归档验证和媒体处理。新登录账户容量为零；正式容量须验证订阅，独立开发身份只能获得明确账户、额度和有效期的测试授权。
 
 `compose.albums-test.yaml` 是独立 Compose 项目：固定 `albums_test` 数据库、专用 MySQL 卷、专用 Redis 和网络、仅 `127.0.0.1:18090` 的 API 入口。迁移全部在这个新库运行。启动服务前检查身份表、上传/分片/派生/实况表与 COS 版本控制；运行中 `/readyz` 检查数据库、Redis 和退出状态。健康检查不等于 worker、Apple、转码或原件恢复通过。
 
@@ -317,7 +317,9 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 此结果只有即时存在性含义，不是防永久清理的预留，也不证明当前 GET 权限；不能单独启用系统原件删除。仍须接入系统副本重读、源版本复核、云端删除并发保护和用户确认。已通过真实 MySQL 并发状态变更验证及既有合成低频对象的 4 次固定版本 HEAD，未部署。证据：`docs/evidence/albums-original-availability-2026-10-14.json`。
 
 
-## 统一开发身份迁移（2026-10-15，本地实现，尚未部署）
+## 统一开发身份与实际测试环境
+
+2026-10-16：源码 `b6bb8ba` 已在腾讯云以 `tellyouwhat-albums-development` 运行，回环端口 18092，专用 MySQL/Redis/网络和密钥；66 项迁移完成。公网 TLS、未登录 401、五分钟 Apple 登录挑战 201 通过，旧正式样式测试栈保留。完整 SQL、删除账本和配置备份已实际加密并经 COS 三对象读回，独立 SQL 密钥未进入恢复包；实际隔离恢复、定时验收、真实 Apple 登录和账户测试容量仍待完成。见 `docs/evidence/albums-development-public-api-2026-10-16.json` 与 `docs/evidence/albums-development-backup-2026-10-16.json`。
 
 新版测试 gateway 绑定 `cn.tellyouwhat.albums.dev` 与 `api-test.albums.tellyouwhat.cn`，正式 gateway 绑定原正式身份。登录令牌、兑换和撤销的 client_id、账号通知 audience、账号哈希、推送 topic、订阅 verifier/client 使用同一个服务端身份，客户端不能选择。`ALBUM_APPLE_BUNDLE_ID` 可显式填写但必须与部署环境匹配；生产/测试 API 域名混用会被拒绝。
 

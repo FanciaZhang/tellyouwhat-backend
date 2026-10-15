@@ -1,0 +1,13 @@
+{
+  "service_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "operations_source": "1dec9b5e1ac42caa2b357e7d31dd00fc5d936a9f",
+  "read_only_account_created": true,
+  "system_database_read_denied": true,
+  "application_write_denied": true,
+  "backup_hooks_installed": true,
+  "cleanup_passed": true,
+  "actual_snapshot_verified": true,
+  "checkpoint_implementation_source": "2937f8145e2799adf7f21900ece3ad80ac312916",
+  "initial_tcp_probe_rejected": true,
+  "local_socket_scope_verified": true
+}

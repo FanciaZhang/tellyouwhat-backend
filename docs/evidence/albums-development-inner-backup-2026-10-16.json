@@ -1,0 +1,18 @@
+{
+  "album_rows": 1,
+  "album_tables": 36,
+  "backup_filename": "mysql-20261015T214354Z-69eec9.sql.gz.enc",
+  "checkpoint_operations_source": "2937f8145e2799adf7f21900ece3ad80ac312916",
+  "cos_objects_sha256_readback": 3,
+  "decrypted_recovery_verified": true,
+  "encrypted_outer_manifest_authenticated": true,
+  "inner_sql_decrypted": true,
+  "inner_sql_manifest_authenticated": true,
+  "recovery_albums_files": 15,
+  "recovery_filename": "recovery-mysql-20261015T214354Z-69eec9.tar.gz.enc",
+  "recovery_sha256": "f23c207a8e26a07b115d8fff56bffe709cf6ca4fffb34b612af41b0520f1a4a3",
+  "scheduled_run_verified": false,
+  "separate_sql_key_absent_from_recovery_bundle": true,
+  "service_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "sql_restored_to_disposable_mysql": false
+}

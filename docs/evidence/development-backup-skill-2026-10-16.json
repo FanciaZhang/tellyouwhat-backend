@@ -1,0 +1,11 @@
+{
+  "skill_files_sha256": {
+    "SKILL.md": "9424b750ea596cf03a77917e43c2af885701e939fc18b87cdd68e0c6c46bfe83",
+    "references/acceptance.md": "9e4e9de6a75d586428d72af03f6bc9135d3fde6746ed0ce34450c4a107776746",
+    "agents/openai.yaml": "6201c8f94d3473b7fc066d90bd6007df99397e009d28e533b9e06aac50fef4c0"
+  },
+  "global_agents_default_rule_present": true,
+  "implicit_invocation_enabled": true,
+  "quick_validate": "Skill is valid!",
+  "backup_rule": "Shared operational scheduling and transport are allowed; test data, read account and decryption key remain separate; configuration-only snapshots do not prove business recovery."
+}

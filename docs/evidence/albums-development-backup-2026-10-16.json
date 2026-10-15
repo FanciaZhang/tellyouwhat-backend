@@ -1,0 +1,31 @@
+{
+  "albums_recovery_files": 15,
+  "apple_recovery_files": 20,
+  "backup_filename": "mysql-20261015T215037Z-230605.sql.gz.enc",
+  "checkpoint_operations_source": "2937f8145e2799adf7f21900ece3ad80ac312916",
+  "cloud_grants_configured": false,
+  "cos_sha256_readback_objects": 3,
+  "decrypted_recovery_verified": true,
+  "encryption_and_manifest_verified": true,
+  "ota_logging_guard_preserved": true,
+  "production_routes_verified": true,
+  "proxy_configuration_in_backup": true,
+  "real_apple_login_verified": false,
+  "recovery_filename": "recovery-mysql-20261015T215037Z-230605.tar.gz.enc",
+  "recovery_sha256": "f86898d73b3aa2cefdc87f0f029f735de816fe05965cd1c3229340d651059f6e",
+  "route_apps": [
+    "albums",
+    "journal"
+  ],
+  "scheduled_backup_verified": false,
+  "service_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "sql_restored_to_disposable_mysql": false,
+  "existing_scheduler": {
+    "service": "tellyouwhat-operation@backup.service",
+    "user": "ubuntu",
+    "command": "/usr/bin/python3 /opt/tellyouwhat/backend/deploy/tencent/operations.py %i",
+    "schedule": "03:05 Asia/Shanghai",
+    "timer_enabled": true,
+    "actual_new_path_scheduled_run_verified": false
+  }
+}

@@ -10,8 +10,8 @@
     "deploy/tencent/albums_development_artifacts.py": "18c0b87c2464225f6a8aa36a9cca2a432ea3257961fdc77d8fc6c41f0793aa15",
     "deploy/tencent/albums_development_artifacts_test.py": "f8de3ba91cc1e90adcae03024b6bf6242221f2d175907789b91a4bac753a92b0",
     "deploy/albums/development.Dockerfile": "0b3395488a5b9d99fbc5291e2f9f118aad3049782ec3906e69ac5db1105d0cfb",
-    "deploy/tencent/albums_development_checkpoint.py": "c31af6c620370ba1f8fe9755edc5d9908d7381c7b7c18e4cbe79df0ac9e00ecc",
-    "deploy/tencent/albums_development_checkpoint_test.py": "e8a8b8ab57048ccb414eb3a984663f14f636f20249dbe9f82ebccc161990929a"
+    "deploy/tencent/albums_development_checkpoint.py": "19c96902dbc5d527ef1325f3953898061534cf8066891ebf6602b454628929ac",
+    "deploy/tencent/albums_development_checkpoint_test.py": "f144e201ab1f77cf8db411d23f29b4c7895702b169a4265cb3f27db7994e2c26"
   },
   "python_operations_tests": {
     "total": 144,
@@ -45,5 +45,13 @@
   "checkpoint_test_fixture_corrections": [
     "mocked backup engine connection must return argument list",
     "synthetic snapshot files must preserve actual private file modes"
+  ],
+  "backup_runtime_verified": true,
+  "public_https_verified": true,
+  "checkpoint_operations_source": "2937f8145e2799adf7f21900ece3ad80ac312916",
+  "live_setup_corrections": [
+    "Read-only localhost role uses a Unix socket inside its container, not the TCP 127.0.0.1 identity; credentials and grant scope preserved.",
+    "Frozen snapshot code imports deletion_ledger by its original name; a scoped module alias preserves that sibling import and restores any earlier module.",
+    "Public Host selects the appropriate Caddy site; direct backend host rejection is the identity check."
   ]
 }
