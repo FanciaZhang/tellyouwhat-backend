@@ -9,7 +9,7 @@
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
 | 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 开发包已交付，独立测试存储与服务尚未完成 |
-| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt、备份、CloudKit 旅程待完成 |
+| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt 已脱离正式库，配置与费用账本独立加密备份；真实语音、供应商身份和 CloudKit 待验收 |
 | 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
 
@@ -21,7 +21,7 @@
 
 平台 `APP_ENV=development` 默认使用 `.dev` 与 `api-test.*`，production 使用正式身份和 `api.*`。配置相反的身份、域名或数据库时，连接数据库前拒绝启动；开发库和账号均以 `_test` 结尾，生产两者均不得以该后缀结尾，且均不能使用 root。实际 MySQL grants、Redis、对象存储及会话/载荷密钥仍须分别验证，命名检查不能代替权限隔离。
 
-`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `833b81d` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
+`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `fb5cd0b` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
 
 生产发布使用 `release.py deploy`；测试和 OTA 使用已登记的产物所有者入口，由 ubuntu 执行，锁定准确源码、镜像与匹配配置。不得通过 root wrapper、移动镜像标签或独立迁移替代既有流程。只保留恢复所需的当前/上一版，不要求未上线 App 继续运行旧协议。见 [产物与备份责任](host-artifact-lifecycle.md)。
 
@@ -33,13 +33,14 @@
 
 - 相册备份包含完整 36 张业务表及删除账本；COS 实际取回、Mac 临时 MySQL 的行数/内容摘要及恢复隔离通过。
 - 平台测试备份沿用本地优先控制记录白名单：COS 实际取回，临时 MySQL 恢复 93 张表、73 条保留记录，行数一致；设备身份、购买、AI 请求及媒体行不恢复。临时容器已清理。
+- 手记测试服务不再持有数据库凭据，Prompt 为独立修订文件。配置、匹配程序及 8,905 条费用事件使用独立密钥加密；COS 实取三对象、断网容器中真实程序的 Prompt 校验/账本重放、Mac 独立密钥与错误密钥拒绝均通过。不备份录音、图片任务、旧同意或连接令牌；恢复需新建连接。
 - OTA 源码绑定配置、二进制和代理同属认证恢复清单；安装包及短时授权可再生，不作业务备份。
 
 以上是手动检查，不代表新路径已通过真实定时任务验收。证据：`evidence/platform-test-runtime-2026-10-16.json`、`evidence/albums-development-cos-restore-2026-10-16.json`、`evidence/apple-delivery-native-rollback-2026-10-16.json`。
 
 ## Apple 与权益
 
-平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册另外要求激活码和允许构建号。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
+平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；平台开发注册按 App 校验构建及测试访问策略；生日已取消手输激活码，仍要求真实设备证明和允许构建号。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
 
 相册 `.dev` 不继承正式商品目录，只接受服务端明确账户、额度和期限的开发授权：最多三个指定账户、每账户不超过 1 GB，不创建购买记录，到期停写但不生成清理期限。当前开发服务尚未配置真实账户容量；真实登录后再授予。签名检查、受控 Apple/MySQL 测试不能代替真实购买和手机旅程。
 
@@ -47,4 +48,6 @@
 
 ## 剩余工作
 
-健康独立测试资源与真实云同步；手记独立 Prompt/状态备份及 CloudKit；生日正式 API/推理资源与日志导出；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+健康独立测试资源与真实云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源与日志导出；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+
+手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
