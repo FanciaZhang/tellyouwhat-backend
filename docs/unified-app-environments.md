@@ -2,7 +2,7 @@
 
 客户端约定：Debug 编译、Ad Hoc 分发、正式 Bundle ID 加 `.dev` 使用测试服务；Release TestFlight 与 App Store 使用正式身份和生产服务。只维护测试与生产两套，不通过客户端自报环境授权。
 
-私有 OTA 服务、限时授权和清理归属见 [Apple 开发版 OTA](apple-development-delivery.md)。当前仅实现并验证传输层与代理日志规则，尚未部署或交付安装包；它不替代客户端签名检查和对应源码的发布门禁。
+私有 OTA 服务、限时授权和清理归属见 [Apple 开发版 OTA](apple-development-delivery.md)。独立服务已在腾讯云主机回环端口部署，登记清理和手动加密异地备份通过；公网入口、安装包交付和定时运行仍待验收。它不替代客户端签名检查和对应源码的发布门禁。
 
 ## 平台 gateway/worker
 
