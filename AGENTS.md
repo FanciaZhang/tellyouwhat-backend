@@ -1,5 +1,7 @@
 # Shared Tencent host operations
 
+Only Health has published users and requires backward-compatible App/API upgrades. Albums, Journal and Birthday migrate directly to the target environment and contract; do not add adapters or keep old test routes solely for earlier development builds. This does not authorize deleting existing data, backups or uncommitted source.
+
 For `/opt/tellyouwhat` on the shared production host, the producer owns cleanup of its disposable artifacts. Do not deploy through an unregistered ad hoc Docker/SSH command.
 
 Run artifact registration and its deployment wrapper as the owner of `/opt/tellyouwhat/backend` (`ubuntu` on the current host). Do not run them through `sudo root`: private registration files must remain readable by scheduled operations. Restrict any required sudo use to the individual privileged action inside the producer.
