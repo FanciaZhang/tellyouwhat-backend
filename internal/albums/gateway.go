@@ -30,6 +30,11 @@ type Gateway struct {
 }
 
 func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundTripper) (_ *Gateway, err error) {
+	if !validAlbumAudience(config.AppleCode.BundleID) || config.AppleCode.BundleID != albumAudienceForDeployment(config.Environment) ||
+		(config.Subscriptions != nil && config.Subscriptions.BundleID != config.AppleCode.BundleID) ||
+		(config.RetentionAPNS != nil && config.RetentionAPNS.BundleID != config.AppleCode.BundleID) {
+		return nil, errors.New("album runtime identity does not match deployment")
+	}
 	db, err := mysqlstore.Open(ctx, config.Worker.DatabaseDSN)
 	if err != nil {
 		return nil, errors.New("album database connection")
@@ -68,7 +73,7 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album credential encryption configuration")
 	}
-	accounts, err := NewMySQLAccounts(db, cipher)
+	accounts, err := NewMySQLAccounts(config.AppleCode.BundleID, db, cipher)
 	if err != nil {
 		return nil, errors.New("album account configuration")
 	}
@@ -80,7 +85,7 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album login challenge configuration")
 	}
-	verifier := NewAppleIdentityVerifier(transport)
+	verifier := NewAppleIdentityVerifier(config.AppleCode.BundleID, transport)
 	exchanger, err := NewAppleCodeExchanger(config.AppleCode, verifier, transport)
 	if err != nil {
 		return nil, errors.New("album Apple Sign in configuration")

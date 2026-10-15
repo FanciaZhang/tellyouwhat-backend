@@ -311,3 +311,12 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 `POST /v1/albums/library/versions/{versionID}/original-availability` 使用账户认证、空请求体、禁止查询参数。先校验完整发布清单与已全量验过的固定 COS 版本，再逐个 HEAD 核对版本、大小及在线存储类型；网络访问前后均检查账户、媒体生命周期和六个月保留边界，整个检查最长 30 秒。HEAD 在数据库锁外执行，不重新下载原件，不使用 ETag 或客户端 hash 元数据充当全量校验。返回清单绑定和检查时间，不返回对象路径或下载链接。
 
 此结果只有即时存在性含义，不是防永久清理的预留，也不证明当前 GET 权限；不能单独启用系统原件删除。仍须接入系统副本重读、源版本复核、云端删除并发保护和用户确认。已通过真实 MySQL 并发状态变更验证及既有合成低频对象的 4 次固定版本 HEAD，未部署。证据：`docs/evidence/albums-original-availability-2026-10-14.json`。
+
+
+## 统一开发身份迁移（2026-10-15，本地实现，尚未部署）
+
+新版测试 gateway 绑定 `cn.tellyouwhat.albums.dev` 与 `api-test.albums.tellyouwhat.cn`，正式 gateway 绑定原正式身份。登录令牌、兑换和撤销的 client_id、账号通知 audience、账号哈希、推送 topic、订阅 verifier/client 使用同一个服务端身份，客户端不能选择。`ALBUM_APPLE_BUNDLE_ID` 可显式填写但必须与部署环境匹配；生产/测试 API 域名混用会被拒绝。
+
+`runtime.env.example` 已改为开发身份，正式部署须明确配置正式域名/身份及其独立资源。已有测试服务使用正式身份及正式商品，其数据库和 Apple 刷新凭据不能直接套用新版开发配置。应保留旧栈恢复能力，为 `.dev` 建新库、登录密钥和独立凭据。历史 SQL、正式账号哈希以及 StoreKit account token 命名空间未更改。
+
+旧 `configure_sandbox.py` / `appstore_probe.go` 针对正式相册 App 的历史 Sandbox 验证，不是 `.dev` 商品配置工具。配置脚本现在要求显式正式 `ALBUM_APPLE_BUNDLE_ID`，并拒绝测试域名，防止把固定正式 ASC ID 写入开发配置。开发身份不继承正式 ASC 商品；本次未注册新商品、未开启销售。现有 production 订阅服务仍需支持正式身份的 TestFlight Sandbox，并验证沙箱到期不影响正式权益和数据清理，完整环境验收尚未完成。

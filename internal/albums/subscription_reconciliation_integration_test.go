@@ -22,7 +22,7 @@ import (
 
 func (f albumReceiptFixture) notification(t *testing.T, id, kind string, transaction map[string]any) string {
 	t.Helper()
-	data := map[string]any{"bundleId": albumAppleAudience, "environment": "Sandbox"}
+	data := map[string]any{"bundleId": albumDevelopmentAudience, "environment": "Sandbox"}
 	if transaction != nil {
 		data["status"] = 1
 		data["signedTransactionInfo"] = f.sign(t, transaction)
@@ -45,7 +45,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	fixture := newAlbumReceiptFixture(t, now)
-	config.Subscriptions = &AlbumSubscriptionConfig{Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+	config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 	owner := uuid.NewString()
 	repository := NewMySQLUploads(db).WithSubscriptionEnvironment("Sandbox")
 	if err := repository.ProvisionAccount(ctx, owner, 0); err != nil {
@@ -55,7 +55,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 	var unavailable atomic.Bool
 	var calls atomic.Int32
 	setCurrent := func(payload map[string]any, status int) {
-		data, _ := json.Marshal(map[string]any{"bundleId": albumAppleAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": status, "signedTransactionInfo": fixture.sign(t, payload)}}}}})
+		data, _ := json.Marshal(map[string]any{"bundleId": albumDevelopmentAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": status, "signedTransactionInfo": fixture.sign(t, payload)}}}}})
 		state.Store(string(data))
 	}
 	transport := appleTestTransport(func(r *http.Request) (*http.Response, error) {
@@ -139,7 +139,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 	}
 	for _, data := range []map[string]any{
 		{"bundleId": "cn.tellyouwhat.health", "environment": "Sandbox", "signedTransactionInfo": fixture.sign(t, active)},
-		{"bundleId": albumAppleAudience, "environment": "Production", "signedTransactionInfo": fixture.sign(t, active)},
+		{"bundleId": albumDevelopmentAudience, "environment": "Production", "signedTransactionInfo": fixture.sign(t, active)},
 	} {
 		foreign := fixture.sign(t, map[string]any{"notificationType": "SUBSCRIBED", "notificationUUID": uuid.NewString(), "version": "2.0", "signedDate": now.UnixMilli(), "data": data})
 		if status, _ := send(encoded(foreign), "POST", config.APIHost); status != 422 || calls.Load() != 1 {

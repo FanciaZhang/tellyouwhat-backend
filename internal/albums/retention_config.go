@@ -13,7 +13,7 @@ func loadRetentionAPNSConfig(getenv func(string) string, gateway GatewayConfig) 
 	if enabled != "true" || gateway.Subscriptions == nil || gateway.PushEnvironment == "" {
 		return nil, errors.New("album retention push requires subscriptions and registration")
 	}
-	c := &albumAPNSConfig{TeamID: gateway.AppleCode.TeamID, KeyID: strings.TrimSpace(getenv("ALBUM_APNS_KEY_ID")), Environment: gateway.PushEnvironment}
+	c := &albumAPNSConfig{BundleID: gateway.AppleCode.BundleID, TeamID: gateway.AppleCode.TeamID, KeyID: strings.TrimSpace(getenv("ALBUM_APNS_KEY_ID")), Environment: gateway.PushEnvironment}
 	if c.KeyID == gateway.AppleCode.KeyID || c.KeyID == gateway.Subscriptions.KeyID {
 		return nil, errors.New("album APNs requires a separate signing key")
 	}

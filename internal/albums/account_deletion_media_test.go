@@ -21,7 +21,7 @@ func sharingDeletionAccounts(t *testing.T, f sharingFixture) *MySQLAccounts {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewMySQLAccounts(f.db, cipher)
+	r, err := NewMySQLAccounts(albumDevelopmentAudience, f.db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func deleteProtocolFixtureOwner(t *testing.T, f *pushFixture, owner string) {
 	t.Helper()
 	f.now = time.Now().UTC().Truncate(time.Microsecond)
 	subject := uuid.NewString()
-	if _, err := f.r.db.Exec(`INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES(?,?)`, owner, appleSubjectHash(subject)); err != nil {
+	if _, err := f.r.db.Exec(`INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES(?,?)`, owner, appleSubjectHash(albumDevelopmentAudience, subject)); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := f.login(t, subject, f.now)

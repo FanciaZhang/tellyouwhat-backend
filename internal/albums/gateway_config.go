@@ -65,6 +65,14 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	if !albumAPIHostPattern.MatchString(c.APIHost) || len(c.APIHost) > 253 {
 		return GatewayConfig{}, errors.New("invalid ALBUM_API_HOST")
 	}
+	c.AppleCode.BundleID = albumAudienceForDeployment(c.Environment)
+	if configured := strings.TrimSpace(getenv("ALBUM_APPLE_BUNDLE_ID")); configured != "" && configured != c.AppleCode.BundleID {
+		return GatewayConfig{}, errors.New("ALBUM_APPLE_BUNDLE_ID does not match deployment environment")
+	}
+	if (c.Environment == "test" && c.APIHost == "api.albums.tellyouwhat.cn") ||
+		(c.Environment == "production" && c.APIHost == "api-test.albums.tellyouwhat.cn") {
+		return GatewayConfig{}, errors.New("ALBUM_API_HOST belongs to the opposite environment")
+	}
 	host, port, err := net.SplitHostPort(c.ListenAddress)
 	number, portErr := strconv.Atoi(port)
 	if err != nil || portErr != nil || number < 1 || number > 65535 {
@@ -94,7 +102,7 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	if err != nil {
 		return GatewayConfig{}, errors.New("invalid ALBUM_APPLE_SIGN_IN_KEY_FILE")
 	}
-	if _, err := NewAppleCodeExchanger(c.AppleCode, NewAppleIdentityVerifier(nil), nil); err != nil {
+	if _, err := NewAppleCodeExchanger(c.AppleCode, NewAppleIdentityVerifier(c.AppleCode.BundleID, nil), nil); err != nil {
 		return GatewayConfig{}, errors.New("invalid album Apple Sign in configuration")
 	}
 	keys := make([][]byte, 0, 2)

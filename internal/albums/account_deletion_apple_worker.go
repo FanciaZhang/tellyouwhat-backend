@@ -9,7 +9,7 @@ import (
 // The API already owns the album login key and credential cipher. Media workers
 // need neither. Durable database leases coordinate multiple API instances.
 func (g *Gateway) startAppleDeletion(accounts *MySQLAccounts, exchanger *AppleCodeExchanger, batchSize int, interval time.Duration) error {
-	if accounts == nil || exchanger == nil || batchSize < 1 || batchSize > 100 || interval < time.Second || interval > time.Minute {
+	if accounts == nil || exchanger == nil || accounts.bundleID != exchanger.bundleID || batchSize < 1 || batchSize > 100 || interval < time.Second || interval > time.Minute {
 		return ErrInvalidManifest
 	}
 	ctx, cancel := context.WithCancel(context.Background())

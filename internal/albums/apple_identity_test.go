@@ -38,7 +38,7 @@ func testAppleJWKS(key *rsa.PrivateKey, kid string) string {
 	return string(data)
 }
 func appleClaims(now time.Time) jwt.MapClaims {
-	return jwt.MapClaims{"iss": appleIssuer, "aud": albumAppleAudience, "sub": "apple-subject-not-an-email", "nonce": strings.Repeat("a", 64), "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()}
+	return jwt.MapClaims{"iss": appleIssuer, "aud": albumDevelopmentAudience, "sub": "apple-subject-not-an-email", "nonce": strings.Repeat("a", 64), "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix()}
 }
 func appleSigned(t *testing.T, key *rsa.PrivateKey, kid string, claims jwt.MapClaims) string {
 	t.Helper()
@@ -59,7 +59,7 @@ func TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce(t *testing.T)
 	key := testAppleKey(t)
 	now := time.Unix(1791660000, 0)
 	var requests atomic.Int64
-	verifier := NewAppleIdentityVerifier(appleTestTransport(func(r *http.Request) (*http.Response, error) {
+	verifier := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(r *http.Request) (*http.Response, error) {
 		requests.Add(1)
 		if r.URL.String() != appleIssuer+"/auth/keys" {
 			t.Error("token-supplied key source trusted")
@@ -77,7 +77,7 @@ func TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce(t *testing.T)
 		edit func(jwt.MapClaims)
 	}{
 		{"other app", func(c jwt.MapClaims) { c["aud"] = "cn.tellyouwhat.health" }},
-		{"multiple audiences", func(c jwt.MapClaims) { c["aud"] = []string{albumAppleAudience, "other"} }},
+		{"multiple audiences", func(c jwt.MapClaims) { c["aud"] = []string{albumDevelopmentAudience, "other"} }},
 		{"wrong issuer", func(c jwt.MapClaims) { c["iss"] = "https://attacker.invalid" }},
 		{"expired", func(c jwt.MapClaims) { c["exp"] = now.Add(-time.Minute).Unix() }},
 		{"future issued", func(c jwt.MapClaims) { c["iat"] = now.Add(time.Minute).Unix() }},
@@ -116,7 +116,7 @@ func TestAppleKeysThrottleUnknownKidsAndRefreshRotation(t *testing.T) {
 	first, second := testAppleKey(t), testAppleKey(t)
 	now := time.Unix(1791660000, 0)
 	var requests atomic.Int64
-	verifier := NewAppleIdentityVerifier(appleTestTransport(func(*http.Request) (*http.Response, error) {
+	verifier := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(*http.Request) (*http.Response, error) {
 		if requests.Add(1) == 1 {
 			return appleResponse(testAppleJWKS(first, "first")), nil
 		}
@@ -156,7 +156,7 @@ func TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache(t *testing.T) {
 	key := testAppleKey(t)
 	now := time.Unix(1791660000, 0)
 	var count int
-	verifier := NewAppleIdentityVerifier(appleTestTransport(func(*http.Request) (*http.Response, error) {
+	verifier := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(*http.Request) (*http.Response, error) {
 		count++
 		if count == 1 {
 			return appleResponse(testAppleJWKS(key, "key")), nil
@@ -173,7 +173,7 @@ func TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache(t *testing.T) {
 	}
 	for _, mode := range []string{"redirect", "oversize", "malformed"} {
 		t.Run(mode, func(t *testing.T) {
-			v := NewAppleIdentityVerifier(appleTestTransport(func(*http.Request) (*http.Response, error) {
+			v := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(*http.Request) (*http.Response, error) {
 				response := appleResponse("invalid")
 				if mode == "redirect" {
 					response.StatusCode = 302

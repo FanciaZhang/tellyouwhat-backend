@@ -16,7 +16,7 @@ func TestMySQLStoreKitIdentitySurvivesAccountRecreationWithoutKeepingOldAccount(
 	ctx := context.Background()
 	repo := NewMySQLUploads(f.r.db).WithSubscriptionEnvironment("Sandbox", func() time.Time { return f.now })
 	login := func(subject string) AccountLogin {
-		a, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
+		a, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -29,7 +29,7 @@ func TestMySQLStoreKitIdentitySurvivesAccountRecreationWithoutKeepingOldAccount(
 		t.Fatal(initial, err)
 	}
 	// Independent Go computation checks the MySQL-generated UUID bits and namespace.
-	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte("cn.tellyouwhat.albums/storekit/v1:"+appleSubjectHash("same-verified-apple-user"))).String()
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte("cn.tellyouwhat.albums/storekit/v1:"+appleSubjectHash(albumDevelopmentAudience, "same-verified-apple-user"))).String()
 	if initial.AppAccountToken != expected {
 		t.Fatal("SQL/UUID derivation mismatch")
 	}
@@ -133,7 +133,7 @@ func TestMySQLStoreKitIdentityMigrationPreservesExistingAccounts(t *testing.T) {
 	f := newPushFixture(t)
 	_, login := f.login(t, "existing-before-token-migration", f.now)
 	ctx := context.Background()
-	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte("cn.tellyouwhat.albums/storekit/v1:"+appleSubjectHash("existing-before-token-migration"))).String()
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte("cn.tellyouwhat.albums/storekit/v1:"+appleSubjectHash(albumDevelopmentAudience, "existing-before-token-migration"))).String()
 	if _, err := f.r.db.Exec(`ALTER TABLE album_accounts DROP INDEX album_storekit_identity,DROP COLUMN storekit_account_token`); err != nil {
 		t.Fatal(err)
 	}

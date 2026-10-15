@@ -35,7 +35,7 @@ func apnsFixture(t *testing.T) (albumAPNSConfig, *ecdsa.PrivateKey, albumRetenti
 	deadline := now.AddDate(0, 0, 30)
 	due, expires, _ := reminderWindow(deadline, 30)
 	c := albumRetentionReminder{ID: uuid.NewString(), Owner: uuid.NewString(), Token: uuid.NewString(), Environment: "Sandbox", Deadline: deadline, Due: due, Expires: expires, Until: now.Add(time.Minute), Days: 30, Attempts: 1, State: "pending"}
-	return albumAPNSConfig{"TESTTEAM01", "TESTPUSH01", "production", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, key, c, now
+	return albumAPNSConfig{albumDevelopmentAudience, "TESTTEAM01", "TESTPUSH01", "production", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, key, c, now
 }
 
 func TestAlbumAPNSRejectsMissingDeliveryIdentity(t *testing.T) {
@@ -58,7 +58,7 @@ func TestAlbumAPNSRealHTTP2RequestAndSignature(t *testing.T) {
 		if r.ProtoMajor != 2 || r.TLS == nil || r.Method != "POST" || r.Host != "api.push.apple.com" || r.URL.Path != "/3/device/"+device || r.URL.RawQuery != "" {
 			t.Error("unexpected APNs request")
 		}
-		for name, expected := range map[string]string{"apns-id": claim.ID, "apns-topic": albumAppleAudience, "apns-push-type": "alert", "apns-priority": "5", "apns-collapse-id": "album-retention", "apns-expiration": strconv.FormatInt(now.Add(24*time.Hour).Unix(), 10)} {
+		for name, expected := range map[string]string{"apns-id": claim.ID, "apns-topic": albumDevelopmentAudience, "apns-push-type": "alert", "apns-priority": "5", "apns-collapse-id": "album-retention", "apns-expiration": strconv.FormatInt(now.Add(24*time.Hour).Unix(), 10)} {
 			if r.Header.Get(name) != expected {
 				t.Error("incorrect header", name)
 			}

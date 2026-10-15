@@ -18,6 +18,13 @@ REGISTRY = Path('/opt/tellyouwhat/backend/.operations')
 def update_environment(text, issuer, key):
     if str(uuid.UUID(issuer)) != issuer or not re.fullmatch('[A-Z0-9]{10}', key):
         raise ValueError('invalid Apple key identifiers')
+    # This legacy helper owns the formal App's fixed ASC ID, never the .dev catalog.
+    identities = [line.partition('=')[2].strip() for line in text.splitlines()
+                  if line.partition('=')[0].strip() == 'ALBUM_APPLE_BUNDLE_ID']
+    hosts = [line.partition('=')[2].strip() for line in text.splitlines()
+             if line.partition('=')[0].strip() == 'ALBUM_API_HOST']
+    if identities != ['cn.tellyouwhat.albums'] or 'api-test.albums.tellyouwhat.cn' in hosts:
+        raise ValueError('legacy Sandbox configuration requires the explicit formal Albums identity')
     values = {
         'ALBUM_SUBSCRIPTIONS_ENABLED': 'true',
         'ALBUM_APP_STORE_ISSUER_ID': issuer,

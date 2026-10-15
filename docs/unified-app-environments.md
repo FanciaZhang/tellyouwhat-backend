@@ -26,7 +26,8 @@ MySQL 模式在打开连接前检查：数据库与账号非空、不得使用 r
 
 ## 仍需完成
 
-- 相册是独立 gateway/worker，现有 Apple 登录、通知、推送等仍硬编码正式 audience；需完整改为服务端绑定的开发/正式身份，保留已有账号哈希与购买关联兼容，不能只改域名。
+- 相册独立 gateway 已将 Apple 登录/兑换/撤销、账号通知、账号哈希、APNs topic 和 StoreKit 验证绑定到部署身份：test 使用 `cn.tellyouwhat.albums.dev`，production 使用原正式 ID。正式账号哈希与 StoreKit token 命名空间保持兼容。新开发栈须使用新库，不能原地把已有正式身份的测试库切成 `.dev`；真实权限及已有数据升级仍待验证。
+- 相册现有订阅实现仍将 test 对应 Sandbox、production 对应 Production；生产 TestFlight 的 Sandbox 验证、独立测试权益及沙箱到期保护尚需实现/验收。`.dev` 不继承正式商品目录，不能拿正式购买凭据绕过身份绑定。
 - Journal 私有开发服务有独立的开发连接与语音协议；新测试域名需接通现有客户端合约，不能直接替换为不兼容的共享 gateway。
 - Birthday 开发版和生产候选的旧路径需迁移，保持现有客户端过渡兼容。
 - 创建并核查独立测试账号、资源及服务，配置公网 HTTPS/DNS，注册清理/备份责任，再验收真机 Ad Hoc 到测试 API 的完整请求。

@@ -13,6 +13,7 @@ import (
 var errAppleNotification = errors.New("album Apple notification rejected")
 
 type appleAccountEvent struct {
+	Audience  string `json:"-"`
 	Type      string `json:"type"`
 	Subject   string `json:"sub"`
 	EventTime int64  `json:"event_time"`
@@ -22,7 +23,7 @@ type appleAccountEvent struct {
 // subject is inside events. Reuse only Apple's fixed-endpoint key cache.
 func (v *AppleIdentityVerifier) verifyAccountEvent(ctx context.Context, encoded string) (appleAccountEvent, error) {
 	var empty appleAccountEvent
-	if len(encoded) == 0 || len(encoded) > 32<<10 {
+	if !validAlbumAudience(v.bundleID) || len(encoded) == 0 || len(encoded) > 32<<10 {
 		return empty, errAppleNotification
 	}
 	claims := struct {
@@ -36,7 +37,7 @@ func (v *AppleIdentityVerifier) verifyAccountEvent(ctx context.Context, encoded 
 			return nil, errAppleNotification
 		}
 		return v.key(ctx, kid)
-	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(appleIssuer), jwt.WithAudience(albumAppleAudience),
+	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(appleIssuer), jwt.WithAudience(v.bundleID),
 		jwt.WithIssuedAt(), jwt.WithTimeFunc(func() time.Time { return now }))
 	if errors.Is(err, errAppleKeyUnavailable) {
 		return empty, errAppleKeyUnavailable
@@ -59,6 +60,7 @@ func (v *AppleIdentityVerifier) verifyAccountEvent(ctx context.Context, encoded 
 		event.EventTime <= 0 || event.EventTime > claims.IssuedAt.Unix() || event.EventTime > now.Unix() {
 		return empty, errAppleNotification
 	}
+	event.Audience = v.bundleID
 	switch event.Type {
 	case "consent-revoked", "account-deleted", "email-enabled", "email-disabled":
 		return event, nil
@@ -77,13 +79,16 @@ func lockAppleIdentity(ctx context.Context, tx *sql.Tx, hash string) (revoked, d
 }
 
 func (r *MySQLAccounts) applyAppleEvent(ctx context.Context, event appleAccountEvent) error {
+	if event.Audience != r.bundleID {
+		return errAppleNotification
+	}
 	if event.Type == "email-enabled" || event.Type == "email-disabled" {
 		return nil
 	} // This app does not collect relay email.
 	if (event.Type != "consent-revoked" && event.Type != "account-deleted") || event.Subject == "" || len(event.Subject) > 255 || event.EventTime <= 0 {
 		return errAppleNotification
 	}
-	hash := appleSubjectHash(event.Subject)
+	hash := appleSubjectHash(r.bundleID, event.Subject)
 	at := time.Unix(event.EventTime, 0).UTC()
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

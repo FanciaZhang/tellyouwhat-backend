@@ -84,10 +84,10 @@ func (f albumReceiptFixture) sign(t *testing.T, payload map[string]any) string {
 	return message + "." + base64.RawURLEncoding.EncodeToString(proof)
 }
 func (f albumReceiptFixture) payload(owner string) map[string]any {
-	return map[string]any{"appAccountToken": owner, "inAppOwnershipType": "PURCHASED", "bundleId": albumAppleAudience, "environment": "Sandbox", "productId": Cloud50GBAnnualProduct,
+	return map[string]any{"appAccountToken": owner, "inAppOwnershipType": "PURCHASED", "bundleId": albumDevelopmentAudience, "environment": "Sandbox", "productId": Cloud50GBAnnualProduct,
 		"originalTransactionId": "1000000000000001", "transactionId": "1000000000000002", "originalPurchaseDate": f.now.Add(-time.Hour).UnixMilli(), "purchaseDate": f.now.Add(-time.Hour).UnixMilli(),
 		"expiresDate": f.now.AddDate(1, 0, 0).UnixMilli(), "signedDate": f.now.UnixMilli()}
 }
 func (f albumReceiptFixture) verifier() *appstore.TransactionVerifier {
-	return appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: f.roots, BundleID: albumAppleAudience, Environment: "Sandbox", ProductIDs: []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}, Now: func() time.Time { return f.now }})
+	return appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: f.roots, BundleID: albumDevelopmentAudience, Environment: "Sandbox", ProductIDs: []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}, Now: func() time.Time { return f.now }})
 }

@@ -18,6 +18,23 @@ import (
 )
 
 const albumAppleAudience = "cn.tellyouwhat.albums"
+const albumDevelopmentAudience = albumAppleAudience + ".dev"
+
+func albumAudienceForDeployment(environment string) string {
+	switch environment {
+	case "test":
+		return albumDevelopmentAudience
+	case "production":
+		return albumAppleAudience
+	default:
+		return ""
+	}
+}
+
+func validAlbumAudience(audience string) bool {
+	return audience == albumAppleAudience || audience == albumDevelopmentAudience
+}
+
 const appleIssuer = "https://appleid.apple.com"
 
 const appleIdentityMaxAge = 10 * time.Minute
@@ -34,6 +51,7 @@ var loginNoncePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 // AppleIdentity is a verified provider identity, not an internal account UUID.
 // Account linking must use issuer/audience/subject, never name or email.
 type AppleIdentity struct {
+	Audience string
 	Subject  string
 	IssuedAt time.Time
 }
@@ -47,6 +65,7 @@ type appleIdentityClaims struct {
 // A login service must additionally consume its stored, single-use challenge
 // and validate the authorization code before issuing a revocable app session.
 type AppleIdentityVerifier struct {
+	bundleID  string
 	client    *http.Client
 	now       func() time.Time
 	mu        sync.Mutex
@@ -55,11 +74,11 @@ type AppleIdentityVerifier struct {
 	lastFetch time.Time
 }
 
-func NewAppleIdentityVerifier(transport http.RoundTripper) *AppleIdentityVerifier {
+func NewAppleIdentityVerifier(bundleID string, transport http.RoundTripper) *AppleIdentityVerifier {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	return &AppleIdentityVerifier{
+	return &AppleIdentityVerifier{bundleID: bundleID,
 		client: &http.Client{Transport: transport, Timeout: 10 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		now: time.Now,
@@ -67,7 +86,7 @@ func NewAppleIdentityVerifier(transport http.RoundTripper) *AppleIdentityVerifie
 }
 
 func (v *AppleIdentityVerifier) Verify(ctx context.Context, encoded, expectedNonce string) (AppleIdentity, error) {
-	if len(encoded) == 0 || len(encoded) > 16<<10 || !loginNoncePattern.MatchString(expectedNonce) {
+	if !validAlbumAudience(v.bundleID) || len(encoded) == 0 || len(encoded) > 16<<10 || !loginNoncePattern.MatchString(expectedNonce) {
 		return AppleIdentity{}, ErrAppleIdentity
 	}
 	now := v.now()
@@ -83,7 +102,7 @@ func (v *AppleIdentityVerifier) Verify(ctx context.Context, encoded, expectedNon
 		// Ignore token-supplied jku/x5u URLs. The only key source is Apple's endpoint.
 		return v.key(ctx, kid)
 	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(appleIssuer),
-		jwt.WithAudience(albumAppleAudience), jwt.WithExpirationRequired(), jwt.WithIssuedAt(),
+		jwt.WithAudience(v.bundleID), jwt.WithExpirationRequired(), jwt.WithIssuedAt(),
 		jwt.WithLeeway(appleIdentityClockSkew), jwt.WithTimeFunc(func() time.Time { return now }))
 	if err != nil || token == nil || !token.Valid || claims.IssuedAt == nil || claims.ExpiresAt == nil ||
 		!freshAppleIdentityAssertion(claims.IssuedAt.Time, now) || !claims.ExpiresAt.Time.After(claims.IssuedAt.Time) ||
@@ -91,7 +110,7 @@ func (v *AppleIdentityVerifier) Verify(ctx context.Context, encoded, expectedNon
 		subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(expectedNonce)) != 1 {
 		return AppleIdentity{}, ErrAppleIdentity
 	}
-	return AppleIdentity{Subject: claims.Subject, IssuedAt: claims.IssuedAt.Time.UTC()}, nil
+	return AppleIdentity{Audience: v.bundleID, Subject: claims.Subject, IssuedAt: claims.IssuedAt.Time.UTC()}, nil
 }
 
 func (v *AppleIdentityVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {

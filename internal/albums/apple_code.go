@@ -22,6 +22,7 @@ var errAppleRevocation = errors.New("Apple credential revocation not confirmed")
 var appleIdentifierPattern = regexp.MustCompile(`^[A-Z0-9]{10}$`)
 
 type AppleCodeConfig struct {
+	BundleID      string
 	TeamID        string
 	KeyID         string
 	PrivateKeyPEM []byte
@@ -36,20 +37,20 @@ func (AppleGrant) String() string       { return "[redacted Apple grant]" }
 func (AppleGrant) GoString() string     { return "[redacted Apple grant]" }
 func (AppleGrant) LogValue() slog.Value { return slog.StringValue("[redacted Apple grant]") }
 
-// AppleCodeExchanger is for the native app's code flow. The client_id is fixed;
+// AppleCodeExchanger is for the native app's code flow. The client_id is bound to server configuration;
 // web redirect_uri and caller-supplied endpoint/client IDs are not accepted.
 // RefreshToken must be encrypted at rest by the account store, never returned
 // to the app or used as the app's bearer session.
 type AppleCodeExchanger struct {
-	teamID, keyID string
-	key           *ecdsa.PrivateKey
-	verifier      *AppleIdentityVerifier
-	client        *http.Client
-	now           func() time.Time
+	bundleID, teamID, keyID string
+	key                     *ecdsa.PrivateKey
+	verifier                *AppleIdentityVerifier
+	client                  *http.Client
+	now                     func() time.Time
 }
 
 func NewAppleCodeExchanger(config AppleCodeConfig, verifier *AppleIdentityVerifier, transport http.RoundTripper) (*AppleCodeExchanger, error) {
-	if !appleIdentifierPattern.MatchString(config.TeamID) || !appleIdentifierPattern.MatchString(config.KeyID) || len(config.PrivateKeyPEM) > 16<<10 || verifier == nil {
+	if !validAlbumAudience(config.BundleID) || verifier == nil || verifier.bundleID != config.BundleID || !appleIdentifierPattern.MatchString(config.TeamID) || !appleIdentifierPattern.MatchString(config.KeyID) || len(config.PrivateKeyPEM) > 16<<10 {
 		return nil, errors.New("invalid Apple code exchange configuration")
 	}
 	key, err := jwt.ParseECPrivateKeyFromPEM(config.PrivateKeyPEM)
@@ -59,14 +60,14 @@ func NewAppleCodeExchanger(config AppleCodeConfig, verifier *AppleIdentityVerifi
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	return &AppleCodeExchanger{teamID: config.TeamID, keyID: config.KeyID, key: key, verifier: verifier, now: time.Now,
+	return &AppleCodeExchanger{bundleID: config.BundleID, teamID: config.TeamID, keyID: config.KeyID, key: key, verifier: verifier, now: time.Now,
 		client: &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (e *AppleCodeExchanger) clientSecret() (string, error) {
 	now := e.now().UTC()
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
-		Issuer: e.teamID, Subject: albumAppleAudience, Audience: jwt.ClaimStrings{appleIssuer},
+		Issuer: e.teamID, Subject: e.bundleID, Audience: jwt.ClaimStrings{appleIssuer},
 		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
 	})
 	token.Header["kid"] = e.keyID
@@ -86,7 +87,7 @@ func (e *AppleCodeExchanger) Exchange(ctx context.Context, code, identityToken, 
 	if err != nil {
 		return AppleGrant{}, ErrAppleCode
 	}
-	form := url.Values{"client_id": {albumAppleAudience}, "client_secret": {secret}, "code": {code}, "grant_type": {"authorization_code"}}
+	form := url.Values{"client_id": {e.bundleID}, "client_secret": {secret}, "code": {code}, "grant_type": {"authorization_code"}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, appleIssuer+"/auth/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return AppleGrant{}, ErrAppleCode
@@ -131,7 +132,7 @@ func (e *AppleCodeExchanger) revokeRefreshCredential(ctx context.Context, token 
 	if err != nil {
 		return errAppleRevocation
 	}
-	form := url.Values{"client_id": {albumAppleAudience}, "client_secret": {secret}, "token": {token}, "token_type_hint": {"refresh_token"}}
+	form := url.Values{"client_id": {e.bundleID}, "client_secret": {secret}, "token": {token}, "token_type_hint": {"refresh_token"}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, appleIssuer+"/auth/revoke", strings.NewReader(form.Encode()))
 	if err != nil {
 		return errAppleRevocation

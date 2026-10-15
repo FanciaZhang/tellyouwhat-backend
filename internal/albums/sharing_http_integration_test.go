@@ -95,7 +95,7 @@ func TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments(t *testing
 	token := parsed.Fragment
 	// A genuine, different account/session still cannot manage this owner's link.
 	cipher, _ := mysqlstore.NewPayloadCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{41}, 32)))
-	accounts, _ := NewMySQLAccounts(f.db, cipher)
+	accounts, _ := NewMySQLAccounts(albumDevelopmentAudience, f.db, cipher)
 	foreign, err := accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity(uuid.NewString()), RefreshToken: uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)

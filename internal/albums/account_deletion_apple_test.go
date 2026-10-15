@@ -57,7 +57,7 @@ func TestMySQLAppleDeletionRetriesEveryGrantAndPreservesOtherAccount(t *testing.
 	if b, err = f.accounts.runAppleDeletionBatch(ctx, fail, 10, clock); err != nil || b != (appleDeletionBatch{}) || calls != 2 {
 		t.Fatal("backoff ignored", b, err)
 	}
-	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
+	reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, f.r.db, f.r.cipher)
 	success := func(context.Context, string) error { calls++; return nil }
 	b, err = reopened.runAppleDeletionBatch(ctx, success, 10, func() time.Time { return f.now.Add(time.Minute) })
 	if err != nil || b.Acknowledged != 2 || calls != 4 {
@@ -95,7 +95,7 @@ func TestMySQLAppleDeletionLeaseRecoveryRejectsStaleWorker(t *testing.T) {
 		t.Fatal("expired worker erased credential", err)
 	}
 	assertAppleCredential(t, f, g, true)
-	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
+	reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, f.r.db, f.r.cipher)
 	second, err := reopened.claimAppleDeletion(ctx, ref, f.now.Add(appleDeletionLease))
 	if err != nil || second.lease == first.lease {
 		t.Fatal("abandoned lease not recovered", err)
@@ -132,7 +132,7 @@ func TestMySQLAppleDeletionAcknowledgementFailureRollsBackCredentialWipe(t *test
 	if err := f.r.db.QueryRow(`SELECT acknowledged_at FROM album_deletion_apple_jobs WHERE grant_id=?`, g.GrantID).Scan(&ack); err != nil || ack.Valid {
 		t.Fatal("partial acknowledgement committed", err)
 	}
-	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
+	reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, f.r.db, f.r.cipher)
 	b, err := reopened.runAppleDeletionBatch(ctx, func(context.Context, string) error { calls++; return nil }, 1, func() time.Time { return f.now.Add(appleDeletionLease) })
 	if err != nil || b.Acknowledged != 1 || calls != 2 {
 		t.Fatal("unknown outcome not safely retried", b, err)

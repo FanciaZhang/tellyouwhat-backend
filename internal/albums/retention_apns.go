@@ -24,8 +24,8 @@ var errAlbumAPNS = errors.New("album notification request unavailable")
 
 // APNs environment follows the app's signing entitlement, not StoreKit's environment.
 type albumAPNSConfig struct {
-	TeamID, KeyID, Environment string
-	PrivateKeyPEM              []byte `json:"-"`
+	BundleID, TeamID, KeyID, Environment string
+	PrivateKeyPEM                        []byte `json:"-"`
 }
 
 func (albumAPNSConfig) String() string   { return "[redacted album push configuration]" }
@@ -39,20 +39,20 @@ type albumAPNSResult struct {
 }
 
 type albumAPNS struct {
-	host, team, keyID string
-	key               *ecdsa.PrivateKey
-	client            *http.Client
-	now               func() time.Time
-	mu                sync.Mutex
-	token             string
-	issuedAt          time.Time
+	bundleID, host, team, keyID string
+	key                         *ecdsa.PrivateKey
+	client                      *http.Client
+	now                         func() time.Time
+	mu                          sync.Mutex
+	token                       string
+	issuedAt                    time.Time
 }
 
 func (*albumAPNS) String() string   { return "[redacted album push sender]" }
 func (*albumAPNS) GoString() string { return "[redacted album push sender]" }
 
 func newAlbumAPNS(c albumAPNSConfig, transport http.RoundTripper) (*albumAPNS, error) {
-	if !appleIdentifierPattern.MatchString(c.TeamID) || !appleIdentifierPattern.MatchString(c.KeyID) || len(c.PrivateKeyPEM) > 16<<10 {
+	if !validAlbumAudience(c.BundleID) || !appleIdentifierPattern.MatchString(c.TeamID) || !appleIdentifierPattern.MatchString(c.KeyID) || len(c.PrivateKeyPEM) > 16<<10 {
 		return nil, errAlbumAPNS
 	}
 	key, err := appstore.ParseSigningKeyPEM(c.PrivateKeyPEM)
@@ -68,7 +68,7 @@ func newAlbumAPNS(c albumAPNSConfig, transport http.RoundTripper) (*albumAPNS, e
 	if transport == nil {
 		transport = &http2.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ReadIdleTimeout: 30 * time.Second, PingTimeout: 15 * time.Second}
 	}
-	return &albumAPNS{host: host, team: c.TeamID, keyID: c.KeyID, key: key, now: time.Now,
+	return &albumAPNS{bundleID: c.BundleID, host: host, team: c.TeamID, keyID: c.KeyID, key: key, now: time.Now,
 		client: &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
@@ -119,7 +119,7 @@ func (s *albumAPNS) sendRetention(ctx context.Context, deviceToken string, c alb
 	}
 	req.Header.Set("authorization", "bearer "+token)
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("apns-topic", albumAppleAudience)
+	req.Header.Set("apns-topic", s.bundleID)
 	req.Header.Set("apns-push-type", "alert")
 	req.Header.Set("apns-priority", "5")
 	req.Header.Set("apns-id", requestID)

@@ -19,6 +19,12 @@ import (
 )
 
 func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
+	for _, bundleID := range []string{albumAppleAudience, albumDevelopmentAudience} {
+		t.Run(bundleID, func(t *testing.T) { testAppleCodeExchange(t, bundleID) })
+	}
+}
+
+func testAppleCodeExchange(t *testing.T, bundleID string) {
 	appleKey := testAppleKey(t)
 	signing, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -28,9 +34,11 @@ func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := AppleCodeConfig{TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
+	config := AppleCodeConfig{BundleID: bundleID, TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
 	now := time.Unix(1791660000, 0)
-	original := appleSigned(t, appleKey, "apple-key", appleClaims(now))
+	originalClaims := appleClaims(now)
+	originalClaims["aud"] = bundleID
+	original := appleSigned(t, appleKey, "apple-key", originalClaims)
 	for _, mode := range []string{"valid", "other subject", "other nonce", "expired returned", "invalid client", "provider error", "oversize", "redirect", "transport failure"} {
 		t.Run(mode, func(t *testing.T) {
 			codeRequests := 0
@@ -45,7 +53,7 @@ func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
 				if err := r.ParseForm(); err != nil {
 					t.Fatal(err)
 				}
-				if r.Form.Get("client_id") != albumAppleAudience || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "one-use-code+&" || len(r.Form) != 4 {
+				if r.Form.Get("client_id") != bundleID || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "one-use-code+&" || len(r.Form) != 4 {
 					t.Error("incorrect native code request")
 				}
 				secret, err := jwt.ParseWithClaims(r.Form.Get("client_secret"), &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
@@ -53,7 +61,7 @@ func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
 						t.Error("incorrect client secret key ID")
 					}
 					return &signing.PublicKey, nil
-				}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(albumAppleAudience), jwt.WithExpirationRequired(), jwt.WithTimeFunc(func() time.Time { return now }))
+				}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(bundleID), jwt.WithExpirationRequired(), jwt.WithTimeFunc(func() time.Time { return now }))
 				if err != nil || !secret.Valid {
 					t.Fatal("client secret failed signature/claims verification", err)
 				}
@@ -77,6 +85,7 @@ func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
 					return appleResponse(`{"error":"invalid_grant","error_description":"private-provider-detail"}`), nil
 				}
 				returned := appleClaims(now)
+				returned["aud"] = bundleID
 				if mode == "other subject" {
 					returned["sub"] = "different-user"
 				}
@@ -89,7 +98,7 @@ func TestAppleCodeExchangeBindsCodeToBothSignedAssertions(t *testing.T) {
 				data, _ := json.Marshal(map[string]string{"id_token": appleSigned(t, appleKey, "apple-key", returned), "refresh_token": "private-refresh-token", "token_type": "Bearer"})
 				return appleResponse(string(data)), nil
 			})
-			verifier := NewAppleIdentityVerifier(transport)
+			verifier := NewAppleIdentityVerifier(bundleID, transport)
 			verifier.now = func() time.Time { return now }
 			exchanger, err := NewAppleCodeExchanger(config, verifier, transport)
 			if err != nil {
@@ -134,8 +143,8 @@ func TestAppleCodeConfigurationRejectsWrongCurveAndMissingVerifier(t *testing.T)
 		t.Fatal(err)
 	}
 	der, _ := x509.MarshalPKCS8PrivateKey(key)
-	config := AppleCodeConfig{TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
-	if _, err := NewAppleCodeExchanger(config, NewAppleIdentityVerifier(nil), nil); err == nil {
+	config := AppleCodeConfig{BundleID: albumDevelopmentAudience, TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
+	if _, err := NewAppleCodeExchanger(config, NewAppleIdentityVerifier(albumDevelopmentAudience, nil), nil); err == nil {
 		t.Fatal("wrong curve accepted")
 	}
 	if _, err := NewAppleCodeExchanger(config, nil, nil); err == nil {
@@ -168,9 +177,9 @@ func TestLoginChallengeRemainsConsumedAfterUncertainAppleExchange(t *testing.T) 
 		requests++
 		return nil, errors.New("connection lost after authorization code sent")
 	})
-	verifier := NewAppleIdentityVerifier(transport)
+	verifier := NewAppleIdentityVerifier(albumDevelopmentAudience, transport)
 	verifier.now = func() time.Time { return now }
-	exchanger, err := NewAppleCodeExchanger(AppleCodeConfig{TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, verifier, transport)
+	exchanger, err := NewAppleCodeExchanger(AppleCodeConfig{BundleID: albumDevelopmentAudience, TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}, verifier, transport)
 	if err != nil {
 		t.Fatal(err)
 	}

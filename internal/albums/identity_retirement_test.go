@@ -14,7 +14,7 @@ import (
 func identityFenceCount(t *testing.T, f *pushFixture, subject string) int {
 	t.Helper()
 	var count int
-	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_apple_identity_state WHERE subject_sha256=?`, appleSubjectHash(subject)).Scan(&count); err != nil {
+	if err := f.r.db.QueryRow(`SELECT COUNT(*) FROM album_apple_identity_state WHERE subject_sha256=?`, appleSubjectHash(albumDevelopmentAudience, subject)).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
@@ -38,7 +38,7 @@ func TestMySQLIdentityRetirementAfterAccountErasureRejectsDelayedLogin(t *testin
 		t.Fatal("orphan identity retained", count, err)
 	}
 	for _, iat := range []time.Time{time.Time{}, issued, issued.Add(appleIdentityClockSkew), x.f.now.Add(appleIdentityClockSkew + time.Second)} {
-		if _, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "erasure-owner", IssuedAt: iat}, RefreshToken: uuid.NewString()}); !errors.Is(err, ErrAppleCode) {
+		if _, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "erasure-owner", IssuedAt: iat}, RefreshToken: uuid.NewString()}); !errors.Is(err, ErrAppleCode) {
 			t.Fatal("invalid or stale assertion recreated an erased identity", iat, err)
 		}
 		if identityFenceCount(t, x.f, "erasure-owner") != 0 {
@@ -48,7 +48,7 @@ func TestMySQLIdentityRetirementAfterAccountErasureRejectsDelayedLogin(t *testin
 	if receipt, err := x.f.accounts.requestAccountDeletion(ctx, x.first.Token, x.d.RequestID, clock); err != nil || receipt != x.d {
 		t.Fatal("identity retirement erased independent deletion intent", err)
 	}
-	login, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "erasure-owner", IssuedAt: x.f.now}, RefreshToken: uuid.NewString()})
+	login, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "erasure-owner", IssuedAt: x.f.now}, RefreshToken: uuid.NewString()})
 	if err != nil || login.AccountID == x.d.AccountID {
 		t.Fatal("fresh reauthorization failed", err)
 	}
@@ -69,7 +69,7 @@ func TestMySQLIdentityRetirementKeepsLinkedOrRenewedFences(t *testing.T) {
 				session, _ = f.login(t, subject, f.now)
 			}
 			old := f.now.Add(-2 * identityFenceRetention)
-			if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Type: "consent-revoked", Subject: subject, EventTime: old.Unix()}); err != nil {
+			if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: subject, EventTime: old.Unix()}); err != nil {
 				t.Fatal(err)
 			}
 			if mode == "deleting" {
@@ -77,7 +77,7 @@ func TestMySQLIdentityRetirementKeepsLinkedOrRenewedFences(t *testing.T) {
 			}
 			if mode == "consent-revoked" || mode == "account-deleted" {
 				// A candidate selected before this notification must recheck the row.
-				if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Type: mode, Subject: subject, EventTime: f.now.Unix()}); err != nil {
+				if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Audience: albumDevelopmentAudience, Type: mode, Subject: subject, EventTime: f.now.Unix()}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -90,11 +90,11 @@ func TestMySQLIdentityRetirementKeepsLinkedOrRenewedFences(t *testing.T) {
 				if _, err := f.r.db.Exec(`CREATE TABLE identity_retirement_guard(subject_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY, FOREIGN KEY(subject_sha256) REFERENCES album_apple_identity_state(subject_sha256))`); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := f.r.db.Exec(`INSERT INTO identity_retirement_guard VALUES (?)`, appleSubjectHash(subject)); err != nil {
+				if _, err := f.r.db.Exec(`INSERT INTO identity_retirement_guard VALUES (?)`, appleSubjectHash(albumDevelopmentAudience, subject)); err != nil {
 					t.Fatal(err)
 				}
 			}
-			removed, err := r.retireIdentityFence(ctx, appleSubjectHash(subject), func() time.Time { return f.now })
+			removed, err := r.retireIdentityFence(ctx, appleSubjectHash(albumDevelopmentAudience, subject), func() time.Time { return f.now })
 			if removed || (mode == "quarantined" && !errors.Is(err, ErrRecoveryQuarantined)) || (mode == "rollback" && err == nil) {
 				t.Fatal("unsafe identity retirement", removed, err)
 			}
@@ -108,7 +108,7 @@ func TestMySQLIdentityRetirementKeepsLinkedOrRenewedFences(t *testing.T) {
 				if _, err := f.r.db.Exec(`DROP TABLE identity_retirement_guard`); err != nil {
 					t.Fatal(err)
 				}
-				if removed, err := r.retireIdentityFence(ctx, appleSubjectHash(subject), func() time.Time { return f.now }); err != nil || !removed {
+				if removed, err := r.retireIdentityFence(ctx, appleSubjectHash(albumDevelopmentAudience, subject), func() time.Time { return f.now }); err != nil || !removed {
 					t.Fatal("retry after failed retirement", removed, err)
 				}
 			}
@@ -121,20 +121,20 @@ func TestMySQLIdentityRetirementSerializesWithFreshRegistration(t *testing.T) {
 	r := NewMySQLUploads(f.r.db).WithSubscriptionEnvironment("Sandbox")
 	ctx := context.Background()
 	for _, subject := range []string{"race-one", "race-two", "race-three"} {
-		if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Type: "consent-revoked", Subject: subject, EventTime: f.now.Add(-2 * identityFenceRetention).Unix()}); err != nil {
+		if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: subject, EventTime: f.now.Add(-2 * identityFenceRetention).Unix()}); err != nil {
 			t.Fatal(err)
 		}
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if _, err := r.retireIdentityFence(ctx, appleSubjectHash(subject), func() time.Time { return f.now }); err != nil {
+			if _, err := r.retireIdentityFence(ctx, appleSubjectHash(albumDevelopmentAudience, subject), func() time.Time { return f.now }); err != nil {
 				t.Error(err)
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if _, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()}); err != nil {
+			if _, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()}); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -150,7 +150,7 @@ func TestMySQLAppleRegistrationRechecksAssertionAfterIdentityLock(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	subject := "delayed-identity-lock"
-	if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Type: "consent-revoked", Subject: subject, EventTime: f.now.Add(-time.Minute).Unix()}); err != nil {
+	if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: subject, EventTime: f.now.Add(-time.Minute).Unix()}); err != nil {
 		t.Fatal(err)
 	}
 	hold, err := f.r.db.BeginTx(ctx, nil)
@@ -159,7 +159,7 @@ func TestMySQLAppleRegistrationRechecksAssertionAfterIdentityLock(t *testing.T) 
 	}
 	defer hold.Rollback()
 	var hash string
-	if err = hold.QueryRowContext(ctx, `SELECT subject_sha256 FROM album_apple_identity_state WHERE subject_sha256=? FOR UPDATE`, appleSubjectHash(subject)).Scan(&hash); err != nil {
+	if err = hold.QueryRowContext(ctx, `SELECT subject_sha256 FROM album_apple_identity_state WHERE subject_sha256=? FOR UPDATE`, appleSubjectHash(albumDevelopmentAudience, subject)).Scan(&hash); err != nil {
 		t.Fatal(err)
 	}
 	var released atomic.Bool
@@ -172,7 +172,7 @@ func TestMySQLAppleRegistrationRechecksAssertionAfterIdentityLock(t *testing.T) 
 	started, done := make(chan struct{}), make(chan error, 1)
 	go func() {
 		close(started)
-		_, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
+		_, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
 		done <- err
 	}()
 	<-started

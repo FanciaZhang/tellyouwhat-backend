@@ -41,7 +41,7 @@ func newAppleGatewayFixture(t *testing.T) appleGatewayFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := NewMySQLAccounts(db, cipher)
+	accounts, err := NewMySQLAccounts(albumDevelopmentAudience, db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func (f appleGatewayFixture) transport(t *testing.T, revoke func(*http.Request) 
 		if err := req.ParseForm(); err != nil {
 			return nil, err
 		}
-		if req.Form.Get("client_id") != albumAppleAudience || req.Form.Get("token_type_hint") != "refresh_token" || len(req.Form) != 4 {
+		if req.Form.Get("client_id") != albumDevelopmentAudience || req.Form.Get("token_type_hint") != "refresh_token" || len(req.Form) != 4 {
 			t.Error("wrong app revocation form")
 			return nil, errors.New("wrong form")
 		}
@@ -97,7 +97,7 @@ func (f appleGatewayFixture) transport(t *testing.T, revoke func(*http.Request) 
 				return nil, errors.New("wrong signing key")
 			}
 			return &key.PublicKey, nil
-		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(f.config.AppleCode.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(albumAppleAudience), jwt.WithExpirationRequired())
+		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(f.config.AppleCode.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(albumDevelopmentAudience), jwt.WithExpirationRequired())
 		if err != nil {
 			t.Error("invalid revocation signature")
 			return nil, err

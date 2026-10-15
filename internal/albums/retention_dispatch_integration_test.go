@@ -326,7 +326,7 @@ func TestMySQLRetentionDispatchRuntimeUsesAPNSAdapter(t *testing.T) {
 	config, _, _, _ := apnsFixture(t)
 	requests := make(chan string, 1)
 	transport := appleTestTransport(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "api.push.apple.com" || r.Header.Get("apns-topic") != albumAppleAudience || r.Header.Get("authorization") == "" {
+		if r.URL.Host != "api.push.apple.com" || r.Header.Get("apns-topic") != albumDevelopmentAudience || r.Header.Get("authorization") == "" {
 			t.Error("incorrect runtime APNs wiring")
 		}
 		id := r.Header.Get("apns-id")

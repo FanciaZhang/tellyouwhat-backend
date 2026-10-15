@@ -105,7 +105,7 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 				}
 				return
 			}
-			if err != nil || config == nil || config.RebindingEnabled != (name == "rebinding" || name == "erasure") || config.RecordErasureEnabled != (name == "erasure") || config.Environment != wantEnvironment || config.SigningKey == nil || config.Roots == nil {
+			if err != nil || config == nil || config.RebindingEnabled != (name == "rebinding" || name == "erasure") || config.RecordErasureEnabled != (name == "erasure") || config.Environment != wantEnvironment || config.BundleID != albumAudienceForDeployment(deployment) || config.SigningKey == nil || config.Roots == nil {
 				t.Fatal("realm selection", err)
 			}
 			if value := fmt.Sprintf("%v %#v", *config, *config); strings.Contains(value, config.IssuerID) || strings.Contains(value, config.KeyID) || !strings.Contains(value, "redacted") {

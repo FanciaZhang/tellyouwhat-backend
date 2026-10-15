@@ -54,10 +54,10 @@ func TestMySQLAccountRecordErasureReplayRecreationAndIsolation(t *testing.T) {
 	if _, err := r.eraseAccountRecords(ctx, x.d.AccountID, uuid.NewString(), func() time.Time { return x.f.now }); err == nil {
 		t.Fatal("wrong request replayed")
 	}
-	if _, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "erasure-owner", IssuedAt: x.f.now}, RefreshToken: uuid.NewString()}); !errors.Is(err, ErrAppleCode) {
+	if _, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "erasure-owner", IssuedAt: x.f.now}, RefreshToken: uuid.NewString()}); !errors.Is(err, ErrAppleCode) {
 		t.Fatal("in-flight pre-erasure authorization recreated account", err)
 	}
-	rebuilt, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "erasure-owner", IssuedAt: x.f.now.Add(2 * time.Second)}, RefreshToken: uuid.NewString()})
+	rebuilt, err := x.f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "erasure-owner", IssuedAt: x.f.now.Add(2 * time.Second)}, RefreshToken: uuid.NewString()})
 	if err != nil || rebuilt.AccountID == x.d.AccountID {
 		t.Fatal("fresh authorization did not create a new media account", rebuilt, err)
 	}
@@ -162,7 +162,7 @@ func TestMySQLAccountRecordErasureRechecksStaleSubscriptionsAndRestoresPurchase(
 		}
 	}
 	f.now = f.now.Add(2 * time.Second)
-	rebuilt, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "binding-owner", IssuedAt: f.now}, RefreshToken: uuid.NewString()})
+	rebuilt, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "binding-owner", IssuedAt: f.now}, RefreshToken: uuid.NewString()})
 	if err != nil || rebuilt.AccountID == deletion.AccountID {
 		t.Fatal(rebuilt, err)
 	}
@@ -192,11 +192,11 @@ func TestGatewayAccountRecordErasureRequiresExplicitEnablement(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := newAlbumReceiptFixture(t, now)
-			orphan := appleSubjectHash("retirement-worker-orphan")
+			orphan := appleSubjectHash(albumDevelopmentAudience, "retirement-worker-orphan")
 			if _, err = f.db.Exec(`INSERT INTO album_apple_identity_state(subject_sha256,revoked_before) VALUES (?,?)`, orphan, now.Add(-2*identityFenceRetention)); err != nil {
 				t.Fatal(err)
 			}
-			f.config.Subscriptions = &AlbumSubscriptionConfig{RebindingEnabled: true, RecordErasureEnabled: enabled, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+			f.config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, RebindingEnabled: true, RecordErasureEnabled: enabled, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 			g, err := NewGateway(context.Background(), f.config, f.transport(t, func(*http.Request) (*http.Response, error) { return appleResponse(""), nil }))
 			if err != nil {
 				t.Fatal(err)

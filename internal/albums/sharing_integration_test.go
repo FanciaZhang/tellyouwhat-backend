@@ -80,7 +80,7 @@ func newSharingFixture(t *testing.T) sharingFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := NewMySQLAccounts(db, cipher)
+	accounts, err := NewMySQLAccounts(albumDevelopmentAudience, db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}

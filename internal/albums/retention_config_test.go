@@ -29,7 +29,7 @@ func TestAlbumRetentionPushConfigFailClosed(t *testing.T) {
 	if err := os.WriteFile(keyPath, fixture.PrivateKeyPEM, 0600); err != nil {
 		t.Fatal(err)
 	}
-	gateway.Subscriptions = &AlbumSubscriptionConfig{KeyID: "STOREKEY01"}
+	gateway.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, KeyID: "STOREKEY01"}
 	gateway.PushEnvironment = "production"
 	values["ALBUM_RETENTION_PUSH_ENABLED"] = "true"
 	values["ALBUM_APNS_KEY_ID"] = fixture.KeyID

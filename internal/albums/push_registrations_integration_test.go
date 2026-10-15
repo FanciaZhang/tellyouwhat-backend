@@ -40,7 +40,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 	}
 	f := &pushFixture{dsn: dsn, now: time.Now().UTC().Truncate(time.Microsecond)}
 	f.r, _ = newAlbumPushRegistrations(db, cipher, "production")
-	f.accounts, _ = NewMySQLAccounts(db, cipher)
+	f.accounts, _ = NewMySQLAccounts(albumDevelopmentAudience, db, cipher)
 	f.accounts.now = func() time.Time { return f.now }
 	f.sessions, _ = NewMySQLSessions(db, func() time.Time { return f.now })
 	return f
@@ -48,7 +48,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 
 func (f *pushFixture) login(t *testing.T, subject string, created time.Time) (AlbumSession, AccountLogin) {
 	t.Helper()
-	login, err := f.accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: AppleIdentity{Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
+	login, err := f.accounts.RegisterAppleLogin(context.Background(), AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: f.now}, RefreshToken: uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}

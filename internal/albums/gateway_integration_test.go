@@ -109,7 +109,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	var nonce string
 	var codeCalls, cosCalls atomic.Int32
 	receipt := newAlbumReceiptFixture(t, time.Now().UTC().Truncate(time.Millisecond))
-	config.Subscriptions = &AlbumSubscriptionConfig{Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: receipt.roots}
+	config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: receipt.roots}
 	var currentSubscription atomic.Value
 	var subscriptionCalls atomic.Int32
 	clientSigningKey, err := jwt.ParseECPrivateKeyFromPEM(config.AppleCode.PrivateKeyPEM)
@@ -142,7 +142,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 				}
 				return &config.Subscriptions.SigningKey.PublicKey, nil
 			}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.Subscriptions.IssuerID), jwt.WithAudience("appstoreconnect-v1"), jwt.WithExpirationRequired())
-			if err != nil || !token.Valid || claims["bid"] != albumAppleAudience {
+			if err != nil || !token.Valid || claims["bid"] != albumDevelopmentAudience {
 				t.Error("album App Store request lacked verified app identity", err)
 			}
 			body, _ := currentSubscription.Load().(string)
@@ -159,7 +159,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		if err := r.ParseForm(); err != nil {
 			t.Error("invalid token request")
 		}
-		if r.Form.Get("client_id") != albumAppleAudience || r.Form.Get("code") != "one-use-gateway-code" || r.Form.Get("client_secret") == "" {
+		if r.Form.Get("client_id") != albumDevelopmentAudience || r.Form.Get("code") != "one-use-gateway-code" || r.Form.Get("client_secret") == "" {
 			t.Error("invalid code exchange wiring")
 		}
 		token, err := jwt.ParseWithClaims(r.Form.Get("client_secret"), &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
@@ -167,7 +167,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 				t.Error("wrong Sign in key ID")
 			}
 			return &clientSigningKey.PublicKey, nil
-		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.AppleCode.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(albumAppleAudience), jwt.WithExpirationRequired())
+		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(config.AppleCode.TeamID), jwt.WithAudience(appleIssuer), jwt.WithSubject(albumDevelopmentAudience), jwt.WithExpirationRequired())
 		if err != nil || !token.Valid {
 			t.Error("assembled client secret failed ECDSA/claims verification")
 		}
@@ -312,7 +312,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		t.Fatal("client-selected capacity was accepted", status)
 	}
 	setSubscription := func(payload map[string]any, state int) {
-		response, _ := json.Marshal(map[string]any{"environment": "Sandbox", "bundleId": albumAppleAudience, "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": state, "signedTransactionInfo": receipt.sign(t, payload)}}}}})
+		response, _ := json.Marshal(map[string]any{"environment": "Sandbox", "bundleId": albumDevelopmentAudience, "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": state, "signedTransactionInfo": receipt.sign(t, payload)}}}}})
 		currentSubscription.Store(string(response))
 	}
 	payload := receipt.payload(session.AccountID)

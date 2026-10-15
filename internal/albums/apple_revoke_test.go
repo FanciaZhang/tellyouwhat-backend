@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing.T) {
+func testAppleRefreshRevocation(t *testing.T, bundleID string) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +22,7 @@ func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := AppleCodeConfig{TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
+	config := AppleCodeConfig{BundleID: bundleID, TeamID: "TEAMID1234", KeyID: "KEYID12345", PrivateKeyPEM: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
 	for _, mode := range []string{"accepted", "repeat", "empty-token", "oversized-token", "invalid-token", "cancelled", "redirect", "bad-status", "unexpected-body", "transport-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
@@ -34,7 +34,7 @@ func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing
 				if err := r.ParseForm(); err != nil {
 					t.Fatal(err)
 				}
-				if len(r.Form) != 4 || r.Form.Get("client_id") != albumAppleAudience || r.Form.Get("client_secret") == "" || r.Form.Get("token") != "private+&refresh" || r.Form.Get("token_type_hint") != "refresh_token" {
+				if len(r.Form) != 4 || r.Form.Get("client_id") != bundleID || r.Form.Get("client_secret") == "" || r.Form.Get("token") != "private+&refresh" || r.Form.Get("token_type_hint") != "refresh_token" {
 					t.Fatal("wrong native revoke form")
 				}
 				response := appleResponse("")
@@ -52,7 +52,7 @@ func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing
 				}
 				return response, nil
 			})
-			e, err := NewAppleCodeExchanger(config, NewAppleIdentityVerifier(transport), transport)
+			e, err := NewAppleCodeExchanger(config, NewAppleIdentityVerifier(bundleID, transport), transport)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -93,5 +93,11 @@ func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing
 				t.Fatal("redirect, invalid request, or automatic retry", calls)
 			}
 		})
+	}
+}
+
+func TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement(t *testing.T) {
+	for _, bundleID := range []string{albumAppleAudience, albumDevelopmentAudience} {
+		t.Run(bundleID, func(t *testing.T) { testAppleRefreshRevocation(t, bundleID) })
 	}
 }

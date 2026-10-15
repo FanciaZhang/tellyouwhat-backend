@@ -24,17 +24,17 @@ func TestAppleGrantEncryptionBindsAccountIdentityAndGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	account, grant := uuid.NewString(), uuid.NewString()
-	hash := appleSubjectHash("subject")
+	hash := appleSubjectHash(albumDevelopmentAudience, "subject")
 	encrypted, nonce, err := cipher.Encrypt([]byte("private-refresh-token"), appleGrantAAD(account, hash, grant))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, aad := range [][]byte{appleGrantAAD(uuid.NewString(), hash, grant), appleGrantAAD(account, appleSubjectHash("other"), grant), appleGrantAAD(account, hash, uuid.NewString())} {
+	for _, aad := range [][]byte{appleGrantAAD(uuid.NewString(), hash, grant), appleGrantAAD(account, appleSubjectHash(albumDevelopmentAudience, "other"), grant), appleGrantAAD(account, hash, uuid.NewString())} {
 		if _, err := cipher.Decrypt(encrypted, nonce, aad); err == nil {
 			t.Fatal("credential could be transplanted")
 		}
 	}
-	if _, err := NewMySQLAccounts(nil, cipher); err == nil {
+	if _, err := NewMySQLAccounts(albumDevelopmentAudience, nil, cipher); err == nil {
 		t.Fatal("missing database accepted")
 	}
 }
@@ -68,14 +68,14 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, err := NewMySQLAccounts(db, cipher)
+	repo, err := NewMySQLAccounts(albumDevelopmentAudience, db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}
 	subject := uuid.NewString()
 	defer func() {
 		var account string
-		if db.QueryRowContext(context.Background(), `SELECT account_id FROM album_accounts WHERE apple_subject_sha256=?`, appleSubjectHash(subject)).Scan(&account) == nil {
+		if db.QueryRowContext(context.Background(), `SELECT account_id FROM album_accounts WHERE apple_subject_sha256=?`, appleSubjectHash(albumDevelopmentAudience, subject)).Scan(&account) == nil {
 			db.ExecContext(context.Background(), `DELETE FROM album_sessions WHERE account_id=?`, account)
 			db.ExecContext(context.Background(), `DELETE FROM album_apple_grants WHERE account_id=?`, account)
 			db.ExecContext(context.Background(), `DELETE FROM album_storage_accounts WHERE owner_id=?`, account)
@@ -129,7 +129,7 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 		t.Fatal("login replaced quota", err)
 	}
 	// A new service instance must recover the same identity without memory state.
-	restarted, err := NewMySQLAccounts(db, cipher)
+	restarted, err := NewMySQLAccounts(albumDevelopmentAudience, db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,5 +177,5 @@ func TestMySQLAppleAccountStableAcrossConcurrentLogins(t *testing.T) {
 }
 
 func freshAppleIdentity(subject string) AppleIdentity {
-	return AppleIdentity{Subject: subject, IssuedAt: time.Now().UTC()}
+	return AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: time.Now().UTC()}
 }

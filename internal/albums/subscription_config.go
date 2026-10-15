@@ -15,12 +15,12 @@ import (
 )
 
 type AlbumSubscriptionConfig struct {
-	RebindingEnabled             bool
-	RecordErasureEnabled         bool
-	Environment, IssuerID, KeyID string
-	AppAppleID                   int64
-	SigningKey                   *ecdsa.PrivateKey
-	Roots                        *x509.CertPool
+	RebindingEnabled                       bool
+	RecordErasureEnabled                   bool
+	BundleID, Environment, IssuerID, KeyID string
+	AppAppleID                             int64
+	SigningKey                             *ecdsa.PrivateKey
+	Roots                                  *x509.CertPool
 }
 
 func (AlbumSubscriptionConfig) String() string { return "[redacted album subscription configuration]" }
@@ -60,7 +60,7 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 	if enabled != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTIONS_ENABLED")
 	}
-	c := &AlbumSubscriptionConfig{RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
+	c := &AlbumSubscriptionConfig{BundleID: albumAudienceForDeployment(deployment), RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
 	issuer, err := uuid.Parse(c.IssuerID)
 	if err != nil || issuer.String() != c.IssuerID || !regexp.MustCompile(`^[A-Z0-9]{10}$`).MatchString(c.KeyID) || c.Environment == "" {
 		return nil, errors.New("invalid album App Store identity")
@@ -97,7 +97,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	if c == nil {
 		return nil, nil
 	}
-	if repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil || (c.RecordErasureEnabled && !c.RebindingEnabled) ||
+	if !validAlbumAudience(c.BundleID) || repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil || (c.RecordErasureEnabled && !c.RebindingEnabled) ||
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
 		return nil, ErrSubscriptionUnavailable
 	}
@@ -109,10 +109,10 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	}
 	httpClient := &http.Client{Transport: transportOrDefault(transport), Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("album App Store redirect refused") }}
-	verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: c.Roots, BundleID: albumAppleAudience, AppAppleID: c.AppAppleID,
+	verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: c.Roots, BundleID: c.BundleID, AppAppleID: c.AppAppleID,
 		Environment: c.Environment, ProductIDs: []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}})
 	client := appstore.NewAPIClient(appstore.APIClientConfig{BaseURL: base, KeyID: c.KeyID, IssuerID: c.IssuerID,
-		BundleID: albumAppleAudience, AppAppleID: c.AppAppleID, Environment: c.Environment, SigningKey: c.SigningKey, HTTPClient: httpClient})
+		BundleID: c.BundleID, AppAppleID: c.AppAppleID, Environment: c.Environment, SigningKey: c.SigningKey, HTTPClient: httpClient})
 	resolver, err := NewAlbumSubscriptionResolver(verifier, client, c.Environment, time.Now)
 	if err != nil {
 		return nil, err

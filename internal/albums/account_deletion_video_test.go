@@ -264,7 +264,7 @@ func TestMySQLVideoDeletionAcceptanceRollbackLeavesNoQueue(t *testing.T) {
 	f := newPushFixture(t)
 	_, j, _ := deletionVideoFixture(t, f, true, false)
 	subject := uuid.NewString()
-	if _, err := f.r.db.Exec(`INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES(?,?)`, j.OwnerID, appleSubjectHash(subject)); err != nil {
+	if _, err := f.r.db.Exec(`INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES(?,?)`, j.OwnerID, appleSubjectHash(albumDevelopmentAudience, subject)); err != nil {
 		t.Fatal(err)
 	}
 	session, _ := f.login(t, subject, f.now)

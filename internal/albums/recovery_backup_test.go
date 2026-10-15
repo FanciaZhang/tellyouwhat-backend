@@ -28,7 +28,7 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts, err := NewMySQLAccounts(f.db, cipher)
+	accounts, err := NewMySQLAccounts(albumDevelopmentAudience, f.db, cipher)
 	if err != nil {
 		t.Fatal(err)
 	}

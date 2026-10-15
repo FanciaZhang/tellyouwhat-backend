@@ -20,19 +20,20 @@ type AccountCipher interface {
 
 type AccountLogin struct{ AccountID, GrantID string }
 type MySQLAccounts struct {
-	db     *sql.DB
-	cipher AccountCipher
-	now    func() time.Time
+	bundleID string
+	db       *sql.DB
+	cipher   AccountCipher
+	now      func() time.Time
 }
 
-func NewMySQLAccounts(db *sql.DB, cipher AccountCipher) (*MySQLAccounts, error) {
-	if db == nil || cipher == nil {
+func NewMySQLAccounts(bundleID string, db *sql.DB, cipher AccountCipher) (*MySQLAccounts, error) {
+	if !validAlbumAudience(bundleID) || db == nil || cipher == nil {
 		return nil, errors.New("album account database and credential cipher are required")
 	}
-	return &MySQLAccounts{db: db, cipher: cipher, now: time.Now}, nil
+	return &MySQLAccounts{bundleID: bundleID, db: db, cipher: cipher, now: time.Now}, nil
 }
-func appleSubjectHash(subject string) string {
-	hash := sha256.Sum256([]byte(appleIssuer + "\x00" + albumAppleAudience + "\x00" + subject))
+func appleSubjectHash(bundleID, subject string) string {
+	hash := sha256.Sum256([]byte(appleIssuer + "\x00" + bundleID + "\x00" + subject))
 	return hex.EncodeToString(hash[:])
 }
 func appleGrantAAD(account, subjectHash, grant string) []byte {
@@ -43,10 +44,10 @@ func appleGrantAAD(account, subjectHash, grant string) []byte {
 // never decode this type from a caller's JSON. Subject and quota are not client
 // choices. Each distinct Apple refresh grant is retained for later revocation.
 func (r *MySQLAccounts) RegisterAppleLogin(ctx context.Context, grant AppleGrant) (AccountLogin, error) {
-	if grant.Identity.Subject == "" || len(grant.Identity.Subject) > 255 || grant.RefreshToken == "" || len(grant.RefreshToken) > 16<<10 {
+	if grant.Identity.Audience != r.bundleID || grant.Identity.Subject == "" || len(grant.Identity.Subject) > 255 || grant.RefreshToken == "" || len(grant.RefreshToken) > 16<<10 {
 		return AccountLogin{}, ErrAppleIdentity
 	}
-	subjectHash := appleSubjectHash(grant.Identity.Subject)
+	subjectHash := appleSubjectHash(r.bundleID, grant.Identity.Subject)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return AccountLogin{}, err

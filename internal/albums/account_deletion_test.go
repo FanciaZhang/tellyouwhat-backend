@@ -77,7 +77,7 @@ func TestMySQLAccountDeletionRecordedAccessRevocationAndExactReplay(t *testing.T
 	if _, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: freshAppleIdentity("delete-owner"), RefreshToken: "new-provider-grant"}); !errors.Is(err, ErrOwner) {
 		t.Fatal("login revived deleting account", err)
 	}
-	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
+	reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, f.r.db, f.r.cipher)
 	replayed, err := reopened.requestAccountDeletion(ctx, first.Token, id, func() time.Time { return f.now.Add(60 * 24 * time.Hour) })
 	if err != nil || replayed != got {
 		t.Fatal("lost-response retry changed receipt", err)

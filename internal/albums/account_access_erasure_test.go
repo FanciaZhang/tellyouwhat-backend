@@ -112,7 +112,7 @@ func TestMySQLAccountAccessErasureRemovesCredentialsAndPreservesExactRequestRepl
 		t.Fatal("other provider credential removed", err)
 	}
 	for range 2 {
-		reopened, _ := NewMySQLAccounts(x.f.r.db, x.f.r.cipher)
+		reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, x.f.r.db, x.f.r.cipher)
 		d, e := reopened.requestAccountDeletion(ctx, x.first.Token, x.d.RequestID, func() time.Time { return x.f.now.AddDate(1, 0, 0) })
 		if e != nil || d != x.d {
 			t.Fatal("lost-response replay failed after session erasure", e)
@@ -201,7 +201,7 @@ func TestMySQLAccountAccessErasureAtomicRollbackAndConcurrentRetry(t *testing.T)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			repo, _ := NewMySQLAccounts(x.f.r.db, x.f.r.cipher)
+			repo, _ := NewMySQLAccounts(albumDevelopmentAudience, x.f.r.db, x.f.r.cipher)
 			at, e := repo.eraseAccountAccess(ctx, x.d.AccountID, x.d.RequestID, x.f.now)
 			if e != nil || !at.Equal(x.f.now) {
 				t.Error(at, e)

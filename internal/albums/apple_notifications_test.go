@@ -16,12 +16,12 @@ import (
 )
 
 func accountEventClaims(now time.Time) jwt.MapClaims {
-	return jwt.MapClaims{"iss": appleIssuer, "aud": albumAppleAudience, "iat": now.Unix(), "jti": "event-id", "events": map[string]any{"type": "consent-revoked", "sub": "apple-user", "event_time": now.Add(-time.Second).Unix()}}
+	return jwt.MapClaims{"iss": appleIssuer, "aud": albumDevelopmentAudience, "iat": now.Unix(), "jti": "event-id", "events": map[string]any{"type": "consent-revoked", "sub": "apple-user", "event_time": now.Add(-time.Second).Unix()}}
 }
 func TestAppleAccountNotificationSignaturePurposeAndFields(t *testing.T) {
 	key := testAppleKey(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	v := NewAppleIdentityVerifier(appleTestTransport(func(r *http.Request) (*http.Response, error) {
+	v := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.String() != appleIssuer+"/auth/keys" {
 			t.Fatal("untrusted key URL")
 		}
@@ -44,7 +44,7 @@ func TestAppleAccountNotificationSignaturePurposeAndFields(t *testing.T) {
 		edit func(jwt.MapClaims)
 	}{
 		{"audience", func(c jwt.MapClaims) { c["aud"] = "cn.tellyouwhat.health" }},
-		{"multiple audience", func(c jwt.MapClaims) { c["aud"] = []string{albumAppleAudience, "other"} }},
+		{"multiple audience", func(c jwt.MapClaims) { c["aud"] = []string{albumDevelopmentAudience, "other"} }},
 		{"issuer", func(c jwt.MapClaims) { c["iss"] = "https://attacker.invalid" }},
 		{"missing iat", func(c jwt.MapClaims) { delete(c, "iat") }},
 		{"future iat", func(c jwt.MapClaims) { c["iat"] = now.Add(time.Minute).Unix() }},
@@ -71,7 +71,7 @@ func TestAppleAccountNotificationSignaturePurposeAndFields(t *testing.T) {
 	if _, err := v.verifyAccountEvent(context.Background(), appleSigned(t, key, "key", appleClaims(now))); !errors.Is(err, errAppleNotification) {
 		t.Fatal("identity token used as notification", err)
 	}
-	unreachable := NewAppleIdentityVerifier(appleTestTransport(func(*http.Request) (*http.Response, error) { return nil, errors.New("private upstream diagnostic") }))
+	unreachable := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(*http.Request) (*http.Response, error) { return nil, errors.New("private upstream diagnostic") }))
 	if _, err := unreachable.verifyAccountEvent(context.Background(), appleSigned(t, key, "key", accountEventClaims(now))); !errors.Is(err, errAppleKeyUnavailable) {
 		t.Fatal("transient failure must be retryable", err)
 	}
@@ -79,7 +79,7 @@ func TestAppleAccountNotificationSignaturePurposeAndFields(t *testing.T) {
 
 func eventLogin(t *testing.T, f *pushFixture, subject string, iat time.Time) (AlbumSession, AccountLogin, AppleGrant) {
 	t.Helper()
-	grant := AppleGrant{Identity: AppleIdentity{Subject: subject, IssuedAt: iat}, RefreshToken: uuid.NewString()}
+	grant := AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: subject, IssuedAt: iat}, RefreshToken: uuid.NewString()}
 	login, err := f.accounts.RegisterAppleLogin(context.Background(), grant)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestMySQLAppleEventRevokesOldDevicesAndPushButPreservesNewLogin(t *testing.
 	if _, err = f.r.db.Exec(`UPDATE album_storage_accounts SET quota_bytes=12345 WHERE owner_id=?`, login.AccountID); err != nil {
 		t.Fatal(err)
 	}
-	event := appleAccountEvent{Type: "consent-revoked", Subject: "owner", EventTime: at.Unix()}
+	event := appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: "owner", EventTime: at.Unix()}
 	if err = f.accounts.applyAppleEvent(ctx, event); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestMySQLAppleEventRevokesOldDevicesAndPushButPreservesNewLogin(t *testing.
 	if _, err = f.r.target(ctx, login.AccountID, p.ID, p.Revision); err == nil {
 		t.Fatal("revoked grant still sends push")
 	}
-	reopened, _ := NewMySQLAccounts(f.r.db, f.r.cipher)
+	reopened, _ := NewMySQLAccounts(albumDevelopmentAudience, f.r.db, f.r.cipher)
 	if err = reopened.applyAppleEvent(ctx, event); err != nil {
 		t.Fatal(err)
 	}
@@ -164,11 +164,11 @@ func TestMySQLAppleEventBeforeFirstLoginAndRollback(t *testing.T) {
 	f := newPushFixture(t)
 	ctx := context.Background()
 	at := f.now.Add(-time.Minute).Truncate(time.Second)
-	event := appleAccountEvent{Type: "consent-revoked", Subject: "not-yet-registered", EventTime: at.Unix()}
+	event := appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: "not-yet-registered", EventTime: at.Unix()}
 	if err := f.accounts.applyAppleEvent(ctx, event); err != nil {
 		t.Fatal(err)
 	}
-	stale := AppleGrant{Identity: AppleIdentity{Subject: event.Subject, IssuedAt: at}, RefreshToken: uuid.NewString()}
+	stale := AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: event.Subject, IssuedAt: at}, RefreshToken: uuid.NewString()}
 	if _, err := f.accounts.RegisterAppleLogin(ctx, stale); !errors.Is(err, ErrAppleCode) {
 		t.Fatal("late stale login accepted", err)
 	}
@@ -187,7 +187,7 @@ func TestMySQLAppleEventBeforeFirstLoginAndRollback(t *testing.T) {
 		t.Fatal("rolled-back event partly revoked session")
 	}
 	var before time.Time
-	if err := f.r.db.QueryRow(`SELECT revoked_before FROM album_apple_identity_state WHERE subject_sha256=?`, appleSubjectHash(event.Subject)).Scan(&before); err != nil || !before.Equal(at) {
+	if err := f.r.db.QueryRow(`SELECT revoked_before FROM album_apple_identity_state WHERE subject_sha256=?`, appleSubjectHash(albumDevelopmentAudience, event.Subject)).Scan(&before); err != nil || !before.Equal(at) {
 		t.Fatal("fence advanced without grant commit", before, err)
 	}
 	if err := f.accounts.applyAppleEvent(ctx, event); err != nil {
@@ -213,7 +213,7 @@ func TestMySQLAppleNotificationRacesWithStaleLogin(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			login, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Subject: "racing", IssuedAt: at.Add(-time.Second)}, RefreshToken: uuid.NewString()})
+			login, err := f.accounts.RegisterAppleLogin(ctx, AppleGrant{Identity: AppleIdentity{Audience: albumDevelopmentAudience, Subject: "racing", IssuedAt: at.Add(-time.Second)}, RefreshToken: uuid.NewString()})
 			if errors.Is(err, ErrAppleCode) {
 				return
 			}
@@ -235,7 +235,7 @@ func TestMySQLAppleNotificationRacesWithStaleLogin(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Type: "consent-revoked", Subject: "racing", EventTime: at.Unix()}); err != nil {
+		if err := f.accounts.applyAppleEvent(ctx, appleAccountEvent{Audience: albumDevelopmentAudience, Type: "consent-revoked", Subject: "racing", EventTime: at.Unix()}); err != nil {
 			failures <- err
 		}
 	}()
@@ -258,7 +258,7 @@ func TestMySQLAppleNotificationHTTPBoundariesAndCommittedReceipt(t *testing.T) {
 	now := f.now.Truncate(time.Second)
 	old, _, _ := eventLogin(t, f, "apple-user", now.Add(-time.Minute))
 	unavailable := false
-	verifier := NewAppleIdentityVerifier(appleTestTransport(func(*http.Request) (*http.Response, error) {
+	verifier := NewAppleIdentityVerifier(albumDevelopmentAudience, appleTestTransport(func(*http.Request) (*http.Response, error) {
 		if unavailable {
 			return nil, errors.New("private provider detail")
 		}

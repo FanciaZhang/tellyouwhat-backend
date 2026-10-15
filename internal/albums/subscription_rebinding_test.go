@@ -294,7 +294,7 @@ func TestGatewaySubscriptionRebindingRunsWithExplicitEnable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.delete(t, session)
-	f.config.Subscriptions = &AlbumSubscriptionConfig{RebindingEnabled: true, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+	f.config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, RebindingEnabled: true, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 	var bound atomic.Bool
 	var puts atomic.Int32
 	base := f.transport(t, func(*http.Request) (*http.Response, error) { return appleResponse(`{}`), nil })
@@ -320,7 +320,7 @@ func TestGatewaySubscriptionRebindingRunsWithExplicitEnable(t *testing.T) {
 		if bound.Load() {
 			token = a.AppAccountToken
 		}
-		data, _ := json.Marshal(map[string]any{"bundleId": albumAppleAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": 1, "signedTransactionInfo": fixture.sign(t, fixture.payload(token))}}}}})
+		data, _ := json.Marshal(map[string]any{"bundleId": albumDevelopmentAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": 1, "signedTransactionInfo": fixture.sign(t, fixture.payload(token))}}}}})
 		return appleResponse(string(data)), nil
 	})
 	g, err := NewGateway(ctx, f.config, transport)
