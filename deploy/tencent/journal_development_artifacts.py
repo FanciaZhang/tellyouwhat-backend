@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import tarfile
 import tempfile
 import time
@@ -205,3 +206,50 @@ def verify_recovery(archive, hashes):
             raise OperationError('Journal recovery checkpoint is missing') from error
         if not member.isfile() or digest(archive.extractfile(member).read()) != expected:
             raise OperationError('Journal recovery differs from its authenticated manifest')
+
+
+def verify_runtime_recovery(runtime, directory, filename):
+    data = read_checkpoint(runtime, directory)
+    selected = json.loads(data['selection.json'])
+    original = json.loads(data['cost-events.json']) or []
+    container = 'journal-recovery-' + secrets.token_hex(12)
+    label = 'cn.tellyouwhat.journal-recovery=' + container
+    with tempfile.TemporaryDirectory(prefix='journal-recovery-', dir=runtime.state) as temporary:
+        root = Path(temporary)
+        config, state = root / 'config', root / 'state'
+        config.mkdir(mode=0o700)
+        state.mkdir(mode=0o700)
+        for path, content, mode in [(root / 'journaldevserver', data['journaldevserver'], 0o555),
+                                    (config / 'prompt.json', data['prompt.json'], 0o600),
+                                    (state / 'cost-events.json', data['cost-events.json'], 0o600)]:
+            path.write_bytes(content)
+            path.chmod(mode)
+        try:
+            runtime.execute('journal-recovery-ownership', ['sudo', '-n', 'chown', '-R', '65532:65532', str(config), str(state)])
+            result = json.loads(runtime.execute('journal-recovery-run', [
+                'docker', 'run', '--rm', '--name', container, '--label', label, '--network', 'none', '--read-only',
+                '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--memory', '192m', '--pids-limit', '64',
+                '--user', '65532:65532', '--env', 'JOURNAL_PROMPT_FILE=/restore/config/prompt.json',
+                '--env', 'JOURNAL_DEVELOPMENT_STATE_DIR=/restore/state',
+                '--env', 'JOURNAL_DEVELOPMENT_MONTHLY_BUDGET_CNY=' + str(selected['monthly_budget_cny']),
+                '--mount', 'type=bind,source=' + str(root / 'journaldevserver') + ',target=/journaldevserver,readonly',
+                '--mount', 'type=bind,source=' + str(config) + ',target=/restore/config,readonly',
+                '--mount', 'type=bind,source=' + str(state) + ',target=/restore/state',
+                '--entrypoint', '/journaldevserver', selected['image'], 'verify-recovery'], timeout=90))
+            if (result.get('passed') is not True or result.get('cost_store_replayed') is not True
+                    or result.get('prompt_revision') != json.loads(data['prompt.json'])['id']):
+                raise OperationError('Journal runtime did not verify the recovered policy and ledger')
+            after = json.loads(cost_snapshot(runtime, root)) or []
+            if after[:len(original)] != original:
+                raise OperationError('Journal recovery discarded previous spending events')
+        finally:
+            try:
+                remaining = runtime.execute('journal-recovery-containers', ['docker', 'ps', '-aq', '--filter', 'label=' + label]).decode().split()
+                if remaining:
+                    runtime.execute('journal-recovery-stop', ['docker', 'rm', '--force', *remaining], timeout=30)
+            finally:
+                runtime.execute('journal-recovery-cleanup', ['sudo', '-n', 'rm', '-rf', '--', str(config), str(state)])
+    return runtime.record('journal-development-restore', filename=filename, source=selected['source'],
+                          passed=True, cost_events=len(original), original_ledger_prefix_retained=True,
+                          prompt_revision=result['prompt_revision'], container_removed=True,
+                          network_disabled=True, connection_credentials_absent=True, user_content_and_consents_excluded=True)

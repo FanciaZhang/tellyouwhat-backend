@@ -160,6 +160,13 @@ def verify_recovery_bundle(runtime, source, manifest):
             if manifest.get('recovery_journal_development'):
                 from journal_development_artifacts import verify_recovery as verify_journal_development
                 verify_journal_development(archive, manifest['recovery_journal_development'])
+                from journal_development_artifacts import verify_runtime_recovery
+                checkpoint = Path(directory) / 'journal-checkpoint'
+                checkpoint.mkdir(mode=0o700)
+                for name in manifest['recovery_journal_development']:
+                    (checkpoint / name).write_bytes(archive.extractfile('recovery/journal-development/' + name).read())
+                    (checkpoint / name).chmod(0o600)
+                verify_runtime_recovery(runtime, checkpoint, manifest['filename'])
             test_routing = manifest.get('recovery_test_routing', {})
             if test_routing:
                 import hashlib

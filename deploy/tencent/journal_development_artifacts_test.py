@@ -31,7 +31,7 @@ class JournalRecoveryTests(unittest.TestCase):
         self.binary = self.app / 'bin' / ('journaldevserver-' + journal.digest(self.program)[:16])
         self.binary.write_bytes(self.program)
         self.image = 'ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:' + 'a' * 64
-        self.state = {'source': 'b' * 40, 'binary': str(self.binary), 'image': self.image}
+        self.state = {'source': 'b' * 40, 'binary': str(self.binary), 'image': self.image, 'monthly_budget_cny': 200}
         self.save(self.runtime.state / 'journal-development.json', self.state)
         self.owner = {'current': {'source': self.state['source'], 'source_run': 'test:binary-sha256:' + journal.digest(self.program),
                                  'images': ['sha256:pinned'], 'paths': [str(self.binary)]}}
@@ -39,7 +39,7 @@ class JournalRecoveryTests(unittest.TestCase):
         self.settings = self.app / 'runtime.env'
         self.settings.write_text('JOURNAL_DEVELOPMENT_RUNTIME_IMAGE=' + self.image + '\nJOURNAL_ARK_API_KEY=restricted-provider-key\n')
         self.settings.chmod(0o600)
-        self.save(self.app / 'config/prompt.json', {'scope': 'journal', 'publishedAt': '2026-10-16T00:00:00Z'})
+        self.save(self.app / 'config/prompt.json', {'id': 'independent-test', 'scope': 'journal', 'publishedAt': '2026-10-16T00:00:00Z'})
         self.container = {'State': {'Running': True}, 'Image': 'sha256:pinned', 'Config': {'Image': self.image, 'User': '65532:65532',
                           'Env': ['JOURNAL_ARK_API_KEY=restricted-provider-key', 'JOURNAL_DEVELOPMENT_TOKEN=never-back-up-connection',
                                   'JOURNAL_PROMPT_FILE=/journal-config/prompt.json']},
@@ -47,6 +47,8 @@ class JournalRecoveryTests(unittest.TestCase):
                                      {'Destination': '/journal-config', 'Source': str(self.app / 'config'), 'RW': False}]}
         self.events = [{'now': '2026-10-16T00:00:00Z', 'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'actual': 17, 'known': True}]
         self.runtime.execute.side_effect = self.execute
+        self.runtime.record.side_effect = lambda name, **value: value
+        self.recovery_passed = True
 
     def save(self, path, value):
         path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -61,6 +63,10 @@ class JournalRecoveryTests(unittest.TestCase):
             if result.returncode:
                 raise OperationError('crypto failed')
             return result.stdout
+        if label == 'journal-recovery-run':
+            return json.dumps({'passed': self.recovery_passed, 'cost_store_replayed': True, 'prompt_revision': 'independent-test'}).encode()
+        if label.startswith('journal-recovery-'):
+            return b''
         self.fail('unexpected command: ' + label)
 
     def backup(self, name='checkpoint'):
@@ -135,6 +141,29 @@ class JournalRecoveryTests(unittest.TestCase):
                 journal.verify_recovery(archive, {journal.CHECKPOINT: hashes[journal.CHECKPOINT]})
             with self.assertRaises(OperationError):
                 journal.verify_recovery(archive, {**hashes, journal.ENVELOPE: '0' * 64})
+
+    def test_actual_program_recovery_uses_copied_state_without_network_or_credentials(self):
+        target, _ = self.backup()
+        with patch.object(journal, 'cost_snapshot', return_value=json.dumps(self.events).encode()):
+            result = journal.verify_runtime_recovery(self.runtime, target, 'authenticated-backup')
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['cost_events'], 1)
+        command = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'journal-recovery-run')
+        self.assertEqual(command[command.index('--network') + 1], 'none')
+        self.assertEqual(command[-1], 'verify-recovery')
+        self.assertNotIn('--env-file', command)
+        self.assertNotIn(str(self.app / 'state'), ' '.join(command))
+        self.assertNotIn('restricted-provider-key', ' '.join(command))
+        self.assertNotIn('never-back-up-connection', ' '.join(command))
+        self.assertTrue(any(c.args[0] == 'journal-recovery-cleanup' for c in self.runtime.execute.call_args_list))
+
+    def test_failed_replay_never_claims_success_and_still_cleans_its_copy(self):
+        target, _ = self.backup()
+        self.recovery_passed = False
+        with self.assertRaisesRegex(OperationError, 'did not verify'):
+            journal.verify_runtime_recovery(self.runtime, target, 'authenticated-backup')
+        self.runtime.record.assert_not_called()
+        self.assertTrue(any(c.args[0] == 'journal-recovery-cleanup' for c in self.runtime.execute.call_args_list))
 
 
 if __name__ == '__main__':

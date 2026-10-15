@@ -34,5 +34,6 @@ func TestRecoveryVerificationCannotOpenLiveStateOrUseConnectionCredentials(t *te
 		if err := verifyRecovery(); err == nil || !strings.Contains(err.Error(), "without connection credentials") {
 			t.Fatal("recovery verification accepted live credentials")
 		}
+		t.Setenv(key, "")
 	}
 }
