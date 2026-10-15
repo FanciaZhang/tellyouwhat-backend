@@ -75,13 +75,16 @@ def create_recovery_bundle(runtime, filename):
         for path in (runtime.root / "deploy/tencent").glob("*"):
             if path.is_file() and not path.is_symlink() and path.suffix in (".py", ".sh") and not path.name.endswith("_test.py"):
                 shutil.copy2(path, scripts / path.name)
+        from test_routes import backup_configuration
+        test_routing = backup_configuration(runtime, bundle / 'test-routing')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
         encrypted = temporary / "recovery.enc"
         crypt(runtime, compressed, encrypted)
         os.replace(encrypted, destination)
-    return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination), "recovery_images": images}
+    return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
+            "recovery_images": images, "recovery_test_routing": test_routing}
 
 
 def publish(runtime, source, manifest):
@@ -134,6 +137,18 @@ def verify_recovery_bundle(runtime, source, manifest):
             images = {k: v.get("images", {}) for k, v in selection["slots"].items()}
             if images != manifest["recovery_images"]:
                 raise OperationError("configuration recovery images differ from the authenticated manifest")
+            test_routing = manifest.get('recovery_test_routing', {})
+            if test_routing:
+                import hashlib
+                if set(test_routing) != {'Caddyfile', 'test.caddy', 'state.json'}:
+                    raise OperationError('test routing recovery selection is incomplete')
+                for name, digest in test_routing.items():
+                    try:
+                        member = archive.getmember('recovery/test-routing/' + name)
+                    except KeyError as error:
+                        raise OperationError('test routing recovery file is missing') from error
+                    if not member.isfile() or hashlib.sha256(archive.extractfile(member).read()).hexdigest() != digest:
+                        raise OperationError('test routing recovery differs from the authenticated manifest')
             for label in selection["slots"]:
                 prefix = "recovery/" + label + "/"
                 if label not in ("current", "previous") or not archive.getmember(prefix + ".env.production").isfile():

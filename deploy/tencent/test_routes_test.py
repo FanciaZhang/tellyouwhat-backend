@@ -105,6 +105,33 @@ class TestRouteTests(unittest.TestCase):
         self.assertIsNone(routes.RejectRedirects().redirect_request(
             Mock(), None, 302, 'redirect', {}, 'https://other.example/'))
 
+    def managed_state(self):
+        import hashlib
+        text = routes.render(['journal'])
+        self.fragment.write_text(text)
+        self.main.write_text(self.before + 'import ' + str(self.fragment) + '\n')
+        (self.runtime.state / 'test-routing.json').write_text(json.dumps({
+            'apps': ['journal'], 'fragment_sha256': hashlib.sha256(text.encode()).hexdigest()}))
+
+    def test_backup_preserves_exact_managed_root_fragment_and_state(self):
+        self.managed_state()
+        target = self.root / 'backup'
+        hashes = routes.backup_configuration(self.runtime, target)
+        self.assertEqual(set(hashes), {'Caddyfile', 'test.caddy', 'state.json'})
+        self.assertEqual((target / 'Caddyfile').read_bytes(), self.main.read_bytes())
+        self.assertEqual((target / 'test.caddy').read_bytes(), self.fragment.read_bytes())
+
+    def test_backup_refuses_unmanaged_drift_and_symlinks(self):
+        self.managed_state()
+        text = self.fragment.read_text()
+        self.fragment.write_text(text + '# unmanaged\n')
+        with self.assertRaisesRegex(OperationError, 'managed recovery state'):
+            routes.backup_configuration(self.runtime, self.root / 'backup')
+        self.fragment.unlink()
+        self.fragment.symlink_to(self.main)
+        with self.assertRaisesRegex(OperationError, 'symlink'):
+            routes.backup_configuration(self.runtime, self.root / 'backup')
+
 
 if __name__ == '__main__':
     unittest.main()

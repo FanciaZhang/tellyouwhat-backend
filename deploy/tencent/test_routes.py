@@ -112,6 +112,29 @@ def install(runtime, source, destination):
     runtime.execute('test-route-commit', ['sudo', '-n', 'mv', '--', str(pending), str(destination)])
 
 
+def backup_configuration(runtime, destination):
+    state = runtime.state / 'test-routing.json'
+    if not state.exists():
+        if FRAGMENT.exists():
+            raise OperationError('test routing exists without managed recovery state')
+        return {}
+    paths = {'Caddyfile': ROOT, 'test.caddy': FRAGMENT, 'state.json': state}
+    if any(p.is_symlink() or not p.is_file() or p.stat().st_size > 256 * 1024 for p in paths.values()):
+        raise OperationError('test routing recovery file is missing, oversized or a symlink')
+    record = json.loads(state.read_text())
+    content = FRAGMENT.read_text()
+    if (content != render(record['apps']) or hashlib.sha256(content.encode()).hexdigest() != record['fragment_sha256']
+            or ROOT.read_text().splitlines().count('import ' + str(FRAGMENT)) != 1):
+        raise OperationError('test routing differs from its managed recovery state')
+    destination.mkdir(mode=0o700)
+    hashes = {}
+    for name, source in paths.items():
+        data = source.read_bytes()
+        (destination / name).write_bytes(data)
+        hashes[name] = hashlib.sha256(data).hexdigest()
+    return hashes
+
+
 def configure(runtime, enabled, voice_protocol):
     require_operator(runtime.root)
     with runtime.lock(wait_seconds=600), runtime.lock('deployment', wait_seconds=600):
