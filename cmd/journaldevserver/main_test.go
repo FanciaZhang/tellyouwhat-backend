@@ -6,7 +6,7 @@ import (
 )
 
 func TestRefusesProductionStorageOrEnvironment(t *testing.T) {
-	for _, key := range []string{"DATABASE_DSN", "REDIS_URL", "APP_ENV"} {
+	for _, key := range []string{"DATABASE_DSN", "JOURNAL_PROMPT_DATABASE_DSN", "REDIS_URL", "APP_ENV"} {
 		t.Run(key, func(t *testing.T) {
 			value := "configured"
 			if key == "APP_ENV" {
