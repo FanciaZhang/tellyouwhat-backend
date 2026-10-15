@@ -79,6 +79,8 @@ def create_recovery_bundle(runtime, filename):
         test_routing = backup_configuration(runtime, bundle / 'test-routing')
         from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
         apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
+        from albums_development_artifacts import backup_configuration as backup_albums_development
+        albums_development = backup_albums_development(runtime, bundle / 'albums-development')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
@@ -87,7 +89,7 @@ def create_recovery_bundle(runtime, filename):
         os.replace(encrypted, destination)
     return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
             "recovery_images": images, "recovery_test_routing": test_routing,
-            "recovery_apple_delivery": apple_delivery}
+            "recovery_apple_delivery": apple_delivery, "recovery_albums_development": albums_development}
 
 
 def publish(runtime, source, manifest):
@@ -144,6 +146,9 @@ def verify_recovery_bundle(runtime, source, manifest):
             if apple_delivery:
                 from apple_delivery_artifacts import verify_recovery
                 verify_recovery(archive, apple_delivery)
+            if manifest.get('recovery_albums_development'):
+                from albums_development_artifacts import verify_recovery as verify_albums_development
+                verify_albums_development(archive, manifest['recovery_albums_development'])
             test_routing = manifest.get('recovery_test_routing', {})
             if test_routing:
                 import hashlib

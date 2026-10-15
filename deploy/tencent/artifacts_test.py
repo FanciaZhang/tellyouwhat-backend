@@ -139,6 +139,40 @@ class ArtifactRetentionTests(unittest.TestCase):
         register.assert_called_once_with(runtime, "albums-test", [], ["albums:test"], "revision", "run")
         cleanup.assert_called_once_with(runtime, "albums-test")
 
+    def test_albums_development_readiness_uses_only_its_explicit_host(self):
+        runtime, _ = self.deployment_runtime()
+        response = Mock(status=200)
+        response.geturl.return_value = "http://127.0.0.1:18092/readyz"
+        response.read.return_value = b'{"code":"ok"}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
+                patch("ops_artifacts.register"), patch("ops_artifacts.cleanup", return_value={"passed": True}):
+            development_deploy(runtime, "albums-test", [], ["albums:test"], "revision", "run", ["producer"],
+                               response.geturl(), verify_host="api-test.albums.tellyouwhat.cn")
+        self.assertEqual(open_url.call_args.args[0].get_header("Host"), "api-test.albums.tellyouwhat.cn")
+        for owner, host in [("albums-test", "other.example"), ("platform-test", "api-test.albums.tellyouwhat.cn")]:
+            runtime, events = self.deployment_runtime()
+            with self.assertRaises(OperationError):
+                development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"],
+                                   response.geturl(), verify_host=host)
+            runtime.execute.assert_not_called()
+            self.assertEqual(events, [])
+
+    def test_albums_release_cleanup_preserves_registered_and_mounted_configurations(self):
+        base = self.root / '.albums-development/releases'
+        folders = [base / (str(i) * 40) for i in range(5)]
+        for folder in folders:
+            self.file(folder / 'compose.env')
+            os.utime(folder, (self.now - GRACE_SECONDS - 1,) * 2)
+        register(Mock(root=self.root, state=self.root / '.operations'), 'albums-test',
+                 paths=folders[:2], source='current')
+        self.file(base / 'operator-note')
+        containers = [{'Image': 'sha256:live', 'Mounts': [{'Type': 'bind', 'Source': str(folders[2])}]}]
+        plan = plan_cleanup(self.root, self.state, containers, [], owners=['albums-test'], now=self.now)
+        self.assertEqual({x['path'] for x in plan['files']}, {str(x) for x in folders[3:]})
+        self.assertEqual(plan_cleanup(self.root, self.state, containers, [], owners=['production'], now=self.now)['files'], [])
+
     def test_readiness_keeps_each_owners_protocol(self):
         for owner, body, accepted in [("birthday-development", b'{"status":"ready"}', True),
                                        ("platform-test", b'{"status":"ready"}', True),

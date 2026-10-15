@@ -112,6 +112,13 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(i["Id"] for i in sorted(versions, key=lambda i: timestamp(i["Created"]), reverse=True)[:2])
 
     files = []
+    if 'albums-test' in owners:
+        base = root / '.albums-development'
+        releases = base / 'releases'
+        if base.is_symlink() or releases.is_symlink():
+            raise OperationError('Albums development artifact directory is a symlink')
+        files.extend(('albums-test', p) for p in releases.glob('*')
+                     if p.is_dir() and re.fullmatch(r'[0-9a-f]{40}', p.name))
     if 'apple-development' in owners:
         base = root / '.apple-delivery'
         releases = base / 'releases'
@@ -259,19 +266,21 @@ def register(runtime, owner, paths=(), images=(), source="", source_run=""):
     return record
 
 
-def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url):
+def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url, *, verify_host=None):
     require_operator(runtime.root)
     url = urlsplit(verify_url)
     if (owner not in ("birthday-development", "albums-test", "platform-test", "apple-development") or not source or not images or not command
             or url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.query
-            or url.fragment or url.path not in ("/readyz", "/healthz")):
+            or url.fragment or url.path not in ("/readyz", "/healthz")
+            or (verify_host is not None and (owner != "albums-test" or verify_host not in (
+                "api.albums.tellyouwhat.cn", "api-test.albums.tellyouwhat.cn")))):
         raise OperationError("development deployment requires a scoped owner, revision, images and local readiness check")
     with runtime.lock(wait_seconds=600):
         with runtime.lock("deployment", wait_seconds=600):
             runtime.refresh()
             runtime.execute("artifact-producer-" + owner, command, timeout=900)
             # Albums validates Host and returns its API envelope for readiness.
-            headers = {"Host": "api.albums.tellyouwhat.cn"} if owner == "albums-test" else {}
+            headers = {"Host": verify_host or "api.albums.tellyouwhat.cn"} if owner == "albums-test" else {}
             readiness = urllib.request.Request(verify_url, headers=headers)
             for attempt in range(30):
                 try:
@@ -303,6 +312,7 @@ def main():
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--verify-url", default="")
+    parser.add_argument("--verify-host", help="Albums readiness identity; only the known test/formal API hosts are accepted")
     parser.add_argument("--run", nargs=argparse.REMAINDER, help="run an owned development producer under both locks, verify it, then register and clean")
     args = parser.parse_args()
     os.umask(0o077)
@@ -311,7 +321,7 @@ def main():
     if args.run:
         if not args.apply or not args.register:
             raise OperationError("owned development execution requires --apply --register")
-        result = development_deploy(runtime, args.owner, args.path, args.image, args.source, args.source_run, args.run, args.verify_url)
+        result = development_deploy(runtime, args.owner, args.path, args.image, args.source, args.source_run, args.run, args.verify_url, verify_host=args.verify_host)
         print(json.dumps(result, sort_keys=True))
         return
     with runtime.lock(wait_seconds=600):

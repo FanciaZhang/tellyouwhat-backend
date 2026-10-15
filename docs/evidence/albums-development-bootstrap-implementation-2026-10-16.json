@@ -1,0 +1,34 @@
+{
+  "checked_at_utc": "2026-10-15T21:17:16.444284+00:00",
+  "base_source": "a9a9176e05d7463348605279131b1c9148da0c8c",
+  "working_tree_sha256": {
+    "deploy/albums/development.py": "99955ecec3f61b7aefaef2188acb42ed1ca4ff076ca8578406cde0d2cc0ba352",
+    "deploy/albums/development_test.py": "37fa24884e0d6eb2f4527fbd66f520ffab8ed266f3d5753dd578d1a22b4545bf",
+    "deploy/tencent/ops_artifacts.py": "f50f1b6a1c8e3857b94921b3260ee7899a4cff196617175660e2f513b5200b0d",
+    "deploy/tencent/artifacts_test.py": "bddce0bf9cf5fb7fe98d8865df3842542169d50743f007d05290d9dd30b340f7",
+    "deploy/tencent/ops_offsite.py": "4e6ce20e91253bd133f6caf69b8064d2b59a2f8f75815a608f5a84e6d87822b1",
+    "deploy/tencent/albums_development_artifacts.py": "73a1103f587475120664b66b8ec599121c48e8712255b4531fa0d244c2499323",
+    "deploy/tencent/albums_development_artifacts_test.py": "b633a90852ecfb77a33a25d4192233f3c09769d2e850db9a9897bba0269e16f5"
+  },
+  "python_operations_tests": {
+    "total": 141,
+    "failed": 0,
+    "skipped": 1,
+    "skip_reason": "Mac has no standalone Caddy binary; existing real host proxy proof is separate"
+  },
+  "python_bootstrap_tests": {
+    "total": 5,
+    "failed": 0,
+    "skipped": 0
+  },
+  "go_race_packages_passed": [
+    "internal/albums",
+    "cmd/albumgateway",
+    "cmd/albumworker"
+  ],
+  "go_build_only_package": "cmd/migrate",
+  "go_live_external_conditions_not_claimed": true,
+  "new_deployment_verified": false,
+  "database_sql_restore_verified": false,
+  "real_apple_login_verified": false
+}

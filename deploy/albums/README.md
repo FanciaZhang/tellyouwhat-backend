@@ -323,6 +323,12 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 `runtime.env.example` 已改为开发身份，正式部署须明确配置正式域名/身份及其独立资源。已有测试服务使用正式身份及正式商品，其数据库和 Apple 刷新凭据不能直接套用新版开发配置。应保留旧栈恢复能力，为 `.dev` 建新库、登录密钥和独立凭据。历史 SQL、正式账号哈希以及 StoreKit account token 命名空间未更改。
 
+首次创建 `.dev` 栈使用 `deploy/albums/development.py --source <完整提交>`。操作员将该提交的原始 Git tar、Compose、私有运行配置和 Compose 插值配置放入后端 `.albums-development/releases/<提交>/`，四份文件的 SHA-256 保存为 `selection.json`；目录 0700、文件 0600。入口校验固定开发身份、18092 端口、172.29.92.0/24 网络及独立数据库/Redis 密码，经现有 owner wrapper 取得双锁后构建三个镜像、创建全新数据卷并迁移。已有开发容器或卷会拒绝重复初始化，失败只停止新 API/worker，保留数据库与旧栈；含数据升级需另行验证迁移及回滚。
+
+数据库/Redis 的独立原始密码保留于 `/opt/tellyouwhat/albums-development/database.env`；Apple 登录、凭据加密和限流三份密钥放在该目录下 `secrets/`。密钥文件为 root:65532、0440，目录由部署操作员所有、组 65532、0750，应用只挂载这个目录。不得复制旧栈的 Apple、StoreKit、会话加密或数据库凭据。初始无云容量授权，媒体处理、订阅、分享和删除开关关闭；真实登录后再按明确账户配置开发容量。
+
+`albums-test` 所有者负责回收此源码目录下超过 48 小时且未被当前/上一版登记或容器引用的旧产物。新栈登记后，共享加密配置备份纳入当前源码/配置、部署记录、独立数据库配置和三份密钥，逐文件摘要随认证清单验证；这是配置恢复范围，不能代替相册 SQL、删除账本、异地备份及实际恢复演练。尚未完成这些验收前，不宣称完整开发环境就绪。
+
 旧 `configure_sandbox.py` / `appstore_probe.go` 针对正式相册 App 的历史 Sandbox 验证，不是 `.dev` 商品配置工具。配置脚本现在要求显式正式 `ALBUM_APPLE_BUNDLE_ID`，并拒绝测试域名，防止把固定正式 ASC ID 写入开发配置。开发身份不继承正式 ASC 商品；本次未注册新商品、未开启销售。production 订阅服务现已分别接收正式身份的 Production/Sandbox 交易与通知，仍需真实 TestFlight 购买、后台运行和跨环境注销验收，完整环境统一尚未完成。
 
 
