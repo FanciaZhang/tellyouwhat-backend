@@ -45,6 +45,10 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 		}
 		return result, err
 	}
+	if r.developmentCloud != nil {
+		r.developmentCloud.apply(&result, now)
+		return cloudAccountBalance(result)
+	}
 	query := `SELECT ` + cloudSubscriptionColumns + ` FROM album_cloud_subscriptions WHERE owner_id=?`
 	args := []any{owner}
 	if r.billingEnvironment != "" && r.productionSandboxQuota == 0 {
@@ -81,6 +85,10 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 			result.QuotaBytes = rawLimit
 		}
 	}
+	return cloudAccountBalance(result)
+}
+
+func cloudAccountBalance(result AlbumCloudAccount) (AlbumCloudAccount, error) {
 	if result.UsedBytes < 0 || result.ReservedBytes < 0 || result.Revision < 0 {
 		return result, ErrSubscriptionVerification
 	}

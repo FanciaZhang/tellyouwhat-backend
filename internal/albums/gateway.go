@@ -31,6 +31,7 @@ type Gateway struct {
 
 func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundTripper) (_ *Gateway, err error) {
 	if !validAlbumAudience(config.AppleCode.BundleID) || config.AppleCode.BundleID != albumAudienceForDeployment(config.Environment) ||
+		(config.Worker.DevelopmentCloud != nil && (config.Environment != "test" || config.Subscriptions != nil)) ||
 		(config.Subscriptions != nil && config.Subscriptions.BundleID != config.AppleCode.BundleID) ||
 		(config.RetentionAPNS != nil && config.RetentionAPNS.BundleID != config.AppleCode.BundleID) {
 		return nil, errors.New("album runtime identity does not match deployment")
@@ -102,7 +103,7 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err != nil {
 		return nil, errors.New("album notification rate limit configuration")
 	}
-	repository := NewMySQLUploads(db).WithSubscriptionEnvironment(albumStoreEnvironment(config.Environment))
+	repository := NewMySQLUploads(db).WithSubscriptionEnvironment(albumStoreEnvironment(config.Environment)).WithDevelopmentCloud(config.Worker.DevelopmentCloud)
 	subscriptions, err := newConfiguredAlbumSubscriptions(repository, config.Subscriptions, transport)
 	if err != nil {
 		return nil, errors.New("album subscription configuration")

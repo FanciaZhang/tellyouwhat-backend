@@ -122,6 +122,10 @@ func (r *MySQLUploads) shareRetentionInTransaction(ctx context.Context, tx *sql.
 	if err != nil {
 		return time.Time{}, err
 	}
+	if r.developmentCloud != nil && a.QuotaKind == "development" {
+		// Expiration/revocation stops writes; authenticated owners can still export.
+		return now.Add(5 * time.Minute), nil
+	}
 	if r.productionSandboxQuota > 0 && a.RetentionDeadline == nil && a.ExpiresAt != nil && (a.State == "active" || a.State == "expired") {
 		// Sandbox expiry must not prevent retrieving already uploaded originals.
 		return now.Add(5 * time.Minute), nil

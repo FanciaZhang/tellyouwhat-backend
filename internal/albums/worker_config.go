@@ -11,6 +11,7 @@ import (
 // WorkerConfig is deliberately separate from the managed-AI worker settings.
 // No AI product, provider key, or device identity is required for album storage.
 type WorkerConfig struct {
+	DevelopmentCloud    *DevelopmentCloudConfig
 	DatabaseDSN         string
 	COS                 COSConfig
 	Policy              UploadPolicy
@@ -109,6 +110,11 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 	// Validate overflow and bounds using the same policy as the upload API.
 	if c.Policy.MaxOriginalBytes > math.MaxInt64-c.Policy.MaxDerivedBytes {
 		return WorkerConfig{}, errors.New("album byte limits overflow")
+	}
+	var err error
+	c.DevelopmentCloud, err = loadDevelopmentCloudConfig(getenv)
+	if err != nil {
+		return WorkerConfig{}, err
 	}
 	return c, nil
 }

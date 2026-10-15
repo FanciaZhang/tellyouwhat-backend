@@ -13,6 +13,7 @@ type MySQLUploads struct {
 	db                     *sql.DB
 	billingEnvironment     string
 	productionSandboxQuota int64
+	developmentCloud       *DevelopmentCloudConfig
 	billingNow             func() time.Time
 }
 

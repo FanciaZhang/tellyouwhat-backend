@@ -19,7 +19,7 @@ func retentionDue(a AlbumCloudAccount, deadline time.Time) bool {
 }
 
 func (s *AlbumSubscriptionService) verifyExpiredRetention(ctx context.Context, r *MySQLUploads, owner string) (expiredRetentionProof, error) {
-	if s == nil || s.resolver == nil || r == nil || (r.productionSandboxQuota > 0 && r.billingEnvironment == "Sandbox") || !validOwner(owner) || r.billingEnvironment != s.resolver.environment {
+	if s == nil || s.resolver == nil || r == nil || r.developmentCloud != nil || (r.productionSandboxQuota > 0 && r.billingEnvironment == "Sandbox") || !validOwner(owner) || r.billingEnvironment != s.resolver.environment {
 		return expiredRetentionProof{}, ErrSubscriptionUnavailable
 	}
 	start := s.now().UTC()
@@ -101,7 +101,7 @@ func (s *AlbumSubscriptionService) verifyExpiredRetention(ctx context.Context, r
 }
 
 func (r *MySQLUploads) checkExpiredRetention(ctx context.Context, tx *sql.Tx, proof expiredRetentionProof, now time.Time) error {
-	if (r.productionSandboxQuota > 0 && proof.environment == "Sandbox") || !validOwner(proof.owner) || proof.environment != r.billingEnvironment || (proof.environment != "Sandbox" && proof.environment != "Production") || proof.revision <= 0 || now.IsZero() || proof.deadline.After(now) || !now.Before(proof.until) {
+	if r.developmentCloud != nil || (r.productionSandboxQuota > 0 && proof.environment == "Sandbox") || !validOwner(proof.owner) || proof.environment != r.billingEnvironment || (proof.environment != "Sandbox" && proof.environment != "Production") || proof.revision <= 0 || now.IsZero() || proof.deadline.After(now) || !now.Before(proof.until) {
 		return ErrLease
 	}
 	a, err := r.cloudAccountInTransaction(ctx, tx, proof.owner, now)
@@ -117,7 +117,7 @@ func (r *MySQLUploads) checkExpiredRetention(ctx context.Context, tx *sql.Tx, pr
 // Subscription updates and first-delete authorization share the owner lock.
 // Removing unstarted plans also invalidates leases and stale provider inventories.
 func (r *MySQLUploads) cancelRenewedRetentionPurges(ctx context.Context, tx *sql.Tx, a AlbumCloudAccount) error {
-	if r.billingEnvironment == "" || (r.productionSandboxQuota > 0 && r.billingEnvironment == "Sandbox") {
+	if r.developmentCloud != nil || r.billingEnvironment == "" || (r.productionSandboxQuota > 0 && r.billingEnvironment == "Sandbox") {
 		return nil
 	}
 	if a.RetentionDeadline != nil && retentionDue(a, *a.RetentionDeadline) {

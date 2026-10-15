@@ -46,7 +46,7 @@ func gatewayTestDatabase(t *testing.T) (*sql.DB, string) {
 		}
 	}
 	name := "albums_gateway" + run + strings.ReplaceAll(uuid.NewString(), "-", "") + "_test"
-	user := "algw_" + run + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+	user := "algw_" + run + strings.ReplaceAll(uuid.NewString(), "-", "")[:12] + "_test"
 	password := strings.ReplaceAll(uuid.NewString(), "-", "")
 	if !albumTestDatabasePattern.MatchString(name) {
 		t.Fatal("invalid generated test schema")
