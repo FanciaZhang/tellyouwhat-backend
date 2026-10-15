@@ -11,6 +11,7 @@ The 2026-10-13 disk alert came from repeated deployments retaining their outputs
 | Birthday development | Owned producer invocation below | Registered current and previous images |
 | Albums test | Owned producer invocation below | Registered current and previous images; schema compatibility must be checked separately |
 | Platform test | Owned producer invocation with `--owner platform-test` | Registered current and previous `tellyouwhat-platform-test-*` images and matching configuration |
+| Apple development delivery | Owned producer invocation with `--owner apple-development` | Current/previous `tellyouwhat-apple-development:*` and matching configuration; IPA/grant expiry is collected separately by this owner's registered image |
 | Host maintenance | `operations.py maintenance` | Removes scoped retired artifacts older than 48 hours; build cache target 2 GB |
 | Host journal | systemd-journald | 512 MB, 14 days, with 1 GB free-space reservation |
 
@@ -35,6 +36,8 @@ python3 /opt/tellyouwhat/backend/deploy/tencent/ops_artifacts.py \
 `deploy-verified.sh` is the producer's reviewed command, not an existing bundled script. It must drain schema-incompatible processes, migrate only its own test database, and recover its prior service on failure. Use Birthday's image and `http://127.0.0.1:18788/readyz` for that owner. The wrapper does not make an old application compatible with a newer database schema.
 
 The independent `compose.platform-test.yaml` stack uses owner `platform-test` and readiness `http://127.0.0.1:18790/readyz`. Install the reviewed operations version that recognizes this owner before running its producer. Use the wrapper as `ubuntu`; do not reuse the production release entry point to start a test stack. Registration protects its current/previous images and configuration, while volumes and credentials remain outside disposable cleanup. The Compose file and owner support alone do not prove backup or deployment acceptance.
+
+Apple development delivery uses owner `apple-development`, readiness `http://127.0.0.1:18791/readyz`, and private data at `.apple-delivery/data`. Its recovery state must bind the cleanup image to the current owner registration. Scheduled operations report expired lease/package cleanup failures; dry-run remains read-only. Installation links are credentials and must not appear in proxy logs. See [Apple development delivery](apple-development-delivery.md) for the supported transport and remaining deployment acceptance.
 
 ## Backups and deployment
 

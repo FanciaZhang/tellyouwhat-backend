@@ -14,13 +14,14 @@ from urllib.parse import urlsplit
 from ops_common import OperationError, Runtime, atomic_json
 
 
-OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "platform-test")
+OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "platform-test", "apple-development")
 GRACE_SECONDS = 48 * 3600
 IMAGE_PREFIXES = {
     "production": ("ghcr.io/fanciazhang/tellyouwhat-ai-", "ghcr.io/fanciazhang/health-ai-", "health-ai-"),
     "birthday-development": ("birthday-development:",),
     "albums-test": ("tellyouwhat-albums-test-",),
     "platform-test": ("tellyouwhat-platform-test-",),
+    "apple-development": ("tellyouwhat-apple-development:",),
 }
 
 
@@ -99,7 +100,7 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(lease.get("images", []))
 
     # Legacy development deployments predate owner records: retain two builds per image family.
-    for owner in ("birthday-development", "albums-test", "platform-test"):
+    for owner in ("birthday-development", "albums-test", "platform-test", "apple-development"):
         if (root / ".operations/artifact-owners" / (owner + ".json")).exists():
             continue
         families = {}
@@ -207,10 +208,18 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
             runtime.execute("artifacts-build-cache", ["docker", "builder", "prune", "-a", "-f", "--keep-storage", "2GB"], timeout=900)
         except OperationError as error:
             errors.append(str(error))
+    apple_delivery = None
+    if owner in (None, "apple-development"):
+        from apple_delivery_artifacts import cleanup_packages
+        try:
+            apple_delivery = cleanup_packages(runtime)
+        except (OperationError, OSError, ValueError) as error:
+            errors.append("Apple delivery cleanup failed: " + str(error))
     after = shutil.disk_usage(runtime.root).free
     result = runtime.record("artifacts" + ("-" + owner if owner else ""), passed=not errors, errors=errors,
                           removed_files=removed_files, removed_images=removed_images,
-                          free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before)
+                          free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before,
+                          apple_delivery=apple_delivery)
     if errors:
         raise OperationError("artifact cleanup incomplete: " + "; ".join(errors))
     return result
@@ -246,7 +255,7 @@ def register(runtime, owner, paths=(), images=(), source="", source_run=""):
 def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url):
     require_operator(runtime.root)
     url = urlsplit(verify_url)
-    if (owner not in ("birthday-development", "albums-test", "platform-test") or not source or not images or not command
+    if (owner not in ("birthday-development", "albums-test", "platform-test", "apple-development") or not source or not images or not command
             or url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.query
             or url.fragment or url.path not in ("/readyz", "/healthz")):
         raise OperationError("development deployment requires a scoped owner, revision, images and local readiness check")

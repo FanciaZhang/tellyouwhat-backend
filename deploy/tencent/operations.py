@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from ops_backup import create_backup, prune_backups, restore_drill
-from ops_artifacts import cleanup
+from ops_artifacts import OWNERS, cleanup
 from ops_common import OperationError, Runtime
 from ops_health import health, report_health
 
@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--backup-dir", default=os.getenv("TELLYOUWHAT_BACKUP_DIR"))
     parser.add_argument("--environment-file", default=os.getenv("TELLYOUWHAT_ENV_FILE"))
     parser.add_argument("--backup", help="backup filename used only by an isolated restore drill")
-    parser.add_argument("--owner", choices=["production", "journal-development", "birthday-development", "albums-test"])
+    parser.add_argument("--owner", choices=OWNERS)
     args = parser.parse_args()
     os.umask(0o077)
     try:
