@@ -83,6 +83,8 @@ def create_recovery_bundle(runtime, filename):
         albums_development = backup_albums_development(runtime, bundle / 'albums-development')
         from platform_test_artifacts import backup_configuration as backup_platform_test
         platform_test = backup_platform_test(runtime, bundle / 'platform-test')
+        from journal_development_artifacts import backup_configuration as backup_journal_development
+        journal_development = backup_journal_development(runtime, bundle / 'journal-development')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
@@ -92,7 +94,7 @@ def create_recovery_bundle(runtime, filename):
     return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
             "recovery_images": images, "recovery_test_routing": test_routing,
             "recovery_apple_delivery": apple_delivery, "recovery_albums_development": albums_development,
-            "recovery_platform_test": platform_test}
+            "recovery_platform_test": platform_test, "recovery_journal_development": journal_development}
 
 
 def publish(runtime, source, manifest):
@@ -155,6 +157,9 @@ def verify_recovery_bundle(runtime, source, manifest):
             if manifest.get('recovery_platform_test'):
                 from platform_test_artifacts import verify_recovery as verify_platform_test
                 verify_platform_test(archive, manifest['recovery_platform_test'])
+            if manifest.get('recovery_journal_development'):
+                from journal_development_artifacts import verify_recovery as verify_journal_development
+                verify_journal_development(archive, manifest['recovery_journal_development'])
             test_routing = manifest.get('recovery_test_routing', {})
             if test_routing:
                 import hashlib
