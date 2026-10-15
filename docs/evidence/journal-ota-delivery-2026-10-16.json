@@ -1,0 +1,182 @@
+{
+  "checked_at_utc": "2026-10-15T21:01:40.163998+00:00",
+  "source_commit": "1fa9ee037f3ced43f60ca69c5ba37bb15235e4aa",
+  "bundle_id": "cn.tellyouwhat.journalapp.dev",
+  "version": "1.0",
+  "build": "19",
+  "configuration": "Debug",
+  "distribution": "Ad Hoc",
+  "native_verification": {
+    "source_commit": "1fa9ee037f3ced43f60ca69c5ba37bb15235e4aa",
+    "ipa_sha256": "cc8b66aa8b49bfc42d2c64c502aad746828d0c66dff25018b75121577ea8c795",
+    "ipa_bytes": 70984685,
+    "version": "1.0",
+    "build": "19",
+    "configuration": "Debug",
+    "distribution": "Ad Hoc",
+    "signature_verified": true,
+    "facts": [
+      {
+        "root_channel": "development",
+        "xcode_build": "27A266a",
+        "associated_domains": [
+          "applinks:journal.tellyouwhat.cn"
+        ],
+        "api_origin_present": true,
+        "private_connection_embedded": false
+      },
+      {
+        "bundle_id": "cn.tellyouwhat.journalapp.dev",
+        "signature_verified": true,
+        "distribution_certificate_verified": true,
+        "registered_device_count": 3,
+        "localized_display_names": {
+          "zh-Hans": "告你手记·开发",
+          "en": "TellYou Journal Dev"
+        }
+      },
+      {
+        "bundle_id": "cn.tellyouwhat.journalapp.dev.share",
+        "signature_verified": true,
+        "distribution_certificate_verified": true,
+        "registered_device_count": 3,
+        "localized_display_names": {
+          "zh-Hans": "告你手记·开发",
+          "en": "TellYou Journal Dev"
+        }
+      }
+    ],
+    "private_device_identifiers_omitted": true,
+    "device_installation_verified": false,
+    "associated_domain_journey_verified": false,
+    "real_cloud_sync_verified": false
+  },
+  "https_download": {
+    "checked_at_utc": "2026-10-15T21:00:22.363373+00:00",
+    "active_link_download_verified": true,
+    "ipa_sha256": "cc8b66aa8b49bfc42d2c64c502aad746828d0c66dff25018b75121577ea8c795",
+    "ipa_bytes": 70984685,
+    "page_manifest_and_ipa_status": 200,
+    "head_verified": true,
+    "range_verified": true,
+    "equivalent_host_variants": {
+      "INSTALL.TELLYOUWHAT.CN": 200,
+      "install.tellyouwhat.cn:443": 200
+    },
+    "privacy_headers_verified": true,
+    "tls_trust_verified": true,
+    "expires_at": "2026-10-16T20:56:25.385780914Z",
+    "source_commit": "1fa9ee037f3ced43f60ca69c5ba37bb15235e4aa",
+    "device_installation_verified": false
+  },
+  "ota_service_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "publication": {
+    "published": true,
+    "ttl": "24h",
+    "expires_at": "2026-10-16T20:56:25.385780914Z",
+    "ipa_bytes": 70984685,
+    "ipa_sha256": "cc8b66aa8b49bfc42d2c64c502aad746828d0c66dff25018b75121577ea8c795",
+    "source_commit": "1fa9ee037f3ced43f60ca69c5ba37bb15235e4aa",
+    "cleanup": {
+      "apple_delivery": {
+        "configured": true,
+        "grants_removed": 0,
+        "packages_removed": 0
+      },
+      "completed_at": 1792097788,
+      "errors": [],
+      "free_bytes_after": 25538084864,
+      "free_bytes_before": 25538084864,
+      "operation": "artifacts-apple-development",
+      "passed": true,
+      "reclaimed_bytes": 0,
+      "removed_files": [],
+      "removed_images": []
+    },
+    "receipt_saved_privately": true,
+    "device_installation_verified": false
+  },
+  "installation_link_saved_privately": true,
+  "raw_installation_url_omitted": true,
+  "device_installation_verified": false,
+  "real_api_and_cloud_journey_verified": false,
+  "formal_release_gate_passed": false,
+  "remote_ci": false,
+  "profile_grants": [
+    {
+      "bundle_id": "cn.tellyouwhat.journalapp.dev",
+      "all_signed_entitlements_authorized": true,
+      "entitlement_count": 10
+    },
+    {
+      "bundle_id": "cn.tellyouwhat.journalapp.dev.share",
+      "all_signed_entitlements_authorized": true,
+      "entitlement_count": 4
+    }
+  ],
+  "connection_https": {
+    "checked_at_utc": "2026-10-15T20:57:49.581370+00:00",
+    "https_decrypted_profile_matches_local": true,
+    "requests": [
+      {
+        "method": "GET",
+        "host": null,
+        "status": 200
+      },
+      {
+        "method": "HEAD",
+        "host": null,
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "host": "INSTALL.TELLYOUWHAT.CN",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "host": "install.tellyouwhat.cn:443",
+        "status": 200
+      }
+    ],
+    "tampered_and_query_rejected": true,
+    "private_headers_verified": true,
+    "expires_at": "2026-10-15T20:58:25.842925094Z",
+    "real_clock_expiry_verified": true,
+    "native_file_import_verified": false,
+    "raw_url_and_token_omitted": true,
+    "expired_status": 410,
+    "expiry_checked_at_utc": "2026-10-15T20:59:46.426723+00:00"
+  },
+  "connection_logs": {
+    "caddy_journal_checked": true,
+    "examined_lines": 40,
+    "raw_profile_token_logged": false,
+    "encrypted_link_logged": false,
+    "window_start_utc": "2026-10-15T20:52:00Z"
+  },
+  "local_gate_records": {
+    "source_commit": "1fa9ee037f3ced43f60ca69c5ba37bb15235e4aa",
+    "app_sources_unchanged_since_candidate": true,
+    "focused_local_gates_recorded": {
+      "docs/evidence/unified-environments-2026-10-15.json": "2ec9b513078bf936162a475e92b095e9ca9dd2c7cc3ff0f758770018b060fb25",
+      "docs/evidence/development-connection-import-2026-10-15.json": "0378dda1cd1362f740e90a5b551af9697d1bd6cc05791da5ca85c22155e2a8ec",
+      "docs/evidence/localized-development-name-2026-10-16.json": "63b600bc576ff984a8a0241ce0b4f33e26e8b2ce2cd37384dc378b66c6766c45",
+      "docs/evidence/adhoc-export-2026-10-16.json": "29db513041dfed3ceb16373a94bb449e2fa7dd47c3e9f281f859f41f3ddeb5f7"
+    },
+    "native_signature_reverified": true,
+    "all_signed_entitlements_authorized": true,
+    "full_release_gate_passed": false,
+    "remote_ci": false,
+    "device_verified": false
+  },
+  "pushed": false,
+  "private_connection_delivery": {
+    "actual_15m_lease_verified": true,
+    "expires_at": "2026-10-15T21:18:30.593806784Z",
+    "matches_online_verified_private_profile": true,
+    "absent_from_installation_page": true,
+    "native_file_import_verified": false,
+    "raw_token_and_url_omitted": true
+  }
+}
