@@ -144,7 +144,7 @@ def activate(runtime, source):
             raise OperationError('platform test gateway did not start cleanly')
         rows = runtime.execute('platform-test-schema', ['docker', 'exec', PROJECT + '-mysql-1', 'sh', '-c',
             'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --database=platform_test --batch --skip-column-names '
-            '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations; SELECT COUNT(*) FROM apps WHERE id=\'birthday\'; SELECT COUNT(*) FROM app_attest_keys;"']).decode().splitlines()
+            '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations; SELECT COUNT(*) FROM apps WHERE app_id=\'birthday\'; SELECT COUNT(*) FROM app_attest_keys;"']).decode().splitlines()
         if rows != [str(len(migrations)) + '\t' + migrations[-1], '1', '0']:
             raise OperationError('fresh platform test schema or identity rows are unexpected')
         assert_route(stable['current'])
