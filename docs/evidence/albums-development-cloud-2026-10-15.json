@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-15",
+  "source_commit": "4b90b1e5c171d7e8b7ff22010768625968653528",
+  "configuration": "Explicit test-only operator grant; <=3 account UUIDs, <=1000000000 bytes per account, required expiry; purchases disabled.",
+  "authorization_source": "Private server configuration; no public quota setter and no synthetic StoreKit purchase.",
+  "go_packages_passed": 56,
+  "go_packages_without_tests": 13,
+  "final_related_packages_passed": [
+    "internal/albums",
+    "cmd/albumworker"
+  ],
+  "mysql_race_scenarios": [
+    "TestMySQLDevelopmentCloudGatewayWorkerQuotaAndExpiredExport",
+    "TestMySQLDevelopmentCloudReservationSerializesQuotaAndRejectsUnlistedOwner",
+    "TestDevelopmentCloudConfigRequiresExplicitBoundedTestGrant",
+    "TestDevelopmentCloudGrantIsNotAPurchaseAndNeverAuthorizesExpiryDeletion",
+    "TestDevelopmentCloudCannotEnterAProductionGateway",
+    "TestGatewayAndWorkerLoadTheSameDevelopmentCloudGrant",
+    "TestMySQLAlbumPushEncryptionReplayExpiryAndLogout"
+  ],
+  "new_mysql_scenarios": 2,
+  "mysql_regression_scenarios": 1,
+  "mysql_and_accounting": "Real isolated MySQL schemas/accounts; COS bytes/signing and Apple identity are test fixtures. No real backup or Apple login claim.",
+  "cleanup": {
+    "schemas_left": 0,
+    "users_left": 0,
+    "tunnels_and_redis_stopped": true
+  },
+  "initial_test_compile_failure": "New integration test referenced a nonexistent candidate-list helper; replaced with the actual deletion-capability guard and reverified.",
+  "runtime_deployed": false,
+  "cloud_policies_provisioned": false,
+  "client_acceptance": "Debug passed; Release rejection test still running at evidence creation."
+}
