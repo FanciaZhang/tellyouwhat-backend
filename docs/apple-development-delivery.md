@@ -110,3 +110,5 @@ DNS 通过既有 Netlify 账号配置独立安装域名，指向当前主机。�
 保留的 `0e9ce2a` 是服务级旧版，其原代理模板缺少修复后的日志绑定；不得恢复该旧代理。当前代理入口会拒绝缺少无条件绑定的模板。完整跨版本回滚仍待验收。
 
 首个实际 IPA 已发布：生日 1.0 (2)、源码 `d29ed18`。该源码的应用/环境检查 54 项通过、1 项真实服务跳过，领域包 27 项通过；主包和 Widget 原生签名再次核验通过。公网 Manifest/完整 IPA 摘要、HEAD/Range、三种 Host 和一分钟真实到期 410 已通过，24 小时受限链接已私下交付用户。发布包装器回收旧授权 1 项，属于手动触发，不能代替定时清理。手机安装、真实测试 API、完整回滚及其他 App 的交付仍待验收，见 [生日 OTA 证据](evidence/birthday-ota-delivery-2026-10-16.json)。详见 [HTTPS 与实际故障证据](evidence/apple-development-https-2026-10-16.json)；早期回环部署记录保留在 [部署证据](evidence/apple-development-delivery-deployment-2026-10-16.json)。
+
+健康 1.0.2 (3) 已通过相同受限入口发布：源码 `75c96ac4`，Xcode 27.1 的本机完整 unit 流程 1,623 项零失败/跳过、双平台 Release 编译通过，随后同工具链导出并核对七个原生签名目标。约 149 MB 的实际 HTTPS 下载摘要、HEAD/Range 及等价 Host 已通过，用户安装链接私有保存。手机及真实云端旅程仍未验收；见 [健康 OTA 证据](evidence/health-ota-delivery-2026-10-16.json)。
