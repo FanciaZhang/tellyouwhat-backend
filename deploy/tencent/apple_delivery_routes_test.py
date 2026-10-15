@@ -117,6 +117,15 @@ class AppleDeliveryRouteTests(unittest.TestCase):
         self.assertEqual(paths, ['/nullable', '/private/credential'])
         self.assertNotIn('synthetic', json.dumps(paths))
 
+    def test_only_generated_file_server_hide_path_uses_installed_input(self):
+        validation = '/private/validation.caddy'
+        installed = '/etc/caddy/Caddyfile'
+        value = {'routes': [{'handler': 'file_server', 'hide': [validation, '/private/keep-hidden']},
+                            {'handler': 'reverse_proxy', 'hide': [validation], 'upstreams': [validation]}]}
+        routes.installed_file_hides(value, validation, installed)
+        self.assertEqual(value['routes'][0]['hide'], [installed, '/private/keep-hidden'])
+        self.assertEqual(value['routes'][1], {'handler': 'reverse_proxy', 'hide': [validation], 'upstreams': [validation]})
+
     def test_unsafe_logging_is_rejected_before_active_files_change(self):
         variants = []
         value = configuration();value['logging']['logs']['default']['level'] = 'DEBUG';variants.append(value)

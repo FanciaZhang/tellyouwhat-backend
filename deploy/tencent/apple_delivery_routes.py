@@ -70,6 +70,18 @@ def difference_paths(expected, actual, path=''):
     return [] if expected == actual else [path]
 
 
+def installed_file_hides(configuration, validation, installed):
+    if isinstance(configuration, dict):
+        # Caddy automatically hides its input Caddyfile; reload uses the installed input path.
+        if configuration.get('handler') == 'file_server' and isinstance(configuration.get('hide'), list):
+            configuration['hide'] = [installed if value == validation else value for value in configuration['hide']]
+        for value in configuration.values():
+            installed_file_hides(value, validation, installed)
+    elif isinstance(configuration, list):
+        for value in configuration:
+            installed_file_hides(value, validation, installed)
+
+
 def configure(runtime, source):
     require_operator(runtime.root)
     files = artifacts.recovery_files(runtime)
@@ -114,6 +126,7 @@ def configure(runtime, source):
         atomic_text(temporary / 'validation.caddy', staged)
         adapted = runtime.execute('apple-route-adapt', ['sudo', '-n', 'caddy', 'adapt', '--config', str(temporary / 'validation.caddy'), '--adapter', 'caddyfile'])
         expected = json.loads(adapted)
+        installed_file_hides(expected, str(temporary / 'validation.caddy'), str(root))
         assert_logging(expected)
         runtime.execute('apple-route-validate', ['sudo', '-n', 'caddy', 'validate', '--config', str(temporary / 'validation.caddy'), '--adapter', 'caddyfile'])
         if active_configuration() != active_before or read_caddy(root) != before or any((read_caddy(path) if path.exists() else None) != previous[name] for name, path in artifacts.CADDY_FILES.items()):
