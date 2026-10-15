@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-15",
+  "source_commit": "7771c172e6f016118cf0fe3b58a4cad92b5826e1",
+  "change": "Optional quotaKind in account responses; subscription policy wins for every account with Production history; sandbox-only accounts identify capped capacity without a deletion deadline.",
+  "openapi_generated": true,
+  "go_albums_package": "passed",
+  "go_generated_api_package": "compiled; no test files",
+  "targeted_policy_race_tests": "passed",
+  "mysql_integration_executed": false,
+  "apple_purchase_executed": false,
+  "runtime_deployed": false,
+  "client_requirement": "Decode explicit sandbox policy while retaining strict legacy/paid validation; release together before the production dual-environment path is enabled."
+}
