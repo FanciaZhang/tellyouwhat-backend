@@ -108,8 +108,13 @@ def ready(runtime, app, voice_protocol):
 
 def install(runtime, source, destination):
     pending = destination.parent / ('.' + destination.name + '.pending')
-    runtime.execute('test-route-stage', ['sudo', '-n', 'install', '-m', '644', str(source), str(pending)])
-    runtime.execute('test-route-commit', ['sudo', '-n', 'mv', '--', str(pending), str(destination)])
+    try:
+        runtime.execute('test-route-stage', ['sudo', '-n', 'install', '-m', '644', str(source), str(pending)])
+        runtime.execute('test-route-commit', ['sudo', '-n', 'mv', '--', str(pending), str(destination)])
+    except Exception:
+        if pending.exists() or pending.is_symlink():
+            runtime.execute('test-route-discard-pending', ['sudo', '-n', 'unlink', str(pending)])
+        raise
 
 
 def backup_configuration(runtime, destination):

@@ -47,6 +47,8 @@ class TestRouteTests(unittest.TestCase):
             Path(command[-2]).replace(command[-1])
         elif 'rm' in command:
             Path(command[-1]).unlink(missing_ok=True)
+        elif 'unlink' in command:
+            Path(command[-1]).unlink()
         return b''
 
     def configure(self):
@@ -87,6 +89,20 @@ class TestRouteTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'stable'): self.configure()
         self.assertEqual(self.main.read_text(), self.before)
         self.assertEqual(self.calls, [])
+
+    def test_atomic_install_failure_discards_only_its_pending_file(self):
+        source = self.root / 'prepared.caddy'
+        source.write_text('synthetic new configuration')
+        destination = self.root / 'managed.caddy'
+        destination.write_text('keep current configuration')
+        execute = self.runtime.execute.side_effect
+        def fail_commit(label, command):
+            if label == 'test-route-commit': raise OperationError('synthetic rename failure')
+            return execute(label, command)
+        self.runtime.execute.side_effect = fail_commit
+        with self.assertRaises(OperationError): routes.install(self.runtime, source, destination)
+        self.assertEqual(destination.read_text(), 'keep current configuration')
+        self.assertFalse((self.root / '.managed.caddy.pending').exists())
 
     def test_production_configuration_cannot_pass_as_test_service(self):
         for app, env in [('journal', ['DATABASE_DSN=production']),

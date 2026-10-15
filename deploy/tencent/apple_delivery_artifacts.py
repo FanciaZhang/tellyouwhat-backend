@@ -14,7 +14,7 @@ CADDY_FILES = {'delivery.caddy': Path('/etc/caddy/apple-delivery.caddy'),
 ROOT_PREFIX = '{\n    import /etc/caddy/apple-delivery-logging.caddy\n}\n\n'
 
 
-def backup_configuration(runtime, destination):
+def recovery_files(runtime):
     from apple_delivery_deploy import FILES, environment, read_record, selection
     state_file = runtime.state / 'apple-delivery.json'
     owner_file = runtime.state / 'artifact-owners/apple-development.json'
@@ -45,10 +45,12 @@ def backup_configuration(runtime, destination):
         for name in (*FILES, 'selection.json', '.env'):
             paths[label + '/' + name] = folder / name
     route_file = runtime.state / 'apple-delivery-routing.json'
+    if route_file.is_symlink():
+        raise OperationError('Apple delivery routing record cannot be a symlink')
     if route_file.exists():
         route = read_record(runtime, route_file)
         root = CADDY_ROOT.read_text()
-        if not root.startswith(ROOT_PREFIX) or root.splitlines().count('import /etc/caddy/apple-delivery.caddy') != 1:
+        if not root.startswith(ROOT_PREFIX) or root.splitlines().count('import ' + str(CADDY_FILES['delivery.caddy'])) != 1:
             raise OperationError('Apple delivery logging import differs from managed configuration')
         paths.update({'Caddyfile': CADDY_ROOT, 'routing.json': route_file, **CADDY_FILES})
         for name, path in CADDY_FILES.items():
@@ -59,11 +61,19 @@ def backup_configuration(runtime, destination):
     elif (any(path.exists() for path in CADDY_FILES.values()) or
           (CADDY_ROOT.exists() and '/etc/caddy/apple-delivery' in CADDY_ROOT.read_text())):
         raise OperationError('Apple delivery proxy has no managed recovery state')
-    destination.mkdir(mode=0o700)
-    hashes = {}
     for name, source in paths.items():
         if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024**2:
             raise OperationError('Apple delivery recovery input is missing, oversized or a symlink')
+    return paths
+
+
+def backup_configuration(runtime, destination):
+    paths = recovery_files(runtime)
+    if not paths:
+        return {}
+    destination.mkdir(mode=0o700)
+    hashes = {}
+    for name, source in paths.items():
         data = source.read_bytes()
         target = destination / name
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
