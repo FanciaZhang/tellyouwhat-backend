@@ -26,7 +26,8 @@ services:
     image: "tellyouwhat-platform-test-gateway:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
     build:
       context: .
-      args: {SERVICE: gateway}
+      dockerfile: deploy/tencent/platform-test.Dockerfile
+      target: gateway
     environment:
       <<: *environment
       PORT: "8080"
@@ -46,7 +47,8 @@ services:
     image: "tellyouwhat-platform-test-worker:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
     build:
       context: .
-      args: {SERVICE: worker}
+      dockerfile: deploy/tencent/platform-test.Dockerfile
+      target: worker
     environment:
       <<: *environment
       PORT: "8081"
@@ -65,7 +67,8 @@ services:
     image: "tellyouwhat-platform-test-migrate:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
     build:
       context: .
-      args: {SERVICE: migrate}
+      dockerfile: deploy/tencent/platform-test.Dockerfile
+      target: migrate
     depends_on:
       mysql: {condition: service_healthy}
     mem_limit: 128m
