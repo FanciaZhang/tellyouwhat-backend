@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -38,8 +39,14 @@ func gatewayTestDatabase(t *testing.T) (*sql.DB, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := "albums_gateway" + strings.ReplaceAll(uuid.NewString(), "-", "") + "_test"
-	user := "algw_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
+	run := os.Getenv("ALBUM_TEST_RUN_ID")
+	if run != "" {
+		if _, err := hex.DecodeString(run); err != nil || len(run) != 8 || run != strings.ToLower(run) {
+			t.Fatal("invalid isolated test run ID")
+		}
+	}
+	name := "albums_gateway" + run + strings.ReplaceAll(uuid.NewString(), "-", "") + "_test"
+	user := "algw_" + run + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 	password := strings.ReplaceAll(uuid.NewString(), "-", "")
 	if !albumTestDatabasePattern.MatchString(name) {
 		t.Fatal("invalid generated test schema")

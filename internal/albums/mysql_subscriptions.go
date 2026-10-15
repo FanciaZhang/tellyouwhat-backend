@@ -47,7 +47,7 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 	}
 	query := `SELECT ` + cloudSubscriptionColumns + ` FROM album_cloud_subscriptions WHERE owner_id=?`
 	args := []any{owner}
-	if r.billingEnvironment != "" {
+	if r.billingEnvironment != "" && r.productionSandboxQuota == 0 {
 		query += ` AND environment=?`
 		args = append(args, r.billingEnvironment)
 	}
@@ -56,52 +56,30 @@ func (r *MySQLUploads) cloudAccountInTransaction(ctx context.Context, tx *sql.Tx
 		return result, err
 	}
 	defer rows.Close()
-	var lastExpiry, activeExpiry, freshExpiry time.Time
+	var combined, production, sandbox cloudSubscriptionSummary
 	for rows.Next() {
 		s, err := scanCloudSubscription(rows)
 		if err != nil {
 			return result, err
 		}
-		if s.Expiry.After(lastExpiry) {
-			lastExpiry = s.Expiry.UTC()
-		}
-		if !s.Active || !now.Before(s.Expiry) {
-			continue
-		}
-		if s.Quota > result.QuotaBytes {
-			result.QuotaBytes, result.ProductID, activeExpiry = s.Quota, s.Product, s.Expiry.UTC()
-			freshExpiry = minTime(s.Expiry.UTC(), s.VerifiedAt.UTC().Add(albumSubscriptionFreshness))
-		} else if s.Quota == result.QuotaBytes {
-			if s.Expiry.After(activeExpiry) {
-				activeExpiry = s.Expiry.UTC()
-			}
-			fresh := minTime(s.Expiry.UTC(), s.VerifiedAt.UTC().Add(albumSubscriptionFreshness))
-			if fresh.After(freshExpiry) {
-				freshExpiry = fresh
-			}
+		combined.add(s, now)
+		if s.Environment == "Production" {
+			production.add(s, now)
+		} else {
+			sandbox.add(s, now)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
-	if !lastExpiry.IsZero() {
-		deadline := albumRetentionDeadline(lastExpiry)
-		result.RetentionDeadline = &deadline
-		result.ExpiresAt = &lastExpiry
-		result.State = "expired"
-		if !now.Before(deadline) {
-			result.State = "retention_due"
+	if r.productionSandboxQuota > 0 {
+		applyProductionCloudEntitlements(&result, production, sandbox, now, r.productionSandboxQuota)
+	} else {
+		combined.apply(&result, now, r.billingEnvironment != "", true, 0)
+		if r.billingEnvironment == "" && !combined.seen {
+			// Non-gateway repository users explicitly provision protocol-test accounts.
+			result.QuotaBytes = rawLimit
 		}
-	}
-	if result.QuotaBytes > 0 {
-		result.State, result.ExpiresAt = "active", &activeExpiry
-		if r.billingEnvironment != "" {
-			result.VerificationExpiresAt = &freshExpiry
-			result.VerificationPending = !now.Before(freshExpiry)
-		}
-	} else if r.billingEnvironment == "" && lastExpiry.IsZero() {
-		// Non-gateway repository users explicitly provision protocol-test accounts.
-		result.QuotaBytes = rawLimit
 	}
 	if result.UsedBytes < 0 || result.ReservedBytes < 0 || result.Revision < 0 {
 		return result, ErrSubscriptionVerification

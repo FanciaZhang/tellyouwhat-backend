@@ -231,6 +231,7 @@ type AlbumSubscriptionRepository interface {
 }
 
 type AlbumSubscriptionService struct {
+	sandbox              *AlbumSubscriptionService
 	rebindingEnabled     bool
 	recordErasureEnabled bool
 	repository           AlbumSubscriptionRepository
@@ -251,6 +252,13 @@ func NewAlbumSubscriptionService(repository AlbumSubscriptionRepository, resolve
 func (s *AlbumSubscriptionService) Sync(ctx context.Context, owner, signed string) (AlbumCloudAccount, error) {
 	if s == nil {
 		return AlbumCloudAccount{}, ErrSubscriptionUnavailable
+	}
+	if s.sandbox != nil {
+		// Choose only from independently verified Apple evidence. A provider or
+		// account-binding failure after verification must never switch realms.
+		if _, err := s.resolver.verifier.VerifyTransaction(signed); err != nil {
+			return s.sandbox.Sync(ctx, owner, signed)
+		}
 	}
 	before, err := s.repository.CloudAccount(ctx, owner, s.now().UTC())
 	if err != nil {

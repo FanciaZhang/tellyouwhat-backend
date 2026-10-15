@@ -10,9 +10,10 @@ import (
 )
 
 type MySQLUploads struct {
-	db                 *sql.DB
-	billingEnvironment string
-	billingNow         func() time.Time
+	db                     *sql.DB
+	billingEnvironment     string
+	productionSandboxQuota int64
+	billingNow             func() time.Time
 }
 
 func NewMySQLUploads(db *sql.DB) *MySQLUploads { return &MySQLUploads{db: db} }

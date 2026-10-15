@@ -35,6 +35,9 @@ func (s *AlbumSubscriptionService) receiveNotification(ctx context.Context, sign
 	}
 	n, err := s.resolver.verifier.VerifyNotification(signed)
 	if err != nil {
+		if s.sandbox != nil {
+			return s.sandbox.receiveNotification(ctx, signed)
+		}
 		return ErrSubscriptionVerification
 	}
 	id, err := uuid.Parse(n.NotificationUUID)

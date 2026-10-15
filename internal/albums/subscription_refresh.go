@@ -44,6 +44,14 @@ func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, re
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	g.subscriptionCancel = cancel
+	g.startSubscriptionWorkers(ctx, service, repository)
+	if service.sandbox != nil {
+		// The dual-environment factory constructs this database-scoped child.
+		g.startSubscriptionWorkers(ctx, service.sandbox, service.sandbox.repository.(*MySQLUploads))
+	}
+}
+
+func (g *Gateway) startSubscriptionWorkers(ctx context.Context, service *AlbumSubscriptionService, repository *MySQLUploads) {
 	if service.rebindingEnabled {
 		g.subscriptionWorkers.Add(1)
 		go func() {

@@ -42,7 +42,7 @@ func reminderAccountEligible(a AlbumCloudAccount, deadline time.Time) bool {
 
 // Called under the account lock, in the same transaction as verified subscription changes.
 func (r *MySQLUploads) syncRetentionReminders(ctx context.Context, tx *sql.Tx, a AlbumCloudAccount, now time.Time) error {
-	if r.billingEnvironment == "" {
+	if r.billingEnvironment == "" || (r.productionSandboxQuota > 0 && r.billingEnvironment == "Sandbox") {
 		return nil
 	}
 	if err := requireMediaAccount(ctx, tx, a.AccountID); err != nil {

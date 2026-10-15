@@ -19,6 +19,7 @@ type AlbumSubscriptionConfig struct {
 	RecordErasureEnabled                   bool
 	BundleID, Environment, IssuerID, KeyID string
 	AppAppleID                             int64
+	SandboxQuotaBytes                      int64
 	SigningKey                             *ecdsa.PrivateKey
 	Roots                                  *x509.CertPool
 }
@@ -61,6 +62,20 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTIONS_ENABLED")
 	}
 	c := &AlbumSubscriptionConfig{BundleID: albumAudienceForDeployment(deployment), RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
+	if deployment == "production" {
+		c.Environment = "Both"
+		c.SandboxQuotaBytes = 1_000_000_000
+		if raw := strings.TrimSpace(getenv("ALBUM_SANDBOX_QUOTA_BYTES")); raw != "" {
+			var err error
+			c.SandboxQuotaBytes, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil || c.SandboxQuotaBytes <= 0 || c.SandboxQuotaBytes > 50_000_000_000 {
+				return nil, errors.New("ALBUM_SANDBOX_QUOTA_BYTES must be between 1 and 50000000000")
+			}
+		}
+		if c.RebindingEnabled || c.RecordErasureEnabled {
+			return nil, errors.New("dual-environment subscription erasure requires cross-environment completion support")
+		}
+	}
 	issuer, err := uuid.Parse(c.IssuerID)
 	if err != nil || issuer.String() != c.IssuerID || !regexp.MustCompile(`^[A-Z0-9]{10}$`).MatchString(c.KeyID) || c.Environment == "" {
 		return nil, errors.New("invalid album App Store identity")
@@ -71,7 +86,7 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 			return nil, errors.New("invalid ALBUM_APP_STORE_APP_APPLE_ID")
 		}
 	}
-	if c.Environment == "Production" && c.AppAppleID <= 0 {
+	if (c.Environment == "Production" || c.Environment == "Both") && c.AppAppleID <= 0 {
 		return nil, errors.New("production album App Store app ID required")
 	}
 	key, err := readAlbumSecretFile(getenv("ALBUM_APP_STORE_KEY_FILE"), 16<<10)
@@ -96,6 +111,27 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscriptionConfig, transport http.RoundTripper) (*AlbumSubscriptionService, error) {
 	if c == nil {
 		return nil, nil
+	}
+	if c.Environment == "Both" {
+		if repository == nil || repository.billingEnvironment != "Production" || c.BundleID != albumAppleAudience || c.AppAppleID <= 0 ||
+			c.SandboxQuotaBytes <= 0 || c.SandboxQuotaBytes > 50_000_000_000 || c.RebindingEnabled || c.RecordErasureEnabled {
+			return nil, ErrSubscriptionUnavailable
+		}
+		productionConfig, sandboxConfig := *c, *c
+		productionConfig.Environment, sandboxConfig.Environment = "Production", "Sandbox"
+		sandboxRepository := *repository
+		sandboxRepository.billingEnvironment = "Sandbox"
+		sandboxRepository.productionSandboxQuota = c.SandboxQuotaBytes
+		service, err := newConfiguredAlbumSubscriptions(repository, &productionConfig, transport)
+		if err != nil {
+			return nil, err
+		}
+		service.sandbox, err = newConfiguredAlbumSubscriptions(&sandboxRepository, &sandboxConfig, transport)
+		if err != nil {
+			return nil, err
+		}
+		repository.productionSandboxQuota = c.SandboxQuotaBytes
+		return service, nil
 	}
 	if !validAlbumAudience(c.BundleID) || repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil || (c.RecordErasureEnabled && !c.RebindingEnabled) ||
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
