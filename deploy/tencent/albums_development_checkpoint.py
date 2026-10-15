@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tarfile
 import tempfile
+import time
 
 from ops_common import OperationError, read_environment
 
@@ -64,14 +66,35 @@ def checkpoint(runtime, folder):
         child = backup.Runtime(runtime.root, app / 'backups', settings)
         child.state = app / 'operations'
         backup.configure(child)
-        snapshot = backup.create(child, binaries)
-        sql = [str(binaries / 'mysql'), '--no-defaults', *backup.connection(child),
-               '--database=albums_test', '--batch', '--skip-column-names']
-        ledger = modules['deletion_ledger'].publish(child, sql, {'MYSQL_PWD': config['MYSQL_PASSWORD']})
-        manifest = backup.verify(child, child.backups / snapshot['filename'])
-        modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
-        names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
-        result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
+        # The existing snapshot library imports its sibling by its original module name.
+        missing = object()
+        previous = sys.modules.get('deletion_ledger', missing)
+        sys.modules['deletion_ledger'] = modules['deletion_ledger']
+        try:
+            snapshot = backup.create(child, binaries)
+            sql = [str(binaries / 'mysql'), '--no-defaults', *backup.connection(child),
+                   '--database=albums_test', '--batch', '--skip-column-names']
+            ledger = modules['deletion_ledger'].publish(child, sql, {'MYSQL_PWD': config['MYSQL_PASSWORD']})
+            manifest = backup.verify(child, child.backups / snapshot['filename'])
+            modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
+            names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
+            result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
+            for old in child.backups.glob('albums-deletions-*.json'):
+                if old.name == ledger['filename']:
+                    continue
+                if not re.fullmatch(r'albums-deletions-[a-f0-9]{32}\.json', old.name):
+                    raise OperationError('unexpected local Albums deletion checkpoint')
+                data = private(old, 32 * 1024**2)
+                modules['deletion_ledger'].verify(child, old, backup.file_digest(old), 0)
+                if json.loads(data)['payload']['exported_at'] <= time.time() - backup.RETENTION:
+                    old.unlink()
+        except ImportError as error:
+            raise OperationError('Albums checkpoint implementation has an unavailable dependency') from error
+        finally:
+            if previous is missing:
+                sys.modules.pop('deletion_ledger', None)
+            else:
+                sys.modules['deletion_ledger'] = previous
     # Keep the independent decryption key in its separate local escrow, outside this bundle.
     result['backup.env'] = ''.join(k + '=' + v + '\n' for k, v in config.items() if k != 'ALBUM_BACKUP_ENCRYPTION_KEY').encode()
     return result

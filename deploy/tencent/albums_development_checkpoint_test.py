@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+import sys
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -71,15 +73,22 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
     def test_verified_checkpoint_keeps_its_decryption_key_outside_the_bundle(self):
         child = SimpleNamespace(backups=self.app / 'backups', config=self.config)
         backup, ledger = Mock(), Mock()
+        backup.RETENTION = 14 * 86400
         backup.Runtime.return_value = child
         snapshot_name = 'albums-' + 'a' * 32 + '.sql.gz.enc'
         ledger_name = 'albums-deletions-' + 'b' * 32 + '.json'
 
         def create(*args):
+            from deletion_ledger import verify
+            self.assertIs(verify, ledger.verify)
             (child.backups / snapshot_name).write_bytes(b'encrypted SQL')
             (child.backups / (snapshot_name + '.json')).write_text('{"authenticated":true}')
             for name in (snapshot_name, snapshot_name + '.json'):
                 (child.backups / name).chmod(0o600)
+            for name, stamp in [('c' * 32, 1), ('d' * 32, int(time.time()))]:
+                path = child.backups / ('albums-deletions-' + name + '.json')
+                path.write_text(json.dumps({'payload': {'exported_at': stamp}}))
+                path.chmod(0o600)
             return {'filename': snapshot_name}
 
         def publish(*args):
@@ -91,15 +100,21 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
         backup.connection.return_value = ['--host=localhost', '--port=3306', '--user=albums_development_backup_test']
         backup.verify.return_value = {'created_at': 123}
         ledger.publish.side_effect = publish
-        with patch.object(checkpoint.importlib.util, 'module_from_spec', side_effect=[backup, ledger]), \
+        previous_ledger = object()
+        with patch.dict(sys.modules, {'deletion_ledger': previous_ledger}), \
+                patch.object(checkpoint.importlib.util, 'module_from_spec', side_effect=[backup, ledger]), \
                 patch.object(checkpoint.importlib.util, 'spec_from_file_location', return_value=Mock(loader=Mock())):
             result = checkpoint.checkpoint(self.runtime, self.folder)
+            self.assertIs(sys.modules['deletion_ledger'], previous_ledger)
         self.assertEqual(len(result), 4)
         self.assertNotIn(b'ALBUM_BACKUP_ENCRYPTION_KEY', result['backup.env'])
         self.assertNotIn(self.config['ALBUM_BACKUP_ENCRYPTION_KEY'].encode(), b''.join(result.values()))
         self.assertIn(self.config['ALBUM_BACKUP_ENCRYPTION_KEY'], (self.app / 'backup.env').read_text())
         backup.verify.assert_called_once_with(child, child.backups / snapshot_name)
-        ledger.verify.assert_called_once_with(child, child.backups / ledger_name, 'c' * 64, 123)
+        ledger.verify.assert_any_call(child, child.backups / ledger_name, 'c' * 64, 123)
+        self.assertEqual(ledger.verify.call_count, 3)
+        self.assertFalse((child.backups / ('albums-deletions-' + 'c' * 32 + '.json')).exists())
+        self.assertTrue((child.backups / ('albums-deletions-' + 'd' * 32 + '.json')).exists())
         backup.Runtime.assert_called_once_with(self.root, self.app / 'backups', self.app / 'backup.env')
 
 
