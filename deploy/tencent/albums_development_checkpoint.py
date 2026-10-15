@@ -30,7 +30,7 @@ def checkpoint(runtime, folder):
     settings = app / 'backup.env'
     private(settings, 8192)
     config = read_environment(settings)
-    required = {'MYSQL_HOST': '127.0.0.1', 'MYSQL_PORT': '3306', 'MYSQL_DATABASE': 'albums_test',
+    required = {'MYSQL_HOST': 'localhost', 'MYSQL_PORT': '3306', 'MYSQL_DATABASE': 'albums_test',
                 'MYSQL_USER': 'albums_development_backup_test'}
     if (set(config) != set(required) | {'MYSQL_PASSWORD', 'ALBUM_BACKUP_ENCRYPTION_KEY'}
             or any(config.get(k) != v for k, v in required.items())

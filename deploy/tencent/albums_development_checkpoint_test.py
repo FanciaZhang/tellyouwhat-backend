@@ -24,7 +24,7 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
         self.runtime.state.mkdir()
         self.folder = self.root / 'source'
         self.folder.mkdir()
-        self.config = {'MYSQL_HOST': '127.0.0.1', 'MYSQL_PORT': '3306', 'MYSQL_DATABASE': 'albums_test',
+        self.config = {'MYSQL_HOST': 'localhost', 'MYSQL_PORT': '3306', 'MYSQL_DATABASE': 'albums_test',
                        'MYSQL_USER': 'albums_development_backup_test', 'MYSQL_PASSWORD': '1' * 64,
                        'ALBUM_BACKUP_ENCRYPTION_KEY': '2' * 64}
         self.save()
@@ -88,7 +88,7 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
             return {'filename': ledger_name, 'sha256': 'c' * 64}
 
         backup.create.side_effect = create
-        backup.connection.return_value = ['--host=127.0.0.1', '--port=3306', '--user=albums_development_backup_test']
+        backup.connection.return_value = ['--host=localhost', '--port=3306', '--user=albums_development_backup_test']
         backup.verify.return_value = {'created_at': 123}
         ledger.publish.side_effect = publish
         with patch.object(checkpoint.importlib.util, 'module_from_spec', side_effect=[backup, ledger]), \
