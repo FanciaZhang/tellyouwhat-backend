@@ -1,0 +1,125 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	cos "github.com/tencentyun/cos-go-sdk-v5"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+func client(env, kind string) *cos.Client {
+	h, _ := os.UserHomeDir()
+	f := "cleanup-credentials.json"
+	if kind == "backend" {
+		f = "backend-credentials.json"
+		if env == "test" {
+			f = "backend-cos.json"
+		}
+	}
+	b, e := os.ReadFile(filepath.Join(h, ".config/tellyouwhat/albums-"+env, f))
+	if e != nil {
+		panic("credentials unavailable")
+	}
+	var k struct{ SecretId, SecretKey string }
+	if json.Unmarshal(b, &k) != nil || k.SecretId == "" || k.SecretKey == "" {
+		panic("invalid credentials")
+	}
+	bucket := "tellyouwhat-albums-1251995834"
+	if env == "production" {
+		bucket = "tellyouwhat-albums-production-1251995834"
+	}
+	u, _ := url.Parse("https://" + bucket + ".cos.ap-guangzhou.myqcloud.com")
+	c := cos.NewClient(&cos.BaseURL{BucketURL: u}, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &cos.AuthorizationTransport{SecretID: k.SecretId, SecretKey: k.SecretKey}})
+	c.Conf.RetryOpt.Count = 1
+	return c
+}
+func status(r *cos.Response) int {
+	if r == nil {
+		return 0
+	}
+	if r.Body != nil {
+		r.Body.Close()
+	}
+	return r.StatusCode
+}
+func check(env, name string, got, want int) {
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"env": env, "check": name, "status": got, "expected": want, "passed": got == want})
+	if got != want {
+		panic("probe assertion failed")
+	}
+}
+func del(c *cos.Client, ctx context.Context, key, version string) int {
+	var opts *cos.ObjectDeleteOptions
+	if version != "" {
+		q := url.Values{"versionId": []string{version}}
+		opts = &cos.ObjectDeleteOptions{XOptionQuery: &q}
+	}
+	r, _ := c.Object.Delete(ctx, key, opts)
+	return status(r)
+}
+func main() {
+	if os.Getenv("ALBUM_CLEANUP_PROBE") != "1" {
+		os.Exit(2)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	id := "0a1a83b9-e846-407b-aeb5-0e55ede655a9"
+	back := map[string]*cos.Client{}
+	clean := map[string]*cos.Client{}
+	versions := map[string]string{}
+	keys := map[string]string{}
+	for _, env := range []string{"test", "production"} {
+		back[env] = client(env, "backend")
+		clean[env] = client(env, "cleanup")
+		key := "albums/originals/cleanup-probe-" + id + "/fixture.txt"
+		v := map[string]string{"test": "MTg0NDQ5NTE5MTIxODg4NDE1NDk", "production": "MTg0NDQ5NTE5MTIxODg1NTUwNTQ"}[env]
+
+		keys[env] = key
+		versions[env] = v
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"env": env, "key": key, "version": v})
+	}
+	for _, env := range []string{"test", "production"} {
+		c := clean[env]
+		key := keys[env]
+		v := versions[env]
+		_, r, _ := c.Bucket.GetVersioning(ctx)
+		check(env, "versioning_read", status(r), 200)
+		_, r, _ = c.Bucket.GetObjectVersions(ctx, &cos.BucketGetObjectVersionsOptions{Prefix: key})
+		check(env, "own_prefix_inventory", status(r), 200)
+		_, r, _ = c.Bucket.GetObjectVersions(ctx, &cos.BucketGetObjectVersionsOptions{Prefix: "unrelated/"})
+		check(env, "other_prefix_inventory_denied", status(r), 403)
+		r, _ = c.Object.Head(ctx, key, nil)
+		check(env, "own_head", status(r), 200)
+		r, _ = c.Object.Get(ctx, key, nil)
+		check(env, "content_download_denied", status(r), 403)
+		r, _ = c.Object.Put(ctx, key+"-forbidden", bytes.NewBufferString("denied"), nil)
+		check(env, "upload_denied", status(r), 403)
+		check(env, "versionless_delete_denied", del(c, ctx, key, ""), 403)
+		check(env, "null_version_delete_denied", del(c, ctx, key, "null"), 403)
+		check(env, "outside_prefix_delete_denied", del(c, ctx, "unrelated/cleanup-probe-"+id, v), 403)
+		other := "test"
+		if env == "test" {
+			other = "production"
+		}
+		old := c.BaseURL.BucketURL
+		c.BaseURL.BucketURL = back[other].BaseURL.BucketURL
+		check(env, "cross_bucket_delete_denied", del(c, ctx, keys[other], versions[other]), 403)
+		c.BaseURL.BucketURL = old
+		check(env, "exact_version_delete", del(c, ctx, key, v), 204)
+		r, _ = back[env].Object.Head(ctx, key, nil, v)
+		check(env, "exact_version_absent", status(r), 404)
+		out, r, e := c.Bucket.GetObjectVersions(ctx, &cos.BucketGetObjectVersionsOptions{Prefix: key})
+		check(env, "final_inventory", status(r), 200)
+		if e != nil || out == nil || out.IsTruncated || len(out.Version) != 0 || len(out.DeleteMarker) != 0 {
+			panic("fixture inventory nonempty")
+		}
+	}
+	fmt.Println(`{"result":"passed","synthetic_fixture_versions_deleted":2,"user_media_touched":false}`)
+}

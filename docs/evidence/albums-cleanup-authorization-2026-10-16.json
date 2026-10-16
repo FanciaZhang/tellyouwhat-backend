@@ -1,33 +1,41 @@
 {
-  "recorded_at": "2026-10-16T14:30:33.712106+00:00",
+  "recorded_at": "2026-10-16T14:44:16.208014+00:00",
   "user_authorization": "Confirmed permanent-cleanup permissions for expired Albums data, account deletion data and associated backups. No repeated scope approval required.",
-  "state": "awaiting_tencent_identity_verification",
+  "state": "media_cleanup_identities_created_and_verified_runtime_and_backup_pending",
   "identities": [
     {
       "name": "albums-test-cleanup",
       "policy_file": "deploy/albums/cam-test-cleanup.policy.json",
-      "bucket": "tellyouwhat-albums-1251995834"
+      "bucket": "tellyouwhat-albums-1251995834",
+      "cam_user_id": "27650776",
+      "policy_id": "290108305",
+      "active_policy_version": 2,
+      "association": "direct; one policy; zero groups"
     },
     {
       "name": "albums-production-cleanup",
       "policy_file": "deploy/albums/cam-production-cleanup.policy.json",
-      "bucket": "tellyouwhat-albums-production-1251995834"
+      "bucket": "tellyouwhat-albums-production-1251995834",
+      "cam_user_id": "27650777",
+      "policy_id": "290108402",
+      "active_policy_version": 2,
+      "association": "direct; one policy; zero groups"
     }
   ],
   "console_access": false,
-  "intended_credential_handling": "Separate private local and server configuration; no credential mounted into gateway or client. No credentials created yet.",
   "policy_sha256": {
-    "deploy/albums/cam-production-cleanup.policy.json": "569af92101eed3a85ab24f20f10df7fa5a64f6889796a699a9b678ca52b89491",
-    "deploy/albums/cam-test-cleanup.policy.json": "081d4c0eaf1960cf5e1f108364ba22d8c914aee42d6e500109f3df2f65b02780"
+    "deploy/albums/cam-production-cleanup.policy.json": "7ba2004519adee20b7d600c77b11dc38ccd47b7ed95af7942b48aec24fcf5c31",
+    "deploy/albums/cam-test-cleanup.policy.json": "75ed3af702863c65aa26671d4d61057bbe5a5a718cc7e594725482201060fac9"
   },
-  "cloud_changes_completed": false,
-  "real_object_deletion_performed": false,
+  "cloud_changes_completed": true,
+  "real_object_deletion_performed": true,
   "automatic_cleanup_enabled": false,
   "tests": {
     "static_policy_tests_passed": 7,
     "cos_cleanup_unit_tests": "passed",
     "backup_offsite_deletion_ledger_python_tests_passed": 22,
-    "backup_transfer_race_tests": "passed"
+    "backup_transfer_race_tests": "passed",
+    "live_cos_permission_assertions_passed": 26
   },
   "backup_boundary": {
     "observed": "Current development Albums encrypted checkpoint is inside shared offsite recovery bundle; original dedicated backup policy is an unused draft.",
@@ -35,9 +43,40 @@
     "authorization": "Already granted; technical separation and verification remain."
   },
   "remaining": [
-    "Complete Tencent MFA, create identities and bind each scoped policy; verify no other group/policy grants",
-    "Save credentials privately and test allowed exact-version synthetic deletion, unversioned/null-version denial, cross-bucket/prefix denial and denied upload/administration",
-    "Integrate independent cleanup credentials into deletion execution paths without granting deletion to current API/upload identities",
-    "Complete independent backup cleanup boundary and real expiry/recovery validation before automated activation"
-  ]
+    "Integrate separate cleanup credentials into deletion execution paths; API/upload identities must not gain deletion",
+    "Complete independent backup cleanup boundary and real expiry/recovery validation before automated activation",
+    "Verify real multipart abort and complete application deletion/expiry workflow before activation"
+  ],
+  "verification_followup": {
+    "user_reported_wechat_verified": true,
+    "creation_request_error": "InvalidParameter.ImageCodeError",
+    "console_message": "img verify error (cam.AddSubAccountCheckingMFA)",
+    "retry_after_form_reload": "same error",
+    "users_list_checked": "six existing users, neither cleanup identity present",
+    "resolved": "User completed graphical verification; both identities created successfully on 2026-10-16."
+  },
+  "credential_handling": {
+    "local": "~/.config/tellyouwhat/albums-{test,production}/cleanup-credentials.json; 0600",
+    "server": "/opt/tellyouwhat/albums-{test,production}/secrets/cleanup-credentials.json; root-owned 0600",
+    "transfer": "private stdin; SHA-256 matched",
+    "mounted_into_running_services": false
+  },
+  "cloud_changes_scope": "Two programmatic identities, each with its own environment media-cleanup policy only; backup permissions remain pending.",
+  "deletion_scope": "Exactly two synthetic fixture versions created for this probe; no user media; final version and delete-marker inventories empty.",
+  "live_evidence": {
+    "first_attempt": "albums-cleanup-probe-initial-failed.jsonl",
+    "corrected_attempt": "albums-cleanup-probe-corrected.jsonl",
+    "source": "albums-cleanup-permission-probe-2026-10-16.go.txt",
+    "probe_exit_code": 0,
+    "correction": "URL-encode slashes in cos:prefix condition values only. Raw-slash v1 returned 403 for allowed version inventory. Same two fixtures resumed successfully with v2. Resource paths unchanged.",
+    "reference": "https://intl.cloud.tencent.com/zh/document/product/436/46206",
+    "not_tested": [
+      "Multipart abort against a live upload session",
+      "Every prefix individually",
+      "Bulk delete API",
+      "Bucket administration API",
+      "Shared backup objects",
+      "Full application deletion/expiry workflow"
+    ]
+  }
 }

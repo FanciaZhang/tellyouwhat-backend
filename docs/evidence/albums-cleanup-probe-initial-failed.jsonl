@@ -1,0 +1,6 @@
+{"check":"fixture_put","env":"test","expected":200,"passed":true,"status":200}
+{"env":"test","key":"albums/originals/cleanup-probe-0a1a83b9-e846-407b-aeb5-0e55ede655a9/fixture.txt","version":"MTg0NDQ5NTE5MTIxODg4NDE1NDk"}
+{"check":"fixture_put","env":"production","expected":200,"passed":true,"status":200}
+{"env":"production","key":"albums/originals/cleanup-probe-0a1a83b9-e846-407b-aeb5-0e55ede655a9/fixture.txt","version":"MTg0NDQ5NTE5MTIxODg1NTUwNTQ"}
+{"check":"versioning_read","env":"test","expected":200,"passed":true,"status":200}
+{"check":"own_prefix_inventory","env":"test","expected":200,"passed":false,"status":403}

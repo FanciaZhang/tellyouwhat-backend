@@ -17,7 +17,7 @@ class CIMediaPolicyTests(unittest.TestCase):
             self.assertEqual(policy, {"version": "2.0", "statement": [
                 {"effect": "allow", "action": ["cos:GetBucketVersioning"], "resource": [base + "*"]},
                 {"effect": "allow", "action": ["cos:GetBucketObjectVersions", "cos:ListMultipartUploads"],
-                 "resource": [base + "*"], "condition": {"string_like": {"cos:prefix": prefixes}}},
+                 "resource": [base + "*"], "condition": {"string_like": {"cos:prefix": [p.replace("/", "%2F") for p in prefixes]}}},
                 {"effect": "allow", "action": ["cos:HeadObject", "cos:AbortMultipartUpload"], "resource": objects},
                 {"effect": "allow", "action": ["cos:DeleteObject"], "resource": objects,
                  "condition": {"string_not_equal": {"cos:versionid": ""}}},

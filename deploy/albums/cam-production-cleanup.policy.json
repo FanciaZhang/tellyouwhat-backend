@@ -22,11 +22,11 @@
       "condition": {
         "string_like": {
           "cos:prefix": [
-            "albums/staging/*",
-            "albums/originals/*",
-            "albums/derivatives/*",
-            "albums/video-previews/*",
-            "albums/live-pairs/*"
+            "albums%2Fstaging%2F*",
+            "albums%2Foriginals%2F*",
+            "albums%2Fderivatives%2F*",
+            "albums%2Fvideo-previews%2F*",
+            "albums%2Flive-pairs%2F*"
           ]
         }
       }
