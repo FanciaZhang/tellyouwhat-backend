@@ -61,3 +61,5 @@
 健康自动开发认证证据：`evidence/health-automatic-development-access-2026-10-16.json`。客户端 69 项定向测试、普通 Release 编译及真实产物检查通过；后端全量 Go 测试、178 项运维 Python 检查（1 项跳过）、3 项独立真实 MySQL 集成检查通过。正式健康网关仍为原镜像、未重启；这批源码尚未部署健康测试 API，也未导出新开发安装包。
 
 生日远程诊断已交付 `398b2ff`、1.0 (5)：Debug 可导出本次进程的受限 AI 元数据，Release 无入口或实现；56 项 Debug 检查、1 项 Release 界面检查及 27 项核心测试通过，另跳过 1 项真实服务测试。原生双目标签名及公网完整 IPA 摘要、HEAD/Range 通过；发布就绪路径误用 `/healthz` 后，改用实际 `/readyz` 完成 owner 检查和清理，复用原回执，未重复发布。平台测试更新到 `7c0e6d2` 后，MySQL、Redis 和正式网关未重启，66 项 schema 未变，匹配的新加密备份已认证。见 `evidence/birthday-remote-diagnostics-ota-2026-10-16.json`；实际手机安装/注册与推理仍未验收。
+
+相册正式桶已创建（2026-10-16）：`tellyouwhat-albums-production-1251995834` / `ap-guangzhou`，私有、多 AZ、版本控制开启。`albums/originals/` 当前/历史版本 30 天转多 AZ 低频已由控制台保存并读回，无对象年龄删除规则。既有开发桶不迁作正式桶；正式 CAM/CI、部署、路由和真实媒体旅程未就绪，禁止将新桶存在等同正式服务可用。证据：`evidence/albums-production-storage-2026-10-16.json`。
