@@ -148,6 +148,12 @@ func parameterError(context *gin.Context, _ error, status int) {
 
 func captureRawRequestBody() gin.HandlerFunc {
 	return func(context *gin.Context) {
+		// The generated recording upload adapter preserves the reader. Its handler
+		// authenticates the signed digest before streaming and verifies actual bytes.
+		if context.Request.Method == http.MethodPut && context.FullPath() == "/v1/journal/voice/recordings/:recordingID" {
+			context.Next()
+			return
+		}
 		limit := requestBodyLimit(context.Request.Method, context.Request.URL.Path)
 		body, err := readLimitedBody(context.Request.Body, limit)
 		if err != nil {
@@ -173,6 +179,14 @@ func captureRawRequestBody() gin.HandlerFunc {
 }
 
 func requestBodyLimit(method, path string) int64 {
+	if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/voice/recordings/") {
+		if strings.HasSuffix(path, "/preview") {
+			return 1 << 20
+		}
+		if strings.HasSuffix(path, "/retry") {
+			return 1024
+		}
+	}
 	switch method + " " + path {
 	case "POST /v1/journal/illustrations":
 		return 34_000_000

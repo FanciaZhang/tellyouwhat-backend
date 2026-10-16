@@ -1,4 +1,4 @@
-package development
+package recordinghttp
 
 import (
 	"crypto/sha256"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-type recordingPreviewRequest struct {
+type PreviewRequest struct {
 	RequestID      string         `json:"requestID"`
 	AudioHash      string         `json:"audioHash"`
 	ReviewRevision int            `json:"reviewRevision"`
@@ -36,14 +36,18 @@ type recordingPreviewCache struct {
 
 // The source's owner/hash remains verifiable after its temporary ASR result
 // expires. Rewrites use the existing token budget, never recording-minute quota.
-func (h *recordingHTTP) preview(w http.ResponseWriter, r *http.Request, owner, archiveID string) {
+func (h *Handler) preview(w http.ResponseWriter, r *http.Request, owner, archiveID string) {
+	if h.rewriter == nil {
+		deny(w, 503, "recording_preview_unavailable")
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		deny(w, 413, "recording_preview_too_large")
 		return
 	}
 	defer r.Body.Close()
-	var input recordingPreviewRequest
+	var input PreviewRequest
 	if json.Unmarshal(body, &input) != nil || input.ReviewRevision < 0 || input.ReviewRevision > 1_000_000 {
 		deny(w, 422, "recording_preview_invalid")
 		return

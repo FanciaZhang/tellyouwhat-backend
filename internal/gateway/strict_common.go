@@ -58,12 +58,15 @@ func strictGinContext(ctx context.Context) *gin.Context {
 }
 
 func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) (Principal, *apiFailure) {
+	return server.apiAuthenticateProof(ctx, requestID, apiRequestProof(ctx, requestID))
+}
+
+func (server *Server) apiAuthenticateProof(ctx context.Context, requestID uuid.UUID, proof RequestProof) (Principal, *apiFailure) {
 	requestIDString := requestID.String()
 	if server.authenticator == nil {
 		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	proof := apiRequestProof(ctx, requestID)
 	principal, err := server.authenticator.Authenticate(ctx, proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {

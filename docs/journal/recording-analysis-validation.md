@@ -2,6 +2,16 @@
 
 This is an isolated provider-contract milestone, not a completed app feature.
 
+## Shared authenticated recording routes (2026-10-16)
+
+The shared gateway now has generated OpenAPI routes for upload, status, process, explicit retry and preview. Both gateways reuse `internal/journal/recordinghttp`; the private development adapter retains its existing authorization, while shared routes use App Attest, managed entitlement and current managed-AI consent. Shared task ownership comes from the authenticated key. Reading an existing owned result remains possible after subscription expiry; writes still require current entitlement. Operations pause and the shared cost-control operation cover recording processing.
+
+For `PUT /v1/journal/voice/recordings/{recordingID}`, the client sends `audio/wav` and lowercase `X-Tellyouwhat-Content-SHA256`. That exact digest is the final body-hash line in the normal App Attest canonical request. The gateway validates the assertion and entitlement before reading audio, then hashes the streamed bytes. A mismatch rejects the upload before publishing any task. The generated adapter preserves the reader; ordinary JSON middleware never buffers the WAV. Non-upload requests retain normal exact-body authentication. Preview and retry reuse those authenticated bytes after generated JSON binding.
+
+Local tests cover a 6.4 MB upload, pre-read authorization failures, digest tampering, owner isolation, single provider submission, polling, retrieval after entitlement expiry and preview/retry body preservation. Existing private-runtime tests exercise the same extracted handler. No real provider inference was used in this milestone.
+
+Runtime activation is still pending: `cmd/gateway` does not yet construct the recording dependency, so deployed/configuration-only gateways continue returning `recording_not_enabled`. Before enabling it, complete environment-specific spool configuration, privacy-deletion fencing, retention/backup integration and native-client authentication. Existing private tasks use a different owner identity and must not be silently reassigned or deleted. There was no remote deployment, new App package or data migration. Evidence: `../evidence/journal-shared-recording-routes-2026-10-16.json`.
+
 ## Shared-gateway migration prerequisite (2026-10-16)
 
 The existing recording store now coordinates processes through filesystem locks. Metadata publication and revision checks share one directory lock; each provider operation holds a separate per-recording lock through settlement. Duplicate uploads cannot overwrite an active recording. Expiry cleanup skips active jobs, then resumes after the owning process exits. Existing job IDs, provider IDs, hashes and on-disk formats remain unchanged; no task data was migrated or removed.

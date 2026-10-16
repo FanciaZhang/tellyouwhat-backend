@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -135,6 +136,48 @@ const (
 func (e OrganizeRequestContractVersion) Valid() bool {
 	switch e {
 	case JournalOrganizeV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordingAnalysisVersion.
+const (
+	JournalRecordingV1 RecordingAnalysisVersion = "journal-recording-v1"
+)
+
+// Valid indicates whether the value is a known member of the RecordingAnalysisVersion enum.
+func (e RecordingAnalysisVersion) Valid() bool {
+	switch e {
+	case JournalRecordingV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordingTaskState.
+const (
+	Completed  RecordingTaskState = "completed"
+	Failed     RecordingTaskState = "failed"
+	Processing RecordingTaskState = "processing"
+	Submitting RecordingTaskState = "submitting"
+	Uploaded   RecordingTaskState = "uploaded"
+)
+
+// Valid indicates whether the value is a known member of the RecordingTaskState enum.
+func (e RecordingTaskState) Valid() bool {
+	switch e {
+	case Completed:
+		return true
+	case Failed:
+		return true
+	case Processing:
+		return true
+	case Submitting:
+		return true
+	case Uploaded:
 		return true
 	default:
 		return false
@@ -326,6 +369,50 @@ type OrganizeResponse struct {
 	Tags                        []Tag                        `json:"tags"`
 }
 
+// RecordingAnalysis defines model for RecordingAnalysis.
+type RecordingAnalysis struct {
+	Milliseconds int                `json:"milliseconds"`
+	TaskID       openapi_types.UUID `json:"taskID"`
+	Text         string             `json:"text"`
+	Utterances   []struct {
+		AcousticEmotion   *string `json:"acousticEmotion,omitempty"`
+		EndMilliseconds   int     `json:"endMilliseconds"`
+		Id                string  `json:"id"`
+		Speaker           string  `json:"speaker"`
+		StartMilliseconds int     `json:"startMilliseconds"`
+		Text              string  `json:"text"`
+	} `json:"utterances"`
+	Version RecordingAnalysisVersion `json:"version"`
+}
+
+// RecordingAnalysisVersion defines model for RecordingAnalysis.Version.
+type RecordingAnalysisVersion string
+
+// RecordingPreviewResponse defines model for RecordingPreviewResponse.
+type RecordingPreviewResponse struct {
+	RequestID      openapi_types.UUID `json:"requestID"`
+	ReviewRevision int                `json:"reviewRevision"`
+
+	// Revision Validated Journal voice revision; see the voice protocol document.
+	Revision map[string]interface{} `json:"revision"`
+}
+
+// RecordingTask defines model for RecordingTask.
+type RecordingTask struct {
+	AudioHash      string             `json:"audioHash"`
+	ErrorCode      *string            `json:"errorCode,omitempty"`
+	Id             openapi_types.UUID `json:"id"`
+	Milliseconds   int                `json:"milliseconds"`
+	ProviderTaskID openapi_types.UUID `json:"providerTaskID"`
+	Result         *RecordingAnalysis `json:"result,omitempty"`
+	Revision       int                `json:"revision"`
+	State          RecordingTaskState `json:"state"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// RecordingTaskState defines model for RecordingTask.State.
+type RecordingTaskState string
+
 // Tag defines model for Tag.
 type Tag struct {
 	Name string  `json:"name"`
@@ -427,6 +514,40 @@ type OrganizeJournalParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// GetJournalRecordingParams defines parameters for GetJournalRecording.
+type GetJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// UploadJournalRecordingParams defines parameters for UploadJournalRecording.
+type UploadJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+
+	// XTellyouwhatContentSHA256 SHA-256 of WAV bytes; also used as the App Attest canonical body digest and verified while streaming.
+	XTellyouwhatContentSHA256 string `json:"X-Tellyouwhat-Content-SHA256"`
+}
+
+// PreviewJournalRecordingJSONBody defines parameters for PreviewJournalRecording.
+type PreviewJournalRecordingJSONBody map[string]interface{}
+
+// PreviewJournalRecordingParams defines parameters for PreviewJournalRecording.
+type PreviewJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// ProcessJournalRecordingParams defines parameters for ProcessJournalRecording.
+type ProcessJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// RetryJournalRecordingJSONBody defines parameters for RetryJournalRecording.
+type RetryJournalRecordingJSONBody map[string]interface{}
+
+// RetryJournalRecordingParams defines parameters for RetryJournalRecording.
+type RetryJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
 // CreateJournalVoiceSessionParams defines parameters for CreateJournalVoiceSession.
 type CreateJournalVoiceSessionParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
@@ -448,6 +569,12 @@ type CancelJournalIllustrationJSONRequestBody = IllustrationCancellation
 
 // OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
 type OrganizeJournalJSONRequestBody = OrganizeRequest
+
+// PreviewJournalRecordingJSONRequestBody defines body for PreviewJournalRecording for application/json ContentType.
+type PreviewJournalRecordingJSONRequestBody PreviewJournalRecordingJSONBody
+
+// RetryJournalRecordingJSONRequestBody defines body for RetryJournalRecording for application/json ContentType.
+type RetryJournalRecordingJSONRequestBody RetryJournalRecordingJSONBody
 
 // CreateJournalVoiceSessionJSONRequestBody defines body for CreateJournalVoiceSession for application/json ContentType.
 type CreateJournalVoiceSessionJSONRequestBody = VoiceSessionRequest
@@ -472,6 +599,21 @@ type ServerInterface interface {
 
 	// (POST /v1/journal/organization)
 	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
+	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (GET /v1/journal/voice/recordings/{recordingID})
+	GetJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams)
+	// UploadJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (PUT /v1/journal/voice/recordings/{recordingID})
+	UploadJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params UploadJournalRecordingParams)
+	// PreviewJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/preview)
+	PreviewJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params PreviewJournalRecordingParams)
+	// ProcessJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/process)
+	ProcessJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params ProcessJournalRecordingParams)
+	// RetryJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/retry)
+	RetryJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params RetryJournalRecordingParams)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(c *gin.Context, params CreateJournalVoiceSessionParams)
@@ -777,6 +919,288 @@ func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
 	siw.Handler.OrganizeJournal(c, params)
 }
 
+// GetJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalRecording(c, recordingID, params)
+}
+
+// UploadJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) UploadJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UploadJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-Tellyouwhat-Content-SHA256" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Content-SHA256")]; found {
+		var XTellyouwhatContentSHA256 string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Content-SHA256, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Content-SHA256", valueList[0], &XTellyouwhatContentSHA256, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Content-SHA256: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatContentSHA256 = XTellyouwhatContentSHA256
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Content-SHA256 is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UploadJournalRecording(c, recordingID, params)
+}
+
+// PreviewJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) PreviewJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PreviewJournalRecording(c, recordingID, params)
+}
+
+// ProcessJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) ProcessJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ProcessJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ProcessJournalRecording(c, recordingID, params)
+}
+
+// RetryJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) RetryJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryJournalRecording(c, recordingID, params)
+}
+
 // CreateJournalVoiceSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateJournalVoiceSession(c *gin.Context) {
 
@@ -913,6 +1337,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.GET(options.BaseURL+"/v1/journal/writing-styles", wrapper.GetJournalWritingStyles)
+	router.GET(options.BaseURL+"/v1/journal/voice/recordings/:recordingID", wrapper.GetJournalRecording)
+	router.PUT(options.BaseURL+"/v1/journal/voice/recordings/:recordingID", wrapper.UploadJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/process", wrapper.ProcessJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/retry", wrapper.RetryJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/preview", wrapper.PreviewJournalRecording)
 	router.POST(options.BaseURL+"/v1/journal/voice/sessions", wrapper.CreateJournalVoiceSession)
 	router.GET(options.BaseURL+"/v1/journal/voice/sessions/:sessionID/stream", wrapper.StreamJournalVoiceSession)
 	router.POST(options.BaseURL+"/v1/journal/organization", wrapper.OrganizeJournal)
@@ -1296,6 +1725,265 @@ func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(
 	return err
 }
 
+type GetJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      GetJournalRecordingParams
+}
+
+type GetJournalRecordingResponseObject interface {
+	VisitGetJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type GetJournalRecording200JSONResponse RecordingTask
+
+func (response GetJournalRecording200JSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalRecording202JSONResponse RecordingTask
+
+func (response GetJournalRecording202JSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalRecordingdefaultJSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      UploadJournalRecordingParams
+	Body        io.Reader
+}
+
+type UploadJournalRecordingResponseObject interface {
+	VisitUploadJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type UploadJournalRecording200JSONResponse RecordingTask
+
+func (response UploadJournalRecording200JSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecording202JSONResponse RecordingTask
+
+func (response UploadJournalRecording202JSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response UploadJournalRecordingdefaultJSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      PreviewJournalRecordingParams
+	Body        *PreviewJournalRecordingJSONRequestBody
+}
+
+type PreviewJournalRecordingResponseObject interface {
+	VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type PreviewJournalRecording200JSONResponse RecordingPreviewResponse
+
+func (response PreviewJournalRecording200JSONResponse) VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PreviewJournalRecordingdefaultJSONResponse) VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      ProcessJournalRecordingParams
+}
+
+type ProcessJournalRecordingResponseObject interface {
+	VisitProcessJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type ProcessJournalRecording200JSONResponse RecordingTask
+
+func (response ProcessJournalRecording200JSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecording202JSONResponse RecordingTask
+
+func (response ProcessJournalRecording202JSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ProcessJournalRecordingdefaultJSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      RetryJournalRecordingParams
+	Body        *RetryJournalRecordingJSONRequestBody
+}
+
+type RetryJournalRecordingResponseObject interface {
+	VisitRetryJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type RetryJournalRecording200JSONResponse RecordingTask
+
+func (response RetryJournalRecording200JSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecording202JSONResponse RecordingTask
+
+func (response RetryJournalRecording202JSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response RetryJournalRecordingdefaultJSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateJournalVoiceSessionRequestObject struct {
 	Params CreateJournalVoiceSessionParams
 	Body   *CreateJournalVoiceSessionJSONRequestBody
@@ -1454,6 +2142,21 @@ type StrictServerInterface interface {
 
 	// (POST /v1/journal/organization)
 	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
+	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (GET /v1/journal/voice/recordings/{recordingID})
+	GetJournalRecording(ctx context.Context, request GetJournalRecordingRequestObject) (GetJournalRecordingResponseObject, error)
+	// UploadJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (PUT /v1/journal/voice/recordings/{recordingID})
+	UploadJournalRecording(ctx context.Context, request UploadJournalRecordingRequestObject) (UploadJournalRecordingResponseObject, error)
+	// PreviewJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/preview)
+	PreviewJournalRecording(ctx context.Context, request PreviewJournalRecordingRequestObject) (PreviewJournalRecordingResponseObject, error)
+	// ProcessJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/process)
+	ProcessJournalRecording(ctx context.Context, request ProcessJournalRecordingRequestObject) (ProcessJournalRecordingResponseObject, error)
+	// RetryJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/retry)
+	RetryJournalRecording(ctx context.Context, request RetryJournalRecordingRequestObject) (RetryJournalRecordingResponseObject, error)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(ctx context.Context, request CreateJournalVoiceSessionRequestObject) (CreateJournalVoiceSessionResponseObject, error)
@@ -1709,6 +2412,157 @@ func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJourna
 	}
 }
 
+// GetJournalRecording operation middleware
+func (sh *strictHandler) GetJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams) {
+	var request GetJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalRecording(ctx, request.(GetJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitGetJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadJournalRecording operation middleware
+func (sh *strictHandler) UploadJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params UploadJournalRecordingParams) {
+	var request UploadJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	request.Body = ctx.Request.Body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadJournalRecording(ctx, request.(UploadJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UploadJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitUploadJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewJournalRecording operation middleware
+func (sh *strictHandler) PreviewJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params PreviewJournalRecordingParams) {
+	var request PreviewJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	var body PreviewJournalRecordingJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewJournalRecording(ctx, request.(PreviewJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PreviewJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitPreviewJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessJournalRecording operation middleware
+func (sh *strictHandler) ProcessJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params ProcessJournalRecordingParams) {
+	var request ProcessJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessJournalRecording(ctx, request.(ProcessJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ProcessJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitProcessJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryJournalRecording operation middleware
+func (sh *strictHandler) RetryJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params RetryJournalRecordingParams) {
+	var request RetryJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	var body RetryJournalRecordingJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryJournalRecording(ctx, request.(RetryJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitRetryJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateJournalVoiceSession operation middleware
 func (sh *strictHandler) CreateJournalVoiceSession(ctx *gin.Context, params CreateJournalVoiceSessionParams) {
 	var request CreateJournalVoiceSessionRequestObject
@@ -1799,60 +2653,70 @@ func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJou
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
