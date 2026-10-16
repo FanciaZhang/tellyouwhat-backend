@@ -23,6 +23,10 @@
 
 `compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `fb5cd0b` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
 
+待部署源码 `7c0e6d2` 使用 `PLATFORM_APPS` 显式选择 App，只读取所选 App 的身份和提供商配置。健康接入要求 `health,birthday`、独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动 gateway/worker；同时检查两种 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
+
+健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；尚未在云端创建或绑定。需要完成控制台登录、独立模型与身份配置，再实际检查本前缀可读写、其他前缀与正式桶拒绝；名称和配置不作为权限验收证据。
+
 生产发布使用 `release.py deploy`；测试和 OTA 使用已登记的产物所有者入口，由 ubuntu 执行，锁定准确源码、镜像与匹配配置。不得通过 root wrapper、移动镜像标签或独立迁移替代既有流程。只保留恢复所需的当前/上一版，不要求未上线 App 继续运行旧协议。见 [产物与备份责任](host-artifact-lifecycle.md)。
 
 测试路由由 `test_routes.py` 管理，当前启用 albums、birthday、journal。切换前核对实际身份/合约，验证完整 Caddy 配置；切换后检查正式 slot 和 OTA 日志保护。真实 DNS/TLS、鉴权及完整业务旅程分别取证。
@@ -40,7 +44,7 @@
 
 ## Apple 与权益
 
-平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；平台开发注册按 App 校验构建及测试访问策略；生日已取消手输激活码，仍要求真实设备证明和允许构建号。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
+平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册自动验证设备与允许构建号，无需手输口令。生日现网已采用此方式，健康源码已完成但测试服务尚未接入。开发权益限制 App、设备和最多 30 天期限，不复制交易标识或创建购买记录；写入与真实购买升级使用同一行锁，拒绝覆盖 production/sandbox 权益。正式服务不配置开发授权入口。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
 
 相册 `.dev` 不继承正式商品目录，只接受服务端明确账户、额度和期限的开发授权：最多三个指定账户、每账户不超过 1 GB，不创建购买记录，到期停写但不生成清理期限。当前开发服务尚未配置真实账户容量；真实登录后再授予。签名检查、受控 Apple/MySQL 测试不能代替真实购买和手机旅程。
 
@@ -51,3 +55,5 @@
 健康独立测试资源与真实云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源与日志导出；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
+
+健康自动开发认证证据：`evidence/health-automatic-development-access-2026-10-16.json`。客户端 69 项定向测试、普通 Release 编译及真实产物检查通过；后端全量 Go 测试、178 项运维 Python 检查（1 项跳过）、3 项独立真实 MySQL 集成检查通过。正式健康网关仍为原镜像、未重启；这批源码尚未部署健康测试 API，也未导出新开发安装包。
