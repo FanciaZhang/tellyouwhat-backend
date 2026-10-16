@@ -1,0 +1,203 @@
+{
+  "checked_at": "2026-10-16T11:59:52.232837+00:00",
+  "production_source": "b24cd75964a71595280404d2ec28da73553dffda",
+  "production_phase": "STABLE",
+  "shared_test_source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+  "retirement_record": {
+    "after_backup": "mysql-20261016T115724Z-f011b9.sql.gz.enc",
+    "before_backup": "mysql-20261016T115656Z-0bf243.sql.gz.enc",
+    "completed_at": 1792151867,
+    "operation": "test-api-retirement",
+    "passed": true,
+    "retained_container_ids": [
+      "6db33cca6a00100b2c9f7bf3277a608f6ae890a93eaf4ee54cda540d92b409b2",
+      "3333669e10a2afd438824df874e771e1e1701236a3ef931cfc618b0a8a28f57a",
+      "093085f6536a17c7dab80b6f927abec9536af865d5269c5263eff2049b8b970e",
+      "6bc027870fe91babc8261202eb793c6352138cf7216d46067c0a11d46229ac16"
+    ],
+    "shared_source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+    "stopped": [
+      "journal-private-development",
+      "birthday-private-development",
+      "birthday-private-testflight",
+      "tellyouwhat-albums-development-albumgateway-1"
+    ]
+  },
+  "targets": [
+    {
+      "name": "journal-private-development",
+      "status": "exited",
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "name": "birthday-private-development",
+      "status": "exited",
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "name": "birthday-private-testflight",
+      "status": "exited",
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "name": "tellyouwhat-albums-development-albumgateway-1",
+      "status": "exited",
+      "restart_policy": "unless-stopped"
+    }
+  ],
+  "retained_running": [
+    "tellyouwhat-platform-test-gateway-1",
+    "tellyouwhat-platform-test-worker-1",
+    "tellyouwhat-platform-test-mysql-1",
+    "tellyouwhat-platform-test-redis-1",
+    "tellyouwhat-albums-development-albumworker-1",
+    "tellyouwhat-albums-development-mysql-1",
+    "tellyouwhat-albums-development-redis-1",
+    "tellyouwhat-albums-test-next-albumgateway-1"
+  ],
+  "authenticated_backups": {
+    "before_backup": {
+      "filename": "mysql-20261016T115656Z-0bf243.sql.gz.enc",
+      "sha256": "b45c5e110604ea96a7aedfdf849785a7ec5131f9144bb4e984ba0acfeb0fa5ad",
+      "recovery_scopes": {
+        "platform_test": true,
+        "journal_development": true,
+        "albums_development": true,
+        "test_routing": true
+      }
+    },
+    "after_backup": {
+      "filename": "mysql-20261016T115724Z-f011b9.sql.gz.enc",
+      "sha256": "217b724a0ce01f98716a0645b641bba8feb669a6b438c36dc5c3b7ab5c494771",
+      "recovery_scopes": {
+        "platform_test": true,
+        "journal_development": true,
+        "albums_development": true,
+        "test_routing": true
+      }
+    }
+  },
+  "pr": 49,
+  "main_ci_run": 38894368661,
+  "pr_ci_run": 38892119008,
+  "cleanup": {
+    "apple_delivery": null,
+    "completed_at": 1792151870,
+    "errors": [],
+    "free_bytes_after": 17161072640,
+    "free_bytes_before": 17161072640,
+    "operation": "artifacts-platform-test",
+    "passed": true,
+    "reclaimed_bytes": 0,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "public_test_checks": {
+    "checked_at": "2026-10-16T12:00:25.910520+00:00",
+    "readiness_passed": true,
+    "checks": [
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.albums.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/albums/account",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.albums.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      }
+    ]
+  },
+  "production_public_ready": [
+    "api.health.tellyouwhat.cn",
+    "api.journal.tellyouwhat.cn",
+    "admin.tellyouwhat.cn"
+  ],
+  "matched_installed_scripts": {
+    "retire_test_apis.py": "16b672818522b457921bb68394f74fe74f1783cb9d96d1f6a2a8757f84cf907f",
+    "journal_development_artifacts.py": "2bfc4ab6bcdbd08fe403d6ac82b35fa147cc5e1ba9265a544395807898fecec9"
+  },
+  "limits": [
+    "The legacy Albums stack serving its formal domain remains running pending production resource authorization and migration.",
+    "The verified backups were created by the retirement operation; the next scheduled backup cycle remains unverified.",
+    "Actual device authentication, CloudKit synchronization and end-to-end media journeys remain unverified."
+  ]
+}
