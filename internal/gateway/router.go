@@ -42,6 +42,33 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 	router.UnescapePathValues = false
 	router.Use(server.httpMiddleware...)
 	router.Use(operationIDMiddleware(server.operationIDs()))
+	if server.app.ID == appregistry.Journal {
+		// Bound large reference/result allocations before reading an image request body.
+		imageRequests := make(chan struct{}, 1)
+		router.Use(func(ctx *gin.Context) {
+			path := ctx.Request.URL.Path
+			if path != "/v1/journal/illustrations" && !strings.HasPrefix(path, "/v1/journal/illustrations/") {
+				ctx.Next()
+				return
+			}
+			if server.journalIllustrations == nil {
+				writeTransportError(ctx, 503, "not_ready", "image service is not configured")
+				ctx.Abort()
+				return
+			}
+			select {
+			case imageRequests <- struct{}{}:
+				defer func() { <-imageRequests }()
+			default:
+				ctx.Header("Retry-After", "2")
+				writeTransportError(ctx, 429, "image_busy", "image service is busy")
+				ctx.Abort()
+				return
+			}
+			ctx.Header("Cache-Control", "no-store")
+			ctx.Next()
+		})
+	}
 	router.Use(captureRawRequestBody())
 
 	server.registerPlatformRoutes(router)
@@ -147,6 +174,8 @@ func captureRawRequestBody() gin.HandlerFunc {
 
 func requestBodyLimit(method, path string) int64 {
 	switch method + " " + path {
+	case "POST /v1/journal/illustrations":
+		return 34_000_000
 	case "POST /v2/birthday/assist":
 		return 64 << 10
 	case "POST /v1/journal/voice/sessions":
@@ -166,6 +195,9 @@ func requestBodyLimit(method, path string) int64 {
 	case "POST /v1/journal/organization", "POST /v1/journal/illustration-suggestions":
 		return journalcontracts.MaxBodyBytes
 	default:
+		if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/illustrations/") && strings.HasSuffix(path, "/cancel") {
+			return 1024
+		}
 		return 0
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -54,6 +55,7 @@ func (config AICostConfig) Valid() bool {
 }
 
 type AppConfig struct {
+	JournalImage           *JournalImageConfig
 	Registry               appregistry.App
 	AttestationEnvironment attestation.Environment
 	AllowedBuilds          map[string]struct{}
@@ -69,6 +71,11 @@ type AppConfig struct {
 	AppStore               AppStoreConfig
 	ManagedAIProductIDs    []string
 	Product                ProductConfig
+}
+
+type JournalImageConfig struct {
+	BaseURL, APIKey, Model string
+	MaxCostNanos           int64
 }
 
 type JournalAIConfig struct {
@@ -269,6 +276,21 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		}
 	}
 	if defaults.ID == appregistry.Journal {
+		enabled := prefixedValue(prefix, "IMAGE_ENABLED", "false")
+		if enabled != "true" && enabled != "false" {
+			return AppConfig{}, errors.New("JOURNAL_IMAGE_ENABLED must be true or false")
+		}
+		if enabled == "true" {
+			price, err := prefixedInt64Optional(prefix, "IMAGE_MAX_COST_NANOS")
+			image := JournalImageConfig{BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MaxCostNanos: price}
+			if err != nil || price <= 0 || price > costcontrol.NanosPerCNY {
+				return AppConfig{}, errors.New("invalid Journal image price ceiling")
+			}
+			if _, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil); err != nil {
+				return AppConfig{}, errors.New("invalid Journal image provider configuration")
+			}
+			config.JournalImage = &image
+		}
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
 		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
@@ -339,6 +361,9 @@ func (config PlatformConfig) Validate() error {
 	}
 	registryEntries := make([]appregistry.App, 0, len(config.Apps))
 	for _, app := range config.Apps {
+		if app.JournalImage != nil && (config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal images require persistent storage and project cost controls")
+		}
 		if err := app.Validate(config.Environment); err != nil {
 			return fmt.Errorf("app %s: %w", app.Registry.ID, err)
 		}

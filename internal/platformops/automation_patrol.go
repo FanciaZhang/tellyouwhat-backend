@@ -194,7 +194,7 @@ func (s Store) Patrol(ctx context.Context, now time.Time) error {
 		conditions = append(conditions, condition{app, "", "budget", true, budget > 0 && used >= (budget*int64(r.Policy.BudgetWarningPercent)+99)/100, now, map[string]any{"usedNanos": used, "budgetNanos": budget, "month": month}})
 		for _, op := range Operations(app) {
 			var count, oldest int64
-			if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(MAX(TIMESTAMPDIFF(SECOND,created_at,?)),0) FROM ai_jobs WHERE app_id=? AND operation=? AND status='queued' AND expires_at>?`, now, app, op, now).Scan(&count, &oldest); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(MAX(TIMESTAMPDIFF(SECOND,created_at,?)),0) FROM (SELECT app_id,operation,status,created_at,expires_at FROM ai_jobs UNION ALL SELECT 'journal','journal.illustration',state,created_at,expires_at FROM journal_illustration_jobs) jobs WHERE app_id=? AND operation=? AND status='queued' AND expires_at>?`, now, app, op, now).Scan(&count, &oldest); err != nil {
 				return err
 			}
 			conditions = append(conditions, condition{app, op, "queue_backlog", true, count >= int64(p.QueueCount) && oldest >= int64(p.QueueAgeMinutes*60), now, map[string]any{"queued": count, "oldestSeconds": oldest, "thresholdCount": p.QueueCount, "thresholdMinutes": p.QueueAgeMinutes}})

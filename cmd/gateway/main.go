@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +35,8 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
@@ -71,6 +74,8 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	images                     *illustrationstore.Store
+	background                 *sync.WaitGroup
 	prompts                    *promptconfig.Cache
 	operations                 platformops.Reader
 	executionPolicies          gateway.PolicyResolver
@@ -137,6 +142,8 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeStorage()
+	var background sync.WaitGroup
+	defer func() { stop(); background.Wait() }()
 	if platform.StorageMode == "mysql" && !birthdayOnly {
 		defaults, err := config.LoadOperationsDefaults()
 		if err != nil {
@@ -184,6 +191,7 @@ func run(logger *slog.Logger) error {
 		}
 		storage := storageForApp(platform, shared, appConfig)
 		storage.prompts = shared.prompts
+		storage.background = &background
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -347,6 +355,7 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
+		images:            &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
 		operations:        ops,
 		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
 		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
@@ -482,7 +491,33 @@ func buildAppHandler(
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
 	case appregistry.Journal:
-		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
+		if appConfig.JournalImage != nil {
+			if storage.images == nil || storage.background == nil || costController == nil {
+				return nil, errors.New("Journal images require durable storage and managed background tasks")
+			}
+			if err := storage.images.Ready(ctx); err != nil {
+				return nil, errors.New("Journal image schema unavailable")
+			}
+			image := appConfig.JournalImage
+			provider, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil)
+			if err != nil {
+				return nil, err
+			}
+			imageService := &illustration.Service{Store: storage.images, Generator: &illustration.BudgetedGenerator{Next: provider, Controller: costController, MaxCostNanos: image.MaxCostNanos, SettlementFailed: func() { logger.Error("Journal image cost settlement failed") }}, Prompts: storage.prompts, Now: time.Now}
+			imageService.Authorize = func(ctx context.Context, owner string) bool {
+				principal := attestation.Principal{AppID: "journal", KeyID: owner}
+				allowed, err := entitlementChecker.HasManagedSubscription(ctx, principal)
+				if err != nil || !allowed {
+					return false
+				}
+				allowed, err = privacyService.HasRequiredConsents(ctx, principal, []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope})
+				return err == nil && allowed && platformops.Check(ctx, storage.operations, "journal", "journal.illustration") == nil
+			}
+			dependencies.JournalIllustrations = imageService
+			storage.background.Add(1)
+			go func() { defer storage.background.Done(); imageService.Run(ctx) }()
+		}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,

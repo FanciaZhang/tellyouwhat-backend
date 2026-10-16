@@ -3,7 +3,7 @@ const opsApps = {health:'告你健康',journal:'告你手记'};
 const opsTabs = {overview:'费用总览',conversion:'转化分析',quotas:'额度设置',runtime:'运行状态'};
 const opsNumber = value => Number(value||0).toLocaleString('zh-CN');
 const opsMoney = value => (Number(value||0)/1e9).toLocaleString('zh-CN',{style:'currency',currency:'CNY',minimumFractionDigits:2,maximumFractionDigits:2});
-const opsName = op => op?.startsWith('journal.organize.')?'智能整理':op?.startsWith('journal.voice.')?'语音手记':({'journal.organize':'智能整理','journal.voice':'语音手记',...aiLabels})[op] || op || '历史任务';
+const opsName = op => op?.startsWith('journal.organize.')?'智能整理':op?.startsWith('journal.voice.')?'语音手记':({'journal.organize':'智能整理','journal.voice':'语音手记','journal.illustration':'插图生成',...aiLabels})[op] || op || '历史任务';
 const opsRoot = () => $('#platform-view');
 const opsValue = (p,path) => path.startsWith('automation.')?(p.automation||automationDefaults)[path.split('.')[1]]:path.split('.').reduce((v,k)=>v[k],p);
 const opsSet = (p,path,value) => {if(path.startsWith('automation.')&&opsValue(p,path)===value)return;if(path.startsWith('automation.')&&!p.automation)p.automation=structuredClone(automationDefaults);const keys=path.split('.');const key=keys.pop();keys.reduce((v,k)=>v[k],p)[key]=value;};

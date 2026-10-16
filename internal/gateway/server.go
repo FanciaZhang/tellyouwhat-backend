@@ -16,6 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -135,6 +136,7 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	JournalIllustrations       *illustration.Service
 	BirthdayAssistant          birthday.Assistant
 	Operations                 platformops.Reader
 	ExecutionPolicies          PolicyResolver
@@ -174,6 +176,7 @@ type Dependencies struct {
 }
 
 type Server struct {
+	journalIllustrations       *illustration.Service
 	birthdayAssistant          birthday.Assistant
 	operations                 platformops.Reader
 	executionPolicies          PolicyResolver
@@ -240,11 +243,12 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
-		birthdayAssistant: dependencies.BirthdayAssistant,
-		operations:        dependencies.Operations,
-		executionPolicies: dependencies.ExecutionPolicies,
-		promptConfig:      dependencies.PromptConfig,
-		voice:             dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
+		journalIllustrations: dependencies.JournalIllustrations,
+		birthdayAssistant:    dependencies.BirthdayAssistant,
+		operations:           dependencies.Operations,
+		executionPolicies:    dependencies.ExecutionPolicies,
+		promptConfig:         dependencies.PromptConfig,
+		voice:                dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/prompteval"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
@@ -31,21 +32,26 @@ func main() {
 	if err != nil {
 		log.Fatal("object storage configuration is required for retention cleanup")
 	}
+	cipher, err := mysqlstore.NewPayloadCipher(os.Getenv("PAYLOAD_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatal("payload encryption key is required for retention cleanup")
+	}
 	repository := mysqlstore.NewMaintenanceRepository(database)
 	now := time.Now().UTC()
 	evaluationError := (prompteval.Store{DB: database}).Recover(ctx, now)
 	result, databaseError := repository.Cleanup(ctx, now)
+	expiredImages, imageError := (illustrationstore.Store{Database: database, Cipher: cipher}).Expire(ctx, now)
 	purgedMedia, mediaError := repository.PurgeExpiredMedia(ctx, now, store)
-	if err := errors.Join(databaseError, mediaError, evaluationError); err != nil {
+	if err := errors.Join(databaseError, mediaError, evaluationError, imageError); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf(
-		"maintenance completed: idempotency=%d media=%d jobs=%d notifications=%d usage=%d identities=%d",
+		"maintenance completed: idempotency=%d media=%d jobs=%d notifications=%d usage=%d identities=%d images=%d",
 		result.IdempotencyRecords,
 		result.MediaObjects+purgedMedia,
 		result.Jobs,
 		result.Notifications,
 		result.UsageRecords,
-		result.IdentityRecords,
+		result.IdentityRecords, expiredImages,
 	)
 }

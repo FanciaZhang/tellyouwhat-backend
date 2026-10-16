@@ -32,7 +32,7 @@ func TestPolicyBoundariesAndAppIsolation(t *testing.T) {
 	if !errors.Is(p.Check("health", "meal_photo_capture"), platformops.ErrPaused) {
 		t.Fatal("photo pause missing")
 	}
-	for _, item := range [][2]string{{"health", "meal_text_capture"}, {"journal", "journal.organize.pro"}, {"journal", "journal.voice.rewrite"}} {
+	for _, item := range [][2]string{{"health", "meal_text_capture"}, {"journal", "journal.organize.pro"}, {"journal", "journal.voice.rewrite"}, {"journal", "journal.illustration"}} {
 		if err := p.Check(item[0], item[1]); err != nil {
 			t.Fatal(err)
 		}

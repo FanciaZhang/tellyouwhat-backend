@@ -87,3 +87,24 @@ func TestImageBudgetSettlementFailureKeepsSuccessfulImage(t *testing.T) {
 		t.Fatal("failed settlement released reservation")
 	}
 }
+
+type imageOutcomeStore struct {
+	costcontrol.Store
+	outcomes []costcontrol.Outcome
+}
+
+func (s *imageOutcomeStore) RecordOutcome(_ context.Context, _ string, outcome costcontrol.Outcome, _ time.Time) error {
+	s.outcomes = append(s.outcomes, outcome)
+	return nil
+}
+func TestImageBudgetRecordsObservedOutcomeWithoutInventingTokenUsage(t *testing.T) {
+	store := &imageOutcomeStore{Store: costcontrol.NewMemoryStore()}
+	next := &workerGenerator{run: func(context.Context, Input) (Result, error) { return Result{Image: []byte("image")}, nil }}
+	generator := &BudgetedGenerator{Next: next, Controller: imageBudgetController(t, store, 15), MaxCostNanos: 10}
+	if _, err := generator.Generate(context.Background(), Input{Prompt: "scene"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.outcomes) != 1 || !store.outcomes[0].Success || store.outcomes[0].Model != next.Model() || store.outcomes[0].UsageKnown || store.outcomes[0].InputTokens != 0 || store.outcomes[0].OutputTokens != 0 {
+		t.Fatal("image observation absent or fabricated", store.outcomes)
+	}
+}

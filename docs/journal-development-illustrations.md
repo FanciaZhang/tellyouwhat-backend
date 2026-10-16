@@ -1,5 +1,7 @@
 # Journal development illustration delivery
 
+The following records the existing private runtime. The target is now one shared API gateway per environment. Shared-gateway illustration code and local verification are described in [journal-shared-illustrations.md](journal-shared-illustrations.md); this does not establish remote cutover or migration of private task data.
+
 The private `journaldevserver` now accepts the App's confirmed illustration task contract, independently of the shared production gateway. It supports authenticated create, status, result and cancellation routes and the separate `journal_illustration` consent dated 2026-09-27. Text consent alone does not authorize image upload. Image approval and withdrawal persist encrypted across service restart. Cancellation remains available to the authenticated owner after image consent or entitlement withdrawal.
 
 Explicit runtime configuration: `JOURNAL_IMAGE_ENABLED=true`, `JOURNAL_IMAGE_BASE_URL`, `JOURNAL_IMAGE_API_KEY`, `JOURNAL_IMAGE_MODEL_ID`, and a reviewed positive `JOURNAL_IMAGE_MAX_COST_NANOS` no greater than CNY 1. Images use the existing persistent developer monthly monetary ceiling and concurrency accounting. The current launcher ceiling is CNY 200. Provider keys remain on the server. No production database or Health service is opened.
