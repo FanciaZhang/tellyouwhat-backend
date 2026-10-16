@@ -9,7 +9,7 @@
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
 | 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 独立测试 API、worker、受限云身份与 HTTPS 已接通；新开发包、真实 App Attest 和云同步待验收 |
-| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt 已脱离正式库，配置与费用账本独立加密备份；真实语音、供应商身份和 CloudKit 待验收 |
+| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务、Prompt、推理及语音身份已接通；配置与费用账本独立加密备份；手机业务旅程和 CloudKit 待验收 |
 | 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
 
@@ -52,7 +52,7 @@
 
 ## 剩余工作
 
-健康真实手机证明与云同步；手记独立推理身份的服务切换、语音资源及真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+健康真实手机证明与云同步；手记手机录音/保存与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
 
@@ -106,14 +106,22 @@ mini 文本/音频、lite 文本和 Pro 图片的真实 Responses 完整响应�
 
 ## 手记测试推理身份（2026-10-16）
 
-`journalapp-development-backend`（97256858）已创建，仅绑定 `JournalDevelopmentInferenceOnly`，只允许三个新测试端点的 `ark:SendInference`；无控制台登录、Access Key、自管理权限。IAM API Key 已保存在获准的本机/服务器私有目录，0600/0700 与内容一致性通过。Lite、Pro、2K 插图真实调用通过，健康测试与手记正式端点均返回 403。Pro 接入点仍在从 260915 切换到 260628，实际响应尚为 260915，因此未替换测试服务凭据或模型；语音凭据本次未改。见 `evidence/journal-development-iam-2026-10-16.json`，服务切换和完整 App 旅程仍待验收。
+`journalapp-development-backend`（97256858）已创建，仅绑定 `JournalDevelopmentInferenceOnly`，只允许三个新测试端点的 `ark:SendInference`；无控制台登录、Access Key、自管理权限。IAM API Key 已保存在获准的本机/服务器私有目录，0600/0700 与内容一致性通过。Lite、Pro、2K 插图真实调用通过，健康测试与手记正式端点均返回 403。创建当时 Pro 仍在切换版本，未立即替换服务；现已按下方“手记测试推理切换验收”完成切换。见 `evidence/journal-development-iam-2026-10-16.json`，服务切换已按后续记录完成，完整 App 旅程仍待验收。
 
 ## 手记独立测试语音（2026-10-16）
 
 `journal-development`（手记开发测试）项目已开通流式语音识别 2.0 与录音文件识别 2.0，采用按时长后付费，未购买资源包；项目专用 API Key 保存在获准的本机/服务器私有目录，权限及内容一致性通过。约 35 秒的双人合成音频通过后端现有实时识别和录音文件识别测试，均返回六个语句、两位说话人；无需修改识别代码。首次文件任务出现一次“无有效人声”，同一音频的对照请求和原样 Go 复测随后成功，原因未确定，保留失败记录。
 
-测试服务已通过既有部署入口切换到项目专用语音凭据，源码 `6d5a8a3`，旧语音备用凭据已移除；运行配置与进程一致，模型、开发连接和生产发布状态未变。原服务及匹配配置保留，部署前后加密备份均完成 COS 三对象读回、认证解密和手记隔离恢复检查。Pro 端点版本切换尚未完成，推理凭据暂未替换；手机录音与完整 App 旅程仍待验收。见 `evidence/journal-development-speech-2026-10-16.json`。
+测试服务已通过既有部署入口切换到项目专用语音凭据，源码 `6d5a8a3`，旧语音备用凭据已移除；运行配置与进程一致，模型、开发连接和生产发布状态未变。原服务及匹配配置保留，部署前后加密备份均完成 COS 三对象读回、认证解密和手记隔离恢复检查。该次语音部署未替换推理凭据，后续已完成独立推理切换；手机录音与完整 App 旅程仍待验收。见 `evidence/journal-development-speech-2026-10-16.json`。
 
 ## 手记开发包 1.0 (20)（2026-10-16）
 
 源码 `9a251b22` 已完成 Debug 归档、Ad Hoc 导出和两个目标的原生签名检查，独立 App Group/CloudKit、开发显示名称、测试 API 及三台登记设备均核对；IPA 不包含私有连接凭据。复用的 Debug/Release 环境边界测试与当前源码摘要一致，未宣称执行了新的完整测试或远端 CI。约 71 MB IPA 已通过私有 OTA 发布，公网完整下载摘要、Manifest、HEAD/Range、Host 和隐私响应头检查通过，上传临时文件已清理。签名产物私有保留，手记仓库未推送，手机安装/CloudKit/业务旅程仍待验收。见 `evidence/journal-runtime-boundary-ota-2026-10-16.json`。
+
+## 手记测试推理切换验收（2026-10-16）
+
+Pro 接入点已完成 260628 切换，控制台与真实响应一致。测试服务已通过既有部署入口激活 `ae02ac4`，Lite、Pro/语音改写、插图与独立 Prompt 修订一起切换到新测试端点，推理/图片均使用受限 IAM Key。语音项目凭据和开发连接未变，运行配置与进程逐项一致；旧服务和对应配置保留，清理通过，正式网关未重启。
+
+公网鉴权、真实标签整理、插图生成与下载、五种文风的 WebSocket 改写通过；生成图片为 2496×1664，人工查看内容符合合成输入。测试 Key 调用正式模型返回 403。首次文风检查使用旧转录协议，没有触发待处理任务；已改为复用现有叙事请求与确认协议，保留事实、顺序和上下文边界断言，五项复测通过，未改业务逻辑。部署前后备份均完成 COS 三对象读回、认证解密和隔离恢复。
+
+详见 `evidence/journal-development-inference-activation-2026-10-16.json`。本轮不改变 App 构建输入，不重跑 Xcode 或完整发布门禁；手机录音/应用保存、CloudKit 同步、真实权益和新定时备份周期仍待验收。

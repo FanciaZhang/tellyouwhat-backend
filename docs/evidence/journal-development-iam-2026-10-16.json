@@ -40,8 +40,8 @@
     }
   ],
   "pro_model_pending_version_switch": false,
-  "service_updated": false,
-  "updated_at": "2026-10-16T04:42:49.223543+00:00",
+  "service_updated": true,
+  "updated_at": "2026-10-16T04:46:39.857667+00:00",
   "policy": "JournalDevelopmentInferenceOnly",
   "policy_path": "config/iam/journal-development-inference-only.json",
   "policy_sha256": "19388fa1f0ebadbab5e98dbc5507dfe9727361d053d19f446996545ebc0ec639",
@@ -83,5 +83,7 @@
     "expected_model": "doubao-seed-2-1-pro-260628",
     "console_completed": true,
     "screenshot": "journal-development-pro-ready-2026-10-16.jpg"
-  }
+  },
+  "runtime_source_commit": "ae02ac4416d857a5e74e92826b7f4399e171abfb",
+  "activation_evidence": "journal-development-inference-activation-2026-10-16.json"
 }
