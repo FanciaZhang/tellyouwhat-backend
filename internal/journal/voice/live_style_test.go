@@ -21,7 +21,7 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 		t.Skip("explicit live development acceptance only")
 	}
 	base := os.Getenv("JOURNAL_WRITING_STYLE_LIVE_URL")
-	if !strings.HasPrefix(base, "https://") || !strings.HasSuffix(base, "/_development/journal") {
+	if base != "https://api-test.journal.tellyouwhat.cn" {
 		t.Fatal("provide the isolated development URL")
 	}
 	data, err := os.ReadFile(os.Getenv("JOURNAL_WRITING_STYLE_SESSION_FILE"))
@@ -44,7 +44,7 @@ func TestLiveWritingStylesOnDevelopmentService(t *testing.T) {
 				req.Header.Set("X-Journal-Development-Installation", installation)
 				req.Header.Set("X-Journal-Development-Mode", "monthly")
 				req.Header.Set("X-Journal-Development-Started-At", time.Now().UTC().Format(time.RFC3339))
-				response, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+				response, err := (&http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
 				if err != nil {
 					t.Fatal("development HTTP request failed")
 				}

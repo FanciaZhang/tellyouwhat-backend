@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,8 +20,22 @@ import (
 // same consent, ticket, snapshot, revision and acknowledgement path as the App.
 type developmentEditRewriter struct{ base string }
 
+func TestDevelopmentEditRewriterRequiresTestOrigin(t *testing.T) {
+	t.Setenv("JOURNAL_DEVELOPMENT_TOKEN", "")
+	for _, origin := range []string{"https://api.journal.tellyouwhat.cn", "https://api.journal.tellyouwhat.cn/_development/journal", "https://api-test.journal.tellyouwhat.cn.attacker.invalid", "http://api-test.journal.tellyouwhat.cn", "https://api-test.journal.tellyouwhat.cn"} {
+		_, err := (developmentEditRewriter{base: origin}).Rewrite(context.Background(), Snapshot{}, 0)
+		want := "isolated development URL required"
+		if origin == "https://api-test.journal.tellyouwhat.cn" {
+			want = "missing development credential"
+		}
+		if err == nil || err.Error() != want {
+			t.Fatalf("origin %q: got %v, want %s", origin, err, want)
+		}
+	}
+}
+
 func (m developmentEditRewriter) Rewrite(ctx context.Context, snapshot Snapshot, _ int) (RewriteResult, error) {
-	if !strings.HasPrefix(m.base, "https://") || !strings.HasSuffix(m.base, "/_development/journal") {
+	if m.base != "https://api-test.journal.tellyouwhat.cn" {
 		return RewriteResult{}, errors.New("isolated development URL required")
 	}
 	token := os.Getenv("JOURNAL_DEVELOPMENT_TOKEN")
