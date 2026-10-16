@@ -6,11 +6,26 @@ import (
 	"testing"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 )
 
+func TestPlatformOnlyLoadsExplicitKnownApplications(t *testing.T) {
+	t.Setenv("PLATFORM_APPS", "health,birthday")
+	t.Setenv("JOURNAL_QUOTA_DAILY_TOKENS", "invalid-unselected-configuration")
+	platform, err := loadPlatformUnchecked()
+	if err != nil || len(platform.Apps) != 2 || platform.Apps[0].Registry.ID != appregistry.Health || platform.Apps[1].Registry.ID != appregistry.Birthday {
+		t.Fatalf("test gateway loaded an unselected App: %v", err)
+	}
+	for _, invalid := range []string{"health,health", "unknown", "health,", ",birthday"} {
+		t.Setenv("PLATFORM_APPS", invalid)
+		if _, err := loadPlatformUnchecked(); err == nil {
+			t.Fatal("invalid App selection accepted")
+		}
+	}
+}
+
 func TestPlatformDefaultsSeparateDevelopmentAndProductionIdentities(t *testing.T) {
-	t.Setenv("BIRTHDAY_AI_ENABLED", "true")
-	t.Setenv("BIRTHDAY_AI_ONLY", "false")
+	t.Setenv("PLATFORM_APPS", "health,journal,birthday")
 	for _, prefix := range []string{"HEALTH", "JOURNAL", "BIRTHDAY"} {
 		t.Setenv(prefix+"_APPLE_BUNDLE_ID", "")
 		t.Setenv(prefix+"_API_HOSTS", "")

@@ -23,28 +23,47 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.folder.mkdir(parents=True, mode=0o700)
         for parent in (self.folder.parent, self.folder.parent.parent):
             parent.chmod(0o700)
-        self.runtime = Mock(root=self.root, state=self.root / '.operations')
+        self.runtime = Mock(root=self.root, state=self.root / '.operations', config={})
         self.runtime.state.mkdir()
         (self.runtime.state / 'blue-green.json').write_text('{"phase":"STABLE","current":{"path":"production"}}')
         for name in ('operations', 'deployment'):
             (self.runtime.state / (name + '.lock')).touch(mode=0o600)
-        self.app = {'BIRTHDAY_AI_ENABLED': 'true', 'BIRTHDAY_AI_ONLY': 'true',
+        self.app = {'PLATFORM_APPS': 'birthday',
                     'BIRTHDAY_APPLE_BUNDLE_ID': 'cn.tellyouwhat.birthday.dev', 'BIRTHDAY_APPLE_TEAM_ID': 'T6DD96HY2B',
                     'BIRTHDAY_API_HOSTS': dev.HOST, 'BIRTHDAY_APP_ATTEST_ENV': 'production',
-                    'AI_PROJECT_MONTHLY_BUDGET_CNY': '10', 'BIRTHDAY_ALLOWED_APP_BUILDS': '2,3',
-                    'BIRTHDAY_DEV_ACTIVATION_SECRET': 'a' * 64}
+                    'AI_PROJECT_MONTHLY_BUDGET_CNY': '10', 'BIRTHDAY_ALLOWED_APP_BUILDS': '4'}
         self.compose = {'PLATFORM_TEST_ENV_FILE': str(self.folder / 'runtime.env'), 'PLATFORM_TEST_IMAGE_TAG': self.source,
                         'PLATFORM_TEST_API_PORT': '18790', 'PLATFORM_TEST_NETWORK_CIDR': '172.29.93.0/24',
                         'PLATFORM_TEST_MYSQL_PASSWORD': '1' * 64, 'PLATFORM_TEST_MYSQL_ROOT_PASSWORD': '2' * 64,
                         'PLATFORM_TEST_REDIS_PASSWORD': '3' * 64}
+        self.write_archive()
+        (self.folder / 'compose.platform-test.yaml').write_bytes(b'name: fixture\n')
+        self.save()
+
+    def write_archive(self, explicit_apps=True, migration=b'x'):
         with tarfile.open(self.folder / 'source.tar', 'w') as archive:
             for name in ('deploy/tencent/platform-test.Dockerfile', 'go.mod', 'go.sum', 'cmd/gateway/main.go',
-                         'cmd/migrate/main.go', 'compose.platform-test.yaml', 'migrations/0001_example.sql'):
+                         'cmd/migrate/main.go', 'compose.platform-test.yaml', 'migrations/0001_example.sql',
+                         'internal/config/platform.go'):
                 data = b'name: fixture\n' if name == 'compose.platform-test.yaml' else b'x'
+                if name == 'internal/config/platform.go' and explicit_apps:
+                    data = b'value("PLATFORM_APPS", "health,journal")'
+                if name.startswith('migrations/'):
+                    data = migration
                 item = tarfile.TarInfo(name)
                 item.size = len(data)
                 archive.addfile(item, io.BytesIO(data))
-        (self.folder / 'compose.platform-test.yaml').write_bytes(b'name: fixture\n')
+
+    def enable_health(self):
+        self.app.update(PLATFORM_APPS='health,birthday',
+                        HEALTH_APPLE_BUNDLE_ID='cn.tellyouwhat.healthapp.dev', HEALTH_APPLE_TEAM_ID='T6DD96HY2B',
+                        HEALTH_API_HOSTS=dev.HEALTH_HOST, HEALTH_APP_ATTEST_ENV='production', HEALTH_ALLOWED_APP_BUILDS='4',
+                        HEALTH_SCHEMA_MANIFEST_PATH='/config/schema-manifest.json',
+                        HEALTH_ARK_BASE_URL='https://ark.cn-beijing.volces.com', HEALTH_ARK_API_KEY='health-test-key',
+                        TOS_ENDPOINT='https://tos-cn-beijing.volces.com', TOS_REGION='cn-beijing', TOS_BUCKET='health-ai-test',
+                        TOS_ACCESS_KEY='test-access', TOS_SECRET_KEY='test-secret')
+        self.app.update({k: 'ep-health-test' for k in dev.HEALTH_ENDPOINTS})
+        self.runtime.config = {k: 'production-' + k for k in ('HEALTH_ARK_API_KEY', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY', *dev.HEALTH_ENDPOINTS)}
         self.save()
 
     def save(self):
@@ -87,7 +106,6 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             dev.selection(self.runtime, self.source)
 
     def test_automatic_enrollment_still_requires_approved_builds(self):
-        self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET')
         self.save()
         dev.selection(self.runtime, self.source)
         self.app['BIRTHDAY_ALLOWED_APP_BUILDS'] = ''
@@ -95,11 +113,49 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaises(OperationError):
             dev.selection(self.runtime, self.source)
 
+    def test_retained_recovery_uses_its_source_contract_but_new_source_rejects_old_flags(self):
+        self.app.pop('PLATFORM_APPS')
+        self.app.update(BIRTHDAY_AI_ENABLED='true', BIRTHDAY_AI_ONLY='true')
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'selected explicitly'):
+            dev.selection(self.runtime, self.source)
+        self.write_archive(explicit_apps=False)
+        self.save()
+        dev.selection(self.runtime, self.source)
+        self.app['PLATFORM_APPS'] = 'birthday'
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'source contract'):
+            dev.selection(self.runtime, self.source)
+
+    def test_health_requires_its_own_complete_test_resources(self):
+        self.enable_health()
+        dev.selection(self.runtime, self.source)
+        self.assertEqual(dev.running_services(self.folder), ('gateway', 'worker'))
+        for key, invalid in [('HEALTH_APPLE_BUNDLE_ID', 'cn.tellyouwhat.healthapp'),
+                             ('HEALTH_API_HOSTS', 'api.health.tellyouwhat.cn'),
+                             ('TOS_BUCKET', 'health-ai'), ('TOS_SECRET_KEY', ''),
+                             ('HEALTH_ARK_ENDPOINT_MEAL_PHOTO_CAPTURE', 'doubao-direct-model'),
+                             ('HEALTH_ALLOWED_APP_BUILDS', ''), ('HEALTH_APP_STORE_PRIVATE_KEY_PATH', '/secrets/formal.p8'),
+                             ('PLATFORM_APPS', 'health,journal,birthday')]:
+            old = self.app.get(key)
+            self.app[key] = invalid
+            self.save()
+            with self.subTest(key=key), self.assertRaises(OperationError):
+                dev.selection(self.runtime, self.source)
+            if old is None:
+                self.app.pop(key)
+            else:
+                self.app[key] = old
+
     def execute(self, label, command, **kwargs):
         if label == 'platform-test-schema':
             return b'1\t0001_example.sql\n1\n0\n'
-        if label == 'platform-test-running':
-            return b'[{"State":{"Running":true,"OOMKilled":false},"RestartCount":0}]'
+        if label.endswith('-worker-status'):
+            return b'{"httpEnabled":true,"backgroundEnabled":true}'
+        if label in ('platform-test-running-gateway', 'platform-test-running-worker'):
+            service = 'worker' if label.endswith('-worker') else 'gateway'
+            return json.dumps([{'State': {'Running': True, 'OOMKilled': False}, 'RestartCount': 0,
+                                'Config': {'Image': dev.PROJECT + '-' + service + ':' + self.source}}]).encode()
         return b''
 
     def activate(self):
@@ -148,15 +204,19 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.folder = self.old_folder.parent / self.source
         shutil.copytree(self.old_folder, self.folder)
         self.compose.update(PLATFORM_TEST_ENV_FILE=str(self.folder / 'runtime.env'), PLATFORM_TEST_IMAGE_TAG=self.source)
-        self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET')
+        self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET', None)
         self.app['BIRTHDAY_ALLOWED_APP_BUILDS'] = '4'
         self.save()
         self.runtime.backups = self.root / 'backups'
         def execute(label, command, **kwargs):
-            if label in ('platform-test-update-running', 'platform-test-update-check'):
-                source = self.old_source if label.endswith('running') else self.source
+            if label.endswith('-worker-status'):
+                return b'{"httpEnabled":true,"backgroundEnabled":true}'
+            if label in ('platform-test-update-running-gateway', 'platform-test-update-check-gateway',
+                         'platform-test-rollback-check-gateway', 'platform-test-update-check-worker'):
+                source = self.source if label.startswith('platform-test-update-check') else self.old_source
+                service = 'worker' if label.endswith('-worker') else 'gateway'
                 return json.dumps([{'State': {'Running': True}, 'RestartCount': 0,
-                                    'Config': {'Image': dev.PROJECT + '-gateway:' + source}}]).encode()
+                                    'Config': {'Image': dev.PROJECT + '-' + service + ':' + source}}]).encode()
             if label == 'platform-test-update-schema':
                 return b'1\t0001_example.sql\n'
             return b''
@@ -180,6 +240,21 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(starts[0][-4:], ['-d', '--no-build', '--no-deps', 'gateway'])
         self.assertFalse(any('down' in c or '--volumes' in c or 'run' in c for c in commands))
 
+    def test_registered_legacy_source_can_upgrade_to_explicit_apps_without_client_adapters(self):
+        self.app.pop('PLATFORM_APPS')
+        self.app.update(BIRTHDAY_AI_ENABLED='true', BIRTHDAY_AI_ONLY='true')
+        self.write_archive(explicit_apps=False)
+        self.save()
+        self.prepare_update()
+        self.app.pop('BIRTHDAY_AI_ENABLED')
+        self.app.pop('BIRTHDAY_AI_ONLY')
+        self.app['PLATFORM_APPS'] = 'birthday'
+        self.write_archive()
+        self.save()
+        result = self.update()
+        self.assertEqual(result['apps'], ['birthday'])
+        self.assertEqual(result['previous'], self.previous)
+
     def test_update_rejects_changed_credentials_and_backup_failure_before_build(self):
         self.prepare_update()
         self.app['BIRTHDAY_ARK_API_KEY'] = 'changed-provider'
@@ -197,9 +272,93 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'not ready'):
             self.update(ready_error=[OperationError('not ready'), None])
         self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
-        rollback = self.runtime.execute.call_args.args[1]
+        rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-rollback')
         self.assertIn(str(self.old_folder / 'compose.env'), rollback)
         self.assertEqual(rollback[-4:], ['-d', '--no-build', '--no-deps', 'gateway'])
+
+    def test_health_admission_starts_and_registers_worker_without_changing_existing_database(self):
+        self.prepare_update()
+        self.enable_health()
+        result = self.update()
+        self.assertEqual(result['apps'], ['health', 'birthday'])
+        self.assertEqual(result['previous'], self.previous)
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list]
+        start = next(c for c in commands if 'up' in c)
+        self.assertEqual(start[-2:], ['gateway', 'worker'])
+        self.assertFalse(any('down' in c or '--volumes' in c or 'run' in c for c in commands))
+        builds = [c for c in commands if 'build' in c]
+        self.assertEqual({c[c.index('--target') + 1] for c in builds}, {'gateway', 'worker', 'migrate'})
+
+    def test_health_bootstrap_also_checks_worker_and_rejects_shared_credentials(self):
+        self.enable_health()
+        self.runtime.execute.side_effect = self.execute
+        self.app['TOS_ACCESS_KEY'] = self.runtime.config['TOS_ACCESS_KEY']
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'differ from verified production'):
+            self.activate()
+        self.app['TOS_ACCESS_KEY'] = 'test-access'
+        self.save()
+        result = self.activate()
+        self.assertEqual(result['apps'], ['health', 'birthday'])
+        self.assertIn('platform-test-running-worker-status', [c.args[0] for c in self.runtime.execute.call_args_list])
+
+    def test_worker_must_report_active_lifecycle_after_startup(self):
+        self.enable_health()
+        calls = []
+        def execute(label, command, **kwargs):
+            calls.append(label)
+            if label.endswith('-worker-status'):
+                return b'{"httpEnabled":false,"backgroundEnabled":false}'
+            return self.execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = execute
+        with patch.object(dev.time, 'sleep'), self.assertRaisesRegex(OperationError, 'not accepting work'):
+            dev.verify_running(self.runtime, self.folder, self.source, 'platform-test-running')
+        self.assertEqual(calls.count('platform-test-running-worker-status'), 30)
+
+    def test_health_admission_rejects_production_resources_before_backup_or_build(self):
+        self.prepare_update()
+        self.enable_health()
+        for key in ('HEALTH_ARK_API_KEY', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY', *dev.HEALTH_ENDPOINTS):
+            old = self.app[key]
+            self.app[key] = self.runtime.config[key]
+            if key in dev.HEALTH_ENDPOINTS:
+                self.runtime.config[key] = self.app[key] = 'ep-production'
+            self.save()
+            with self.subTest(key=key), self.assertRaisesRegex(OperationError, 'differ from verified production'):
+                self.update()
+            self.app[key] = old
+        self.assertFalse(any(c.args[0].startswith('platform-test-build') for c in self.runtime.execute.call_args_list))
+
+    def test_health_start_failure_stops_new_worker_and_restores_old_gateway(self):
+        self.prepare_update()
+        self.enable_health()
+        with self.assertRaisesRegex(OperationError, 'not ready'):
+            self.update(ready_error=[OperationError('not ready'), None])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-stop-worker'), labels.index('platform-test-update-rollback'))
+        self.assertIn('platform-test-rollback-check-gateway', labels)
+
+    def test_worker_cleanup_failure_still_restores_old_gateway_and_reports_failure(self):
+        self.prepare_update()
+        self.enable_health()
+        execute = self.runtime.execute.side_effect
+        def fail_worker_stop(label, command, **kwargs):
+            if label == 'platform-test-update-stop-worker':
+                raise OperationError('worker stop failed')
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = fail_worker_stop
+        with self.assertRaisesRegex(OperationError, 'worker stop failed'):
+            self.update(ready_error=[OperationError('not ready'), None])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+        self.assertIn('platform-test-rollback-check-gateway', [c.args[0] for c in self.runtime.execute.call_args_list])
+
+    def test_configuration_update_rejects_schema_changes(self):
+        self.prepare_update()
+        self.write_archive(migration=b'ALTER TABLE existing_users DROP COLUMN data;')
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'database schemas'):
+            self.update()
 
 
 if __name__ == '__main__':

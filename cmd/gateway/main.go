@@ -374,8 +374,7 @@ func buildAppHandler(
 	attestationVerifier := attestation.NewAppleAttestationVerifier(app.TeamID, app.BundleID, appConfig.AttestationEnvironment, attestationRoots)
 	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
 		AppID: string(app.ID), Environment: appConfig.AttestationEnvironment,
-		DevelopmentSecret: appConfig.DevelopmentSecret, AllowedBuilds: appConfig.AllowedBuilds,
-		RequireActivationSecret: appConfig.RequiresActivationSecret(platform.Environment),
+		AllowedBuilds: appConfig.AllowedBuilds,
 	}, storage.nonces, storage.keys, attestationVerifier, time.Now)
 	authenticator := attestation.NewService(
 		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
@@ -532,7 +531,7 @@ func commerceServices(
 		return nil, nil, nil, nil
 	}
 	if environment == "development" {
-		return entitlement.NewDevelopmentService(store, appConfig.DevelopmentSecret, 30*24*time.Hour, time.Now), nil, nil, nil
+		return entitlement.NewDevelopmentService(string(appConfig.Registry.ID), store, 30*24*time.Hour, time.Now), nil, nil, nil
 	}
 	rootPEM, err := os.ReadFile(appConfig.AppStore.RootPEMPath)
 	if err != nil {

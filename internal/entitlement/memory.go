@@ -21,8 +21,11 @@ func NewMemoryStore() *MemoryStore {
 
 func (store *MemoryStore) Upsert(_ context.Context, record Record) error {
 	store.mu.Lock()
+	defer store.mu.Unlock()
+	if existing, found := store.records[record.KeyID]; record.Environment == "development" && found && existing.Environment != "development" {
+		return ErrActivationDenied
+	}
 	store.records[record.KeyID] = record
-	store.mu.Unlock()
 	return nil
 }
 

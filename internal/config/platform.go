@@ -56,7 +56,6 @@ func (config AICostConfig) Valid() bool {
 type AppConfig struct {
 	Registry               appregistry.App
 	AttestationEnvironment attestation.Environment
-	DevelopmentSecret      string
 	AllowedBuilds          map[string]struct{}
 	SchemaManifestPath     string
 	Ark                    ark.Config
@@ -139,47 +138,38 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 		},
 	}
 
-	health, err := loadPlatformApp("HEALTH", appDefaults{
-		ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
-		BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
-		ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
-		AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
-	}, environment, commonTeamID)
-	if err != nil {
-		return PlatformConfig{}, err
-	}
-	journal, err := loadPlatformApp("JOURNAL", appDefaults{
-		ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
-		BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
-		ProductIDs: []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"}, OperationPrefix: "journal.",
-		PrivacyBaseURL: "https://journal.tellyouwhat.cn",
-	}, environment, commonTeamID)
-	if err != nil {
-		return PlatformConfig{}, err
-	}
-	result.Apps = []AppConfig{health, journal}
-	enabled := value("BIRTHDAY_AI_ENABLED", "false")
-	only := value("BIRTHDAY_AI_ONLY", "false")
-	if (only != "true" && only != "false") || (only == "true" && enabled != "true") {
-		return PlatformConfig{}, errors.New("BIRTHDAY_AI_ONLY requires the enabled birthday service")
-	}
-	if enabled != "true" && enabled != "false" {
-		return PlatformConfig{}, errors.New("BIRTHDAY_AI_ENABLED must be true or false")
-	}
-	if enabled == "true" {
-		birthday, err := loadPlatformApp("BIRTHDAY", appDefaults{
+	definitions := map[appregistry.AppID]appDefaults{
+		appregistry.Health: {
+			ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
+			ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
+			AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
+		},
+		appregistry.Journal: {
+			ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
+			ProductIDs:      []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"},
+			OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.tellyouwhat.cn",
+		},
+		appregistry.Birthday: {
 			ID: appregistry.Birthday, DisplayName: "告你生日", Host: "api.birthday.tellyouwhat.cn",
 			BundleID: "cn.tellyouwhat.birthday", ProductID: "birthday.assistant", ProductIDs: []string{"birthday.assistant"},
 			AllowedOperations: []string{"birthday.propose", "birthday.revise"}, PrivacyBaseURL: "https://birthday.tellyouwhat.cn",
-		}, environment, commonTeamID)
+		},
+	}
+	seen := map[appregistry.AppID]bool{}
+	for _, name := range strings.Split(value("PLATFORM_APPS", "health,journal"), ",") {
+		id := appregistry.AppID(strings.TrimSpace(name))
+		defaults, known := definitions[id]
+		if !known || seen[id] {
+			return PlatformConfig{}, errors.New("PLATFORM_APPS must select unique known applications")
+		}
+		seen[id] = true
+		app, err := loadPlatformApp(strings.ToUpper(string(id)), defaults, environment, commonTeamID)
 		if err != nil {
 			return PlatformConfig{}, err
 		}
-		if only == "true" {
-			result.Apps = []AppConfig{birthday}
-		} else {
-			result.Apps = append(result.Apps, birthday)
-		}
+		result.Apps = append(result.Apps, app)
 	}
 	return result, nil
 }
@@ -237,7 +227,6 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 			AllowedOperations:      append([]string(nil), defaults.AllowedOperations...),
 		},
 		AttestationEnvironment: attestationEnvironment,
-		DevelopmentSecret:      prefixedValue(prefix, "DEV_ACTIVATION_SECRET", ""),
 		AllowedBuilds:          splitSet(prefixedValue(prefix, "ALLOWED_APP_BUILDS", "")),
 		SchemaManifestPath:     prefixedValue(prefix, "SCHEMA_MANIFEST_PATH", ""),
 		Quota:                  quotaLimits,
@@ -330,8 +319,14 @@ func (config PlatformConfig) Validate() error {
 	if len(config.JobCapabilitySecret) < 32 {
 		return errors.New("JOB_CAPABILITY_SECRET must be at least 32 bytes")
 	}
-	if (len(config.Apps) != 1 || config.Apps[0].Registry.ID != appregistry.Birthday) && (config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "") {
-		return errors.New("TOS bucket credentials are required")
+	if len(config.Apps) != 1 || config.Apps[0].Registry.ID != appregistry.Birthday {
+		if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
+			return errors.New("TOS bucket credentials are required")
+		}
+		testBucket := strings.HasSuffix(config.TOS.Bucket, "-test") || strings.HasSuffix(config.TOS.Bucket, "-development")
+		if (config.Environment == "development") != testBucket {
+			return errors.New("TOS_BUCKET must end in -test or -development only in development")
+		}
 	}
 	registryEntries := make([]appregistry.App, 0, len(config.Apps))
 	for _, app := range config.Apps {
@@ -342,10 +337,6 @@ func (config PlatformConfig) Validate() error {
 	}
 	_, err := appregistry.New(registryEntries)
 	return err
-}
-
-func (config AppConfig) RequiresActivationSecret(environment string) bool {
-	return environment == "development" && config.Registry.ID != appregistry.Birthday
 }
 
 func (config AppConfig) Validate(environment string) error {
@@ -382,9 +373,6 @@ func (config AppConfig) Validate(environment string) error {
 	}
 	if environment == "development" && len(config.AllowedBuilds) == 0 {
 		return errors.New("ALLOWED_APP_BUILDS is required in development")
-	}
-	if config.RequiresActivationSecret(environment) && config.DevelopmentSecret == "" {
-		return errors.New("DEV_ACTIVATION_SECRET is required for this development App")
 	}
 	if environment == "production" && config.Registry.ID != appregistry.Birthday {
 		if err := config.AppStore.validate(); err != nil {

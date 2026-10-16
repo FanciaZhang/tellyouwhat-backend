@@ -4,13 +4,51 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
 )
+
+func TestHealthStorageBucketCannotCrossEnvironments(t *testing.T) {
+	for _, tc := range []struct {
+		environment, bucket string
+		valid               bool
+	}{
+		{"development", "health-ai-test", true}, {"development", "health-ai-development", true},
+		{"development", "health-ai", false}, {"production", "health-ai-test", false}, {"production", "health-ai", true},
+	} {
+		t.Run(tc.environment+"/"+tc.bucket, func(t *testing.T) {
+			app := validHealthAppConfig()
+			config := PlatformConfig{Environment: tc.environment, StorageMode: "memory", Apps: []AppConfig{app},
+				AppAttestRootPEMPath: "fixture-root", WorkerSecret: "fixture-worker", JobCapabilitySecret: strings.Repeat("x", 32),
+				TOS: media.TOSConfig{Bucket: tc.bucket, AccessKey: "fixture", SecretKey: "fixture"}}
+			if tc.environment == "production" {
+				config.StorageMode, config.DatabaseDSN, config.RedisURL, config.PayloadEncryptionKey = "mysql", "application:fixture@tcp(localhost:3306)/tellyouwhat?parseTime=true", "redis://fixture", "fixture"
+				config.WorkerAsyncURL = "http://worker:8081/internal/jobs/process"
+				config.AICost = AICostConfig{Limits: costcontrol.Limits{MonthlyBudgetNanos: 10, MaxConcurrent: 1, LeaseDuration: time.Minute},
+					HealthArk:     costcontrol.TokenPrice{InputNanosPerMillionTokens: 1, OutputNanosPerMillionTokens: 1},
+					JournalArk:    costcontrol.TokenPrice{InputNanosPerMillionTokens: 1, OutputNanosPerMillionTokens: 1},
+					JournalSpeech: costcontrol.DurationPrice{NanosPerHour: 1}}
+				config.Apps[0].Registry.BundleID = "health.bundle"
+				config.Apps[0].AttestationEnvironment = attestation.EnvironmentProduction
+				config.Apps[0].AppStore = validProductionAppStoreConfig("Both")
+			}
+			err := config.Validate()
+			if tc.valid && err != nil {
+				t.Fatalf("valid isolated bucket rejected: %v", err)
+			}
+			if !tc.valid && (err == nil || !strings.Contains(err.Error(), "TOS_BUCKET")) {
+				t.Fatalf("mixed storage accepted: %v", err)
+			}
+		})
+	}
+}
 
 func TestDevelopmentAppRequiresExplicitBuildAllowlist(t *testing.T) {
 	t.Parallel()
@@ -73,7 +111,6 @@ func TestProductionAppRequiresAppStoreServerCredentials(t *testing.T) {
 	app := validHealthAppConfig()
 	app.Registry.BundleID = "health.bundle"
 	app.AttestationEnvironment = attestation.EnvironmentProduction
-	app.DevelopmentSecret = ""
 	app.AllowedBuilds = nil
 	if err := app.Validate("production"); err == nil || !strings.Contains(err.Error(), "APP_STORE") {
 		t.Fatalf("production accepted missing App Store credentials: %v", err)
@@ -90,7 +127,6 @@ func TestProductionAppAcceptsBothAppStoreEnvironments(t *testing.T) {
 	app := validHealthAppConfig()
 	app.Registry.BundleID = "health.bundle"
 	app.AttestationEnvironment = attestation.EnvironmentProduction
-	app.DevelopmentSecret = ""
 	app.AllowedBuilds = nil
 	app.AppStore = validProductionAppStoreConfig("Both")
 	if err := app.Validate("production"); err != nil {
@@ -117,7 +153,6 @@ func validHealthAppConfig() AppConfig {
 			AllowedOperations: allowedOperations,
 		},
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
-		DevelopmentSecret:      "development-secret",
 		AllowedBuilds:          map[string]struct{}{"100": {}},
 		ManagedAIProductIDs:    []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
 		SchemaManifestPath:     "/config/schema-manifest.json",

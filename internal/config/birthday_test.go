@@ -7,8 +7,7 @@ import (
 
 func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
-	t.Setenv("BIRTHDAY_AI_ONLY", "false")
-	t.Setenv("BIRTHDAY_AI_ENABLED", "false")
+	t.Setenv("PLATFORM_APPS", "health,journal")
 	platform, err := loadPlatformUnchecked()
 	if err != nil {
 		t.Fatal(err)
@@ -16,7 +15,7 @@ func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) 
 	if len(platform.Apps) != 2 {
 		t.Fatal("birthday enabled without configuration")
 	}
-	t.Setenv("BIRTHDAY_AI_ENABLED", "true")
+	t.Setenv("PLATFORM_APPS", "health,journal,birthday")
 	t.Setenv("HEALTH_ARK_API_KEY", "health-synthetic-key")
 	t.Setenv("JOURNAL_ARK_API_KEY", "journal-synthetic-key")
 	t.Setenv("BIRTHDAY_ARK_API_KEY", "")
@@ -38,12 +37,7 @@ func TestBirthdayRuntimeIsOptInAndDoesNotReuseOtherAppCredentials(t *testing.T) 
 
 func TestBirthdayOnlyRuntimeKeepsOtherAppCredentialsOut(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
-	t.Setenv("BIRTHDAY_AI_ONLY", "true")
-	t.Setenv("BIRTHDAY_AI_ENABLED", "false")
-	if _, err := loadPlatformUnchecked(); err == nil {
-		t.Fatal("birthday-only runtime accepted a disabled service")
-	}
-	t.Setenv("BIRTHDAY_AI_ENABLED", "true")
+	t.Setenv("PLATFORM_APPS", "birthday")
 	t.Setenv("HEALTH_ARK_API_KEY", "")
 	t.Setenv("JOURNAL_ARK_API_KEY", "")
 	platform, err := loadPlatformUnchecked()
@@ -58,7 +52,6 @@ func TestBirthdayOnlyRuntimeKeepsOtherAppCredentialsOut(t *testing.T) {
 	app := &platform.Apps[0]
 	app.Registry.TeamID = "SYNTHETIC"
 	app.AttestationEnvironment = "development"
-	app.DevelopmentSecret = ""
 	app.AllowedBuilds = map[string]struct{}{"1": {}}
 	app.JournalAI.APIKey, app.JournalAI.LiteModel = "synthetic-key", "synthetic-model"
 	app.BirthdayPrice = platform.AICost.JournalArk
@@ -68,14 +61,5 @@ func TestBirthdayOnlyRuntimeKeepsOtherAppCredentialsOut(t *testing.T) {
 	app.AllowedBuilds = nil
 	if err := platform.Validate(); err == nil {
 		t.Fatal("Birthday development must still restrict approved builds")
-	}
-}
-
-func TestBirthdayAutomaticEnrollmentKeepsOtherAppActivationRequirements(t *testing.T) {
-	for _, id := range []appregistry.AppID{appregistry.Birthday, appregistry.Health, appregistry.Journal} {
-		app := AppConfig{Registry: appregistry.App{ID: id}}
-		if app.RequiresActivationSecret("development") != (id != appregistry.Birthday) || app.RequiresActivationSecret("production") {
-			t.Fatalf("activation requirement incorrect for %s", id)
-		}
 	}
 }

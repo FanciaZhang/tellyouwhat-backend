@@ -39,12 +39,10 @@ func TestBirthdayAutomaticEnrollmentStillVerifiesAppleIdentityAndBuild(t *testin
 		t.Run(tc.name, func(t *testing.T) {
 			now, ctx := time.Now().UTC(), context.Background()
 			client := appattest.New(t, tc.identity, now)
-			app := config.AppConfig{Registry: appregistry.App{ID: appregistry.Birthday}}
 			keys := attestation.NewMemoryKeyStore()
 			service := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
 				AppID: "birthday", Environment: attestation.EnvironmentProduction,
-				RequireActivationSecret: app.RequiresActivationSecret("development"),
-				AllowedBuilds:           map[string]struct{}{"4": {}},
+				AllowedBuilds: map[string]struct{}{"4": {}},
 			}, attestation.NewMemoryNonceStore(), keys,
 				attestation.NewAppleAttestationVerifier("TEAM", "cn.tellyouwhat.birthday.dev", attestation.EnvironmentProduction, client.Roots),
 				func() time.Time { return now })

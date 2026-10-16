@@ -1,0 +1,9 @@
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["tos:PutObject", "tos:GetObject", "tos:DeleteObject"],
+      "Resource": ["trn:tos:::health-ai-test/ai-temp/health/*"]
+    }
+  ]
+}

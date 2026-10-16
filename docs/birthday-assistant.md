@@ -2,11 +2,11 @@
 
 生日助手是独立 App 身份，复用平台的 App Attest 注册、按 App 隔离的存储和额度、项目成本控制。接口为 `POST /v2/birthday/assist`，操作只允许 `birthday.propose` 和 `birthday.revise`。首块采用受限免费额度，不要求 StoreKit 订阅，也不触碰手记和健康权益。
 
-默认 `BIRTHDAY_AI_ENABLED=false`，已有服务的部署配置继续只启用原来的 App。生日需显式配置自己的 Bundle ID、Apple Team、Ark 凭据／模型和成本预留价格；配置不会隐式取健康或手记的值。
+`PLATFORM_APPS` 显式选择要加载的 App，默认 `health,journal` 保留原正式服务范围；生日独立进程使用 `birthday`，共享测试进程使用 `health,birthday`。生日需配置自己的 Bundle ID、Apple Team、Ark 凭据／模型和成本预留价格，不隐式取健康或手记的值。
 
 ## 2026-10-16 独立开发环境
 
-开发身份为 `cn.tellyouwhat.birthday.dev`，API 为 `https://api-test.birthday.tellyouwhat.cn/`，使用 production App Attest。生日改为自动设备注册，不再要求输入激活码；注册仍验证 Apple 签名、团队、Bundle ID、挑战和构建白名单，调用仍受单设备限额与每月 10 元服务端成本限制。健康、手记的既有注册策略保持原样。
+开发身份为 `cn.tellyouwhat.birthday.dev`，API 为 `https://api-test.birthday.tellyouwhat.cn/`，使用 production App Attest。开发注册通过设备证明自动完成，不要求输入激活码；仍验证 Apple 签名、团队、Bundle ID、挑战和构建白名单，调用受单设备限额与每月 10 元测试项目服务端成本限制。健康开发版也使用自动注册；正式服务仍验证其原 App 身份和真实购买。
 
 本次代码已提供同 schema 的注册策略升级：先制作并验证包含测试配置及 SQL 的 COS 备份，保持 MySQL、Redis、其他凭据及 Compose 拓扑，失败切回匹配的旧网关/配置。未运行迁移，也不重建数据卷。发布及真机结果分别记录在证据中。
 
@@ -40,14 +40,12 @@
 
 | 变量 | 用途 |
 |---|---|
-| BIRTHDAY_AI_ENABLED | 显式启用，默认 false |
-| BIRTHDAY_AI_ONLY | 独立部署只加载生日，必须同时启用 AI；无需其他 App 或 TOS 凭据 |
+| PLATFORM_APPS | `birthday` 只加载生日；`health,birthday` 加载共享测试服务；默认 `health,journal` |
 | BIRTHDAY_API_HOSTS | 生日专用 HTTPS 主机，与健康和手记分开 |
 | BIRTHDAY_APPLE_TEAM_ID | 生日 App 的签名团队 |
 | BIRTHDAY_APPLE_BUNDLE_ID | cn.tellyouwhat.birthday |
 | BIRTHDAY_APP_ATTEST_ENV | 与签名环境一致；生产必须 production |
 | BIRTHDAY_ALLOWED_APP_BUILDS | 开发设备允许注册的构建号 |
-| BIRTHDAY_DEV_ACTIVATION_SECRET | 已停用；生日自动验证真实设备，不要求口令 |
 | BIRTHDAY_ARK_BASE_URL | Ark Responses API 根地址 |
 | BIRTHDAY_ARK_API_KEY | 服务端推理凭据，不放进 App 或 Git |
 | BIRTHDAY_ARK_MODEL_ID | 支持结构化输出的专用模型配置 |
