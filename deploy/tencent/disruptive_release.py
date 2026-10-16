@@ -138,6 +138,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, con
                 listener.bind(("127.0.0.1", port))
             except OSError as error:
                 raise OperationError("candidate slot port is occupied") from error
+    bg.bind_proxy(runtime, state, candidate)
     clear_offer(runtime)
     bg.write_state(runtime, state, phase="INTERRUPTING", strategy="disruptive",
                    recovery_target=previous, candidate=candidate)

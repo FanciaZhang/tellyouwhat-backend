@@ -41,6 +41,9 @@ def create_recovery_bundle(runtime, filename):
     if state and state.get("phase") != "STABLE":
         raise OperationError("configuration backup requires a stable production release")
     slots = {k: v for k, v in state.items() if k in ("current", "previous") and v}
+    if state and 'proxy' not in slots['current']:
+        from blue_green import capture_proxy
+        slots['current'] = dict(slots['current'], proxy=capture_proxy(runtime))
     if not slots:
         slots = {"current": {"path": str(runtime.compose_root)}}
     images = {k: v.get("images", {}) for k, v in slots.items()}

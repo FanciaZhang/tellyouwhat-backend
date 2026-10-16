@@ -23,6 +23,14 @@ class BlueGreenTests(unittest.TestCase):
               "PUBLIC_PROXY_MODE=external\n")
         (self.root / "compose.production.yaml").write_text("name: fixture\n")
         self.runtime = Runtime(self.root)
+        fragment = self.root / 'backend.caddy'
+        fragment.write_text(bg.shared_proxy(self.runtime.config, {'slot': 'legacy'}, None)['fragment'])
+        main = self.root / 'Caddyfile'
+        main.write_text('import ' + str(fragment) + '\n')
+        for name, path in [('PROXY_FILE', fragment), ('PROXY_ROOT', main), ('LEGACY_ALBUM_PROXY', self.root / 'albums.caddy')]:
+            patcher = patch.object(bg, name, path)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.legacy = {"slot": "legacy", "path": ".", "tag": "old", "registry": "registry/app", "healthy": True, "automationVersion": 1}
         atomic_json(self.runtime.state / bg.STATE, {"phase": "STABLE", "current": self.legacy, "previous": None})
         self.processes = {"legacy": self.processes_for("legacy", True)}
@@ -343,12 +351,12 @@ class BlueGreenTests(unittest.TestCase):
 
 
 class ProxyRenderingTests(unittest.TestCase):
-    def test_preserves_development_route_and_streaming_settings(self):
+    def test_preserves_streaming_settings_and_internal_path_protection(self):
         source = (Path(__file__).parents[1] / "single-server/Caddyfile.external").read_text()
         rendered = bg.render_proxy(source, {"slot": "green"})
         self.assertIn("reverse_proxy 127.0.0.1:18180", rendered)
         self.assertIn("reverse_proxy 127.0.0.1:18182", rendered)
-        self.assertIn("reverse_proxy 127.0.0.1:18787", rendered)
+        self.assertNotIn("/_development/", rendered)
         self.assertIn("stream_close_delay 4h", rendered)
         self.assertEqual(bg.render_proxy(rendered, {"slot": "green"}), rendered)
         self.assertIn("respond @internal 404", rendered)

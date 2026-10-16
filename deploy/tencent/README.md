@@ -127,7 +127,9 @@ curl -fsS -H 'Host: admin.tellyouwhat.cn' http://127.0.0.1:18082/readyz
 
 `PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过本次启用的所有 App 及管理后台 HTTPS 入口的验收。
 
-原生 Caddy 可在现有配置中导入 [`Caddyfile.external`](../single-server/Caddyfile.external)，保留原有站点。该文件将两个 App 的域名转发到 `127.0.0.1:18080`，管理后台转发到 `127.0.0.1:18082`，并屏蔽 App 入口的 `/internal/*`。将 `HEALTH_API_DOMAIN`、`JOURNAL_API_DOMAIN`、`ADMIN_DOMAIN` 和 `ACME_EMAIL` 渲染为实际值，或仅将这四个非密钥变量提供给 Caddy 服务。不要让 Caddy 加载完整生产环境文件。先用 `caddy validate` 验证包含原站点的完整配置，再通过 `systemctl reload caddy` 加载；核对原站点仍正常响应。
+首次接入原生 Caddy 的健康/手记基础模板为 [`Caddyfile.external`](../single-server/Caddyfile.external)。蓝绿发布从候选配置生成全部启用 App 的站点，共享所选网关端口；管理后台使用对应槽位的独立端口。代理不读取完整环境文件，只渲染域名和证书联系方式。切换前验证包含其他站点的完整配置，切换后检查每个 App 域名实际只指向所选网关；测试与 OTA 入口不随正式槽位改变。
+
+首次共享相册接入会停用 `/etc/caddy/albums-test.caddy` 的导入，原文件保留；只有确认该片段仅含旧相册站点时才允许迁移。原网关片段与相册片段随版本保存到发布状态和加密备份，失败恢复旧配置，后续回滚恢复该版本的路由。正式域名下的旧开发/TestFlight 路径不再转发。该迁移与启用相册的真实资源就绪检查一起执行，不能提前手工切域名。
 
 DNS、备案接入和证书签发条件满足后，执行完整公网发布：
 
