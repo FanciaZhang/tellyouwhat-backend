@@ -23,6 +23,10 @@
 
 `install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `398b2ff`、1.0 (5)，自动验证设备并支持 Debug 诊断导出；测试后端 `7c0e6d2` 保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
 
+## 手记共享认证客户端（2026-10-16）
+
+手记客户端已本地提交 `3ca91f2`、`fc1f9eb`：移除私有 Bearer/连接文件导入，开发与正式共用设备认证；开发版在服务器明确拒绝测试权益时，通过签名申请最长 30 天的授权并重试一次，不伪造 Apple 购买。5 项客户端定向检查、Release 编译及二进制排除检查通过。后端签名 HTTP 及竞态检查覆盖健康免费档保留、手记授权、到期和重新授权；未改服务器运行行为。测试使用合成 App Attest 根，不代表真实 Apple 认证。见 `evidence/journal-development-entitlement-2026-10-16.json`。旧私有服务和数据仍保留，新客户端尚未交付，公网路由尚未切换。
+
 ## 隔离和部署
 
 平台 `APP_ENV=development` 默认使用 `.dev` 与 `api-test.*`，production 使用正式身份和 `api.*`。配置相反的身份、域名或数据库时，连接数据库前拒绝启动；开发库和账号均以 `_test` 结尾，生产两者均不得以该后缀结尾，且均不能使用 root。实际 MySQL grants、Redis、对象存储及会话/载荷密钥仍须分别验证，命名检查不能代替权限隔离。

@@ -14,22 +14,36 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/testutil/appattest"
 )
 
 func TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP(t *testing.T) {
+	for _, app := range []struct {
+		id     appregistry.AppID
+		bundle string
+	}{
+		{appregistry.Health, "cn.tellyouwhat.healthapp.dev"},
+		{appregistry.Journal, "cn.tellyouwhat.journalapp.dev"},
+	} {
+		t.Run(string(app.id), func(t *testing.T) { verifyDevelopmentAccessHTTP(t, app.id, app.bundle) })
+	}
+}
+
+func verifyDevelopmentAccessHTTP(t *testing.T, id appregistry.AppID, bundle string) {
 	now := time.Now().UTC().Truncate(time.Second)
 	clock := func() time.Time { return now }
-	client := appattest.New(t, "TEAM.cn.tellyouwhat.healthapp.dev", now)
+	client := appattest.New(t, "TEAM."+bundle, now)
 	nonces, keys := attestation.NewMemoryNonceStore(), attestation.NewMemoryKeyStore()
 	store := entitlement.NewMemoryStore()
 	server := newTestServer()
 	server.now = clock
+	server.app.ID = id
 	server.enrollment = attestation.NewEnrollmentService(attestation.EnrollmentConfig{
-		AppID: "health", Environment: attestation.EnvironmentProduction, AllowedBuilds: map[string]struct{}{"4": {}},
-	}, nonces, keys, attestation.NewAppleAttestationVerifier("TEAM", "cn.tellyouwhat.healthapp.dev", attestation.EnvironmentProduction, client.Roots), clock)
-	server.authenticator = attestation.NewService(nonces, keys, attestation.NewAppleAssertionVerifier("TEAM", "cn.tellyouwhat.healthapp.dev"), clock).RequireEnvironment(attestation.EnvironmentProduction)
-	server.activator = entitlement.NewDevelopmentService("health", store, 30*24*time.Hour, clock)
+		AppID: string(id), Environment: attestation.EnvironmentProduction, AllowedBuilds: map[string]struct{}{"4": {}},
+	}, nonces, keys, attestation.NewAppleAttestationVerifier("TEAM", bundle, attestation.EnvironmentProduction, client.Roots), clock)
+	server.authenticator = attestation.NewService(nonces, keys, attestation.NewAppleAssertionVerifier("TEAM", bundle), clock).RequireEnvironment(attestation.EnvironmentProduction)
+	server.activator = entitlement.NewDevelopmentService(string(id), store, 30*24*time.Hour, clock)
 	server.entitlements = entitlement.NewChecker(store, clock)
 	router := server.newHTTPRouter()
 	serve := func(request *http.Request, expected int) *httptest.ResponseRecorder {
@@ -86,6 +100,11 @@ func TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP(t *testing.T
 		client.Assert(t, r, nil, client.AppStoreData(t, counter))
 		return r
 	}
+	if id == appregistry.Journal {
+		serve(request(http.MethodGet, "/v1/ai/quota"), 403)
+	} else if response := serve(request(http.MethodGet, "/v1/ai/quota"), 200); !strings.Contains(response.Body.String(), `"plan":"free"`) {
+		t.Fatal("Health must retain its existing free plan")
+	}
 	activation := request(http.MethodPost, path)
 	serve(activation, 200)
 	serve(activation, 409)
@@ -97,6 +116,14 @@ func TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP(t *testing.T
 	if !strings.Contains(quota.Body.String(), `"plan":"managed_subscription"`) {
 		t.Fatal("verified developer access not applied")
 	}
+	now = now.Add(31 * 24 * time.Hour)
+	if id == appregistry.Journal {
+		serve(request(http.MethodGet, "/v1/ai/quota"), 403)
+	} else if response := serve(request(http.MethodGet, "/v1/ai/quota"), 200); !strings.Contains(response.Body.String(), `"plan":"free"`) {
+		t.Fatal("Health must retain its existing free plan")
+	}
+	serve(request(http.MethodPost, path), 200)
+	serve(request(http.MethodGet, "/v1/ai/quota"), 200)
 	// Production installs no development activator, regardless of client headers.
 	server.activator = nil
 	serve(request(http.MethodPost, path), 404)
