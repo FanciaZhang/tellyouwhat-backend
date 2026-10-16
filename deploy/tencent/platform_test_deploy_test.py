@@ -108,7 +108,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
     def save(self):
         for name, values in [('runtime.env', self.app), ('compose.env', self.compose)]:
             (self.folder / name).write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
-        record = {'source': self.source, 'files': {n: hashlib.sha256((self.folder / n).read_bytes()).hexdigest() for n in dev.FILES}}
+        record = {'source': self.source, 'files': {n: hashlib.sha256((self.folder / n).read_bytes()).hexdigest() for n in dev.selection_files(self.folder)}}
         (self.folder / 'selection.json').write_text(json.dumps(record))
         for p in self.folder.iterdir():
             p.chmod(0o600)
@@ -273,11 +273,12 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             return b''
         self.runtime.execute.side_effect = execute
 
-    def update(self, *, ready_error=None, backup_error=None):
+    def update(self, *, ready_error=None, backup_error=None, albums_backup=False):
         with patch.object(dev.fcntl, 'flock', side_effect=BlockingIOError), patch.object(dev, 'assert_route'), \
                 patch.object(dev, 'ready', side_effect=ready_error), \
                 patch('ops_backup.create_backup', return_value={'filename': 'verified-checkpoint'}, side_effect=backup_error), \
-                patch('ops_backup.verify_backup', return_value={'recovery_platform_test': {'state.json': 'verified'}}):
+                patch('ops_backup.verify_backup', return_value={'recovery_platform_test': {'state.json': 'verified'},
+                      'recovery_albums_development': {'state.json': 'verified'} if albums_backup else {}}):
             return dev.activate(self.runtime, self.source, self.old_source)
 
     def test_enrollment_update_backs_up_and_preserves_database_and_matched_rollback(self):
@@ -601,6 +602,140 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.set_topology(mounted=True)
         with self.assertRaisesRegex(OperationError, 'Health media configuration'):
             dev.selection(self.runtime, self.source)
+
+    def enable_albums(self):
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        overlay = Path(__file__).resolve().parents[2] / dev.albums.OVERLAY
+        (self.folder / dev.albums.OVERLAY).write_bytes(overlay.read_bytes())
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            item = tarfile.TarInfo(dev.albums.OVERLAY)
+            data = overlay.read_bytes(); item.size = len(data)
+            archive.addfile(item, io.BytesIO(data))
+        values = {**dev.albums.REGISTRY, 'ALBUM_COS_BUCKET': 'tellyouwhat-albums-1251995834',
+                  'ALBUM_COS_REGION': 'ap-guangzhou', 'ALBUM_APPLE_SIGN_IN_KEY_ID': '9H4R3FJ9D8',
+                  'ALBUM_APPLE_SIGN_IN_KEY_FILE': '/album-secrets/apple-sign-in.p8',
+                  'ALBUM_CREDENTIAL_KEY_FILE': '/album-secrets/credential-key.base64',
+                  'ALBUM_LOGIN_LIMIT_KEY_FILE': '/album-secrets/login-limit-key.base64'}
+        (self.folder / 'albums.env').write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
+        self.app.update(dev.albums.REGISTRY)
+        self.app['PLATFORM_APPS'] = 'health,journal,birthday,albums'
+        self.compose.update(PLATFORM_ALBUM_SOURCE='c' * 40, PLATFORM_ALBUM_ENV_FILE=str(self.folder / 'albums.env'),
+                            PLATFORM_ALBUM_MYSQL_PASSWORD='4' * 64, PLATFORM_ALBUM_REDIS_PASSWORD='5' * 64)
+        self.save()
+        approved = self.root / '.albums-development/releases' / ('c' * 40)
+        approved.mkdir(mode=0o700, parents=True)
+        for p in (approved.parent, approved.parent.parent):
+            p.chmod(0o700)
+        for name in dev.albums.ALBUM_FILES:
+            (approved / name).write_bytes(b'synthetic selected source')
+            (approved / name).chmod(0o600)
+        (approved / 'runtime.env').write_bytes((self.folder / 'albums.env').read_bytes())
+        (approved / 'compose.env').write_text('ALBUM_TEST_SECRET_DIRECTORY=/opt/tellyouwhat/albums-development/secrets\n'
+            'ALBUM_TEST_MYSQL_USER=albums_development_test\nALBUM_TEST_NETWORK_CIDR=172.29.92.0/24\n'
+            'ALBUM_TEST_MYSQL_PASSWORD=' + '4' * 64 + '\nALBUM_TEST_REDIS_PASSWORD=' + '5' * 64 + '\n')
+        (approved / 'selection.json').write_text(json.dumps({'source': 'c' * 40, 'files': {
+            n: hashlib.sha256((approved / n).read_bytes()).hexdigest() for n in dev.albums.ALBUM_FILES if n != 'selection.json'}}))
+        for path, value in [(self.runtime.state / 'albums-development.json', {'source': 'c' * 40, 'release': str(approved)}),
+                            (self.runtime.state / 'artifact-owners/albums-test.json', {'current': {'source': 'c' * 40, 'paths': [str(approved)]}})]:
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(json.dumps(value)); path.chmod(0o600)
+        execute = self.runtime.execute.side_effect or self.execute
+        def with_albums(label, command, **kwargs):
+            if label.startswith('platform-test-albums-'):
+                return json.dumps([{'State': {'Running': True},
+                    'NetworkSettings': {'Networks': {dev.albums.NETWORK: {}}},
+                    'Config': {'Labels': {'com.docker.compose.project': dev.albums.PROJECT},
+                               'Image': 'tellyouwhat-albums-test-development-albumworker:' + 'c' * 40,
+                               'Env': ['MYSQL_DATABASE=albums_test', 'MYSQL_USER=albums_development_test',
+                                       'MYSQL_PASSWORD=' + '4' * 64, 'REDIS_PASSWORD=' + '5' * 64]}}]).encode()
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = with_albums
+
+    def test_albums_admission_requires_registered_resources_and_complete_backup_before_build(self):
+        self.set_topology(mounted=False)
+        self.prepare_update()
+        self.enable_albums()
+        dev.selection(self.runtime, self.source)
+        dev.albums.require_resources(self.runtime, self.folder)
+        with self.assertRaisesRegex(OperationError, 'full authenticated development backup'):
+            self.update()
+        self.assertFalse(any(c.args[0].startswith('platform-test-build') for c in self.runtime.execute.call_args_list))
+        self.compose['PLATFORM_ALBUM_MYSQL_PASSWORD'] = '6' * 64
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'existing store'):
+            self.update()
+        self.compose['PLATFORM_ALBUM_MYSQL_PASSWORD'] = '4' * 64
+        self.save()
+        with (self.folder / 'albums.env').open('a') as f:
+            f.write('ALBUM_SHARING_ENABLED=true\n')
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'approved resources'):
+            self.update()
+
+    def test_albums_credentials_cannot_escape_gateway_or_use_production_identity(self):
+        self.enable_albums()
+        for target, key, bad in [(self.app, 'ALBUM_COS_SECRET_KEY', 'private'),
+                                 (self.compose, 'PLATFORM_ALBUM_MYSQL_PASSWORD', '1' * 64),
+                                 (self.app, 'ALBUM_APPLE_BUNDLE_ID', 'cn.tellyouwhat.albums')]:
+            original = target.get(key)
+            target[key] = bad
+            self.save()
+            with self.subTest(key=key), self.assertRaises(OperationError):
+                dev.selection(self.runtime, self.source)
+            if original is None:
+                target.pop(key)
+            else:
+                target[key] = original
+        self.save()
+        with (self.folder / 'albums.env').open('a') as f:
+            f.write('DATABASE_DSN=wrong-database\n')
+        self.save()
+        with self.assertRaises(OperationError):
+            dev.selection(self.runtime, self.source)
+
+    def test_all_four_hosts_are_checked_using_their_actual_readiness_contract(self):
+        self.enable_albums()
+        seen = []
+        def respond(request, **kwargs):
+            host = request.get_header('Host'); seen.append(host)
+            result = io.BytesIO(b'{"code":"ok"}' if host == dev.albums.HOST else b'{"status":"ready"}')
+            result.status = 200
+            return result
+        opener = Mock(); opener.open.side_effect = respond
+        with patch.object(dev.urllib.request, 'build_opener', return_value=opener):
+            dev.ready(self.folder)
+        self.assertEqual(seen, [dev.HOST, dev.HEALTH_HOST, dev.journal.HOST, dev.albums.HOST])
+        self.assertIn(str(self.folder / dev.albums.OVERLAY), dev.compose(self.folder, 'config', '--quiet'))
+
+    def test_albums_admission_reuses_data_services_and_registers_shared_gateway(self):
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.prepare_update()
+        self.enable_albums()
+        with patch.object(dev.albums, 'verify_gateway') as verify:
+            result = self.update(albums_backup=True)
+        verify.assert_called_once()
+        self.assertEqual(result['apps'], ['health', 'journal', 'birthday', 'albums'])
+        self.assertEqual(result['previous']['source'], self.old_source)
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list]
+        starts = [c for c in commands if 'up' in c]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0][-2:], ['gateway', 'worker'])
+        self.assertIn(str(self.folder / dev.albums.OVERLAY), starts[0])
+        self.assertFalse(any('down' in c or '--volumes' in c or 'albumworker' in c or 'albumgateway' in c for c in commands))
+
+    def test_failed_albums_admission_restores_previous_gateway_without_touching_album_data(self):
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.prepare_update()
+        self.enable_albums()
+        with self.assertRaisesRegex(OperationError, 'not ready'):
+            self.update(albums_backup=True, ready_error=[OperationError('not ready'), None])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+        rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-rollback')
+        self.assertIn(str(self.old_folder / 'compose.env'), rollback)
+        self.assertNotIn(str(self.folder / dev.albums.OVERLAY), rollback)
 
 
 if __name__ == '__main__':

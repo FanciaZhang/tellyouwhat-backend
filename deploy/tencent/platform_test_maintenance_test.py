@@ -19,6 +19,7 @@ class PlatformTestMaintenanceTests(unittest.TestCase):
         self.state.mkdir()
         self.folder = self.root / 'selected'
         self.folder.mkdir()
+        (self.folder / 'runtime.env').write_text('PLATFORM_APPS=health,journal,birthday\n')
         self.runtime = Mock(root=self.root, state=self.state)
         self.source = 'a' * 40
         self.marker = self.state / 'platform-test.json'

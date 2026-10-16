@@ -18,6 +18,7 @@ from ops_common import OperationError, Runtime, atomic_json, read_environment
 from test_routes import RejectRedirects
 import platform_test_journal as journal
 import platform_test_storage as recording
+import platform_test_albums as albums
 
 PROJECT = 'tellyouwhat-platform-test'
 HOST = 'api-test.birthday.tellyouwhat.cn'
@@ -36,6 +37,10 @@ HEALTH_SETTINGS = HEALTH_ENDPOINTS | {'HEALTH_APPLE_BUNDLE_ID', 'HEALTH_APPLE_TE
 
 def applications(folder):
     return read_environment(folder / 'runtime.env').get('PLATFORM_APPS', 'birthday').split(',')
+
+
+def selection_files(folder):
+    return {**FILES, **(albums.FILES if albums.selected(folder) else {})}
 
 
 def running_services(folder):
@@ -62,9 +67,11 @@ def selection(runtime, source):
                 or path.stat().st_uid != runtime.root.stat().st_uid):
             raise OperationError('platform test release must be private and operator owned')
     record = json.loads(private_file(runtime, folder / 'selection.json', 4096))
-    if set(record) != {'source', 'files'} or record['source'] != source or set(record['files']) != set(FILES):
+    private_file(runtime, folder / 'runtime.env', FILES['runtime.env'])
+    files = selection_files(folder)
+    if set(record) != {'source', 'files'} or record['source'] != source or set(record['files']) != set(files):
         raise OperationError('platform test source selection is incomplete')
-    for name, limit in FILES.items():
+    for name, limit in files.items():
         if hashlib.sha256(private_file(runtime, folder / name, limit)).hexdigest() != record['files'][name]:
             raise OperationError('platform test input changed after selection')
     compose = read_environment(folder / 'compose.env')
@@ -96,11 +103,14 @@ def selection(runtime, source):
             raise OperationError('platform test build source is incomplete')
         if archive.extractfile('compose.platform-test.yaml').read() != (folder / 'compose.platform-test.yaml').read_bytes():
             raise OperationError('platform test Compose differs from selected source')
+        if albums.selected(folder) and (albums.OVERLAY not in names or
+                archive.extractfile(albums.OVERLAY).read() != (folder / albums.OVERLAY).read_bytes()):
+            raise OperationError('Albums overlay differs from selected source')
         config = archive.extractfile('internal/config/platform.go') if 'internal/config/platform.go' in names else None
         explicit_apps = config is not None and b'"PLATFORM_APPS"' in config.read()
         # Retained recovery selections must be validated using their own configuration contract.
         if explicit_apps:
-            if (app.get('PLATFORM_APPS') not in ('birthday', 'health,birthday', 'health,journal,birthday')
+            if (app.get('PLATFORM_APPS') not in ('birthday', 'health,birthday', 'health,journal,birthday', 'health,journal,birthday,albums')
                     or any(k in app for k in ('BIRTHDAY_AI_ENABLED', 'BIRTHDAY_AI_ONLY', 'BIRTHDAY_DEV_ACTIVATION_SECRET'))):
                 raise OperationError('platform test applications must be selected explicitly')
         elif (app.get('BIRTHDAY_AI_ENABLED') != 'true' or app.get('BIRTHDAY_AI_ONLY') != 'true'
@@ -136,12 +146,16 @@ def selection(runtime, source):
             raise OperationError('Journal recordings require the reviewed test storage mount')
     elif any(k.startswith('JOURNAL_') for k in app):
         raise OperationError('Journal credentials require its explicit test application selection')
+    albums.validate(folder, app, compose)
+    if albums.selected(folder) and not recording.available(folder):
+        raise OperationError('Albums admission requires the reviewed shared test topology')
     return folder, record, migrations
 
 
 def compose(folder, *args):
     return ['docker', 'compose', '--project-name', PROJECT, '--env-file', str(folder / 'compose.env'),
-            '-f', str(folder / 'compose.platform-test.yaml'), *args]
+            '-f', str(folder / 'compose.platform-test.yaml'),
+            *(['-f', str(folder / albums.OVERLAY)] if albums.selected(folder) else []), *args]
 
 
 def ready(folder=None):
@@ -154,10 +168,13 @@ def ready(folder=None):
                 hosts.append(HEALTH_HOST)
             if 'journal' in apps:
                 hosts.append(journal.HOST)
+            if 'albums' in apps:
+                hosts.append(albums.HOST)
             for host in hosts:
                 request = urllib.request.Request('http://127.0.0.1:18790/readyz', headers={'Host': host})
                 with opener.open(request, timeout=2) as response:
-                    if response.status != 200 or json.load(response).get('status') != 'ready':
+                    payload = json.load(response)
+                    if response.status != 200 or (payload.get('code') != 'ok' if host == albums.HOST else payload.get('status') != 'ready'):
                         raise ValueError('not ready')
             return
         except (OSError, ValueError):
@@ -192,6 +209,12 @@ def verify_running(runtime, folder, source, label):
             raise OperationError('platform test process differs from the selected healthy image')
         if service == 'gateway' and recording.available(folder):
             recording.verify_gateway(running)
+        if albums.selected(folder):
+            if service == 'gateway':
+                albums.verify_gateway(running, folder)
+            elif any(e.split('=', 1)[0].startswith('ALBUM_') and e.split('=', 1)[0] not in albums.REGISTRY
+                     for e in running.get('Config', {}).get('Env', [])):
+                raise OperationError('AI worker received Albums private credentials')
         if service == 'worker':
             for attempt in range(30):
                 try:
@@ -236,7 +259,15 @@ def update_configuration(runtime, source, previous_source, folder, record):
         permitted |= journal.SETTINGS
     if 'journal' in after_apps:
         permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'}
-    for filename, allowed in [('compose.env', {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}),
+    compose_changes = {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}
+    if 'albums' in after_apps:
+        compose_changes.add('PLATFORM_ALBUM_ENV_FILE')
+        if 'albums' not in before_apps:
+            permitted |= set(albums.REGISTRY)
+            compose_changes |= albums.COMPOSE_KEYS
+        elif (old / 'albums.env').read_bytes() != (folder / 'albums.env').read_bytes():
+            raise OperationError('enrollment update cannot replace Albums credentials or feature settings')
+    for filename, allowed in [('compose.env', compose_changes),
                               ('runtime.env', permitted)]:
         before, after = read_environment(old / filename), read_environment(folder / filename)
         if {k: v for k, v in before.items() if k not in allowed} != {k: v for k, v in after.items() if k not in allowed}:
@@ -258,6 +289,8 @@ def update_configuration(runtime, source, previous_source, folder, record):
     manifest = verify_backup(runtime, runtime.backups / snapshot['filename'])
     if not manifest.get('recovery_platform_test'):
         raise OperationError('platform test update requires an authenticated offsite recovery selection')
+    if 'albums' in after_apps and not manifest.get('recovery_albums_development'):
+        raise OperationError('Albums shared API admission requires its full authenticated development backup')
     recording.prepare(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
@@ -302,6 +335,10 @@ def activate(runtime, source, update_from=None):
     require_separate_health_resources(runtime, folder)
     if 'journal' in applications(folder):
         journal.require_resources(runtime, read_environment(folder / 'runtime.env'))
+    if albums.selected(folder):
+        albums.require_resources(runtime, folder)
+        if not update_from:
+            raise OperationError('Albums admission requires an existing backed-up shared test service')
     stable = json.loads((runtime.state / 'blue-green.json').read_text())
     if stable.get('phase') != 'STABLE':
         raise OperationError('wait for a stable production release')

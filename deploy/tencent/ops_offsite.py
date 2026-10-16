@@ -159,6 +159,9 @@ def verify_recovery_bundle(runtime, source, manifest):
                 if manifest.get('recovery_albums_' + environment):
                     verify_albums(archive, manifest['recovery_albums_' + environment], environment)
             if manifest.get('recovery_platform_test'):
+                if ('current/albums.env' in manifest['recovery_platform_test']
+                        and not manifest.get('recovery_albums_development')):
+                    raise OperationError('shared test Albums recovery is missing its independent data and keys')
                 from platform_test_artifacts import verify_recovery as verify_platform_test
                 verify_platform_test(archive, manifest['recovery_platform_test'])
             if manifest.get('recovery_journal_development'):

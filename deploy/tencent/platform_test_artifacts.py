@@ -10,7 +10,8 @@ import re
 from ops_common import OperationError, Runtime, read_environment
 from ops_backup import create_backup, verify_backup
 import ops_offsite
-from platform_test_deploy import FILES, private_file, selection
+from platform_test_deploy import FILES, private_file, selection, selection_files
+import platform_test_albums as albums
 
 
 def checkpoint_runtime(runtime):
@@ -54,6 +55,8 @@ def backup_configuration(runtime, destination):
         return {}
     state = json.loads(private_file(runtime, state_path, 16384))
     folder, record, _ = selection(runtime, state.get('source'))
+    if albums.selected(folder):
+        albums.require_configuration(runtime, folder)
     owner_path = runtime.state / 'artifact-owners/platform-test.json'
     owner = json.loads(private_file(runtime, owner_path, 16384))
     if (state.get('release') != str(folder) or not any(
@@ -62,7 +65,7 @@ def backup_configuration(runtime, destination):
         raise OperationError('platform test recovery selection is not registered')
     inputs = {'state.json': state_path, 'owner.json': owner_path,
               'database.env': runtime.root.parent / 'platform-test/database.env',
-              **{'current/' + name: folder / name for name in (*FILES, 'selection.json')}}
+              **{'current/' + name: folder / name for name in (*selection_files(folder), 'selection.json')}}
     data = {name: private_file(runtime, path, 64 * 1024**2 if name.endswith('source.tar') else 32768)
             for name, path in inputs.items()}
     child = checkpoint_runtime(runtime)
@@ -87,6 +90,8 @@ def backup_configuration(runtime, destination):
 
 def verify_recovery(archive, hashes):
     expected = {'state.json', 'owner.json', 'database.env', 'backup.env', *('current/' + name for name in (*FILES, 'selection.json'))}
+    if any('current/' + name in hashes for name in albums.FILES):
+        expected.update('current/' + name for name in albums.FILES)
     extra = set(hashes) - expected
     snapshots = [name for name in extra if re.fullmatch(r'checkpoint/mysql-\d{8}T\d{6}Z-[a-f0-9]{6}\.sql\.gz\.enc', name)]
     if not expected <= set(hashes) or len(extra) != 2 or len(snapshots) != 1 or snapshots[0] + '.json' not in extra:

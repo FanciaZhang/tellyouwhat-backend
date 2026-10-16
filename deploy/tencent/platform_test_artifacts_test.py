@@ -85,6 +85,13 @@ class PlatformTestRecoveryTests(unittest.TestCase):
             hashes['state.json'] = '0' * 64
             with self.assertRaisesRegex(OperationError, 'authenticated manifest'):
                 artifacts.verify_recovery(tar, hashes)
+        hashes['state.json'] = hashlib.sha256(b'state.json').hexdigest()
+        names.update('current/' + n for n in artifacts.albums.FILES)
+        hashes.update({n: hashlib.sha256(n.encode()).hexdigest() for n in names})
+        with archive() as tar:
+            artifacts.verify_recovery(tar, hashes)
+            with self.assertRaisesRegex(OperationError, 'incomplete'):
+                artifacts.verify_recovery(tar, {k: v for k, v in hashes.items() if k != 'current/albums.env'})
 
     def test_absent_test_stack_leaves_existing_backups_unchanged(self):
         self.assertEqual(artifacts.backup_configuration(self.runtime, self.base / 'unused'), {})
@@ -104,6 +111,7 @@ class PlatformTestRecoveryTests(unittest.TestCase):
         for name in (*artifacts.FILES, 'selection.json'):
             (folder / name).write_bytes(b'synthetic selected source/configuration')
             (folder / name).chmod(0o600)
+        (folder / 'runtime.env').write_text('PLATFORM_APPS=birthday\n')
         (self.app / 'database.env').write_text('test database credentials')
         (self.app / 'database.env').chmod(0o600)
         child = artifacts.checkpoint_runtime(self.runtime)
@@ -120,7 +128,7 @@ class PlatformTestRecoveryTests(unittest.TestCase):
             payload = b''.join((destination / n).read_bytes() for n in hashes)
             self.assertNotIn(self.config['BACKUP_ENCRYPTION_KEY'].encode(), payload)
             self.assertNotIn(b'BACKUP_ENCRYPTION_KEY', (destination / 'backup.env').read_bytes())
-            (folder / 'runtime.env').write_text(self.config['BACKUP_ENCRYPTION_KEY'])
+            (folder / 'runtime.env').write_text('KEY=' + self.config['BACKUP_ENCRYPTION_KEY'])
             with self.assertRaisesRegex(OperationError, 'decryption key'):
                 artifacts.backup_configuration(self.runtime, self.base / 'rejected')
 

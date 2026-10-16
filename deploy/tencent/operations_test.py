@@ -149,6 +149,9 @@ class BackupSafetyTests(unittest.TestCase):
             **manifest['recovery_albums_production'], 'secrets/apple-sign-in.p8': '0' * 64}}
         with self.assertRaisesRegex(OperationError, 'content verification'):
             verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], incomplete)
+        missing_album_data = {**manifest, 'recovery_platform_test': {'current/albums.env': 'a' * 64}}
+        with self.assertRaisesRegex(OperationError, 'independent data and keys'):
+            verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], missing_album_data)
 
     def test_authenticated_backup_includes_registered_apple_service_binary_and_configuration(self):
         import hashlib
