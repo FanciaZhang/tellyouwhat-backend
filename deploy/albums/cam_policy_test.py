@@ -6,6 +6,34 @@ import unittest
 
 
 class CIMediaPolicyTests(unittest.TestCase):
+    def test_production_identities_cannot_reach_other_buckets_or_manage_permissions(self):
+        bucket = "tellyouwhat-albums-production-1251995834"
+        for kind in ("upload", "backend"):
+            policy = json.loads(Path(__file__).with_name("cam-production-" + kind + ".policy.json").read_text())
+            self.assertEqual(policy["version"], "2.0")
+            for entry in policy["statement"]:
+                self.assertEqual(entry["effect"], "allow")
+                self.assertTrue(entry["resource"])
+                for action in entry["action"]:
+                    self.assertTrue(action.startswith(("cos:", "ci:")))
+                    self.assertNotIn("*", action)
+                    self.assertNotIn("Delete", action)
+                    self.assertNotIn("ACL", action)
+                    self.assertNotIn("Policy", action)
+                for resource in entry["resource"]:
+                    self.assertTrue(resource.startswith((
+                        "qcs::cos:ap-guangzhou:uid/1251995834:" + bucket + "/",
+                        "qcs::ci:ap-guangzhou:uid/1251995834:bucket/" + bucket + "/")))
+                    self.assertNotIn("tellyouwhat-albums-1251995834/", resource)
+                    if kind == "upload":
+                        self.assertEqual(entry["action"], ["cos:PutObject", "cos:UploadPart"])
+                        self.assertTrue(resource.endswith("/albums/staging/*"))
+            if kind == "backend":
+                inventory = [e for e in policy["statement"] if "cos:GetBucketObjectVersions" in e["action"]]
+                self.assertEqual(len(inventory), 1)
+                self.assertEqual(inventory[0]["condition"]["string_like"]["cos:prefix"],
+                                 ["albums/" + area + "/*" for area in ("staging", "originals", "derivatives", "video-previews", "live-pairs")])
+
     def test_service_role_is_read_only_for_originals_and_scoped_to_outputs(self):
         policy = json.loads(Path(__file__).with_name("cam-ci-service.policy.json").read_text())
         self.assertEqual(policy["version"], "2.0")

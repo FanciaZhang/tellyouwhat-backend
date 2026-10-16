@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "statement": [{
+    "effect": "allow",
+    "action": ["cos:PutObject", "cos:UploadPart"],
+    "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-production-1251995834/albums/staging/*"]
+  }]
+}

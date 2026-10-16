@@ -28,6 +28,12 @@ type WorkerConfig struct {
 	VideoQueueID        string
 }
 
+const (
+	albumTestBucket       = "tellyouwhat-albums-1251995834"
+	albumProductionBucket = "tellyouwhat-albums-production-1251995834"
+	albumTestVideoQueue   = "p543daa336f7a4d4b896654b933f8881b"
+)
+
 var albumTestDatabasePattern = regexp.MustCompile(`^albums(?:_[a-z0-9]+)*_test$`)
 
 func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
@@ -65,6 +71,13 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 		(c.Environment == "production" && db.DBName != "albums" && db.DBName != "albums_production") {
 		return WorkerConfig{}, errors.New("invalid independent album database/environment")
 	}
+	expectedBucket := albumTestBucket
+	if c.Environment == "production" {
+		expectedBucket = albumProductionBucket
+	}
+	if c.COS.Bucket != expectedBucket || c.COS.Region != "ap-guangzhou" {
+		return WorkerConfig{}, errors.New("album COS bucket/region does not match deployment environment")
+	}
 	c.COS.SessionToken = strings.TrimSpace(getenv("ALBUM_COS_ARCHIVE_SESSION_TOKEN"))
 	c.COS.UploadSessionToken = strings.TrimSpace(getenv("ALBUM_COS_UPLOAD_SESSION_TOKEN"))
 	for _, field := range []struct {
@@ -93,7 +106,9 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 	case "true":
 		c.VideoProcessing = true
 		c.VideoQueueID = strings.TrimSpace(getenv("ALBUM_CI_VIDEO_QUEUE_ID"))
-		if !ciQueuePattern.MatchString(c.VideoQueueID) {
+		if !ciQueuePattern.MatchString(c.VideoQueueID) ||
+			(c.Environment == "test" && c.VideoQueueID != albumTestVideoQueue) ||
+			(c.Environment == "production" && c.VideoQueueID == albumTestVideoQueue) {
 			return WorkerConfig{}, errors.New("invalid ALBUM_CI_VIDEO_QUEUE_ID")
 		}
 	default:

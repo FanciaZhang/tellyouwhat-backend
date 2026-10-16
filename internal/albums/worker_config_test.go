@@ -10,7 +10,7 @@ func workerEnvironment() map[string]string {
 	return map[string]string{
 		"ALBUM_DEPLOYMENT_ENVIRONMENT": "test",
 		"ALBUM_DATABASE_DSN":           "test:private-password@tcp(localhost:3306)/albums_test",
-		"ALBUM_COS_BUCKET":             "album-test-1250000000", "ALBUM_COS_REGION": "ap-guangzhou",
+		"ALBUM_COS_BUCKET":             albumTestBucket, "ALBUM_COS_REGION": "ap-guangzhou",
 		"ALBUM_COS_ARCHIVE_SECRET_ID": "archive-id", "ALBUM_COS_ARCHIVE_SECRET_KEY": "private-archive-key",
 		"ALBUM_COS_UPLOAD_SECRET_ID": "upload-id", "ALBUM_COS_UPLOAD_SECRET_KEY": "private-upload-key",
 		"ALBUM_MAX_ORIGINAL_BYTES": "107374182400", "ALBUM_MAX_DERIVED_BYTES": "4294967296",
@@ -23,6 +23,9 @@ func TestAlbumWorkerAndGatewayRejectCrossEnvironmentDatabases(t *testing.T) {
 			t.Run(environment+"/"+database, func(t *testing.T) {
 				values := gatewayEnvironment(t)
 				values["ALBUM_DEPLOYMENT_ENVIRONMENT"] = environment
+				if environment == "production" {
+					values["ALBUM_COS_BUCKET"] = albumProductionBucket
+				}
 				values["ALBUM_DATABASE_DSN"] = "app:private-password@tcp(localhost:3306)/" + database
 				want := (environment == "test" && (database == "albums_test" || database == "albums_recovery_test")) ||
 					(environment == "production" && (database == "albums" || database == "albums_production"))
@@ -58,7 +61,7 @@ func TestVideoProcessingRequiresExplicitEnableAndQueue(t *testing.T) {
 	if _, err := LoadWorkerConfig(func(key string) string { return values[key] }); err == nil {
 		t.Fatal("enabled without a private CI queue")
 	}
-	values["ALBUM_CI_VIDEO_QUEUE_ID"] = "p" + strings.Repeat("a", 32)
+	values["ALBUM_CI_VIDEO_QUEUE_ID"] = albumTestVideoQueue
 	config, err := LoadWorkerConfig(func(key string) string { return values[key] })
 	if err != nil || !config.VideoProcessing || config.VideoQueueID != values["ALBUM_CI_VIDEO_QUEUE_ID"] {
 		t.Fatal("video processing not enabled", err)
@@ -138,6 +141,53 @@ func TestAccountMediaErasureRequiresExplicitEnable(t *testing.T) {
 		}
 		if err != nil || config.AccountMediaErasure != (value == "true") || config.DerivedCleanup {
 			t.Fatal(config.AccountMediaErasure, err)
+		}
+	}
+}
+
+func TestAlbumWorkerAndGatewayRejectCrossEnvironmentMedia(t *testing.T) {
+	for _, environment := range []string{"test", "production"} {
+		for _, bucket := range []string{albumTestBucket, albumProductionBucket, "other-1251995834"} {
+			for _, region := range []string{"ap-guangzhou", "ap-beijing"} {
+				t.Run(environment+"/"+bucket+"/"+region, func(t *testing.T) {
+					values := gatewayEnvironment(t)
+					values["ALBUM_DEPLOYMENT_ENVIRONMENT"] = environment
+					if environment == "production" {
+						values["ALBUM_DATABASE_DSN"] = "app:private-password@tcp(localhost:3306)/albums_production"
+					}
+					values["ALBUM_COS_BUCKET"], values["ALBUM_COS_REGION"] = bucket, region
+					want := region == "ap-guangzhou" && ((environment == "test" && bucket == albumTestBucket) || (environment == "production" && bucket == albumProductionBucket))
+					_, workerErr := LoadWorkerConfig(func(k string) string { return values[k] })
+					_, gatewayErr := LoadGatewayConfig(func(k string) string { return values[k] })
+					for _, err := range []error{workerErr, gatewayErr} {
+						if (err == nil) != want {
+							t.Fatalf("media boundary accepted=%t, want=%t", err == nil, want)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestAlbumVideoQueueCannotCrossDeployment(t *testing.T) {
+	for _, environment := range []string{"test", "production"} {
+		for _, queue := range []string{albumTestVideoQueue, "p" + strings.Repeat("b", 32)} {
+			values := gatewayEnvironment(t)
+			values["ALBUM_DEPLOYMENT_ENVIRONMENT"] = environment
+			if environment == "production" {
+				values["ALBUM_DATABASE_DSN"] = "app:synthetic@tcp(localhost:3306)/albums_production"
+				values["ALBUM_COS_BUCKET"] = albumProductionBucket
+			}
+			values["ALBUM_VIDEO_PROCESSING_ENABLED"], values["ALBUM_CI_VIDEO_QUEUE_ID"] = "true", queue
+			want := (environment == "test") == (queue == albumTestVideoQueue)
+			_, workerErr := LoadWorkerConfig(func(k string) string { return values[k] })
+			_, gatewayErr := LoadGatewayConfig(func(k string) string { return values[k] })
+			for _, err := range []error{workerErr, gatewayErr} {
+				if (err == nil) != want {
+					t.Fatalf("queue boundary accepted=%t, want=%t", err == nil, want)
+				}
+			}
 		}
 	}
 }

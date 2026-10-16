@@ -80,6 +80,7 @@ func TestAlbumGatewayBindsIdentityToDeployment(t *testing.T) {
 			values["ALBUM_API_HOST"] = "api-test.albums.tellyouwhat.cn"
 			oppositeHost := "api.albums.tellyouwhat.cn"
 			if deployment == "production" {
+				values["ALBUM_COS_BUCKET"] = albumProductionBucket
 				values["ALBUM_DATABASE_DSN"] = "app:synthetic@tcp(localhost:3306)/albums_production"
 				values["ALBUM_API_HOST"], oppositeHost = oppositeHost, values["ALBUM_API_HOST"]
 				want, opposite = opposite, want

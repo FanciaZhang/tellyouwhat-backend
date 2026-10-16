@@ -97,6 +97,7 @@ func TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials(t *testing
 	}
 	for _, productionDB := range []string{"albums", "albums_production"} {
 		values["ALBUM_DEPLOYMENT_ENVIRONMENT"] = "production"
+		values["ALBUM_COS_BUCKET"] = albumProductionBucket
 		values["ALBUM_DATABASE_DSN"] = "app:private-secret@tcp(localhost:3306)/" + productionDB
 		values["ALBUM_TRUSTED_PROXIES"] = "127.0.0.1/32,172.29.90.1/32"
 		if _, err := LoadGatewayConfig(func(k string) string { return values[k] }); err != nil {

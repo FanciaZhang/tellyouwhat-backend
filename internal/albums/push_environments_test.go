@@ -71,6 +71,7 @@ func TestAlbumDualPushConfigRequiresIsolatedDevelopmentIdentity(t *testing.T) {
 	}
 	env := gatewayEnvironment(t)
 	env["ALBUM_DEPLOYMENT_ENVIRONMENT"] = "production"
+	env["ALBUM_COS_BUCKET"] = albumProductionBucket
 	env["ALBUM_DATABASE_DSN"] = "app:private-test-password@tcp(localhost:3306)/albums_production"
 	env["ALBUM_PUSH_ALLOW_DEVELOPMENT"] = "true"
 	env["ALBUM_PUSH_ENVIRONMENT"] = "production"
