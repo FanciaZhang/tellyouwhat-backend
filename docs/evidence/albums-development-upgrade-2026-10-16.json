@@ -8,42 +8,48 @@
       "environment": "production",
       "dsnUser": "albums_test_user",
       "database": "albums_test",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     },
     {
       "role": "albumgateway",
       "environment": "test",
       "dsnUser": "albums_user",
       "database": "albums",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     },
     {
       "role": "albumgateway",
       "environment": "test",
       "dsnUser": "root",
       "database": "albums_test",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     },
     {
       "role": "albumworker",
       "environment": "production",
       "dsnUser": "albums_test_user",
       "database": "albums_test",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     },
     {
       "role": "albumworker",
       "environment": "test",
       "dsnUser": "albums_user",
       "database": "albums",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     },
     {
       "role": "albumworker",
       "environment": "test",
       "dsnUser": "root",
       "database": "albums_test",
-      "rejected": true
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
     }
   ],
   "readiness": {
@@ -158,5 +164,7 @@
   "databaseRestarted": false,
   "redisRestarted": false,
   "healthProductionRestarted": false,
-  "deviceAndMediaJourneyAccepted": false
+  "deviceAndMediaJourneyAccepted": false,
+  "negativeProbeEnvironmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT",
+  "probeCorrection": "Initial command used ALBUM_ENVIRONMENT, testing missing environment rather than the intended mismatches. All six deployed-binary cases were rerun with the correct key and passed."
 }

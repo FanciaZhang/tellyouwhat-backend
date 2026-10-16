@@ -8,7 +8,7 @@
 
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
-| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 开发包已交付；测试桶与模型端点已创建，受限身份和测试 API 待接通 |
+| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 独立测试 API、worker、受限云身份与 HTTPS 已接通；新开发包、真实 App Attest 和云同步待验收 |
 | 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt 已脱离正式库，配置与费用账本独立加密备份；真实语音、供应商身份和 CloudKit 待验收 |
 | 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
@@ -21,15 +21,15 @@
 
 平台 `APP_ENV=development` 默认使用 `.dev` 与 `api-test.*`，production 使用正式身份和 `api.*`。配置相反的身份、域名或数据库时，连接数据库前拒绝启动；开发库和账号均以 `_test` 结尾，生产两者均不得以该后缀结尾，且均不能使用 root。实际 MySQL grants、Redis、对象存储及会话/载荷密钥仍须分别验证，命名检查不能代替权限隔离。
 
-`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `7c0e6d2` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
+`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `761dc7b` 启用健康和生日，66 项迁移保持不变；健康使用独立测试桶、三个测试端点及受限身份。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
 
-源码 `7c0e6d2` 已以 `PLATFORM_APPS=birthday` 部署，允许构建 4、5；只读取所选 App 的身份和提供商配置。健康仍未接入，要求 `health,birthday`、独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动所需 gateway/worker；检查所选 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
+源码 `761dc7b` 已以 `PLATFORM_APPS=health,birthday` 部署，生日允许构建 4、5，健康允许构建 4；只初始化已启用 App 的 Prompt，健康不会依赖手记模型。健康使用独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动所需 gateway/worker；检查所选 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
 
-健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；尚未在云端创建或绑定。测试桶与模型端点已创建；独立身份与策略绑定仍待完成，随后检查本前缀可读写、其他前缀与正式桶拒绝。推理策略在 `health-development-inference-only.json`，仅包含三个测试端点；名称和配置不作为权限验收证据。
+健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；已创建并绑定，实测本前缀可读写删除，其他前缀与正式桶拒绝。推理策略在 `health-development-inference-only.json`，仅包含三个测试端点；名称和配置不作为权限验收证据。
 
 生产发布使用 `release.py deploy`；测试和 OTA 使用已登记的产物所有者入口，由 ubuntu 执行，锁定准确源码、镜像与匹配配置。不得通过 root wrapper、移动镜像标签或独立迁移替代既有流程。只保留恢复所需的当前/上一版，不要求未上线 App 继续运行旧协议。见 [产物与备份责任](host-artifact-lifecycle.md)。
 
-测试路由由 `test_routes.py` 管理，当前启用 albums、birthday、journal。切换前核对实际身份/合约，验证完整 Caddy 配置；切换后检查正式 slot 和 OTA 日志保护。真实 DNS/TLS、鉴权及完整业务旅程分别取证。
+测试路由由 `test_routes.py` 管理，当前启用 albums、birthday、health、journal。切换前核对实际身份/合约，验证完整 Caddy 配置；切换后检查正式 slot 和 OTA 日志保护。真实 DNS/TLS、鉴权及完整业务旅程分别取证。
 
 ## 备份
 
@@ -44,7 +44,7 @@
 
 ## Apple 与权益
 
-平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册自动验证设备与允许构建号，无需手输口令。生日现网已采用此方式，健康源码已完成但测试服务尚未接入。开发权益限制 App、设备和最多 30 天期限，不复制交易标识或创建购买记录；写入与真实购买升级使用同一行锁，拒绝覆盖 production/sandbox 权益。正式服务不配置开发授权入口。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
+平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册自动验证设备与允许构建号，无需手输口令。生日和健康测试服务均采用此方式；健康新签名包和真实手机证明尚未验收。开发权益限制 App、设备和最多 30 天期限，不复制交易标识或创建购买记录；写入与真实购买升级使用同一行锁，拒绝覆盖 production/sandbox 权益。正式服务不配置开发授权入口。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
 
 相册 `.dev` 不继承正式商品目录，只接受服务端明确账户、额度和期限的开发授权：最多三个指定账户、每账户不超过 1 GB，不创建购买记录，到期停写但不生成清理期限。当前开发服务尚未配置真实账户容量；真实登录后再授予。签名检查、受控 Apple/MySQL 测试不能代替真实购买和手机旅程。
 
@@ -52,7 +52,7 @@
 
 ## 剩余工作
 
-健康独立测试资源与真实云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+健康新开发包、真实手机证明与云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
 
@@ -82,14 +82,20 @@
 
 ## 健康测试云资源（2026-10-16）
 
-`health-ai-test` 已创建并读回：北京、标准单 AZ、私有桶与默认私有对象、SSE-TOS；未启用版本控制或生命周期删除。独立 mini 260428、lite 260428、pro 2.1 / 260628 三个按 Token 付费端点已创建，管理 API 均返回 Running，八项功能的接入映射已准备，计划按模型复用三个端点，尚未部署。正式图片识别的 pro 2.0 / 260215 已禁止新建，测试改用 2.1 / 260628；正式端点未改，测试效果和结构化输出尚待验收。
+`health-ai-test` 已创建并读回：北京、标准单 AZ、私有桶与默认私有对象、SSE-TOS；未启用版本控制或生命周期删除。独立 mini 260428、lite 260428、pro 2.1 / 260628 三个按 Token 付费端点已创建，管理 API 均返回 Running，八项功能已按模型复用三个端点接入测试 API。正式图片识别的 pro 2.0 / 260215 已禁止新建，测试改用 2.1 / 260628；正式端点未改，测试效果和结构化输出尚待验收。
 
 `healthapp-development-backend` 尚未创建；媒体前缀和三个端点的最小权限策略已准备，未授予权限、生成凭据或接通健康测试 API。下一步为创建受限身份、验证正式资源访问被拒绝，再通过现有平台测试部署入口接入。正式健康运行镜像和 2026-10-13 启动时间未变。证据：`evidence/health-development-cloud-resources-2026-10-16.json`。
 
 ## 健康测试身份与相册测试升级（2026-10-16）
 
-健康 `healthapp-development-backend`（97255372）已创建，只绑定测试媒体前缀 CRUD 与三个指定测试端点策略，无控制台登录或自行管理密钥。AK 与推理 Key 已存于本机和服务器的获准私有目录，SHA-256 读回一致。合成对象写入/读取/删除通过；测试桶其他前缀、正式桶读取及正式模型调用均返回 403，三个测试端点返回 200。密钥就绪不代表测试 API 已接通。
+健康 `healthapp-development-backend`（97255372）已创建，只绑定测试媒体前缀 CRUD 与三个指定测试端点策略，无控制台登录或自行管理密钥。AK 与推理 Key 已存于本机和服务器的获准私有目录，SHA-256 读回一致。合成对象写入/读取/删除通过；测试桶其他前缀、正式桶读取及正式模型调用均返回 403，三个测试端点返回 200。测试 API 已接通，公网鉴权与环境隔离检查通过；手机实际认证仍未验收。
 
 官方价目表核对后，健康测试部署强制使用每百万输入 12 元、输出 30 元的保守成本上界，覆盖 mini 音频最高档与 Pro 2.1 输出，月预算仍为 10 元；生产成本配置不变。部署校验 19 项通过，拒绝缺失和旧低价配置。见 `evidence/health-development-cloud-resources-2026-10-16.json` 和 `evidence/health-development-iam-isolation-2026-10-16.json`。
 
 相册独立测试服务已通过登记的部署入口升级至 `42165fed`。保留匹配的 `b6bb8ba` 镜像和配置；20 项部署/恢复检查及部署后 API、worker 共六项环境/数据库拒绝检查通过。升级前恢复备份已认证；数据库、Redis、66 项 schema 及健康生产进程未改变，清理成功。真实 Apple 登录、媒体旅程及手机验收仍待完成。见 `evidence/albums-development-upgrade-2026-10-16.json`。
+
+## 健康测试 API 接通（2026-10-16）
+
+`761dc7b` 已部署，健康测试域名的 DNS/TLS、就绪 200、未授权配额及开发权益 401、内部路径 404、错误 Host 421 均通过。gateway/worker 正常运行，MySQL/Redis 容器与 66 项 schema 未改，健康生产进程未重启。启动时发现的手记 Prompt 依赖已修复；第一次发布自动恢复到 `7c0e6d2`，未对数据库做快照覆盖。修复后 58 个 Go 包检查通过，独立临时 MySQL 三项检查通过，真实测试库仅初始化八个 Health Prompt。部署清理已完成，上一版匹配镜像与配置保留。
+
+mini 文本/音频、lite 文本和 Pro 图片的真实 Responses 完整响应、流式响应及 schema 校验均通过；不能替代识别质量验收。运维目录的测试恢复配置读取器已同步，异地备份结果见 `evidence/health-development-runtime-2026-10-16.json`。当前允许健康构建 4，但新版 IPA 尚未交付；真实 App Attest、系统媒体上传、CloudKit 同步、正式升级及用户验收保持待办。

@@ -79,7 +79,7 @@
       "config/iam/health-development-media-only.json",
       "config/iam/health-development-inference-only.json"
     ],
-    "runtimeCredentialsConfigured": false,
+    "runtimeCredentialsConfigured": true,
     "isolationNegativeProbes": "passed; production model and bucket plus other test prefix return 403",
     "userID": "97255372",
     "credentialStorage": {
@@ -99,7 +99,7 @@
     "running": true,
     "changedByThisStep": false
   },
-  "testAPIEnrollment": false,
+  "testAPIEnrollment": true,
   "deviceAcceptance": false,
   "screenshot": "health-development-endpoints-2026-10-16.jpg",
   "screenshotSHA256": "546b9392c7d71bd3459a03b59e9957d66cfadb881cdae2f09380bcc81ec31e47",
@@ -111,5 +111,7 @@
     "source": "https://docs.volcengine.com/docs/ark/model-pricing?lang=zh&redirect=1",
     "verifiedAt": "2026-10-16",
     "productionChanged": false
-  }
+  },
+  "serviceSource": "761dc7bc01f103670639f3172e23dde147be1289",
+  "modelProtocolChecks": "four operation/media paths passed; real recognition quality pending"
 }
