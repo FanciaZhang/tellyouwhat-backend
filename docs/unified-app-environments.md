@@ -25,6 +25,8 @@
 
 `install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `398b2ff`、1.0 (5)，自动验证设备并支持 Debug 诊断导出；当前共享测试后端保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
 
+手记最新 Ad Hoc 为 1.0 (21)、源码 `fc1f9eb`，已接入共享测试 API 并发布；公网完整包摘要、Manifest、HEAD/Range 和私有响应头通过，上传暂存已清理。手机先前安装的是构建 20，新包尚待设备验收。见 `evidence/journal-shared-gateway-ota-2026-10-16.json`。
+
 以下各节保留实施阶段记录；当前部署状态以上述“当前服务”和最新部署证据为准。
 
 ## 共享路由与公网验收（2026-10-16）
