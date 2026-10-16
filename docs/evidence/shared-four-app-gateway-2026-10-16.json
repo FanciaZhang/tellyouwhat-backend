@@ -45,7 +45,7 @@
     "deploy/tencent/ops_health.py": "4cd2c373321b7679cdfb784203ca0f7bf81d53b942cb573df629549bc304cf7f",
     "deploy/tencent/release.py": "65b8710c4526034871885f2b2314f4af82f176c9880d48ae26621520ab23d458",
     "deploy/tencent/release_test.py": "36397c100f560dbb760b4c1ae40dd9f2ed4ee288959534f2f7938b4d02d3b4bf",
-    "docs/unified-app-environments.md": "78e49737e51fdbb9b8be7bcc5b0e001bdfdc3461ad92bc70a27911ddab03fd51",
+    "docs/unified-app-environments.md": "8a8f356daeaa4f1cbc33fc82c54ef59f87e1b905c40c4067c6aed7d08f7a977e",
     "internal/adminui/static/automation.js": "55a1ff3b5f0fa90c8279110d47c23541da7884c74e33b40717d2ea9c28b5ad5b",
     "internal/albums/account_deletion_apple_worker.go": "5f19dc2be343ad0cc7f8b5932364e8d434253eb1ea897470609f35d12d25efe1",
     "internal/albums/account_deletion_apple_worker_test.go": "28193efb78cd8c040438c219e99c67e07c7bfa6830a553890400747311d66dc2",
