@@ -129,6 +129,10 @@ func (r *unreadableAudio) Read([]byte) (int, error) { r.reads++; return 0, io.EO
 
 func TestRecordingRouteAuthorizesBeforeReadingAudio(t *testing.T) {
 	f := newRecordingFixture(t, 100)
+	before, err := os.ReadDir(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := recordingPrefix + uuid.NewString()
 	input := &unreadableAudio{}
 	f.token = strings.Repeat("x", 43)
@@ -147,9 +151,14 @@ func TestRecordingRouteAuthorizesBeforeReadingAudio(t *testing.T) {
 	if input.reads != 0 || f.provider.submissions != 0 {
 		t.Fatal("unauthorized audio was read or sent")
 	}
-	entries, _ := os.ReadDir(f.root)
-	if len(entries) != 0 {
+	entries, err := os.ReadDir(f.root)
+	if err != nil || len(entries) != len(before) {
 		t.Fatal("unauthorized source persisted")
+	}
+	for i := range entries {
+		if entries[i].Name() != before[i].Name() {
+			t.Fatal("unauthorized request changed processing storage")
+		}
 	}
 }
 

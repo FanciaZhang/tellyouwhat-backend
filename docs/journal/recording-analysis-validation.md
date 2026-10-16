@@ -1,6 +1,16 @@
 # Whole-recording analysis capability probe — 2026-09-08
 
 This is an isolated provider-contract milestone, not a completed app feature.
+
+## Shared-gateway migration prerequisite (2026-10-16)
+
+The existing recording store now coordinates processes through filesystem locks. Metadata publication and revision checks share one directory lock; each provider operation holds a separate per-recording lock through settlement. Duplicate uploads cannot overwrite an active recording. Expiry cleanup skips active jobs, then resumes after the owning process exits. Existing job IDs, provider IDs, hashes and on-disk formats remain unchanged; no task data was migrated or removed.
+
+This is for the existing single-host deployment: both gateway slots must mount the same private directory within an environment, with separate test/production directories. Lock files stay alongside task tombstones; deleting or replacing them during operation invalidates mutual exclusion. This does not provide coordination between hosts with independent disks.
+
+Local race tests cover separate store instances, a real child process holding a paid submission, refusal of duplicate execution, active-audio retention, forced process termination and query-only recovery using the original provider ID. Unsafe lock symlinks and public permissions are rejected. The existing authorization-before-body test now compares the processing directory before/after the denied request, including the startup lock file. The voice, private development and command package race suites passed. Linux/amd64 gateway and private-service compilation passed; provider responses in these tests are synthetic.
+
+This is not a route cutover. Shared App Attest streaming-upload authentication, recording routes/preview, private-state ownership mapping, environment mounts, scheduled retention and backup/recovery acceptance remain required. No cloud service, remote process, App build or real recording was changed. Evidence: `../evidence/journal-recording-process-isolation-2026-10-16.json`.
 No production route or existing streaming behavior changes in this milestone.
 
 ## Real provider observation

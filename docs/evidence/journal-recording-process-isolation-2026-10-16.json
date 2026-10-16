@@ -1,0 +1,39 @@
+{
+  "scope": "Cross-process recording coordination required before shared-gateway route cutover",
+  "base": "2a1802272105f9bb42364161344273bbe25d4e3b",
+  "production_modified": false,
+  "remote_deployed": false,
+  "data_format_changed": false,
+  "verification": {
+    "race_commands": [
+      "go test -race ./internal/journal/voice -run TestRecording(Store|Job|Executor|Missing|Lock) -count=1",
+      "go test -race ./internal/journal/voice ./internal/journal/development ./cmd/journaldevserver"
+    ],
+    "race_result": "passed; subprocess helper skips in ordinary parent invocation and executes in child test",
+    "subprocess": "Real local child process held provider submission; concurrent execution/upload denied, active source survived cleanup, SIGKILL released lock and recovery queried original provider task without resubmission",
+    "build": "GOOS=linux GOARCH=amd64 go build ./cmd/gateway ./cmd/journaldevserver passed",
+    "vet": "go vet ./internal/journal/voice ./internal/journal/development ./cmd/journaldevserver passed",
+    "diff_check": "passed",
+    "provider": "synthetic responses only; no paid API requests"
+  },
+  "corrections": [
+    "Authorization test originally assumed an empty initialized directory; changed to assert identical directory before/after denied requests, preserving proof that no audio or new task was persisted"
+  ],
+  "not_verified": [
+    "Linux runtime filesystem-lock behavior",
+    "Shared App Attest streamed recording uploads and route integration",
+    "Native client authentication migration",
+    "Environment-specific mount, retention, backup and recovery integration",
+    "Real cloud and device recording journey"
+  ],
+  "constraint": "Same host and shared private filesystem per environment; test/production directories must differ. Keep lock files alongside durable task tombstones.",
+  "sha256": {
+    "docs/journal/recording-analysis-validation.md": "9959b77fcd7a61ee46ff140769a2d96affb9ab1e564749333b3f8b1c0ef06564",
+    "docs/unified-app-environments.md": "78e47dbade2219df08b4e1b03cb61685488643d66824ecf54532af793499bcf8",
+    "internal/journal/development/recording_test.go": "6387db5fcaa5189d32a0104e436409a83d92154d7c563b297a344cd49fae790f",
+    "internal/journal/voice/recording_executor.go": "bcbd907b158d6f2c3803e053490acc23b53877aa517ae10f36df159831473116",
+    "internal/journal/voice/recording_jobs.go": "59109904c1235484be95da9e6cff0b12561de2f81487eee01ac7015372a4409c",
+    "internal/journal/voice/recording_lock.go": "3846d72acf82a0ef5b77e815fa38068c81e23ba46a585b73c3e4ab71e62609bc",
+    "internal/journal/voice/recording_lock_test.go": "7a037d8d55f28853f404f067702c6b39f6426f0029316aef47075719681b52a6"
+  }
+}
