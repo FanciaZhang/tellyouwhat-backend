@@ -1,0 +1,46 @@
+{
+  "checked_at": "2026-10-16T04:55:46.162889+00:00",
+  "scope": "Birthday production release readiness and operational reporting; local verification only",
+  "checks": {
+    "python_operations": {
+      "run": 182,
+      "passed": 181,
+      "skipped": 1,
+      "skip_reason": "native Caddy unavailable for unchanged proxy logging check"
+    },
+    "go_packages": [
+      "internal/platformops",
+      "internal/adminui"
+    ],
+    "browser_acceptance": true,
+    "birthday_alias_failure_blocks_readiness": true,
+    "birthday_failure_recorded_once": true,
+    "birthday_failure_visible_in_admin": true,
+    "diff_check": true
+  },
+  "initial_browser_attempt": {
+    "passed": false,
+    "reason": "new assertion read text inside collapsed details",
+    "resolution": "open disclosure before checking visible failure text; full browser acceptance then passed"
+  },
+  "test_identity_denial": {
+    "checked_at": "2026-10-16T04:51:26.105677+00:00",
+    "endpoint": "ep-20261016124914-tttsd",
+    "http_status": 403
+  },
+  "remote_deployed": false,
+  "production_iam_created": false,
+  "production_iam_approval": "pending",
+  "production_route_migrated": false,
+  "native_app_journey_verified": false,
+  "source_sha256": {
+    "deploy/tencent/release.py": "4f826e264501dba541bc1f3a4f91e6a19b06b462479b7752dd27aa25e92f92ea",
+    "deploy/tencent/ops_health.py": "334a21f39c9583bcd9ba2d8ca5faff18ecdb56f543d7e9fdefd9320f62bb389e",
+    "deploy/tencent/release_test.py": "5873fdb942b4209b3078fa48fbc08d67f6a4cf145a8aa8f14d4e32d06fba94c3",
+    "deploy/tencent/health_test.py": "5f9b8f58d6d6b6b5cdf52e795f8a21f7648d4ecd9ace56937353cd05a4f93a9b",
+    "internal/platformops/automation_host.go": "ab241803aa17fab2d3e91a3b2b9543df8669d1287e7b1c7c475864a3de2455c6",
+    "internal/platformops/automation_host_test.go": "3a512a91bee29e3213aff89a382301f6a8a98a374eeb065c91bb30bce8a36bb6",
+    "internal/adminui/static/automation.js": "4f01d513901d44fe52391e14d04a5ec94ab9ffb44770b88dbad3e8c75228b69e",
+    "scripts/platform-admin-ui-test.mjs": "934cf247ea99b24597ef14326ba633afe73beeb65e3c8da36630db3cf1b10568"
+  }
+}

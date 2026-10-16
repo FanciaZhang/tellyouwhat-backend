@@ -80,6 +80,7 @@ def validate(source, tag, registry, acceptance):
             raise OperationError("production application domains are required")
     if config.get("PUBLIC_PROXY_MODE", "docker") not in ("external", "docker"):
         raise OperationError("PUBLIC_PROXY_MODE must be docker or external")
+    readiness_checks(config)
     return config
 
 
@@ -98,13 +99,25 @@ def probe(url, host, status):
             return False
 
 
+def readiness_checks(config, ports=(18080, 18081, 18082)):
+    checks = [("health_gateway", f"http://127.0.0.1:{ports[0]}/readyz", config["HEALTH_API_DOMAIN"], "ready"),
+              ("journal_gateway", f"http://127.0.0.1:{ports[0]}/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
+              ("worker", f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
+              ("admin", f"http://127.0.0.1:{ports[2]}/readyz", config["ADMIN_DOMAIN"], "ready")]
+    if "birthday" in [app.strip() for app in config.get("PLATFORM_APPS", "health,journal").split(",")]:
+        hosts = config.get("BIRTHDAY_API_HOSTS", "").strip() or "api.birthday.tellyouwhat.cn"
+        for host in hosts.split(","):
+            host = host.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]", host):
+                raise OperationError("invalid birthday production API host")
+            checks.append(("birthday_gateway", f"http://127.0.0.1:{ports[0]}/readyz", host, "ready"))
+    return checks
+
+
 def internally_ready(config, attempts, ports=(18080, 18081, 18082)):
-    checks = [(f"http://127.0.0.1:{ports[0]}/readyz", config["HEALTH_API_DOMAIN"], "ready"),
-              (f"http://127.0.0.1:{ports[0]}/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
-              (f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
-              (f"http://127.0.0.1:{ports[2]}/readyz", config["ADMIN_DOMAIN"], "ready")]
+    checks = readiness_checks(config, ports)
     for attempt in range(attempts):
-        if all(probe(*check) for check in checks):
+        if all(probe(*check[1:]) for check in checks):
             return True
         if attempt + 1 < attempts:
             time.sleep(5)

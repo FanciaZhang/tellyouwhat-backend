@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ops_common import OperationError, Runtime, read_environment
-from release import KEY_FILES, copy_runtime, deploy, rollback
+from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
@@ -38,6 +38,30 @@ class ReleaseRecoveryTests(unittest.TestCase):
         (self.bundle / "compose.production.yaml").write_text("new compose")
         for name in KEY_FILES:
             (self.bundle / "secrets" / name).write_text("new key")
+
+    def test_birthday_readiness_uses_candidate_port_and_every_host(self):
+        config = dict(self.runtime.config, PLATFORM_APPS="health, journal, birthday",
+                      BIRTHDAY_API_HOSTS="birthday.example, birthday-alias.example")
+        with patch("release.probe", side_effect=lambda url, host, status: host != "birthday-alias.example") as probe:
+            self.assertFalse(internally_ready(config, 1, ports=(18180, 18181, 18182)))
+        self.assertIn((("http://127.0.0.1:18180/readyz", "birthday.example", "ready"),), probe.call_args_list)
+        self.assertIn((("http://127.0.0.1:18180/readyz", "birthday-alias.example", "ready"),), probe.call_args_list)
+        with patch("release.probe", return_value=True):
+            self.assertTrue(internally_ready(config, 1))
+
+    def test_birthday_default_host_is_checked_only_when_enabled(self):
+        for apps, count in (("health,journal", 4), ("health,journal,birthday", 5)):
+            with self.subTest(apps=apps), patch("release.probe", return_value=True) as probe:
+                self.assertTrue(internally_ready(dict(self.runtime.config, PLATFORM_APPS=apps), 1))
+                self.assertEqual(probe.call_count, count)
+                if count == 5:
+                    probe.assert_called_with("http://127.0.0.1:18080/readyz", "api.birthday.tellyouwhat.cn", "ready")
+
+    def test_invalid_birthday_host_blocks_release_before_activation(self):
+        with (self.bundle / ".env.production").open("a") as output:
+            output.write("PLATFORM_APPS=health,journal,birthday\nBIRTHDAY_API_HOSTS=https://birthday.example/path\n")
+        with self.assertRaisesRegex(OperationError, "birthday production API host"):
+            validate(self.bundle, "new", "registry/app", "internal")
 
     def run_deploy(self):
         with patch("release.require_disk_space"):

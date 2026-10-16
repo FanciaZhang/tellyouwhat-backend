@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import time
 
-from release import probe
+from release import probe, readiness_checks
 from ops_common import OperationError
 
 
@@ -44,13 +44,11 @@ def health(runtime):
         except (OSError, ValueError, KeyError):
             fresh = False
         checks.append({"name": "deployment_controller", "passed": fresh})
-    for name, url, host, status in [
-        ("health_gateway", f"http://127.0.0.1:{ports[0]}/readyz", runtime.config["HEALTH_API_DOMAIN"], "ready"),
-        ("journal_gateway", f"http://127.0.0.1:{ports[0]}/readyz", runtime.config["JOURNAL_API_DOMAIN"], "ready"),
-        ("worker", f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
-        ("admin", f"http://127.0.0.1:{ports[2]}/readyz", runtime.config["ADMIN_DOMAIN"], "ready"),
-    ]:
-        checks.append({"name": name, "passed": probe(url, host, status)})
+    services = {}
+    for name, url, host, status in readiness_checks(runtime.config, ports):
+        passed = probe(url, host, status)
+        services[name] = services.get(name, True) and passed
+    checks.extend({"name": name, "passed": passed} for name, passed in services.items())
     disk = shutil.disk_usage(runtime.root)
     checks.append({"name": "disk_space", "passed": disk.free >= max(2 * 1024**3, disk.total * 0.15),
                    "free_megabytes": disk.free // 1024**2})

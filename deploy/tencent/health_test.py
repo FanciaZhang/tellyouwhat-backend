@@ -34,6 +34,17 @@ class OperationalHealthTests(unittest.TestCase):
         disk.start()
         self.addCleanup(disk.stop)
 
+    def test_birthday_alias_failure_produces_one_failed_service_check(self):
+        self.runtime.config.update(PLATFORM_APPS="health,journal,birthday",
+                                   BIRTHDAY_API_HOSTS="birthday.example,birthday-alias.example")
+        with patch("ops_health.probe", side_effect=lambda url, host, status: host != "birthday.example"):
+            result = health(self.runtime)
+        self.assertFalse(result["passed"])
+        birthday = [check for check in result["checks"] if check["name"] == "birthday_gateway"]
+        self.assertEqual(birthday, [{"name": "birthday_gateway", "passed": False}])
+        with patch("ops_health.probe", return_value=True):
+            self.assertTrue(health(self.runtime)["passed"])
+
     def test_disk_pressure_is_unhealthy(self):
         with patch("ops_health.probe", return_value=True), patch(
             "ops_health.shutil.disk_usage", return_value=SimpleNamespace(total=100 * 1024**3, free=1024**3)
