@@ -1,0 +1,106 @@
+{
+  "checked_at_utc": "2026-10-16T04:30:41.245784+00:00",
+  "source_commit": "9a251b22b2a8655b731285181eae31d7bd61b10d",
+  "native_verification": {
+    "source_commit": "9a251b22b2a8655b731285181eae31d7bd61b10d",
+    "version": "1.0",
+    "build": "20",
+    "configuration": "Debug",
+    "distribution": "Ad Hoc",
+    "package_sha256": "bf0c60b4158fa0321be218a4dadf3d9342d42a36ef414856289a98c9854f6faa",
+    "package_bytes": 70989789,
+    "bundles": [
+      {
+        "bundle_id": "cn.tellyouwhat.journalapp.dev",
+        "registered_devices": 3,
+        "profile_uuid": "113c75cc-0c53-46e5-a4a4-6b701d1e0065",
+        "profile_expires": "2027-08-24T05:02:39Z",
+        "entitlements": {
+          "application-identifier": "T6DD96HY2B.cn.tellyouwhat.journalapp.dev",
+          "com.apple.developer.associated-domains": [
+            "applinks:journal.tellyouwhat.cn"
+          ],
+          "com.apple.developer.devicecheck.appattest-environment": "production",
+          "com.apple.developer.icloud-container-environment": "Production",
+          "com.apple.developer.icloud-container-identifiers": [
+            "iCloud.cn.tellyouwhat.journalapp.dev"
+          ],
+          "com.apple.developer.icloud-services": [
+            "CloudKit"
+          ],
+          "com.apple.developer.journal.allow": [
+            "suggestions"
+          ],
+          "com.apple.developer.team-identifier": "T6DD96HY2B",
+          "com.apple.security.application-groups": [
+            "group.cn.tellyouwhat.journalapp.dev"
+          ],
+          "get-task-allow": false
+        },
+        "localized_names": {
+          "zh-Hans": "告你手记·开发",
+          "en": "TellYou Journal Dev"
+        }
+      },
+      {
+        "bundle_id": "cn.tellyouwhat.journalapp.dev.share",
+        "registered_devices": 3,
+        "profile_uuid": "3d934378-978d-415b-89fc-dfc343cafe0c",
+        "profile_expires": "2027-08-24T05:02:39Z",
+        "entitlements": {
+          "application-identifier": "T6DD96HY2B.cn.tellyouwhat.journalapp.dev.share",
+          "com.apple.developer.team-identifier": "T6DD96HY2B",
+          "com.apple.security.application-groups": [
+            "group.cn.tellyouwhat.journalapp.dev"
+          ],
+          "get-task-allow": false
+        },
+        "localized_names": {
+          "zh-Hans": "告你手记·开发",
+          "en": "TellYou Journal Dev"
+        }
+      }
+    ],
+    "archive_exit": 0,
+    "export_exit": 0,
+    "signature_verified": true,
+    "runtime_connection_token_embedded": false,
+    "physical_install_verified": false
+  },
+  "https_verification": {
+    "checked_at": "2026-10-16T04:29:40.661233+00:00",
+    "page_manifest_head_range_hosts_privacy_passed": true,
+    "tls_verified": true,
+    "full_download_sha256": "bf0c60b4158fa0321be218a4dadf3d9342d42a36ef414856289a98c9854f6faa",
+    "bytes": 70989789,
+    "expires_at": "2026-10-17T04:25:17.653544229Z",
+    "device_installation_verified": false,
+    "owned_staging_removed": true
+  },
+  "owner_publication_cleanup": {
+    "apple_delivery": {
+      "configured": true,
+      "grants_removed": 0,
+      "packages_removed": 0
+    },
+    "completed_at": 1792124720,
+    "errors": [],
+    "free_bytes_after": 18583400448,
+    "free_bytes_before": 18583404544,
+    "operation": "artifacts-apple-development",
+    "passed": true,
+    "reclaimed_bytes": -4096,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "ota_service_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "gate_evidence": "journal-release-runtime-boundary-2026-10-16.json",
+  "gate_source_hashes_match": true,
+  "new_test_run": false,
+  "formal_release_gate_passed": false,
+  "remote_ci": false,
+  "pushed": false,
+  "device_installation_verified": false,
+  "real_cloud_sync_verified": false,
+  "raw_installation_link_omitted": true
+}

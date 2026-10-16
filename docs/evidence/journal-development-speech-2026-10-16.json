@@ -62,7 +62,7 @@
   ],
   "code_changes_required": false,
   "backend_source_commit": "f4989776dbf263679882ea4780c310c31b52471f",
-  "runtime_credentials_replaced": false,
+  "runtime_credentials_replaced": true,
   "inference_endpoint_version_switch_pending": true,
   "production_services_changed": false,
   "native_app_journey_verified": false,
@@ -75,5 +75,27 @@
     "file-full-metadata-probe.json": "e99b276f3cb10ea6fec93694463855f83cd780afc5adf7e2e9ba206cc1e483f5",
     "file-original-metadata-control.json": "603300cbdc33d2fbdb85f5023bf5400cc118ae0b5eb864525a82969b8215c008"
   },
-  "screenshot": "journal-development-speech-ready-2026-10-16.jpg"
+  "screenshot": "journal-development-speech-ready-2026-10-16.jpg",
+  "runtime_source_commit": "6d5a8a349a442e7d44ee03a97a1df889ad753fa3",
+  "runtime_matches_private_configuration": true,
+  "previous_container_and_matching_configuration_retained": true,
+  "legacy_speech_credentials_absent": true,
+  "model_configuration_changed": false,
+  "development_connection_changed": false,
+  "production_release_state_changed": false,
+  "artifact_cleanup_passed": true,
+  "predeployment_backup": {
+    "filename": "mysql-20261016T042737Z-8905e3.sql.gz.enc",
+    "cos_three_objects_readback": true,
+    "authenticated_decryption": true,
+    "isolated_journal_recovery": true
+  },
+  "postdeployment_backup": {
+    "filename": "mysql-20261016T043001Z-19a037.sql.gz.enc",
+    "cos_three_objects_readback": true,
+    "authenticated_decryption": true,
+    "isolated_journal_recovery": true
+  },
+  "scheduled_backup_new_cycle_verified": false,
+  "updated_at_utc": "2026-10-16T04:31:07.471317+00:00"
 }
