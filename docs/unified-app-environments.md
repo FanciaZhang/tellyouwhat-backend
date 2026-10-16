@@ -141,3 +141,9 @@ Pro 接入点已完成 260628 切换，控制台与真实响应一致。测试�
 服务器最近一次自动备份及维护分别于北京时间 03:06、03:26 成功；维护记录已包含安装服务清理（当时过期授权和包均为 0）。但这两次早于后续配置变更，新配置后的计划备份仍待下一周期。当前 systemd 无失败单元，巡检通过；遗留 release_failure 是 9 月记录且已恢复，未删除。没有手动触发任务或修改线上服务。证据：`evidence/unified-scheduled-audit-2026-10-16.json`。
 
 相册正式资源核查（2026-10-16）：正式桶已存在但媒体任务尚未开通。API/worker 已新增桶/地域环境绑定和已知测试队列拒绝保护；相关三个 Go 包、定向竞态及六项 CAM 静态检查通过，未部署。正式上传/后端身份权限草案已准备，控制台停在安全检测，等待新权限确认；不授予 PassRole 或修改共享 CI 角色。见 `evidence/albums-production-resource-boundary-2026-10-16.json`。
+
+## 相册独立生产栈描述（2026-10-16）
+
+`compose.albums-production.yaml`、`deploy/albums/production.env.example` 与 `production-runtime.env.example` 已准备：独立 `albums_production` 数据库、Redis、数据卷、网络和正式身份；API 默认仅回环 18093，网段 172.29.94.0/24。实时主机检查无端口或网段冲突，可用内存约 2,444 MiB、磁盘约 18 GiB；这不是负载容量验收。
+
+测试/生产两种描述的隔离单测通过。已在服务器原有 Docker Compose 上仅用合成配置执行解析：五服务、环境及数据卷匹配，应用不含 root 密码，worker 无私钥目录，六类必填配置缺失均拒绝；临时目录已清理，未启动容器。生产发布必须接入 `release.py deploy` 与既有备份/产物保留流程，当前接入尚未完成，不得直接运行 Compose 激活。真实凭据、云权限、CI、生产路由及业务验收仍待完成。证据：`evidence/albums-production-compose-2026-10-16.json`。

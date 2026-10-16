@@ -1,0 +1,126 @@
+# Independent Albums production descriptor; release.py activation support is pending.
+# Do not start it with an ad hoc Compose command.
+# Never combine with the test stack or reuse its environment, network or volumes.
+name: tellyouwhat-albums-production
+
+x-album-app: &album-app
+  restart: unless-stopped
+  init: true
+  user: "65532:65532"
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  env_file: ["${ALBUM_PRODUCTION_ENV_FILE:?Set the private album production environment file}"]
+  environment: &album-environment
+    ALBUM_DEPLOYMENT_ENVIRONMENT: production
+    ALBUM_DATABASE_DSN: "${ALBUM_PRODUCTION_MYSQL_USER:-albums_production}:${ALBUM_PRODUCTION_MYSQL_PASSWORD:?Set a production-only database password}@tcp(mysql:3306)/albums_production?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    ALBUM_REDIS_URL: "redis://:${ALBUM_PRODUCTION_REDIS_PASSWORD:?Set a production-only URL-safe Redis password}@redis:6379/0"
+  networks: [albums-production]
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+
+services:
+  albumgateway:
+    <<: *album-app
+    image: "${ALBUM_PRODUCTION_IMAGE_PREFIX:-tellyouwhat-albums-production}-albumgateway:${ALBUM_PRODUCTION_IMAGE_TAG:?Set the exact tested Git commit}"
+    build:
+      context: .
+      args: {SERVICE: albumgateway}
+    environment:
+      <<: *album-environment
+      ALBUM_HTTP_LISTEN_ADDRESS: "0.0.0.0:8080"
+      ALBUM_TRUSTED_PROXIES: "${ALBUM_PRODUCTION_PROXY_CIDR:-172.29.94.1/32}"
+      # Two bounded 64-MiB password jobs plus runtime; collect before the cgroup limit.
+      GOMEMLIMIT: "180MiB"
+    volumes:
+      - "${ALBUM_PRODUCTION_SECRET_DIRECTORY:?Set the private production secret directory}:/album-secrets:ro"
+    ports: ["127.0.0.1:${ALBUM_PRODUCTION_API_PORT:-18093}:8080/tcp"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /service, -check-ready]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 20s
+    mem_limit: 256m
+    pids_limit: 100
+
+  albumworker:
+    <<: *album-app
+    image: "${ALBUM_PRODUCTION_IMAGE_PREFIX:-tellyouwhat-albums-production}-albumworker:${ALBUM_PRODUCTION_IMAGE_TAG:?Set the exact tested Git commit}"
+    build:
+      context: .
+      args: {SERVICE: albumworker}
+    depends_on:
+      mysql: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    stop_grace_period: 35s
+    mem_limit: 384m
+    pids_limit: 100
+
+  migrate:
+    <<: *album-app
+    restart: "no"
+    image: "${ALBUM_PRODUCTION_IMAGE_PREFIX:-tellyouwhat-albums-production}-migrate:${ALBUM_PRODUCTION_IMAGE_TAG:?Set the exact tested Git commit}"
+    build:
+      context: .
+      args: {SERVICE: migrate}
+    environment:
+      DATABASE_DSN: "${ALBUM_PRODUCTION_MYSQL_USER:-albums_production}:${ALBUM_PRODUCTION_MYSQL_PASSWORD:?Set a production-only database password}@tcp(mysql:3306)/albums_production?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    depends_on:
+      mysql: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 50
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: albums_production
+      MYSQL_USER: "${ALBUM_PRODUCTION_MYSQL_USER:-albums_production}"
+      MYSQL_PASSWORD: "${ALBUM_PRODUCTION_MYSQL_PASSWORD:?Set a production-only database password}"
+      MYSQL_ROOT_PASSWORD: "${ALBUM_PRODUCTION_MYSQL_ROOT_PASSWORD:?Set a different production-only root password}"
+    command: [--performance-schema=OFF, --innodb-buffer-pool-size=134217728, --max-connections=30]
+    volumes: [albums-production-mysql:/var/lib/mysql]
+    networks: [albums-production]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, localhost, --silent]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    pids_limit: 150
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${ALBUM_PRODUCTION_REDIS_PASSWORD:?Set a production-only URL-safe Redis password}"
+    command: [sh, -ec, 'exec redis-server --requirepass "$${REDIS_PASSWORD}" --maxmemory 64mb --maxmemory-policy noeviction --appendonly no --save ""']
+    networks: [albums-production]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 96m
+    pids_limit: 50
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+
+networks:
+  albums-production:
+    ipam:
+      config: [{subnet: "${ALBUM_PRODUCTION_NETWORK_CIDR:-172.29.94.0/24}"}]
+volumes:
+  albums-production-mysql:

@@ -355,3 +355,5 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 正式权限草案为 `cam-production-upload.policy.json` 与 `cam-production-backend.policy.json`，只针对正式桶，未授权永久删除、桶/权限管理或 PassRole。两个仅编程访问身份已填写到控制台表单，等待用户确认和安全验证，尚未创建/绑定。共享 `CI_QCSRole` 仍只服务测试资源；不得通过一键授权扩大为跨测试/生产的全桶权限。正式 CI 的角色隔离和跨桶输出拒绝仍须验证。
 
 三个相关 Go 包、定向竞态和六项 CAM 静态范围检查通过，未部署、未切换域名或启用处理。证据：`../../docs/evidence/albums-production-resource-boundary-2026-10-16.json`。
+
+正式栈描述已准备在 `../../compose.albums-production.yaml`，配套插值文件为 `production.env.example`、应用文件为 `production-runtime.env.example`。默认生产库/卷、回环 18093 和 172.29.94.0/24 均与测试栈分开；不得复用旧测试环境或卷。当前仅通过隔离单测及服务器原生 Compose 合成配置解析，尚未接入生产发布、备份和产物保留入口，禁止直接 `docker compose up` 激活。待凭据、云权限及媒体队列验证后，通过 `release.py deploy` 完成发布接入和实际验收。
