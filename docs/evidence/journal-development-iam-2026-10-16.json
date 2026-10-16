@@ -39,9 +39,9 @@
       "response_model": "doubao-seed-2-1-pro-260915"
     }
   ],
-  "pro_model_pending_version_switch": true,
+  "pro_model_pending_version_switch": false,
   "service_updated": false,
-  "updated_at": "2026-10-16T04:04:56.677434+00:00",
+  "updated_at": "2026-10-16T04:42:49.223543+00:00",
   "policy": "JournalDevelopmentInferenceOnly",
   "policy_path": "config/iam/journal-development-inference-only.json",
   "policy_sha256": "19388fa1f0ebadbab5e98dbc5507dfe9727361d053d19f446996545ebc0ec639",
@@ -62,17 +62,26 @@
     },
     "pro": {
       "endpoint": "ep-20261016114934-6nzjt",
-      "current_response_version": "260915",
+      "current_response_version": "260628",
       "requested_version": "260628",
-      "switch_complete": false
+      "switch_complete": true
     },
     "illustration": {
       "endpoint": "ep-20261016115027-2rx24",
       "version": "260915"
     }
   },
-  "deployment_blocker": "Pro version switch is still pending; actual response remains 260915. Existing Journal runtime configuration retained.",
+  "deployment_blocker": null,
   "speech_credentials_changed": false,
   "production_services_changed": false,
-  "device_journey_verified": false
+  "device_journey_verified": false,
+  "version_switch_verification": {
+    "checked_at": "2026-10-16T04:38:57.560117+00:00",
+    "http_status": 200,
+    "model": "doubao-seed-2-1-pro-260628",
+    "status": "completed",
+    "expected_model": "doubao-seed-2-1-pro-260628",
+    "console_completed": true,
+    "screenshot": "journal-development-pro-ready-2026-10-16.jpg"
+  }
 }
