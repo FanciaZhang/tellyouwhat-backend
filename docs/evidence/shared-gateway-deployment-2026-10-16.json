@@ -1,0 +1,191 @@
+{
+  "checked_at": "2026-10-16T10:51:32.465382+00:00",
+  "source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+  "production": {
+    "phase": "STABLE",
+    "apps": [
+      "health",
+      "journal"
+    ],
+    "current": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+    "previous": "da7c981f23ed0d2a26daf4afd6d832f7da0f2149",
+    "ci_run": "38886687246",
+    "public_https_verified": [
+      "api.health.tellyouwhat.cn",
+      "api.journal.tellyouwhat.cn",
+      "admin.tellyouwhat.cn"
+    ],
+    "pre_release_backup": {
+      "filename": "mysql-20261016T103520Z-8dd321.sql.gz.enc",
+      "sha256": "19338b759646aa0cd1e4450da6423d005d94c4197fbf012008d848d0b88f0bea",
+      "source_run": "38886687246"
+    }
+  },
+  "test": {
+    "apps": {
+      "health": {
+        "bundle_id": "cn.tellyouwhat.healthapp.dev",
+        "host": "api-test.health.tellyouwhat.cn",
+        "port": 18790
+      },
+      "journal": {
+        "bundle_id": "cn.tellyouwhat.journalapp.dev",
+        "host": "api-test.journal.tellyouwhat.cn",
+        "port": 18790
+      },
+      "birthday": {
+        "bundle_id": "cn.tellyouwhat.birthday.dev",
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "port": 18790
+      },
+      "albums": {
+        "bundle_id": "cn.tellyouwhat.albums.dev",
+        "host": "api-test.albums.tellyouwhat.cn",
+        "port": 18790
+      }
+    },
+    "source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+    "previous_source": "24f4cd98c5533e4c62db9e53a98f5338b9765d69",
+    "migrations": 67,
+    "latest_migration": "0065_journal_illustration_jobs.sql",
+    "recording_enabled": true,
+    "route_fragment_sha256": "20b17491f1b1f60099bc873745b85759fe0f4e133fdc75e7ee79d79cdcc72c3b",
+    "route_recovery": "/opt/tellyouwhat/backend/.operations/test-routing-8db8bd11d3b942d6aad4688cfb491fac",
+    "pre_update_backup": "mysql-20261016T104445Z-824af9.sql.gz.enc",
+    "all_four_local_and_public_readiness_verified": true,
+    "wrong_production_and_unknown_hosts_status": 421
+  },
+  "post_switch_backup": {
+    "completed_at": 1792147749,
+    "filename": "mysql-20261016T104850Z-a3ef11.sql.gz.enc",
+    "operation": "backup",
+    "sha256": "6dae6a0d1c261700933034e637308b3357bdb6e07d57d8839b024af8666db4fc",
+    "tables": 94
+  },
+  "isolated_control_plane_restore": {
+    "completed_at": 1792147819,
+    "filename": "mysql-20261016T104850Z-a3ef11.sql.gz.enc",
+    "operation": "restore",
+    "sha256": "6dae6a0d1c261700933034e637308b3357bdb6e07d57d8839b024af8666db4fc",
+    "source": "cos",
+    "tables": 94
+  },
+  "limits": [
+    "Real Apple authentication, CloudKit and device journeys remain unverified.",
+    "Birthday and Albums production resources and admission remain pending.",
+    "Old standalone test processes still require managed retirement; Journal backup currently requires its old process to be running.",
+    "Manual backup and restore do not establish the next scheduled cycle."
+  ],
+  "public_authentication_checks": {
+    "checked_at": "2026-10-16T10:46:53.768280+00:00",
+    "checks": [
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/ai/quota",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "method": "POST",
+        "path": "/v1/dev/entitlements/activate",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      },
+      {
+        "host": "api-test.albums.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/v1/albums/account",
+        "expected": 401,
+        "status": 401,
+        "passed": true
+      },
+      {
+        "host": "api-test.albums.tellyouwhat.cn",
+        "method": "GET",
+        "path": "/internal/jobs/process",
+        "expected": 404,
+        "status": 404,
+        "passed": true
+      }
+    ],
+    "all_passed": true,
+    "corrected_probe_input": "Initial probes omitted required UUID request ID and incorrectly sent a JSON body to a bodyless operation; initial rejected requests preserved separately. No service changes.",
+    "birthday_expectation_verified": "cmd/gateway/main.go commerceServices explicitly returns no entitlement activator for Birthday; this route intentionally returns 404."
+  },
+  "native_proxy_privacy_check": {
+    "checked_at": "2026-10-16T10:27:42.503728+00:00",
+    "source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+    "source_tar_sha256": "0747fd2f712246638a4b68db2947977cb988579ee9b166193ae522538b59675b",
+    "test": "AppleDeliveryProxyTests.test_error_log_exclusion_removes_only_installation_requests",
+    "result": "passed",
+    "native_caddy": true,
+    "isolated_loopback_instance": true,
+    "negative_control_verified": true,
+    "uppercase_and_explicit_port_hosts_verified": true,
+    "active_proxy_modified": false,
+    "temporary_processes_and_files_cleaned": true,
+    "limits": [
+      "This validates the exact source templates in an isolated native proxy, not the later production route switch."
+    ]
+  }
+}
