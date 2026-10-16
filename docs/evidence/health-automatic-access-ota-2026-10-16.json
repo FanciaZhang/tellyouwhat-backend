@@ -1,0 +1,153 @@
+{
+  "source_commit": "100514f0ada88a958acf83da20a531a24f03bfb7",
+  "source_tree": "efc929aac1029f60ec701d96f81ece4dcd324490",
+  "version": "1.0.2",
+  "build": "4",
+  "configuration": "Debug",
+  "distribution": "Ad Hoc",
+  "verification": "repository unit lane and development export, locally executed",
+  "unit_tests": {
+    "passed": 1624,
+    "failed": 0,
+    "skipped": 0
+  },
+  "release_builds": [
+    "iOS",
+    "watchOS"
+  ],
+  "toolchain": "Xcode 27.1 (27A9275)",
+  "ipa_sha256": "dd948138cdb0b2099dff9e49fabb940dd3e38baf9910d2c35105cee8e59be622",
+  "ipa_bytes": 148972748,
+  "native_verification": {
+    "schemaVersion": 1,
+    "packageSHA256": "dd948138cdb0b2099dff9e49fabb940dd3e38baf9910d2c35105cee8e59be622",
+    "packageName": "TellYouHealth.ipa",
+    "bundleIdentifier": "cn.tellyouwhat.healthapp.dev",
+    "teamID": "T6DD96HY2B",
+    "bundles": [
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": "Production",
+        "attestationEnvironment": "production",
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev",
+        "localizedDisplayNames": {
+          "zh-Hans": "告你健康·开发"
+        }
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepDeviceActivityMonitor",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepDeviceActivityMonitor",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepShieldAction",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepShieldAction",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepShieldConfiguration",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepShieldConfiguration",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.HealthWidget",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.HealthWidget",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.watchkitapp",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.watchkitapp",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.watchkitapp.widget",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.watchkitapp.widget",
+        "localizedDisplayNames": {}
+      }
+    ],
+    "state": "verified-export",
+    "deviceInstallationVerified": false
+  },
+  "archive_and_export_succeeded": true,
+  "download": {
+    "observedAt": "2026-10-16T04:01:21.316086+00:00",
+    "sourceCommit": "100514f0ada88a958acf83da20a531a24f03bfb7",
+    "version": "1.0.2",
+    "build": "4",
+    "expiresAt": "2026-10-17T03:53:16.203582998Z",
+    "checks": [
+      {
+        "operation": "installation-page",
+        "passed": true
+      },
+      {
+        "operation": "manifest",
+        "passed": true
+      },
+      {
+        "operation": "ipa-head",
+        "passed": true
+      },
+      {
+        "operation": "ipa-range",
+        "passed": true
+      },
+      {
+        "operation": "equivalent-hosts",
+        "passed": true
+      },
+      {
+        "operation": "full-https-ipa-sha256",
+        "passed": true,
+        "bytes": 148972748,
+        "sha256": "dd948138cdb0b2099dff9e49fabb940dd3e38baf9910d2c35105cee8e59be622"
+      }
+    ],
+    "privateHeadersVerified": true,
+    "otaPublished": true,
+    "deviceInstallationVerified": false
+  },
+  "ota_published": true,
+  "private_receipt_saved": true,
+  "raw_link_and_device_identifiers_omitted": true,
+  "owned_staging_removed": true,
+  "managed_build_runs_finished": true,
+  "production": {
+    "running": true,
+    "started_at": "2026-10-13T06:51:32.051220621Z",
+    "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:ac7e9d601ba9215f5409a769dfb53cd12e4e54d4fd17354a8889d16699199427",
+    "unchanged": true
+  },
+  "remote_workflow_verified": false,
+  "formal_release_gate_verified": false,
+  "device_installation_verified": false,
+  "real_app_attest_verified": false,
+  "cloud_sync_verified": false,
+  "scheduled_cleanup_verified": false
+}

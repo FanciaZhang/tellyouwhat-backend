@@ -130,3 +130,5 @@ DNS 通过既有 Netlify 账号配置独立安装域名，指向当前主机。�
 手记 1.0 (19)、源码 `1fa9ee0` 与相册 0.1.0 (2)、源码 `2164291` 已完成实际 OTA 发布，完整 HTTPS 下载摘要与各自已核对的原生 IPA 相同。手记未推送仓库；相册合计 475 项应用测试通过、88 项条件检查跳过，核心包 193 项通过，Release 编译通过。两者仍未证明手机安装或完整后端/云端隔离；见 `evidence/journal-ota-delivery-2026-10-16.json`、`evidence/albums-ota-delivery-2026-10-16.json`。
 
 回滚后重新生成完整加密备份并认证、解密核验：当前/上一版 OTA 的二十份恢复文件、相册开发 SQL/账本等十五份文件均纳入，COS 三对象完整读回摘要通过。此项是手动执行，未代替计划任务验收；见 [回滚后备份证据](evidence/apple-delivery-post-rollback-backup-2026-10-16.json)。
+
+健康 Debug/Ad Hoc 1.0.2 (4)、源码 `100514f0` 已交付，包含自动开发认证和 Release 引导测试入口隔离。Xcode 27.1 的本机完整 unit 流程 1,624 项通过、零失败/跳过，iOS/watchOS Release 编译通过；七个签名目标及独立开发权限已核对。公网安装页、Manifest、完整约 149 MB IPA 的 SHA-256、HEAD/Range、等价 Host 和隐私响应头通过。安装临时上传目录已清理，签名包与证据保留于私有候选目录；正式健康进程未重启。此记录不代表手机安装、真实 App Attest、CloudKit、GitHub workflow 或完整 Release 门禁通过。见 `evidence/health-automatic-access-ota-2026-10-16.json`。

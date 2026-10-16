@@ -44,7 +44,7 @@
 
 ## Apple 与权益
 
-平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册自动验证设备与允许构建号，无需手输口令。生日和健康测试服务均采用此方式；健康新签名包和真实手机证明尚未验收。开发权益限制 App、设备和最多 30 天期限，不复制交易标识或创建购买记录；写入与真实购买升级使用同一行锁，拒绝覆盖 production/sandbox 权益。正式服务不配置开发授权入口。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
+平台 App Attest 两套 API 均使用 production 证明环境，仍严格核对各自 Bundle ID；开发注册自动验证设备与允许构建号，无需手输口令。生日和健康测试服务均采用此方式；健康新签名包已交付，真实手机证明尚未验收。开发权益限制 App、设备和最多 30 天期限，不复制交易标识或创建购买记录；写入与真实购买升级使用同一行锁，拒绝覆盖 production/sandbox 权益。正式服务不配置开发授权入口。手记私有测试服务使用独立连接凭据，Release 不接受其模拟权益声明。StoreKit Sandbox 与 API 环境独立，正式候选在生产 API 验证 Sandbox/Production 交易，正式购买优先，沙箱加速到期不触发正式数据清理。
 
 相册 `.dev` 不继承正式商品目录，只接受服务端明确账户、额度和期限的开发授权：最多三个指定账户、每账户不超过 1 GB，不创建购买记录，到期停写但不生成清理期限。当前开发服务尚未配置真实账户容量；真实登录后再授予。签名检查、受控 Apple/MySQL 测试不能代替真实购买和手机旅程。
 
@@ -52,7 +52,7 @@
 
 ## 剩余工作
 
-健康新开发包、真实手机证明与云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+健康真实手机证明与云同步；手记独立推理身份的服务切换、语音资源及真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
 
@@ -98,4 +98,12 @@
 
 `761dc7b` 已部署，健康测试域名的 DNS/TLS、就绪 200、未授权配额及开发权益 401、内部路径 404、错误 Host 421 均通过。gateway/worker 正常运行，MySQL/Redis 容器与 66 项 schema 未改，健康生产进程未重启。启动时发现的手记 Prompt 依赖已修复；第一次发布自动恢复到 `7c0e6d2`，未对数据库做快照覆盖。修复后 58 个 Go 包检查通过，独立临时 MySQL 三项检查通过，真实测试库仅初始化八个 Health Prompt。部署清理已完成，上一版匹配镜像与配置保留。
 
-mini 文本/音频、lite 文本和 Pro 图片的真实 Responses 完整响应、流式响应及 schema 校验均通过；不能替代识别质量验收。运维目录的测试恢复配置读取器已同步，异地备份结果见 `evidence/health-development-runtime-2026-10-16.json`。当前允许健康构建 4，但新版 IPA 尚未交付；真实 App Attest、系统媒体上传、CloudKit 同步、正式升级及用户验收保持待办。
+mini 文本/音频、lite 文本和 Pro 图片的真实 Responses 完整响应、流式响应及 schema 校验均通过；不能替代识别质量验收。运维目录的测试恢复配置读取器已同步，异地备份结果见 `evidence/health-development-runtime-2026-10-16.json`。当前允许健康构建 4，对应新版 IPA 已交付；真实 App Attest、系统媒体上传、CloudKit 同步、正式升级及用户验收保持待办。
+
+## 健康自动认证开发包交付（2026-10-16）
+
+健康 Debug/Ad Hoc 1.0.2 (4)、源码 `100514f0` 已交付，包含自动开发认证和 Release 引导测试入口隔离。Xcode 27.1 的本机完整 unit 流程 1,624 项通过、零失败/跳过，iOS/watchOS Release 编译通过；七个签名目标及独立开发权限已核对。公网安装页、Manifest、完整约 149 MB IPA 的 SHA-256、HEAD/Range、等价 Host 和隐私响应头通过。安装临时上传目录已清理，签名包与证据保留于私有候选目录；正式健康进程未重启。此记录不代表手机安装、真实 App Attest、CloudKit、GitHub workflow 或完整 Release 门禁通过。见 `evidence/health-automatic-access-ota-2026-10-16.json`。
+
+## 手记测试推理身份（2026-10-16）
+
+`journalapp-development-backend`（97256858）已创建，仅绑定 `JournalDevelopmentInferenceOnly`，只允许三个新测试端点的 `ark:SendInference`；无控制台登录、Access Key、自管理权限。IAM API Key 已保存在获准的本机/服务器私有目录，0600/0700 与内容一致性通过。Lite、Pro、2K 插图真实调用通过，健康测试与手记正式端点均返回 403。Pro 接入点仍在从 260915 切换到 260628，实际响应尚为 260915，因此未替换测试服务凭据或模型；语音凭据本次未改。见 `evidence/journal-development-iam-2026-10-16.json`，服务切换和完整 App 旅程仍待验收。
