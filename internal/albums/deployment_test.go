@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestAlbumDeploymentsHaveIndependentStorageAndOnlyLoopbackIngress(t *testing.T) {
+func TestAlbumResourceDeploymentsKeepStorageAndIngressIsolated(t *testing.T) {
 	for _, environment := range []string{"test", "production"} {
 		t.Run(environment, func(t *testing.T) { checkAlbumDeployment(t, environment) })
 	}
@@ -35,8 +35,15 @@ func checkAlbumDeployment(t *testing.T, environment string) {
 	if err := yaml.Unmarshal(data, &stack); err != nil {
 		t.Fatal(err)
 	}
-	if stack.Name != "tellyouwhat-albums-"+environment || len(stack.Services) != 5 || len(stack.Networks) != 1 || len(stack.Volumes) != 1 {
-		t.Fatal("stack is not standalone")
+	serviceCount := 5
+	if environment == "production" {
+		serviceCount = 4
+		if _, exists := stack.Services["albumgateway"]; exists {
+			t.Fatal("production Albums must use the shared API gateway")
+		}
+	}
+	if stack.Name != "tellyouwhat-albums-"+environment || len(stack.Services) != serviceCount || len(stack.Networks) != 1 || len(stack.Volumes) != 1 {
+		t.Fatal("resource services or storage are not isolated")
 	}
 	for name, service := range stack.Services {
 		if len(service.Networks) != 1 || service.Networks[0] != "albums-"+environment {
@@ -47,17 +54,19 @@ func checkAlbumDeployment(t *testing.T, environment string) {
 				t.Fatal("wrong environment file", name)
 			}
 		}
-		if name != "albumgateway" && len(service.Ports) != 0 {
+		if (environment == "production" || name != "albumgateway") && len(service.Ports) != 0 {
 			t.Fatal("database/worker publicly exposed", name)
 		}
 	}
-	api := stack.Services["albumgateway"]
-	if len(api.Ports) != 1 || !strings.HasPrefix(api.Ports[0], "127.0.0.1:") || api.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != environment || !strings.Contains(api.Environment["ALBUM_DATABASE_DSN"], "/albums_"+environment+"?") {
-		t.Fatal("unsafe API environment")
-	}
 	worker := stack.Services["albumworker"]
-	if worker.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != api.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] || worker.Environment["ALBUM_DATABASE_DSN"] != api.Environment["ALBUM_DATABASE_DSN"] {
-		t.Fatal("worker and API storage environment differ")
+	if worker.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != environment || !strings.Contains(worker.Environment["ALBUM_DATABASE_DSN"], "/albums_"+environment+"?") || len(worker.Volumes) != 0 {
+		t.Fatal("unsafe worker storage environment or private-key mount")
+	}
+	if environment == "test" {
+		api := stack.Services["albumgateway"]
+		if len(api.Ports) != 1 || !strings.HasPrefix(api.Ports[0], "127.0.0.1:") || api.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != environment || api.Environment["ALBUM_DATABASE_DSN"] != worker.Environment["ALBUM_DATABASE_DSN"] {
+			t.Fatal("unsafe test API environment")
+		}
 	}
 	if stack.Services["mysql"].Environment["MYSQL_DATABASE"] != "albums_"+environment || len(stack.Services["mysql"].Volumes) != 1 || stack.Services["mysql"].Volumes[0] != "albums-"+environment+"-mysql:/var/lib/mysql" {
 		t.Fatal("database volume not isolated")
