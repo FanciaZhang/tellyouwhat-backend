@@ -16,6 +16,7 @@ from blue_green import assert_route
 from ops_artifacts import development_deploy, require_operator
 from ops_common import OperationError, Runtime, atomic_json, read_environment
 from test_routes import RejectRedirects
+import platform_test_journal as journal
 
 PROJECT = 'tellyouwhat-platform-test'
 HOST = 'api-test.birthday.tellyouwhat.cn'
@@ -76,7 +77,7 @@ def selection(runtime, source):
     if (any(app.get(k) != v for k, v in required.items())
             or (app.get('BIRTHDAY_DEV_ACTIVATION_SECRET') and not re.fullmatch('[a-f0-9]{64}', app['BIRTHDAY_DEV_ACTIVATION_SECRET']))
             or not re.fullmatch(r'\d+(,\d+)*', app.get('BIRTHDAY_ALLOWED_APP_BUILDS', ''))
-            or any(k.startswith(('JOURNAL_', 'ARK_MANAGEMENT_')) for k in app)
+            or any(k.startswith('ARK_MANAGEMENT_') for k in app)
             or any(k in app for k in ('DATABASE_DSN', 'REDIS_URL', 'MYSQL_ROOT_PASSWORD'))
             or any(p in v for p in passwords for v in app.values())):
         raise OperationError('platform test identity, cost limit or credential boundary is invalid')
@@ -94,7 +95,7 @@ def selection(runtime, source):
         explicit_apps = config is not None and b'"PLATFORM_APPS"' in config.read()
         # Retained recovery selections must be validated using their own configuration contract.
         if explicit_apps:
-            if (app.get('PLATFORM_APPS') not in ('birthday', 'health,birthday')
+            if (app.get('PLATFORM_APPS') not in ('birthday', 'health,birthday', 'health,journal,birthday')
                     or any(k in app for k in ('BIRTHDAY_AI_ENABLED', 'BIRTHDAY_AI_ONLY', 'BIRTHDAY_DEV_ACTIVATION_SECRET'))):
                 raise OperationError('platform test applications must be selected explicitly')
         elif (app.get('BIRTHDAY_AI_ENABLED') != 'true' or app.get('BIRTHDAY_AI_ONLY') != 'true'
@@ -122,6 +123,10 @@ def selection(runtime, source):
             raise OperationError('Health test identity, media or model resources are invalid')
     elif any(k.startswith(('HEALTH_', 'TOS_')) for k in app):
         raise OperationError('Birthday-only test service cannot receive Health or media credentials')
+    if 'journal' in applications(folder):
+        journal.validate(app)
+    elif any(k.startswith('JOURNAL_') for k in app):
+        raise OperationError('Journal credentials require its explicit test application selection')
     return folder, record, migrations
 
 
@@ -134,7 +139,13 @@ def ready(folder=None):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RejectRedirects)
     for _ in range(30):
         try:
-            for host in ([HOST, HEALTH_HOST] if folder and 'health' in applications(folder) else [HOST]):
+            hosts = [HOST]
+            apps = applications(folder) if folder else []
+            if 'health' in apps:
+                hosts.append(HEALTH_HOST)
+            if 'journal' in apps:
+                hosts.append(journal.HOST)
+            for host in hosts:
                 request = urllib.request.Request('http://127.0.0.1:18790/readyz', headers={'Host': host})
                 with opener.open(request, timeout=2) as response:
                     if response.status != 200 or json.load(response).get('status') != 'ready':
@@ -202,7 +213,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
             or owner.get('current', {}).get('source') != previous_source
             or str(old) not in owner['current'].get('paths', [])):
         raise OperationError('platform test update does not match the registered running release')
-    # shortcut: same-schema updates only; schema and infrastructure upgrades need a separate recovery path.
+    # Infrastructure changes still need a separately checked topology transition.
     if (folder / 'compose.platform-test.yaml').read_bytes() != (old / 'compose.platform-test.yaml').read_bytes():
         raise OperationError('enrollment update cannot change the platform test topology')
     before_apps, after_apps = applications(old), applications(folder)
@@ -212,23 +223,27 @@ def update_configuration(runtime, source, previous_source, folder, record):
                  'BIRTHDAY_AI_ENABLED', 'BIRTHDAY_AI_ONLY', 'PLATFORM_APPS'}
     if 'health' not in before_apps and 'health' in after_apps:
         permitted |= HEALTH_SETTINGS | TOS_SETTINGS
+    if 'journal' not in before_apps and 'journal' in after_apps:
+        permitted |= journal.SETTINGS
+    if 'journal' in after_apps:
+        permitted.add('JOURNAL_ALLOWED_APP_BUILDS')
     for filename, allowed in [('compose.env', {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}),
                               ('runtime.env', permitted)]:
         before, after = read_environment(old / filename), read_environment(folder / filename)
         if {k: v for k, v in before.items() if k not in allowed} != {k: v for k, v in after.items() if k not in allowed}:
             raise OperationError('enrollment update cannot replace unrelated configuration or credentials')
-    with tarfile.open(old / 'source.tar') as before, tarfile.open(folder / 'source.tar') as after:
-        def schemas(archive):
-            return {m.name: hashlib.sha256(archive.extractfile(m).read()).hexdigest() for m in archive.getmembers()
-                    if m.isfile() and m.name.startswith('migrations/')}
-        if schemas(before) != schemas(after):
-            raise OperationError('enrollment update cannot migrate or roll back database schemas')
+    from platform_test_schema import plan, applied
+    old_names, new_names = plan(old, folder)
     verify_running(runtime, old, previous_source, 'platform-test-update-running')
     rows = runtime.execute('platform-test-update-schema', ['docker', 'exec', PROJECT + '-mysql-1', 'sh', '-c',
         'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --database=platform_test --batch --skip-column-names '
         '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations;"']).decode().strip()
     if rows != str(previous['migrations']) + '\t' + previous['latest_migration']:
         raise OperationError('platform test applied schema differs from the rollback selection')
+    actual = applied(runtime, PROJECT)
+    if actual not in (old_names, new_names):
+        raise OperationError('platform test schema does not match either reviewed release')
+    pending_migration = actual != new_names
     from ops_backup import create_backup, verify_backup
     snapshot = create_backup(runtime)
     manifest = verify_backup(runtime, runtime.backups / snapshot['filename'])
@@ -236,6 +251,13 @@ def update_configuration(runtime, source, previous_source, folder, record):
         raise OperationError('platform test update requires an authenticated offsite recovery selection')
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
+    if pending_migration:
+        # The old service keeps serving; never undo an additive table or restore a partial data backup.
+        runtime.execute('platform-test-update-migrate', compose(folder, 'run', '--rm', '--no-deps', 'migrate'), timeout=180)
+        if applied(runtime, PROJECT) != new_names:
+            raise OperationError('platform test migration result differs from its reviewed source')
+        previous = {**previous, 'migrations': len(new_names), 'latest_migration': new_names[-1], 'schema_source': source}
+        atomic_json(state_path, previous)
     try:
         runtime.execute('platform-test-update-start', compose(folder, 'up', '-d', '--no-build', '--no-deps', *running_services(folder)), timeout=120)
         ready(folder)
@@ -268,6 +290,8 @@ def activate(runtime, source, update_from=None):
             raise OperationError('platform test bootstrap requires both owner locks')
     folder, record, migrations = selection(runtime, source)
     require_separate_health_resources(runtime, folder)
+    if 'journal' in applications(folder):
+        journal.require_resources(runtime, read_environment(folder / 'runtime.env'))
     stable = json.loads((runtime.state / 'blue-green.json').read_text())
     if stable.get('phase') != 'STABLE':
         raise OperationError('wait for a stable production release')
@@ -308,7 +332,7 @@ def main():
     parser.add_argument('--backend-dir', default='/opt/tellyouwhat/backend')
     parser.add_argument('--source', required=True)
     parser.add_argument('--source-run', default='platform-test-bootstrap')
-    parser.add_argument('--update-from', help='exact current source; same-schema configuration updates only')
+    parser.add_argument('--update-from', help='exact current source; only explicitly reviewed additive schema changes')
     parser.add_argument('--activate', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     os.umask(0o077)

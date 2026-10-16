@@ -67,6 +67,28 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.runtime.config = {k: 'production-' + k for k in ('HEALTH_ARK_API_KEY', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY', *dev.HEALTH_ENDPOINTS)}
         self.save()
 
+    def enable_journal(self):
+        self.enable_health()
+        self.app.update(dev.journal.FIXED)
+        self.app.update(PLATFORM_APPS='health,journal,birthday', JOURNAL_ALLOWED_APP_BUILDS='20')
+        for key in dev.journal.RESOURCE_KEYS:
+            self.app[key] = 'ep-journal-test' if key.endswith('_MODEL_ID') else 'journal-test-key'
+        self.app['JOURNAL_IMAGE_MAX_COST_NANOS'] = '100000000'
+        approved = self.root.parent / 'journal-development/runtime.env'
+        approved.parent.mkdir(mode=0o700, exist_ok=True)
+        approved.write_text(''.join(source + '=' + self.app[key] + '\n' for key, source in dev.journal.RESOURCE_KEYS.items()))
+        approved.chmod(0o600)
+        self.save()
+
+    def add_illustration_migration(self, contents=None, name='0065_journal_illustration_jobs.sql'):
+        if contents is None:
+            contents = (Path(__file__).resolve().parents[2] / 'migrations' / name).read_bytes()
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            item = tarfile.TarInfo('migrations/' + name)
+            item.size = len(contents)
+            archive.addfile(item, io.BytesIO(contents))
+        self.save()
+
     def save(self):
         for name, values in [('runtime.env', self.app), ('compose.env', self.compose)]:
             (self.folder / name).write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
@@ -223,6 +245,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                                     'Config': {'Image': dev.PROJECT + '-' + service + ':' + source}}]).encode()
             if label == 'platform-test-update-schema':
                 return b'1\t0001_example.sql\n'
+            if label == 'platform-test-migration-names':
+                return b'0001_example.sql\n'
             return b''
         self.runtime.execute.side_effect = execute
 
@@ -363,6 +387,138 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.save()
         with self.assertRaisesRegex(OperationError, 'database schemas'):
             self.update()
+
+    def test_journal_admission_uses_one_gateway_and_existing_test_resources(self):
+        self.prepare_update()
+        self.enable_journal()
+        result = self.update()
+        self.assertEqual(result['apps'], ['health', 'journal', 'birthday'])
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list]
+        starts = [c for c in commands if 'up' in c]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0][-2:], ['gateway', 'worker'])
+        self.assertFalse(any('journal-private-development' in c or 'down' in c for c in commands))
+
+    def test_journal_rejects_formal_identity_and_unmounted_or_unscoped_credentials(self):
+        self.enable_journal()
+        for key, bad in [('JOURNAL_APPLE_BUNDLE_ID', 'cn.tellyouwhat.journalapp'),
+                         ('JOURNAL_API_HOSTS', 'api.journal.tellyouwhat.cn'),
+                         ('JOURNAL_APP_ATTEST_ENV', 'development'),
+                         ('JOURNAL_RECORDING_ENABLED', 'true'),
+                         ('JOURNAL_APP_STORE_PRIVATE_KEY_PATH', '/secrets/formal.p8'),
+                         ('JOURNAL_IMAGE_MAX_COST_NANOS', '2000000000')]:
+            before = dict(self.app)
+            self.app[key] = bad
+            self.save()
+            with self.subTest(key=key), self.assertRaises(OperationError):
+                dev.selection(self.runtime, self.source)
+            self.app = before
+        self.save()
+        for key in ('JOURNAL_ARK_API_KEY', 'JOURNAL_SPEECH_API_KEY', 'JOURNAL_IMAGE_API_KEY', 'JOURNAL_ARK_PRO_MODEL_ID'):
+            self.runtime.config[key] = self.app[key]
+            with self.subTest(key=key), self.assertRaisesRegex(OperationError, 'differ from production'):
+                self.activate()
+            self.runtime.config.pop(key)
+        self.app['JOURNAL_SPEECH_API_KEY'] = 'unapproved'
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'restricted development resources'):
+            self.activate()
+        self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_readiness_checks_every_selected_app_host(self):
+        self.enable_journal()
+        seen = []
+        def respond(request, **kwargs):
+            seen.append(request.get_header('Host'))
+            result = io.BytesIO(b'{"status":"ready"}')
+            result.status = 200
+            return result
+        opener = Mock()
+        opener.open.side_effect = respond
+        with patch.object(dev.urllib.request, 'build_opener', return_value=opener):
+            dev.ready(self.folder)
+        self.assertEqual(seen, [dev.HOST, dev.HEALTH_HOST, dev.journal.HOST])
+
+    def prepare_migration(self):
+        self.prepare_update()
+        self.add_illustration_migration()
+        execute = self.runtime.execute.side_effect
+        self.migrated = False
+        def migrate(label, command, **kwargs):
+            if label == 'platform-test-update-migrate':
+                self.migrated = True
+            if label == 'platform-test-migration-names':
+                return b'0001_example.sql\n' + (b'0065_journal_illustration_jobs.sql\n' if self.migrated else b'')
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = migrate
+
+    def test_reviewed_additive_migration_updates_database_metadata_before_activation(self):
+        self.prepare_migration()
+        result = self.update()
+        self.assertEqual(result['migrations'], 2)
+        self.assertEqual(result['schema_source'], self.source)
+        self.assertEqual(result['previous']['source'], self.old_source)
+        self.assertEqual(result['previous']['migrations'], 2)
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-migrate'), labels.index('platform-test-update-start'))
+        self.assertFalse(any('down' in c.args[1] or '--volumes' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_failed_candidate_keeps_additive_schema_and_restores_old_api(self):
+        self.prepare_migration()
+        with self.assertRaisesRegex(OperationError, 'not ready'):
+            self.update(ready_error=[OperationError('not ready'), None])
+        retained = json.loads((self.runtime.state / 'platform-test.json').read_text())
+        self.assertEqual(retained['source'], self.old_source)
+        self.assertEqual(retained['migrations'], 2)
+        self.assertEqual(retained['schema_source'], self.source)
+        self.assertIn('platform-test-update-rollback', [c.args[0] for c in self.runtime.execute.call_args_list])
+
+    def test_failed_migration_does_not_switch_or_restore_data(self):
+        self.prepare_migration()
+        execute = self.runtime.execute.side_effect
+        def fail(label, command, **kwargs):
+            if label == 'platform-test-update-migrate':
+                raise OperationError('migration failed')
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = fail
+        with self.assertRaisesRegex(OperationError, 'migration failed'):
+            self.update()
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+        self.assertFalse(any('up' in c.args[1] or 'stop' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_unknown_or_changed_additive_migration_is_rejected(self):
+        self.prepare_update()
+        self.add_illustration_migration(b'CREATE TABLE unreviewed (id INT);')
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            self.update()
+        self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_candidate_retry_after_rollback_does_not_repeat_migration(self):
+        self.prepare_migration()
+        with self.assertRaises(OperationError):
+            self.update(ready_error=[OperationError('not ready'), None])
+        execute = self.runtime.execute.side_effect
+        def already_migrated(label, command, **kwargs):
+            if label == 'platform-test-update-schema':
+                return b'2\t0065_journal_illustration_jobs.sql\n'
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = already_migrated
+        self.runtime.execute.reset_mock()
+        result = self.update()
+        self.assertEqual(result['migrations'], 2)
+        self.assertNotIn('platform-test-update-migrate', [c.args[0] for c in self.runtime.execute.call_args_list])
+
+    def test_different_applied_names_are_rejected_even_if_count_and_latest_match(self):
+        self.prepare_update()
+        execute = self.runtime.execute.side_effect
+        def altered(label, command, **kwargs):
+            if label == 'platform-test-migration-names':
+                return b'0001_unexpected.sql\n'
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = altered
+        with self.assertRaisesRegex(OperationError, 'either reviewed release'):
+            self.update()
+        self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
 
 
 if __name__ == '__main__':

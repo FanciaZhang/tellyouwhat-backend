@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "806c780",
+  "scope": "Shared test gateway Journal admission and reviewed additive schema upgrade",
+  "source_sha256": {
+    ".github/workflows/deploy.yml": "b2dace15ff724b1b20e58dcb14d15f53f7b3e4124b848aa511226db4d6058d32",
+    "deploy/tencent/platform_test_deploy.py": "e4a3aeceeda58a9116ec51f0aa900d2eb44bbb131389cfc7e41115bf992a8d93",
+    "deploy/tencent/platform_test_journal.py": "2e450b36c70bc96f19f1921e451f99309b82247511ee5698cf97f594c8bb935c",
+    "deploy/tencent/platform_test_schema.py": "3e728f87304158a6a50cef2a8162fb3da57211ee041ef078d53cd4bec80b7209",
+    "deploy/tencent/platform_test_deploy_test.py": "f8b4d0ce45a33e1dd21c206c2e7b348ed24e02aa69723095a0de2d47c368fd29",
+    "migrations/0065_journal_illustration_jobs.sql": "7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6"
+  },
+  "remote_observation": {
+    "read_only": true,
+    "source": "761dc7bc01f103670639f3172e23dde147be1289",
+    "apps": [
+      "health",
+      "birthday"
+    ],
+    "migrations": 66,
+    "latest_migration": "0064_album_identity_retirement.sql"
+  },
+  "validation": {
+    "python_operations": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "run": 218,
+      "skipped": 1,
+      "skip_reason": "native Caddy unavailable on Mac",
+      "passed": true
+    },
+    "mysql_upgrade": {
+      "old_source": "761dc7bc01f103670639f3172e23dde147be1289",
+      "database": "isolated Unix-socket-only temporary MySQL 8.4",
+      "passed": true,
+      "old_migrations": 66,
+      "new_migrations": 67,
+      "preserved_table_count": 92,
+      "preserved_rows_sha256": "6123a8a60603776fb6472d624717496bf6c31dd2546f0c945b7d3ca5fa13fb59",
+      "checks": [
+        "all previous migration bytes match running test source",
+        "existing rows byte-identical after upgrade",
+        "second migration invocation idempotent",
+        "existing Health assertion counter can update",
+        "new Journal queue accepts work",
+        "Journal owner deletion cascades"
+      ],
+      "temporary_database_removed": true
+    },
+    "workflow_yaml_and_shell_syntax": true
+  },
+  "limits": [
+    "No remote database migration or deployment",
+    "No public route switch or production change",
+    "Journal recording file processing remains disabled until test mount integration",
+    "Albums shared test admission not implemented in this change",
+    "Native App Attest integration and real device/cloud journeys remain pending",
+    "No Git push or Apple release"
+  ]
+}
