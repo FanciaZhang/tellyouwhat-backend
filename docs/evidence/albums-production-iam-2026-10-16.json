@@ -1,0 +1,134 @@
+{
+  "checked_at": "2026-10-16T13:38:05.196970+00:00",
+  "scope": "Albums production CAM identities and storage boundaries; no production API deployment",
+  "bucket": "tellyouwhat-albums-production-1251995834",
+  "region": "ap-guangzhou",
+  "identities": [
+    {
+      "name": "albums-production-upload",
+      "uid": "27650022",
+      "policy": "AlbumsProductionUploadOnly",
+      "policy_id": "290101787"
+    },
+    {
+      "name": "albums-production-backend",
+      "uid": "27650023",
+      "policy": "AlbumsProductionBackendScoped",
+      "policy_id": "290101860"
+    }
+  ],
+  "credentials": {
+    "local_directory": "~/.config/tellyouwhat/albums-production/",
+    "remote_directory": "/opt/tellyouwhat/albums-production/secrets/",
+    "files": [
+      "upload-credentials.json",
+      "backend-credentials.json"
+    ],
+    "file_mode": "0600",
+    "directory_mode": "0700",
+    "copy_hash_matched": true,
+    "console_access": false,
+    "key_self_management": false
+  },
+  "storage_checks": [
+    {
+      "name": "backend_version_delete_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "upload_version_delete_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "backend_delete_marker_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "backend_versioning_read",
+      "status": 200,
+      "code": "",
+      "passed": true
+    },
+    {
+      "name": "upload_staging_allowed",
+      "status": 200,
+      "code": "",
+      "passed": true
+    },
+    {
+      "name": "upload_read_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "upload_original_write_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "backend_outside_prefix_write_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "backend_test_bucket_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    },
+    {
+      "name": "upload_test_bucket_denied",
+      "status": 403,
+      "code": "AccessDenied",
+      "passed": true
+    }
+  ],
+  "original_exact_version_intact": true,
+  "probe_original": {
+    "key": "albums/originals/permission-probe-f230a3808657326ea027d16a2469194e/probe.txt",
+    "version": "MTg0NDQ5NTE5MTYyMTIxMTE1NDc",
+    "bytes": 48,
+    "sha256": "ece94c86afc504a5f411d0fdcfdd06d1f693e094125e5297a6d470e20f40b9ae"
+  },
+  "probe_correction": "Cross-bucket HEAD returned 403 without an XML error body; separate GET confirmed 403 AccessDenied. Earlier combined probe retained as diagnostic, not counted as successful.",
+  "ci": {
+    "bucket_bound": true,
+    "media_service_enabled": true,
+    "normal_queue": "p7901bbf1fe6e49ee95cf8e28799c35df",
+    "speed_queue": "p2ef7885f9a0241c19cfc3746cc4344bf",
+    "queue_status": "InUse",
+    "shared_role": "CI_QCSRole",
+    "shared_role_policies": [
+      "AlbumsTestCIMediaService"
+    ],
+    "shared_role_changed": false,
+    "production_pass_role_granted": false,
+    "synthetic_job_id": "j85c2e0fec96611f1bf721735f87a4927",
+    "submission_status": 200,
+    "terminal_state": "Failed",
+    "terminal_code": "InvalidArgument",
+    "terminal_message": "Get CAM UnauthorizedOperation",
+    "production_video_ready": false
+  },
+  "production_api_changed": false,
+  "test_services_changed": false,
+  "retained_synthetic_objects": "Only newly generated text and one-second video fixtures, unique probe prefixes; no existing media touched.",
+  "pending": [
+    "CI indirect cross-environment isolation verification and separately approved role scope",
+    "Production resource bootstrap, authenticated recovery and shared API activation",
+    "User real login, CloudKit and business acceptance"
+  ],
+  "policy_sha256": {
+    "deploy/albums/cam-production-upload.policy.json": "bae646977b3645ce7e5679f106ec3d224c5c25cbc81cac669cee4dbe331086aa",
+    "deploy/albums/cam-production-backend.policy.json": "868d4d131326fb02cc5b2a64529187ea2fc24327a849b47b63427b18b4bb07c3"
+  }
+}

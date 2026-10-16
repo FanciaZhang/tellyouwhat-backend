@@ -259,6 +259,8 @@ Pro 接入点已完成 260628 切换，控制台与真实响应一致。测试�
 健康完整远端门禁（2026-10-16）：PR #173 的 head `da8c2bf6`、base `a81e8383` 已通过运行 `38895777751`。仓库验证器读取发布证据并核对当前 PR 绑定，1,624 项 unit、107 项 UI、112 项 Watch 测试零失败/跳过，iOS/watchOS Release 编译成功。PR 已转为可审阅，合并授权尚待确认；此轮未生成新签名包、上传 Apple 或验证真实 App Attest、CloudKit、正式覆盖升级。完整证据见 `evidence/health-full-ci-2026-10-16.json`。
 
 
-2026-10-16 授权后的实施：健康 PR #173 已合并为 `db8f52b0`，合并树与完整 CI 证据一致，没有上传 Apple。生日正式身份 `birthdayapp-production-backend` 已创建，仅绑定 `BirthdayProductionInferenceOnly`，无控制台登录和 Access Key；专用 API Key 已在本机和服务器以 0600 保存、目录 0700，正式模型请求成功且健康测试模型返回 403。生日生产 API 尚未切换。相册正式权限已获用户批准，腾讯云扫码完成后仍需图片验证。详见 `evidence/health-approved-merge-2026-10-16.json`、`evidence/birthday-production-iam-2026-10-16.json`。
+2026-10-16 授权后的实施：健康 PR #173 已合并为 `db8f52b0`，合并树与完整 CI 证据一致，没有上传 Apple。生日正式身份 `birthdayapp-production-backend` 已创建，仅绑定 `BirthdayProductionInferenceOnly`，无控制台登录和 Access Key；专用 API Key 已在本机和服务器以 0600 保存、目录 0700，正式模型请求成功且健康测试模型返回 403。生日生产 API 尚未切换。相册正式权限与腾讯云验证已完成；后续实施见相册正式 IAM 验收记录。详见 `evidence/health-approved-merge-2026-10-16.json`、`evidence/birthday-production-iam-2026-10-16.json`。
 
 手机验收由用户通过 Ad Hoc OTA 完成，不再要求手机连接 Mac。四个当前安装回执的页面、Manifest、HEAD、Range 已重新验证，见 `evidence/ota-user-handoff-2026-10-16.json`；本次没有重新下载整包或生成新 IPA。安装链接仅在私有会话交付，不进入源码。手记构建 21 已使用 App Attest，不需要旧的连接文件。真实登录、CloudKit、业务及健康正式升级验收状态继续保持待确认。
+
+2026-10-16 相册正式 IAM 验收：两个仅编程身份已创建并分别绑定正式上传/后端策略；密钥以 0600 保存在批准的本机及服务器目录。上传 staging、后端原件写入与精确版本读取成功；读取限制、越界写入、永久删除及跨测试桶访问均验证拒绝。正式桶已绑定数据万象，普通媒体队列 `p7901bbf1fe6e49ee95cf8e28799c35df` 已生成。真实合成任务提交 200，但终态为 `InvalidArgument / Get CAM UnauthorizedOperation`，不能视为转码成功。共享 CI 角色仍仅允许测试桶，未新增正式 PassRole。正式媒体角色隔离、生产 API 切换和真实手机业务验收未完成。见 `evidence/albums-production-iam-2026-10-16.json`。
