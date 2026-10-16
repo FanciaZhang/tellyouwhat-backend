@@ -13,7 +13,8 @@ from release import copy_runtime
 
 class RecordingStorageTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        # Exercise the /opt ancestor policy without Linux's publicly writable /tmp.
+        temporary = tempfile.TemporaryDirectory(dir=Path.home())
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         self.stage = self.root / 'release'
@@ -114,6 +115,19 @@ class RecordingStorageTests(unittest.TestCase):
         with patch.object(recording, 'UID', os.getuid()):
             with self.assertRaises(OperationError):
                 recording.compose_overlay(self.stage, self.config)
+
+    def test_publicly_writable_ancestor_is_rejected_without_changes(self):
+        sentinel = self.path / 'owner.deleted'
+        sentinel.write_bytes(b'private fixture')
+        self.root.chmod(0o777)
+        try:
+            with patch.object(os, 'chown') as chown, self.assertRaisesRegex(OperationError, 'ancestors'):
+                recording.prepare_directory('production')
+            chown.assert_not_called()
+            self.assertEqual(sentinel.read_bytes(), b'private fixture')
+            self.assertEqual(self.path.stat().st_mode & 0o777, 0o700)
+        finally:
+            self.root.chmod(0o700)
 
 
 if __name__ == '__main__':

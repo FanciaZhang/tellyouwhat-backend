@@ -61,28 +61,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Test with MySQL and Redis
-        run: |
-          test -n "$MYSQL_TEST_DSN"
-          test -n "$REDIS_TEST_URL"
-          go test -timeout=30m -count=1 -v ./...
-        env:
-          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
-          MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
-          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
-      - name: Verify real Caddy switching and long connections
-        run: |
-          container=$(docker create caddy:2.11.4-alpine)
-          trap 'docker rm "$container" >/dev/null' EXIT
-          docker cp "$container:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
-          chmod +x "$RUNNER_TEMP/caddy"
-          CADDY_TEST_BIN="$RUNNER_TEMP/caddy" go test -race -count=1 -v ./internal/lifecycle
       - name: Validate workflow syntax and reusable deployment inputs
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-      - run: go vet ./...
-      - run: go build ./cmd/...
-      - run: make verify-generated
-      - run: swift test --package-path Contracts/HTTP
       - run: bash deploy/tencent/deploy-production_test.sh
       - run: bash deploy/tencent/verify-public_test.sh
       - name: Test operations and rollback protections
@@ -135,6 +115,27 @@ jobs:
             -e ALBUM_TEST_API_PORT=18090 \
             -v "${{ github.workspace }}/deploy/albums/Caddyfile.external:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine validate --config /etc/caddy/Caddyfile
+
+      - name: Test with MySQL and Redis
+        run: |
+          test -n "$MYSQL_TEST_DSN"
+          test -n "$REDIS_TEST_URL"
+          go test -timeout=30m -count=1 -v ./...
+        env:
+          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
+      - name: Verify real Caddy switching and long connections
+        run: |
+          container=$(docker create caddy:2.11.4-alpine)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          chmod +x "$RUNNER_TEMP/caddy"
+          CADDY_TEST_BIN="$RUNNER_TEMP/caddy" go test -race -count=1 -v ./internal/lifecycle
+      - run: go vet ./...
+      - run: go build ./cmd/...
+      - run: make verify-generated
+      - run: swift test --package-path Contracts/HTTP
 
   container:
     needs: verify
