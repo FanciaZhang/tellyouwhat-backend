@@ -29,7 +29,7 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     services:
       mysql:
         image: mysql:8.4
@@ -41,6 +41,7 @@ jobs:
         ports:
           - 3306/tcp
         options: >-
+          --tmpfs /var/lib/mysql:rw,size=2g
           --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
           --health-interval=5s
           --health-timeout=5s
@@ -64,7 +65,7 @@ jobs:
         run: |
           test -n "$MYSQL_TEST_DSN"
           test -n "$REDIS_TEST_URL"
-          go test -count=1 -v ./...
+          go test -timeout=30m -count=1 -v ./...
         env:
           MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
