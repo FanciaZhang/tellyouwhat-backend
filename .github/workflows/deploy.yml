@@ -90,7 +90,7 @@ jobs:
           test -n "$DEPLOY_USER"
           remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml compose.ark-management.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/"
+          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml compose.ark-management.yaml compose.journal-recording.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/blue_green.py deploy/tencent/disruptive_release.py deploy/tencent/operations.py deploy/tencent/ark_credentials.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
           scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"

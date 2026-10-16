@@ -19,7 +19,7 @@ from ops_backup import create_backup, verify_backup
 from ops_artifacts import cleanup
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
@@ -81,6 +81,8 @@ def validate(source, tag, registry, acceptance):
     if config.get("PUBLIC_PROXY_MODE", "docker") not in ("external", "docker"):
         raise OperationError("PUBLIC_PROXY_MODE must be docker or external")
     readiness_checks(config)
+    from ops_recording import configured_root
+    configured_root(config, 'production')
     return config
 
 
@@ -175,8 +177,11 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-
     if strategy not in ("blue-green", "disruptive"):
         raise OperationError("unsupported release strategy")
     source = Path(bundle).resolve() if bundle else runtime.root
-    validate(source, tag, registry, acceptance)
+    config = validate(source, tag, registry, acceptance)
+    from ops_recording import prepare, require_continuity
+    require_continuity(runtime.config, config)
     require_disk_space(runtime)
+    prepare(runtime, config)
     backup = create_backup(runtime)
     verify_backup(runtime, runtime.backups / backup["filename"])
     runtime.record("release_backup", tag=tag, registry=registry, source_run=source_run,
@@ -253,6 +258,8 @@ def rollback(runtime, attempts):
         raise OperationError("no verified previous release is available")
     current = record["current"]
     require_automation_compatibility(current, previous)
+    from ops_recording import require_continuity
+    require_continuity(runtime.config, read_environment(runtime.root / previous['snapshot'] / '.env.production'))
     try:
         recover(runtime, previous, attempts)
     except Exception:

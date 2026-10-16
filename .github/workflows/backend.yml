@@ -98,6 +98,7 @@ jobs:
           touch .env.production
           docker compose -f compose.production.yaml config --quiet
           ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=/tmp/ark-test-credentials.json docker compose -f compose.production.yaml -f compose.ark-management.yaml config --quiet
+          JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production docker compose --profile operations -f compose.production.yaml -f compose.journal-recording.yaml config --quiet
         env:
           HEALTH_API_DOMAIN: api.health.example
           JOURNAL_API_DOMAIN: api.journal.example

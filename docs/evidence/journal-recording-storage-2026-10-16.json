@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "9fc0711",
+  "scope": "Production shared-gateway recording mount, provisioning and rollback/configuration-recovery guards",
+  "source_sha256": {
+    "compose.journal-recording.yaml": "ce6ac580c3d2e0874bc14deade292e57bf969c7fbd1893fcd50f5a51b66ff3d2",
+    "deploy/tencent/ops_recording.py": "60572eab1ad612f98a0be1c097aa84ddd7e4eaed5a594e7cc673ca2d66fda12c",
+    "deploy/tencent/ops_common.py": "690e1392e5adafe75287fde5ad423ea362ffcfd76417538919910be3ac6e662a",
+    "deploy/tencent/release.py": "3a685b4d6f2bf2ca1849c48cd1c8202130fec909b52ffd0bfce880236ba50936",
+    "deploy/tencent/blue_green.py": "d1a8b093c717dcb7b84b00e333a1e91c39c4b574c743e3d992f7e36b26d00075",
+    "deploy/tencent/ops_offsite.py": "d17e96694b82efe24716a4e23279a653db34bb32a1ec823841ed790b5b36c8d6",
+    "deploy/tencent/recording_storage_test.py": "d979e9d479c14571ce02b05a969a98987aff8305f6a5785c1f01b7027f118e36",
+    "deploy/tencent/release_test.py": "74f48a063799e98316a2a529829952067cb97caf4e0762753e20f3d160676ff6",
+    "deploy/tencent/offsite_test.py": "59eddb1c2089ab9d0657e55a4a3fe0d067d19b95beb2b29d9d88e38d8e9713dd",
+    ".github/workflows/backend.yml": "bfec20e64cb23b8e8b6cdbe15b6143d150c294bc0f939cdc241b8810c2262ede",
+    ".github/workflows/deploy.yml": "bae932dbc881a657a8bd2293e84fc979d445de798f96373b719151d94c387e3f",
+    "deploy/single-server/production.env.example": "a4de8b4b4511b0ad74ef440257d463a8a9916300df321fabc84a7b64d72450a6"
+  },
+  "validation": {
+    "operations_suite": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "run": 207,
+      "skipped": 1,
+      "skip_reason": "native Caddy unavailable on Mac",
+      "passed": true
+    },
+    "after_adding_two_release_guard_tests": {
+      "command": "python3 -m unittest recording_storage_test release_test blue_green_test offsite_test",
+      "run": 51,
+      "skipped": 0,
+      "passed": true
+    },
+    "remote_compose": {
+      "version": "2.40.3+ds1-0ubuntu1~24.04.1",
+      "mode": "config only with operations profile, synthetic environment, disposable files removed",
+      "passed": true,
+      "checks": [
+        "gateway and maintenance share fixed host/container path",
+        "bind cannot automatically create host directory",
+        "no recording mount in worker/admin/migrate/adminctl",
+        "gateway existing read-only secrets retained",
+        "missing recording root rejected"
+      ],
+      "initial_probe": "maintenance omitted without operations profile; corrected probe explicitly enabled operations"
+    }
+  },
+  "limits": [
+    "No remote deployment, service restart or route cutover",
+    "Privileged host directory provisioning not executed",
+    "Test stack topology/schema upgrade remains pending",
+    "Recording data and deletion fences are not backed up by configuration recovery",
+    "Native client and live provider acceptance remain pending",
+    "No image build or Apple release"
+  ],
+  "recovery_policy": "Reuse existing control-plane-only backup: preserve live store across releases; never restore old recording data or App Attest identities after host loss. Fresh environment-bound store and client re-registration; actual recovery drill pending."
+}

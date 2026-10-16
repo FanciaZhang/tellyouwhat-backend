@@ -39,6 +39,25 @@ class ReleaseRecoveryTests(unittest.TestCase):
         for name in KEY_FILES:
             (self.bundle / "secrets" / name).write_text("new key")
 
+    def test_first_recording_enable_is_rejected_before_backup_or_host_changes(self):
+        with (self.bundle / '.env.production').open('a') as output:
+            output.write('JOURNAL_RECORDING_ENABLED=true\n'
+                         'JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production\n')
+        with patch.object(self.runtime, 'execute') as execute, patch('release.create_backup') as backup:
+            with self.assertRaisesRegex(OperationError, 'compatible rollback'):
+                deploy(self.runtime, 'new', 'registry/app', 'internal', str(self.bundle), 1)
+        execute.assert_not_called()
+        backup.assert_not_called()
+
+    def test_recording_unaware_rollback_is_rejected_before_recovery(self):
+        self.runtime.config['JOURNAL_RECORDING_ROOT'] = '/opt/tellyouwhat/journal-recordings/production'
+        (self.runtime.state / 'release.json').write_text(json.dumps({
+            'current': {}, 'previous': {'snapshot': str(self.bundle.relative_to(self.root))}}))
+        with patch('release.recover') as recover:
+            with self.assertRaisesRegex(OperationError, 'remain mounted'):
+                rollback(self.runtime, 1)
+        recover.assert_not_called()
+
     def test_birthday_readiness_uses_candidate_port_and_every_host(self):
         config = dict(self.runtime.config, PLATFORM_APPS="health, journal, birthday",
                       BIRTHDAY_API_HOSTS="birthday.example, birthday-alias.example")

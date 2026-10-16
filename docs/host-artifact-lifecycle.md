@@ -7,6 +7,7 @@ The 2026-10-13 disk alert came from repeated deployments retaining their outputs
 | Producer | Required entry point | Retention |
 | --- | --- | --- |
 | Production CI | `release.py deploy` | Current and verified previous slot, immutable image digests, active candidate/recovery references |
+| Shared Journal recording processing | `release.py deploy` provisions the production mount; gateway and `cmd/maintenance` own content retention | Private environment directory outside slots; 24-hour task lifetime, active execution locks protected; deletion fences and lock files retained. Not a disposable deployment artifact or configuration-backup input |
 | Journal development | JournalApp `scripts/journal-development.py` | Authenticated current service and stopped previous service, matching binary and base image |
 | Birthday development | Owned producer invocation below | Registered current and previous images |
 | Albums test | Owned producer invocation below | Registered current and previous images; schema compatibility must be checked separately |

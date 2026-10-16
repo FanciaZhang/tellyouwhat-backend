@@ -403,6 +403,9 @@ def rollback(runtime, attempts):
     candidate = state["previous"]
     if not candidate.get("healthy"):
         raise OperationError("previous slot never passed readiness verification")
+    from ops_recording import require_continuity
+    require_continuity(read_environment(slot_path(runtime, state['current']) / '.env.production'),
+                       read_environment(slot_path(runtime, candidate) / '.env.production'))
     if not running(runtime, candidate):
         resource_check(runtime, candidate["slot"])
     # A retired legacy slot occupies blue ports and cannot be restarted after

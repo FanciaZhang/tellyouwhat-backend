@@ -190,6 +190,17 @@ def verify_recovery_bundle(runtime, source, manifest):
                 content = archive.extractfile(prefix + ".env.production").read().decode()
                 if any(line.lstrip().startswith("BACKUP_ENCRYPTION_KEY=") for line in content.splitlines()):
                     raise OperationError("backup decryption key must be preserved separately")
+                from ops_recording import configured_root
+                recovered_env = Path(directory) / (label + '.env')
+                recovered_env.touch(mode=0o600)
+                recovered_env.write_text(content)
+                if configured_root(read_environment(recovered_env), 'production') is not None:
+                    try:
+                        overlay = archive.getmember(prefix + 'compose.journal-recording.yaml')
+                    except KeyError as error:
+                        raise OperationError('recording recovery mount configuration is missing') from error
+                    if not overlay.isfile():
+                        raise OperationError('recording recovery mount configuration is invalid')
                 for name in ["compose.production.yaml", *["secrets/" + key for key in KEY_FILES]]:
                     if not archive.getmember(prefix + name).isfile():
                         raise OperationError("configuration recovery signing or Compose files are incomplete")

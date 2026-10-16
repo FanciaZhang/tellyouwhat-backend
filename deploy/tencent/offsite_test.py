@@ -121,6 +121,14 @@ class OffsiteSafetyTests(unittest.TestCase):
             legacy = dict(manifest)
             legacy.pop('recovery_test_routing')
             self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy))
+            (current / '.env.production').write_text('APP_ENV=production\nJOURNAL_RECORDING_ENABLED=false\n'
+                                                    'JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production\n')
+            archive()
+            with self.assertRaisesRegex(OperationError, 'recording recovery mount'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy)
+            (current / 'compose.journal-recording.yaml').write_text('services: {}\n')
+            archive()
+            self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy))
 
 
 if __name__ == "__main__":
