@@ -1,0 +1,130 @@
+{
+  "runID": "38895777751",
+  "runAttempt": "1",
+  "updatedAt": "2026-10-16T12:11:58Z",
+  "url": "https://github.com/FanciaZhang/health/actions/runs/38895777751",
+  "evidence": {
+    "schemaVersion": 1,
+    "repository": "FanciaZhang/health",
+    "commit": "da8c2bf6d6efad3c7d1a6bdfaf0df68c9cf255b0",
+    "tree": "d88a0c124c4f757d1426061429a61aebf554ca7b",
+    "runID": "38895777751",
+    "runAttempt": "1",
+    "lane": "full",
+    "tests": {
+      "unit": {
+        "passed": 1624,
+        "failed": 0,
+        "skipped": 0,
+        "destination": {
+          "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-1",
+          "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"
+        }
+      },
+      "ui": {
+        "passed": 107,
+        "failed": 0,
+        "skipped": 0,
+        "destination": {
+          "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+          "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-16"
+        },
+        "parts": {
+          "ui-storekit": {
+            "passed": 8,
+            "failed": 0,
+            "skipped": 0,
+            "destination": {
+              "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+              "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-16"
+            }
+          },
+          "ui-parallel": {
+            "passed": 99,
+            "failed": 0,
+            "skipped": 0,
+            "destination": {
+              "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+              "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-16"
+            }
+          }
+        }
+      },
+      "watch": {
+        "passed": 112,
+        "failed": 0,
+        "skipped": 0,
+        "destination": {
+          "runtime": "com.apple.CoreSimulator.SimRuntime.watchOS-26-5",
+          "deviceType": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-46mm"
+        }
+      }
+    },
+    "releaseBuilds": [
+      "iOS",
+      "watchOS"
+    ],
+    "execution": {
+      "schemaVersion": 1,
+      "wallSeconds": 1539.19,
+      "uiWorkers": 3,
+      "simulatorArchitecture": "arm64",
+      "phases": {
+        "unit": {
+          "startedAt": "2026-10-16T11:45:08.857673+00:00",
+          "exitCode": 0,
+          "seconds": 350.757
+        },
+        "release": {
+          "startedAt": "2026-10-16T11:45:08.857810+00:00",
+          "exitCode": 0,
+          "seconds": 469.582
+        },
+        "ui-build": {
+          "startedAt": "2026-10-16T11:50:59.617300+00:00",
+          "exitCode": 0,
+          "seconds": 30.685
+        },
+        "ui": {
+          "startedAt": "2026-10-16T11:52:58.443605+00:00",
+          "exitCode": 0,
+          "seconds": 1069.604
+        },
+        "watch": {
+          "startedAt": "2026-10-16T11:52:58.443648+00:00",
+          "exitCode": 0,
+          "seconds": 70.475
+        }
+      }
+    },
+    "compilerCache": {
+      "key": "6872d70a3cc0c75f07b2bf55",
+      "scope": "trusted",
+      "restored": true,
+      "limitBytes": 4294967296
+    },
+    "sourceCommit": "da8c2bf6d6efad3c7d1a6bdfaf0df68c9cf255b0",
+    "pullRequest": 173,
+    "baseCommit": "a81e838356af9c53ce04e898aaad06ab03f653a7",
+    "approvedCommit": "da8c2bf6d6efad3c7d1a6bdfaf0df68c9cf255b0",
+    "toolchain": {
+      "xcode": "Xcode 27.1\nBuild version 27A9275",
+      "sdks": "DriverKit SDKs:\n\tDriverKit 27.0                \t-sdk driverkit27.0\n\niOS SDKs:\n\tiOS 27.1                      \t-sdk iphoneos27.1\n\niOS Simulator SDKs:\n\tSimulator - iOS 27.1          \t-sdk iphonesimulator27.1\n\nmacOS SDKs:\n\tmacOS 27.0                    \t-sdk macosx27.0\n\tmacOS 27.0                    \t-sdk macosx27.0\n\ntvOS SDKs:\n\ttvOS 27.0                     \t-sdk appletvos27.0\n\ntvOS Simulator SDKs:\n\tSimulator - tvOS 27.0         \t-sdk appletvsimulator27.0\n\nvisionOS SDKs:\n\tvisionOS 27.0                 \t-sdk xros27.0\n\nvisionOS Simulator SDKs:\n\tSimulator - visionOS 27.0     \t-sdk xrsimulator27.0\n\nwatchOS SDKs:\n\twatchOS 27.0                  \t-sdk watchos27.0\n\nwatchOS Simulator SDKs:\n\tSimulator - watchOS 27.0      \t-sdk watchsimulator27.0"
+    }
+  },
+  "verification": {
+    "method": "Scripts/CI/release_flow.py GitHub.ci + check_later_ci + live PR head/base assertions",
+    "passed": true,
+    "pullRequest": 173,
+    "mergeAuthorized": false,
+    "merged": false,
+    "signedBuildCreated": false,
+    "appleUploadPerformed": false,
+    "remaining": [
+      "real App Attest",
+      "CloudKit synchronization",
+      "production overwrite upgrade",
+      "user acceptance"
+    ]
+  }
+}
