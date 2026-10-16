@@ -8,11 +8,36 @@ import (
 
 func workerEnvironment() map[string]string {
 	return map[string]string{
-		"ALBUM_DATABASE_DSN": "test:private-password@tcp(localhost:3306)/albums_test",
-		"ALBUM_COS_BUCKET":   "album-test-1250000000", "ALBUM_COS_REGION": "ap-guangzhou",
+		"ALBUM_DEPLOYMENT_ENVIRONMENT": "test",
+		"ALBUM_DATABASE_DSN":           "test:private-password@tcp(localhost:3306)/albums_test",
+		"ALBUM_COS_BUCKET":             "album-test-1250000000", "ALBUM_COS_REGION": "ap-guangzhou",
 		"ALBUM_COS_ARCHIVE_SECRET_ID": "archive-id", "ALBUM_COS_ARCHIVE_SECRET_KEY": "private-archive-key",
 		"ALBUM_COS_UPLOAD_SECRET_ID": "upload-id", "ALBUM_COS_UPLOAD_SECRET_KEY": "private-upload-key",
 		"ALBUM_MAX_ORIGINAL_BYTES": "107374182400", "ALBUM_MAX_DERIVED_BYTES": "4294967296",
+	}
+}
+
+func TestAlbumWorkerAndGatewayRejectCrossEnvironmentDatabases(t *testing.T) {
+	for _, environment := range []string{"test", "production", "", "preview"} {
+		for _, database := range []string{"albums_test", "albums_recovery_test", "albums", "albums_production", "health_test", "tellyouwhat", ""} {
+			t.Run(environment+"/"+database, func(t *testing.T) {
+				values := gatewayEnvironment(t)
+				values["ALBUM_DEPLOYMENT_ENVIRONMENT"] = environment
+				values["ALBUM_DATABASE_DSN"] = "app:private-password@tcp(localhost:3306)/" + database
+				want := (environment == "test" && (database == "albums_test" || database == "albums_recovery_test")) ||
+					(environment == "production" && (database == "albums" || database == "albums_production"))
+				_, workerErr := LoadWorkerConfig(func(k string) string { return values[k] })
+				_, gatewayErr := LoadGatewayConfig(func(k string) string { return values[k] })
+				for _, err := range []error{workerErr, gatewayErr} {
+					if (err == nil) != want {
+						t.Fatalf("worker/gateway database boundary: accepted=%t, want=%t", err == nil, want)
+					}
+					if err != nil && strings.Contains(err.Error(), "private-password") {
+						t.Fatal("configuration error disclosed credentials")
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -49,6 +74,10 @@ func TestVideoProcessingRequiresExplicitEnableAndQueue(t *testing.T) {
 func TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets(t *testing.T) {
 	for _, test := range []struct{ key, value string }{
 		{"ALBUM_DATABASE_DSN", ""}, {"ALBUM_COS_UPLOAD_SECRET_KEY", ""},
+		{"ALBUM_DATABASE_DSN", "root:private-password@tcp(localhost:3306)/albums_test"},
+		{"ALBUM_DATABASE_DSN", "ROOT:private-password@tcp(localhost:3306)/albums_test"},
+		{"ALBUM_DATABASE_DSN", "tcp(localhost:3306)/albums_test"},
+		{"ALBUM_DATABASE_DSN", "not-a-dsn-private-password"},
 		{"ALBUM_COS_UPLOAD_SECRET_ID", "archive-id"},
 		{"ALBUM_COS_REGION", "https://private-token.invalid"},
 		{"ALBUM_MAX_ORIGINAL_BYTES", "9223372036854775807"},

@@ -3,14 +3,18 @@ package albums
 import (
 	"errors"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // WorkerConfig is deliberately separate from the managed-AI worker settings.
 // No AI product, provider key, or device identity is required for album storage.
 type WorkerConfig struct {
+	Environment         string
 	DevelopmentCloud    *DevelopmentCloudConfig
 	DatabaseDSN         string
 	COS                 COSConfig
@@ -23,6 +27,8 @@ type WorkerConfig struct {
 	AccountMediaErasure bool
 	VideoQueueID        string
 }
+
+var albumTestDatabasePattern = regexp.MustCompile(`^albums(?:_[a-z0-9]+)*_test$`)
 
 func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 	var c WorkerConfig
@@ -51,6 +57,13 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 			return WorkerConfig{}, err
 		}
 		*field.target = value
+	}
+	c.Environment = strings.TrimSpace(getenv("ALBUM_DEPLOYMENT_ENVIRONMENT"))
+	db, err := mysql.ParseDSN(c.DatabaseDSN)
+	if err != nil || db.User == "" || strings.EqualFold(db.User, "root") || (c.Environment != "test" && c.Environment != "production") ||
+		(c.Environment == "test" && !albumTestDatabasePattern.MatchString(db.DBName)) ||
+		(c.Environment == "production" && db.DBName != "albums" && db.DBName != "albums_production") {
+		return WorkerConfig{}, errors.New("invalid independent album database/environment")
 	}
 	c.COS.SessionToken = strings.TrimSpace(getenv("ALBUM_COS_ARCHIVE_SESSION_TOKEN"))
 	c.COS.UploadSessionToken = strings.TrimSpace(getenv("ALBUM_COS_UPLOAD_SESSION_TOKEN"))
@@ -111,7 +124,6 @@ func LoadWorkerConfig(getenv func(string) string) (WorkerConfig, error) {
 	if c.Policy.MaxOriginalBytes > math.MaxInt64-c.Policy.MaxDerivedBytes {
 		return WorkerConfig{}, errors.New("album byte limits overflow")
 	}
-	var err error
 	c.DevelopmentCloud, err = loadDevelopmentCloudConfig(getenv)
 	if err != nil {
 		return WorkerConfig{}, err

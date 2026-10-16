@@ -48,6 +48,10 @@ func TestAlbumTestDeploymentHasIndependentStorageAndOnlyLoopbackIngress(t *testi
 	if len(api.Ports) != 1 || !strings.HasPrefix(api.Ports[0], "127.0.0.1:") || api.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != "test" || !strings.Contains(api.Environment["ALBUM_DATABASE_DSN"], "/albums_test?") {
 		t.Fatal("unsafe API environment")
 	}
+	worker := stack.Services["albumworker"]
+	if worker.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] != api.Environment["ALBUM_DEPLOYMENT_ENVIRONMENT"] || worker.Environment["ALBUM_DATABASE_DSN"] != api.Environment["ALBUM_DATABASE_DSN"] {
+		t.Fatal("worker and API storage environment differ")
+	}
 	if stack.Services["mysql"].Environment["MYSQL_DATABASE"] != "albums_test" || len(stack.Services["mysql"].Volumes) != 1 || stack.Services["mysql"].Volumes[0] != "albums-test-mysql:/var/lib/mysql" {
 		t.Fatal("database volume not isolated")
 	}

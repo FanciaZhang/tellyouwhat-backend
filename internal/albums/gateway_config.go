@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -44,7 +43,6 @@ func (GatewayConfig) LogValue() slog.Value {
 	return slog.StringValue("[redacted album gateway configuration]")
 }
 
-var albumTestDatabasePattern = regexp.MustCompile(`^albums(?:_[a-z0-9]+)*_test$`)
 var albumAPIHostPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$`)
 
 func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
@@ -52,17 +50,11 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 	if err != nil {
 		return GatewayConfig{}, err
 	}
-	c := GatewayConfig{Worker: worker, Environment: strings.TrimSpace(getenv("ALBUM_DEPLOYMENT_ENVIRONMENT")),
+	c := GatewayConfig{Worker: worker, Environment: worker.Environment,
 		APIHost: strings.TrimSpace(getenv("ALBUM_API_HOST")), ListenAddress: strings.TrimSpace(getenv("ALBUM_HTTP_LISTEN_ADDRESS")),
 		RedisURL: strings.TrimSpace(getenv("ALBUM_REDIS_URL"))}
 	if c.ListenAddress == "" {
 		c.ListenAddress = "127.0.0.1:8080"
-	}
-	db, err := mysql.ParseDSN(c.Worker.DatabaseDSN)
-	if err != nil || db.User == "" || strings.EqualFold(db.User, "root") || (c.Environment != "test" && c.Environment != "production") ||
-		(c.Environment == "test" && !albumTestDatabasePattern.MatchString(db.DBName)) ||
-		(c.Environment == "production" && db.DBName != "albums" && db.DBName != "albums_production") {
-		return GatewayConfig{}, errors.New("invalid independent album database/environment")
 	}
 	if !albumAPIHostPattern.MatchString(c.APIHost) || len(c.APIHost) > 253 {
 		return GatewayConfig{}, errors.New("invalid ALBUM_API_HOST")

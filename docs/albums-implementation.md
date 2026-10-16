@@ -46,7 +46,7 @@ Bundle ID 为 `cn.tellyouwhat.albums`。相册是长期账户媒体业务，不�
 
 必填配置（值由部署环境注入，不能提交到仓库）：
 
-- `ALBUM_DATABASE_DSN`
+- `ALBUM_DEPLOYMENT_ENVIRONMENT`（`test` 或 `production`）和 `ALBUM_DATABASE_DSN`：API 与 worker 共用启动校验，拒绝 root／空数据库用户；测试库必须匹配 `albums*_test` 的受限命名规则，生产库只允许 `albums` 或 `albums_production`。错配在连接数据库前退出。
 - `ALBUM_COS_BUCKET`、`ALBUM_COS_REGION`
 - `ALBUM_COS_ARCHIVE_SECRET_ID`、`ALBUM_COS_ARCHIVE_SECRET_KEY`
 - `ALBUM_COS_UPLOAD_SECRET_ID`、`ALBUM_COS_UPLOAD_SECRET_KEY`
