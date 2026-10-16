@@ -281,7 +281,7 @@ func TestGatewayAppleDeletionRequiresQueueSchemaAndValidScheduling(t *testing.T)
 	if calls != 0 {
 		t.Fatal("provider contacted before schema check")
 	}
-	if err := (&Gateway{}).startAppleDeletion(f.accounts, nil, 1, time.Second); !errors.Is(err, ErrInvalidManifest) {
+	if err := (&Gateway{}).startAppleDeletion(context.Background(), f.accounts, nil, 1, time.Second); !errors.Is(err, ErrInvalidManifest) {
 		t.Fatal(err)
 	}
 }

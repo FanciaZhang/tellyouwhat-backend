@@ -182,12 +182,12 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 			}
 		}
 	}
-	if err := g.startAppleDeletion(accounts, exchanger, config.Worker.BatchSize, config.Worker.PollInterval); err != nil {
+	if err := g.startAppleDeletion(context.WithoutCancel(ctx), accounts, exchanger, config.Worker.BatchSize, config.Worker.PollInterval); err != nil {
 		return nil, errors.New("album Apple deletion worker configuration")
 	}
-	g.startSubscriptionRefresh(subscriptions, repository)
+	g.startSubscriptionRefresh(context.WithoutCancel(ctx), subscriptions, repository)
 	if dispatcher != nil {
-		g.startRetentionDispatch(dispatcher)
+		g.startRetentionDispatch(context.WithoutCancel(ctx), dispatcher)
 	}
 	return g, nil
 }

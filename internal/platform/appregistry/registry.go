@@ -7,13 +7,12 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-
-	"github.com/gin-gonic/gin"
 )
 
 type AppID string
 
 const (
+	Albums   AppID = "albums"
 	Birthday AppID = "birthday"
 	Health   AppID = "health"
 	Journal  AppID = "journal"
@@ -41,10 +40,12 @@ type App struct {
 
 func (app App) Validate() error {
 	if app.ID == "" || strings.TrimSpace(app.DisplayName) == "" || len(app.Hosts) == 0 ||
-		strings.TrimSpace(app.TeamID) == "" || strings.TrimSpace(app.BundleID) == "" ||
-		strings.TrimSpace(app.ManagedAIProductID) == "" ||
-		(strings.TrimSpace(app.AllowedOperationPrefix) == "" && len(app.AllowedOperations) == 0) {
+		strings.TrimSpace(app.TeamID) == "" || strings.TrimSpace(app.BundleID) == "" {
 		return errors.New("app registry entry is incomplete")
+	}
+	if app.ID != Albums && (strings.TrimSpace(app.ManagedAIProductID) == "" ||
+		(strings.TrimSpace(app.AllowedOperationPrefix) == "" && len(app.AllowedOperations) == 0)) {
+		return errors.New("AI app registry entry is incomplete")
 	}
 	if app.AllowedOperationPrefix != "" && !strings.HasSuffix(app.AllowedOperationPrefix, ".") {
 		return errors.New("operation prefix must end in a dot")
@@ -143,16 +144,16 @@ func normalizeHost(value string) string {
 
 type HostMux struct {
 	registry *Registry
-	routers  map[AppID]*gin.Engine
+	routers  map[AppID]http.Handler
 }
 
-func NewHostMux(registry *Registry, routers map[AppID]*gin.Engine) (*HostMux, error) {
+func NewHostMux(registry *Registry, routers map[AppID]http.Handler) (*HostMux, error) {
 	if registry == nil {
 		return nil, errors.New("app registry is required")
 	}
 	for _, app := range registry.Apps() {
 		if routers[app.ID] == nil {
-			return nil, fmt.Errorf("Gin router for app %q is required", app.ID)
+			return nil, fmt.Errorf("HTTP handler for app %q is required", app.ID)
 		}
 	}
 	return &HostMux{registry: registry, routers: routers}, nil

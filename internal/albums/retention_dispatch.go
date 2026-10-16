@@ -96,14 +96,18 @@ func (d *albumRetentionDispatcher) dispatchOne(ctx context.Context) (bool, error
 	return true, err
 }
 
-func (g *Gateway) startRetentionDispatch(d *albumRetentionDispatcher) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (g *Gateway) startRetentionDispatch(parent context.Context, d *albumRetentionDispatcher) {
+	ctx, cancel := context.WithCancel(parent)
 	g.retentionCancel = cancel
 	g.subscriptionWorkers.Add(1)
 	go func() {
 		defer g.subscriptionWorkers.Done()
 		for ctx.Err() == nil {
-			found, err := d.dispatchOne(ctx)
+			var found bool
+			var err error
+			if !runGatewayBatch(ctx, func() { found, err = d.dispatchOne(ctx) }) {
+				return
+			}
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("album retention reminder deferred")
 			}

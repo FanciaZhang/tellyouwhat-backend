@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 
+	"github.com/tellyouwhat/backend/internal/albums"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/birthday"
@@ -159,9 +160,28 @@ func run(logger *slog.Logger) error {
 	}
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
-	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))
+	routers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
+	var albumGateway *albums.Gateway
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
+		if appConfig.Registry.ID == appregistry.Albums {
+			albumConfig, configErr := albums.LoadGatewayConfig(os.Getenv)
+			if configErr != nil {
+				return fmt.Errorf("album API configuration: %w", configErr)
+			}
+			if err := validateAlbumGatewayIdentity(platform, appConfig.Registry, albumConfig); err != nil {
+				return err
+			}
+			startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+			albumGateway, err = albums.NewGateway(startup, albumConfig, nil)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("build app albums: %w", err)
+			}
+			defer albumGateway.Close()
+			routers[appregistry.Albums] = albumGateway
+			continue
+		}
 		storage := storageForApp(platform, shared, appConfig)
 		storage.prompts = shared.prompts
 		appReadiness := shared.readiness
@@ -207,6 +227,9 @@ func run(logger *slog.Logger) error {
 	}()
 	select {
 	case <-ctx.Done():
+		if albumGateway != nil {
+			albumGateway.BeginDrain()
+		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdownContext)

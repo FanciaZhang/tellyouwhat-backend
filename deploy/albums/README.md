@@ -1,4 +1,7 @@
-# 相册独立测试环境
+# 相册环境与部署
+
+目标为每个环境一个共享 API 网关。`cmd/gateway` 直接装配相册路由，`cmd/albumworker` 继续独立处理媒体；以下独立 API 部署记录描述现存服务，迁移完成前保留其数据与恢复材料。尚未发布的 `compose.albums-production.yaml` 独立 API 草案已被替代，禁止按该草案新增独立生产 API。
+
 
 `cmd/albumgateway` 装配 MySQL 账户、加密 Apple refresh grant、单次登录挑战、可撤销会话、Redis 限流、上传/分片/图库/日常副本和订阅接口。`cmd/albumworker` 执行归档验证和媒体处理。新登录账户容量为零；正式容量须验证订阅，独立开发身份只能获得明确账户、额度和有效期的测试授权。
 
@@ -356,7 +359,7 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 三个相关 Go 包、定向竞态和六项 CAM 静态范围检查通过，未部署、未切换域名或启用处理。证据：`../../docs/evidence/albums-production-resource-boundary-2026-10-16.json`。
 
-正式栈描述已准备在 `../../compose.albums-production.yaml`，配套插值文件为 `production.env.example`、应用文件为 `production-runtime.env.example`。默认生产库/卷、回环 18093 和 172.29.94.0/24 均与测试栈分开；不得复用旧测试环境或卷。当前仅通过隔离单测及服务器原生 Compose 合成配置解析，尚未接入生产发布、备份和产物保留入口，禁止直接 `docker compose up` 激活。待凭据、云权限及媒体队列验证后，通过 `release.py deploy` 完成发布接入和实际验收。
+已被共享网关目标替代的正式栈描述保留在 `../../compose.albums-production.yaml`，配套插值文件为 `production.env.example`、应用文件为 `production-runtime.env.example`。默认生产库/卷、回环 18093 和 172.29.94.0/24 均与测试栈分开；不得复用旧测试环境或卷。当前仅通过隔离单测及服务器原生 Compose 合成配置解析，尚未接入生产发布、备份和产物保留入口，禁止直接 `docker compose up` 激活。待凭据、云权限及媒体队列验证后，通过 `release.py deploy` 完成发布接入和实际验收。
 
 ### Production recovery integration status
 

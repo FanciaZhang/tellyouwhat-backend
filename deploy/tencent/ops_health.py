@@ -45,8 +45,8 @@ def health(runtime):
             fresh = False
         checks.append({"name": "deployment_controller", "passed": fresh})
     services = {}
-    for name, url, host, status in readiness_checks(runtime.config, ports):
-        passed = probe(url, host, status)
+    for name, *request in readiness_checks(runtime.config, ports):
+        passed = probe(*request)
         services[name] = services.get(name, True) and passed
     checks.extend({"name": name, "passed": passed} for name, passed in services.items())
     disk = shutil.disk_usage(runtime.root)

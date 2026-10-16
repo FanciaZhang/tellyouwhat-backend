@@ -45,6 +45,16 @@ class OperationalHealthTests(unittest.TestCase):
         with patch("ops_health.probe", return_value=True):
             self.assertTrue(health(self.runtime)["passed"])
 
+    def test_albums_failure_is_reported_without_changing_other_service_checks(self):
+        self.runtime.config.update(PLATFORM_APPS="health,journal,birthday,albums",
+                                   ALBUM_API_HOST="api.albums.tellyouwhat.cn", ALBUM_DEPLOYMENT_ENVIRONMENT="production")
+        with patch("ops_health.probe", side_effect=lambda url, host, status, field="status": field != "code"):
+            result = health(self.runtime)
+        self.assertFalse(result["passed"])
+        services = {check["name"]: check["passed"] for check in result["checks"]}
+        self.assertFalse(services["albums_gateway"])
+        self.assertTrue(all(services[name] for name in ("health_gateway", "journal_gateway", "birthday_gateway")))
+
     def test_disk_pressure_is_unhealthy(self):
         with patch("ops_health.probe", return_value=True), patch(
             "ops_health.shutil.disk_usage", return_value=SimpleNamespace(total=100 * 1024**3, free=1024**3)

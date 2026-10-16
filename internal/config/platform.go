@@ -139,6 +139,7 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 	}
 
 	definitions := map[appregistry.AppID]appDefaults{
+		appregistry.Albums: {ID: appregistry.Albums, DisplayName: "告你相册", Host: "api.albums.tellyouwhat.cn", BundleID: "cn.tellyouwhat.albums"},
 		appregistry.Health: {
 			ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
 			BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
@@ -190,6 +191,14 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 	if environment == "development" {
 		defaults.BundleID += ".dev"
 		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
+	}
+	if defaults.ID == appregistry.Albums {
+		return AppConfig{Registry: appregistry.App{
+			ID: defaults.ID, DisplayName: defaults.DisplayName,
+			Hosts:    []string{prefixedValue("ALBUM", "API_HOST", defaults.Host)},
+			TeamID:   prefixedValue("ALBUM", "APPLE_TEAM_ID", commonTeamID),
+			BundleID: prefixedValue("ALBUM", "APPLE_BUNDLE_ID", defaults.BundleID),
+		}}, nil
 	}
 	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", string(attestation.EnvironmentProduction)))
 	defaultTimeout := 90
@@ -345,6 +354,10 @@ func (config AppConfig) Validate(environment string) error {
 	}
 	if err := config.validateEnvironmentIdentity(environment); err != nil {
 		return err
+	}
+	if config.Registry.ID == appregistry.Albums {
+		// Album authentication and storage plans are validated by its API, not the AI worker.
+		return nil
 	}
 	if len(config.ManagedAIProductIDs) == 0 {
 		return errors.New("MANAGED_AI_PRODUCT_IDS must contain the primary product")

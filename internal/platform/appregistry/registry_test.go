@@ -41,7 +41,7 @@ func TestHostMuxRejectsUnknownHostAndDispatchesKnownHost(t *testing.T) {
 	healthRouter.NoRoute(func(context *gin.Context) { context.Status(http.StatusNoContent) })
 	journalRouter := gin.New()
 	journalRouter.NoRoute(func(context *gin.Context) { context.Status(http.StatusAccepted) })
-	routers := map[AppID]*gin.Engine{
+	routers := map[AppID]http.Handler{
 		Health: healthRouter, Journal: journalRouter,
 	}
 	mux, err := NewHostMux(registry, routers)
@@ -59,5 +59,46 @@ func TestHostMuxRejectsUnknownHostAndDispatchesKnownHost(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusMisdirectedRequest {
 		t.Fatalf("unexpected unknown-host status %d", response.Code)
+	}
+}
+
+func TestFourAppsShareOneListenerWithoutForwardedHostRouting(t *testing.T) {
+	apps := append(fixtureApps(),
+		App{ID: Birthday, DisplayName: "生日", Hosts: []string{"api.birthday.test"}, TeamID: "TEAM", BundleID: "birthday.bundle", ManagedAIProductID: "birthday.assistant", AllowedOperationPrefix: "birthday."},
+		App{ID: Albums, DisplayName: "相册", Hosts: []string{"api.albums.test"}, TeamID: "TEAM", BundleID: "albums.bundle"})
+	registry, err := New(apps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlers := map[AppID]http.Handler{}
+	for _, app := range apps {
+		handlers[app.ID] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Header().Set("X-Test-App", string(app.ID)) })
+	}
+	mux, err := NewHostMux(registry, handlers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	for _, app := range apps {
+		req, _ := http.NewRequest(http.MethodGet, server.URL+"/readyz", nil)
+		req.Host = app.Hosts[0]
+		req.Header.Set("X-Forwarded-Host", "api.albums.test")
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 || resp.Header.Get("X-Test-App") != string(app.ID) {
+			t.Fatal("cross-app dispatch")
+		}
+	}
+	delete(handlers, Albums)
+	if _, err := NewHostMux(registry, handlers); err == nil {
+		t.Fatal("missing album handler accepted")
+	}
+	album := apps[3]
+	if album.AllowsOperation("journal.organize") || album.AllowsOperation("meal_decision") {
+		t.Fatal("album inherited AI access")
 	}
 }

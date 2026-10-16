@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ops_common import OperationError, Runtime, read_environment
-from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate
+from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate, probe
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
@@ -62,6 +62,27 @@ class ReleaseRecoveryTests(unittest.TestCase):
             output.write("PLATFORM_APPS=health,journal,birthday\nBIRTHDAY_API_HOSTS=https://birthday.example/path\n")
         with self.assertRaisesRegex(OperationError, "birthday production API host"):
             validate(self.bundle, "new", "registry/app", "internal")
+
+    def test_albums_readiness_checks_same_gateway_with_its_own_response_contract(self):
+        config = dict(self.runtime.config, PLATFORM_APPS="health,journal,birthday,albums",
+                      ALBUM_API_HOST="api.albums.tellyouwhat.cn", ALBUM_DEPLOYMENT_ENVIRONMENT="production")
+        with patch("release.probe", side_effect=lambda url, host, status, field="status": field != "code") as check:
+            self.assertFalse(internally_ready(config, 1, ports=(18180, 18181, 18182)))
+            check.assert_called_with("http://127.0.0.1:18180/readyz", "api.albums.tellyouwhat.cn", "ok", "code")
+        for key, value in (("ALBUM_API_HOST", "api-test.albums.tellyouwhat.cn"),
+                           ("ALBUM_DEPLOYMENT_ENVIRONMENT", "test")):
+            with self.assertRaisesRegex(OperationError, "album production"):
+                internally_ready(dict(config, **{key: value}), 1)
+
+    def test_probe_does_not_confuse_album_and_ai_readiness(self):
+        from types import SimpleNamespace
+        for body, field, expected in (({'code': 'ok'}, 'code', True), ({'status': 'ok'}, 'code', False),
+                                       ({'code': 'ok'}, 'status', False), ({'status': 'ok'}, 'status', True)):
+            def curl(command, **kwargs):
+                Path(command[command.index('--output') + 1]).write_text(json.dumps(body))
+                return SimpleNamespace(returncode=0, stdout=b'200')
+            with patch("release.subprocess.run", side_effect=curl):
+                self.assertEqual(probe("http://localhost/readyz", "example.test", "ok", field), expected)
 
     def run_deploy(self):
         with patch("release.require_disk_space"):

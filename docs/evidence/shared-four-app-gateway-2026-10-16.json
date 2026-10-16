@@ -1,0 +1,70 @@
+{
+  "scope": "One API gateway process per environment for all four apps; local integration only",
+  "base": "90ec254cb16e8c433ab228092d189d4b2141ef88",
+  "implemented": [
+    "Albums opt-in registry entry and direct shared gateway assembly",
+    "Strict matching of gateway environment, host, Apple team and bundle identity",
+    "Album API background acquisition-through-settlement participates in deployment lifecycle",
+    "Per-app readiness for release gating, host patrol and management UI"
+  ],
+  "validation": {
+    "go_all": {
+      "passed_packages": 58,
+      "packages_without_tests": 13,
+      "passed_test_events_including_subtests": 2295,
+      "skipped_test_events_including_subtests": 643,
+      "failed": 0
+    },
+    "race_packages": [
+      "internal/platform/appregistry",
+      "internal/config",
+      "cmd/gateway",
+      "internal/albums",
+      "internal/gateway",
+      "internal/lifecycle",
+      "internal/architecture"
+    ],
+    "python_operations": {
+      "total": 198,
+      "passed": 197,
+      "skipped": 1
+    },
+    "management_browser": "platform-admin-ui-test.mjs passed using local Chrome, synthetic API fixtures",
+    "diff_check": "passed"
+  },
+  "not_verified": [
+    "Real MySQL, Apple, COS and native client flows for the combined gateway",
+    "Remote shared-gateway activation, resource/memory sizing, rollback and backup recovery",
+    "Journal private-development feature and credential migration into the shared gateway"
+  ],
+  "production_modified": false,
+  "sha256": {
+    "cmd/gateway/main.go": "cbd24764ef314474337423c06450370f6f949884ecd2f6565294595351a003bd",
+    "deploy/albums/README.md": "175f8c251f93cd21bc8b276259a5936a52acba27e67c084e3d167145807f151c",
+    "deploy/tencent/health_test.py": "77f0622840336eee4d28634aed74bb90e4f59edce1da241b78324ac9b0422cea",
+    "deploy/tencent/ops_health.py": "4cd2c373321b7679cdfb784203ca0f7bf81d53b942cb573df629549bc304cf7f",
+    "deploy/tencent/release.py": "65b8710c4526034871885f2b2314f4af82f176c9880d48ae26621520ab23d458",
+    "deploy/tencent/release_test.py": "36397c100f560dbb760b4c1ae40dd9f2ed4ee288959534f2f7938b4d02d3b4bf",
+    "docs/unified-app-environments.md": "78e49737e51fdbb9b8be7bcc5b0e001bdfdc3461ad92bc70a27911ddab03fd51",
+    "internal/adminui/static/automation.js": "55a1ff3b5f0fa90c8279110d47c23541da7884c74e33b40717d2ea9c28b5ad5b",
+    "internal/albums/account_deletion_apple_worker.go": "5f19dc2be343ad0cc7f8b5932364e8d434253eb1ea897470609f35d12d25efe1",
+    "internal/albums/account_deletion_apple_worker_test.go": "28193efb78cd8c040438c219e99c67e07c7bfa6830a553890400747311d66dc2",
+    "internal/albums/dual_binding_integration_test.go": "d43227bb959127a800a3972e355bd182bd1d8da0920c28c3d0885556af1882d3",
+    "internal/albums/gateway.go": "37bb2b84c31c32466d32207fb7212494a14379f72ec97d5bbce89b555718b1b8",
+    "internal/albums/retention_dispatch.go": "94435cb725eb52a7e3977f8b5204eecc13f12689bec79d834e289cb92b35f6eb",
+    "internal/albums/retention_dispatch_integration_test.go": "9f170aed6ead9c78a02f586ad62651bb4f80341b419d7da701aacc877f60a58e",
+    "internal/albums/subscription_refresh.go": "d0a62d7d4d7978c84a5213898b5f5f9cb4f5ed07ea862f56035d8b3e556870a9",
+    "internal/config/platform.go": "4f1f4a0dc65d34c1399efe1509abe21e5c5d05cfaef035552fd8d62fec0687f3",
+    "internal/gateway/server_test.go": "da719949dd328d590402e82b74bd556ed700fbcac78062c54a37e2b0429269dd",
+    "internal/platform/appregistry/registry.go": "91b37bac2b4bbcf0f18c2a9e8ff46a843674aef168c01b51049029caff530dee",
+    "internal/platform/appregistry/registry_test.go": "60a42da497b540addd9d5a9a9396f8e597b77ded5dccf7006a69939172baf5bc",
+    "internal/platformops/automation_host.go": "43a24d17fff0c5d68854febbb4d46b9fe5e049e580c42a57fc90326dddad0e87",
+    "internal/platformops/automation_host_test.go": "801823c066358264dcf1f4d89fe9ae29f41c55b720f564ee916961d95d7bc9cc",
+    "scripts/platform-admin-ui-test.mjs": "defb05cd1f69b9ed1504ffa0a9af9d76efe627d0187e04101b86f77c9ae3e6e5",
+    "cmd/gateway/albums.go": "39b0566f776d9317dcf215944cb6312deeb804047942dadb12aeed6720497844",
+    "cmd/gateway/albums_test.go": "30938a1dfa6d887c2b880640526d4b364b26665a2ec3b8f811d2e57423d4acc3",
+    "internal/albums/gateway_background.go": "06e1fb91d32c2053b04aceea1ce9b628402b341034f7f33578d575757001598a",
+    "internal/albums/gateway_background_test.go": "b5bcd7798281b13dcc8e39af8d64ef7eb537b9e3c6923a809baa4a24b595ef83",
+    "internal/config/albums_test.go": "f776ab12fe101caa3d1e88cbd9db24adeb8ba84230383ae4aef89fe1a09578fc"
+  }
+}

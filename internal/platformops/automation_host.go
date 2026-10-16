@@ -71,12 +71,12 @@ func (s Store) RecordHostHealth(ctx context.Context, source io.Reader, now time.
 	return tx.Commit()
 }
 
-// Birthday is present when enabled; lifecycle checks must always arrive as a pair.
+// Optional app checks are present when enabled; lifecycle checks must always arrive as a pair.
 func validateHostChecks(checks []HostCheck) error {
 	expected := map[string]bool{"health_gateway": true, "journal_gateway": true, "worker": true, "admin": true, "disk_space": true, "backup_freshness": true, "maintenance_freshness": true, "restore_freshness": true}
 	for _, check := range checks {
-		if check.Name == "birthday_gateway" {
-			expected["birthday_gateway"] = true
+		if check.Name == "birthday_gateway" || check.Name == "albums_gateway" {
+			expected[check.Name] = true
 		}
 		if check.Name == "deployment_state" || check.Name == "deployment_controller" {
 			expected["deployment_state"] = true

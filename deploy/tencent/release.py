@@ -84,7 +84,7 @@ def validate(source, tag, registry, acceptance):
     return config
 
 
-def probe(url, host, status):
+def probe(url, host, status, field="status"):
     with tempfile.TemporaryDirectory(prefix="tellyouwhat-readiness-") as directory:
         response = Path(directory) / "response.json"
         result = subprocess.run(["curl", "--fail", "--silent", "--show-error", "--connect-timeout", "2",
@@ -94,7 +94,7 @@ def probe(url, host, status):
             return False
         try:
             value = json.loads(response.read_text())
-            return isinstance(value, dict) and value.get("status") == status
+            return isinstance(value, dict) and value.get(field) == status
         except (ValueError, OSError):
             return False
 
@@ -111,6 +111,11 @@ def readiness_checks(config, ports=(18080, 18081, 18082)):
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]", host):
                 raise OperationError("invalid birthday production API host")
             checks.append(("birthday_gateway", f"http://127.0.0.1:{ports[0]}/readyz", host, "ready"))
+    if "albums" in [app.strip() for app in config.get("PLATFORM_APPS", "health,journal").split(",")]:
+        host = config.get("ALBUM_API_HOST", "").strip()
+        if host != "api.albums.tellyouwhat.cn" or config.get("ALBUM_DEPLOYMENT_ENVIRONMENT") != "production":
+            raise OperationError("invalid album production API host or environment")
+        checks.append(("albums_gateway", f"http://127.0.0.1:{ports[0]}/readyz", host, "ok", "code"))
     return checks
 
 

@@ -233,7 +233,7 @@ func TestMySQLDualBindingWorkersCompleteBothQueues(t *testing.T) {
 		}
 	}
 	g := &Gateway{}
-	g.startSubscriptionRefresh(x.s, x.r)
+	g.startSubscriptionRefresh(context.Background(), x.s, x.r)
 	stop := func() { g.BeginDrain(); g.subscriptionWorkers.Wait() }
 	defer stop()
 	deadline := time.Now().Add(20 * time.Second)

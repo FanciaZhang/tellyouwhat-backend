@@ -38,11 +38,11 @@ func (s *AlbumSubscriptionService) refreshOne(ctx context.Context, repository *M
 	return true, err
 }
 
-func (g *Gateway) startSubscriptionRefresh(service *AlbumSubscriptionService, repository *MySQLUploads) {
+func (g *Gateway) startSubscriptionRefresh(parent context.Context, service *AlbumSubscriptionService, repository *MySQLUploads) {
 	if service == nil {
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	g.subscriptionCancel = cancel
 	g.startSubscriptionWorkers(ctx, service, repository)
 	if service.sandbox != nil {
@@ -57,31 +57,35 @@ func (g *Gateway) startSubscriptionWorkers(ctx context.Context, service *AlbumSu
 		go func() {
 			defer g.subscriptionWorkers.Done()
 			for ctx.Err() == nil {
-				batch, err := service.runSubscriptionBindingBatch(ctx, repository, 10)
-				if ctx.Err() != nil {
+				if !runGatewayBatch(ctx, func() {
+					batch, err := service.runSubscriptionBindingBatch(ctx, repository, 10)
+					if ctx.Err() != nil {
+						return
+					}
+					if err != nil {
+						slog.Warn("album subscription rebinding queue unavailable")
+					}
+					if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
+						slog.Info("album subscription rebinding batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
+					}
+					if err == nil && service.recordErasureEnabled {
+						erased, eraseErr := repository.runAccountRecordErasureBatch(ctx, 10, service.now)
+						if eraseErr != nil && ctx.Err() == nil {
+							slog.Warn("album account record erasure queue unavailable")
+						}
+						if erased > 0 {
+							slog.Info("album account records erased", "accounts", erased)
+						}
+						retired, retireErr := repository.runIdentityRetirementBatch(ctx, 10, service.now)
+						if retireErr != nil && ctx.Err() == nil {
+							slog.Warn("album identity retirement queue unavailable")
+						}
+						if retired > 0 {
+							slog.Info("album identity fences retired", "identities", retired)
+						}
+					}
+				}) {
 					return
-				}
-				if err != nil {
-					slog.Warn("album subscription rebinding queue unavailable")
-				}
-				if batch.Acknowledged+batch.Deferred+batch.Contended > 0 {
-					slog.Info("album subscription rebinding batch", "acknowledged", batch.Acknowledged, "deferred", batch.Deferred, "contended", batch.Contended)
-				}
-				if err == nil && service.recordErasureEnabled {
-					erased, eraseErr := repository.runAccountRecordErasureBatch(ctx, 10, service.now)
-					if eraseErr != nil && ctx.Err() == nil {
-						slog.Warn("album account record erasure queue unavailable")
-					}
-					if erased > 0 {
-						slog.Info("album account records erased", "accounts", erased)
-					}
-					retired, retireErr := repository.runIdentityRetirementBatch(ctx, 10, service.now)
-					if retireErr != nil && ctx.Err() == nil {
-						slog.Warn("album identity retirement queue unavailable")
-					}
-					if retired > 0 {
-						slog.Info("album identity fences retired", "identities", retired)
-					}
 				}
 				timer := time.NewTimer(5 * time.Second)
 				select {
@@ -100,7 +104,11 @@ func (g *Gateway) startSubscriptionWorkers(ctx context.Context, service *AlbumSu
 		go func() {
 			defer g.subscriptionWorkers.Done()
 			for ctx.Err() == nil {
-				found, err := service.refreshOne(ctx, repository)
+				var found bool
+				var err error
+				if !runGatewayBatch(ctx, func() { found, err = service.refreshOne(ctx, repository) }) {
+					return
+				}
 				if found && err == nil {
 					continue
 				}

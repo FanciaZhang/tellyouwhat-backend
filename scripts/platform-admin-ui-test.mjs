@@ -54,12 +54,14 @@ try {
  await page.locator('[data-ops-pause="journal"]:not([data-operation])').click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.equal(current.policy.apps.journal.paused,true);assert.equal(await page.locator('[data-ops-pause="journal"][data-operation="journal.voice"]').isDisabled(),true);
  await page.locator('[data-ops-pause="health"][data-operation="meal_photo_capture"]').click();await heading('确认服务配置变更');await page.getByRole('button',{name:'通行密钥确认并发布'}).click();await heading('服务管理');assert.deepEqual(current.policy.apps.health.pausedOperations,['diet_analysis']);assert.equal(current.policy.apps.journal.paused,true);
  assert.equal(await page.locator('.automation-host-grid').innerText().then(t=>t.includes('生日服务')),false);
- metrics.automation.host.checks.push({name:'birthday_gateway',passed:false});await page.evaluate(()=>loadPlatform());
+ metrics.automation.host.checks.push({name:'birthday_gateway',passed:false},{name:'albums_gateway',passed:false});await page.evaluate(()=>loadPlatform());
  await page.locator('#automation-host-summary').click();
  const birthdayStatus=await page.locator('.automation-host-grid>div').filter({hasText:'生日服务'}).innerText();
  assert.ok(birthdayStatus.includes('未通过'),birthdayStatus);
+ const albumStatus=await page.locator('.automation-host-grid>div').filter({hasText:'相册服务'}).innerText();
+ assert.ok(albumStatus.includes('未通过'),albumStatus);
  await page.locator('#automation-host-summary').click();
- metrics.automation.host.checks.pop();await page.evaluate(()=>loadPlatform());
+ metrics.automation.host.checks.splice(-2);await page.evaluate(()=>loadPlatform());
  await page.locator('#automation-host-summary').click();await page.locator('#automation-events-summary').click();await page.locator('#automation-events-summary').focus();await page.evaluate(()=>opsRenderContent());assert.equal(await page.locator('#automation-host').getAttribute('open'),'');assert.equal(await page.locator('#automation-events-summary').evaluate(el=>el===document.activeElement),true);
  assert.ok(await page.locator('#ops-content').innerText().then(t=>t.includes('正在保护与恢复')&&t.includes('16 / 20 次失败')&&t.includes('冷却中')));
  metrics.automation.circuits[0]={...metrics.automation.circuits[0],phase:'probe',successes:2,probeOccupied:true};await page.evaluate(()=>loadPlatform());assert.ok(await page.locator('#ops-content').innerText().then(t=>t.includes('已成功 2 / 3 次')&&t.includes('正在使用一个真实请求')));

@@ -12,6 +12,8 @@ func TestValidateHostChecks(t *testing.T) {
 	birthdayManaged := append(append([]HostCheck{}, managed...), HostCheck{Name: "birthday_gateway", Passed: true})
 	birthdayDuplicate := append(append([]HostCheck{}, birthday...), HostCheck{Name: "birthday_gateway", Passed: true})
 	birthdayUnpaired := append(append([]HostCheck{}, birthday...), HostCheck{Name: "deployment_state", Passed: true})
+	albums := append(append([]HostCheck{}, birthdayManaged...), HostCheck{Name: "albums_gateway", Passed: false})
+	albumsDuplicate := append(append([]HostCheck{}, albums...), HostCheck{Name: "albums_gateway", Passed: true})
 	duplicate := append([]HostCheck{}, managed...)
 	duplicate[9].Name = "deployment_state"
 	unknown := append([]HostCheck{}, managed...)
@@ -21,6 +23,7 @@ func TestValidateHostChecks(t *testing.T) {
 		checks []HostCheck
 		valid  bool
 	}{
+		{"all four apps", albums, true}, {"albums duplicate", albumsDuplicate, false},
 		{"birthday failed", birthday, true}, {"birthday managed", birthdayManaged, true},
 		{"birthday duplicate", birthdayDuplicate, false}, {"birthday missing lifecycle pair", birthdayUnpaired, false},
 		{"legacy", legacy, true}, {"managed with failed controller", managed, true},
