@@ -4,8 +4,10 @@ info:
   version: 2.0.0
   description: Scoped decisions for one birthday, with shared PlatformAPI authentication.
 servers:
-- url: https://api.journal.tellyouwhat.cn/_development/birthday
-  description: Private development
+- url: https://api.birthday.tellyouwhat.cn
+  description: Production
+- url: https://api-test.birthday.tellyouwhat.cn
+  description: Development
 tags:
 - name: Birthday
 paths:
