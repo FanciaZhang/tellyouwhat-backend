@@ -123,6 +123,19 @@ def readiness_checks(config, ports=(18080, 18081, 18082)):
     return checks
 
 
+def public_targets(config):
+    targets = []
+    for name, _url, host, status, *field in readiness_checks(config):
+        if name == 'worker':
+            continue
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]', host):
+            raise OperationError('public verification requires valid DNS hosts')
+        targets.append({'domain': host, 'field': field[0] if field else 'status', 'value': status})
+    if len({target['domain'] for target in targets}) != len(targets):
+        raise OperationError('public verification hosts must be distinct')
+    return targets
+
+
 def internally_ready(config, attempts, ports=(18080, 18081, 18082)):
     checks = readiness_checks(config, ports)
     for attempt in range(attempts):

@@ -5,10 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import urllib.request
 import uuid
-import time
 
 from ops_common import OperationError, Runtime, atomic_text
 from ops_artifacts import require_operator
@@ -17,31 +15,26 @@ from blue_green import assert_route
 ROOT = Path('/etc/caddy/Caddyfile')
 FRAGMENT = Path('/etc/caddy/tellyouwhat-test.caddy')
 ROUTES = {'health': ('api-test.health.tellyouwhat.cn', 18790),
-          'journal': ('api-test.journal.tellyouwhat.cn', 18787),
+          'journal': ('api-test.journal.tellyouwhat.cn', 18790),
           'birthday': ('api-test.birthday.tellyouwhat.cn', 18790),
-          'albums': ('api-test.albums.tellyouwhat.cn', 18092)}
+          'albums': ('api-test.albums.tellyouwhat.cn', 18790)}
 
 
 def development_environment(runtime, app):
-    name = ('journal-private-development' if app == 'journal' else
-            'tellyouwhat-albums-development-albumgateway-1' if app == 'albums' else
-            'tellyouwhat-platform-test-gateway-1')
-    container = json.loads(runtime.execute('test-route-identity', ['docker', 'inspect', name]))[0]
-    if not container.get('State', {}).get('Running'):
-        raise OperationError('test container is not running')
+    container = json.loads(runtime.execute('test-route-identity',
+        ['docker', 'inspect', 'tellyouwhat-platform-test-gateway-1']))[0]
+    if not container.get('State', {}).get('Running') or container['State'].get('OOMKilled'):
+        raise OperationError('shared test gateway is not running')
     env = dict(item.split('=', 1) for item in container['Config']['Env'] if '=' in item)
-    if app == 'journal':
-        if env.get('DATABASE_DSN') or env.get('REDIS_URL') or env.get('APP_ENV') == 'production':
-            raise OperationError('Journal development service contains production runtime configuration')
-    elif app == 'albums':
-        if (env.get('ALBUM_DEPLOYMENT_ENVIRONMENT') != 'test'
-                or env.get('ALBUM_APPLE_BUNDLE_ID') != 'cn.tellyouwhat.albums.dev'
-                or env.get('ALBUM_API_HOST') != ROUTES[app][0]):
-            raise OperationError('Albums service is not bound to its development identity')
-    elif (env.get('APP_ENV') != 'development'
-          or env.get(app.upper() + '_APPLE_BUNDLE_ID') != 'cn.tellyouwhat.' + ('healthapp' if app == 'health' else app) + '.dev'
-          or env.get(app.upper() + '_API_HOSTS') != ROUTES[app][0]):
-        raise OperationError('platform service is not bound to its development identity')
+    if env.get('APP_ENV') != 'development' or app not in env.get('PLATFORM_APPS', '').split(','):
+        raise OperationError('App is not enabled in the shared test gateway')
+    prefix = 'ALBUM' if app == 'albums' else app.upper()
+    bundle = {'health': 'healthapp', 'journal': 'journalapp', 'birthday': 'birthday', 'albums': 'albums'}[app]
+    host_key = prefix + ('_API_HOST' if app == 'albums' else '_API_HOSTS')
+    if (env.get(prefix + '_APPLE_BUNDLE_ID') != 'cn.tellyouwhat.' + bundle + '.dev'
+            or env.get(host_key) != ROUTES[app][0]
+            or (app == 'albums' and env.get('ALBUM_DEPLOYMENT_ENVIRONMENT') != 'test')):
+        raise OperationError('shared test App is not bound to its development identity')
     return env
 
 
@@ -71,39 +64,20 @@ class RejectRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def ready(runtime, app, voice_protocol):
-    env = development_environment(runtime, app)
+def ready(runtime, app):
+    development_environment(runtime, app)
     host, port = ROUTES[app]
-    headers = {'Host': host}
-    path = '/readyz'
-    if app == 'journal':
-        if not re.fullmatch(r'journal-voice-v[0-9]+', voice_protocol or ''):
-            raise OperationError('Journal requires the current client voice protocol')
-        token = env.get('JOURNAL_DEVELOPMENT_TOKEN', '')
-        if not token:
-            raise OperationError('Journal development credential is missing')
-        headers.update({'Authorization': 'Bearer ' + token, 'X-Tellyouwhat-Request-ID': str(uuid.uuid4()),
-                        'X-Journal-Development-Installation': str(uuid.uuid4()),
-                        'X-Journal-Development-Mode': 'forced',
-                        'X-Journal-Development-Started-At': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
-        path = '/v1/ai/quota'
-    request = urllib.request.Request(f'http://127.0.0.1:{port}{path}', headers=headers)
+    request = urllib.request.Request(f'http://127.0.0.1:{port}/readyz', headers={'Host': host})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RejectRedirects)
     try:
         with opener.open(request, timeout=5) as response:
             if response.geturl() != request.full_url or response.status != 200:
-                raise OperationError('test service readiness failed')
-            if app == 'journal':
-                if (response.headers.get('X-Journal-Environment') != 'development'
-                        or response.headers.get('X-Journal-Development-Protocol') != 'subscription-v2'
-                        or response.headers.get('X-Journal-Voice-Protocol') != voice_protocol):
-                    raise OperationError('Journal development contract does not match the client')
-            else:
-                body = json.load(response)
-                if (body.get('code') != 'ok' if app == 'albums' else body.get('status') != 'ready'):
-                    raise OperationError('test service readiness failed')
+                raise OperationError('shared test service readiness failed')
+            body = json.load(response)
+            if not isinstance(body, dict) or (body.get('code') != 'ok' if app == 'albums' else body.get('status') != 'ready'):
+                raise OperationError('shared test service readiness failed')
     except (OSError, ValueError) as error:
-        raise OperationError('test service readiness failed') from error
+        raise OperationError('shared test service readiness failed') from error
 
 
 def install(runtime, source, destination):
@@ -128,7 +102,8 @@ def backup_configuration(runtime, destination):
         raise OperationError('test routing recovery file is missing, oversized or a symlink')
     record = json.loads(state.read_text())
     content = FRAGMENT.read_text()
-    if (content != render(record['apps']) or hashlib.sha256(content.encode()).hexdigest() != record['fragment_sha256']
+    render(record['apps'])  # Validate ownership; older pinned routes remain recoverable during migration.
+    if (hashlib.sha256(content.encode()).hexdigest() != record['fragment_sha256']
             or ROOT.read_text().splitlines().count('import ' + str(FRAGMENT)) != 1):
         raise OperationError('test routing differs from its managed recovery state')
     destination.mkdir(mode=0o700)
@@ -140,7 +115,7 @@ def backup_configuration(runtime, destination):
     return hashes
 
 
-def configure(runtime, enabled, voice_protocol):
+def configure(runtime, enabled):
     require_operator(runtime.root)
     with runtime.lock(wait_seconds=600), runtime.lock('deployment', wait_seconds=600):
         runtime.refresh()
@@ -153,14 +128,14 @@ def configure(runtime, enabled, voice_protocol):
             raise OperationError('wait for the production release to become stable')
         assert_route(stable['current'])
         for app in apps:
-            ready(runtime, app, voice_protocol)
+            ready(runtime, app)
         before = ROOT.read_text()
         existed = FRAGMENT.exists()
         previous = FRAGMENT.read_text() if existed else None
         marker = 'import ' + str(FRAGMENT)
         if (before.count(str(FRAGMENT)) not in (0, 1) or
                 (str(FRAGMENT) in before and marker not in before.splitlines()) or
-                (existed and (not prior or previous != render(prior['apps']))) or
+                (existed and (not prior or hashlib.sha256(previous.encode()).hexdigest() != prior.get('fragment_sha256'))) or
                 (bool(prior) != existed)):
             raise OperationError('test routing differs from its managed state')
         after = before if marker in before.splitlines() else before.rstrip() + '\n\n' + marker + '\n'
@@ -205,10 +180,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend-dir', default='/opt/tellyouwhat/backend')
     parser.add_argument('--enable', nargs='+', choices=ROUTES, required=True)
-    parser.add_argument('--journal-voice-protocol')
     args = parser.parse_args()
     os.umask(0o077)
-    print(json.dumps(configure(Runtime(args.backend_dir), args.enable, args.journal_voice_protocol), sort_keys=True))
+    print(json.dumps(configure(Runtime(args.backend_dir), args.enable), sort_keys=True))
 
 
 if __name__ == '__main__':

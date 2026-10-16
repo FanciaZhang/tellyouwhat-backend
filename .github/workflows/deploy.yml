@@ -16,6 +16,11 @@ on:
         type: string
         default: ''
 
+    outputs:
+      public_targets:
+        description: Public readiness targets from the deployed protected configuration
+        value: ${{ jobs.deploy.outputs.public_targets }}
+
 permissions:
   contents: read
   packages: read
@@ -29,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: production
+    outputs:
+      public_targets: ${{ steps.public_targets.outputs.targets }}
     concurrency:
       group: backend-production
       cancel-in-progress: false
@@ -72,6 +79,19 @@ jobs:
           for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
           python3 deploy/tencent/platform_configuration.py "$RUNNER_TEMP/.env.production"
           python3 deploy/tencent/ark_credentials.py materialize --output "$RUNNER_TEMP/ark-management.json"
+      - name: Select public verification targets
+        id: public_targets
+        run: |
+          python3 - <<'PYTARGETS'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'deploy/tencent')
+          from ops_common import read_environment
+          from release import public_targets
+          targets = public_targets(read_environment(Path(os.environ['RUNNER_TEMP']) / '.env.production'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('targets=' + json.dumps(targets, separators=(',', ':')) + '\n')
+          PYTARGETS
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}

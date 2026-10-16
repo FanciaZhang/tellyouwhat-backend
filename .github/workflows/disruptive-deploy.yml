@@ -61,4 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - run: bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
+      - run: bash deploy/tencent/verify-public.sh "$PUBLIC_TARGETS"
+        env:
+          PUBLIC_TARGETS: ${{ needs.deploy.outputs.public_targets }}

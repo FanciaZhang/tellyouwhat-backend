@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ops_common import OperationError, Runtime, read_environment
-from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate, probe
+from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate, probe, public_targets
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
@@ -92,6 +92,26 @@ class ReleaseRecoveryTests(unittest.TestCase):
                            ("ALBUM_DEPLOYMENT_ENVIRONMENT", "test")):
             with self.assertRaisesRegex(OperationError, "album production"):
                 internally_ready(dict(config, **{key: value}), 1)
+
+    def test_public_targets_match_enabled_apps_and_exclude_internal_worker(self):
+        config = dict(self.runtime.config)
+        expected = [{'domain': config[key], 'field': 'status', 'value': 'ready'}
+                    for key in ('HEALTH_API_DOMAIN', 'JOURNAL_API_DOMAIN', 'ADMIN_DOMAIN')]
+        self.assertEqual(public_targets(config), expected)
+        config.update(PLATFORM_APPS='health,journal,birthday,albums',
+                      ALBUM_API_HOST='api.albums.tellyouwhat.cn', ALBUM_DEPLOYMENT_ENVIRONMENT='production')
+        expected += [{'domain': 'api.birthday.tellyouwhat.cn', 'field': 'status', 'value': 'ready'},
+                     {'domain': 'api.albums.tellyouwhat.cn', 'field': 'code', 'value': 'ok'}]
+        self.assertEqual(public_targets(config), expected)
+        config['BIRTHDAY_API_HOSTS'] = 'birthday.example,birthday-alias.example'
+        self.assertEqual([target['domain'] for target in public_targets(config)][3:5],
+                         ['birthday.example', 'birthday-alias.example'])
+
+    def test_public_targets_reject_duplicate_hosts_and_non_dns_values(self):
+        for value in (self.runtime.config['HEALTH_API_DOMAIN'], 'https://journal.example/path',
+                      'journal.example\nInjected: value', ''):
+            with self.subTest(value=value), self.assertRaises(OperationError):
+                public_targets(dict(self.runtime.config, JOURNAL_API_DOMAIN=value))
 
     def test_probe_does_not_confuse_album_and_ai_readiness(self):
         from types import SimpleNamespace

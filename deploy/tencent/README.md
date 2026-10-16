@@ -68,8 +68,8 @@ Pull Request 与 `main` push 会执行：
 2. gateway、worker、admin、adminctl、migrate、maintenance 六个容器镜像构建；
 3. 非 PR 构建发布提交 SHA 和 `main` 标签到 GHCR；
 4. 仅当 production gate 开启或手动选择部署阶段时，将 Compose、Caddyfile、部署脚本、生产环境与四个 Apple 私钥上传到独立候选目录；
-5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证两个 App、Worker 和管理后台；
-6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 验证三个域名的真实 DNS、可信 TLS、HTTP 200 和 `status: ready` 响应。
+5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证本次启用的 App、Worker 和管理后台；
+6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 从受保护部署配置生成检查目标，验证所有启用 App 及管理后台的真实 DNS、可信 TLS、HTTP 200 和各自就绪响应（相册为 `code: ok`，其他入口为 `status: ready`）。
 
 构建缓存按服务名隔离。GitHub Actions 缓存导出最多等待两分钟，使用 BuildKit 的 `ignore-error=true` 将缓存写入失败降为非阻断结果；后续构建可以重新生成缓存。此设置仅作用于缓存导出，编译、测试、镜像导出和 GHCR 上传失败仍会阻止部署，不对整个构建任务设置 `continue-on-error`。参数语义见 [Docker 缓存文档](https://docs.docker.com/build/cache/backends/gha/)。
 
@@ -85,7 +85,7 @@ Pull Request 与 `main` push 会执行：
 | --- | --- | --- |
 | `none` | 测试、构建和发布镜像 | 镜像可交付 |
 | `internal` | 额外部署并验证内部服务 | 内部服务就绪，公网验收待完成 |
-| `public` | 部署内部服务、启动公网代理并验证三个 HTTPS 入口 | 公网入口验收通过 |
+| `public` | 部署内部服务、启动公网代理并验证本次启用的所有 HTTPS 入口 | 公网入口验收通过 |
 
 ```sh
 gh workflow run backend.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f deployment=internal
@@ -125,7 +125,7 @@ curl -fsS http://127.0.0.1:18081/healthz
 curl -fsS -H 'Host: admin.tellyouwhat.cn' http://127.0.0.1:18082/readyz
 ```
 
-`PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过三个公网 HTTPS 入口的验收。
+`PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过本次启用的所有 App 及管理后台 HTTPS 入口的验收。
 
 原生 Caddy 可在现有配置中导入 [`Caddyfile.external`](../single-server/Caddyfile.external)，保留原有站点。该文件将两个 App 的域名转发到 `127.0.0.1:18080`，管理后台转发到 `127.0.0.1:18082`，并屏蔽 App 入口的 `/internal/*`。将 `HEALTH_API_DOMAIN`、`JOURNAL_API_DOMAIN`、`ADMIN_DOMAIN` 和 `ACME_EMAIL` 渲染为实际值，或仅将这四个非密钥变量提供给 Caddy 服务。不要让 Caddy 加载完整生产环境文件。先用 `caddy validate` 验证包含原站点的完整配置，再通过 `systemctl reload caddy` 加载；核对原站点仍正常响应。
 
@@ -138,7 +138,13 @@ gh workflow run backend.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f
 公网验证也可独立执行：
 
 ```sh
-bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
+targets=$(PYTHONPATH=deploy/tencent python3 -c '
+import json
+from pathlib import Path
+from ops_common import read_environment
+from release import public_targets
+print(json.dumps(public_targets(read_environment(Path("/opt/tellyouwhat/backend/.env.production")))))')
+bash deploy/tencent/verify-public.sh "$targets"
 docker compose --env-file /opt/tellyouwhat/backend/.env.production \
   -f /opt/tellyouwhat/backend/compose.production.yaml ps
 ```

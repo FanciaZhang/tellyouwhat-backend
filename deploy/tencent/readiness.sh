@@ -5,6 +5,7 @@ check_readiness() {
   local host="$2"
   local expected_status="$3"
   local response_file="$4"
+  local response_field="${5:-status}"
   local status_code
 
   if ! status_code=$(curl --fail --silent --show-error \
@@ -14,6 +15,6 @@ check_readiness() {
     return 1
   fi
   [[ "$status_code" == 200 ]] &&
-    jq -e --arg expected "$expected_status" \
-      'type == "object" and .status == $expected' "$response_file" >/dev/null
+    jq -e --arg expected "$expected_status" --arg field "$response_field" \
+      'type == "object" and .[$field] == $expected' "$response_file" >/dev/null
 }

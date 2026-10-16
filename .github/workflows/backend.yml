@@ -192,6 +192,8 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Verify all public runtimes
+        env:
+          PUBLIC_TARGETS: ${{ needs.deploy.outputs.public_targets }}
         run: |
-          bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
-          printf 'Public HTTPS verified for %s across Health, Journal, and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          bash deploy/tencent/verify-public.sh "$PUBLIC_TARGETS"
+          printf 'Public HTTPS verified for %s across all selected Apps and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

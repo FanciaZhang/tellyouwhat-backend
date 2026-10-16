@@ -244,7 +244,7 @@ def require_installed_operations(runtime, folder):
     # Scheduled jobs import the host copy, even when activation runs from a staged release.
     source = Path(__file__).resolve().parent
     installed = runtime.root / 'deploy/tencent'
-    for name in ('operations.py', 'ops_common.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'platform_test_deploy.py',
+    for name in ('operations.py', 'ops_common.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
                  'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py'):
         path = installed / name
