@@ -30,10 +30,10 @@ var versionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
 var appNames = map[string]string{
-	"cn.tellyouwhat.healthapp.dev":  "告你健康·开发",
-	"cn.tellyouwhat.journalapp.dev": "告你手记·开发",
+	"cn.tellyouwhat.healthapp.dev":  "告你健康开发",
+	"cn.tellyouwhat.journalapp.dev": "告你手记开发",
 	"cn.tellyouwhat.birthday.dev":   "告你生日开发",
-	"cn.tellyouwhat.albums.dev":     "告你相册·开发",
+	"cn.tellyouwhat.albums.dev":     "告你相册开发",
 }
 
 // Candidate is control-plane input from a reviewed, signature-verified build.
