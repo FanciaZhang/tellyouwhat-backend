@@ -1,0 +1,79 @@
+{
+  "checked_at_utc": "2026-10-16T04:26:40.173652+00:00",
+  "project": "journal-development",
+  "display_name": "手记开发测试",
+  "speech_app_id": "5704248204",
+  "api_key_name": "journal-development-speech-20261016",
+  "services": [
+    {
+      "name": "流式语音识别2.0",
+      "resource_id": "volc.seedasr.sauc.duration",
+      "opened": true,
+      "billing": "duration-postpaid",
+      "listed_cny_per_hour": 1
+    },
+    {
+      "name": "录音文件识别2.0",
+      "resource_id": "volc.seedasr.auc",
+      "opened": true,
+      "billing": "duration-postpaid",
+      "listed_cny_per_hour": 0.8
+    }
+  ],
+  "resource_packages_purchased": false,
+  "credentials": {
+    "saved_local_and_remote": true,
+    "content_match": true,
+    "file_mode": "0600",
+    "directory_mode": "0700",
+    "values_omitted": true
+  },
+  "fixture": {
+    "synthetic": true,
+    "milliseconds": 34953,
+    "wav_sha256": "44e5e64379029821aa7723760e39f61071ffc2b04fa1c9e0b3f67cc4c3b5bd79",
+    "real_user_content": false
+  },
+  "stream": {
+    "test": "TestConfiguredNaturalASRReturnsCompletedTurnsDuringCapture",
+    "passed": true,
+    "utterances": 6,
+    "speakers": 2,
+    "multiple_completed_voices_before_final_input": true
+  },
+  "file": {
+    "test": "TestLiveRecordingAnalysis",
+    "passed": true,
+    "utterances": 6,
+    "speakers": 2,
+    "elapsed_seconds": 3.8069
+  },
+  "prior_attempts": [
+    {
+      "outcome": "authentication failed",
+      "cause": "visual key character spacing retained during capture",
+      "correction": "removed UI spacing, validated UUID shape and local/remote equality; runtime never used malformed key"
+    },
+    {
+      "outcome": "first authenticated recording task returned 20000003 no valid speech",
+      "cause": "unconfirmed",
+      "controls": "same synthetic audio succeeded through explicit-metadata/minimal and full-feature Python controls, then unmodified Go implementation; not attributed to request options"
+    }
+  ],
+  "code_changes_required": false,
+  "backend_source_commit": "f4989776dbf263679882ea4780c310c31b52471f",
+  "runtime_credentials_replaced": false,
+  "inference_endpoint_version_switch_pending": true,
+  "production_services_changed": false,
+  "native_app_journey_verified": false,
+  "evidence_logs_sha256": {
+    "verified-probe.log": "1475ea87b7a04b26706f1222c9ad509aa416d1fb77f618ff4d95e66e91dcb032",
+    "file-go-control.log": "87b3dab4242d7b1c8006bc472bb5b47f2d2ab2ea1702eb8c21e34a452166afc2",
+    "stream-result.json": "7d4d4476435b67961bb9324b4f79579426cc7dfabd759277dbc9d130e969c4c5",
+    "file-result.json": "5a0b4216a969d5bf20bbdd6caac75c68deff88f9c6585d83473a762f1c4e51f9",
+    "file-minimal-probe.json": "2113f89557d8a27b82af4c3e39234852f46b86cbd391a8affe607ab36e022199",
+    "file-full-metadata-probe.json": "e99b276f3cb10ea6fec93694463855f83cd780afc5adf7e2e9ba206cc1e483f5",
+    "file-original-metadata-control.json": "603300cbdc33d2fbdb85f5023bf5400cc118ae0b5eb864525a82969b8215c008"
+  },
+  "screenshot": "journal-development-speech-ready-2026-10-16.jpg"
+}
