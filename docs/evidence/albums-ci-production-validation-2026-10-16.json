@@ -1,0 +1,744 @@
+{
+  "recordedAt": "2026-10-16T14:23:58.482387+00:00",
+  "result": "passed",
+  "scope": "User-approved production CI service policy and production backend PassRole; preserve existing test permissions",
+  "region": "ap-guangzhou",
+  "role": "CI_QCSRole",
+  "roleId": "4611686018427619549",
+  "policies": {
+    "service": {
+      "id": 290105929,
+      "name": "AlbumsProductionCIMediaServiceValidation",
+      "version": 2,
+      "attachedTo": "CI_QCSRole",
+      "retainedAt": "2026-10-16T14:16:53Z"
+    },
+    "passRole": {
+      "id": 290105972,
+      "name": "AlbumsProductionCIMediaPassRoleValidation",
+      "version": 2,
+      "attachedTo": "albums-production-backend",
+      "retainedAt": "2026-10-16T14:16:35Z"
+    },
+    "existingTestService": {
+      "id": 289600252,
+      "changed": false
+    },
+    "existingTestPassRole": {
+      "id": 289601206,
+      "changed": false
+    }
+  },
+  "temporaryExpiration": "2026-10-16T14:42:24Z",
+  "retentionDecision": "All v1 tests passed before expiry; remove expiry and retain same scoped permissions, then repeat both environment probes and read-only checks against v2.",
+  "policyReadback": "albums-ci-policy-readback-2026-10-16.json",
+  "policyReadbackMatchesApprovedFiles": true,
+  "consoleRolePolicyCount": 2,
+  "rounds": {
+    "temporary_v1": {
+      "test": [
+        {
+          "fixture": "albums/originals/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/source.mp4",
+          "queue": "p543daa336f7a4d4b896654b933f8881b",
+          "sha256": "cadd9fd9407313dede4b9a41d6f1ece2bc2dca997e9cc778344e761702355db4",
+          "sizeBytes": 2325,
+          "version": "MTg0NDQ5NTE5MTM2MTkyNDcxNzM"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/allowed.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "jobID": "jf360de9ac96b11f19dc96dc30505228a"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "Success",
+          "jobID": "jf360de9ac96b11f19dc96dc30505228a",
+          "phase": "terminal",
+          "state": "Success"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "output": "albums/video-previews/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/allowed.mp4",
+          "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+          "sizeBytes": 2338,
+          "version": "MTg0NDQ5NTE5MTM2MTgzODg3NTc"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/staging-denied.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_staging_read",
+          "jobID": "jf5652ad4c96b11f191d9d9cae23f63df"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf5652ad4c96b11f191d9d9cae23f63df",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/originals/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_original_write",
+          "jobID": "jf748ce14c96b11f1ad38bd99ddb0b007"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf748ce14c96b11f1ad38bd99ddb0b007",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/derivatives/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "jobID": "jf929f6aec96b11f19143019a8f2cb19a"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf929f6aec96b11f19143019a8f2cb19a",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_cross_environment_output",
+          "code": "WriteTargetBucketDenied",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-a1975e81-527f-4089-87aa-800b7c89e5ce/cross-environment.mp4",
+          "phase": "submit",
+          "status": 403
+        },
+        {
+          "automaticProcessingEnabled": false,
+          "crossBucket": "output_denial_verified",
+          "result": "passed",
+          "sourceLatestAndBytesUnchanged": true
+        }
+      ],
+      "production": [
+        {
+          "fixture": "albums/originals/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/source.mp4",
+          "queue": "p7901bbf1fe6e49ee95cf8e28799c35df",
+          "sha256": "cadd9fd9407313dede4b9a41d6f1ece2bc2dca997e9cc778344e761702355db4",
+          "sizeBytes": 2325,
+          "version": "MTg0NDQ5NTE5MTM2MTk0OTkxMDc"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/allowed.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "jobID": "jf33059d2c96b11f181133dda83ca9a4f"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "Success",
+          "jobID": "jf33059d2c96b11f181133dda83ca9a4f",
+          "phase": "terminal",
+          "state": "Success"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "output": "albums/video-previews/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/allowed.mp4",
+          "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+          "sizeBytes": 2338,
+          "version": "MTg0NDQ5NTE5MTM2MTg3Njg4MjI"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/staging-denied.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_staging_read",
+          "jobID": "jf5551c66c96b11f18ba1d1a9ee91cf17"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf5551c66c96b11f18ba1d1a9ee91cf17",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/originals/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_original_write",
+          "jobID": "jf743ce46c96b11f1a16925cdb3b2cf97"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf743ce46c96b11f1a16925cdb3b2cf97",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/derivatives/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "jobID": "jf924d764c96b11f19dc96dc30505228a"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "ResourceAccessDenied",
+          "jobID": "jf924d764c96b11f19dc96dc30505228a",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_cross_environment_output",
+          "code": "WriteTargetBucketDenied",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-673b3c63-522c-4d76-bebf-e98f944d5206/cross-environment.mp4",
+          "phase": "submit",
+          "status": 403
+        },
+        {
+          "automaticProcessingEnabled": false,
+          "crossBucket": "output_denial_verified",
+          "result": "passed",
+          "sourceLatestAndBytesUnchanged": true
+        }
+      ],
+      "readback": [
+        {
+          "check": "deny_staging_read_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_original_write_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_other_output_prefix_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_cross_environment_output_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "direct_cross_environment_read_denied",
+          "env": "test",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "check": "deny_staging_read_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_original_write_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_other_output_prefix_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_cross_environment_output_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "direct_cross_environment_read_denied",
+          "env": "production",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "passed": true
+        }
+      ]
+    },
+    "retained_v2": {
+      "test": [
+        {
+          "fixture": "albums/originals/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/source.mp4",
+          "queue": "p543daa336f7a4d4b896654b933f8881b",
+          "sha256": "cadd9fd9407313dede4b9a41d6f1ece2bc2dca997e9cc778344e761702355db4",
+          "sizeBytes": 2325,
+          "version": "MTg0NDQ5NTE5MTM0Nzg2OTI0MDk"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/allowed.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "jobID": "j47224078c96c11f1be75493f50c350b6"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "Success",
+          "jobID": "j47224078c96c11f1be75493f50c350b6",
+          "phase": "terminal",
+          "state": "Success"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "output": "albums/video-previews/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/allowed.mp4",
+          "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+          "sizeBytes": 2338,
+          "version": "MTg0NDQ5NTE5MTM0Nzc4MjU4MTM"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/staging-denied.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_staging_read",
+          "jobID": "j49257b7ec96c11f1b58c71051b1d0a48"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "ResourceAccessDenied",
+          "jobID": "j49257b7ec96c11f1b58c71051b1d0a48",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/originals/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_original_write",
+          "jobID": "j4b07aa0cc96c11f1b4a139bd7694f73e"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "ResourceAccessDenied",
+          "jobID": "j4b07aa0cc96c11f1b4a139bd7694f73e",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/derivatives/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "jobID": "j4ce62204c96c11f1888bf1e156a3ea29"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "ResourceAccessDenied",
+          "jobID": "j4ce62204c96c11f1888bf1e156a3ea29",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_cross_environment_output",
+          "code": "WriteTargetBucketDenied",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-f97c8b35-876f-4cdd-a41a-aeff80a26fec/cross-environment.mp4",
+          "phase": "submit",
+          "status": 403
+        },
+        {
+          "automaticProcessingEnabled": false,
+          "crossBucket": "output_denial_verified",
+          "result": "passed",
+          "sourceLatestAndBytesUnchanged": true
+        }
+      ],
+      "production": [
+        {
+          "fixture": "albums/originals/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/source.mp4",
+          "queue": "p7901bbf1fe6e49ee95cf8e28799c35df",
+          "sha256": "cadd9fd9407313dede4b9a41d6f1ece2bc2dca997e9cc778344e761702355db4",
+          "sizeBytes": 2325,
+          "version": "MTg0NDQ5NTE5MTM0Nzk4MzgwNzY"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/allowed.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "jobID": "j466ec0f2c96c11f1a446bb016b44d0b8"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "code": "Success",
+          "jobID": "j466ec0f2c96c11f1a446bb016b44d0b8",
+          "phase": "terminal",
+          "state": "Success"
+        },
+        {
+          "check": "allowed_original_to_preview",
+          "output": "albums/video-previews/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/allowed.mp4",
+          "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+          "sizeBytes": 2338,
+          "version": "MTg0NDQ5NTE5MTM0NzkwNjY1MDY"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/staging-denied.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_staging_read",
+          "jobID": "j487c4e50c96c11f1888bf1e156a3ea29"
+        },
+        {
+          "check": "deny_staging_read",
+          "code": "ResourceAccessDenied",
+          "jobID": "j487c4e50c96c11f1888bf1e156a3ea29",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/originals/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_original_write",
+          "jobID": "j4a60df9cc96c11f1989ce121fafc8a0f"
+        },
+        {
+          "check": "deny_original_write",
+          "code": "ResourceAccessDenied",
+          "jobID": "j4a60df9cc96c11f1989ce121fafc8a0f",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "",
+          "outputBucket": "tellyouwhat-albums-production-1251995834",
+          "outputKey": "albums/derivatives/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/denied-output.mp4",
+          "phase": "submit",
+          "status": 200
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "jobID": "j4c45267ec96c11f1b18c798645d81ccd"
+        },
+        {
+          "check": "deny_other_output_prefix",
+          "code": "ResourceAccessDenied",
+          "jobID": "j4c45267ec96c11f1b18c798645d81ccd",
+          "phase": "terminal",
+          "state": "Failed"
+        },
+        {
+          "check": "deny_cross_environment_output",
+          "code": "WriteTargetBucketDenied",
+          "outputBucket": "tellyouwhat-albums-1251995834",
+          "outputKey": "albums/video-previews/ci-role-probe-b9f79489-b025-47bb-8027-36adbbfd3ada/cross-environment.mp4",
+          "phase": "submit",
+          "status": 403
+        },
+        {
+          "automaticProcessingEnabled": false,
+          "crossBucket": "output_denial_verified",
+          "result": "passed",
+          "sourceLatestAndBytesUnchanged": true
+        }
+      ],
+      "readback": [
+        {
+          "check": "deny_staging_read_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_original_write_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_other_output_prefix_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_cross_environment_output_no_output",
+          "env": "test",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "direct_cross_environment_read_denied",
+          "env": "test",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "check": "deny_staging_read_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_original_write_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_other_output_prefix_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "deny_cross_environment_output_no_output",
+          "env": "production",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "check": "direct_cross_environment_read_denied",
+          "env": "production",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "passed": true
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "test": {
+      "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+      "fullFFmpegDecodeExit": 0
+    },
+    "production": {
+      "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+      "fullFFmpegDecodeExit": 0
+    }
+  },
+  "probeSources": {
+    "albums-ci-environment-probe-2026-10-16.go.txt": "3deeca5b0108b71847a3314ea44d83a4c8043c93e12c60ec440053cb156b277b",
+    "albums-ci-readonly-check-2026-10-16.go.txt": "9fa35c12c527ebcc904827b7578bd26b97e48fdbae36acb16f7b58c593527553"
+  },
+  "harnessCorrection": "First test recognized AccessDenied only. Provider returned explicit 403 WriteTargetBucketDenied. Added that denial code and repeated all tests; did not relax cloud policy.",
+  "earlierHarnessRun": [
+    {
+      "fixture": "albums/originals/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/source.mp4",
+      "queue": "p543daa336f7a4d4b896654b933f8881b",
+      "sha256": "cadd9fd9407313dede4b9a41d6f1ece2bc2dca997e9cc778344e761702355db4",
+      "sizeBytes": 2325,
+      "version": "MTg0NDQ5NTE5MTM2OTEwNDA1MDQ"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "",
+      "outputBucket": "tellyouwhat-albums-1251995834",
+      "outputKey": "albums/video-previews/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/allowed.mp4",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "jobID": "jc893d37ac96b11f1b1d339ed0cc9bc00"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "Success",
+      "jobID": "jc893d37ac96b11f1b1d339ed0cc9bc00",
+      "phase": "terminal",
+      "state": "Success"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "output": "albums/video-previews/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/allowed.mp4",
+      "sha256": "e4464301fac2b6c4a7c8dcb9d9877479efb2964decd61b6da6c9772953f2ea78",
+      "sizeBytes": 2338,
+      "version": "MTg0NDQ5NTE5MTM2ODk5NjQyNTg"
+    },
+    {
+      "check": "deny_staging_read",
+      "code": "",
+      "outputBucket": "tellyouwhat-albums-1251995834",
+      "outputKey": "albums/video-previews/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/staging-denied.mp4",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_staging_read",
+      "jobID": "jcaa3d1c4c96b11f1ad38bd99ddb0b007"
+    },
+    {
+      "check": "deny_staging_read",
+      "code": "ResourceAccessDenied",
+      "jobID": "jcaa3d1c4c96b11f1ad38bd99ddb0b007",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "check": "deny_original_write",
+      "code": "",
+      "outputBucket": "tellyouwhat-albums-1251995834",
+      "outputKey": "albums/originals/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/denied-output.mp4",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_original_write",
+      "jobID": "jcc843a7ec96b11f19bfc89b2177b968c"
+    },
+    {
+      "check": "deny_original_write",
+      "code": "ResourceAccessDenied",
+      "jobID": "jcc843a7ec96b11f19bfc89b2177b968c",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "code": "",
+      "outputBucket": "tellyouwhat-albums-1251995834",
+      "outputKey": "albums/derivatives/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/denied-output.mp4",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "jobID": "jce66753cc96b11f191d9d9cae23f63df"
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "code": "ResourceAccessDenied",
+      "jobID": "jce66753cc96b11f191d9d9cae23f63df",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "check": "deny_cross_environment_output",
+      "code": "WriteTargetBucketDenied",
+      "outputBucket": "tellyouwhat-albums-production-1251995834",
+      "outputKey": "albums/video-previews/ci-role-probe-1be98f03-d0bb-4e30-884d-1da998d02ce1/cross-environment.mp4",
+      "phase": "submit",
+      "status": 403
+    },
+    {
+      "result": "failed",
+      "stage": "submit_deny_cross_environment_output"
+    }
+  ],
+  "staticPolicyTests": {
+    "passed": 6
+  },
+  "mutations": {
+    "productionAPIDeployed": false,
+    "otherAppServicesChanged": false,
+    "credentialsChanged": false,
+    "permanentDeleteGranted": false,
+    "bucketManagementGranted": false,
+    "realUserMediaUsed": false,
+    "cloudObjectsDeleted": false
+  },
+  "fixtureRetention": {
+    "owner": "albums CI validation",
+    "status": "retained; no object deletion authority added",
+    "objects": "Unique ci-role-probe UUID prefixes recorded in all rounds, plus earlierHarnessRun. Only synthetic originals, staging and successful previews were created.",
+    "cleanup": "Requires separately scoped existing cleanup authority; this record does not claim cleanup or scheduled cleanup completed."
+  },
+  "limitations": [
+    "Shared service role can access specified prefixes in both buckets; tested boundaries do not prove all possible CI input paths.",
+    "CI Input.Url cross-bucket fetch not tested.",
+    "One-second synthetic MP4 only; output larger than input, not compression-efficiency evidence.",
+    "Full Live Photo pairing, large media, concurrency, app journey and production API deployment not tested."
+  ],
+  "screenshots": [
+    "albums-ci-production-role-2026-10-16.png",
+    "albums-ci-production-passrole-2026-10-16.png"
+  ]
+}
