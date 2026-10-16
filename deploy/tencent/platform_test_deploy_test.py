@@ -60,6 +60,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                         HEALTH_API_HOSTS=dev.HEALTH_HOST, HEALTH_APP_ATTEST_ENV='production', HEALTH_ALLOWED_APP_BUILDS='4',
                         HEALTH_SCHEMA_MANIFEST_PATH='/config/schema-manifest.json',
                         HEALTH_ARK_BASE_URL='https://ark.cn-beijing.volces.com', HEALTH_ARK_API_KEY='health-test-key',
+                        HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION='12', HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION='30',
                         TOS_ENDPOINT='https://tos-cn-beijing.volces.com', TOS_REGION='cn-beijing', TOS_BUCKET='health-ai-test',
                         TOS_ACCESS_KEY='test-access', TOS_SECRET_KEY='test-secret')
         self.app.update({k: 'ep-health-test' for k in dev.HEALTH_ENDPOINTS})
@@ -136,6 +137,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                              ('TOS_BUCKET', 'health-ai'), ('TOS_SECRET_KEY', ''),
                              ('HEALTH_ARK_ENDPOINT_MEAL_PHOTO_CAPTURE', 'doubao-direct-model'),
                              ('HEALTH_ALLOWED_APP_BUILDS', ''), ('HEALTH_APP_STORE_PRIVATE_KEY_PATH', '/secrets/formal.p8'),
+                             ('HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION', ''),
+                             ('HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION', '0.8'),
+                             ('HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION', '8'),
                              ('PLATFORM_APPS', 'health,journal,birthday')]:
             old = self.app.get(key)
             self.app[key] = invalid

@@ -72,7 +72,7 @@
   },
   "iam": {
     "identity": "healthapp-development-backend",
-    "status": "prepared_not_created",
+    "status": "created_verified",
     "consoleAccess": false,
     "selfManageKeys": false,
     "policies": [
@@ -80,7 +80,18 @@
       "config/iam/health-development-inference-only.json"
     ],
     "runtimeCredentialsConfigured": false,
-    "isolationNegativeProbes": "pending"
+    "isolationNegativeProbes": "passed; production model and bucket plus other test prefix return 403",
+    "userID": "97255372",
+    "credentialStorage": {
+      "local": "~/.config/tellyouwhat/health-development/",
+      "server": "/opt/tellyouwhat/backend/.platform-test/health-development-secrets/",
+      "directoryMode": "0700",
+      "fileMode": "0600",
+      "sha256Readback": true
+    },
+    "verificationEvidence": "health-development-iam-isolation-2026-10-16.json",
+    "screenshot": "health-development-iam-2026-10-16.jpg",
+    "screenshotSHA256": "38bbe5d7d4398fed73a591fd1cf096786d6dae82f853f6f8c9338233ca966a81"
   },
   "healthProduction": {
     "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:ac7e9d601ba9215f5409a769dfb53cd12e4e54d4fd17354a8889d16699199427",
@@ -91,5 +102,14 @@
   "testAPIEnrollment": false,
   "deviceAcceptance": false,
   "screenshot": "health-development-endpoints-2026-10-16.jpg",
-  "screenshotSHA256": "546b9392c7d71bd3459a03b59e9957d66cfadb881cdae2f09380bcc81ec31e47"
+  "screenshotSHA256": "546b9392c7d71bd3459a03b59e9957d66cfadb881cdae2f09380bcc81ec31e47",
+  "testCostBounds": {
+    "inputCNYPerMillion": "12",
+    "outputCNYPerMillion": "30",
+    "monthlyBudgetCNY": "10",
+    "basis": "maximum across mini audio, lite text and pro 2.1 image/text; conservative for every operation",
+    "source": "https://docs.volcengine.com/docs/ark/model-pricing?lang=zh&redirect=1",
+    "verifiedAt": "2026-10-16",
+    "productionChanged": false
+  }
 }

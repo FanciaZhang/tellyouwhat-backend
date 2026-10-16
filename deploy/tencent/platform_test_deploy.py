@@ -28,7 +28,8 @@ HEALTH_ENDPOINTS = {'HEALTH_ARK_ENDPOINT_' + name for name in (
     'MEAL_DECISION', 'DIET_ANALYSIS', 'HEALTH_NUTRITION_ANALYSIS', 'HEALTH_BEHAVIOR_ANALYSIS')}
 HEALTH_SETTINGS = HEALTH_ENDPOINTS | {'HEALTH_APPLE_BUNDLE_ID', 'HEALTH_APPLE_TEAM_ID', 'HEALTH_API_HOSTS',
     'HEALTH_APP_ATTEST_ENV', 'HEALTH_ALLOWED_APP_BUILDS', 'HEALTH_SCHEMA_MANIFEST_PATH',
-    'HEALTH_ARK_API_KEY', 'HEALTH_ARK_BASE_URL'}
+    'HEALTH_ARK_API_KEY', 'HEALTH_ARK_BASE_URL',
+    'HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION', 'HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION'}
 
 
 def applications(folder):
@@ -107,6 +108,9 @@ def selection(runtime, source):
                   'HEALTH_API_HOSTS': HEALTH_HOST, 'HEALTH_APP_ATTEST_ENV': 'production',
                   'HEALTH_SCHEMA_MANIFEST_PATH': '/config/schema-manifest.json',
                   'HEALTH_ARK_BASE_URL': 'https://ark.cn-beijing.volces.com',
+                  # Current test mapping: mini audio up to 12, pro 2.1 output 30 CNY per million tokens.
+                  'HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION': '12',
+                  'HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION': '30',
                   'TOS_ENDPOINT': 'https://tos-cn-beijing.volces.com', 'TOS_REGION': 'cn-beijing',
                   'TOS_BUCKET': 'health-ai-test'}
         if (any(app.get(k) != v for k, v in health.items())
