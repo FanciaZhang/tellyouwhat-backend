@@ -1,0 +1,220 @@
+{
+  "recorded_at": "2026-10-16T15:21:58.371085+00:00",
+  "state": "four_adhoc_packages_published_and_https_verified",
+  "scope": "Four isolated Debug Ad Hoc development packages, unified display names and DEV icons; no TestFlight/App Store distribution",
+  "apps": {
+    "health": {
+      "bundle_id": "cn.tellyouwhat.healthapp.dev",
+      "source_commit": "7edd400350ba014a033a384259cb0dd354388b91",
+      "version": "1.4.0",
+      "build": "5",
+      "ipa_sha256": "eb427049d69884fbe4a26182507af95fc15d77530869ac129062de48f3678064",
+      "ipa_bytes": 153465243,
+      "state": "verified-local-candidate",
+      "ota_published": true,
+      "device_installation_verified": false,
+      "release_gates_verified": false,
+      "display_name": "告你健康开发",
+      "icon": "AppIconDevelopment",
+      "configuration": "Debug",
+      "distribution": "Ad Hoc",
+      "native_signature_verified": true,
+      "https": {
+        "bundle_id": "cn.tellyouwhat.healthapp.dev",
+        "source_commit": "7edd400350ba014a033a384259cb0dd354388b91",
+        "version": "1.4.0",
+        "build": "5",
+        "ipa_sha256": "eb427049d69884fbe4a26182507af95fc15d77530869ac129062de48f3678064",
+        "ipa_bytes": 153465243,
+        "state": "verified-local-candidate",
+        "ota_published": true,
+        "device_installation_verified": false,
+        "release_gates_verified": false,
+        "https_full_sha256_verified": true,
+        "manifest": {
+          "bundle-identifier": "cn.tellyouwhat.healthapp.dev",
+          "bundle-version": "5",
+          "kind": "software",
+          "title": "告你健康开发"
+        },
+        "expires_at": "2026-10-17T15:13:58.23738059Z",
+        "verified_at": "2026-10-16T15:21:14.494888+00:00"
+      },
+      "toolchain": "Xcode 27.1 (27A9275)"
+    },
+    "journal": {
+      "source_commit": "cf538ebf9f57c14e96120681dbd49ae05cac0c53",
+      "bundle_id": "cn.tellyouwhat.journalapp.dev",
+      "version": "1.0",
+      "build": "22",
+      "ipa_sha256": "75b285cfa58a1d54f573630196a918fb3e2dc4042f047f465dd35ac5f285ce3b",
+      "ipa_bytes": 76118149,
+      "state": "verified-local-candidate",
+      "ota_published": true,
+      "device_installation_verified": false,
+      "release_gates_verified": false,
+      "display_name": "告你手记开发",
+      "icon": "AppIconDevelopment",
+      "configuration": "Debug",
+      "distribution": "Ad Hoc",
+      "native_signature_verified": true,
+      "https": {
+        "source_commit": "cf538ebf9f57c14e96120681dbd49ae05cac0c53",
+        "bundle_id": "cn.tellyouwhat.journalapp.dev",
+        "version": "1.0",
+        "build": "22",
+        "ipa_sha256": "75b285cfa58a1d54f573630196a918fb3e2dc4042f047f465dd35ac5f285ce3b",
+        "ipa_bytes": 76118149,
+        "state": "verified-local-candidate",
+        "ota_published": true,
+        "device_installation_verified": false,
+        "release_gates_verified": false,
+        "https_full_sha256_verified": true,
+        "manifest": {
+          "bundle-identifier": "cn.tellyouwhat.journalapp.dev",
+          "bundle-version": "22",
+          "kind": "software",
+          "title": "告你手记开发"
+        },
+        "expires_at": "2026-10-17T15:05:25.938599744Z",
+        "verified_at": "2026-10-16T15:11:39.397232+00:00"
+      },
+      "toolchain": "Xcode 27.0 (27A266a)"
+    },
+    "birthday": {
+      "source_commit": "9666f25d5f1bc9aa8f346b8b9e2b486aba32e984",
+      "bundle_id": "cn.tellyouwhat.birthday.dev",
+      "version": "1.0",
+      "build": "6",
+      "ipa_sha256": "c35d1e2818f1ea660c19163cbae11a54dec6b91ad4f27491fa71ee081e251d8b",
+      "ipa_bytes": 6320396,
+      "state": "verified-local-candidate",
+      "ota_published": true,
+      "device_installation_verified": false,
+      "release_gates_verified": false,
+      "display_name": "告你生日开发",
+      "icon": "AppIconDevelopment",
+      "configuration": "Debug",
+      "distribution": "Ad Hoc",
+      "native_signature_verified": true,
+      "https": {
+        "source_commit": "9666f25d5f1bc9aa8f346b8b9e2b486aba32e984",
+        "bundle_id": "cn.tellyouwhat.birthday.dev",
+        "version": "1.0",
+        "build": "6",
+        "ipa_sha256": "c35d1e2818f1ea660c19163cbae11a54dec6b91ad4f27491fa71ee081e251d8b",
+        "ipa_bytes": 6320396,
+        "state": "verified-local-candidate",
+        "ota_published": true,
+        "device_installation_verified": false,
+        "release_gates_verified": false,
+        "https_full_sha256_verified": true,
+        "manifest": {
+          "bundle-identifier": "cn.tellyouwhat.birthday.dev",
+          "bundle-version": "6",
+          "kind": "software",
+          "title": "告你生日开发"
+        },
+        "expires_at": "2026-10-17T15:12:22.675818644Z",
+        "verified_at": "2026-10-16T15:12:44.112453+00:00"
+      },
+      "toolchain": "Xcode 27.0 (27A266a)"
+    },
+    "albums": {
+      "source_commit": "379d35bf606d8405580e9c5b2fc278eb6508cd4b",
+      "bundle_id": "cn.tellyouwhat.albums.dev",
+      "version": "0.1.0",
+      "build": "3",
+      "ipa_sha256": "6c192c9fc339b46f2aa3c0b26b2ffa51eb6b1c875e4279ad4b701f069555d3ac",
+      "ipa_bytes": 16252675,
+      "state": "verified-local-candidate",
+      "ota_published": true,
+      "device_installation_verified": false,
+      "release_gates_verified": false,
+      "display_name": "告你相册开发",
+      "icon": "AppIconDevelopment",
+      "configuration": "Debug",
+      "distribution": "Ad Hoc",
+      "native_signature_verified": true,
+      "https": {
+        "source_commit": "379d35bf606d8405580e9c5b2fc278eb6508cd4b",
+        "bundle_id": "cn.tellyouwhat.albums.dev",
+        "version": "0.1.0",
+        "build": "3",
+        "ipa_sha256": "6c192c9fc339b46f2aa3c0b26b2ffa51eb6b1c875e4279ad4b701f069555d3ac",
+        "ipa_bytes": 16252675,
+        "state": "verified-local-candidate",
+        "ota_published": true,
+        "device_installation_verified": false,
+        "release_gates_verified": false,
+        "https_full_sha256_verified": true,
+        "manifest": {
+          "bundle-identifier": "cn.tellyouwhat.albums.dev",
+          "bundle-version": "3",
+          "kind": "software",
+          "title": "告你相册开发"
+        },
+        "expires_at": "2026-10-17T15:12:47.203440251Z",
+        "verified_at": "2026-10-16T15:13:36.261670+00:00"
+      },
+      "toolchain": "Xcode 27.0 (27A266a)"
+    }
+  },
+  "health_gate": {
+    "unit_passed": 1624,
+    "unit_failed": 0,
+    "unit_skipped": 0,
+    "release_builds": [
+      "iOS",
+      "watchOS"
+    ],
+    "initial_failure": "One test still required AppIcon for Debug; fixed expected Debug icon to AppIconDevelopment and reran the unit lane on commit 7edd400350ba014a033a384259cb0dd354388b91."
+  },
+  "backend": {
+    "https": [
+      {
+        "app": "health",
+        "ready_status": 200
+      },
+      {
+        "app": "journal",
+        "ready_status": 200
+      },
+      {
+        "app": "birthday",
+        "ready_status": 200
+      },
+      {
+        "app": "albums",
+        "ready_status": 200
+      }
+    ],
+    "server": {
+      "source": "2bf57092fc332ef9250732f5128cc8cbcf55f90f",
+      "allowed_builds": {
+        "BIRTHDAY_ALLOWED_APP_BUILDS": "4,5,6",
+        "HEALTH_ALLOWED_APP_BUILDS": "4,5",
+        "JOURNAL_ALLOWED_APP_BUILDS": "21,22"
+      },
+      "running_configuration_verified": true,
+      "backup": "mysql-20261016T145841Z-6b3940.sql.gz.enc"
+    }
+  },
+  "post_deployment_backup": {
+    "authenticated": true,
+    "configuration_decryption_verified": true,
+    "platform_test_included": true,
+    "albums_development_included": true,
+    "filename": "mysql-20261016T150504Z-893538.sql.gz.enc"
+  },
+  "device_installation_verified": false,
+  "real_login_and_business_acceptance_verified": false,
+  "managed_xcode_runs_finished": true,
+  "temporary_upload_staging_removed": true,
+  "remote_ci": false,
+  "verification_tool_corrections": [
+    "Profile scalar wildcard authorization handles entitlement arrays; verified exported bytes unchanged.",
+    "Publisher readiness URL corrected from /healthz to /readyz; existing receipt reused, no duplicate publication.",
+    "HTTP plist parsed from response bytes; remote helper indentation corrected before Birthday publication."
+  ]
+}
