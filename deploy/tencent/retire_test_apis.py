@@ -24,6 +24,8 @@ TARGETS = {
     'tellyouwhat-albums-development-albumgateway-1': 'albums-test',
 }
 OLD_PORTS = {'18787', '18788', '18789', '18092'}
+API_BINDINGS = {'birthday-private-development': '18788', 'birthday-private-testflight': '18789',
+                'tellyouwhat-albums-development-albumgateway-1': '18092'}
 
 
 def read_state(runtime, name):
@@ -74,12 +76,21 @@ def containers(runtime):
     if len(values) != len(TARGETS) or {c['Name'].lstrip('/') for c in values} != set(TARGETS):
         raise OperationError('standalone API inventory differs from the reviewed targets')
     for container in values:
-        owner = TARGETS[container['Name'].lstrip('/')]
+        name = container['Name'].lstrip('/')
+        owner = TARGETS[name]
         if (not re.fullmatch('[a-f0-9]{64}', container.get('Id', ''))
                 or container.get('Image') not in approved[owner]
                 or container['State'].get('Status') not in ('running', 'exited')
                 or container['State'].get('Paused') or container['State'].get('Restarting')):
             raise OperationError('standalone container differs from its registered API image')
+        if name in API_BINDINGS and container.get('HostConfig', {}).get('PortBindings') != {
+                '8080/tcp': [{'HostIp': '127.0.0.1', 'HostPort': API_BINDINGS[name]}]}:
+            raise OperationError('standalone API no longer has its reviewed loopback binding')
+        if name == 'tellyouwhat-albums-development-albumgateway-1':
+            labels = container.get('Config', {}).get('Labels', {})
+            if (labels.get('com.docker.compose.project') != 'tellyouwhat-albums-development'
+                    or labels.get('com.docker.compose.service') != 'albumgateway'):
+                raise OperationError('Albums retirement target is not its registered API service')
     return values
 
 

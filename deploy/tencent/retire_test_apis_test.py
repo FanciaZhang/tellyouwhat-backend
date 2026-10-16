@@ -35,6 +35,12 @@ class RetirementTests(unittest.TestCase):
         for index, (name, owner) in enumerate(retire.TARGETS.items(), 1):
             self.expected.append({'Id': str(index) * 64, 'Name': '/' + name, 'Image': 'sha256:' + owner,
                                   'State': {'Running': True, 'Status': 'running'}})
+            if name in retire.API_BINDINGS:
+                self.expected[-1]['HostConfig'] = {'PortBindings': {
+                    '8080/tcp': [{'HostIp': '127.0.0.1', 'HostPort': retire.API_BINDINGS[name]}]}}
+            if name.endswith('-albumgateway-1'):
+                self.expected[-1]['Config'] = {'Labels': {'com.docker.compose.project': 'tellyouwhat-albums-development',
+                                                         'com.docker.compose.service': 'albumgateway'}}
             self.save('artifact-owners/' + owner + '.json',
                       {'owner': owner, 'current': {'images': ['sha256:' + owner]}, 'previous': None})
         self.original = copy.deepcopy(self.expected)
@@ -140,6 +146,16 @@ class RetirementTests(unittest.TestCase):
     def test_missing_scheduled_backup_update_blocks_before_mutation(self):
         (self.runtime.root / 'deploy/tencent/journal_development_artifacts.py').write_text('old implementation')
         with self.assertRaisesRegex(OperationError, 'scheduled backup'):
+            retire.retire(self.runtime, self.source)
+        self.assertEqual(self.events, [])
+
+    def test_repurposed_service_or_changed_binding_is_not_retired(self):
+        self.expected[-1]['Config']['Labels']['com.docker.compose.service'] = 'albumworker'
+        with self.assertRaisesRegex(OperationError, 'registered API service'):
+            retire.retire(self.runtime, self.source)
+        self.expected = copy.deepcopy(self.original)
+        self.expected[1]['HostConfig']['PortBindings']['8080/tcp'][0]['HostPort'] = '18080'
+        with self.assertRaisesRegex(OperationError, 'loopback binding'):
             retire.retire(self.runtime, self.source)
         self.assertEqual(self.events, [])
 
