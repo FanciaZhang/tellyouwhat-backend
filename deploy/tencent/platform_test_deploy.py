@@ -238,6 +238,21 @@ def require_separate_health_resources(runtime, folder):
             raise OperationError('Health test credentials and endpoints must differ from verified production resources')
 
 
+def require_installed_operations(runtime, folder):
+    if not recording.available(folder) and 'journal' not in applications(folder):
+        return
+    # Scheduled jobs import the host copy, even when activation runs from a staged release.
+    source = Path(__file__).resolve().parent
+    installed = runtime.root / 'deploy/tencent'
+    for name in ('operations.py', 'ops_offsite.py', 'ops_recording.py', 'platform_test_deploy.py',
+                 'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
+                 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py'):
+        path = installed / name
+        if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
+                or path.stat().st_mode & 0o022 or path.read_bytes() != (source / name).read_bytes()):
+            raise OperationError('install the matched scheduled operations through the production release before shared test admission')
+
+
 def update_configuration(runtime, source, previous_source, folder, record):
     state_path = runtime.state / 'platform-test.json'
     previous = json.loads(private_file(runtime, state_path, 16384))
@@ -332,6 +347,7 @@ def activate(runtime, source, update_from=None):
                 continue
             raise OperationError('platform test bootstrap requires both owner locks')
     folder, record, migrations = selection(runtime, source)
+    require_installed_operations(runtime, folder)
     require_separate_health_resources(runtime, folder)
     if 'journal' in applications(folder):
         journal.require_resources(runtime, read_environment(folder / 'runtime.env'))

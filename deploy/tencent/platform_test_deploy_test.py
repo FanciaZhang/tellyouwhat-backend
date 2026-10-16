@@ -25,6 +25,11 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             parent.chmod(0o700)
         self.runtime = Mock(root=self.root, state=self.root / '.operations', config={})
         self.runtime.state.mkdir()
+        scripts = self.root / 'deploy/tencent'
+        scripts.mkdir(parents=True)
+        for path in Path(__file__).resolve().parent.glob('*.py'):
+            if not path.name.endswith('_test.py'):
+                shutil.copy2(path, scripts / path.name)
         (self.runtime.state / 'blue-green.json').write_text('{"phase":"STABLE","current":{"path":"production"}}')
         for name in ('operations', 'deployment'):
             (self.runtime.state / (name + '.lock')).touch(mode=0o600)
@@ -736,6 +741,25 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-rollback')
         self.assertIn(str(self.old_folder / 'compose.env'), rollback)
         self.assertNotIn(str(self.folder / dev.albums.OVERLAY), rollback)
+
+    def test_admission_requires_matched_scheduled_backup_and_maintenance_before_any_mutation(self):
+        self.enable_journal()
+        scripts = self.root / 'deploy/tencent'
+        for name in ('operations.py', 'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_albums.py'):
+            path = scripts / name
+            expected = path.read_bytes()
+            path.write_bytes(b'old operations version')
+            with self.subTest(name=name), self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
+                self.activate()
+            path.write_bytes(expected)
+        self.runtime.execute.assert_not_called()
+        path = scripts / 'platform_test_maintenance.py'
+        path.unlink()
+        with self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
+            self.activate()
+        path.symlink_to(Path(__file__).resolve().parent / path.name)
+        with self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
+            self.activate()
 
 
 if __name__ == '__main__':

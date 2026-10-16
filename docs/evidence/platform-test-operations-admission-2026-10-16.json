@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "c157325",
+  "scope": "Require the matched scheduled operations before shared test admission",
+  "validation": {
+    "targeted_python_tests": {
+      "run": 51,
+      "passed": true
+    },
+    "remote_read_only": {
+      "ready": false,
+      "missing": [
+        "ops_recording.py",
+        "platform_test_maintenance.py",
+        "platform_test_storage.py",
+        "platform_test_journal.py",
+        "platform_test_albums.py",
+        "platform_test_schema.py"
+      ],
+      "outdated": [
+        "operations.py",
+        "ops_offsite.py",
+        "platform_test_deploy.py",
+        "platform_test_artifacts.py"
+      ],
+      "mutations": false
+    }
+  },
+  "required_operations_sha256": {
+    "operations.py": "cff6bbeb98fb1f866cbdce4b53ac8580addf7c175522e0c91d9c771b4d598dac",
+    "ops_offsite.py": "701927aa830340d72b45bf712db3d3c97822be0b02cec3e65927bd106e29f2cf",
+    "ops_recording.py": "60572eab1ad612f98a0be1c097aa84ddd7e4eaed5a594e7cc673ca2d66fda12c",
+    "platform_test_deploy.py": "356d7a52117d783ffca75e658b65a902c61df11eb57c45bdbff6e6b5ff6d923b",
+    "platform_test_artifacts.py": "3cf07bf4ea364d7e01c5a8661b3d13554f53e131644656765cbb4cb18ae6115c",
+    "platform_test_maintenance.py": "9286bd4aa6f125054f612262a935d4481b5614e3408f3177147b9f44906c4e7e",
+    "platform_test_storage.py": "0b80f098e308b956a0e833a0c6dc0ea6bb1b8d37783bddd30cdc0646ee2232ad",
+    "platform_test_journal.py": "07b2690ff655e42e2fc0cfd9349870c3794930aab77db60d714092d567dcd35d",
+    "platform_test_albums.py": "389dfed0eef3676a4a5dc37df5cd3026e46d8a7fd2cb17a1c8d410daf83d610c",
+    "platform_test_schema.py": "3e728f87304158a6a50cef2a8162fb3da57211ee041ef078d53cd4bec80b7209"
+  },
+  "limits": [
+    "No production or test deployment",
+    "No database migration or route switch",
+    "Host operations still require installation through the production release",
+    "Native Journal still contains private development authentication; full migration pending"
+  ]
+}
