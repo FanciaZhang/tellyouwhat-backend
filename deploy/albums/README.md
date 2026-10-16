@@ -327,6 +327,8 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 首次创建 `.dev` 栈使用 `deploy/albums/development.py --source <完整提交>`。操作员将该提交的原始 Git tar、Compose、私有运行配置和 Compose 插值配置放入后端 `.albums-development/releases/<提交>/`，四份文件的 SHA-256 保存为 `selection.json`；目录 0700、文件 0600。入口校验固定开发身份、18092 端口、172.29.92.0/24 网络及独立数据库/Redis 密码，经现有 owner wrapper 取得双锁后构建三个镜像、创建全新数据卷并迁移。已有开发容器或卷会拒绝重复初始化，失败只停止新 API/worker，保留数据库与旧栈；含数据升级需另行验证迁移及回滚。
 
+同结构代码升级使用 `deploy/albums/development.py --source <新完整提交> --update-from <当前完整提交>`，仍经 `albums-test` 的双锁和产物登记入口。必须与登记状态、实际运行镜像、完整迁移清单相符，Compose 拓扑、运行配置和数据库/Redis 凭据不变。先创建并校验含相册完整 SQL 与恢复配置的异地备份，再仅替换 API/worker；就绪失败恢复旧镜像与配置，不还原数据库、不启动迁移、不重建数据服务。该入口不负责启用新功能、修改 schema 或改变权限，这些操作需各自验收。
+
 数据库/Redis 的独立原始密码保留于 `/opt/tellyouwhat/albums-development/database.env`；Apple 登录、凭据加密和限流三份密钥放在该目录下 `secrets/`。密钥文件为 root:65532、0440，目录由部署操作员所有、组 65532、0750，应用只挂载这个目录。不得复制旧栈的 Apple、StoreKit、会话加密或数据库凭据。初始无云容量授权，媒体处理、订阅、分享和删除开关关闭；真实登录后再按明确账户配置开发容量。
 
 `albums-test` 所有者负责回收此源码目录下超过 48 小时且未被当前/上一版登记或容器引用的旧产物。新栈使用单进程 Go 编译及共享构建阶段，三个镜像复用一次编译；不改变其他服务的 Dockerfile。
