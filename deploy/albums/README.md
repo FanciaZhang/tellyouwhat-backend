@@ -357,3 +357,9 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 三个相关 Go 包、定向竞态和六项 CAM 静态范围检查通过，未部署、未切换域名或启用处理。证据：`../../docs/evidence/albums-production-resource-boundary-2026-10-16.json`。
 
 正式栈描述已准备在 `../../compose.albums-production.yaml`，配套插值文件为 `production.env.example`、应用文件为 `production-runtime.env.example`。默认生产库/卷、回环 18093 和 172.29.94.0/24 均与测试栈分开；不得复用旧测试环境或卷。当前仅通过隔离单测及服务器原生 Compose 合成配置解析，尚未接入生产发布、备份和产物保留入口，禁止直接 `docker compose up` 激活。待凭据、云权限及媒体队列验证后，通过 `release.py deploy` 完成发布接入和实际验收。
+
+### Production recovery integration status
+
+The shared Tencent backup task now uses `deploy/tencent/albums_artifacts.py` and `albums_checkpoint.py` for both environments. Production requires a registered `albums-production` release, a private `albums-production/backup.env` selecting `albums_production` and the read-only `albums_production_backup` user, exact production-container mysql wrappers, and a separately escrowed encryption key. It includes current/previous source-bound configuration, enabled-feature signing material, encrypted SQL and deletion fences. Production artifacts have their own cleanup owner; the development deploy wrapper rejects that owner.
+
+This implementation is locally tested only. `release.py deploy` activation support, provisioning the production backup account, initial offsite restore verification and routing are still required. Do not run the Compose descriptor directly. See `docs/evidence/albums-production-recovery-2026-10-16.json`.

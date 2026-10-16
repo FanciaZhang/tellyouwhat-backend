@@ -173,6 +173,33 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual({x['path'] for x in plan['files']}, {str(x) for x in folders[3:]})
         self.assertEqual(plan_cleanup(self.root, self.state, containers, [], owners=['production'], now=self.now)['files'], [])
 
+    def test_albums_production_preserves_recovery_without_collecting_test_or_database_files(self):
+        runtime = Mock(root=self.root, state=self.root / '.operations')
+        base = self.root / '.albums-production/releases'
+        folders = [base / (str(i) * 40) for i in range(5)]
+        images = [self.image(str(i), ['tellyouwhat-albums-production-albumgateway:' + str(i) * 40]) for i in range(5)]
+        for folder in folders:
+            self.file(folder / 'runtime.env')
+            os.utime(folder, (self.now - GRACE_SECONDS - 1,) * 2)
+        for i in (1, 0):
+            register(runtime, 'albums-production', [folders[i]], images[i]['RepoTags'], source=str(i) * 40)
+        self.file(self.root / '.albums-production/data/mysql.ibd')
+        self.file(self.root / '.albums-development/releases' / ('a' * 40) / 'runtime.env')
+        containers = [{'Image': 'sha256:2', 'Mounts': [{'Type': 'bind', 'Source': str(folders[2])}]}]
+        images.append(self.image('test', ['tellyouwhat-albums-test-albumgateway:old']))
+        plan = plan_cleanup(self.root, self.state, containers, images, owners=['albums-production'], now=self.now)
+        self.assertEqual({f['path'] for f in plan['files']}, {str(f) for f in folders[3:]})
+        self.assertEqual({i['id'] for i in plan['images']}, {'sha256:3', 'sha256:4'})
+        self.assertEqual(plan_cleanup(self.root, self.state, containers, images, owners=['production'], now=self.now)['images'], [])
+
+    def test_development_entry_point_cannot_activate_production_albums(self):
+        runtime, events = self.deployment_runtime()
+        with self.assertRaises(OperationError):
+            development_deploy(runtime, 'albums-production', [], ['tellyouwhat-albums-production-albumgateway:sha'],
+                               'revision', 'run', ['producer'], 'http://127.0.0.1:18093/readyz')
+        runtime.execute.assert_not_called()
+        self.assertEqual(events, [])
+
     def test_platform_readiness_accepts_only_its_test_host(self):
         runtime, _ = self.deployment_runtime()
         response = Mock(status=200)

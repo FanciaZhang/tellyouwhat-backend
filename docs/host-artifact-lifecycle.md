@@ -10,6 +10,7 @@ The 2026-10-13 disk alert came from repeated deployments retaining their outputs
 | Journal development | JournalApp `scripts/journal-development.py` | Authenticated current service and stopped previous service, matching binary and base image |
 | Birthday development | Owned producer invocation below | Registered current and previous images |
 | Albums test | Owned producer invocation below | Registered current and previous images; schema compatibility must be checked separately |
+| Albums production | `release.py deploy` integration pending; direct Compose activation is prohibited | Owner `albums-production`; current/previous `tellyouwhat-albums-production-*` and matching `.albums-production/releases/<SHA>` selections |
 | Platform test | Owned producer invocation with `--owner platform-test` | Registered current and previous `tellyouwhat-platform-test-*` images and matching configuration |
 | Apple development delivery | Owned producer invocation with `--owner apple-development` | Current/previous `tellyouwhat-apple-development:*` and matching configuration; IPA/grant expiry is collected separately by this owner's registered image |
 | Host maintenance | `operations.py maintenance` | Removes scoped retired artifacts older than 48 hours; build cache target 2 GB |
@@ -44,6 +45,14 @@ The shared backup task includes a separate `platform_test_artifacts.py` checkpoi
 Apple development delivery uses owner `apple-development`, readiness `http://127.0.0.1:18791/readyz`, and private data at `.apple-delivery/data`. Its recovery state must bind the cleanup image to the current owner registration. Scheduled operations report expired lease/package cleanup failures; dry-run remains read-only. Installation links are credentials and must not appear in proxy logs. See [Apple development delivery](apple-development-delivery.md) for the supported transport and remaining deployment acceptance.
 
 Its `apple_delivery_deploy.py` entry point invokes that same owner wrapper, checks file hashes and operator ownership, and restores the prior image/configuration if activation fails. Retired source-bound directories under `.apple-delivery/releases/<40-hex-source>` are collected after 48 hours unless protected by current/previous or a live container reference. The private data directory and unknown files are excluded. Encrypted offsite configuration snapshots include both protected service binaries and their matched configurations; authenticated per-file hashes are verified before recovery.
+
+## Albums production recovery preparation
+
+`albums_artifacts.py` and `albums_checkpoint.py` now serve both Albums environments; the shared backup task includes `recovery_albums_production` only when its registered state exists. Production uses `albums_production`, SELECT-only account `albums_production_backup`, container `tellyouwhat-albums-production-mysql-1`, and private `/opt/tellyouwhat/albums-production/` inputs. Development keeps its existing test database, wrapper, account and archive section. A wrapper or database account from the other environment is rejected.
+
+The production section preserves source-bound current and previous configuration, required login keys, enabled subscription/push/share credentials, an encrypted full Albums SQL snapshot and the deletion ledger. Inner SQL decryption keys remain in separate restricted escrow; they are omitted from the recovery bundle. Missing required keys, modified files or unregistered selections block backup. Outer recovery archives remain bounded at 512 MiB to accommodate the independent source selections and encrypted database checkpoints; individual source archives and checkpoints retain their 64/32 MiB limits. This is a bounded small-service implementation, not evidence that larger datasets have passed recovery.
+
+Owner cleanup includes only retired production images and source-bound release directories after the existing 48-hour grace. It preserves current/previous selections and container references, and does not collect volumes, credentials, state or the development stack. The development deployment wrapper cannot activate this production owner. Production deployment, actual database grants, initial offsite backup/restore and scheduled-run acceptance remain pending; this code has not been installed on the host.
 
 ## Backups and deployment
 

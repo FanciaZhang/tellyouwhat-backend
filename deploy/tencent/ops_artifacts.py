@@ -14,12 +14,13 @@ from urllib.parse import urlsplit
 from ops_common import OperationError, Runtime, atomic_json
 
 
-OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "platform-test", "apple-development")
+OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "albums-production", "platform-test", "apple-development")
 GRACE_SECONDS = 48 * 3600
 IMAGE_PREFIXES = {
     "production": ("ghcr.io/fanciazhang/tellyouwhat-ai-", "ghcr.io/fanciazhang/health-ai-", "health-ai-"),
     "birthday-development": ("birthday-development:",),
     "albums-test": ("tellyouwhat-albums-test-",),
+    "albums-production": ("tellyouwhat-albums-production-",),
     "platform-test": ("tellyouwhat-platform-test-",),
     "apple-development": ("tellyouwhat-apple-development:",),
 }
@@ -112,13 +113,14 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(i["Id"] for i in sorted(versions, key=lambda i: timestamp(i["Created"]), reverse=True)[:2])
 
     files = []
-    for owner, directory in (('albums-test', '.albums-development'), ('platform-test', '.platform-test')):
+    for owner, directory in (('albums-test', '.albums-development'), ('albums-production', '.albums-production'),
+                             ('platform-test', '.platform-test')):
         if owner not in owners:
             continue
         base = root / directory
         releases = base / 'releases'
         if base.is_symlink() or releases.is_symlink():
-            raise OperationError('isolated test artifact directory is a symlink')
+            raise OperationError('isolated artifact directory is a symlink')
         files.extend((owner, p) for p in releases.glob('*')
                      if p.is_dir() and re.fullmatch(r'[0-9a-f]{40}', p.name))
     if 'apple-development' in owners:

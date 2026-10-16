@@ -79,8 +79,9 @@ def create_recovery_bundle(runtime, filename):
         test_routing = backup_configuration(runtime, bundle / 'test-routing')
         from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
         apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
-        from albums_development_artifacts import backup_configuration as backup_albums_development
-        albums_development = backup_albums_development(runtime, bundle / 'albums-development')
+        from albums_artifacts import backup_configuration as backup_albums
+        albums_development = backup_albums(runtime, bundle / 'albums-development', 'development')
+        albums_production = backup_albums(runtime, bundle / 'albums-production', 'production')
         from platform_test_artifacts import backup_configuration as backup_platform_test
         platform_test = backup_platform_test(runtime, bundle / 'platform-test')
         from journal_development_artifacts import backup_configuration as backup_journal_development
@@ -94,6 +95,7 @@ def create_recovery_bundle(runtime, filename):
     return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
             "recovery_images": images, "recovery_test_routing": test_routing,
             "recovery_apple_delivery": apple_delivery, "recovery_albums_development": albums_development,
+            "recovery_albums_production": albums_production,
             "recovery_platform_test": platform_test, "recovery_journal_development": journal_development}
 
 
@@ -140,7 +142,8 @@ def verify_recovery_bundle(runtime, source, manifest):
         crypt(runtime, encrypted, archive_path, decrypt=True)
         with tarfile.open(archive_path, "r:gz") as archive:
             members = archive.getmembers()
-            if sum(m.size for m in members) > 64 * 1024**2 or any(
+            # Independent app sources, rollback selections and encrypted SQL share this bundle.
+            if sum(m.size for m in members) > 512 * 1024**2 or any(
                 Path(m.name).is_absolute() or ".." in Path(m.name).parts or not (m.isfile() or m.isdir()) for m in members):
                 raise OperationError("unsafe or oversized configuration recovery archive")
             selection = json.load(archive.extractfile("recovery/selection.json"))
@@ -151,9 +154,10 @@ def verify_recovery_bundle(runtime, source, manifest):
             if apple_delivery:
                 from apple_delivery_artifacts import verify_recovery
                 verify_recovery(archive, apple_delivery)
-            if manifest.get('recovery_albums_development'):
-                from albums_development_artifacts import verify_recovery as verify_albums_development
-                verify_albums_development(archive, manifest['recovery_albums_development'])
+            from albums_artifacts import verify_recovery as verify_albums
+            for environment in ('development', 'production'):
+                if manifest.get('recovery_albums_' + environment):
+                    verify_albums(archive, manifest['recovery_albums_' + environment], environment)
             if manifest.get('recovery_platform_test'):
                 from platform_test_artifacts import verify_recovery as verify_platform_test
                 verify_platform_test(archive, manifest['recovery_platform_test'])
