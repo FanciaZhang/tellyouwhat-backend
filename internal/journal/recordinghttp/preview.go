@@ -115,6 +115,9 @@ func (h *Handler) preview(w http.ResponseWriter, r *http.Request, owner, archive
 	}
 	response := recordingPreviewResponse{input.RequestID, input.ReviewRevision, result.Revision}
 	h.previews.mu.Lock()
+	if _, lookupErr := h.executor.Store.Get(owner, archiveID); lookupErr != nil {
+		err = lookupErr
+	}
 	if err != nil {
 		delete(h.previews.entries, key)
 	} else {

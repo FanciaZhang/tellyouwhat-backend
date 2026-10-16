@@ -43,6 +43,16 @@ func New(executor *voice.RecordingExecutor, rewriter voice.Rewriter, now func() 
 	return &Handler{executor: executor, rewriter: rewriter, now: now, admission: make(chan struct{}, 2), previews: recordingPreviewCache{entries: map[string]previewCacheEntry{}}}
 }
 
+func (h *Handler) ForgetOwner(owner string) {
+	h.previews.mu.Lock()
+	defer h.previews.mu.Unlock()
+	for key := range h.previews.entries {
+		if strings.HasPrefix(key, owner+"/") {
+			delete(h.previews.entries, key)
+		}
+	}
+}
+
 // ServeAuthorized is called only after the transport authenticates the owner and body digest.
 func (h *Handler) ServeAuthorized(w http.ResponseWriter, r *http.Request, owner, digest string) {
 	if owner == "" || !Route(r) || h.executor == nil || h.executor.Store == nil {

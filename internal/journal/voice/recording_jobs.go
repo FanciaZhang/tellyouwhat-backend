@@ -71,6 +71,9 @@ func (s *RecordingJobStore) prefix(owner, id string) (string, error) {
 	if owner == "" || err != nil || len(id) != 36 {
 		return "", ErrInvalid
 	}
+	if err := s.checkOwner(owner); err != nil {
+		return "", err
+	}
 	digest := sha256.Sum256([]byte(owner))
 	return filepath.Join(s.root, hex.EncodeToString(digest[:])+"-"+parsed.String()), nil
 }
@@ -125,7 +128,16 @@ func (s *RecordingJobStore) Upload(ctx context.Context, owner, id string, input 
 	if err != nil {
 		return RecordingJob{}, err
 	}
-	temp, err := os.CreateTemp(s.root, "upload-*")
+	unlockCreation, err := s.lock()
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	if err := s.checkOwner(owner); err != nil {
+		unlockCreation()
+		return RecordingJob{}, err
+	}
+	temp, err := os.CreateTemp(s.root, "upload-"+filepath.Base(path)+"-*")
+	unlockCreation()
 	if err != nil {
 		return RecordingJob{}, err
 	}
@@ -161,6 +173,9 @@ func (s *RecordingJobStore) Upload(ctx context.Context, owner, id string, input 
 		return RecordingJob{}, err
 	}
 	defer unlock()
+	if err := s.checkOwner(owner); err != nil {
+		return RecordingJob{}, err
+	}
 	previous, err := readRecordingJob(path)
 	if err == nil {
 		if previous.AudioHash != sum {

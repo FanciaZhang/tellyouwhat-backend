@@ -55,6 +55,7 @@ func (config AICostConfig) Valid() bool {
 }
 
 type AppConfig struct {
+	JournalRecording       *JournalRecordingConfig
 	JournalImage           *JournalImageConfig
 	Registry               appregistry.App
 	AttestationEnvironment attestation.Environment
@@ -294,6 +295,11 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
 		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
+		var err error
+		config.JournalRecording, err = LoadJournalRecording(environment)
+		if err != nil {
+			return AppConfig{}, err
+		}
 		config.JournalAI = JournalAIConfig{
 			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
 			APIKey:         prefixedValue(prefix, "ARK_API_KEY", ""),
@@ -361,6 +367,9 @@ func (config PlatformConfig) Validate() error {
 	}
 	registryEntries := make([]appregistry.App, 0, len(config.Apps))
 	for _, app := range config.Apps {
+		if app.JournalRecording != nil && app.JournalRecording.Enabled && (!app.VoiceEnabled || config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal recordings require voice configuration, persistent storage and project cost controls")
+		}
 		if app.JournalImage != nil && (config.StorageMode != "mysql" || !config.AICost.Valid()) {
 			return errors.New("Journal images require persistent storage and project cost controls")
 		}

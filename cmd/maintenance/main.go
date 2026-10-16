@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/config"
 	"log"
 	"os"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/prompteval"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
@@ -41,8 +43,16 @@ func main() {
 	evaluationError := (prompteval.Store{DB: database}).Recover(ctx, now)
 	result, databaseError := repository.Cleanup(ctx, now)
 	expiredImages, imageError := (illustrationstore.Store{Database: database, Cipher: cipher}).Expire(ctx, now)
+	recordingConfig, recordingError := config.LoadJournalRecording(os.Getenv("APP_ENV"))
+	if recordingError == nil && recordingConfig != nil {
+		var recordings *voice.RecordingJobStore
+		recordings, recordingError = voice.NewEnvironmentRecordingJobStore(recordingConfig.Root, os.Getenv("APP_ENV"), func() time.Time { return now })
+		if recordingError == nil {
+			recordingError = recordings.Cleanup()
+		}
+	}
 	purgedMedia, mediaError := repository.PurgeExpiredMedia(ctx, now, store)
-	if err := errors.Join(databaseError, mediaError, evaluationError, imageError); err != nil {
+	if err := errors.Join(databaseError, mediaError, evaluationError, imageError, recordingError); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf(

@@ -2,6 +2,18 @@
 
 This is an isolated provider-contract milestone, not a completed app feature.
 
+## Shared runtime, isolation and deletion (2026-10-16)
+
+`cmd/gateway` can now construct recording processing with `JOURNAL_RECORDING_ENABLED=true` and `JOURNAL_RECORDING_ROOT` pointing to an absolute private persistent directory whose final component equals `APP_ENV` (`development` or `production`). Voice configuration, MySQL and shared cost controls are required. The executor reuses the environment's speech credentials and conservative speech-duration budget price; the preview reuses the configured, budgeted Journal rewriter. Defaults remain disabled with no directory.
+
+The directory must have private permissions and an exact `.environment` marker. An empty new directory may be initialized; an unmarked directory containing private-service tasks is rejected rather than adopted. A wrong marker or public/symlinked root is rejected before retention touches its contents. The two release slots must share the same directory within their environment; test and production must use separate volumes. Container mounts and backup/restore binding are still pending, so this code does not establish remote readiness.
+
+Opening a candidate does not run content cleanup. The gateway runs retention each minute under the existing lifecycle admission/drain controller, and `cmd/maintenance` can clean the same configured directory even when recording generation is disabled. Keep `JOURNAL_RECORDING_ROOT` configured when disabling the feature. Cleanup failures are reported and cannot be treated as successful maintenance.
+
+Journal privacy deletion first durably writes a per-owner deletion fence, then removes that owner's tasks, audio and staged uploads. Metadata/creation locks prevent races; late uploads and provider results cannot recreate files. Preview caches are cleared and completed rewrites recheck durable ownership before caching/delivery. Other owners remain intact. Shared Redis cleanup still runs, and any failure propagates so deletion can be retried. Open descriptors or already-sent provider requests cannot be retroactively recalled, but their files are unlinked and their results cannot be published.
+
+Local tests cover late upload/provider/preview completion, repeated deletion after cleanup failure, other-owner preservation, restart fencing, environment mount mismatch, unmarked private-state rejection and configuration requirements. Cloud inference is synthetic here. No deployment, App build or existing user-data migration occurred. Before activation, register persistent mounts/ownership and retention, include `.environment` and deletion fences in backup/recovery, resolve the old private-state ownership boundary, and complete native-client/cloud acceptance. Evidence: `../evidence/journal-recording-runtime-2026-10-16.json`.
+
 ## Shared authenticated recording routes (2026-10-16)
 
 The shared gateway now has generated OpenAPI routes for upload, status, process, explicit retry and preview. Both gateways reuse `internal/journal/recordinghttp`; the private development adapter retains its existing authorization, while shared routes use App Attest, managed entitlement and current managed-AI consent. Shared task ownership comes from the authenticated key. Reading an existing owned result remains possible after subscription expiry; writes still require current entitlement. Operations pause and the shared cost-control operation cover recording processing.
@@ -10,7 +22,7 @@ For `PUT /v1/journal/voice/recordings/{recordingID}`, the client sends `audio/wa
 
 Local tests cover a 6.4 MB upload, pre-read authorization failures, digest tampering, owner isolation, single provider submission, polling, retrieval after entitlement expiry and preview/retry body preservation. Existing private-runtime tests exercise the same extracted handler. No real provider inference was used in this milestone.
 
-Runtime activation is still pending: `cmd/gateway` does not yet construct the recording dependency, so deployed/configuration-only gateways continue returning `recording_not_enabled`. Before enabling it, complete environment-specific spool configuration, privacy-deletion fencing, retention/backup integration and native-client authentication. Existing private tasks use a different owner identity and must not be silently reassigned or deleted. There was no remote deployment, new App package or data migration. Evidence: `../evidence/journal-shared-recording-routes-2026-10-16.json`.
+At this route milestone the command entry did not yet construct the dependency; the runtime section above records the subsequent implementation. Remote activation and native-client migration remain pending. Existing private tasks use a different owner identity and must not be silently reassigned or deleted. There was no remote deployment, new App package or data migration. Evidence: `../evidence/journal-shared-recording-routes-2026-10-16.json`.
 
 ## Shared-gateway migration prerequisite (2026-10-16)
 

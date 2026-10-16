@@ -38,6 +38,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
@@ -416,6 +417,19 @@ func buildAppHandler(
 	if err != nil {
 		return nil, err
 	}
+	var recordingPrivacy *journalRecordingPrivacy
+	if appConfig.JournalRecording != nil {
+		if app.ID != appregistry.Journal || storage.background == nil {
+			return nil, errors.New("Journal recording storage requires managed lifecycle")
+		}
+		store, err := voice.NewEnvironmentRecordingJobStore(appConfig.JournalRecording.Root, platform.Environment, time.Now)
+		if err != nil {
+			return nil, errors.New("Journal recording storage is unavailable or belongs to another environment")
+		}
+		recordingPrivacy = &journalRecordingPrivacy{store: store, next: storage.privacyCache}
+		storage.privacyCache = recordingPrivacy
+		runRecordingRetention(ctx, store, storage.background, logger)
+	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
@@ -542,6 +556,16 @@ func buildAppHandler(
 			}
 			if storage.prompts != nil {
 				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
+			}
+			if appConfig.JournalRecording != nil && appConfig.JournalRecording.Enabled {
+				if recordingPrivacy == nil || costController == nil {
+					return nil, errors.New("Journal recording dependencies unavailable")
+				}
+				asr := appConfig.VoiceASR
+				asr.URL, asr.ResourceID = "https://openspeech.bytedance.com/api/v3/auc/bigmodel", "volc.seedasr.auc"
+				executor := &voice.RecordingExecutor{Store: recordingPrivacy.store, Provider: voice.RecordingASR{Config: asr}, Budget: costController, AppID: "journal", Price: platform.AICost.JournalSpeech}
+				recordingPrivacy.handler = recordinghttp.New(executor, rewriter, time.Now)
+				dependencies.JournalRecordings = recordingPrivacy.handler
 			}
 			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Logger: voiceLogger, Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
