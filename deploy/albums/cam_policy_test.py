@@ -6,6 +6,30 @@ import unittest
 
 
 class CIMediaPolicyTests(unittest.TestCase):
+    def test_cleanup_identities_are_separate_and_require_concrete_versions(self):
+        for environment, bucket in (("test", "tellyouwhat-albums-1251995834"),
+                                    ("production", "tellyouwhat-albums-production-1251995834")):
+            policy = json.loads(Path(__file__).with_name("cam-" + environment + "-cleanup.policy.json").read_text())
+            base = "qcs::cos:ap-guangzhou:uid/1251995834:" + bucket + "/"
+            prefixes = ["albums/" + area + "/*" for area in
+                        ("staging", "originals", "derivatives", "video-previews", "live-pairs")]
+            objects = [base + prefix for prefix in prefixes]
+            self.assertEqual(policy, {"version": "2.0", "statement": [
+                {"effect": "allow", "action": ["cos:GetBucketVersioning"], "resource": [base + "*"]},
+                {"effect": "allow", "action": ["cos:GetBucketObjectVersions", "cos:ListMultipartUploads"],
+                 "resource": [base + "*"], "condition": {"string_like": {"cos:prefix": prefixes}}},
+                {"effect": "allow", "action": ["cos:HeadObject", "cos:AbortMultipartUpload"], "resource": objects},
+                {"effect": "allow", "action": ["cos:DeleteObject"], "resource": objects,
+                 "condition": {"string_not_equal": {"cos:versionid": ""}}},
+                {"effect": "deny", "action": ["cos:DeleteObject"], "resource": objects,
+                 "condition": {"string_equal": {"cos:versionid": "null"}}},
+            ]})
+            # These identities must never inherit upload, CI, CAM, or shared-backup access.
+            allowed = {a for e in policy["statement"] if e["effect"] == "allow" for a in e["action"]}
+            self.assertEqual(allowed, {"cos:GetBucketVersioning", "cos:GetBucketObjectVersions",
+                                     "cos:ListMultipartUploads", "cos:HeadObject",
+                                     "cos:AbortMultipartUpload", "cos:DeleteObject"})
+
     def test_production_identities_cannot_reach_other_buckets_or_manage_permissions(self):
         bucket = "tellyouwhat-albums-production-1251995834"
         for kind in ("upload", "backend"):

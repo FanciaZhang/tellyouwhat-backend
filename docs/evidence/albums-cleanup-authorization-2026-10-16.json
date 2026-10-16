@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-10-16T14:30:33.712106+00:00",
+  "user_authorization": "Confirmed permanent-cleanup permissions for expired Albums data, account deletion data and associated backups. No repeated scope approval required.",
+  "state": "awaiting_tencent_identity_verification",
+  "identities": [
+    {
+      "name": "albums-test-cleanup",
+      "policy_file": "deploy/albums/cam-test-cleanup.policy.json",
+      "bucket": "tellyouwhat-albums-1251995834"
+    },
+    {
+      "name": "albums-production-cleanup",
+      "policy_file": "deploy/albums/cam-production-cleanup.policy.json",
+      "bucket": "tellyouwhat-albums-production-1251995834"
+    }
+  ],
+  "console_access": false,
+  "intended_credential_handling": "Separate private local and server configuration; no credential mounted into gateway or client. No credentials created yet.",
+  "policy_sha256": {
+    "deploy/albums/cam-production-cleanup.policy.json": "569af92101eed3a85ab24f20f10df7fa5a64f6889796a699a9b678ca52b89491",
+    "deploy/albums/cam-test-cleanup.policy.json": "081d4c0eaf1960cf5e1f108364ba22d8c914aee42d6e500109f3df2f65b02780"
+  },
+  "cloud_changes_completed": false,
+  "real_object_deletion_performed": false,
+  "automatic_cleanup_enabled": false,
+  "tests": {
+    "static_policy_tests_passed": 7,
+    "cos_cleanup_unit_tests": "passed",
+    "backup_offsite_deletion_ledger_python_tests_passed": 22,
+    "backup_transfer_race_tests": "passed"
+  },
+  "backup_boundary": {
+    "observed": "Current development Albums encrypted checkpoint is inside shared offsite recovery bundle; original dedicated backup policy is an unused draft.",
+    "decision": "Do not grant Albums cleanup access to shared backups/* or create an unused backup identity. Establish independently cleanable Albums backup objects and prove recovery/deletion-fence retention before binding backup deletion permissions.",
+    "authorization": "Already granted; technical separation and verification remain."
+  },
+  "remaining": [
+    "Complete Tencent MFA, create identities and bind each scoped policy; verify no other group/policy grants",
+    "Save credentials privately and test allowed exact-version synthetic deletion, unversioned/null-version denial, cross-bucket/prefix denial and denied upload/administration",
+    "Integrate independent cleanup credentials into deletion execution paths without granting deletion to current API/upload identities",
+    "Complete independent backup cleanup boundary and real expiry/recovery validation before automated activation"
+  ]
+}
