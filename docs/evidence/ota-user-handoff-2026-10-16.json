@@ -1,0 +1,54 @@
+{
+  "health": {
+    "passed": true,
+    "metadata": {
+      "bundle-identifier": "cn.tellyouwhat.healthapp.dev",
+      "bundle-version": "4",
+      "kind": "software",
+      "title": "告你健康·开发"
+    },
+    "bytes": 148972748,
+    "expires_at": "2026-10-17T03:53:16.203582998Z",
+    "source": "100514f0ada88a958acf83da20a531a24f03bfb7",
+    "ipa_sha256": "dd948138cdb0b2099dff9e49fabb940dd3e38baf9910d2c35105cee8e59be622"
+  },
+  "journal": {
+    "passed": true,
+    "metadata": {
+      "bundle-identifier": "cn.tellyouwhat.journalapp.dev",
+      "bundle-version": "21",
+      "kind": "software",
+      "title": "告你手记·开发"
+    },
+    "bytes": 70961939,
+    "expires_at": "2026-10-17T10:48:32.18335422Z",
+    "source": "fc1f9eb73fc0b4591a9596660f212ce991b6db0d",
+    "ipa_sha256": "53ed562349efc45f8a8cf3d399ee1c4cc79c2ce8f649e3fe1b88d3e3f669ad5e"
+  },
+  "birthday": {
+    "passed": true,
+    "metadata": {
+      "bundle-identifier": "cn.tellyouwhat.birthday.dev",
+      "bundle-version": "5",
+      "kind": "software",
+      "title": "告你生日开发"
+    },
+    "bytes": 3625229,
+    "expires_at": "2026-10-17T01:07:01.194514865Z",
+    "source": "398b2ff75de5f3ed8f68cc87418ae65e2ec23c59",
+    "ipa_sha256": "800f5c49b0a026ebeb8f7450124a6c50bbbb99623583f6ee28a7e18385cb2b1e"
+  },
+  "albums": {
+    "passed": true,
+    "metadata": {
+      "bundle-identifier": "cn.tellyouwhat.albums.dev",
+      "bundle-version": "2",
+      "kind": "software",
+      "title": "告你相册·开发"
+    },
+    "bytes": 10426172,
+    "expires_at": "2026-10-16T20:59:50.600975707Z",
+    "source": "2164291d26f84d3956951f75530a332a95356513",
+    "ipa_sha256": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872"
+  }
+}
