@@ -56,6 +56,8 @@
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
 
+手记客户端 `f238cd8` 排除普通 Release 的持久化、iCloud 和模拟商品目录启动覆盖，Debug 22 项、Release 20 项通过，实际新建内容在旧参数下重启仍保留。另分别跳过 2、4 项真实 Apple 或渠道限定检查；未改模型或正式容器，未推送或更新 OTA。见 `evidence/journal-release-runtime-boundary-2026-10-16.json`。生日契约 `d55b2d3` 已改为生产/测试独立域名，三包定向测试和 `make verify-generated` 通过；此契约元数据更新未部署服务。
+
 健康自动开发认证证据：`evidence/health-automatic-development-access-2026-10-16.json`。客户端 69 项定向测试、普通 Release 编译及真实产物检查通过；后端全量 Go 测试、178 项运维 Python 检查（1 项跳过）、3 项独立真实 MySQL 集成检查通过。正式健康网关仍为原镜像、未重启；这批源码尚未部署健康测试 API，也未导出新开发安装包。
 
 生日远程诊断已交付 `398b2ff`、1.0 (5)：Debug 可导出本次进程的受限 AI 元数据，Release 无入口或实现；56 项 Debug 检查、1 项 Release 界面检查及 27 项核心测试通过，另跳过 1 项真实服务测试。原生双目标签名及公网完整 IPA 摘要、HEAD/Range 通过；发布就绪路径误用 `/healthz` 后，改用实际 `/readyz` 完成 owner 检查和清理，复用原回执，未重复发布。平台测试更新到 `7c0e6d2` 后，MySQL、Redis 和正式网关未重启，66 项 schema 未变，匹配的新加密备份已认证。见 `evidence/birthday-remote-diagnostics-ota-2026-10-16.json`；实际手机安装/注册与推理仍未验收。
