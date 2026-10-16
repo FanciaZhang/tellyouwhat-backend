@@ -374,10 +374,19 @@ ALBUM_RESOURCE_SOURCE=<已登记的相册资源完整提交 SHA>
 
 必须先有已核验的蓝绿网络及相册生产数据/worker；两条网络的实际宿主网关地址用于限制代理信任。候选启动后复核真实网络、只读挂载与凭据，其他共享服务不得获得相册专用凭据。配置随候选、回滚快照和加密恢复包保留；恢复必须同时具备匹配的完整相册数据检查点。媒体资源更新必须与这一固定资源选择协调，不能先换 worker 再让旧快照指向另一套资源。
 
-这部分仅通过本机运维测试和服务器 Compose 合成配置解析。生产数据/worker 的首次受管部署、IAM/CI、公开路由、真实备份与登录媒体旅程仍未验收；禁止直接 `docker compose up` 绕过正式发布。
+首次资源创建入口已实现，尚未远端执行。先准备 `.albums-production/releases/<完整 SHA>` 的私有源码、匹配 Compose/runtime 配置和 `selection.json`，以及独立生产密钥、`backup.env` 和单独留存的备份解密密钥。确认该 SHA 的可信 Backend CI 已通过并发布镜像、服务器已具备受限 GHCR 拉取凭据后，由后端目录所有者执行：
+
+```sh
+python3 deploy/tencent/release.py deploy --backend-dir /opt/tellyouwhat/backend \
+  --albums-resources "$SOURCE_SHA" --source-run "$SOURCE_RUN"
+```
+
+该入口持有运维与部署锁，复用 CI 的 worker/migrate 镜像并核对提交、源码 tar 摘要、运行 ID 和镜像 digest。先验证当前共享服务的备份，再创建独立数据库/Redis、运行迁移、配置仅 SELECT/SHOW VIEW 的备份账号；完整相册恢复包验证通过后才启动媒体 worker。已有生产容器、数据卷或登记时拒绝重复初始化；失败保留数据和配置，停止新 worker，`prepared` 状态不能被共享网关接入。它不切换 API 或域名，不提供资源升级或故障后自动重建；已有状态需先核对并恢复。
+
+资源为 `ready` 后，再通过 `ops_albums.py` 和正常共享 API 发布接入。产物登记/清理由相册生产 owner 负责，独立资源源版本继续固定在 `ALBUM_RESOURCE_SOURCE`。IAM/CI、真实备份恢复、公开路由和登录媒体旅程仍待实际验收；禁止直接 `docker compose up` 绕过正式发布。
 
 ### Production recovery integration status
 
 The shared Tencent backup task now uses `deploy/tencent/albums_artifacts.py` and `albums_checkpoint.py` for both environments. Production requires a registered `albums-production` release, a private `albums-production/backup.env` selecting `albums_production` and the read-only `albums_production_backup` user, exact production-container mysql wrappers, and a separately escrowed encryption key. It includes current/previous source-bound configuration, enabled-feature signing material, encrypted SQL and deletion fences. Production artifacts have their own cleanup owner; the development deploy wrapper rejects that owner.
 
-This implementation is locally tested only. `release.py deploy` activation support, provisioning the production backup account, initial offsite restore verification and routing are still required. Do not run the Compose descriptor directly. See `docs/evidence/albums-production-recovery-2026-10-16.json`.
+The resource bootstrap and backup-account provisioning are implemented in `release.py deploy --albums-resources` but have not run remotely. Real offsite restore verification and shared API activation/routing are still required. Do not run the Compose descriptor directly. See `docs/evidence/albums-production-recovery-2026-10-16.json`.

@@ -1,6 +1,7 @@
 """Admit the existing Albums production store to the shared release slots."""
 
 import ipaddress
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -90,10 +91,10 @@ def require_configuration(runtime, root, config):
             raise OperationError('Albums production resource selection must remain private')
     state = json.loads(private_file(runtime.state / 'albums-production.json', owner, 16384))
     registry = json.loads(private_file(runtime.state / 'artifact-owners/albums-production.json', owner, 16384))
-    if (state.get('source') != source or state.get('release') != str(original)
+    if (state.get('source') != source or state.get('release') != str(original) or state.get('phase') != 'ready'
             or not any(s and s.get('source') == source and str(original) in s.get('paths', [])
                        for s in (registry.get('current'), registry.get('previous')))):
-        raise OperationError('Albums resources must match their registered production selection')
+        raise OperationError('Albums resources must be ready and match their registered production selection')
     selected_files(runtime, original, source, PRODUCTION_FILES)
     compose = read_environment(original / 'compose.env')
     passwords = [compose.get('ALBUM_PRODUCTION_' + k, '') for k in ('MYSQL_PASSWORD', 'REDIS_PASSWORD')]
@@ -137,6 +138,18 @@ def require_resources(runtime, root, config):
         if (any(env.get(k) != v for k, v in required.items()) or (service == 'albumworker'
                 and container['Config'].get('Image') != 'tellyouwhat-albums-production-albumworker:' + source)):
             raise OperationError('Albums running data resources differ from their selection')
+        if service == 'albumworker':
+            state = json.loads(private_file(runtime.state / 'albums-production.json', runtime.root.stat().st_uid, 16384))
+            image = json.loads(runtime.execute('production-albums-worker-image',
+                ['docker', 'image', 'inspect', container['Config']['Image']]))[0]
+            labels = image.get('Config', {}).get('Labels', {})
+            source_tar = runtime.root / '.albums-production/releases' / source / 'source.tar'
+            if (image.get('Id') != container.get('Image')
+                    or state.get('images', {}).get('albumworker') not in image.get('RepoDigests', [])
+                    or labels.get('org.opencontainers.image.revision') != source
+                    or labels.get('cn.tellyouwhat.source-tar-sha256') != hashlib.sha256(source_tar.read_bytes()).hexdigest()
+                    or labels.get('cn.tellyouwhat.source-run') != state.get('source_run')):
+                raise OperationError('Albums media worker does not match its registered CI artifact')
 
 
 def verify_gateway(runtime, root, config, slot):
@@ -220,5 +233,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     runtime = Runtime(args.backend_dir)
     from ops_artifacts import require_operator
-    require_operator(runtime)
+    require_operator(runtime.root)
     stage(runtime, args.bundle)

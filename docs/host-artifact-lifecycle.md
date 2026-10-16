@@ -11,7 +11,7 @@ The 2026-10-13 disk alert came from repeated deployments retaining their outputs
 | Journal development | JournalApp `scripts/journal-development.py` | Authenticated current service and stopped previous service, matching binary and base image |
 | Birthday development | Owned producer invocation below | Registered current and previous images |
 | Albums test | Owned producer invocation below | Registered current and previous images; schema compatibility must be checked separately |
-| Albums production | `release.py deploy` integration pending; direct Compose activation is prohibited | Owner `albums-production`; current/previous `tellyouwhat-albums-production-*` and matching `.albums-production/releases/<SHA>` selections |
+| Albums production | First data/worker creation uses `release.py deploy --albums-resources <SHA> --source-run <CI run>`; shared API uses the normal release; direct Compose activation is prohibited | Owner `albums-production`; current/previous `tellyouwhat-albums-production-*` and matching `.albums-production/releases/<SHA>` selections |
 | Platform test | Owned producer invocation with `--owner platform-test` | Registered current and previous `tellyouwhat-platform-test-*` images and matching configuration |
 | Apple development delivery | Owned producer invocation with `--owner apple-development` | Current/previous `tellyouwhat-apple-development:*` and matching configuration; IPA/grant expiry is collected separately by this owner's registered image |
 | Host maintenance | `operations.py maintenance` | Removes scoped retired artifacts older than 48 hours; build cache target 2 GB |

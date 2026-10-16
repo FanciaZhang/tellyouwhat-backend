@@ -2,6 +2,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -48,7 +50,9 @@ class ProductionAlbumsTests(unittest.TestCase):
         self.write(self.original / 'source.tar', b'synthetic source selection')
         self.write(self.original / 'compose.albums-production.yaml', b'services: {}\n')
         self.manifest()
-        atomic_json(self.runtime.state / 'albums-production.json', {'source': self.source, 'release': str(self.original)})
+        self.image_digest = 'ghcr.io/fanciazhang/tellyouwhat-ai-albumworker@sha256:' + 'b' * 64
+        atomic_json(self.runtime.state / 'albums-production.json', {'source': self.source, 'release': str(self.original), 'phase': 'ready',
+                    'source_run': '123', 'images': {'albumworker': self.image_digest}})
         registry = self.runtime.state / 'artifact-owners'
         registry.mkdir()
         atomic_json(registry / 'albums-production.json', {'current': {'source': self.source, 'paths': [str(self.original)]}})
@@ -67,6 +71,10 @@ class ProductionAlbumsTests(unittest.TestCase):
                     'files': {n: hashlib.sha256((self.original / n).read_bytes()).hexdigest() for n in names}})
 
     def execute(self, label, command, **kwargs):
+        if label == 'production-albums-worker-image':
+            return json.dumps([{'Id': 'sha256:fixture-worker', 'RepoDigests': [self.image_digest], 'Config': {'Labels': {
+                'org.opencontainers.image.revision': self.source, 'cn.tellyouwhat.source-run': '123',
+                'cn.tellyouwhat.source-tar-sha256': hashlib.sha256((self.original / 'source.tar').read_bytes()).hexdigest()}}}]).encode()
         if command[:3] == ['docker', 'network', 'inspect']:
             gateway = '172.18.0.1' if 'blue' in command[-1] else '172.19.0.1'
             return json.dumps([{'Name': command[-1], 'IPAM': {'Config': [{'Gateway': gateway}]}}]).encode()
@@ -76,7 +84,7 @@ class ProductionAlbumsTests(unittest.TestCase):
                    **self.app, 'ALBUM_DEPLOYMENT_ENVIRONMENT': 'production',
                    'ALBUM_DATABASE_DSN': 'albums_production:' + '1' * 64 + '@tcp(mysql:3306)/albums_production?charset=utf8mb4&collation=utf8mb4_0900_ai_ci',
                    'ALBUM_REDIS_URL': 'redis://:' + '2' * 64 + '@redis:6379/0'})
-        return json.dumps([{'State': {'Running': True}, 'NetworkSettings': {'Networks': {albums.NETWORK: {}}},
+        return json.dumps([{'State': {'Running': True}, 'Image': 'sha256:fixture-worker', 'NetworkSettings': {'Networks': {albums.NETWORK: {}}},
                            'Config': {'Labels': {'com.docker.compose.project': albums.PROJECT},
                                       'Image': albums.PROJECT + '-albumworker:' + self.source,
                                       'Env': [k + '=' + v for k, v in env.items()]}}]).encode()
@@ -92,6 +100,18 @@ class ProductionAlbumsTests(unittest.TestCase):
         albums.stage(self.runtime, self.root)
         self.assertEqual(albums.compose_overlay(self.root, {}), [])
         self.runtime.execute.assert_not_called()
+
+    def test_staging_cli_checks_the_backend_directory_owner(self):
+        result = subprocess.run([sys.executable, str(Path(albums.__file__)), '--backend-dir', str(self.root),
+                                 '--bundle', str(self.root)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_prepared_resources_are_not_admitted_before_worker_readiness(self):
+        atomic_json(self.runtime.state / 'albums-production.json',
+                    {'source': self.source, 'release': str(self.original), 'phase': 'prepared'})
+        with self.assertRaisesRegex(OperationError, 'must be ready'):
+            albums.stage(self.runtime, self.bundle)
+        self.assertFalse((self.bundle / 'albums.env').exists())
 
     def test_staging_is_private_repeatable_and_preserves_a_matched_snapshot(self):
         albums.stage(self.runtime, self.bundle)
@@ -150,8 +170,19 @@ class ProductionAlbumsTests(unittest.TestCase):
             with self.assertRaises(OperationError):
                 deploy(self.runtime, 'fixture', 'registry/app', 'internal', str(self.bundle), 1)
         backup.assert_not_called()
-        self.assertTrue(all(call.args[1][:2] == ['docker', 'inspect'] or call.args[1][:3] == ['docker', 'network', 'inspect']
+        self.assertTrue(all(call.args[1][:2] == ['docker', 'inspect'] or call.args[1][:3] in (['docker', 'network', 'inspect'], ['docker', 'image', 'inspect'])
                             for call in self.runtime.execute.call_args_list))
+
+    def test_same_image_tag_cannot_hide_a_different_worker_artifact(self):
+        albums.stage(self.runtime, self.bundle)
+        def inspect(label, command, **kwargs):
+            data = json.loads(self.execute(label, command, **kwargs))
+            if label == 'production-albums-worker-image':
+                data[0]['Id'] = 'sha256:unexpected'
+            return json.dumps(data).encode()
+        self.runtime.execute.side_effect = inspect
+        with self.assertRaisesRegex(OperationError, 'registered CI artifact'):
+            albums.require_resources(self.runtime, self.bundle, self.config)
 
     def test_worker_configuration_and_mounts_must_match_selected_resources(self):
         albums.stage(self.runtime, self.bundle)

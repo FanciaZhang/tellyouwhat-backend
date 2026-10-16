@@ -43,6 +43,12 @@
 
 249 项运维测试完成，247 项通过、2 项因本机条件跳过，服务器原生 Compose 使用合成配置完成补验；未创建容器或改变服务。未部署。生产数据/worker 首次受管创建、IAM/CI、公开路由及真实业务验收仍待完成；配置解析不能代表线上已统一。见 `evidence/albums-shared-production-admission-2026-10-16.json`。
 
+## 相册正式资源首次创建入口（2026-10-16）
+
+`release.py deploy --albums-resources <SHA> --source-run <CI run>` 已接入运维/部署锁、备份、登记和清理。复用既有 CI 镜像，验证提交、源码摘要、CI 运行和镜像 digest；仅创建独立数据服务与媒体 worker。完整恢复包通过后才启动 worker，`prepared` 状态不能接入共享网关；失败保留数据和源配置，已有资源拒绝重复初始化。另修复 `ops_albums.py` CLI 的目录所有者检查参数错误。
+
+源码和测试已完成，本机运维测试及服务器原生 Compose 合成配置验证通过；未创建线上资源、运行数据库迁移或更改域名。发布镜像、生产凭据准备、真实备份恢复和 API/手机验收仍待完成。证据见 `evidence/albums-production-bootstrap-2026-10-16.json`。
+
 ## 手记共享认证客户端（2026-10-16）
 
 手记客户端已本地提交 `3ca91f2`、`fc1f9eb`：移除私有 Bearer/连接文件导入，开发与正式共用设备认证；开发版在服务器明确拒绝测试权益时，通过签名申请最长 30 天的授权并重试一次，不伪造 Apple 购买。5 项客户端定向检查、Release 编译及二进制排除检查通过。后端签名 HTTP 及竞态检查覆盖健康免费档保留、手记授权、到期和重新授权；未改服务器运行行为。测试使用合成 App Attest 根，不代表真实 Apple 认证。见 `evidence/journal-development-entitlement-2026-10-16.json`。旧私有服务和数据仍保留，新客户端尚未交付，公网路由尚未切换。

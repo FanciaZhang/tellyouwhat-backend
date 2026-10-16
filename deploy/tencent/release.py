@@ -296,7 +296,11 @@ def main():
     parser.add_argument("--strategy", choices=["blue-green", "disruptive"], default="blue-green")
     parser.add_argument("--source-run", default="")
     parser.add_argument("--confirm-interruption", default="")
+    parser.add_argument('--albums-resources', help='bootstrap only the selected Albums production data/worker source; does not switch the API')
     args = parser.parse_args()
+    if args.albums_resources and (args.action != 'deploy' or args.tag or args.registry or args.bundle
+                                 or args.strategy != 'blue-green' or args.acceptance != 'internal' or args.confirm_interruption):
+        parser.error('--albums-resources must be a separate internal resource deployment')
     os.umask(0o077)
     try:
         attempts = int(os.getenv("READINESS_ATTEMPTS", "18"))
@@ -309,11 +313,16 @@ def main():
         with operations_lock, runtime.lock("deployment", wait_seconds=lock_wait):
             runtime.refresh()
             if args.action == "deploy":
-                if not args.tag or not args.registry:
-                    raise OperationError("image tag and registry are required")
-                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
+                if args.albums_resources:
+                    from albums_production import bootstrap
+                    require_disk_space(runtime)
+                    result = bootstrap(runtime, args.albums_resources, args.source_run)
+                else:
+                    if not args.tag or not args.registry:
+                        raise OperationError("image tag and registry are required")
+                    result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
                 try:
-                    receipt = cleanup(runtime, "production")
+                    receipt = cleanup(runtime, 'albums-production' if args.albums_resources else 'production')
                     result["cleanup"] = {"passed": True, "completed_at": receipt["completed_at"]}
                 except (OperationError, OSError) as error:
                     result["cleanup"] = {"passed": False, "error": str(error)}
