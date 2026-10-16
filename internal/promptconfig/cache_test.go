@@ -107,3 +107,21 @@ func TestStartupFailureNeverPublishesPartialSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSelectedCacheDoesNotExposeOtherScopes(t *testing.T) {
+	c := NewJournalCache(&fixtureLoader{})
+	if err := c.Refresh(context.Background(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Current("health:meal_photo_capture"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("unselected scope escaped", err)
+	}
+}
+
+func TestStartRejectsEmptyAndUnknownScopesBeforeDatabaseAccess(t *testing.T) {
+	for _, defaults := range []map[string]Policy{nil, {"unknown": {}}} {
+		if _, err := Start(context.Background(), Store{}, defaults, nil); !errors.Is(err, ErrInvalid) {
+			t.Fatal("invalid scope selection accepted", err)
+		}
+	}
+}

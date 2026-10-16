@@ -108,6 +108,7 @@ func (c *Cache) Refresh(ctx context.Context, now time.Time) error {
 	c.lastAttempt = now
 	c.mu.Unlock()
 	values, err := c.loader.Published(ctx)
+	selected := make(map[string]Revision, len(c.scopes))
 	if err == nil {
 		for _, scope := range c.scopes {
 			r, ok := values[scope]
@@ -115,12 +116,13 @@ func (c *Cache) Refresh(ctx context.Context, now time.Time) error {
 				err = ErrInvalid
 				break
 			}
+			selected[scope] = r
 		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err == nil {
-		c.snapshot.Store(&cacheSnapshot{revisions: clone(values)})
+		c.snapshot.Store(&cacheSnapshot{revisions: clone(selected)})
 		c.lastSuccess = now
 	}
 	c.lastError = err
@@ -153,16 +155,27 @@ func (c *Cache) Run(ctx context.Context, report func(error)) {
 
 // Start rejects an incomplete startup snapshot. A later refresh failure retains the last valid revision.
 func Start(ctx context.Context, store Store, defaults map[string]Policy, report func(error)) (*Cache, error) {
+	if len(defaults) == 0 {
+		return nil, ErrInvalid
+	}
+	// Validate the selected scopes before writing any initialization records.
+	for scope, p := range defaults {
+		if err := p.Validate(scope); err != nil {
+			return nil, err
+		}
+	}
+	scopes := make([]string, 0, len(defaults))
 	for _, scope := range Scopes() {
 		p, ok := defaults[scope]
 		if !ok {
-			return nil, ErrInvalid
+			continue
 		}
 		if err := store.Initialize(ctx, scope, p, time.Now()); err != nil {
 			return nil, err
 		}
+		scopes = append(scopes, scope)
 	}
-	c := NewCache(store)
+	c := &Cache{loader: store, scopes: scopes}
 	if err := c.Refresh(ctx, time.Now()); err != nil {
 		return nil, err
 	}

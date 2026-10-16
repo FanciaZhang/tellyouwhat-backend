@@ -64,7 +64,7 @@ func run(logger *slog.Logger) error {
 	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
 		return err
 	}
-	promptDefaults, err := config.LoadPromptDefaults()
+	promptDefaults, err := config.LoadPromptDefaults(platform.Apps...)
 	if err != nil {
 		return err
 	}

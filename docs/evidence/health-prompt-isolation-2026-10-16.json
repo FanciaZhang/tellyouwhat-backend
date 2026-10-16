@@ -1,0 +1,29 @@
+{
+  "nativeIsolatedMySQL": true,
+  "networkingDisabled": true,
+  "testsPassed": true,
+  "output": "=== RUN   TestMySQLIllustrationBaselinePreservesPublishedPoliciesAndHistory\n--- PASS: TestMySQLIllustrationBaselinePreservesPublishedPoliciesAndHistory (0.57s)\n=== RUN   TestMySQLHealthOnlyStartupDoesNotInitializeJournal\n--- PASS: TestMySQLHealthOnlyStartupDoesNotInitializeJournal (0.60s)\n=== RUN   TestMySQLPublicationConcurrencyHistoryAndCrossInstanceRefresh\n--- PASS: TestMySQLPublicationConcurrencyHistoryAndCrossInstanceRefresh (0.56s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/promptconfig\t2.187s\n",
+  "sourceBase": "5c97caac3eab5f57e76010332ac41ba745f3d493",
+  "temporaryDatabaseRemoved": true,
+  "goAllPassed": true,
+  "goAllOutputSHA256": "b5107500374483d0f79a497ea9ae2a1258c902e2b5a51b72daf08a69d17bdff4",
+  "goPackagesPassed": 58,
+  "platformDeploymentChecks": 19,
+  "failedDeployment": {
+    "source": "5c97caac3eab5f57e76010332ac41ba745f3d493",
+    "cause": "Health initialization required disabled Journal prompt models",
+    "rollbackSource": "7c0e6d265a41d98e484c1e84305b1b92dd4760b1",
+    "birthdayReadiness": 200,
+    "workerStopped": true,
+    "databaseRedisProductionUnchanged": true
+  },
+  "sourceSHA256": {
+    "internal/config/prompts.go": "2e1e23a92c90fa32190a46e4298402be8962db9ccefdd1dd027a3407f61970de",
+    "internal/config/prompts_test.go": "46f560841d105567512c6fbe0a76790547b4f14f3ec44c76e9a133edcc2963e4",
+    "internal/promptconfig/cache.go": "b08bc88017d10c22ffcd0c67d7b19851f477502e55facf8afeacedd19ef603ff",
+    "internal/promptconfig/cache_test.go": "23d2be95da3624dfcd4e3a927cf6e3e40b9e0aec99f32a6b2cdccb8049d06436",
+    "internal/promptconfig/mysql_test.go": "3e89f41a072f3db89820ffa24985af0eb16eaa0cc741d4a4eab21a33f042d8ca",
+    "cmd/gateway/main.go": "806d958db0b3ce6bbee13bb187886dbcd13382566e6dd3694405ddd9f2e3ab7e",
+    "cmd/worker/main.go": "c8ac7380243c9b2e864f5c8dd086b5454662b0e9a7e70409a0bffa06bb81f40d"
+  }
+}
