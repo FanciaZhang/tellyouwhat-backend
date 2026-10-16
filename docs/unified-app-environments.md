@@ -71,3 +71,7 @@
 ## 健康独立开发 CloudKit schema（2026-10-16）
 
 独立容器 `iCloud.cn.tellyouwhat.healthapp.dev` 已导入当前同步代码所需的 `AppObjectV2`、`AppMediaV2`，并部署到该开发容器自己的 Production 环境，供 Ad Hoc 包使用。控制台读回确认记录类型、字段及 `manifest` 加密类型；既有 Users 类型不变，未操作业务记录，也未修改正式容器。此证据仅证明 schema 就绪，真实手机写入、恢复、跨设备同步及正式容器隔离仍待验收。见 `evidence/health-development-cloudkit-schema-2026-10-16.json`；可复现 schema 保存在健康仓库 `docs/ci/health-development.ckdb`。
+
+## 相册后台任务数据库隔离（2026-10-16）
+
+源码 `15a5b31` 将 API 既有数据库/环境检查移到与 worker 共用的配置入口，阻止独立 worker 在错误环境连接数据库。28 组配置覆盖测试/生产互串、其他 App 数据库、缺失环境；另外验证 root、空用户和错误 DSN 的拒绝及日志脱敏。相关三个 Go 包共 235 项顶层测试通过、220 项真实集成条件检查跳过。现有 Compose 已给两个进程注入相同配置，新增回归断言；未更新远端服务。见 `evidence/albums-worker-environment-2026-10-16.json`。
