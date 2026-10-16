@@ -51,7 +51,9 @@ def bundle_fingerprint(runtime, source):
 
 def capacity_check(runtime, target, source, tag, registry, acceptance, source_run, previous):
     try:
-        bg.resource_check(runtime, target)
+        from ops_albums import selected
+        gateway_mib = 512 if selected(runtime.config) or selected(read_environment(Path(source) / ".env.production")) else 384
+        bg.resource_check(runtime, target, gateway_mib)
     except bg.CapacityError as error:
         if not re.fullmatch(r"[0-9a-f]{40}", tag) or not re.fullmatch(r"[0-9]+", source_run):
             raise
@@ -141,7 +143,8 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, con
                    recovery_target=previous, candidate=candidate)
     try:
         stop(runtime, previous)
-        bg.require_memory_capacity(dual=False)
+        from ops_albums import selected
+        bg.require_memory_capacity(dual=False, gateway_mib=512 if selected(config) else 384)
         runtime.execute("slot-migrate", bg.compose(runtime, candidate, "run", "--rm", "--no-deps", "migrate"), timeout=300)
         start(runtime, candidate, attempts)
         values = bg.statuses(runtime, candidate)

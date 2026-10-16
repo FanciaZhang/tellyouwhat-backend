@@ -91,6 +91,9 @@ def ready(runtime, slot, attempts):
 
 
 def require_ready(runtime, slot, attempts):
+    from ops_albums import verify_gateway
+    root = slot_path(runtime, slot)
+    verify_gateway(runtime, root, read_environment(root / ".env.production"), slot["slot"])
     if not ready(runtime, slot, attempts):
         raise OperationError("slot dependencies are not ready")
 
@@ -202,14 +205,15 @@ def storage_check(runtime):
         raise OperationError("insufficient disk headroom")
 
 
-def require_memory_capacity(dual=True):
+def require_memory_capacity(dual=True, gateway_mib=384):
     memory = dict(re.findall(r"^(MemTotal|MemAvailable):\s+(\d+)", Path("/proc/meminfo").read_text(), re.M))
-    if int(memory["MemAvailable"]) < (1344 + 512) * 1024 or (dual and int(memory["MemTotal"]) < (2688 + 192 + 512) * 1024):
+    slot_mib = gateway_mib + 768 + 192
+    if int(memory["MemAvailable"]) < (slot_mib + 512) * 1024 or (dual and int(memory["MemTotal"]) < (2 * slot_mib + 192 + 512) * 1024):
         raise CapacityError("insufficient memory headroom for release startup")
 
 
-def resource_check(runtime, slot):
-    require_memory_capacity()
+def resource_check(runtime, slot, gateway_mib=384):
+    require_memory_capacity(gateway_mib=gateway_mib)
     if cpu_busy_percent() >= 85:
         raise CapacityError("CPU usage is at least 85 percent; active services were retained")
     storage_check(runtime)
@@ -267,7 +271,10 @@ def validate_slot_config(runtime, slot):
     config = json.loads(output)
     if config.get("name") != "tellyouwhat-" + slot["slot"]:
         raise OperationError("candidate Compose project is not isolated")
-    for service, port, limit in zip(SERVICES, PORTS[slot["slot"]], (384, 768, 192)):
+    from ops_albums import selected, verify_compose
+    selected_config = read_environment(slot_path(runtime, slot) / ".env.production")
+    verify_compose(selected_config, config)
+    for service, port, limit in zip(SERVICES, PORTS[slot["slot"]], (512 if selected(selected_config) else 384, 768, 192)):
         value = config["services"][service]
         bindings = value.get("ports", [])
         if (value.get("image") != slot["images"][service]
@@ -406,8 +413,12 @@ def rollback(runtime, attempts):
     from ops_recording import require_continuity
     require_continuity(read_environment(slot_path(runtime, state['current']) / '.env.production'),
                        read_environment(slot_path(runtime, candidate) / '.env.production'))
+    from ops_albums import require_resources
+    candidate_root = slot_path(runtime, candidate)
+    require_resources(runtime, candidate_root, read_environment(candidate_root / '.env.production'))
     if not running(runtime, candidate):
-        resource_check(runtime, candidate["slot"])
+        from ops_albums import selected
+        resource_check(runtime, candidate["slot"], 512 if selected(runtime.config) or selected(read_environment(candidate_root / ".env.production")) else 384)
     # A retired legacy slot occupies blue ports and cannot be restarted after
     # blue is adopted. Use a lifecycle-capable slot snapshot instead.
     if candidate["slot"] == "legacy" and state["current"]["slot"] == "blue":

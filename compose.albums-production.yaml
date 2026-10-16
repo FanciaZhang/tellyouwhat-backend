@@ -1,4 +1,4 @@
-# Independent Albums production descriptor; release.py activation support is pending.
+# Albums production data and media worker; HTTP is served by the shared production gateway.
 # Do not start it with an ad hoc Compose command.
 # Never combine with the test stack or reuse its environment, network or volumes.
 name: tellyouwhat-albums-production
@@ -20,35 +20,6 @@ x-album-app: &album-app
     options: {max-size: 5m, max-file: "2"}
 
 services:
-  albumgateway:
-    <<: *album-app
-    image: "${ALBUM_PRODUCTION_IMAGE_PREFIX:-tellyouwhat-albums-production}-albumgateway:${ALBUM_PRODUCTION_IMAGE_TAG:?Set the exact tested Git commit}"
-    build:
-      context: .
-      args: {SERVICE: albumgateway}
-    environment:
-      <<: *album-environment
-      ALBUM_HTTP_LISTEN_ADDRESS: "0.0.0.0:8080"
-      ALBUM_TRUSTED_PROXIES: "${ALBUM_PRODUCTION_PROXY_CIDR:-172.29.94.1/32}"
-      # Two bounded 64-MiB password jobs plus runtime; collect before the cgroup limit.
-      GOMEMLIMIT: "180MiB"
-    volumes:
-      - "${ALBUM_PRODUCTION_SECRET_DIRECTORY:?Set the private production secret directory}:/album-secrets:ro"
-    ports: ["127.0.0.1:${ALBUM_PRODUCTION_API_PORT:-18093}:8080/tcp"]
-    depends_on:
-      mysql: {condition: service_healthy}
-      redis: {condition: service_healthy}
-      migrate: {condition: service_completed_successfully}
-    healthcheck:
-      test: [CMD, /service, -check-ready]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    stop_grace_period: 20s
-    mem_limit: 256m
-    pids_limit: 100
-
   albumworker:
     <<: *album-app
     image: "${ALBUM_PRODUCTION_IMAGE_PREFIX:-tellyouwhat-albums-production}-albumworker:${ALBUM_PRODUCTION_IMAGE_TAG:?Set the exact tested Git commit}"

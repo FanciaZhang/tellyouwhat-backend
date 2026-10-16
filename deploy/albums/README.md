@@ -1,6 +1,6 @@
 # 相册环境与部署
 
-目标为每个环境一个共享 API 网关。`cmd/gateway` 直接装配相册路由，`cmd/albumworker` 继续独立处理媒体；以下独立 API 部署记录描述现存服务，迁移完成前保留其数据与恢复材料。尚未发布的 `compose.albums-production.yaml` 独立 API 草案已被替代，禁止按该草案新增独立生产 API。
+目标为每个环境一个共享 API 网关。`cmd/gateway` 直接装配相册路由，`cmd/albumworker` 继续独立处理媒体；以下独立 API 部署记录描述现存服务，迁移完成前保留其数据与恢复材料。`compose.albums-production.yaml` 现仅包含 MySQL、Redis、迁移及媒体 worker，不再创建独立生产 API。
 
 
 `cmd/albumgateway` 装配 MySQL 账户、加密 Apple refresh grant、单次登录挑战、可撤销会话、Redis 限流、上传/分片/图库/日常副本和订阅接口。`cmd/albumworker` 执行归档验证和媒体处理。新登录账户容量为零；正式容量须验证订阅，独立开发身份只能获得明确账户、额度和有效期的测试授权。
@@ -359,7 +359,22 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 三个相关 Go 包、定向竞态和六项 CAM 静态范围检查通过，未部署、未切换域名或启用处理。证据：`../../docs/evidence/albums-production-resource-boundary-2026-10-16.json`。
 
-已被共享网关目标替代的正式栈描述保留在 `../../compose.albums-production.yaml`，配套插值文件为 `production.env.example`、应用文件为 `production-runtime.env.example`。默认生产库/卷、回环 18093 和 172.29.94.0/24 均与测试栈分开；不得复用旧测试环境或卷。当前仅通过隔离单测及服务器原生 Compose 合成配置解析，尚未接入生产发布、备份和产物保留入口，禁止直接 `docker compose up` 激活。待凭据、云权限及媒体队列验证后，通过 `release.py deploy` 完成发布接入和实际验收。
+`../../compose.albums-production.yaml` 仅承载独立 `albums_production` 数据库、Redis、迁移与媒体 worker；不发布端口、不创建 API。共享网关使用 `../../compose.shared-albums-production.yaml` 加入该资源网络，专用 `albums.env` 及只读 `/album-secrets` 仅进入 gateway。共享数据库使用明确 IP，相册使用完整容器名，避免双网络的同名解析。
+
+`release.py deploy` 在备份和变更前核对已登记的相册资源、凭据和运行状态；CI 的 `ops_albums.py --backend-dir … --bundle …` 从服务器已有登记生成 0600 的 `albums.env`，不向 GitHub 再复制一套相册秘密。公共环境只保留以下标识，不能放相册数据服务密码或云密钥：
+
+```dotenv
+PLATFORM_APPS=health,journal,birthday,albums
+ALBUM_API_HOST=api.albums.tellyouwhat.cn
+ALBUM_APPLE_BUNDLE_ID=cn.tellyouwhat.albums
+ALBUM_APPLE_TEAM_ID=T6DD96HY2B
+ALBUM_DEPLOYMENT_ENVIRONMENT=production
+ALBUM_RESOURCE_SOURCE=<已登记的相册资源完整提交 SHA>
+```
+
+必须先有已核验的蓝绿网络及相册生产数据/worker；两条网络的实际宿主网关地址用于限制代理信任。候选启动后复核真实网络、只读挂载与凭据，其他共享服务不得获得相册专用凭据。配置随候选、回滚快照和加密恢复包保留；恢复必须同时具备匹配的完整相册数据检查点。媒体资源更新必须与这一固定资源选择协调，不能先换 worker 再让旧快照指向另一套资源。
+
+这部分仅通过本机运维测试和服务器 Compose 合成配置解析。生产数据/worker 的首次受管部署、IAM/CI、公开路由、真实备份与登录媒体旅程仍未验收；禁止直接 `docker compose up` 绕过正式发布。
 
 ### Production recovery integration status
 

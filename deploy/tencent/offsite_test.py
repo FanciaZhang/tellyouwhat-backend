@@ -129,6 +129,27 @@ class OffsiteSafetyTests(unittest.TestCase):
             (current / 'compose.journal-recording.yaml').write_text('services: {}\n')
             archive()
             self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy))
+            (current / '.env.production').write_text('APP_ENV=production\nPLATFORM_APPS=health,journal,birthday,albums\n'
+                                                    'ALBUM_RESOURCE_SOURCE=' + 'a' * 40 + '\n')
+            archive()
+            with self.assertRaisesRegex(OperationError, 'full production checkpoint'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy)
+            album = bundle / 'albums-production'
+            album.mkdir()
+            (album / 'state.json').write_text(json.dumps({'source': 'a' * 40}))
+            matched = dict(legacy, recovery_albums_production={'fixture': 'verified separately'})
+            with patch('albums_artifacts.verify_recovery'):
+                archive()
+                with self.assertRaisesRegex(OperationError, 'configuration is missing'):
+                    verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched)
+                (current / 'albums.env').write_text('ALBUM_API_HOST=api.albums.tellyouwhat.cn\n')
+                (current / 'compose.shared-albums-production.yaml').write_text('services: {}\n')
+                archive()
+                self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched))
+                (album / 'state.json').write_text(json.dumps({'source': 'b' * 40}))
+                archive()
+                with self.assertRaisesRegex(OperationError, 'differs from its data selection'):
+                    verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched)
 
 
 if __name__ == "__main__":

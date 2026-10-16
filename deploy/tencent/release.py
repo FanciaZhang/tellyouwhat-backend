@@ -19,7 +19,7 @@ from ops_backup import create_backup, verify_backup
 from ops_artifacts import cleanup
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
@@ -38,7 +38,7 @@ def copy_runtime(source, destination):
             target = destination / relative
             target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
             shutil.copy2(origin, target)
-            if relative == ".env.production":
+            if relative in (".env.production", "albums.env"):
                 target.chmod(0o600)
 
 
@@ -80,6 +80,8 @@ def validate(source, tag, registry, acceptance):
             raise OperationError("production application domains are required")
     if config.get("PUBLIC_PROXY_MODE", "docker") not in ("external", "docker"):
         raise OperationError("PUBLIC_PROXY_MODE must be docker or external")
+    from ops_albums import validate as validate_albums
+    validate_albums(source, config)
     readiness_checks(config)
     from ops_recording import configured_root
     configured_root(config, 'production')
@@ -180,6 +182,8 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-
     config = validate(source, tag, registry, acceptance)
     from ops_recording import prepare, require_continuity
     require_continuity(runtime.config, config)
+    from ops_albums import require_resources
+    require_resources(runtime, source, config)
     require_disk_space(runtime)
     prepare(runtime, config)
     backup = create_backup(runtime)

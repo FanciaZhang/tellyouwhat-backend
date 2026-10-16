@@ -58,6 +58,8 @@ def create_recovery_bundle(runtime, filename):
             copy_runtime(source, target)
             env = target / ".env.production"
             values = read_environment(env)
+            from ops_albums import require_configuration
+            require_configuration(runtime, source, values)
             # The decryption key is preserved separately from its encrypted backup.
             env.write_text("\n".join(line for line in env.read_text().splitlines() if not line.lstrip().startswith("BACKUP_ENCRYPTION_KEY=")) + "\n")
             external = values.get("ARK_MANAGEMENT_CREDENTIAL_HOST_FILE")
@@ -204,6 +206,21 @@ def verify_recovery_bundle(runtime, source, manifest):
                         raise OperationError('recording recovery mount configuration is missing') from error
                     if not overlay.isfile():
                         raise OperationError('recording recovery mount configuration is invalid')
+                from ops_albums import selected as albums_selected, OVERLAY as albums_overlay
+                values = read_environment(recovered_env)
+                if albums_selected(values):
+                    if not manifest.get('recovery_albums_production'):
+                        raise OperationError('shared Albums API recovery requires its full production checkpoint')
+                    for name in ('albums.env', albums_overlay):
+                        try:
+                            item = archive.getmember(prefix + name)
+                        except KeyError as error:
+                            raise OperationError('shared Albums API recovery configuration is missing') from error
+                        if not item.isfile() or not 0 < item.size <= 32768:
+                            raise OperationError('shared Albums API recovery configuration is invalid')
+                    state = json.loads(archive.extractfile('recovery/albums-production/state.json').read())
+                    if values.get('ALBUM_RESOURCE_SOURCE') != state.get('source'):
+                        raise OperationError('shared Albums API recovery differs from its data selection')
                 for name in ["compose.production.yaml", *["secrets/" + key for key in KEY_FILES]]:
                     if not archive.getmember(prefix + name).isfile():
                         raise OperationError("configuration recovery signing or Compose files are incomplete")
