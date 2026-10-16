@@ -1,0 +1,29 @@
+{
+  "source": "ca361059373d96fc89d1ad15655d7508a4dff6a8",
+  "targets": [
+    "journal-private-development",
+    "birthday-private-development",
+    "birthday-private-testflight",
+    "tellyouwhat-albums-development-albumgateway-1"
+  ],
+  "registered_images_match": true,
+  "all_test_hosts_use_shared_api": true,
+  "old_ports_not_routed": true,
+  "installed_operations_match": false,
+  "activated": false,
+  "tests": {
+    "total": 290,
+    "passed": 288,
+    "skipped": 2,
+    "skip_conditions": [
+      "native Docker Compose unavailable",
+      "native Caddy unavailable"
+    ],
+    "log_sha256": "ab598f4db0ddab56a8e92f8c1af914d454d3ab1f595cd4be6a3ab52a2ba1f899"
+  },
+  "limits": [
+    "No standalone service was stopped.",
+    "The matched scheduled backup and retirement modules must first be installed by the normal production release.",
+    "The formal Albums legacy stack and all media workers/data services are outside the retirement target set."
+  ]
+}
