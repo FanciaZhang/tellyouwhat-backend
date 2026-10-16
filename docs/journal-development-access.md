@@ -4,8 +4,8 @@
 absent from the production gateway dependency graph and production image build
 commands. Health code, storage and commerce are not changed.
 
-The authenticated HTTPS route `/_development/journal/*` on the existing Journal
-site forwards to loopback port 18787. The Health site has no development route.
+The authenticated HTTPS host `api-test.journal.tellyouwhat.cn`
+forwards to loopback port 18787. The Health site has no development route.
 Never expose port 18787 directly. A random operator-provisioned credential is
 required for every business request; WebSockets use the normal expiring one-time
 tickets. Release clients never contain this credential or simulation code.
@@ -34,7 +34,7 @@ the server. Debug and Release both require HTTPS and the client rejects credenti
 redirects.
 
 Voice uses the regular 120-minute monthly allowance. The old 10-minute/CNY 1
-session limits are removed. A separate CNY 100 calendar-month estimated spend
+session limits are removed. A separate CNY 200 calendar-month estimated spend
 ceiling is configured by the launcher; the command reads
 `JOURNAL_DEVELOPMENT_MONTHLY_BUDGET_CNY`. The normal budget accounting implementation
 is backed by an atomic, private operation history in `JOURNAL_DEVELOPMENT_STATE_DIR`.
@@ -59,8 +59,8 @@ only synthetic audio unless the user explicitly tests their own recording.
 
 ## 服务协议与重启恢复
 
-新开发服务返回 `X-Journal-Development-Protocol: subscription-v1`。客户端和连接脚本拒绝把旧临时服务的 HTTP 200 当作长期开发连接；升级服务前不会报告长期能力已验证。
+新开发服务返回 `X-Journal-Development-Protocol: subscription-v2`。客户端和连接脚本拒绝把旧临时服务的 HTTP 200 当作长期开发连接；升级服务前不会报告长期能力已验证。
 
 费用存储由一个独立开发进程独占。重启时，旧进程未完成的请求保留预留费用，但立即释放旧并发名额；恢复结果持久化，避免录音和整理各占一个名额时重启后仍需等待租约到期。
 
-Prompt configuration and the private runtime's required read-only database account are documented in [Journal AI quality](journal-ai-quality.md). Deployment now stops if `prompt-reader.env` is missing; there is no second private-service copy of the published Prompt policy.
+The development Prompt is an independent validated file, not a database connection. Private runtime parameters pin an immutable image and never read the production gateway environment. Configuration, program and identity-free spending events use an independently encrypted checkpoint inside the existing authenticated COS backup. Recordings, image jobs, payload keys, consent records and the developer connection token are excluded; recovery requires a new connection credential. The checkpoint key is escrowed separately on the Mac. Source and hashes bind the restored program to the matching configuration; [Journal AI quality](journal-ai-quality.md) describes the Prompt boundary.

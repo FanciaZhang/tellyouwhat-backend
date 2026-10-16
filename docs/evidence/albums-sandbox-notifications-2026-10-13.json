@@ -1,0 +1,120 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "isolated_albums_test_sandbox_only",
+  "app": {
+    "bundle_id": "cn.tellyouwhat.albums",
+    "app_apple_id": 6822133304,
+    "team_id": "T6DD96HY2B"
+  },
+  "key": {
+    "name": "Albums Test Backend",
+    "key_id": "YTX5GYG2Z5",
+    "issuer_id": "1f4f7f07-26b1-4226-9518-5bd19f8440b8",
+    "scope": "Apple team IAP key; application binding enforced by Albums code",
+    "local_file": "~/.config/tellyouwhat/albums-test/album-app-store.p8",
+    "local_mode": "0600",
+    "server_file": "/opt/tellyouwhat/albums-test/secrets/album-app-store.p8",
+    "server_mode": "0440 root:65532",
+    "other_app_keys_modified": false
+  },
+  "deployment": {
+    "runtime_source": "c8760dc190ea6e00071842ed7682c385986ebfdc",
+    "configuration_tool_source": "d60fe14",
+    "gateway_container": "88cdd4e63ae7",
+    "gateway_image": "sha256:4d27fb62efcf9597535273ae142ebb289a204fdafa62f74d711b947ee65fe044",
+    "subscription_enabled": true,
+    "environment": "Sandbox",
+    "database_migration": false,
+    "image_changed": false,
+    "worker_restarted": false,
+    "other_app_containers_unchanged": true,
+    "public_readyz": {
+      "status": 200,
+      "body": {
+        "code": "ok"
+      }
+    },
+    "registered_owner": "albums-test",
+    "recovery_directory": "/opt/tellyouwhat/albums-test/albums-sandbox-20261013",
+    "before_after_config_retained": true,
+    "cleanup_passed": true,
+    "cleanup_removed_files": [],
+    "cleanup_removed_images": []
+  },
+  "notification": {
+    "url": "https://api.albums.tellyouwhat.cn/v1/albums/subscription/notifications",
+    "asc_sandbox_url_saved": true,
+    "production_url_configured": false,
+    "apple_status": {
+      "attempts": [
+        {
+          "attemptDate": 1791867477367,
+          "sendAttemptResult": "SUCCESS"
+        }
+      ],
+      "environment": "Sandbox",
+      "http_status": 200,
+      "notification_id": "41d1a46a-4187-45b5-9e8c-7f2536a8176b",
+      "signed_at": "2026-10-13T12:57:57.339+08:00",
+      "signed_payload_sha256": "6dfe0b6bd51e0f366b72a452641fe848aabdf876c1392af188c3a5c4e0748b5c",
+      "type": "TEST"
+    },
+    "database_notification_id": "41d1a46a-4187-45b5-9e8c-7f2536a8176b",
+    "database_semantic_digest": "329d949f0557a02c0a265e4286869e16464fa50bd8cbccca2b4bc6aca1db9a7c",
+    "database_digest_matches_verified_fields": true,
+    "processed_at_utc": "2026-10-13T04:57:59.076247Z",
+    "replay_http_statuses": [
+      200,
+      200
+    ],
+    "rows_after_replay": 1,
+    "accounts_after_test": 0,
+    "subscriptions_after_test": 0,
+    "invalid_signature_http_status": 422
+  },
+  "verification": {
+    "configuration_and_artifact_tests_passed": 12,
+    "probe_private_file_test_passed": 1,
+    "probe_initial_status_failure": "Token was incorrectly restricted to UUID; changed to bounded opaque string and queried the same existing request successfully. No repeated POST.",
+    "raw_signed_payload_or_tokens_in_repository": false
+  },
+  "source_sha256": {
+    "deploy/albums/configure_sandbox.py": "8143d5d71314948a9013b3e8a553c92a04af8f876ee359db9b4059f0e921344b",
+    "deploy/tencent/ops_artifacts.py": "9749ebaf948b837ea6ac7ce9bf57cf698c651e7e183fc87677dc81c1a2e40c0e",
+    "deploy/albums/appstore_probe.go": "5f680254540307ed70f204cad781541dd53200ab9586c62e8d3afd8fdc5d502f",
+    "deploy/albums/appstore_probe_test.go": "963e12b09d10c6c1e6f592fb5c0a22fea2608cbb35f2c5c1c13102f1a30d4826"
+  },
+  "not_verified": [
+    "real Apple sign-in",
+    "real Sandbox product fetch and free-trial purchase",
+    "paid conversion, renewal, upgrade, downgrade, refund and account restoration",
+    "complete user account upload and replacement workflow",
+    "physical device acceptance"
+  ],
+  "unchanged_disabled": [
+    "production sales",
+    "photo_processing",
+    "video_processing",
+    "sharing",
+    "trash",
+    "retention_push",
+    "derived_cleanup",
+    "permanent_original_purge"
+  ],
+  "read_only_recheck_2026_10_14": {
+    "apple_test_status": "SUCCESS",
+    "apple_status_http": 200,
+    "notification_uuid": "41d1a46a-4187-45b5-9e8c-7f2536a8176b",
+    "public_readyz": {
+      "code": "ok"
+    },
+    "gateway_running": true,
+    "deployment_environment": "test",
+    "subscriptions_enabled": true,
+    "configured_key_id": "YTX5GYG2Z5",
+    "local_key_mode": "0600",
+    "server_key_mode": "0440 root:65532",
+    "new_key_or_notification_created": false,
+    "purchase_verified": false
+  }
+}

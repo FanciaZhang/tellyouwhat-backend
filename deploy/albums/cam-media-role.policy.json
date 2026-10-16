@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "statement": [{
+    "effect": "allow",
+    "action": ["cam:PassRole"],
+    "resource": ["qcs::cam::uin/757772438:roleName/CI_QCSRole"]
+  }]
+}

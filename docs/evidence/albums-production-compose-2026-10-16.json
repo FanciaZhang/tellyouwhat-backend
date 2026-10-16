@@ -1,0 +1,47 @@
+{
+  "passed": true,
+  "services": [
+    "albumgateway",
+    "albumworker",
+    "migrate",
+    "mysql",
+    "redis"
+  ],
+  "loopback_port": 18093,
+  "network": "172.29.94.0/24",
+  "root_password_not_in_apps": true,
+  "database_volume_isolated": true,
+  "worker_has_no_secret_mount": true,
+  "missing_required_configuration_rejected": [
+    "ALBUM_PRODUCTION_ENV_FILE",
+    "ALBUM_PRODUCTION_SECRET_DIRECTORY",
+    "ALBUM_PRODUCTION_IMAGE_TAG",
+    "ALBUM_PRODUCTION_MYSQL_PASSWORD",
+    "ALBUM_PRODUCTION_MYSQL_ROOT_PASSWORD",
+    "ALBUM_PRODUCTION_REDIS_PASSWORD"
+  ],
+  "containers_started": false,
+  "synthetic_values_only": true,
+  "temporary_directory_removed_on_exit": true,
+  "checked_at": "2026-10-16T05:07:40.357373+00:00",
+  "source_hashes": {
+    "compose.albums-production.yaml": "7ff8e0f8034712ce72084e7a52c8ca3a222c28b76c194a780e6dd1fea9b2890b",
+    "deploy/albums/production.env.example": "264ffc2416a4a3ab4e00bcb7cd5b5bb3cbc8a2efbb3e4d9090278baa24082858",
+    "deploy/albums/production-runtime.env.example": "ed502e1840954aef520e460e280197273b65b1aa61ec407262c82c060eed5364",
+    "internal/albums/deployment_test.go": "7490ace77f87c752d08e63ba2934702c4136791efe852dc0f8bc996d229f798c"
+  },
+  "local_test": "TestAlbumDeploymentsHaveIndependentStorageAndOnlyLoopbackIngress: test and production passed",
+  "native_host_preflight": {
+    "memory_available_mib": 2444,
+    "root_disk_available_gib_rounded": 18,
+    "proposed_subnet_overlap": false,
+    "proposed_port_in_use": false,
+    "load_capacity_verified": false
+  },
+  "initial_network_inventory_failure": "host/none networks have null IPAM config; corrected read-only inventory to treat it as empty",
+  "production_activation_entry_implemented": false,
+  "production_backup_integrated": false,
+  "production_credentials_configured": false,
+  "public_route_changed": false,
+  "all_worktrees_clean_before_this_change": true
+}

@@ -112,7 +112,7 @@ func (s Store) Metrics(ctx context.Context, now time.Time) (Metrics, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err = tx.QueryContext(ctx, `SELECT app_id,operation,status,COUNT(*),GREATEST(0,TIMESTAMPDIFF(SECOND,MIN(created_at),?)) FROM ai_jobs WHERE expires_at>? AND status IN ('queued','running') GROUP BY app_id,operation,status`, now, now)
+	rows, err = tx.QueryContext(ctx, `SELECT app_id,operation,status,COUNT(*),GREATEST(0,TIMESTAMPDIFF(SECOND,MIN(created_at),?)) FROM (SELECT app_id,operation,status,created_at,expires_at FROM ai_jobs UNION ALL SELECT 'journal','journal.illustration',state,created_at,expires_at FROM journal_illustration_jobs) jobs WHERE expires_at>? AND status IN ('queued','running') GROUP BY app_id,operation,status`, now, now)
 	if err != nil {
 		return out, err
 	}

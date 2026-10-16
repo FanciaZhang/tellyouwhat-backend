@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-14",
+  "scope": "Durable local publication intent before uploading an Albums recovery bundle",
+  "changes": [
+    "Private configuration supplies nonsecret destination; request pins bucket and region",
+    "Persist authenticated exact destination, ciphertext digest and bytes before PUT",
+    "Mark confirmed only after version-pinned readback; unknown outcomes retain unconfirmed intent",
+    "Unconfirmed intent cannot be fetched or published as a receipt; can authorize expiry after source snapshot retention",
+    "Legacy confirmed receipts remain readable"
+  ],
+  "validation": {
+    "python_passed": 34,
+    "python_failed": 0,
+    "python_skipped": 0,
+    "python_command": "python3 -m unittest backup_test offsite_test deletion_ledger_test",
+    "native_mysql_race_test": "TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill",
+    "native_mysql_passed": 1,
+    "native_mysql_failed": 0,
+    "native_mysql_skipped": 0,
+    "native_run": "/tmp/albums-records-vnxts47z",
+    "actual_encryption_and_mysql_restore": true,
+    "object_transport": "controlled; not live COS",
+    "fixture_services_stopped": true,
+    "disposable_database_removed": true
+  },
+  "deployed": false,
+  "permissions_changed": false,
+  "real_objects_deleted": false,
+  "remaining": [
+    "Real backup bucket and independent identities awaiting user approval",
+    "Loss of local intent together with host still requires independent offsite intent protection or orphan inventory reconciliation",
+    "Account-specific backup and deletion-ledger erasure not complete"
+  ],
+  "source_sha256": {
+    "deploy/albums/offsite.py": "e5541eacb20c18b2ce3c8acaea613e0457927e40cf2992c2bf78f7d981ee2369",
+    "deploy/albums/offsite_test.py": "d23b39dea01f1639b11d47b350012e1c435b9059e24cf5b7f7df9e585b64676c",
+    "internal/albums/recovery_backup_test.go": "d4548cb8c0b14b32120d2166311c4ca5f6e5e3bb531ed93603dce8803883b38a"
+  }
+}

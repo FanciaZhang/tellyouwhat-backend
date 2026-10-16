@@ -4,11 +4,9 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"log"
 	"log/slog"
@@ -28,7 +26,11 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	action := run
+	if len(os.Args) == 2 && os.Args[1] == "verify-recovery" {
+		action = verifyRecovery
+	}
+	if err := action(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -37,24 +39,18 @@ func main() {
 func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("app_id", "journal", "environment", "development", "component", "journal_voice")
 	// The fixed loopback listener is reached through the authenticated Journal HTTPS route.
-	if os.Getenv("DATABASE_DSN") != "" || os.Getenv("REDIS_URL") != "" || os.Getenv("APP_ENV") == "production" {
+	if os.Getenv("DATABASE_DSN") != "" || os.Getenv("JOURNAL_PROMPT_DATABASE_DSN") != "" || os.Getenv("REDIS_URL") != "" || os.Getenv("APP_ENV") == "production" {
 		return errors.New("refusing production configuration in developer service")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	policyDSN := os.Getenv("JOURNAL_PROMPT_DATABASE_DSN")
-	if policyDSN == "" {
-		return errors.New("missing read-only Journal Prompt database connection")
+	policyPath := os.Getenv("JOURNAL_PROMPT_FILE")
+	if policyPath == "" {
+		return errors.New("missing independent Journal Prompt file")
 	}
-	policyDB, err := sql.Open("mysql", policyDSN)
-	if err != nil {
-		return errors.New("invalid Journal Prompt database connection")
-	}
-	defer policyDB.Close()
-	policyDB.SetMaxOpenConns(1)
-	prompts := promptconfig.NewJournalCache(promptconfig.JournalLoader{Store: promptconfig.Store{DB: policyDB}})
+	prompts := promptconfig.NewJournalCache(journalPromptFile{path: policyPath})
 	refresh, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err = prompts.Refresh(refresh, time.Now())
+	err := prompts.Refresh(refresh, time.Now())
 	cancel()
 	if err != nil {
 		return errors.New("published Journal Prompt configuration unavailable")

@@ -17,10 +17,11 @@ func TestDevelopmentEnrollmentConsumesChallengeAndPinsVerifiedKey(t *testing.T) 
 	keys := NewMemoryKeyStore()
 	verifier := &fakeAttestationObjectVerifier{}
 	enrollment := NewEnrollmentService(EnrollmentConfig{
-		AppID:             "health",
-		Environment:       EnvironmentDevelopment,
-		DevelopmentSecret: "rotate-me",
-		AllowedBuilds:     map[string]struct{}{"100": {}},
+		AppID:                   "health",
+		Environment:             EnvironmentDevelopment,
+		DevelopmentSecret:       "rotate-me",
+		RequireActivationSecret: true,
+		AllowedBuilds:           map[string]struct{}{"100": {}},
 	}, nonces, keys, verifier, func() time.Time { return now })
 	challenge, err := enrollment.IssueChallenge(context.Background(), "key-1")
 	if err != nil {
@@ -66,10 +67,11 @@ func TestEnrollmentReplayDoesNotSucceedWhenKeyWasNeverStored(t *testing.T) {
 	nonces := NewMemoryNonceStore()
 	keys := failingEnrollmentKeyStore{}
 	enrollment := NewEnrollmentService(EnrollmentConfig{
-		AppID:             "health",
-		Environment:       EnvironmentDevelopment,
-		DevelopmentSecret: "rotate-me",
-		AllowedBuilds:     map[string]struct{}{"100": {}},
+		AppID:                   "health",
+		Environment:             EnvironmentDevelopment,
+		DevelopmentSecret:       "rotate-me",
+		RequireActivationSecret: true,
+		AllowedBuilds:           map[string]struct{}{"100": {}},
 	}, nonces, keys, &fakeAttestationObjectVerifier{}, func() time.Time { return now })
 	challenge, err := enrollment.IssueChallenge(context.Background(), "key-1")
 	if err != nil {

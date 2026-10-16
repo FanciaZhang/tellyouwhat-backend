@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-14",
+  "scope": "Local recovered backup retention; no remote deletion or account-specific erasure",
+  "changes": [
+    "Recovered fetch directories inherit authenticated source snapshot expiry at 14 days",
+    "Verify snapshot and deletion ledger before authorizing cleanup",
+    "Persist HMAC authenticated member digests for retry after partial removal",
+    "Preserve unknown, corrupt, nonprivate and linked files; retain root deletion ledgers and remote bundles"
+  ],
+  "validation": {
+    "command": "python3 -m unittest backup_test offsite_test deletion_ledger_test",
+    "working_directory": "deploy/albums",
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "transport": "controlled file transport",
+    "encryption": "real OpenSSL publish/fetch round trip",
+    "mysql_started": false
+  },
+  "deployed": false,
+  "actual_user_data_deleted": false,
+  "remaining": [
+    "Remote version retention and account-specific backup erasure",
+    "Independent deletion ledger retirement and latest-checkpoint recovery proof",
+    "Real COS offsite restore and independent key escrow"
+  ],
+  "source_sha256": {
+    "deploy/albums/backup.py": "ced0fce0087aa41eeaa6b7735f182881c5ee73310533ba614b80e1fb76d3c201",
+    "deploy/albums/offsite_test.py": "b4308f3043add590de4ce225831f397eda0a9a57a0944c8ef58e30842144662e"
+  }
+}

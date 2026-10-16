@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo 'usage: verify-public.sh <health-domain> <journal-domain> <admin-domain>' >&2
+if [[ $# -ne 1 ]]; then
+  echo 'usage: verify-public.sh <public-targets-json>' >&2
   exit 64
 fi
 
@@ -18,15 +18,20 @@ if [[ ! "$attempts" =~ ^[1-9][0-9]*$ ]]; then
   exit 64
 fi
 
+if ! jq -e 'type == "array" and length > 0 and
+  all(.[]; type == "object" and keys == ["domain","field","value"] and
+      (.domain | type == "string" and test("^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\\z")) and
+      ((.field == "status" and .value == "ready") or (.field == "code" and .value == "ok"))) and
+  ([.[].domain] | length == (unique | length))' <<< "$1" >/dev/null; then
+  echo 'Public verification requires the selected release targets.' >&2
+  exit 64
+fi
+
 failed=0
-for domain in "$@"; do
-  if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$ ]]; then
-    echo 'Each public domain must be a DNS hostname.' >&2
-    exit 64
-  fi
+while IFS=$'\t' read -r domain field expected_status; do
   ready=0
   for ((attempt = 1; attempt <= attempts; attempt++)); do
-    if check_readiness "https://$domain/readyz" "$domain" ready "$response_file"; then
+    if check_readiness "https://$domain/readyz" "$domain" "$expected_status" "$response_file" "$field"; then
       ready=1
       break
     fi
@@ -38,5 +43,5 @@ for domain in "$@"; do
     printf 'Public HTTPS verification failed: %s\n' "$domain" >&2
     failed=1
   fi
-done
+done < <(jq -r '.[] | [.domain, .field, .value] | @tsv' <<< "$1")
 exit "$failed"

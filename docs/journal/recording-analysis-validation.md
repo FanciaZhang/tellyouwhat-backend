@@ -1,6 +1,48 @@
 # Whole-recording analysis capability probe — 2026-09-08
 
 This is an isolated provider-contract milestone, not a completed app feature.
+
+## Production mount and release protection (2026-10-16)
+
+The production deployment wrapper now provisions `/opt/tellyouwhat/journal-recordings/production` only when configured. Its parent is root-owned `0711`, and the store is UID 65532 `0700`. Existing directories are checked rather than recursively changing ownership or deleting contents. A conditional Compose overlay mounts the same absolute directory in gateway and maintenance, outside immutable release slots. Docker cannot auto-create a missing host path; workers/admin receive no recording mount. The overlay is carried in release staging, snapshots and encrypted configuration recovery; recovery validation rejects a configured store whose overlay is missing.
+
+First deploy the mounted store with generation disabled, then enable on a later release. This leaves a recording-aware rollback able to perform privacy deletion and retention. Normal deployments and explicit rollbacks reject dropping/changing the configured root, including when generation is disabled. This adds no service or environment.
+
+Recording recovery follows the existing control-plane-only backup policy in `../data-retention.md`: normal releases preserve the live store and fences; disaster recovery does not restore recording tasks/audio/fences or App Attest identities. Start a fresh environment-bound store after host loss and let newly registered clients retry unfinished recordings. Do not overlay an old recording snapshot on a surviving store. This avoids adding private temporary media to offsite backups.
+
+The host's Docker Compose 2.40.3 parsed the actual base/overlay with synthetic settings and verified scoped mounts, retained read-only secrets and rejection of a missing root. No container was started and no production configuration was modified. Python operations regression and focused release/recovery tests passed. Test-stack topology/migration, privileged directory creation on the host, actual disaster-recovery acceptance, native authentication and live cloud acceptance remain unverified or unfinished. Configuration recovery is not a backup of recording tasks/audio/fences. Evidence: `../evidence/journal-recording-storage-2026-10-16.json`.
+
+## Shared runtime, isolation and deletion (2026-10-16)
+
+`cmd/gateway` can now construct recording processing with `JOURNAL_RECORDING_ENABLED=true` and `JOURNAL_RECORDING_ROOT` pointing to an absolute private persistent directory whose final component equals `APP_ENV` (`development` or `production`). Voice configuration, MySQL and shared cost controls are required. The executor reuses the environment's speech credentials and conservative speech-duration budget price; the preview reuses the configured, budgeted Journal rewriter. Defaults remain disabled with no directory.
+
+The directory must have private permissions and an exact `.environment` marker. An empty new directory may be initialized; an unmarked directory containing private-service tasks is rejected rather than adopted. A wrong marker or public/symlinked root is rejected before retention touches its contents. The two release slots must share the same directory within their environment; test and production must use separate volumes. Production mount implementation is recorded above; remote readiness and storage disaster recovery remain pending.
+
+Opening a candidate does not run content cleanup. The gateway runs retention each minute under the existing lifecycle admission/drain controller, and `cmd/maintenance` can clean the same configured directory even when recording generation is disabled. Keep `JOURNAL_RECORDING_ROOT` configured when disabling the feature. Cleanup failures are reported and cannot be treated as successful maintenance.
+
+Journal privacy deletion first durably writes a per-owner deletion fence, then removes that owner's tasks, audio and staged uploads. Metadata/creation locks prevent races; late uploads and provider results cannot recreate files. Preview caches are cleared and completed rewrites recheck durable ownership before caching/delivery. Other owners remain intact. Shared Redis cleanup still runs, and any failure propagates so deletion can be retried. Open descriptors or already-sent provider requests cannot be retroactively recalled, but their files are unlinked and their results cannot be published.
+
+Local tests cover late upload/provider/preview completion, repeated deletion after cleanup failure, other-owner preservation, restart fencing, environment mount mismatch, unmarked private-state rejection and configuration requirements. Cloud inference is synthetic here. No deployment, App build or existing user-data migration occurred. Before activation, verify persistent mounts/ownership and retention, preserve `.environment` and deletion fences during version changes (disaster-recovery boundary clarified above), resolve the old private-state ownership boundary, and complete native-client/cloud acceptance. Evidence: `../evidence/journal-recording-runtime-2026-10-16.json`.
+
+## Shared authenticated recording routes (2026-10-16)
+
+The shared gateway now has generated OpenAPI routes for upload, status, process, explicit retry and preview. Both gateways reuse `internal/journal/recordinghttp`; the private development adapter retains its existing authorization, while shared routes use App Attest, managed entitlement and current managed-AI consent. Shared task ownership comes from the authenticated key. Reading an existing owned result remains possible after subscription expiry; writes still require current entitlement. Operations pause and the shared cost-control operation cover recording processing.
+
+For `PUT /v1/journal/voice/recordings/{recordingID}`, the client sends `audio/wav` and lowercase `X-Tellyouwhat-Content-SHA256`. That exact digest is the final body-hash line in the normal App Attest canonical request. The gateway validates the assertion and entitlement before reading audio, then hashes the streamed bytes. A mismatch rejects the upload before publishing any task. The generated adapter preserves the reader; ordinary JSON middleware never buffers the WAV. Non-upload requests retain normal exact-body authentication. Preview and retry reuse those authenticated bytes after generated JSON binding.
+
+Local tests cover a 6.4 MB upload, pre-read authorization failures, digest tampering, owner isolation, single provider submission, polling, retrieval after entitlement expiry and preview/retry body preservation. Existing private-runtime tests exercise the same extracted handler. No real provider inference was used in this milestone.
+
+At this route milestone the command entry did not yet construct the dependency; the runtime section above records the subsequent implementation. Remote activation and native-client migration remain pending. Existing private tasks use a different owner identity and must not be silently reassigned or deleted. There was no remote deployment, new App package or data migration. Evidence: `../evidence/journal-shared-recording-routes-2026-10-16.json`.
+
+## Shared-gateway migration prerequisite (2026-10-16)
+
+The existing recording store now coordinates processes through filesystem locks. Metadata publication and revision checks share one directory lock; each provider operation holds a separate per-recording lock through settlement. Duplicate uploads cannot overwrite an active recording. Expiry cleanup skips active jobs, then resumes after the owning process exits. Existing job IDs, provider IDs, hashes and on-disk formats remain unchanged; no task data was migrated or removed.
+
+This is for the existing single-host deployment: both gateway slots must mount the same private directory within an environment, with separate test/production directories. Lock files stay alongside task tombstones; deleting or replacing them during operation invalidates mutual exclusion. This does not provide coordination between hosts with independent disks.
+
+Local race tests cover separate store instances, a real child process holding a paid submission, refusal of duplicate execution, active-audio retention, forced process termination and query-only recovery using the original provider ID. Unsafe lock symlinks and public permissions are rejected. The existing authorization-before-body test now compares the processing directory before/after the denied request, including the startup lock file. The voice, private development and command package race suites passed. Linux/amd64 gateway and private-service compilation passed; provider responses in these tests are synthetic.
+
+This is not a route cutover. Shared App Attest streaming-upload authentication, recording routes/preview, private-state ownership mapping, environment mounts, scheduled retention and backup/recovery acceptance remain required. No cloud service, remote process, App build or real recording was changed. Evidence: `../evidence/journal-recording-process-isolation-2026-10-16.json`.
 No production route or existing streaming behavior changes in this milestone.
 
 ## Real provider observation

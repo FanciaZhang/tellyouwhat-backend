@@ -66,6 +66,14 @@ class ArtifactRetentionTests(unittest.TestCase):
         plan = plan_cleanup(self.root, self.state, [], images, now=self.now)
         self.assertEqual([i["id"] for i in plan["images"]], ["sha256:2", "sha256:3"])
 
+    def test_platform_test_cleanup_does_not_select_production_or_other_apps(self):
+        images = [self.image(str(i), ["tellyouwhat-platform-test-gateway:" + str(i)]) for i in range(4)]
+        for i, image in enumerate(images):
+            image["Created"] = datetime.fromtimestamp(self.now - GRACE_SECONDS - 10 - i, timezone.utc).isoformat()
+        images += [self.image("production"), self.image("albums", ["tellyouwhat-albums-test-albumgateway:old"])]
+        plan = plan_cleanup(self.root, self.state, [], images, owners=["platform-test"], now=self.now)
+        self.assertEqual([i["id"] for i in plan["images"]], ["sha256:2", "sha256:3"])
+
     def test_symlink_directory_and_escape_fail_closed(self):
         directory = self.root.parent / "journal-development"
         directory.mkdir()
@@ -118,17 +126,133 @@ class ArtifactRetentionTests(unittest.TestCase):
         runtime, events = self.deployment_runtime()
         response = Mock(status=200)
         response.geturl.return_value = "http://127.0.0.1:18090/readyz"
-        response.read.return_value = b'{"status":"ready"}'
+        response.read.return_value = b'{"code":"ok"}'
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
-        with patch("ops_artifacts.urllib.request.urlopen", return_value=response), \
+        with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
                 patch("ops_artifacts.register") as register, patch("ops_artifacts.cleanup", return_value={"passed": True}) as cleanup:
             result = development_deploy(runtime, "albums-test", [], ["albums:test"], "revision", "run", ["producer"], response.geturl())
         self.assertTrue(result["passed"])
+        self.assertEqual(open_url.call_args.args[0].get_header("Host"), "api.albums.tellyouwhat.cn")
         self.assertEqual(events, [("enter", "operations", 600), ("enter", "deployment", 600),
                                   ("exit", "deployment"), ("exit", "operations")])
         register.assert_called_once_with(runtime, "albums-test", [], ["albums:test"], "revision", "run")
         cleanup.assert_called_once_with(runtime, "albums-test")
+
+    def test_albums_development_readiness_uses_only_its_explicit_host(self):
+        runtime, _ = self.deployment_runtime()
+        response = Mock(status=200)
+        response.geturl.return_value = "http://127.0.0.1:18092/readyz"
+        response.read.return_value = b'{"code":"ok"}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
+                patch("ops_artifacts.register"), patch("ops_artifacts.cleanup", return_value={"passed": True}):
+            development_deploy(runtime, "albums-test", [], ["albums:test"], "revision", "run", ["producer"],
+                               response.geturl(), verify_host="api-test.albums.tellyouwhat.cn")
+        self.assertEqual(open_url.call_args.args[0].get_header("Host"), "api-test.albums.tellyouwhat.cn")
+        for owner, host in [("albums-test", "other.example"), ("platform-test", "api-test.albums.tellyouwhat.cn")]:
+            runtime, events = self.deployment_runtime()
+            with self.assertRaises(OperationError):
+                development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"],
+                                   response.geturl(), verify_host=host)
+            runtime.execute.assert_not_called()
+            self.assertEqual(events, [])
+
+    def test_albums_release_cleanup_preserves_registered_and_mounted_configurations(self):
+        base = self.root / '.albums-development/releases'
+        folders = [base / (str(i) * 40) for i in range(5)]
+        for folder in folders:
+            self.file(folder / 'compose.env')
+            os.utime(folder, (self.now - GRACE_SECONDS - 1,) * 2)
+        register(Mock(root=self.root, state=self.root / '.operations'), 'albums-test',
+                 paths=folders[:2], source='current')
+        self.file(base / 'operator-note')
+        containers = [{'Image': 'sha256:live', 'Mounts': [{'Type': 'bind', 'Source': str(folders[2])}]}]
+        plan = plan_cleanup(self.root, self.state, containers, [], owners=['albums-test'], now=self.now)
+        self.assertEqual({x['path'] for x in plan['files']}, {str(x) for x in folders[3:]})
+        self.assertEqual(plan_cleanup(self.root, self.state, containers, [], owners=['production'], now=self.now)['files'], [])
+
+    def test_albums_production_preserves_recovery_without_collecting_test_or_database_files(self):
+        runtime = Mock(root=self.root, state=self.root / '.operations')
+        base = self.root / '.albums-production/releases'
+        folders = [base / (str(i) * 40) for i in range(5)]
+        images = [self.image(str(i), ['tellyouwhat-albums-production-albumgateway:' + str(i) * 40]) for i in range(5)]
+        for folder in folders:
+            self.file(folder / 'runtime.env')
+            os.utime(folder, (self.now - GRACE_SECONDS - 1,) * 2)
+        for i in (1, 0):
+            register(runtime, 'albums-production', [folders[i]], images[i]['RepoTags'], source=str(i) * 40)
+        self.file(self.root / '.albums-production/data/mysql.ibd')
+        self.file(self.root / '.albums-development/releases' / ('a' * 40) / 'runtime.env')
+        containers = [{'Image': 'sha256:2', 'Mounts': [{'Type': 'bind', 'Source': str(folders[2])}]}]
+        images.append(self.image('test', ['tellyouwhat-albums-test-albumgateway:old']))
+        plan = plan_cleanup(self.root, self.state, containers, images, owners=['albums-production'], now=self.now)
+        self.assertEqual({f['path'] for f in plan['files']}, {str(f) for f in folders[3:]})
+        self.assertEqual({i['id'] for i in plan['images']}, {'sha256:3', 'sha256:4'})
+        self.assertEqual(plan_cleanup(self.root, self.state, containers, images, owners=['production'], now=self.now)['images'], [])
+
+    def test_development_entry_point_cannot_activate_production_albums(self):
+        runtime, events = self.deployment_runtime()
+        with self.assertRaises(OperationError):
+            development_deploy(runtime, 'albums-production', [], ['tellyouwhat-albums-production-albumgateway:sha'],
+                               'revision', 'run', ['producer'], 'http://127.0.0.1:18093/readyz')
+        runtime.execute.assert_not_called()
+        self.assertEqual(events, [])
+
+    def test_platform_readiness_accepts_only_its_test_host(self):
+        runtime, _ = self.deployment_runtime()
+        response = Mock(status=200)
+        response.geturl.return_value = "http://127.0.0.1:18790/readyz"
+        response.read.return_value = b'{"status":"ready"}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
+                patch("ops_artifacts.register"), patch("ops_artifacts.cleanup", return_value={"passed": True}):
+            development_deploy(runtime, "platform-test", [], ["test:image"], "revision", "run", ["producer"],
+                               response.geturl(), verify_host="api-test.birthday.tellyouwhat.cn")
+        self.assertEqual(open_url.call_args.args[0].get_header("Host"), "api-test.birthday.tellyouwhat.cn")
+        for host in ("api.birthday.tellyouwhat.cn", "api-test.albums.tellyouwhat.cn", "other.example"):
+            with self.subTest(host=host), self.assertRaises(OperationError):
+                development_deploy(runtime, "platform-test", [], ["test:image"], "revision", "run", ["producer"],
+                                   response.geturl(), verify_host=host)
+
+    def test_platform_release_cleanup_preserves_current_previous_and_live_configurations(self):
+        folders = [self.root / '.platform-test/releases' / (str(i) * 40) for i in range(5)]
+        for folder in folders:
+            self.file(folder / 'compose.env')
+            os.utime(folder, (self.now - GRACE_SECONDS - 1,) * 2)
+        runtime = Mock(root=self.root, state=self.root / '.operations')
+        register(runtime, 'platform-test', paths=folders[:2], source='current')
+        containers = [{'Image': 'sha256:live', 'Mounts': [{'Type': 'bind', 'Source': str(folders[2])}]}]
+        plan = plan_cleanup(self.root, self.state, containers, [], owners=['platform-test'], now=self.now)
+        self.assertEqual({x['path'] for x in plan['files']}, {str(x) for x in folders[3:]})
+        self.assertFalse(plan_cleanup(self.root, self.state, containers, [], owners=['production'], now=self.now)['files'])
+
+    def test_readiness_keeps_each_owners_protocol(self):
+        for owner, body, accepted in [("birthday-development", b'{"status":"ready"}', True),
+                                       ("platform-test", b'{"status":"ready"}', True),
+                                       ("platform-test", b'{"code":"ok"}', False),
+                                       ("birthday-development", b'{"code":"ok"}', False),
+                                       ("albums-test", b'{"code":"unavailable"}', False)]:
+            with self.subTest(owner=owner, body=body):
+                runtime, _ = self.deployment_runtime()
+                response = Mock(status=200)
+                response.geturl.return_value = "http://127.0.0.1:18090/readyz"
+                response.read.return_value = body
+                response.__enter__ = Mock(return_value=response)
+                response.__exit__ = Mock(return_value=False)
+                with patch("ops_artifacts.urllib.request.urlopen", return_value=response) as open_url, \
+                        patch("ops_artifacts.time.sleep"), patch("ops_artifacts.register") as register, \
+                        patch("ops_artifacts.cleanup", return_value={"passed": True}):
+                    if accepted:
+                        development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"], response.geturl())
+                        register.assert_called_once()
+                        self.assertIsNone(open_url.call_args.args[0].get_header("Host"))
+                    else:
+                        with self.assertRaises(OperationError):
+                            development_deploy(runtime, owner, [], ["test:image"], "revision", "run", ["producer"], response.geturl())
+                        register.assert_not_called()
 
     def test_failed_readiness_retains_previous_registration_and_skips_cleanup(self):
         runtime, _ = self.deployment_runtime()

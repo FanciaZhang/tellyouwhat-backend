@@ -1,0 +1,44 @@
+{
+  "checked_at": "2026-10-16T02:34:55.162436+00:00",
+  "app_source": "ba4f47abae4ec38fba5800a968224245baed6994",
+  "reference_container": "iCloud.cn.tellyouwhat.journalapp",
+  "reference_environment": "Development",
+  "target_container": "iCloud.cn.tellyouwhat.journalapp.dev",
+  "before_development": [
+    "Users"
+  ],
+  "schema_file": "docs/journal-development.ckdb",
+  "schema_sha256": "ca908fd419662693db017f5bcd66a8ac8ea41140f60e692a61a660f0db3db86f",
+  "reference_export_sha256": "0eb76a45574b07fc99f9cf4706ac825748f45b0f09f85546f9d90745ef7f8664",
+  "business_record_types": [
+    "CD_JournalAIOrganizationSuggestion",
+    "CD_JournalBook",
+    "CD_JournalBookMembership",
+    "CD_JournalEntry",
+    "CD_JournalEntryTagAssignment",
+    "CD_JournalLocationIndexRecord",
+    "CD_JournalMediaResource",
+    "CD_JournalPhotoIndexRecord",
+    "CD_JournalSettings",
+    "CD_JournalShareImportReceipt",
+    "CD_JournalTagAnalysisState",
+    "CD_JournalTagNode",
+    "CD_JournalTagRejection",
+    "CD_JournalVocabularyWord"
+  ],
+  "static_source_check": "All 14 PersistenceController schema models match; top-level stored property names checked against exported fields; this does not prove device serialization/sync",
+  "changes": "Keep existing fields and indexes; creator write only for new business types; no world-read or iCloud-public-create grants copied; Users unchanged",
+  "import_result": "Validation Passed; The schema was successfully imported.",
+  "deployment_result": "Changes Deployed; The schema is deployed to Production.",
+  "production_readback": "Exported complete Production schema exactly matches expected import text, ignoring only outer whitespace",
+  "screenshot": "journal-development-cloudkit-production-2026-10-16.jpg",
+  "screenshot_sha256": "12b433f6f5b78abab9c1972089dbb3ebb0e71ed842ad3408b8fc50470ec1a669",
+  "formal_container_mutated": false,
+  "user_records_accessed_or_copied": false,
+  "app_build_inputs_changed": false,
+  "real_sync_accepted": false,
+  "pending": [
+    "Signed Ad Hoc write and download",
+    "Cross-device synchronization and isolation from formal container"
+  ]
+}

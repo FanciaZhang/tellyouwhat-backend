@@ -75,6 +75,10 @@ def compose_command(root, environment_file):
         command += ["-f", str(overlay)]
     elif container_path or config.get("AI_ENDPOINT_WRITES_ENABLED", "false").lower() == "true":
         raise OperationError("Ark endpoint writes require the isolated service credential mount")
+    from ops_recording import compose_overlay
+    command += compose_overlay(root, config)
+    from ops_albums import compose_overlay as albums_overlay
+    command += albums_overlay(root, config)
     return command
 
 

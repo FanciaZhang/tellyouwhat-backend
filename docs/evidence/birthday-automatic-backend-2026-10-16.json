@@ -1,0 +1,37 @@
+{
+  "backend_source": "fb5cd0bace6cd6046384e8d8ab9a4b8376568613",
+  "previous_source": "833b81de4b8a370c99ff3b1d0c409d5083b4e6af",
+  "allowed_builds": [
+    "4"
+  ],
+  "manual_activation_required": false,
+  "real_apple_attestation_required": true,
+  "monthly_backend_cost_cap_cny": 10,
+  "pre_update_backup": "mysql-20261015T231339Z-2fe369.sql.gz.enc",
+  "migrations": 66,
+  "latest_migration": "0064_album_identity_retirement.sql",
+  "registered_current_and_previous": true,
+  "services_running_no_restarts_or_oom": true,
+  "mysql_started_at": "2026-10-15T22:37:50.893964328Z",
+  "redis_started_at": "2026-10-15T22:37:50.89533259Z",
+  "public_checks": {
+    "ready": 200,
+    "challenge": 201,
+    "invalid_registration": 401,
+    "unapproved_build": 401,
+    "unauthenticated_assistant": 401
+  },
+  "real_phone_app_attest_verified": false,
+  "real_phone_model_call_verified": false,
+  "scheduled_execution_verified": false,
+  "local_go_auth_config_gateway_tests_passed": true,
+  "python_operations_tests": {
+    "total": 160,
+    "skipped": 1,
+    "failed": 0
+  },
+  "post_update_backup": "mysql-20261015T231942Z-95fe87.sql.gz.enc",
+  "cos_readback_objects": 3,
+  "recovery_platform_test_files": 11,
+  "backup_contains_current_configuration": true
+}

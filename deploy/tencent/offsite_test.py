@@ -3,12 +3,14 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import tarfile
+import shutil
 import unittest
 from unittest.mock import Mock, patch
 
 from ops_common import OperationError, Runtime
 from ops_cos import transfer, validate_bucket
-from ops_offsite import download, publish, transport
+from ops_offsite import download, publish, transport, verify_recovery_bundle
 
 
 class OffsiteSafetyTests(unittest.TestCase):
@@ -84,6 +86,70 @@ class OffsiteSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(OperationError, "authentication failed"):
                 download(self.runtime, name, directory)
         self.assertEqual(fetcher.call_count, 1)
+
+    def test_test_route_files_are_verified_against_the_authenticated_manifest(self):
+        from release import KEY_FILES
+        bundle = self.root / 'fixture'
+        current = bundle / 'current'
+        (current / 'secrets').mkdir(parents=True)
+        (current / '.env.production').write_text('APP_ENV=production\n')
+        (current / 'compose.production.yaml').write_text('services: {}\n')
+        for name in KEY_FILES: (current / 'secrets' / name).write_text('synthetic signing fixture')
+        (bundle / 'selection.json').write_text('{"slots":{"current":{"images":{}}}}')
+        routes = bundle / 'test-routing'
+        routes.mkdir()
+        files = {'Caddyfile': b'import /etc/caddy/tellyouwhat-test.caddy\n',
+                 'test.caddy': b'api-test.journal.example {}\n', 'state.json': b'{"apps":["journal"]}'}
+        for name, data in files.items(): (routes / name).write_bytes(data)
+        encrypted = self.runtime.backups / 'recovery-fixture.enc'
+        def archive():
+            with tarfile.open(encrypted, 'w:gz') as output: output.add(bundle, arcname='recovery')
+        manifest = {'recovery_filename': encrypted.name, 'recovery_images': {'current': {}},
+                    'recovery_test_routing': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
+        def decrypt(_runtime, source, target, **kwargs): shutil.copyfile(source, target)
+        archive()
+        with patch('ops_backup.crypt', side_effect=decrypt):
+            self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', manifest))
+            (routes / 'test.caddy').write_text('changed configuration')
+            archive()
+            with self.assertRaisesRegex(OperationError, 'authenticated manifest'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', manifest)
+            (routes / 'test.caddy').unlink()
+            archive()
+            with self.assertRaisesRegex(OperationError, 'missing'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', manifest)
+            legacy = dict(manifest)
+            legacy.pop('recovery_test_routing')
+            self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy))
+            (current / '.env.production').write_text('APP_ENV=production\nJOURNAL_RECORDING_ENABLED=false\n'
+                                                    'JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production\n')
+            archive()
+            with self.assertRaisesRegex(OperationError, 'recording recovery mount'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy)
+            (current / 'compose.journal-recording.yaml').write_text('services: {}\n')
+            archive()
+            self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy))
+            (current / '.env.production').write_text('APP_ENV=production\nPLATFORM_APPS=health,journal,birthday,albums\n'
+                                                    'ALBUM_RESOURCE_SOURCE=' + 'a' * 40 + '\n')
+            archive()
+            with self.assertRaisesRegex(OperationError, 'full production checkpoint'):
+                verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', legacy)
+            album = bundle / 'albums-production'
+            album.mkdir()
+            (album / 'state.json').write_text(json.dumps({'source': 'a' * 40}))
+            matched = dict(legacy, recovery_albums_production={'fixture': 'verified separately'})
+            with patch('albums_artifacts.verify_recovery'):
+                archive()
+                with self.assertRaisesRegex(OperationError, 'configuration is missing'):
+                    verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched)
+                (current / 'albums.env').write_text('ALBUM_API_HOST=api.albums.tellyouwhat.cn\n')
+                (current / 'compose.shared-albums-production.yaml').write_text('services: {}\n')
+                archive()
+                self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched))
+                (album / 'state.json').write_text(json.dumps({'source': 'b' * 40}))
+                archive()
+                with self.assertRaisesRegex(OperationError, 'differs from its data selection'):
+                    verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched)
 
 
 if __name__ == "__main__":

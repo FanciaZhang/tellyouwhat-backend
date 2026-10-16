@@ -60,7 +60,7 @@ func TestSamePlatformPathIsIsolatedByApplicationHost(t *testing.T) {
 	}
 	health := New(Dependencies{App: healthApp, ManagedProduct: ManagedProduct{ProductID: "health.ai.monthly"}})
 	journal := New(Dependencies{App: journalApp, ManagedProduct: ManagedProduct{ProductID: "journal.ai.monthly"}})
-	mux, err := appregistry.NewHostMux(registry, map[appregistry.AppID]*gin.Engine{
+	mux, err := appregistry.NewHostMux(registry, map[appregistry.AppID]http.Handler{
 		appregistry.Health: health.Router(), appregistry.Journal: journal.Router(),
 	})
 	if err != nil {

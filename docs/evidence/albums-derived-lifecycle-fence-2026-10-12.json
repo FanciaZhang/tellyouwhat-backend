@@ -1,0 +1,76 @@
+{
+  "startedAt": "2026-10-12T07:39:10.853169+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-qhsez2mh",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-qhsez2mh/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 3
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "734431536cf3fdc518e6d9ac3a24cde99ce235c584bf99ce4f700db4b104404e"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-qhsez2mh/related-race.log",
+      "testCounts": {
+        "pass": 584
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "82971a1df4319fd4fcba9b88b88921874b6c5026d219298615233a7203cf85a2"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-qhsez2mh/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-qhsez2mh/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T07:40:03.886432+00:00",
+  "baselineCommit": "a4d3cbbf52c395ee4f49fb100ff0ffe6507c470f",
+  "scope": "Prevent new derivative write intents and live-pair upload grants after logical trash; preserve consumed-write evidence and restoration retry",
+  "sourceSHA256": {
+    "internal/albums/derived_lifecycle_integration_test.go": "4f68260f73c13885e0132750559061703f0a16daf56180b3bf96dbd74fe4acfd",
+    "internal/albums/live_pairs.go": "ce9a1ae9b8f72f9aed993b8616f8fe15694b31cf71b17dd3d57e9803b419abbc",
+    "internal/albums/mysql_live_pairs.go": "3a9116581937f48bfc3ab9be2f426432b5c33cda879c730f205e511b3f02b246",
+    "internal/albums/mysql_photo_writes.go": "21f6f57d5dab1c7d8d6fd35c7ca303732dbf6e880f29919e78dcd20096370341",
+    "internal/albums/mysql_subscriptions.go": "fb6cfbc87d32bd8687b7897d5de40b3e6e8e38f0ec70164b12f5734e069ca7e5",
+    "internal/albums/photo_jobs.go": "effd1d2c6713a6942a9a23b76135b1ca8ae2c8a02a2f973c229796e9f73d5d21",
+    "internal/albums/photo_worker.go": "14517d7c0b939f73a4de6dd8f74e0d3f4cd7b0f95dd88220e8b830ea3b471204",
+    "internal/albums/video_jobs.go": "a3bf3cb0f543242a60e579e59d7b61ad16d3e440656cc4e36d2893c9cc0c009a",
+    "internal/albums/video_worker.go": "2801e445a9bda9b1b40037f8d29810ebb4a8bb64cdccce7ff045b33369b0029b"
+  },
+  "beforeFix": {
+    "testFailures": 3,
+    "report": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-derived-fence-9yg5tb5u/result.json",
+    "observations": [
+      "trashed photo granted fresh PUT",
+      "trashed video granted fresh paid POST",
+      "trashed live pair issued staging PUT"
+    ]
+  },
+  "intermediateCorrections": [
+    "Compiler caught a nonexistent maxTime helper; replaced with direct comparison",
+    "Owner lock initially changed cross-owner claim errors; retained ErrLease behavior and reran race tests"
+  ],
+  "limitations": [
+    "Provider adapters controlled; no real COS/CI mutations or media deletion",
+    "An already committed write intent or issued URL can complete after trash; purge still requires quiescence/reconciliation",
+    "Physical permanent purge, expired-upload cleanup, account deletion and metadata backup/deletion propagation still pending",
+    "Current production cloud switches remain disabled; no deployment or production migration",
+    "Native source/HTTP contract unchanged; no Xcode run for this backend-only fix"
+  ]
+}

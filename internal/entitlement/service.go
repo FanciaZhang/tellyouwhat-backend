@@ -2,7 +2,6 @@ package entitlement
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"time"
 
@@ -33,7 +32,7 @@ type Store interface {
 
 type DevelopmentService struct {
 	store       Store
-	secret      []byte
+	appID       string
 	duration    time.Duration
 	now         func() time.Time
 	environment string
@@ -66,8 +65,8 @@ func (checker *Checker) HasManagedSubscription(
 }
 
 func NewDevelopmentService(
+	appID string,
 	store Store,
-	secret string,
 	duration time.Duration,
 	now func() time.Time,
 ) *DevelopmentService {
@@ -76,7 +75,7 @@ func NewDevelopmentService(
 	}
 	return &DevelopmentService{
 		store:       store,
-		secret:      []byte(secret),
+		appID:       appID,
 		duration:    duration,
 		now:         now,
 		environment: "development",
@@ -86,19 +85,26 @@ func NewDevelopmentService(
 func (service *DevelopmentService) Activate(
 	ctx context.Context,
 	principal attestation.Principal,
-	secret string,
+	_ string,
 ) (time.Time, error) {
-	if service == nil || service.store == nil || len(service.secret) == 0 || principal.KeyID == "" ||
-		len(secret) != len(service.secret) || subtle.ConstantTimeCompare([]byte(secret), service.secret) != 1 {
+	if service == nil || service.store == nil || service.appID == "" || principal.AppID != service.appID ||
+		principal.KeyID == "" || principal.DeviceID == "" || principal.TransactionID != "" ||
+		service.duration <= 0 || service.duration > 30*24*time.Hour {
+		return time.Time{}, ErrActivationDenied
+	}
+	existing, found, err := service.store.Get(ctx, principal.KeyID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if found && existing.Environment != service.environment {
 		return time.Time{}, ErrActivationDenied
 	}
 	expiresAt := service.now().Add(service.duration)
 	record := Record{
-		KeyID:         principal.KeyID,
-		TransactionID: principal.TransactionID,
-		ExpiresAt:     expiresAt,
-		StartedAt:     service.now(),
-		Environment:   service.environment,
+		KeyID:       principal.KeyID,
+		ExpiresAt:   expiresAt,
+		StartedAt:   service.now(),
+		Environment: service.environment,
 	}
 	if err := service.store.Upsert(ctx, record); err != nil {
 		return time.Time{}, err

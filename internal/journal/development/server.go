@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -91,8 +92,7 @@ func New(c Config) (http.Handler, error) {
 			return err == nil && granted
 		}
 	}
-	recordings := newRecordingHTTP(c.Recording, store, consent, c.Now)
-	recordings.rewriter = c.Rewriter
+	recordings := newRecordingHTTP(c.Recording, c.Rewriter, store, consent, c.Now)
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func New(c Config) (http.Handler, error) {
 		// The stream uses an expiring, single-use ticket issued by the authenticated
 		// session route. Never substitute the developer credential for that ticket.
 		stream := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/journal/voice/sessions/") && strings.HasSuffix(r.URL.Path, "/stream")
-		recording := c.Recording != nil && recordingRoute(r)
+		recording := c.Recording != nil && recordinghttp.Route(r)
 		image := illustrationRoute(r)
 		allowed := stream || recording || image || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
 			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/journal/organization" || r.URL.Path == "/v1/journal/illustration-suggestions"))

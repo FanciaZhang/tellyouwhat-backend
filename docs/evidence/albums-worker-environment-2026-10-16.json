@@ -1,0 +1,24 @@
+{
+  "implementation_commit": "15a5b3197684d394b335a9792d6580ad49bf0f67",
+  "command": "go test -json ./internal/albums ./cmd/albumworker ./cmd/albumgateway -count=1",
+  "exit_code": 0,
+  "packages": {
+    "github.com/tellyouwhat/backend/cmd/albumgateway": "pass",
+    "github.com/tellyouwhat/backend/cmd/albumworker": "pass",
+    "github.com/tellyouwhat/backend/internal/albums": "pass"
+  },
+  "top_level_tests": {
+    "passed": 235,
+    "failed": 0,
+    "skipped": 220
+  },
+  "skips": "Opt-in MySQL, Apple or cloud integration checks; no live credentials used",
+  "regression": "Before fix, worker accepted 24 invalid environment/database combinations; 28-case matrix now passes for worker and API",
+  "security": "DSN errors are fixed messages and never include input passwords; rejects root, empty user and malformed DSNs",
+  "deployment_config": "Existing compose.albums-test.yaml already supplies same environment and DSN to both processes; regression assertion added",
+  "deployed": false,
+  "limits": [
+    "No remote restart or database mutation",
+    "Database name validation is not proof of remote IAM or database grants"
+  ]
+}

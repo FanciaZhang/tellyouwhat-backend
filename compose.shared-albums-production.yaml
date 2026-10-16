@@ -1,0 +1,19 @@
+# Only the shared HTTP gateway receives Albums credentials and storage access.
+services:
+  gateway:
+    env_file: [./albums.env]
+    environment:
+      GOMEMLIMIT: "384MiB"
+    networks: [albums-production]
+    volumes:
+      - type: bind
+        source: /opt/tellyouwhat/albums-production/secrets
+        target: /album-secrets
+        read_only: true
+        bind: {create_host_path: false}
+    mem_limit: 512m
+
+networks:
+  albums-production:
+    external: true
+    name: tellyouwhat-albums-production_albums-production

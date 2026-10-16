@@ -44,6 +44,10 @@ func (server *Server) GetReadiness(
 }
 
 func (server *Server) dependenciesAvailable() bool {
+	if server.app.ID == appregistry.Birthday {
+		return server.birthdayAssistant != nil && server.authenticator != nil && server.quota != nil &&
+			server.enrollment != nil && server.usage != nil && server.readiness != nil
+	}
 	common := server.authenticator != nil && server.entitlements != nil && server.quota != nil && server.quotaReader != nil &&
 		server.enrollment != nil && server.usage != nil && server.readiness != nil && server.privacy != nil && server.consent != nil && server.media != nil
 	if !common {

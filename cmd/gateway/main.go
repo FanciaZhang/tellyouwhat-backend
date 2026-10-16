@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,8 +24,10 @@ import (
 	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 
+	"github.com/tellyouwhat/backend/internal/albums"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -32,7 +35,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
@@ -69,6 +75,8 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	images                     *illustrationstore.Store
+	background                 *sync.WaitGroup
 	prompts                    *promptconfig.Cache
 	operations                 platformops.Reader
 	executionPolicies          gateway.PolicyResolver
@@ -106,6 +114,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	birthdayOnly := len(platform.Apps) == 1 && platform.Apps[0].Registry.ID == appregistry.Birthday
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
@@ -122,16 +131,21 @@ func run(logger *slog.Logger) error {
 	if !attestationRoots.AppendCertsFromPEM(rootPEM) {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH contains no certificates")
 	}
-	tosStore, err := media.NewTOSStore(platform.TOS)
-	if err != nil {
-		return err
+	var tosStore *media.TOSStore
+	if !birthdayOnly {
+		tosStore, err = media.NewTOSStore(platform.TOS)
+		if err != nil {
+			return err
+		}
 	}
 	shared, closeStorage, err := openSharedStorage(ctx, platform)
 	if err != nil {
 		return err
 	}
 	defer closeStorage()
-	if platform.StorageMode == "mysql" {
+	var background sync.WaitGroup
+	defer func() { stop(); background.Wait() }()
+	if platform.StorageMode == "mysql" && !birthdayOnly {
 		defaults, err := config.LoadOperationsDefaults()
 		if err != nil {
 			return err
@@ -139,7 +153,7 @@ func run(logger *slog.Logger) error {
 		if err = (platformops.Store{DB: shared.database}).Initialize(ctx, defaults, time.Now()); err != nil {
 			return err
 		}
-		promptDefaults, err := config.LoadPromptDefaults()
+		promptDefaults, err := config.LoadPromptDefaults(platform.Apps...)
 		if err != nil {
 			return err
 		}
@@ -154,11 +168,31 @@ func run(logger *slog.Logger) error {
 	}
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
-	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))
+	routers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
+	var albumGateway *albums.Gateway
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
+		if appConfig.Registry.ID == appregistry.Albums {
+			albumConfig, configErr := albums.LoadGatewayConfig(os.Getenv)
+			if configErr != nil {
+				return fmt.Errorf("album API configuration: %w", configErr)
+			}
+			if err := validateAlbumGatewayIdentity(platform, appConfig.Registry, albumConfig); err != nil {
+				return err
+			}
+			startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+			albumGateway, err = albums.NewGateway(startup, albumConfig, nil)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("build app albums: %w", err)
+			}
+			defer albumGateway.Close()
+			routers[appregistry.Albums] = albumGateway
+			continue
+		}
 		storage := storageForApp(platform, shared, appConfig)
 		storage.prompts = shared.prompts
+		storage.background = &background
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -202,6 +236,9 @@ func run(logger *slog.Logger) error {
 	}()
 	select {
 	case <-ctx.Done():
+		if albumGateway != nil {
+			albumGateway.BeginDrain()
+		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdownContext)
@@ -314,9 +351,12 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	ops := platformops.Store{DB: shared.database}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
-	limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	if appConfig.Registry.ID != appregistry.Birthday {
+		limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
+		images:            &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
 		operations:        ops,
 		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
 		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
@@ -367,7 +407,7 @@ func buildAppHandler(
 	attestationVerifier := attestation.NewAppleAttestationVerifier(app.TeamID, app.BundleID, appConfig.AttestationEnvironment, attestationRoots)
 	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
 		AppID: string(app.ID), Environment: appConfig.AttestationEnvironment,
-		DevelopmentSecret: appConfig.DevelopmentSecret, AllowedBuilds: appConfig.AllowedBuilds,
+		AllowedBuilds: appConfig.AllowedBuilds,
 	}, storage.nonces, storage.keys, attestationVerifier, time.Now)
 	authenticator := attestation.NewService(
 		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
@@ -376,6 +416,19 @@ func buildAppHandler(
 	activator, productionSync, notifications, err := commerceServices(platform.Environment, appConfig, storage.keys, storage.entitlements)
 	if err != nil {
 		return nil, err
+	}
+	var recordingPrivacy *journalRecordingPrivacy
+	if appConfig.JournalRecording != nil {
+		if app.ID != appregistry.Journal || storage.background == nil {
+			return nil, errors.New("Journal recording storage requires managed lifecycle")
+		}
+		store, err := voice.NewEnvironmentRecordingJobStore(appConfig.JournalRecording.Root, platform.Environment, time.Now)
+		if err != nil {
+			return nil, errors.New("Journal recording storage is unavailable or belongs to another environment")
+		}
+		recordingPrivacy = &journalRecordingPrivacy{store: store, next: storage.privacyCache}
+		storage.privacyCache = recordingPrivacy
+		runRecordingRetention(ctx, store, storage.background, logger)
 	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
@@ -408,6 +461,12 @@ func buildAppHandler(
 	}
 
 	switch app.ID {
+	case appregistry.Birthday:
+		if costController == nil {
+			return nil, errors.New("birthday requires project cost controls")
+		}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		dependencies.BirthdayAssistant = birthday.New(birthday.Config{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.JournalAI.LiteModel}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second}, costController, appConfig.BirthdayPrice)
 	case appregistry.Health:
 		dependencies.ExecutionPolicies = storage.executionPolicies
 		configureHealthConsents(&dependencies)
@@ -446,7 +505,33 @@ func buildAppHandler(
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
 	case appregistry.Journal:
-		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
+		if appConfig.JournalImage != nil {
+			if storage.images == nil || storage.background == nil || costController == nil {
+				return nil, errors.New("Journal images require durable storage and managed background tasks")
+			}
+			if err := storage.images.Ready(ctx); err != nil {
+				return nil, errors.New("Journal image schema unavailable")
+			}
+			image := appConfig.JournalImage
+			provider, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil)
+			if err != nil {
+				return nil, err
+			}
+			imageService := &illustration.Service{Store: storage.images, Generator: &illustration.BudgetedGenerator{Next: provider, Controller: costController, MaxCostNanos: image.MaxCostNanos, SettlementFailed: func() { logger.Error("Journal image cost settlement failed") }}, Prompts: storage.prompts, Now: time.Now}
+			imageService.Authorize = func(ctx context.Context, owner string) bool {
+				principal := attestation.Principal{AppID: "journal", KeyID: owner}
+				allowed, err := entitlementChecker.HasManagedSubscription(ctx, principal)
+				if err != nil || !allowed {
+					return false
+				}
+				allowed, err = privacyService.HasRequiredConsents(ctx, principal, []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope})
+				return err == nil && allowed && platformops.Check(ctx, storage.operations, "journal", "journal.illustration") == nil
+			}
+			dependencies.JournalIllustrations = imageService
+			storage.background.Add(1)
+			go func() { defer storage.background.Done(); imageService.Run(ctx) }()
+		}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
@@ -471,6 +556,16 @@ func buildAppHandler(
 			}
 			if storage.prompts != nil {
 				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
+			}
+			if appConfig.JournalRecording != nil && appConfig.JournalRecording.Enabled {
+				if recordingPrivacy == nil || costController == nil {
+					return nil, errors.New("Journal recording dependencies unavailable")
+				}
+				asr := appConfig.VoiceASR
+				asr.URL, asr.ResourceID = "https://openspeech.bytedance.com/api/v3/auc/bigmodel", "volc.seedasr.auc"
+				executor := &voice.RecordingExecutor{Store: recordingPrivacy.store, Provider: voice.RecordingASR{Config: asr}, Budget: costController, AppID: "journal", Price: platform.AICost.JournalSpeech}
+				recordingPrivacy.handler = recordinghttp.New(executor, rewriter, time.Now)
+				dependencies.JournalRecordings = recordingPrivacy.handler
 			}
 			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Logger: voiceLogger, Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
@@ -514,8 +609,11 @@ func commerceServices(
 	keys keyRepository,
 	store entitlementRepository,
 ) (gateway.EntitlementActivator, gateway.ProductionEntitlementSync, gateway.AppStoreNotificationProcessor, error) {
+	if appConfig.Registry.ID == appregistry.Birthday {
+		return nil, nil, nil, nil
+	}
 	if environment == "development" {
-		return entitlement.NewDevelopmentService(store, appConfig.DevelopmentSecret, 30*24*time.Hour, time.Now), nil, nil, nil
+		return entitlement.NewDevelopmentService(string(appConfig.Registry.ID), store, 30*24*time.Hour, time.Now), nil, nil, nil
 	}
 	rootPEM, err := os.ReadFile(appConfig.AppStore.RootPEMPath)
 	if err != nil {

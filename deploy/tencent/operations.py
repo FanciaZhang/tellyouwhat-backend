@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from ops_backup import create_backup, prune_backups, restore_drill
-from ops_artifacts import cleanup
+from ops_artifacts import OWNERS, cleanup
 from ops_common import OperationError, Runtime
 from ops_health import health, report_health
 
@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--backup-dir", default=os.getenv("TELLYOUWHAT_BACKUP_DIR"))
     parser.add_argument("--environment-file", default=os.getenv("TELLYOUWHAT_ENV_FILE"))
     parser.add_argument("--backup", help="backup filename used only by an isolated restore drill")
-    parser.add_argument("--owner", choices=["production", "journal-development", "birthday-development", "albums-test"])
+    parser.add_argument("--owner", choices=OWNERS)
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -34,7 +34,7 @@ def main():
                 runtime.refresh()
                 try:
                     result = operate(runtime, args)
-                except (OperationError, OSError, TimeoutError, KeyError, subprocess.TimeoutExpired):
+                except (OperationError, OSError, TimeoutError, KeyError, ValueError, subprocess.TimeoutExpired):
                     runtime.record(args.operation + "-failure", passed=False)
                     raise
                 (runtime.state / (args.operation + "-failure.json")).unlink(missing_ok=True)
@@ -43,7 +43,7 @@ def main():
     except subprocess.TimeoutExpired:
         print(json.dumps({"operation": args.operation, "passed": False, "error": "operation exceeded its timeout"}))
         return 1
-    except (OperationError, OSError, TimeoutError, KeyError) as error:
+    except (OperationError, OSError, TimeoutError, KeyError, ValueError) as error:
         print(json.dumps({"operation": args.operation, "passed": False, "error": str(error)}))
         return 1
 
@@ -70,13 +70,19 @@ def operate(runtime, args):
         runtime.execute("maintenance", runtime.compose("run", "--rm", "--no-deps", "maintenance"), timeout=900)
     except (OperationError, OSError) as error:
         errors.append(str(error))
+    from platform_test_maintenance import maintain
+    platform_test = None
+    try:
+        platform_test = maintain(runtime)
+    except (OperationError, OSError, KeyError, ValueError) as error:
+        errors.append(str(error))
     try:
         cleanup(runtime, cache=True)
     except (OperationError, OSError) as error:
         errors.append(str(error))
     if errors:
         raise OperationError("; ".join(errors))
-    return runtime.record("maintenance", expired_backups_removed=removed)
+    return runtime.record("maintenance", expired_backups_removed=removed, platform_test=platform_test)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-10-16T02:16:52.607548+00:00",
+  "source": "Apple CloudKit Console exported schema from formal Production, compared with current ICloudReplica and privateCloudDatabase code",
+  "read_only_reference_container": "iCloud.cn.tellyouwhat.healthapp",
+  "target_container": "iCloud.cn.tellyouwhat.healthapp.dev",
+  "before": {
+    "Development": [
+      "Users"
+    ],
+    "Production": [
+      "Users"
+    ]
+  },
+  "schema_file": "docs/ci/health-development.ckdb",
+  "schema_sha256": "771758f1c0189a69e35f4665866e2bc344778903e5d2f926d0d79099a70df634",
+  "changes": [
+    "Create AppObjectV2 with digest STRING and payload ASSET",
+    "Create AppMediaV2 with digest STRING, file ASSET and manifest ENCRYPTED BYTES",
+    "Creator-only write grants for the two new types; existing Users schema unchanged"
+  ],
+  "development_import": "Validation Passed; The schema was successfully imported.",
+  "production_deploy": "Changes Deployed; The schema is deployed to Production.",
+  "production_readback": [
+    "AppMediaV2 9 fields",
+    "AppObjectV2 8 fields",
+    "Users 7 fields",
+    "AppMediaV2.manifest ENCRYPTED BYTES"
+  ],
+  "data_operations_performed": false,
+  "formal_container_mutated": false,
+  "pending": [
+    "Real signed Ad Hoc device write and restore",
+    "Cross-device synchronization",
+    "Verify synthetic development records stay out of formal container"
+  ],
+  "real_sync_accepted": false
+}

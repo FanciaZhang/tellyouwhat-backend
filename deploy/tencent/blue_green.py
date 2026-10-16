@@ -16,6 +16,7 @@ PORTS = {"legacy": (18080, 18081, 18082), "blue": (18080, 18081, 18082), "green"
 STATE = "blue-green.json"
 PROXY_FILE = Path("/etc/caddy/tellyouwhat-backend.caddy")
 PROXY_ROOT = Path("/etc/caddy/Caddyfile")
+LEGACY_ALBUM_PROXY = Path("/etc/caddy/albums-test.caddy")
 PROXY_API = "http://127.0.0.1:2019/config/"
 
 
@@ -91,6 +92,9 @@ def ready(runtime, slot, attempts):
 
 
 def require_ready(runtime, slot, attempts):
+    from ops_albums import verify_gateway
+    root = slot_path(runtime, slot)
+    verify_gateway(runtime, root, read_environment(root / ".env.production"), slot["slot"])
     if not ready(runtime, slot, attempts):
         raise OperationError("slot dependencies are not ready")
 
@@ -118,9 +122,106 @@ def proxy_ports(value):
 
 def assert_route(slot):
     ports = PORTS[slot["slot"]]
-    found = set(proxy_ports(proxy_config()))
+    configuration = proxy_config()
+    found = set(proxy_ports(configuration))
     if found != {ports[0], ports[2]}:
         raise OperationError("proxy route does not match the recorded slot; recovery required")
+    expected = slot.get('proxy', {}).get('hosts', {})
+    if expected:
+        actual = proxy_hosts(configuration)
+        if any(actual.get(host) != {upstream} for host, upstream in expected.items()):
+            raise OperationError('public App host does not route exclusively to the selected shared slot')
+
+
+def proxy_hosts(value):
+    found = {}
+    def dials(item):
+        found = set()
+        if isinstance(item, dict):
+            if 'dial' in item:
+                found.add(item['dial'])
+            for child in item.values():
+                found.update(dials(child))
+        elif isinstance(item, list):
+            for child in item:
+                found.update(dials(child))
+        return found
+    def walk(item):
+        if isinstance(item, dict):
+            for match in item.get('match', []):
+                for host in match.get('host', []):
+                    found.setdefault(host, set()).update(dials(item))
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+    walk(value)
+    return found
+
+
+def capture_proxy(runtime):
+    root = PROXY_ROOT.read_text()
+    marker = 'import ' + str(LEGACY_ALBUM_PROXY)
+    if root.count(str(LEGACY_ALBUM_PROXY)) != root.splitlines().count(marker) or root.splitlines().count(marker) > 1:
+        raise OperationError('legacy Albums proxy import is not in the managed layout')
+    legacy = None
+    if marker in root.splitlines():
+        if LEGACY_ALBUM_PROXY.is_symlink() or not LEGACY_ALBUM_PROXY.is_file():
+            raise OperationError('legacy Albums proxy must be a regular file')
+        adapted = json.loads(runtime.execute('proxy-legacy-inspect',
+            ['caddy', 'adapt', '--config', str(LEGACY_ALBUM_PROXY), '--adapter', 'caddyfile']))
+        if proxy_hosts(adapted) != {'api.albums.tellyouwhat.cn': {'127.0.0.1:18091'}}:
+            raise OperationError('legacy Albums fragment contains unrecognized routes')
+        legacy = LEGACY_ALBUM_PROXY.read_text()
+    return {'fragment': PROXY_FILE.read_text(), 'legacyAlbums': legacy}
+
+
+def shared_proxy(config, slot, legacy):
+    from release import public_targets
+    targets = public_targets(config)
+    gateway, _, admin = PORTS[slot['slot']]
+    email = config.get('ACME_EMAIL', '')
+    if email and not re.fullmatch(r'[A-Za-z0-9_.+%-]+@[A-Za-z0-9.-]+', email):
+        raise OperationError('invalid production certificate contact')
+    tls = '\n\ttls ' + email if email else ''
+    headers = '''header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }'''
+    fragment = f'''(tellyouwhat_public_api) {{
+    {headers}
+    @internal path /internal/* /_development/* /_testflight/*
+    respond @internal 404
+    reverse_proxy 127.0.0.1:{gateway} {{
+        stream_close_delay 4h
+        header_up X-Real-IP {{remote_host}}
+        flush_interval -1
+    }}
+}}
+'''
+    hosts = {}
+    for target in targets:
+        host = target['domain']
+        is_admin = host == config['ADMIN_DOMAIN']
+        hosts[host] = '127.0.0.1:' + str(admin if is_admin else gateway)
+        body = (headers + f'\n\treverse_proxy 127.0.0.1:{admin} {{\n\t\theader_up X-Real-IP {{remote_host}}\n\t}}'
+                if is_admin else 'import tellyouwhat_public_api')
+        fragment += f'\n{host} {{{tls}\n\t{body}\n}}\n'
+    return {'fragment': fragment, 'hosts': hosts,
+            'legacyAlbums': None if 'api.albums.tellyouwhat.cn' in hosts else legacy}
+
+
+def bind_proxy(runtime, state, candidate):
+    # Freeze the previous topology before pausing services or replacing routes.
+    if 'proxy' not in state['current']:
+        state['current']['proxy'] = capture_proxy(runtime)
+    if 'proxy' not in candidate:
+        config = read_environment(slot_path(runtime, candidate) / '.env.production')
+        candidate['proxy'] = shared_proxy(config, candidate, state['current']['proxy']['legacyAlbums'])
+    write_state(runtime, state, candidate=candidate)
 
 
 def render_proxy(source, slot):
@@ -144,32 +245,64 @@ def render_proxy(source, slot):
 def switch_proxy(runtime, slot):
     before = PROXY_FILE.read_text()
     root_before = PROXY_ROOT.read_text()
-    if root_before.count(str(PROXY_FILE)) != 1:
+    if root_before.count(str(PROXY_FILE)) != 1 or ('import ' + str(PROXY_FILE)) not in root_before.splitlines():
         raise OperationError("Caddy must import the dedicated backend fragment exactly once")
+    selection = slot.get('proxy') or capture_proxy(runtime)
+    legacy_marker = 'import ' + str(LEGACY_ALBUM_PROXY)
+    if (root_before.count(str(LEGACY_ALBUM_PROXY)) != root_before.splitlines().count(legacy_marker)
+            or root_before.splitlines().count(legacy_marker) > 1):
+        raise OperationError('legacy Albums proxy import is not in the managed layout')
+    root_after = root_before
+    if selection['legacyAlbums']:
+        if (LEGACY_ALBUM_PROXY.is_symlink() or not LEGACY_ALBUM_PROXY.is_file()
+                or LEGACY_ALBUM_PROXY.read_text() != selection['legacyAlbums']):
+            raise OperationError('legacy Albums proxy differs from the selected recovery snapshot')
+        if legacy_marker not in root_after.splitlines():
+            root_after = root_after.rstrip() + '\n\n' + legacy_marker + '\n'
+    else:
+        if legacy_marker in root_before.splitlines():
+            capture_proxy(runtime)
+        root_after = ''.join(line for line in root_before.splitlines(keepends=True) if line.rstrip('\r\n') != legacy_marker)
     candidate = runtime.state / "proxy-fragment.caddy"
-    atomic_text(candidate, render_proxy(before, slot))
+    atomic_text(candidate, render_proxy(selection['fragment'], slot))
     # Keep the validation root next to the original to preserve relative imports.
     validation_root = PROXY_ROOT.parent / ".tellyouwhat-validation"
     temporary_root = runtime.state / "proxy-root.caddy"
-    atomic_text(temporary_root, root_before.replace(str(PROXY_FILE), str(candidate)))
+    atomic_text(temporary_root, root_after.replace(str(PROXY_FILE), str(candidate)))
     runtime.execute("proxy-stage", ["sudo", "-n", "install", "-m", "600", str(temporary_root), str(validation_root)])
     runtime.execute("proxy-validate", ["sudo", "-n", "caddy", "validate", "--config", str(validation_root), "--adapter", "caddyfile"])
     if PROXY_FILE.read_text() != before or PROXY_ROOT.read_text() != root_before:
         raise OperationError("Caddy configuration changed during preparation")
     backup = runtime.state / "proxy-before.caddy"
     atomic_text(backup, before)
+    root_backup = runtime.state / 'proxy-root-before.caddy'
+    atomic_text(root_backup, root_before)
+    root_candidate = runtime.state / 'proxy-root-after.caddy'
+    atomic_text(root_candidate, root_after)
     pending = PROXY_FILE.parent / ".tellyouwhat-fragment.pending"
     permissions = PROXY_FILE.stat()
     install = ["sudo", "-n", "install", "-m", format(permissions.st_mode & 0o777, "o"),
                "-o", str(permissions.st_uid), "-g", str(permissions.st_gid)]
+    def install_root(source, label):
+        permissions = PROXY_ROOT.stat()
+        pending_root = PROXY_ROOT.parent / '.tellyouwhat-root.pending'
+        runtime.execute(label, ['sudo', '-n', 'install', '-m', format(permissions.st_mode & 0o777, 'o'),
+                        '-o', str(permissions.st_uid), '-g', str(permissions.st_gid), str(source), str(pending_root)])
+        runtime.execute(label + '-sync', ['sudo', '-n', 'sync', '-f', str(pending_root)])
+        runtime.execute(label + '-commit', ['sudo', '-n', 'mv', '-f', str(pending_root), str(PROXY_ROOT)])
+        runtime.execute(label + '-commit-sync', ['sudo', '-n', 'sync', '-f', str(PROXY_ROOT)])
     try:
         runtime.execute("proxy-install", [*install, str(candidate), str(pending)])
         runtime.execute("proxy-sync", ["sudo", "-n", "sync", "-f", str(pending)])
         runtime.execute("proxy-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
         runtime.execute("proxy-commit-sync", ["sudo", "-n", "sync", "-f", str(PROXY_FILE)])
+        if root_after != root_before:
+            install_root(root_candidate, 'proxy-root-install')
         runtime.execute("proxy-reload", ["sudo", "-n", "caddy", "reload", "--config", str(PROXY_ROOT), "--adapter", "caddyfile"])
         assert_route(slot)
     except Exception:
+        if root_after != root_before:
+            install_root(root_backup, 'proxy-root-restore')
         runtime.execute("proxy-restore", [*install, str(backup), str(pending)])
         runtime.execute("proxy-restore-sync", ["sudo", "-n", "sync", "-f", str(pending)])
         runtime.execute("proxy-restore-commit", ["sudo", "-n", "mv", "-f", str(pending), str(PROXY_FILE)])
@@ -202,14 +335,15 @@ def storage_check(runtime):
         raise OperationError("insufficient disk headroom")
 
 
-def require_memory_capacity(dual=True):
+def require_memory_capacity(dual=True, gateway_mib=384):
     memory = dict(re.findall(r"^(MemTotal|MemAvailable):\s+(\d+)", Path("/proc/meminfo").read_text(), re.M))
-    if int(memory["MemAvailable"]) < (1344 + 512) * 1024 or (dual and int(memory["MemTotal"]) < (2688 + 192 + 512) * 1024):
+    slot_mib = gateway_mib + 768 + 192
+    if int(memory["MemAvailable"]) < (slot_mib + 512) * 1024 or (dual and int(memory["MemTotal"]) < (2 * slot_mib + 192 + 512) * 1024):
         raise CapacityError("insufficient memory headroom for release startup")
 
 
-def resource_check(runtime, slot):
-    require_memory_capacity()
+def resource_check(runtime, slot, gateway_mib=384):
+    require_memory_capacity(gateway_mib=gateway_mib)
     if cpu_busy_percent() >= 85:
         raise CapacityError("CPU usage is at least 85 percent; active services were retained")
     storage_check(runtime)
@@ -267,7 +401,10 @@ def validate_slot_config(runtime, slot):
     config = json.loads(output)
     if config.get("name") != "tellyouwhat-" + slot["slot"]:
         raise OperationError("candidate Compose project is not isolated")
-    for service, port, limit in zip(SERVICES, PORTS[slot["slot"]], (384, 768, 192)):
+    from ops_albums import selected, verify_compose
+    selected_config = read_environment(slot_path(runtime, slot) / ".env.production")
+    verify_compose(selected_config, config)
+    for service, port, limit in zip(SERVICES, PORTS[slot["slot"]], (512 if selected(selected_config) else 384, 768, 192)):
         value = config["services"][service]
         bindings = value.get("ports", [])
         if (value.get("image") != slot["images"][service]
@@ -288,6 +425,7 @@ def adopt(runtime):
     require_ready(runtime, current, 1)
     values = statuses(runtime, current)
     assert_route(current)
+    current['proxy'] = capture_proxy(runtime)
     # The first proxy reload establishes stream protection for future reloads.
     # Existing legacy WebSockets may reconnect during this explicit bootstrap.
     revision = switch_proxy(runtime, current)
@@ -299,6 +437,7 @@ def adopt(runtime):
 
 def activate(runtime, state, candidate, attempts):
     previous = state["current"]
+    bind_proxy(runtime, state, candidate)
     # Pausing acknowledges every process before any candidate can claim work.
     action(runtime, previous, "pause")
     action(runtime, candidate, "serve")
@@ -403,8 +542,15 @@ def rollback(runtime, attempts):
     candidate = state["previous"]
     if not candidate.get("healthy"):
         raise OperationError("previous slot never passed readiness verification")
+    from ops_recording import require_continuity
+    require_continuity(read_environment(slot_path(runtime, state['current']) / '.env.production'),
+                       read_environment(slot_path(runtime, candidate) / '.env.production'))
+    from ops_albums import require_resources
+    candidate_root = slot_path(runtime, candidate)
+    require_resources(runtime, candidate_root, read_environment(candidate_root / '.env.production'))
     if not running(runtime, candidate):
-        resource_check(runtime, candidate["slot"])
+        from ops_albums import selected
+        resource_check(runtime, candidate["slot"], 512 if selected(runtime.config) or selected(read_environment(candidate_root / ".env.production")) else 384)
     # A retired legacy slot occupies blue ports and cannot be restarted after
     # blue is adopted. Use a lifecycle-capable slot snapshot instead.
     if candidate["slot"] == "legacy" and state["current"]["slot"] == "blue":

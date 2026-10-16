@@ -1,0 +1,121 @@
+{
+  "runtime": {
+    "cap_drop_all": true,
+    "completed_at": 1792087233,
+    "current_registered": true,
+    "filesystem_free_bytes": 24815800320,
+    "image_id": "sha256:43e66f565a65cea2c6721587508805941b4785add52b774297cd4a9ecd45c3b7",
+    "loopback_binding": {
+      "8080/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "18791"
+        }
+      ]
+    },
+    "memory_limit_bytes": 134217728,
+    "no_new_privileges": true,
+    "operation": "apple-delivery-acceptance",
+    "operator_uid": 1000,
+    "package_counts": {
+      "grants": 0,
+      "packages": 0
+    },
+    "passed": true,
+    "previous_verified_selection": null,
+    "production_route_check": true,
+    "public_proxy_configured": false,
+    "read_only_data": true,
+    "read_only_root": true,
+    "running": true,
+    "source": "0e9ce2a46d0c44f853c200672204a36cafd71477",
+    "started_utc": "2026-10-15T17:59:19.854320555Z"
+  },
+  "backup": {
+    "apple_recovery_files": [
+      "current/.env",
+      "current/Dockerfile",
+      "current/apple-delivery-logging.caddy",
+      "current/apple-delivery.caddy",
+      "current/compose.apple-delivery.yaml",
+      "current/selection.json",
+      "current/service",
+      "owner.json",
+      "state.json"
+    ],
+    "binary_sha256": "784eff85b9ccb76385862a9c4539609fd07c72a7f8d04baf03267c2837a5d600",
+    "completed_at": 1792087320,
+    "cos_objects_read_back": 3,
+    "decrypted_configuration_verified": true,
+    "encrypted_manifest_authenticated": true,
+    "filename": "mysql-20261015T180046Z-eab591.sql.gz.enc",
+    "operation": "apple-delivery-backup-acceptance",
+    "passed": true,
+    "recovery_filename": "recovery-mysql-20261015T180046Z-eab591.tar.gz.enc",
+    "recovery_sha256": "4f0e4d097ea0511f4ce2d5aaf987cca639b9fdd1274a6b47a9bd2e15644c6829",
+    "scheduled_run": false,
+    "source": "0e9ce2a46d0c44f853c200672204a36cafd71477",
+    "sql_restored": false
+  },
+  "date": "2026-10-16",
+  "scope": "owner-registered loopback OTA service and authenticated offsite configuration backup",
+  "implementation_commits": [
+    "14863ca",
+    "8920421",
+    "7252557",
+    "0e9ce2a"
+  ],
+  "local_tests": {
+    "command": "python3 -m unittest discover -s deploy/tencent -p '*test.py'",
+    "passed": 121,
+    "skipped": 1,
+    "skip_reason": "native Caddy unavailable on Mac; original proxy fixture separately passed on target host"
+  },
+  "failed_attempts": [
+    {
+      "source": "14863ca",
+      "stage": "Docker build",
+      "cause": "host uses legacy builder; COPY --chmod unsupported",
+      "service_started": false,
+      "resolution_commit": "8920421"
+    },
+    {
+      "source": "8920421",
+      "stage": "loopback readiness",
+      "cause": "container running but internal bridge left effective port mapping null",
+      "service_removed_on_failure": true,
+      "diagnostics_preserved": true,
+      "resolution_commit": "0e9ce2a"
+    }
+  ],
+  "bounds": {
+    "public_dns_changed": false,
+    "public_caddy_changed": false,
+    "ipa_published": false,
+    "phone_installation_verified": false,
+    "previous_verified_version_available": false,
+    "manual_cleanup_passed": true,
+    "scheduled_cleanup_observed": false,
+    "manual_encrypted_backup_verified": true,
+    "scheduled_backup_observed_for_new_service": false,
+    "production_routes_verified": true,
+    "test_api_migration_complete": false,
+    "overall_goal_complete": false
+  },
+  "network": {
+    "dedicated_bridge": true,
+    "internal": false,
+    "attached_container_count": 1,
+    "egress_firewall_configured": false,
+    "application_initiates_external_requests": false
+  },
+  "pending": [
+    "HTTPS installation route with complete proxy logging validation and recovery backup",
+    "project-specific signing and source-gate publication preflight",
+    "private connection file delivery",
+    "signed IPA HTTPS hash and real-time expiry acceptance",
+    "scheduled cleanup and backup observations",
+    "remote iPhone install/launch/coexistence",
+    "remaining app API and CloudKit migration"
+  ]
+}

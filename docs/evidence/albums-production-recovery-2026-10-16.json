@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-16",
+  "scope": "Albums production recovery and artifact ownership preparation",
+  "base_commit": "43e15e38daec663b43780c34c612effd8a9d511b",
+  "files": {
+    "deploy/tencent/albums_artifacts.py": "10a7f441820adc7bcb2bb1721a7b5040600becf259400e510a8a6e7074750674",
+    "deploy/tencent/albums_checkpoint.py": "3be96f7a14ec9481517ad492efac35d0386c3dbf1aff3fe55dd95a21d77cd2c5",
+    "deploy/tencent/albums_artifacts_test.py": "2e1d0cf3b2349ef8e48392906b03378647d8a00e71f387f95d5f3fbec98fc3ba",
+    "deploy/tencent/albums_checkpoint_test.py": "4e85caec8159320b8b411597f1fbc37f136d404392386d497d39de7478a1a4ff",
+    "deploy/tencent/ops_offsite.py": "d19c74940671b8c8587fe81faf2b0df63926fa52b7199f4c8881f3be4c41eb45",
+    "deploy/tencent/ops_artifacts.py": "6dc38acc26c72e08a5635b9a7a048472f3d48a14595b1a3379c01c692b28c0e1",
+    "deploy/tencent/operations_test.py": "4e8e9d5aacbbc87df6ed99734d3d98d6c6bf8c65936e0a530939aeb2b7f872cd",
+    "deploy/tencent/artifacts_test.py": "d607d073450a3390deba5c97ec00a70a1eb0637a40b37315e1517a7d0830eb82"
+  },
+  "implementation": {
+    "environments": [
+      "development",
+      "production"
+    ],
+    "production_database": "albums_production",
+    "production_backup_user": "albums_production_backup",
+    "production_owner": "albums-production",
+    "production_current_previous_configuration": true,
+    "enabled_feature_keys_required": true,
+    "inner_encryption_key_in_bundle": false,
+    "development_entry_accepts_production_owner": false,
+    "outer_recovery_size_limit_mib": 512
+  },
+  "validation": [
+    {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "tests": 195,
+      "passed": 194,
+      "skipped": 1,
+      "skip": "local Caddy unavailable",
+      "failed": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s deploy/tencent -p 'albums_*test.py'",
+      "tests": 17,
+      "passed": 17,
+      "failed": 0,
+      "after": "enabled-feature recovery verification and canonical key paths"
+    },
+    {
+      "command": "python3 -m unittest discover -s deploy/tencent -p 'operations_test.py'",
+      "tests": 21,
+      "passed": 21,
+      "failed": 0,
+      "after": "final recovery credential verification"
+    },
+    {
+      "command": "python3 -m unittest discover -s deploy/albums -p 'development_test.py'",
+      "tests": 13,
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "command": "git diff --check",
+      "passed": true
+    }
+  ],
+  "meaningful_cases": [
+    "production SQL wrapper rejects the development database/user/container",
+    "full shared backup encrypts and authenticates production recovery section",
+    "tampered key hash is rejected during shared recovery verification",
+    "missing enabled subscription credentials and foreign key paths are rejected",
+    "current and previous configurations survive cleanup with container references",
+    "production cleanup excludes test images and database files",
+    "checkpoint decryption key excluded from bundle"
+  ],
+  "initial_failures": [
+    {
+      "kind": "test fixture",
+      "reason": "duplicate environment assignment rejected before intended identity assertion",
+      "correction": "fixture now replaces canonical environment keys"
+    },
+    {
+      "kind": "test fixture",
+      "reason": "macOS temporary /var path did not equal Runtime-resolved /private/var path",
+      "correction": "fixture uses Runtime.root for registered source and secret paths"
+    }
+  ],
+  "limitations": [
+    "SQL export, deletion ledger and protected key metadata use synthetic fixtures in local tests; no production database restore proved",
+    "no remote files installed; no containers started, no routes changed",
+    "production release entry, backup-user provisioning, actual COS backup/restore and scheduled runs remain pending",
+    "unchanged global Health control-plane backup row allowlist"
+  ]
+}

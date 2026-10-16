@@ -1,0 +1,39 @@
+name: tellyouwhat-apple-delivery
+
+x-common: &common
+  image: "tellyouwhat-apple-development:${APPLE_DELIVERY_IMAGE_TAG:?Set the reviewed source commit}"
+  user: "${APPLE_DELIVERY_UID:?Set the operator UID}:${APPLE_DELIVERY_GID:?Set the operator GID}"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 64
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+
+services:
+  server:
+    <<: *common
+    build:
+      context: .
+      args: {SERVICE: appledelivery}
+    command: [serve, --data, /data, --origin, "${APPLE_DELIVERY_ORIGIN:?Set the HTTPS origin}", --listen, ":8080"]
+    restart: unless-stopped
+    volumes: ["${APPLE_DELIVERY_DATA_DIR:?Set the private store}:/data:ro"]
+    ports: ["127.0.0.1:18791:8080/tcp"]
+    networks: [delivery]
+    environment: {GOMEMLIMIT: 96MiB}
+    mem_limit: 128m
+    stop_grace_period: 20s
+  cleanup:
+    <<: *common
+    profiles: [maintenance]
+    command: [cleanup, --data, /data]
+    volumes: ["${APPLE_DELIVERY_DATA_DIR:?Set the private store}:/data:rw"]
+    network_mode: none
+    environment: {GOMEMLIMIT: 48MiB}
+    mem_limit: 64m
+
+networks:
+  delivery: {driver: bridge}

@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "422e05a5c67fed7755ea60cd1e6cb9c90b488c69",
+  "upstream_main": "da7c981f23ed0d2a26daf4afd6d832f7da0f2149",
+  "scope": "Whole backend pre-publication verification",
+  "full_go_run": {
+    "counts": {
+      "skip:package": 13,
+      "pass:test": 2336,
+      "pass:package": 59,
+      "skip:test": 651,
+      "fail:test": 2,
+      "fail:package": 1
+    },
+    "failures": [
+      {
+        "Package": "github.com/tellyouwhat/backend/internal/albums",
+        "Test": "TestAlbumDeploymentsHaveIndependentStorageAndOnlyLoopbackIngress/production"
+      },
+      {
+        "Package": "github.com/tellyouwhat/backend/internal/albums",
+        "Test": "TestAlbumDeploymentsHaveIndependentStorageAndOnlyLoopbackIngress"
+      },
+      {
+        "Package": "github.com/tellyouwhat/backend/internal/albums",
+        "Test": null
+      }
+    ]
+  },
+  "album_retest": {
+    "counts": {
+      "skip:test": 502,
+      "pass:test": 834,
+      "pass:package": 1
+    },
+    "failures": []
+  },
+  "failure_resolution": "Old production topology assertion expected an independent Albums API; now verifies data-only production resources with no published ports and no worker key mounts.",
+  "checks": {
+    "generated_api_matches": true,
+    "go_vet_all": true,
+    "go_build_all_commands": true,
+    "actionlint_1_7_7": true,
+    "swift_contract_tests_passed": 19,
+    "private_key_and_tencent_key_pattern_scan": "No matches in changed tracked files"
+  },
+  "test_source_sha256": "f7528853865fc2cc39ec1faf51d580083b3605a86a074cb3613097fb39be87b1",
+  "limitations": [
+    "Local Go run explicitly excluded MySQL/Redis integration credentials; those skipped tests require CI service containers",
+    "Live Apple/cloud business journeys are not established by these checks",
+    "No CI or production deployment completed in this evidence"
+  ],
+  "git_pushed": false,
+  "deployed": false
+}

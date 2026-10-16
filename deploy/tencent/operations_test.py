@@ -94,6 +94,97 @@ class BackupSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, "configuration recovery content"):
             verify_backup(self.runtime, source)
 
+    def test_production_albums_is_authenticated_inside_shared_backup(self):
+        import hashlib
+        import stat
+        from albums_artifacts import PRODUCTION_FILES, KEYS
+        from ops_common import atomic_json, atomic_text
+        from ops_artifacts import register
+        source = 'a' * 40
+        folder = self.runtime.root / '.albums-production/releases' / source
+        folder.mkdir(parents=True, mode=0o700)
+        app = self.runtime.root.parent / 'albums-production'
+        (app / 'secrets').mkdir(parents=True, mode=0o700)
+        files = {name: b'synthetic production configuration' for name in PRODUCTION_FILES if name != 'selection.json'}
+        files['runtime.env'] = (b'ALBUM_APPLE_BUNDLE_ID=cn.tellyouwhat.albums\n'
+                                b'ALBUM_API_HOST=api.albums.tellyouwhat.cn\n'
+                                b'ALBUM_COS_BUCKET=tellyouwhat-albums-production-1251995834\n')
+        for name, data in files.items():
+            atomic_text(folder / name, data.decode())
+        atomic_json(folder / 'selection.json', {'source': source, 'files': {
+            name: hashlib.sha256(data).hexdigest() for name, data in files.items()}})
+        atomic_json(self.runtime.state / 'albums-production.json', {'source': source, 'release': str(folder)})
+        register(self.runtime, 'albums-production', [str(folder)], [], source)
+        atomic_text(app / 'database.env', 'synthetic database configuration')
+        keys = {app / 'secrets' / name: b'synthetic production key' for name in KEYS}
+        for path, data in keys.items():
+            atomic_text(path, data.decode())
+        original_stat, execute = Path.stat, self.runtime.execute
+
+        def metadata(path, *args, **kwargs):
+            value = original_stat(path, *args, **kwargs)
+            if path in keys:
+                fields = list(value)
+                fields[0], fields[4], fields[5] = stat.S_IFREG | 0o440, 0, 65532
+                return os.stat_result(fields)
+            return value
+
+        def command(label, args, **kwargs):
+            return keys[Path(args[-1])] if label == 'backup-albums-production-key' else execute(label, args, **kwargs)
+
+        snapshot = 'checkpoint/albums-' + 'b' * 32 + '.sql.gz.enc'
+        checkpoint = {'backup.env': b'no inner key', snapshot: b'encrypted SQL',
+                      snapshot + '.json': b'inner manifest',
+                      'checkpoint/albums-deletions-' + 'c' * 32 + '.json': b'deletion fence'}
+        (self.runtime.state / 'offsite-required').touch()
+        with patch.object(Path, 'stat', metadata), patch.object(self.runtime, 'execute', side_effect=command), \
+                patch('albums_artifacts.checkpoint', return_value=checkpoint) as export, patch('ops_offsite.publish'):
+            result = create_backup(self.runtime)
+            manifest = verify_backup(self.runtime, self.runtime.backups / result['filename'])
+            export.assert_called_once_with(self.runtime, folder, 'production')
+        self.assertEqual(manifest['recovery_albums_development'], {})
+        self.assertEqual(len(manifest['recovery_albums_production']), 15)
+        from ops_offsite import verify_recovery_bundle
+        incomplete = {**manifest, 'recovery_albums_production': {
+            **manifest['recovery_albums_production'], 'secrets/apple-sign-in.p8': '0' * 64}}
+        with self.assertRaisesRegex(OperationError, 'content verification'):
+            verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], incomplete)
+        missing_album_data = {**manifest, 'recovery_platform_test': {'current/albums.env': 'a' * 64}}
+        with self.assertRaisesRegex(OperationError, 'independent data and keys'):
+            verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], missing_album_data)
+
+    def test_authenticated_backup_includes_registered_apple_service_binary_and_configuration(self):
+        import hashlib
+        from apple_delivery_deploy import FILES, IMAGE, ORIGIN, environment
+        from ops_common import atomic_json, atomic_text
+        from ops_artifacts import register
+        from ops_offsite import verify_recovery_bundle
+        source = 'a' * 40
+        folder = self.runtime.root / '.apple-delivery/releases' / source
+        folder.mkdir(mode=0o700, parents=True)
+        folder.parent.chmod(0o700)
+        folder.parent.parent.chmod(0o700)
+        files = {}
+        for name in FILES:
+            content = 'synthetic backup fixture for ' + name
+            atomic_text(folder / name, content)
+            files[name] = hashlib.sha256(content.encode()).hexdigest()
+        atomic_json(folder / 'selection.json', {'source': source, 'image': IMAGE + source, 'origin': ORIGIN, 'files': files})
+        atomic_text(folder / '.env', ''.join(key + '=' + val + '\n' for key, val in environment(self.runtime, source).items()))
+        atomic_json(self.runtime.state / 'apple-delivery.json', {'source': source, 'image': IMAGE + source,
+                    'origin': ORIGIN, 'release': str(folder), 'previous': None})
+        register(self.runtime, 'apple-development', [str(folder)], [IMAGE + source], source)
+        (self.runtime.state / 'offsite-required').touch()
+        with patch('ops_offsite.publish'), patch('apple_delivery_artifacts.CADDY_ROOT', self.root / 'inactive-Caddyfile'), \
+                patch('apple_delivery_artifacts.CADDY_FILES', {'delivery.caddy': self.root / 'inactive-delivery.caddy',
+                                                            'logging.caddy': self.root / 'inactive-logging.caddy'}):
+            result = create_backup(self.runtime)
+        encrypted = self.runtime.backups / result['filename']
+        manifest = verify_backup(self.runtime, encrypted)
+        self.assertIn('current/service', manifest['recovery_apple_delivery'])
+        self.assertIn('current/.env', manifest['recovery_apple_delivery'])
+        self.assertTrue(verify_recovery_bundle(self.runtime, encrypted, manifest))
+
     def test_backup_age_uses_authenticated_creation_time_after_file_copy(self):
         now = int(time.time())
         with patch("ops_backup.time.time", return_value=now - 15 * 86400):
@@ -133,6 +224,15 @@ class BackupSafetyTests(unittest.TestCase):
         execute.assert_called_once()
         record = json.loads((self.runtime.state / "maintenance.json").read_text())
         self.assertEqual(record["expired_backups_removed"], 1)
+
+    def test_test_environment_cleanup_failure_does_not_skip_other_maintenance(self):
+        with patch.object(self.runtime, 'execute') as execute, patch('operations.cleanup') as cleanup, \
+                patch('platform_test_maintenance.maintain', side_effect=OperationError('test cleanup failed')):
+            with self.assertRaisesRegex(OperationError, 'test cleanup failed'):
+                operate(self.runtime, SimpleNamespace(operation='maintenance'))
+        execute.assert_called_once()
+        cleanup.assert_called_once()
+        self.assertFalse((self.runtime.state / 'maintenance.json').exists())
 
     def test_invalid_snapshot_does_not_skip_other_expired_snapshots_or_database_cleanup(self):
         corrupt = create_backup(self.runtime)

@@ -10,12 +10,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -134,6 +137,9 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	JournalRecordings          *recordinghttp.Handler
+	JournalIllustrations       *illustration.Service
+	BirthdayAssistant          birthday.Assistant
 	Operations                 platformops.Reader
 	ExecutionPolicies          PolicyResolver
 	PromptConfig               *promptconfig.Cache
@@ -172,6 +178,9 @@ type Dependencies struct {
 }
 
 type Server struct {
+	journalRecordings          *recordinghttp.Handler
+	journalIllustrations       *illustration.Service
+	birthdayAssistant          birthday.Assistant
 	operations                 platformops.Reader
 	executionPolicies          PolicyResolver
 	promptConfig               *promptconfig.Cache
@@ -237,10 +246,13 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
-		operations:        dependencies.Operations,
-		executionPolicies: dependencies.ExecutionPolicies,
-		promptConfig:      dependencies.PromptConfig,
-		voice:             dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
+		journalIllustrations: dependencies.JournalIllustrations,
+		journalRecordings:    dependencies.JournalRecordings,
+		birthdayAssistant:    dependencies.BirthdayAssistant,
+		operations:           dependencies.Operations,
+		executionPolicies:    dependencies.ExecutionPolicies,
+		promptConfig:         dependencies.PromptConfig,
+		voice:                dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,

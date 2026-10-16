@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/tellyouwhat/backend/internal/birthdayhttpapi"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
@@ -41,6 +42,33 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 	router.UnescapePathValues = false
 	router.Use(server.httpMiddleware...)
 	router.Use(operationIDMiddleware(server.operationIDs()))
+	if server.app.ID == appregistry.Journal {
+		// Bound large reference/result allocations before reading an image request body.
+		imageRequests := make(chan struct{}, 1)
+		router.Use(func(ctx *gin.Context) {
+			path := ctx.Request.URL.Path
+			if path != "/v1/journal/illustrations" && !strings.HasPrefix(path, "/v1/journal/illustrations/") {
+				ctx.Next()
+				return
+			}
+			if server.journalIllustrations == nil {
+				writeTransportError(ctx, 503, "not_ready", "image service is not configured")
+				ctx.Abort()
+				return
+			}
+			select {
+			case imageRequests <- struct{}{}:
+				defer func() { <-imageRequests }()
+			default:
+				ctx.Header("Retry-After", "2")
+				writeTransportError(ctx, 429, "image_busy", "image service is busy")
+				ctx.Abort()
+				return
+			}
+			ctx.Header("Cache-Control", "no-store")
+			ctx.Next()
+		})
+	}
 	router.Use(captureRawRequestBody())
 
 	server.registerPlatformRoutes(router)
@@ -49,6 +77,14 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 		server.registerHealthRoutes(router)
 	case appregistry.Journal:
 		server.registerJournalRoutes(router)
+	case appregistry.Birthday:
+		strict := birthdayhttpapi.NewStrictHandlerWithOptions(server, nil, birthdayhttpapi.StrictGinServerOptions{
+			RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+				writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request violates the transport contract")
+			},
+			HandlerErrorFunc: strictHandlerError, ResponseErrorHandlerFunc: strictResponseError,
+		})
+		birthdayhttpapi.RegisterHandlersWithOptions(router, strict, birthdayhttpapi.GinServerOptions{ErrorHandler: parameterError})
 	default:
 		panic("unsupported App router")
 	}
@@ -112,6 +148,12 @@ func parameterError(context *gin.Context, _ error, status int) {
 
 func captureRawRequestBody() gin.HandlerFunc {
 	return func(context *gin.Context) {
+		// The generated recording upload adapter preserves the reader. Its handler
+		// authenticates the signed digest before streaming and verifies actual bytes.
+		if context.Request.Method == http.MethodPut && context.FullPath() == "/v1/journal/voice/recordings/:recordingID" {
+			context.Next()
+			return
+		}
 		limit := requestBodyLimit(context.Request.Method, context.Request.URL.Path)
 		body, err := readLimitedBody(context.Request.Body, limit)
 		if err != nil {
@@ -137,7 +179,19 @@ func captureRawRequestBody() gin.HandlerFunc {
 }
 
 func requestBodyLimit(method, path string) int64 {
+	if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/voice/recordings/") {
+		if strings.HasSuffix(path, "/preview") {
+			return 1 << 20
+		}
+		if strings.HasSuffix(path, "/retry") {
+			return 1024
+		}
+	}
 	switch method + " " + path {
+	case "POST /v1/journal/illustrations":
+		return 34_000_000
+	case "POST /v2/birthday/assist":
+		return 64 << 10
 	case "POST /v1/journal/voice/sessions":
 		return 8 << 10
 	case "POST /v1/attest/challenges":
@@ -155,6 +209,9 @@ func requestBodyLimit(method, path string) int64 {
 	case "POST /v1/journal/organization", "POST /v1/journal/illustration-suggestions":
 		return journalcontracts.MaxBodyBytes
 	default:
+		if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/illustrations/") && strings.HasSuffix(path, "/cancel") {
+			return 1024
+		}
 		return 0
 	}
 }
@@ -197,6 +254,8 @@ func (server *Server) operationIDs() map[string]string {
 		documents = append(documents, mustOpenAPI(healthhttpapi.GetSwagger()))
 	case appregistry.Journal:
 		documents = append(documents, mustOpenAPI(journalhttpapi.GetSwagger()))
+	case appregistry.Birthday:
+		documents = append(documents, mustOpenAPI(birthdayhttpapi.GetSwagger()))
 	}
 	result := make(map[string]string)
 	for _, document := range documents {

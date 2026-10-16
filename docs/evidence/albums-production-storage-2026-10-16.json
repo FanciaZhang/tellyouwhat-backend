@@ -1,0 +1,41 @@
+{
+  "checked_at": "2026-10-16T02:10:41.245944+00:00",
+  "verification": "Tencent COS console authenticated UI, bucket overview and saved lifecycle table",
+  "bucket": "tellyouwhat-albums-production-1251995834",
+  "region": "ap-guangzhou",
+  "private_read_write": true,
+  "multi_az": true,
+  "versioning": true,
+  "created_at_console": "2026-10-16 09:55:00 +08:00",
+  "lifecycle": {
+    "id": "albums-originals-ia-30d",
+    "enabled": true,
+    "prefix": "albums/originals/",
+    "current_version_transition_days": 30,
+    "noncurrent_version_transition_days": 30,
+    "target_storage_class": "MAZ_STANDARD_IA",
+    "expiration": false,
+    "noncurrent_expiration": false,
+    "expired_delete_marker_removal": false,
+    "multipart_expiration": false
+  },
+  "mutations": [
+    "Created new independent private bucket",
+    "Enabled versioning and multi-AZ during creation",
+    "Added original-prefix 30-day transitions for current and historical versions"
+  ],
+  "unchanged": [
+    "Existing development bucket",
+    "Shared backup bucket",
+    "Health production API and data"
+  ],
+  "pending": [
+    "Independent production CAM identities and access probes",
+    "CI activation and media role scope",
+    "Production backend deployment and route migration",
+    "Release COS allowlist",
+    "Real upload and restore",
+    "Lifecycle execution after age threshold"
+  ],
+  "production_ready": false
+}

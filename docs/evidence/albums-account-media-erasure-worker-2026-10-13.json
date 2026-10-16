@@ -1,0 +1,80 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "isolated MySQL/Redis; fake account object inventory and deletion responses; no cloud mutation or deployment",
+  "migration": "0057_album_account_media_erasure_schedule.sql",
+  "default_gate": "ALBUM_ACCOUNT_MEDIA_ERASURE_ENABLED=false",
+  "verification": {
+    "startedAt": "2026-10-13T12:37:28.392711+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-media-erasure-worker-5dpipyaz",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-media-erasure-worker-5dpipyaz/race.log",
+        "testCounts": {
+          "pass": 47
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-media-erasure-worker-5dpipyaz/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-media-erasure-worker-5dpipyaz/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T12:37:54.206837+00:00"
+  },
+  "top_level_tests": 19,
+  "passed_test_events": 47,
+  "failed_test_events": 0,
+  "skipped_test_events": 0,
+  "covered": [
+    "worker resumes object deletion across fresh instances and settles media metadata and quota",
+    "six namespaces and exact version/delete-marker plans",
+    "lost delete response retries the identical saved version",
+    "provider failures and cancellation preserve metadata, retry after persisted scheduling/object leases",
+    "one scheduling claim wins concurrent contenders; stale finish cannot alter a newer claim",
+    "failed account cannot starve another account at batch size one",
+    "active, unready and media-settled accounts not selected",
+    "missing migration rejected; cancellation stops polling",
+    "toggle defaults off and accepts only explicit true/false",
+    "media settlement and credential erasure regression"
+  ],
+  "initial_failure": "Migration embed test expected 56 files; added migration 0057 to the ordered list and reran all selected tests, vet and builds successfully.",
+  "source_sha256": {
+    "internal/albums/account_media_erasure_worker.go": "76fa89032b9216923646bae883a50596de5fd87b494783ba731bb982a0524565",
+    "internal/albums/account_media_erasure_worker_test.go": "8768da0e7db842e39fa08d7199974564a91a5bfa1eed22ec6f7f6b509d8eef99",
+    "internal/albums/account_object_purge.go": "1a84f590911ce9fc06b944894fbec661927da7422665a9163147c23cac1e4c78",
+    "internal/albums/account_media_settlement.go": "ba6c382caf1b02b8e324f297000c4a97154e5200d8602ce8355a488b85e4a021",
+    "internal/albums/worker_config.go": "12bf94310a2409171dc1cefc51708c30dafb90eb15461cfc3e59b6739dfc19c5",
+    "internal/albums/worker_config_test.go": "b81a9522c7f96d6c9e7e24705dd295b8ed77410907cd8d531f438f7e68fdc82a",
+    "cmd/albumworker/main.go": "c11d229eb506708f9631a1d2d7785a7820bae9989415793163b1a3145da199dc",
+    "migrations/0057_album_account_media_erasure_schedule.sql": "a58a292d7a5c2a3c2e548785410e5b2355b92e59df19b2846e86fe5ec204c279",
+    "migrations/embed_test.go": "44c261c688cc042d96654b1bd1ef10e48f20f0f65d8fc9fb126199dd7e67e771",
+    "deploy/albums/runtime.env.example": "e644a656b1a8c8b7feab6d03908b5404775be68c8851b13014d4dd285563f3d3",
+    "deploy/albums/test.env.example": "207ad1d6b64b3a6e963cd73b52740137b486f8cba4f83cd63e0b807175c7073b"
+  },
+  "log_sha256": {
+    "mysql-init.log": "58caa6848b99acec0e3698b871cbd2763168450d76a62031f7a17ecf419fc5a0",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mysql.log": "75af47dd770f932570a7e6c4608f0b73bb95ef0b9fd9a78cb36e17266fa0d311",
+    "redis.log": "bb9097d952cd83e863136ce8bc9270d18057b763c204b5da42d5d616bef7b87f",
+    "race.log": "030a279f49c457b7e10721d913bee0d73c3d7fcc840f9d10797a04c76f4fe7cc",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "not deployed; existing test runtime unchanged",
+    "no real COS permanent deletion or new IAM permission",
+    "no final account identity/billing/backup erasure or account-deletion HTTP/UI",
+    "no real device or Apple purchase/renewal/refund/restore acceptance",
+    "production sales remain closed"
+  ]
+}

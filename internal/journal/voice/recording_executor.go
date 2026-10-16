@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
@@ -25,8 +24,6 @@ type RecordingExecutor struct {
 	Budget   *costcontrol.Controller
 	AppID    string
 	Price    costcontrol.DurationPrice
-	mu       sync.Mutex
-	active   map[string]bool
 }
 
 func (e *RecordingExecutor) Process(ctx context.Context, owner, id string) (RecordingJob, error) {
@@ -47,21 +44,11 @@ func (e *RecordingExecutor) advance(ctx context.Context, owner, id string, retry
 	if e == nil || e.Store == nil || e.Provider == nil || e.Budget == nil || e.AppID == "" || e.Price.NanosPerHour <= 0 {
 		return RecordingJob{}, ErrInvalid
 	}
-	key, err := e.Store.prefix(owner, id)
+	unlock, err := e.Store.lockExecution(owner, id)
 	if err != nil {
 		return RecordingJob{}, err
 	}
-	e.mu.Lock()
-	if e.active[key] {
-		e.mu.Unlock()
-		return RecordingJob{}, ErrConflict
-	}
-	if e.active == nil {
-		e.active = make(map[string]bool)
-	}
-	e.active[key] = true
-	e.mu.Unlock()
-	defer func() { e.mu.Lock(); delete(e.active, key); e.mu.Unlock() }()
+	defer unlock()
 	if err = ctx.Err(); err != nil {
 		return RecordingJob{}, err
 	}

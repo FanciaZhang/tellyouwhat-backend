@@ -9,6 +9,30 @@ import (
 	"time"
 )
 
+func TestMySQLHealthOnlyStartupDoesNotInitializeJournal(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defaults := Defaults("", "", "", 90)
+	delete(defaults, "journal")
+	cache, err := Start(ctx, Store{DB: db}, defaults, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for scope := range defaults {
+		if _, err := cache.Current(scope); err != nil {
+			t.Fatal("missing Health scope", scope, err)
+		}
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM prompt_config_current WHERE scope='journal'`).Scan(&count); err != nil || count != 0 {
+		t.Fatal("disabled Journal policy initialized", count, err)
+	}
+	if _, err := cache.Current("journal"); !errors.Is(err, ErrNotFound) {
+		t.Fatal("disabled scope exposed", err)
+	}
+}
+
 func TestMySQLPublicationConcurrencyHistoryAndCrossInstanceRefresh(t *testing.T) {
 	db := testutil.MySQL(t)
 	ctx := context.Background()

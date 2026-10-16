@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,11 +41,10 @@ type RecordingJob struct {
 
 // This store is private temporary processing storage, not journal sync/storage.
 // The authenticated caller supplies owner; no client-supplied filesystem path
-// is accepted. One process owns a store directory in the Journal development service.
+// is accepted. Processes sharing the same private filesystem use OS locks.
 type RecordingJobStore struct {
 	root string
 	now  func() time.Time
-	mu   sync.Mutex
 }
 
 func NewRecordingJobStore(root string, now func() time.Time) (*RecordingJobStore, error) {
@@ -72,6 +70,9 @@ func (s *RecordingJobStore) prefix(owner, id string) (string, error) {
 	parsed, err := uuid.Parse(id)
 	if owner == "" || err != nil || len(id) != 36 {
 		return "", ErrInvalid
+	}
+	if err := s.checkOwner(owner); err != nil {
+		return "", err
 	}
 	digest := sha256.Sum256([]byte(owner))
 	return filepath.Join(s.root, hex.EncodeToString(digest[:])+"-"+parsed.String()), nil
@@ -108,8 +109,11 @@ func readRecordingJob(path string) (RecordingJob, error) {
 	return job, nil
 }
 func (s *RecordingJobStore) Get(owner, id string) (RecordingJob, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock()
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	defer unlock()
 	path, err := s.prefix(owner, id)
 	if err != nil {
 		return RecordingJob{}, err
@@ -124,7 +128,16 @@ func (s *RecordingJobStore) Upload(ctx context.Context, owner, id string, input 
 	if err != nil {
 		return RecordingJob{}, err
 	}
-	temp, err := os.CreateTemp(s.root, "upload-*")
+	unlockCreation, err := s.lock()
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	if err := s.checkOwner(owner); err != nil {
+		unlockCreation()
+		return RecordingJob{}, err
+	}
+	temp, err := os.CreateTemp(s.root, "upload-"+filepath.Base(path)+"-*")
+	unlockCreation()
 	if err != nil {
 		return RecordingJob{}, err
 	}
@@ -150,8 +163,19 @@ func (s *RecordingJobStore) Upload(ctx context.Context, owner, id string, input 
 		return RecordingJob{}, ErrInvalid
 	}
 	sum := hex.EncodeToString(digest.Sum(nil))
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	finish, err := lockRecordingFile(path+".execution.lock", true)
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	defer finish()
+	unlock, err := s.lock()
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	defer unlock()
+	if err := s.checkOwner(owner); err != nil {
+		return RecordingJob{}, err
+	}
 	previous, err := readRecordingJob(path)
 	if err == nil {
 		if previous.AudioHash != sum {
@@ -223,8 +247,11 @@ func (s *RecordingJobStore) write(path string, job RecordingJob) error {
 }
 
 func (s *RecordingJobStore) Advance(owner, id string, revision int, state RecordingJobState, result *RecordingAnalysis, errorCode string) (RecordingJob, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock()
+	if err != nil {
+		return RecordingJob{}, err
+	}
+	defer unlock()
 	path, err := s.prefix(owner, id)
 	if err != nil {
 		return RecordingJob{}, err
@@ -284,8 +311,11 @@ func absDuration(value int) int {
 }
 
 func (s *RecordingJobStore) AudioPath(owner, id string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	path, err := s.prefix(owner, id)
 	if err != nil {
 		return "", err
@@ -304,8 +334,11 @@ func (s *RecordingJobStore) AudioPath(owner, id string) (string, error) {
 // delivery cache (24 hours), while its small identity/hash tombstone prevents
 // accidental re-submission. The App owns the durable document/result.
 func (s *RecordingJobStore) Cleanup() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		return err
@@ -347,26 +380,41 @@ func (s *RecordingJobStore) Cleanup() error {
 			continue
 		}
 		prefix := strings.TrimSuffix(path, ".json")
-		job, err := readRecordingJob(prefix)
-		if err != nil {
+		if err := s.cleanupJob(prefix); err != nil {
 			return err
 		}
-		if s.now().Sub(job.UpdatedAt) > 24*time.Hour && (job.Result != nil || job.State != RecordingCompleted && job.State != RecordingFailed) {
-			if job.State != RecordingCompleted {
-				job.State = RecordingFailed
-			}
-			job.Result = nil
-			job.ErrorCode = "analysis_result_expired"
-			job.Revision++
-			job.UpdatedAt = s.now()
-			if err = s.write(prefix, job); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+func (s *RecordingJobStore) cleanupJob(prefix string) error {
+	finish, err := lockRecordingFile(prefix+".execution.lock", true)
+	if errors.Is(err, ErrConflict) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer finish()
+	job, err := readRecordingJob(prefix)
+	if err != nil {
+		return err
+	}
+	if s.now().Sub(job.UpdatedAt) > 24*time.Hour && (job.Result != nil || job.State != RecordingCompleted && job.State != RecordingFailed) {
+		if job.State != RecordingCompleted {
+			job.State = RecordingFailed
 		}
-		if job.State == RecordingCompleted || job.State == RecordingFailed {
-			if err = os.Remove(prefix + ".wav"); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
+		job.Result = nil
+		job.ErrorCode = "analysis_result_expired"
+		job.Revision++
+		job.UpdatedAt = s.now()
+		if err = s.write(prefix, job); err != nil {
+			return err
+		}
+	}
+	if job.State == RecordingCompleted || job.State == RecordingFailed {
+		if err = os.Remove(prefix + ".wav"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
 	}
 	return nil

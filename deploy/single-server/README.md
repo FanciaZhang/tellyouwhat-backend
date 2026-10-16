@@ -59,11 +59,7 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm --
 
 完整权限与恢复边界见 [`../../docs/modules/admin.md`](../../docs/modules/admin.md)。
 
-DNS 和可信证书条件满足后，通过 CI 的 `deployment=public` 运行完成公网代理激活和独立 HTTPS 验收。手动验收命令：
-
-```sh
-bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
-```
+DNS 和可信证书条件满足后，通过 CI 的 `deployment=public` 运行完成公网代理激活和独立 HTTPS 验收。验证目标来自本次受保护配置，覆盖所有启用的 App 和管理后台；手动运行见 [公网验收命令](../tencent/README.md#5-acceptance)。
 
 每天运行一次保留期清理：
 

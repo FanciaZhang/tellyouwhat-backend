@@ -1,0 +1,15 @@
+{
+  "source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "deployment_command_exit_code": 0,
+  "private_diagnostics_saved": true,
+  "public_api_verified": false,
+  "real_apple_login_verified": false,
+  "project": "tellyouwhat-albums-development",
+  "api_host": "api-test.albums.tellyouwhat.cn",
+  "port": 18092,
+  "migrations": 66,
+  "latest_migration": "0064_album_identity_retirement.sql",
+  "accounts": 0,
+  "uploads": 0,
+  "backup_verified": false
+}

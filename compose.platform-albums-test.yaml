@@ -1,0 +1,27 @@
+# Shared API admission only; Albums keeps its existing database, Redis and media worker.
+services:
+  gateway:
+    env_file:
+      - "${PLATFORM_ALBUM_ENV_FILE:?Set the selected Albums test configuration}"
+    environment:
+      # Both networks have mysql/redis aliases; use the exact container names.
+      DATABASE_DSN: "platform_test:${PLATFORM_TEST_MYSQL_PASSWORD:?Set a test-only database password}@tcp(tellyouwhat-platform-test-mysql-1:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true"
+      REDIS_URL: "redis://:${PLATFORM_TEST_REDIS_PASSWORD:?Set a test-only URL-safe Redis password}@tellyouwhat-platform-test-redis-1:6379/0"
+      ALBUM_DEPLOYMENT_ENVIRONMENT: test
+      ALBUM_DATABASE_DSN: "albums_development_test:${PLATFORM_ALBUM_MYSQL_PASSWORD:?Set the existing Albums development password}@tcp(tellyouwhat-albums-development-mysql-1:3306)/albums_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+      ALBUM_REDIS_URL: "redis://:${PLATFORM_ALBUM_REDIS_PASSWORD:?Set the existing Albums development Redis password}@tellyouwhat-albums-development-redis-1:6379/0"
+      ALBUM_TRUSTED_PROXIES: "172.29.93.1/32,172.29.92.1/32"
+      GOMEMLIMIT: "384MiB"
+    networks: [albums-development]
+    volumes:
+      - type: bind
+        source: /opt/tellyouwhat/albums-development/secrets
+        target: /album-secrets
+        read_only: true
+        bind: {create_host_path: false}
+    mem_limit: 512m
+
+networks:
+  albums-development:
+    external: true
+    name: tellyouwhat-albums-development_albums-test

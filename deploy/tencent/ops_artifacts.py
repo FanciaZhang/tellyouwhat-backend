@@ -14,12 +14,15 @@ from urllib.parse import urlsplit
 from ops_common import OperationError, Runtime, atomic_json
 
 
-OWNERS = ("production", "journal-development", "birthday-development", "albums-test")
+OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "albums-production", "platform-test", "apple-development")
 GRACE_SECONDS = 48 * 3600
 IMAGE_PREFIXES = {
     "production": ("ghcr.io/fanciazhang/tellyouwhat-ai-", "ghcr.io/fanciazhang/health-ai-", "health-ai-"),
     "birthday-development": ("birthday-development:",),
     "albums-test": ("tellyouwhat-albums-test-",),
+    "albums-production": ("tellyouwhat-albums-production-",),
+    "platform-test": ("tellyouwhat-platform-test-",),
+    "apple-development": ("tellyouwhat-apple-development:",),
 }
 
 
@@ -98,7 +101,7 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(lease.get("images", []))
 
     # Legacy development deployments predate owner records: retain two builds per image family.
-    for owner in ("birthday-development", "albums-test"):
+    for owner in ("birthday-development", "albums-test", "platform-test", "apple-development"):
         if (root / ".operations/artifact-owners" / (owner + ".json")).exists():
             continue
         families = {}
@@ -110,6 +113,23 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             protected_images.update(i["Id"] for i in sorted(versions, key=lambda i: timestamp(i["Created"]), reverse=True)[:2])
 
     files = []
+    for owner, directory in (('albums-test', '.albums-development'), ('albums-production', '.albums-production'),
+                             ('platform-test', '.platform-test')):
+        if owner not in owners:
+            continue
+        base = root / directory
+        releases = base / 'releases'
+        if base.is_symlink() or releases.is_symlink():
+            raise OperationError('isolated artifact directory is a symlink')
+        files.extend((owner, p) for p in releases.glob('*')
+                     if p.is_dir() and re.fullmatch(r'[0-9a-f]{40}', p.name))
+    if 'apple-development' in owners:
+        base = root / '.apple-delivery'
+        releases = base / 'releases'
+        if base.is_symlink() or releases.is_symlink():
+            raise OperationError('Apple delivery artifact directory is a symlink')
+        files.extend(('apple-development', p) for p in releases.glob('*')
+                     if p.is_dir() and re.fullmatch(r'[0-9a-f]{40}', p.name))
     if "journal-development" in owners:
         directory = root.parent / "journal-development/bin"
         if directory.is_symlink():
@@ -206,10 +226,18 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
             runtime.execute("artifacts-build-cache", ["docker", "builder", "prune", "-a", "-f", "--keep-storage", "2GB"], timeout=900)
         except OperationError as error:
             errors.append(str(error))
+    apple_delivery = None
+    if owner in (None, "apple-development"):
+        from apple_delivery_artifacts import cleanup_packages
+        try:
+            apple_delivery = cleanup_packages(runtime)
+        except (OperationError, OSError, ValueError) as error:
+            errors.append("Apple delivery cleanup failed: " + str(error))
     after = shutil.disk_usage(runtime.root).free
     result = runtime.record("artifacts" + ("-" + owner if owner else ""), passed=not errors, errors=errors,
                           removed_files=removed_files, removed_images=removed_images,
-                          free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before)
+                          free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before,
+                          apple_delivery=apple_delivery)
     if errors:
         raise OperationError("artifact cleanup incomplete: " + "; ".join(errors))
     return result
@@ -242,22 +270,30 @@ def register(runtime, owner, paths=(), images=(), source="", source_run=""):
     return record
 
 
-def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url):
+def development_deploy(runtime, owner, paths, images, source, source_run, command, verify_url, *, verify_host=None):
     require_operator(runtime.root)
     url = urlsplit(verify_url)
-    if (owner not in ("birthday-development", "albums-test") or not source or not images or not command
+    if (owner not in ("birthday-development", "albums-test", "platform-test", "apple-development") or not source or not images or not command
             or url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.query
-            or url.fragment or url.path not in ("/readyz", "/healthz")):
+            or url.fragment or url.path not in ("/readyz", "/healthz")
+            or (verify_host is not None and verify_host not in {
+                "albums-test": ("api.albums.tellyouwhat.cn", "api-test.albums.tellyouwhat.cn"),
+                "platform-test": ("api-test.health.tellyouwhat.cn", "api-test.birthday.tellyouwhat.cn"),
+            }.get(owner, ()))):
         raise OperationError("development deployment requires a scoped owner, revision, images and local readiness check")
     with runtime.lock(wait_seconds=600):
         with runtime.lock("deployment", wait_seconds=600):
             runtime.refresh()
             runtime.execute("artifact-producer-" + owner, command, timeout=900)
+            # Albums validates Host and returns its API envelope for readiness.
+            headers = {"Host": verify_host} if verify_host else ({"Host": "api.albums.tellyouwhat.cn"} if owner == "albums-test" else {})
+            readiness = urllib.request.Request(verify_url, headers=headers)
             for attempt in range(30):
                 try:
-                    with urllib.request.urlopen(verify_url, timeout=2) as response:
+                    with urllib.request.urlopen(readiness, timeout=2) as response:
                         if (response.geturl() == verify_url and response.status == 200
-                                and json.load(response).get("status") in ("ready", "ok")):
+                                and (json.load(response).get("code") == "ok" if owner == "albums-test"
+                                     else json.load(response).get("status") in ("ready", "ok"))):
                             break
                 except (OSError, ValueError):
                     pass
@@ -282,6 +318,7 @@ def main():
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--verify-url", default="")
+    parser.add_argument("--verify-host", help="Readiness identity restricted to the owner's known API hosts")
     parser.add_argument("--run", nargs=argparse.REMAINDER, help="run an owned development producer under both locks, verify it, then register and clean")
     args = parser.parse_args()
     os.umask(0o077)
@@ -290,7 +327,7 @@ def main():
     if args.run:
         if not args.apply or not args.register:
             raise OperationError("owned development execution requires --apply --register")
-        result = development_deploy(runtime, args.owner, args.path, args.image, args.source, args.source_run, args.run, args.verify_url)
+        result = development_deploy(runtime, args.owner, args.path, args.image, args.source, args.source_run, args.run, args.verify_url, verify_host=args.verify_host)
         print(json.dumps(result, sort_keys=True))
         return
     with runtime.lock(wait_seconds=600):

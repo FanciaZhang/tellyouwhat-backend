@@ -1,0 +1,13 @@
+{
+  "reason": "read-only Prompt credential accidentally included in diagnostic output",
+  "account": "journal_prompt_reader",
+  "password_value_omitted": true,
+  "old_password_rejected": true,
+  "new_reader_query_verified": true,
+  "runtime_refreshed_through_registered_journal_producer": true,
+  "developer_bearer_token_preserved": true,
+  "existing_binary_preserved": true,
+  "authenticated_runtime_protocol_verified": true,
+  "pending_secret_removed": true,
+  "production_prompt_dependency_still_present": true
+}

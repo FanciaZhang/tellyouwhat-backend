@@ -1,0 +1,644 @@
+{
+  "checked_at_utc": "2026-10-15T21:01:40.165904+00:00",
+  "source_commit": "2164291d26f84d3956951f75530a332a95356513",
+  "bundle_id": "cn.tellyouwhat.albums.dev",
+  "version": "0.1.0",
+  "build": "2",
+  "configuration": "Debug",
+  "distribution": "Ad Hoc",
+  "native_verification": {
+    "source_commit": "2164291d26f84d3956951f75530a332a95356513",
+    "backend_contract_commit": "79ba5db7632f48045429190195355b56f3b4069d",
+    "configuration": "Debug",
+    "distribution": "Ad Hoc",
+    "version": "0.1.0",
+    "build": "2",
+    "archive_succeeded": true,
+    "export_succeeded": true,
+    "signature_verified": true,
+    "all_signed_entitlements_authorized": true,
+    "distribution_certificate_verified": true,
+    "bundle_id": "cn.tellyouwhat.albums.dev",
+    "display_name": "告你相册·开发",
+    "localized_display_names": {},
+    "minimum_ios": "18.0",
+    "api_origin": "https://api-test.albums.tellyouwhat.cn",
+    "api_environment": "test",
+    "apns_environment": "production",
+    "notifications_enabled": false,
+    "keychain_scope": "T6DD96HY2B.cn.tellyouwhat.albums.dev",
+    "cloudkit_enabled": false,
+    "registered_device_count": 3,
+    "profile_expires_utc": "2027-08-24T05:02:39+00:00",
+    "debug_development_quota_symbol": true,
+    "release_development_quota_symbol": false,
+    "release_compile_passed": true,
+    "ipa_sha256": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872",
+    "ipa_bytes": 10426172,
+    "device_installation_verified": false,
+    "real_api_verified": false,
+    "full_release_gate_passed": false
+  },
+  "https_download": {
+    "checked_at_utc": "2026-10-15T21:00:46.445951+00:00",
+    "active_link_download_verified": true,
+    "ipa_sha256": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872",
+    "ipa_bytes": 10426172,
+    "page_manifest_and_ipa_status": 200,
+    "head_verified": true,
+    "range_verified": true,
+    "equivalent_host_variants": {
+      "INSTALL.TELLYOUWHAT.CN": 200,
+      "install.tellyouwhat.cn:443": 200
+    },
+    "privacy_headers_verified": true,
+    "tls_trust_verified": true,
+    "expires_at": "2026-10-16T20:59:50.600975707Z",
+    "source_commit": "2164291d26f84d3956951f75530a332a95356513",
+    "device_installation_verified": false
+  },
+  "ota_service_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "publication": {
+    "published": true,
+    "ttl": "24h",
+    "expires_at": "2026-10-16T20:59:50.600975707Z",
+    "ipa_bytes": 10426172,
+    "ipa_sha256": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872",
+    "source_commit": "2164291d26f84d3956951f75530a332a95356513",
+    "cleanup": {
+      "apple_delivery": {
+        "configured": true,
+        "grants_removed": 0,
+        "packages_removed": 0
+      },
+      "completed_at": 1792097992,
+      "errors": [],
+      "free_bytes_after": 25587630080,
+      "free_bytes_before": 25587642368,
+      "operation": "artifacts-apple-development",
+      "passed": true,
+      "reclaimed_bytes": -12288,
+      "removed_files": [],
+      "removed_images": []
+    },
+    "receipt_saved_privately": true,
+    "device_installation_verified": false
+  },
+  "installation_link_saved_privately": true,
+  "raw_installation_url_omitted": true,
+  "device_installation_verified": false,
+  "real_api_and_cloud_journey_verified": false,
+  "formal_release_gate_passed": false,
+  "remote_ci": false,
+  "development_gates": {
+    "source_commit": "2164291d26f84d3956951f75530a332a95356513",
+    "unit_passed_after_preconditions": 475,
+    "conditional_skipped": 88,
+    "total_cases": 563,
+    "domain_package_passed": 193,
+    "preflight_passed": 4,
+    "corrected_multipart_fixture_bytes": 9328788,
+    "storekit_runtime": "18.6",
+    "main_runtime": "26.5",
+    "earlier_runs_retained": true,
+    "initial_failure_causes": [
+      "new simulator Photos confirmation not completed",
+      "missing 2304x1296 video, followed by undersized substitute",
+      "local StoreKit 26.5 service issue; transactions passed 18.6"
+    ],
+    "release_compile_passed": true,
+    "native_signature_verified": true,
+    "full_release_gate_passed": false,
+    "remote_ci": false,
+    "device_verified": false
+  },
+  "test_summaries": {
+    "unit": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "E9E4948D-1B01-4283-BBBB-2FFEC552CFB4",
+            "deviceName": "Albums OTA Gate 2026-10-16",
+            "modelName": "iPhone 17",
+            "osBuildNumber": "23F77",
+            "osVersion": "26.5",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 34,
+          "passedTests": 440,
+          "skippedTests": 89,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 34,
+      "finishTime": 1792096121.574,
+      "passedTests": 440,
+      "result": "Failed",
+      "runtimeWarnings": [],
+      "skippedTests": 89,
+      "startTime": 1792094745.398,
+      "statistics": [],
+      "testFailures": [
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Bool\" - Complete the simulator's Photos full-access confirmation before system restore tests; a simctl grant alone may use an older authorization version.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 238,
+          "testIdentifierString": "AlbumPhotoRestorerTests/testAccessLostAfterCreationRetainsCandidateAndRecoveryDoesNotDuplicate()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumPhotoRestorerTests/testAccessLostAfterCreationRetainsCandidateAndRecoveryDoesNotDuplicate",
+          "testName": "testAccessLostAfterCreationRetainsCandidateAndRecoveryDoesNotDuplicate()"
+        },
+        {
+          "failureText": "XCTAssertEqual failed: (\"Optional(Albums.AlbumRestoreError.permission)\") is not equal to (\"Optional(Albums.AlbumRestoreError.uncertain)\")",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 239,
+          "testIdentifierString": "AlbumPhotoRestorerTests/testAmbiguousAttemptAndModifiedStagingDoNotCreateAssets()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumPhotoRestorerTests/testAmbiguousAttemptAndModifiedStagingDoNotCreateAssets",
+          "testName": "testAmbiguousAttemptAndModifiedStagingDoNotCreateAssets()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 97,
+          "testIdentifierString": "AlbumDailyPhotoTests/testAmbiguousAttemptCannotCreateAgainAndGridIsRejected()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumDailyPhotoTests/testAmbiguousAttemptCannotCreateAgainAndGridIsRejected",
+          "testName": "testAmbiguousAttemptCannotCreateAgainAndGridIsRejected()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"VerificationResult<Transaction>\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 275,
+          "testIdentifierString": "AlbumStoreKitTrialTests/testBothAnnualPlansStartWithTwoWeekTrialAndRenewAtAnnualPrice()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumStoreKitTrialTests/testBothAnnualPlansStartWithTwoWeekTrialAndRenewAtAnnualPrice",
+          "testName": "testBothAnnualPlansStartWithTwoWeekTrialAndRenewAtAnnualPrice()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 179,
+          "testIdentifierString": "AlbumLivePhotoPreviewTests/testCanonicalCloudPairKeepsExactBytesIdentifierAndNativePlaybackWithoutRepacking()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumLivePhotoPreviewTests/testCanonicalCloudPairKeepsExactBytesIdentifierAndNativePlaybackWithoutRepacking",
+          "testName": "testCanonicalCloudPairKeepsExactBytesIdentifierAndNativePlaybackWithoutRepacking()"
+        },
+        {
+          "failureText": "Test crashed with signal kill.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 396,
+          "testIdentifierString": "LivePhotoPairTests/testDailyJPEGAndMP4RepackPreservesEncodedMediaAndSystemLivePlayback()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testDailyJPEGAndMP4RepackPreservesEncodedMediaAndSystemLivePlayback",
+          "testName": "testDailyJPEGAndMP4RepackPreservesEncodedMediaAndSystemLivePlayback()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Bool\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 261,
+          "testIdentifierString": "AlbumRestoreCoordinatorTests/testDailySystemBatchReopenAfterCommitReusesVerifiedCopies()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumRestoreCoordinatorTests/testDailySystemBatchReopenAfterCommitReusesVerifiedCopies",
+          "testName": "testDailySystemBatchReopenAfterCommitReusesVerifiedCopies()"
+        },
+        {
+          "failureText": "Test crashed with signal kill.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 397,
+          "testIdentifierString": "LivePhotoPairTests/testEditedPairRoundTripsThroughSystemLibrary()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testEditedPairRoundTripsThroughSystemLibrary",
+          "testName": "testEditedPairRoundTripsThroughSystemLibrary()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 456,
+          "testIdentifierString": "PhotoBackupStagingTests/testFailedStageNeverPublishesReadyAndExistingTaskIsNotOverwritten()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testFailedStageNeverPublishesReadyAndExistingTaskIsNotOverwritten",
+          "testName": "testFailedStageNeverPublishesReadyAndExistingTaskIsNotOverwritten()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 102,
+          "testIdentifierString": "AlbumDailyPhotoTests/testJPEGMetadataAndCancellationAfterCreationRecoverWithoutDuplicate()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumDailyPhotoTests/testJPEGMetadataAndCancellationAfterCreationRecoverWithoutDuplicate",
+          "testName": "testJPEGMetadataAndCancellationAfterCreationRecoverWithoutDuplicate()"
+        },
+        {
+          "failureText": "failed: caught error: \"unsupported\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 403,
+          "testIdentifierString": "LivePhotoPairTests/testNativePairContainsOneTimedStillAndLoadsAsLivePhoto()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testNativePairContainsOneTimedStillAndLoadsAsLivePhoto",
+          "testName": "testNativePairContainsOneTimedStillAndLoadsAsLivePhoto()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"PHAsset\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 404,
+          "testIdentifierString": "LivePhotoPairTests/testPendingSystemCopiesRecoverAfterJournalReopenAndExportCleanup()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testPendingSystemCopiesRecoverAfterJournalReopenAndExportCleanup",
+          "testName": "testPendingSystemCopiesRecoverAfterJournalReopenAndExportCleanup()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Bool\" - Complete the simulator's Photos full-access confirmation before system restore tests; a simctl grant alone may use an older authorization version.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 245,
+          "testIdentifierString": "AlbumPhotoRestorerTests/testPipelineUncertainOrMissingCandidateNeverFallsBackToDownloading()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumPhotoRestorerTests/testPipelineUncertainOrMissingCandidateNeverFallsBackToDownloading",
+          "testName": "testPipelineUncertainOrMissingCandidateNeverFallsBackToDownloading()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"PHAsset\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 406,
+          "testIdentifierString": "LivePhotoPairTests/testPlaceholderPersistenceFailureIsUncertainAndStopsReplay()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testPlaceholderPersistenceFailureIsUncertainAndStopsReplay",
+          "testName": "testPlaceholderPersistenceFailureIsUncertainAndStopsReplay()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Bool\" - Complete the simulator's Photos full-access confirmation before system restore tests; a simctl grant alone may use an older authorization version.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 247,
+          "testIdentifierString": "AlbumPhotoRestorerTests/testRealPhotoKitRoundTripAndReopenReusesVerifiedAsset()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumPhotoRestorerTests/testRealPhotoKitRoundTripAndReopenReusesVerifiedAsset",
+          "testName": "testRealPhotoKitRoundTripAndReopenReusesVerifiedAsset()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 457,
+          "testIdentifierString": "PhotoBackupStagingTests/testRealResourceSetRecoversAfterRestartAndRejectsChangedBytes()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testRealResourceSetRecoversAfterRestartAndRejectsChangedBytes",
+          "testName": "testRealResourceSetRecoversAfterRestartAndRejectsChangedBytes()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 458,
+          "testIdentifierString": "PhotoBackupStagingTests/testRecoveryRejectsForgedPathsAndIncompleteTask()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testRecoveryRejectsForgedPathsAndIncompleteTask",
+          "testName": "testRecoveryRejectsForgedPathsAndIncompleteTask()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 459,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCleanupRechecksSourceAfterInterruptedFileRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCleanupRechecksSourceAfterInterruptedFileRemoval",
+          "testName": "testReleaseCleanupRechecksSourceAfterInterruptedFileRemoval()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 460,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCleanupRejectsChangedReceiptWhileVerificationWaitsAndCanUseRestoredOriginal()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCleanupRejectsChangedReceiptWhileVerificationWaitsAndCanUseRestoredOriginal",
+          "testName": "testReleaseCleanupRejectsChangedReceiptWhileVerificationWaitsAndCanUseRestoredOriginal()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 461,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCoordinatorBatchPreparationStopsWithoutDiscardingEarlierProtection()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCoordinatorBatchPreparationStopsWithoutDiscardingEarlierProtection",
+          "testName": "testReleaseCoordinatorBatchPreparationStopsWithoutDiscardingEarlierProtection()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 462,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCoordinatorRestoresOfflineAndShowsPersistentResult()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCoordinatorRestoresOfflineAndShowsPersistentResult",
+          "testName": "testReleaseCoordinatorRestoresOfflineAndShowsPersistentResult()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 463,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCoordinatorRetriesInterruptedRestoredOriginalCleanup()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCoordinatorRetriesInterruptedRestoredOriginalCleanup",
+          "testName": "testReleaseCoordinatorRetriesInterruptedRestoredOriginalCleanup()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 464,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseCoordinatorStopsDelayedPreparationAfterLeavingForeground()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseCoordinatorStopsDelayedPreparationAfterLeavingForeground",
+          "testName": "testReleaseCoordinatorStopsDelayedPreparationAfterLeavingForeground()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 465,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseDeletionJournalNeverReplaysUnknownOrAcceptsStaleReceipt()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseDeletionJournalNeverReplaysUnknownOrAcceptsStaleReceipt",
+          "testName": "testReleaseDeletionJournalNeverReplaysUnknownOrAcceptsStaleReceipt()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 466,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleasePreparationRebuildsPartialExportOnlyWithIntactSource()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleasePreparationRebuildsPartialExportOnlyWithIntactSource",
+          "testName": "testReleasePreparationRebuildsPartialExportOnlyWithIntactSource()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 467,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleasePreparationRefusesPublishedUnexpectedAndLockedDirectories()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleasePreparationRefusesPublishedUnexpectedAndLockedDirectories",
+          "testName": "testReleasePreparationRefusesPublishedUnexpectedAndLockedDirectories()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 468,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleasePreparationReusesVerifiedUnpublishedExportWithoutExtraSpace()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleasePreparationReusesVerifiedUnpublishedExportWithoutExtraSpace",
+          "testName": "testReleasePreparationReusesVerifiedUnpublishedExportWithoutExtraSpace()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 469,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseSafetyRejectsChangedScopeManifestAndBytes()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseSafetyRejectsChangedScopeManifestAndBytes",
+          "testName": "testReleaseSafetyRejectsChangedScopeManifestAndBytes()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 470,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseSafetyReopensAndRestoresOfflineWithoutDiscardingBytes()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseSafetyReopensAndRestoresOfflineWithoutDiscardingBytes",
+          "testName": "testReleaseSafetyReopensAndRestoresOfflineWithoutDiscardingBytes()"
+        },
+        {
+          "failureText": "failed: caught error: \"permission\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 471,
+          "testIdentifierString": "PhotoBackupStagingTests/testReleaseSafetySpaceLimitsPartialRecordsAndRestoreCancellationKeepSource()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoBackupStagingTests/testReleaseSafetySpaceLimitsPartialRecordsAndRestoreCancellationKeepSource",
+          "testName": "testReleaseSafetySpaceLimitsPartialRecordsAndRestoreCancellationKeepSource()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Bool\" - Complete the dedicated simulator's full Photos access confirmation first.",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 268,
+          "testIdentifierString": "AlbumRestoreCoordinatorTests/testSystemBatchReopenAfterCommittedPhotoDoesNotCreateDuplicates()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumRestoreCoordinatorTests/testSystemBatchReopenAfterCommittedPhotoDoesNotCreateDuplicates",
+          "testName": "testSystemBatchReopenAfterCommittedPhotoDoesNotCreateDuplicates()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - Dedicated simulator must grant Photos access",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 104,
+          "testIdentifierString": "AlbumDailyPhotoTests/testSystemDailyCopyReadbackAndRetryReuseSameAsset()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumDailyPhotoTests/testSystemDailyCopyReadbackAndRetryReuseSameAsset",
+          "testName": "testSystemDailyCopyReadbackAndRetryReuseSameAsset()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"PHAsset\"",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 408,
+          "testIdentifierString": "LivePhotoPairTests/testVerifiedLiveAndStillCopiesReopenOriginalEditsAndRestoreFullPair()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/LivePhotoPairTests/testVerifiedLiveAndStillCopiesReopenOriginalEditsAndRestoreFullPair",
+          "testName": "testVerifiedLiveAndStillCopiesReopenOriginalEditsAndRestoreFullPair()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"PHAsset\" - Requires the dedicated synthetic video fixture",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 250,
+          "testIdentifierString": "AlbumPhotoRestorerTests/testVideoRestorationPreservesOriginalBytesAndDecodesVideoAndAudio()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumPhotoRestorerTests/testVideoRestorationPreservesOriginalBytesAndDecodesVideoAndAudio",
+          "testName": "testVideoRestorationPreservesOriginalBytesAndDecodesVideoAndAudio()"
+        }
+      ],
+      "title": "Test - Albums",
+      "topInsights": [
+        {
+          "category": "Common Failures",
+          "impact": "52% of failures",
+          "text": "18 runs of 18 tests failed with failed: caught error: \"permission\""
+        },
+        {
+          "category": "Common Failures",
+          "impact": "8% of failures",
+          "text": "3 runs of 3 tests failed with XCTUnwrap failed: expected non-nil value of type \"PHAsset\""
+        },
+        {
+          "category": "Common Failures",
+          "impact": "8% of failures",
+          "text": "3 runs of 3 tests failed with XCTUnwrap failed: expected non-nil value of type \"Bool\" - Complete the simulator's Photos full-access confirmation before system restore tests; a simctl grant alone may use an older authorization version."
+        }
+      ],
+      "totalTestCount": 563
+    },
+    "unit-authorized": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "E9E4948D-1B01-4283-BBBB-2FFEC552CFB4",
+            "deviceName": "Albums OTA Gate 2026-10-16",
+            "modelName": "iPhone 17",
+            "osBuildNumber": "23F77",
+            "osVersion": "26.5",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "passedTests": 472,
+          "skippedTests": 88,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 1,
+      "finishTime": 1792097095.404,
+      "passedTests": 472,
+      "result": "Failed",
+      "runtimeWarnings": [],
+      "skippedTests": 88,
+      "startTime": 1792097025.629,
+      "statistics": [],
+      "testFailures": [
+        {
+          "failureText": "XCTAssertEqual failed: (\"1\") is not equal to (\"2\")",
+          "targetName": "AlbumsTests",
+          "testIdentifier": 515,
+          "testIdentifierString": "PhotoResourceTransferTests/testVideoMeasurementMatchesOriginalResource()",
+          "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/PhotoResourceTransferTests/testVideoMeasurementMatchesOriginalResource",
+          "testName": "testVideoMeasurementMatchesOriginalResource()"
+        }
+      ],
+      "title": "Test - Albums",
+      "topInsights": [
+        {
+          "category": "Longest Test Runs",
+          "impact": "39% of duration",
+          "text": "13 longest test runs with outlier durations exceeding 0.91s (three standard deviations)"
+        }
+      ],
+      "totalTestCount": 561
+    },
+    "authorized-preflight": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "E9E4948D-1B01-4283-BBBB-2FFEC552CFB4",
+            "deviceName": "Albums OTA Gate 2026-10-16",
+            "modelName": "iPhone 17",
+            "osBuildNumber": "23F77",
+            "osVersion": "26.5",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 4,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792096786.906,
+      "passedTests": 4,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792096771.794,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [],
+      "totalTestCount": 4
+    },
+    "storekit18": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "AE2D7570-D7A5-48E0-9E0C-49B4871E7619",
+            "deviceName": "Albums StoreKit Gate 2026-10-16",
+            "modelName": "iPhone 16",
+            "osBuildNumber": "22G86",
+            "osVersion": "18.6",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 2,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792096665.396,
+      "passedTests": 2,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792096549.882,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [],
+      "totalTestCount": 2
+    },
+    "multipart18": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "AE2D7570-D7A5-48E0-9E0C-49B4871E7619",
+            "deviceName": "Albums StoreKit Gate 2026-10-16",
+            "modelName": "iPhone 16",
+            "osBuildNumber": "22G86",
+            "osVersion": "18.6",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 0,
+          "skippedTests": 1,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792097535.847,
+      "passedTests": 0,
+      "result": "Skipped",
+      "runtimeWarnings": [],
+      "skippedTests": 1,
+      "startTime": 1792097526.08,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [],
+      "totalTestCount": 1,
+      "note": "First run on the dedicated StoreKit simulator skipped before its native full-Photos confirmation. Explicit native confirmation completed before final run."
+    },
+    "multipart18-authorized": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "AE2D7570-D7A5-48E0-9E0C-49B4871E7619",
+            "deviceName": "Albums StoreKit Gate 2026-10-16",
+            "modelName": "iPhone 16",
+            "osBuildNumber": "22G86",
+            "osVersion": "18.6",
+            "platform": "iOS Simulator"
+          },
+          "expectedFailures": 0,
+          "failedTests": 0,
+          "passedTests": 1,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "Albums · Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "finishTime": 1792097647.802,
+      "passedTests": 1,
+      "result": "Passed",
+      "runtimeWarnings": [],
+      "skippedTests": 0,
+      "startTime": 1792097643.786,
+      "statistics": [],
+      "testFailures": [],
+      "title": "Test - Albums",
+      "topInsights": [],
+      "totalTestCount": 1
+    }
+  }
+}

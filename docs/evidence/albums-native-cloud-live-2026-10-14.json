@@ -1,0 +1,469 @@
+{
+  "date": "2026-10-14",
+  "scope": "Native synthetic Live Photo through real COS/CI and canonical-pair multipart; two iOS runtimes; no deletion",
+  "changes": "Extended shared native test and isolated Go bridge with Live Photo scenario; reused native remuxing, upload runners, production workers and PhotoKit verification. No production implementation changes.",
+  "cases": [
+    {
+      "runtime": "26.5",
+      "results": {
+        "success": true,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912963.643,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [
+                {
+                  "issueType": "Runtime Warning",
+                  "message": "[Internal] Thread running at User-interactive quality-of-service class waiting on a thread without a QoS class specified (base priority 31). Investigate ways to avoid priority inversions"
+                }
+              ],
+              "skippedTests": 0,
+              "startTime": 1791912861.195,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          },
+          {
+            "name": "native-2",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                    "deviceName": "告你相册 批量挑片 20261013",
+                    "modelName": "iPhone 17",
+                    "osBuildNumber": "23F77",
+                    "osVersion": "26.5",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791912969.259,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791912965.028,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+        "scenario": "cloud-live",
+        "backend": {
+          "exitCode": 0,
+          "passed": true
+        },
+        "servicesStopped": true
+      },
+      "backend": {
+        "counts": {
+          "originalsVerified": 1,
+          "pairsVerified": 1,
+          "previewsStored": 2,
+          "videosStored": 1
+        },
+        "original": {
+          "resourceID": "resource_0",
+          "key": "albums/originals/1490a60e-f32b-4030-8e8f-d4fb58c52ed2/8c47231c-88e2-46e4-8e5d-f14592d43d75/resource_0",
+          "versionID": "MTg0NDQ5NTIxNjA4NDAwMzMxNTA",
+          "sizeBytes": 213482,
+          "sha256": "6108e280e71241b2d39b234d201ce39fe4556380e6b3cb817d8e10e79d4b9ed0"
+        },
+        "originals": [
+          {
+            "resourceID": "resource_0",
+            "key": "albums/originals/1490a60e-f32b-4030-8e8f-d4fb58c52ed2/8c47231c-88e2-46e4-8e5d-f14592d43d75/resource_0",
+            "versionID": "MTg0NDQ5NTIxNjA4NDAwMzMxNTA",
+            "sizeBytes": 213482,
+            "sha256": "6108e280e71241b2d39b234d201ce39fe4556380e6b3cb817d8e10e79d4b9ed0"
+          },
+          {
+            "resourceID": "resource_1",
+            "key": "albums/originals/1490a60e-f32b-4030-8e8f-d4fb58c52ed2/8c47231c-88e2-46e4-8e5d-f14592d43d75/resource_1",
+            "versionID": "MTg0NDQ5NTIxNjA4Mzk0NzQ0NDg",
+            "sizeBytes": 8545397,
+            "sha256": "fc6467662de2fc3db4ab54e8f05d320025c64ddb9244b2bf3f053d06e9f9f0cf"
+          }
+        ],
+        "passed": true,
+        "reservedBytes": 0,
+        "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+        "usedBytes": 10609416,
+        "versionID": "8c47231c-88e2-46e4-8e5d-f14592d43d75"
+      },
+      "native": {
+        "duplicatesAfterRestart": 0,
+        "mediaKind": "live_photo",
+        "originalBytes": 8758879,
+        "originalSHA256": "6108e280e71241b2d39b234d201ce39fe4556380e6b3cb817d8e10e79d4b9ed0",
+        "passed": true,
+        "sourceRetained": true,
+        "systemAssetsAdded": 3,
+        "versionID": "8c47231c-88e2-46e4-8e5d-f14592d43d75"
+      },
+      "appProcessIDs": {
+        "native-1": [
+          "6374"
+        ],
+        "native-2": [
+          "6871"
+        ]
+      },
+      "originalUploadedParts": {
+        "resource_0": [
+          1
+        ],
+        "resource_1": [
+          2,
+          1
+        ]
+      },
+      "dailyLivePhoto": {
+        "movie": {
+          "sizeBytes": 810714,
+          "sha256": "e95cee79ae1419bfb942558f06d2e429ce08f378f8ef122fc4adf72effb80c8e"
+        },
+        "pair": {
+          "identifier": "f97a49a4-9ee0-4ed3-a61b-782cd8191b5b",
+          "hasAudio": true,
+          "hasHDRVideo": false,
+          "photoTime": 0.5,
+          "photoWidth": 2304,
+          "photoHeight": 1296,
+          "duration": 2.003548752834467
+        },
+        "photo": {
+          "sizeBytes": 109876,
+          "sha256": "aca9dafe7cbaa0e262ae1c7c5df904444bf9e653db2cda72d6b1d4572a5236aa"
+        },
+        "timing": {
+          "durationMicroseconds": 2000000,
+          "photoResourceID": "resource_0",
+          "photoTimeMicroseconds": 500000,
+          "videoResourceID": "resource_1"
+        },
+        "sourcePhoto": {
+          "sizeBytes": 109864,
+          "height": 1296,
+          "sha256": "a2f83be11bda7e4b7cb5267012825fc93725c4b87b1fac0117926f0a9f07895a",
+          "width": 2304,
+          "contentType": "image/jpeg",
+          "preset": "daily_jpeg_v1"
+        },
+        "sourceVideo": {
+          "durationMilliseconds": 2005,
+          "width": 1920,
+          "sizeBytes": 810787,
+          "audioChannels": 1,
+          "height": 1080,
+          "preset": "daily_mp4_1080_v1",
+          "frameRate": 30,
+          "sha256": "b1271bb102973d33e18bc40c74801bbdaaf9183fe776235da62a6a2781cf7ee9"
+        }
+      },
+      "cloudPair": {
+        "state": "verified",
+        "pairUploadID": "b4bb4756-ffa8-442c-bc07-99830b6a3a73",
+        "transferProtocol": "multipart_v1",
+        "verifiedDescriptorMatchesSavedSystemCopy": true
+      },
+      "playback": "Both system daily copy and restored original reached ordered PHLivePhotoView full-playback begin/end callbacks after resource export and validation.",
+      "restart": "Second process downloaded canonical pair with cloudPairVerified=true and unchanged descriptor; journals reused existing system IDs.",
+      "logSHA256": {
+        "native-1.log": "adcf21de28be7f62260af2e1f15fab70d14a3bb360adb1c9bd8fe2783598e25e",
+        "native-2.log": "a3c9e6696e7ca9858928a04f7238bc6e3b7c248213e976fcfe6380607631de60",
+        "backend.log": "51f25b32e49a176146a6dd7dc3e28bec83bc525b7d160c4f0d46f34b49d8729b"
+      }
+    },
+    {
+      "runtime": "18.6",
+      "results": {
+        "success": true,
+        "phases": [
+          {
+            "name": "native-1",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791913111.643,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791913019.933,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          },
+          {
+            "name": "native-2",
+            "exitCode": 0,
+            "summary": {
+              "devicesAndConfigurations": [
+                {
+                  "device": {
+                    "architecture": "arm64",
+                    "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                    "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                    "modelName": "iPhone 16",
+                    "osBuildNumber": "22G86",
+                    "osVersion": "18.6",
+                    "platform": "iOS Simulator"
+                  },
+                  "expectedFailures": 0,
+                  "failedTests": 0,
+                  "passedTests": 1,
+                  "skippedTests": 0,
+                  "testPlanConfiguration": {
+                    "configurationId": "1",
+                    "configurationName": "Test Scheme Action"
+                  }
+                }
+              ],
+              "environmentDescription": "Albums · Built with macOS 27.0",
+              "expectedFailures": 0,
+              "failedTests": 0,
+              "finishTime": 1791913115.881,
+              "passedTests": 1,
+              "result": "Passed",
+              "runtimeWarnings": [],
+              "skippedTests": 0,
+              "startTime": 1791913112.512,
+              "statistics": [],
+              "testFailures": [],
+              "title": "Test - Albums",
+              "topInsights": [],
+              "totalTestCount": 1
+            }
+          }
+        ],
+        "device": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+        "scenario": "cloud-live",
+        "backend": {
+          "exitCode": 0,
+          "passed": true
+        },
+        "servicesStopped": true
+      },
+      "backend": {
+        "counts": {
+          "originalsVerified": 1,
+          "pairsVerified": 1,
+          "previewsStored": 2,
+          "videosStored": 1
+        },
+        "original": {
+          "resourceID": "resource_0",
+          "key": "albums/originals/4cc9757d-32fb-4b07-b275-7c3007494cf2/516318e5-0d14-4ce1-b8ec-a6213762bfed/resource_0",
+          "versionID": "MTg0NDQ5NTIxNjA2ODAyMDUxNTY",
+          "sizeBytes": 213482,
+          "sha256": "8376545abecd50abca3834f314f928ed4275b2a3f98a008951703705c3aa5fab"
+        },
+        "originals": [
+          {
+            "resourceID": "resource_0",
+            "key": "albums/originals/4cc9757d-32fb-4b07-b275-7c3007494cf2/516318e5-0d14-4ce1-b8ec-a6213762bfed/resource_0",
+            "versionID": "MTg0NDQ5NTIxNjA2ODAyMDUxNTY",
+            "sizeBytes": 213482,
+            "sha256": "8376545abecd50abca3834f314f928ed4275b2a3f98a008951703705c3aa5fab"
+          },
+          {
+            "resourceID": "resource_1",
+            "key": "albums/originals/4cc9757d-32fb-4b07-b275-7c3007494cf2/516318e5-0d14-4ce1-b8ec-a6213762bfed/resource_1",
+            "versionID": "MTg0NDQ5NTIxNjA2Nzk0NDc1Njg",
+            "sizeBytes": 8545397,
+            "sha256": "210905843fc834fb0d71cd8e91ee087a4ce4e577c833c67364db399f0965e3f7"
+          }
+        ],
+        "passed": true,
+        "reservedBytes": 0,
+        "scope": "real COS/CI and native HTTP clients; isolated account, entitlement and MySQL",
+        "usedBytes": 10607910,
+        "versionID": "516318e5-0d14-4ce1-b8ec-a6213762bfed"
+      },
+      "native": {
+        "duplicatesAfterRestart": 0,
+        "mediaKind": "live_photo",
+        "originalBytes": 8758879,
+        "originalSHA256": "8376545abecd50abca3834f314f928ed4275b2a3f98a008951703705c3aa5fab",
+        "passed": true,
+        "sourceRetained": true,
+        "systemAssetsAdded": 3,
+        "versionID": "516318e5-0d14-4ce1-b8ec-a6213762bfed"
+      },
+      "appProcessIDs": {
+        "native-1": [
+          "7457"
+        ],
+        "native-2": [
+          "7855"
+        ]
+      },
+      "originalUploadedParts": {
+        "resource_1": [
+          2,
+          1
+        ],
+        "resource_0": [
+          1
+        ]
+      },
+      "dailyLivePhoto": {
+        "pair": {
+          "photoHeight": 1296,
+          "hasAudio": true,
+          "hasHDRVideo": false,
+          "photoWidth": 2304,
+          "photoTime": 0.5,
+          "duration": 2.003548752834467,
+          "identifier": "5299360a-d3ee-48a2-a75c-e55a27ed2918"
+        },
+        "sourcePhoto": {
+          "sizeBytes": 109864,
+          "sha256": "07e5bd1bb177f9a190b542b8e3ef98762d55d63c05195170e703a53596a2c185",
+          "height": 1296,
+          "contentType": "image/jpeg",
+          "width": 2304,
+          "preset": "daily_jpeg_v1"
+        },
+        "photo": {
+          "sizeBytes": 109876,
+          "sha256": "b0381ea073921b3398944c9b059d152e591f67097371b2c8c3ef77da22677b2e"
+        },
+        "movie": {
+          "sizeBytes": 809961,
+          "sha256": "499c90e8dc19041088c9cca7402bb22257aac74eeaffc1254b5fb3a600c488c8"
+        },
+        "timing": {
+          "photoResourceID": "resource_0",
+          "photoTimeMicroseconds": 500000,
+          "durationMicroseconds": 2000000,
+          "videoResourceID": "resource_1"
+        },
+        "sourceVideo": {
+          "frameRate": 30,
+          "durationMilliseconds": 2005,
+          "width": 1920,
+          "sha256": "3f964c95a372a8d4e6eff239b2a2f678be214001363f028df1dad010f1407e44",
+          "height": 1080,
+          "audioChannels": 1,
+          "preset": "daily_mp4_1080_v1",
+          "sizeBytes": 810034
+        }
+      },
+      "cloudPair": {
+        "state": "verified",
+        "pairUploadID": "cca4c238-17e5-4e43-900e-768e2d034ad9",
+        "transferProtocol": "multipart_v1",
+        "verifiedDescriptorMatchesSavedSystemCopy": true
+      },
+      "playback": "Both system daily copy and restored original reached ordered PHLivePhotoView full-playback begin/end callbacks after resource export and validation.",
+      "restart": "Second process downloaded canonical pair with cloudPairVerified=true and unchanged descriptor; journals reused existing system IDs.",
+      "logSHA256": {
+        "native-1.log": "710d58abd59078d307389e90e78f37a38cf9fb6d70ba65cfe6b1edd828772435",
+        "native-2.log": "af4fc3c8eec36a328999b2038494a5a6e89030b7c9623bb29dddd803bf143f63",
+        "backend.log": "42daee44202ea0f4b6b8995a131c2dd5d2f98666694a1ff76f6ac2aab623097a"
+      }
+    }
+  ],
+  "nativeStagesPassed": 4,
+  "backendRaceRunsPassed": 2,
+  "failures": [],
+  "skippedLiveStages": 0,
+  "goVetPassed": true,
+  "buildLogSHA256": "cd10c6aae4b948755879843a870fcd74bc0a843f6d1164fea13bf91fc908a288",
+  "sourceSHA256": {
+    "app": {
+      "AlbumsTests/AlbumCloudMediaIntegrationTests.swift": "458c34d1e6fe3342c7da93173be3a881a515924727c76bb7c7ae8f067f1b8dd9",
+      "AlbumsTests/AlbumLivePhotoPreviewTests.swift": "7af063c5de35b36255ef4485b0aa14c814041c5b755e04e9fd9c1eb7513b6e89",
+      "scripts/test-native-roundtrip.py": "d620e7b48eec265f9f457afa3f1efd35203cf8d68b9a0ed27bc74785c8c415fa"
+    },
+    "backend": {
+      "internal/albums/cos_native_pipeline_test.go": "ff0ac93f8a6c0766c75bb9bd2f239545f70181272b33c7110702326102c56e49"
+    }
+  },
+  "limits": [
+    "Isolated database and synthetic account/entitlement, not Apple sign-in or Sandbox purchase.",
+    "Control API uses test-only loopback; COS media and CI operations are real.",
+    "Synthetic unedited two-second SDR pair, not arbitrary camera, edited, HDR or spatial Live Photos.",
+    "No deployment, sales, security permissions or system/cloud media deletion.",
+    "Synthetic media including staging objects retained; used bytes are account quota, not total physical bucket charges.",
+    "No real device, WeChat/SMS, reinstall/multi-device association, mixed batch, interrupted-provider-write, low-space or background acceptance.",
+    "Programmatic native playback is not long-press gesture UI acceptance."
+  ]
+}

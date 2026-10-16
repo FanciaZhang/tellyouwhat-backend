@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ops_common import OperationError, Runtime, read_environment
-from release import KEY_FILES, copy_runtime, deploy, rollback
+from release import KEY_FILES, copy_runtime, deploy, rollback, internally_ready, validate, probe, public_targets
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
@@ -38,6 +38,90 @@ class ReleaseRecoveryTests(unittest.TestCase):
         (self.bundle / "compose.production.yaml").write_text("new compose")
         for name in KEY_FILES:
             (self.bundle / "secrets" / name).write_text("new key")
+
+    def test_first_recording_enable_is_rejected_before_backup_or_host_changes(self):
+        with (self.bundle / '.env.production').open('a') as output:
+            output.write('JOURNAL_RECORDING_ENABLED=true\n'
+                         'JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production\n')
+        with patch.object(self.runtime, 'execute') as execute, patch('release.create_backup') as backup:
+            with self.assertRaisesRegex(OperationError, 'compatible rollback'):
+                deploy(self.runtime, 'new', 'registry/app', 'internal', str(self.bundle), 1)
+        execute.assert_not_called()
+        backup.assert_not_called()
+
+    def test_recording_unaware_rollback_is_rejected_before_recovery(self):
+        self.runtime.config['JOURNAL_RECORDING_ROOT'] = '/opt/tellyouwhat/journal-recordings/production'
+        (self.runtime.state / 'release.json').write_text(json.dumps({
+            'current': {}, 'previous': {'snapshot': str(self.bundle.relative_to(self.root))}}))
+        with patch('release.recover') as recover:
+            with self.assertRaisesRegex(OperationError, 'remain mounted'):
+                rollback(self.runtime, 1)
+        recover.assert_not_called()
+
+    def test_birthday_readiness_uses_candidate_port_and_every_host(self):
+        config = dict(self.runtime.config, PLATFORM_APPS="health, journal, birthday",
+                      BIRTHDAY_API_HOSTS="birthday.example, birthday-alias.example")
+        with patch("release.probe", side_effect=lambda url, host, status: host != "birthday-alias.example") as probe:
+            self.assertFalse(internally_ready(config, 1, ports=(18180, 18181, 18182)))
+        self.assertIn((("http://127.0.0.1:18180/readyz", "birthday.example", "ready"),), probe.call_args_list)
+        self.assertIn((("http://127.0.0.1:18180/readyz", "birthday-alias.example", "ready"),), probe.call_args_list)
+        with patch("release.probe", return_value=True):
+            self.assertTrue(internally_ready(config, 1))
+
+    def test_birthday_default_host_is_checked_only_when_enabled(self):
+        for apps, count in (("health,journal", 4), ("health,journal,birthday", 5)):
+            with self.subTest(apps=apps), patch("release.probe", return_value=True) as probe:
+                self.assertTrue(internally_ready(dict(self.runtime.config, PLATFORM_APPS=apps), 1))
+                self.assertEqual(probe.call_count, count)
+                if count == 5:
+                    probe.assert_called_with("http://127.0.0.1:18080/readyz", "api.birthday.tellyouwhat.cn", "ready")
+
+    def test_invalid_birthday_host_blocks_release_before_activation(self):
+        with (self.bundle / ".env.production").open("a") as output:
+            output.write("PLATFORM_APPS=health,journal,birthday\nBIRTHDAY_API_HOSTS=https://birthday.example/path\n")
+        with self.assertRaisesRegex(OperationError, "birthday production API host"):
+            validate(self.bundle, "new", "registry/app", "internal")
+
+    def test_albums_readiness_checks_same_gateway_with_its_own_response_contract(self):
+        config = dict(self.runtime.config, PLATFORM_APPS="health,journal,birthday,albums",
+                      ALBUM_API_HOST="api.albums.tellyouwhat.cn", ALBUM_DEPLOYMENT_ENVIRONMENT="production")
+        with patch("release.probe", side_effect=lambda url, host, status, field="status": field != "code") as check:
+            self.assertFalse(internally_ready(config, 1, ports=(18180, 18181, 18182)))
+            check.assert_called_with("http://127.0.0.1:18180/readyz", "api.albums.tellyouwhat.cn", "ok", "code")
+        for key, value in (("ALBUM_API_HOST", "api-test.albums.tellyouwhat.cn"),
+                           ("ALBUM_DEPLOYMENT_ENVIRONMENT", "test")):
+            with self.assertRaisesRegex(OperationError, "album production"):
+                internally_ready(dict(config, **{key: value}), 1)
+
+    def test_public_targets_match_enabled_apps_and_exclude_internal_worker(self):
+        config = dict(self.runtime.config)
+        expected = [{'domain': config[key], 'field': 'status', 'value': 'ready'}
+                    for key in ('HEALTH_API_DOMAIN', 'JOURNAL_API_DOMAIN', 'ADMIN_DOMAIN')]
+        self.assertEqual(public_targets(config), expected)
+        config.update(PLATFORM_APPS='health,journal,birthday,albums',
+                      ALBUM_API_HOST='api.albums.tellyouwhat.cn', ALBUM_DEPLOYMENT_ENVIRONMENT='production')
+        expected += [{'domain': 'api.birthday.tellyouwhat.cn', 'field': 'status', 'value': 'ready'},
+                     {'domain': 'api.albums.tellyouwhat.cn', 'field': 'code', 'value': 'ok'}]
+        self.assertEqual(public_targets(config), expected)
+        config['BIRTHDAY_API_HOSTS'] = 'birthday.example,birthday-alias.example'
+        self.assertEqual([target['domain'] for target in public_targets(config)][3:5],
+                         ['birthday.example', 'birthday-alias.example'])
+
+    def test_public_targets_reject_duplicate_hosts_and_non_dns_values(self):
+        for value in (self.runtime.config['HEALTH_API_DOMAIN'], 'https://journal.example/path',
+                      'journal.example\nInjected: value', ''):
+            with self.subTest(value=value), self.assertRaises(OperationError):
+                public_targets(dict(self.runtime.config, JOURNAL_API_DOMAIN=value))
+
+    def test_probe_does_not_confuse_album_and_ai_readiness(self):
+        from types import SimpleNamespace
+        for body, field, expected in (({'code': 'ok'}, 'code', True), ({'status': 'ok'}, 'code', False),
+                                       ({'code': 'ok'}, 'status', False), ({'status': 'ok'}, 'status', True)):
+            def curl(command, **kwargs):
+                Path(command[command.index('--output') + 1]).write_text(json.dumps(body))
+                return SimpleNamespace(returncode=0, stdout=b'200')
+            with patch("release.subprocess.run", side_effect=curl):
+                self.assertEqual(probe("http://localhost/readyz", "example.test", "ok", field), expected)
 
     def run_deploy(self):
         with patch("release.require_disk_space"):

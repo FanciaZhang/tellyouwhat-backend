@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-16",
+  "scope": "Managed first production Albums data and media-worker deployment through the production release entry",
+  "base_commit": "f6cc01ff85673e3a4b376590210921792bd2a630",
+  "source_sha256": {
+    "deploy/tencent/albums_production.py": "437e1b1247cb17b125a59800dc7327e824ea6e0053a57fb825e4369fc9353d1c",
+    "deploy/tencent/albums_production_test.py": "6fe132828ba17d97e245794709f01824ba109767095b992626baf205ff2ec976",
+    "deploy/tencent/ops_albums.py": "6e258c8424afd54f710b9ebf17bd700f26dc2d1d7953f78f2fda3657513effeb",
+    "deploy/tencent/production_albums_test.py": "1a648b58248e07a74810d0de0dd373d71072f332c033813dd16b6994d7f4d0dc",
+    "deploy/tencent/release.py": "6f5d2d29185ded69fa7007fa171dfd2568136dfc5c08a58ccc01c912eebb9eee",
+    ".github/workflows/backend.yml": "02d5196d18f8e990519538c2e50288ef7bd9e5dc6e80e5c12d5d0d82c450ee24"
+  },
+  "checks": {
+    "operations_regression": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "total": 276,
+      "passed": 274,
+      "skipped": 2,
+      "skip_reason": "Local Caddy and Docker binaries unavailable"
+    },
+    "bootstrap_fixtures": [
+      "Both release locks held and only Albums resource owner cleaned",
+      "Source, production identity and backup credential isolation",
+      "Existing resources and conflicting network refused",
+      "Migration failure preserves data/configuration and registered source",
+      "Missing authenticated checkpoint prevents worker start",
+      "Prepared resources cannot enter the shared API",
+      "Native staging CLI owner check uses the directory path",
+      "Source archive, CI run, image digest and running image identity matched"
+    ],
+    "native_compose": {
+      "host": "106.55.105.177",
+      "passed": true,
+      "mode": "Parse synthetic configuration only",
+      "services": [
+        "mysql",
+        "redis",
+        "migrate",
+        "albumworker"
+      ],
+      "private_network": true,
+      "mysql_persistent_volume": true,
+      "api_ports": false,
+      "worker_host_mounts": false,
+      "temporary_files_removed": true
+    },
+    "workflow_yaml": {
+      "parser": "Ruby YAML.parse_file",
+      "passed": true
+    },
+    "diff_check": true
+  },
+  "remote_resources_created": false,
+  "remote_database_migration_run": false,
+  "remote_routes_changed": false,
+  "real_ci_images_published": false,
+  "git_pushed": false,
+  "remaining": [
+    "Publish and verify matching trusted CI images",
+    "Prepare approved production cloud/signing/backup credentials and escrow",
+    "Execute registered first resource creation and verify actual offsite recovery",
+    "Activate shared API and verify real device business journeys"
+  ],
+  "limitations": [
+    "Bootstrap orchestration, IAM credentials and backup outcomes use fixtures in these tests",
+    "Native Compose check does not start production containers or exercise cloud APIs",
+    "This entry refuses existing resources; later media-resource changes require a coordinated update and are not implemented by bootstrap"
+  ]
+}

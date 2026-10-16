@@ -1,0 +1,32 @@
+{
+  "previous_service_source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+  "synthetic_transport_only": true,
+  "native_signatures_or_devices_verified": false,
+  "actual_old_and_current_binaries_executed": true,
+  "old_grants_unchanged": true,
+  "older_service_rejects_new_private_connection_path": true,
+  "new_service_decrypts_after_older_cleanup": true,
+  "key_preserved_by_both_cleanup_versions": true,
+  "outcomes": [
+    {
+      "version": "previous",
+      "installation_manifest": 200,
+      "private_connection_status": 404
+    },
+    {
+      "version": "current",
+      "installation_manifest": 200,
+      "private_connection_status": 200
+    }
+  ],
+  "raw_urls_tokens_and_key_omitted": true,
+  "tested_working_tree_files_sha256": {
+    "internal/appledelivery/connection.go": "37b3730533a6368589f26fb525620807173ab6baf01d88b2d7e0ad2a37b78a0b",
+    "internal/appledelivery/http.go": "035109011051fae0549c5f89af4d3a615f2a19c5e59779b8c386c5b4b4427e89",
+    "cmd/appledelivery/main.go": "a31b2849b55bf4768e978ff7c3b1af121af473fd6c1fec36ba0635b90335b7e8",
+    "internal/appledelivery/connection_test.go": "2d3dabae63e295b434303fd67e6f89e537fb0e334f3279cf3b9bec6ba8a0aadf",
+    "cmd/appledelivery/main_test.go": "9396254c3e8744e8b7adac84726bc2fea084bffd96378d94e7008f46436f7077"
+  },
+  "test_scope": "Go appledelivery package and CLI race tests; previous/current binary compatibility probe",
+  "test_functions": 14
+}

@@ -1,0 +1,2922 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T05:18:41.606517+00:00",
+  "baselineCommit": "f3260e62f0ed5436b23a64453a54c53dfe6a6185",
+  "scope": "durable retention reminder scheduling, fenced claims and receipts; no message transport or media purge",
+  "sourceSHA256": {
+    "internal/albums/mysql_retention_reminders.go": "55923533c344ef44aaf5b07cc10620c5774b5d020f16556a72a904bfaeddd6c2",
+    "internal/albums/mysql_subscriptions.go": "7708afb6a0bc77733be92afbd8c9d35e479acb61cb0b555015c539eed649d21d",
+    "internal/albums/retention_reminders_integration_test.go": "12cab404fcf9e51e6f6e290c149f5724d54fd89427447e1a773d266665d78fbb",
+    "internal/albums/subscription_reconciliation_integration_test.go": "b4d7894a944504d9ec35251a3fc26136e084ee28c4e4b3e28533ecdde082fd82",
+    "internal/albums/mysql_subscription_refresh.go": "666ae6bb44d724bb6f617a038a24a8f17a268a6ee800f89c7409a6e112d1764e",
+    "internal/albums/subscription_refresh.go": "81c3e1df485f61ff50a15252bc9a77b1c61539d3c881ee2c8082c78e3a9fef2c",
+    "internal/albums/mysql_subscription_notifications.go": "87a922929f4ee83a07388c13fdc62f390df9c5d337c6fefc1f00318e628d1519",
+    "internal/albums/subscriptions.go": "3d06e2dd3aca651b2fb1be53972beea5996d6ac4e99a56a21c87fe4e27981532",
+    "internal/albums/gateway.go": "ffd3c1386640702ecd9a52dc5d638be8a006b88157711108c6950410ebf47546",
+    "migrations/0031_album_retention_reminders.sql": "586291fdc8a83c91acd3e70b6b53a27b4c8ee0a37700c0d210a9adf9968078b3",
+    "migrations/embed_test.go": "00917ff78e22ea9352ce2ed55ed29c293f88254db7cfc2f2cb48dea05255a5cf",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b"
+  },
+  "environment": "isolated MySQL 8.4 and Redis on private Unix sockets; per-test restricted schemas/users; controlled Apple/COS transports",
+  "validation": [
+    {
+      "name": "initial-trigger-fixture",
+      "exitCode": 1,
+      "logSHA256": "ec1629000c6f3d447c58c48c12ade8c0e286a8220f6b2d9b689f6045fbce29fd",
+      "counts": {
+        "pass": 3,
+        "fail": 1
+      },
+      "results": [
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderWindowsRetryAndRestart",
+          "Action": "pass",
+          "Elapsed": 0.35
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderRenewalInvalidatesClaim",
+          "Action": "pass",
+          "Elapsed": 0.35
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderDowntimeAndConcurrentClaim",
+          "Action": "pass",
+          "Elapsed": 0.34
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderSchedulingRollsBackSubscription",
+          "Action": "fail",
+          "Elapsed": 0.45
+        }
+      ]
+    },
+    {
+      "name": "albums-and-migrations-race",
+      "exitCode": 0,
+      "logSHA256": "f7009b1780b65f867a76c4af4f0a1b71ff76aac5296763cfde667c32689bab55",
+      "counts": {
+        "pass": 451
+      },
+      "results": [
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleGrantEncryptionBindsAccountIdentityAndGrant",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAppleAccountStableAcrossConcurrentLogins",
+          "Action": "pass",
+          "Elapsed": 0.51
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema/empty",
+          "Action": "pass",
+          "Elapsed": 0.78
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/valid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/other_subject",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/other_nonce",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/expired_returned",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/invalid_client",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/provider_error",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/oversize",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/redirect",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions/transport_failure",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeExchangeBindsCodeToBothSignedAssertions",
+          "Action": "pass",
+          "Elapsed": 0.11
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleCodeConfigurationRejectsWrongCurveAndMissingVerifier",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginChallengeRemainsConsumedAfterUncertainAppleExchange",
+          "Action": "pass",
+          "Elapsed": 0.06
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/other_app",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/multiple_audiences",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/wrong_issuer",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/future_issued",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/stale_issued",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/missing_issued",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/missing_expiry",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/missing_subject",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/wrong_nonce",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce/missing_nonce",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleIdentityRequiresSignatureAudienceIssuerTimesAndNonce",
+          "Action": "pass",
+          "Elapsed": 0.19
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleKeysThrottleUnknownKidsAndRefreshRotation",
+          "Action": "pass",
+          "Elapsed": 0.05
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema/0025",
+          "Action": "pass",
+          "Elapsed": 0.39
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache/redirect",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache/oversize",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache/malformed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAppleKeyFetchRejectsRedirectOversizeAndExpiredCache",
+          "Action": "pass",
+          "Elapsed": 0.05
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumContractAndPublicUploadDoNotExposeWorkerProofFields",
+          "Action": "pass",
+          "Elapsed": 0.1
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGeneratedAlbumPathErrorsUsePublicErrorShape",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCreateAndGetPreserveReconstructionDescriptors",
+          "Action": "pass",
+          "Elapsed": 0.07
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsBoundPaginationAndExcludePrefixNeighbours",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/bucket",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/prefix",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/key",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/null-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/duplicate",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/encoding",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/stalled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists/page-cap",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVersionsRejectIncompleteForeignOrAmbiguousLists",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteRequiresExactVersionAndDerivedNamespace",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteLostResponseHasNoImplicitRetry",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteSpecificMissingVersionAllowsReconciliation/NoSuchVersion",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteSpecificMissingVersionAllowsReconciliation/NoSuchKey",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteSpecificMissingVersionAllowsReconciliation/AccessDenied",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedDeleteSpecificMissingVersionAllowsReconciliation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty/valid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty/invalid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty/network",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty/wrong-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty/short-body",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedPhotoAssessmentDistinguishesInvalidBytesFromUncertainty",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Submitted",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Running",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Pause",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Success",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Failed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/Unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates/foreign",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSDerivedVideoCleanupAcceptsOnlyBoundTerminalStates",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/one",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/none",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/neighbor",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/multiple",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/paged",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/bad-marker",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/duplicate-page",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/wrong-prefix",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/outside-prefix",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/bad-id",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing/page-budget",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSFindMultipartRequiresUniqueExactKeyAndCompleteListing",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartLayoutCoversExactResourceWithoutOverflow",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPartGrantSignsExactQueryAndLength",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion/#00",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion/missing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion/wrong-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion/wrong-id",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion/bad-marker",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUsesProviderPartsAndVersion",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartUnknownInitiationIsNotAutomaticallyRetried",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartListingPagination",
+          "Action": "pass",
+          "Elapsed": 0.04
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartInitiationAndAbortStayOnStagingKey",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartCompletionUnknownOutcomeNeedsReconciliation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/sparse",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/empty",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/duplicate",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/wrong-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/out-of-range",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations/bad-marker",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartResumeAcceptsSparsePartsAndRejectsInvalidObservations",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSAdapterFixesCopyAndReadVersions",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSGrantsCannotWriteArchiveAndBindSize",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSUnversionedSourceAndMismatchedReadFailClosed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSLargeCopyPinsEveryPartToSourceVersion",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSCopyEmbeddedErrorAndDisabledVersioningAreRejected",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartFailureAbortsWithIndependentContext/part",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartFailureAbortsWithIndependentContext/cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartFailureAbortsWithIndependentContext/complete",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartFailureAbortsWithIndependentContext/abort",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSMultipartFailureAbortsWithIndependentContext",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidatePinsVersionAndFixedPreset/grid_jpeg_v1",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidatePinsVersionAndFixedPreset/daily_jpeg_v1",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidatePinsVersionAndFixedPreset/grid_png_v1",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidatePinsVersionAndFixedPreset/daily_png_v1",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidatePinsVersionAndFixedPreset",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/wrong-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/partial",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/encoding",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/range",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/too-large",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/length",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/wrong-format",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/oversize-dimensions",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/truncated-image",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/html",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/truncated-stream",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses/cancelled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsInvalidResponseAndCloses",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateRejectsUnboundedChunkedResponse",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoCandidateValidatesBeforeNetwork",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWritePersistsPrivateBytesAndVerifiesExactVersion",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteLostResponseRecoversWithoutSecondPut",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/missing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/head-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/head-null",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-hash",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-dimensions",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-truncated",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-range",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-encoding",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-uncompressed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults/get-overflow",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRecoveryRejectsUnprovenResults",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoWriteRejectsInvalidSpecOrCandidateBeforeMutation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/valid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/head-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/missing-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/version-race",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/body-size",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/wrong-bytes",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/truncated",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/extra-byte",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/read-error",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes/head-error",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcilePinsVersionAndChecksFullBytes",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReconcileRejectsInvalidManifestBeforeNetwork",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/#00",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/source-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/header-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/hdr",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/multi",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR/rate",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoInspectionPinsOpaqueSourceVersionAndRejectsHDR",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoSubmitPreservesFPSAspectAndNeverRetriesLostPOST",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch/found",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch/absent",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch/duplicate",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch/truncated",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch/cross-source",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoUnknownSubmissionOnlyQueriesAndProvesUniqueMatch",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoPollingRejectsForeignAndFailedTasks",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/valid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/truncated",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/long",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/wrong-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/range",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/compressed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/container",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/fps",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/duration",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/audio",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource/source-changed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoResultStreamsFixedVersionAndChecksMediaAndSource",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoProfileRejectsNonFiniteAndExtremeCanvasAndPreservesRotation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSVideoGrantSignsOnlyCompletedResultExactVersionGET",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumTestDeploymentHasIndependentStorageAndOnlyLoopbackIngress",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema/0026-interrupted",
+          "Action": "pass",
+          "Elapsed": 0.39
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema",
+          "Action": "pass",
+          "Elapsed": 1.57
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestMigrationFileFilterRejectsHiddenMetadata",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestInitialSchemaUsesTwoRolesAndPasswordlessRecoveryInvitations",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Test": "TestEmbeddedMigrationsStartFromCleanMultiAppSchema",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedFinalizationClosesOnceAcrossConcurrentWorkers",
+          "Action": "pass",
+          "Elapsed": 0.03
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedFinalizationPendingAndUnspentBudget",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedFinalizationQuotaMismatchRollsBack",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupFailedVideoLostDeleteReopensAndRefundsOnce",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/unknown",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/running",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/network",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow/success-unverified",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupUnknownOrRunningVideoRetainsEscrow",
+          "Action": "pass",
+          "Elapsed": 0.04
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupRecoversDiscoveredVideoAndProtectsReceipt",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupPhotoRecoveryFencesConcurrentRetirement",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupClaimsAndExpiryFenceConcurrentWorkers",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupInvalidPhotoCannotPublishAfterRetirement",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/missing-receipt",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/changed-receipt-size",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions/unplanned-version",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLDerivedCleanupProtectsMissingReceiptAndUnexpectedNewVersions",
+          "Action": "pass",
+          "Elapsed": 0.05
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DEPLOYMENT_ENVIRONMENT/0",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DEPLOYMENT_ENVIRONMENT/7",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DATABASE_DSN/53",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DATABASE_DSN/53#01",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DATABASE_DSN/54",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_DATABASE_DSN/27",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_API_HOST/27",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_API_HOST/22",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_API_HOST/18",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_API_HOST/16",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_HTTP_LISTEN_ADDRESS/5",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_HTTP_LISTEN_ADDRESS/14",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_HTTP_LISTEN_ADDRESS/9",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_REDIS_URL/45",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_REDIS_URL/36",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_TRUSTED_PROXIES/9",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_TRUSTED_PROXIES/14",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_TRUSTED_PROXIES/14#01",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_APPLE_SIGN_IN_KEY_ID/22",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_APPLE_SIGN_IN_KEY_FILE/25",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_CREDENTIAL_KEY_FILE/28",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials/ALBUM_LOGIN_LIMIT_KEY_FILE/131",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewaySecretFilesRejectPublicPermissionsAndMalformedKeys/-rw-r--r--",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewaySecretFilesRejectPublicPermissionsAndMalformedKeys/-rw-rw----",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewaySecretFilesRejectPublicPermissionsAndMalformedKeys/-rwx------",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewaySecretFilesRejectPublicPermissionsAndMalformedKeys",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayMySQLRedisAppleLoginAndSessionLifecycle",
+          "Action": "pass",
+          "Elapsed": 0.74
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLivePairDeclarationsRejectInvalidTimelineAndUnboundedOrMismatchedProfiles",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSLivePairAdapterSeparatesStagingAndArchiveAndPinsEveryRead",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSLivePairOpenRejectsChangedVersionPartialAndEncodedResponses",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLiveTimingIsCurrentPairBoundAndLegacyDigestIsUnchanged",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLiveSourceAndProfileRequireSupportedBoundTiming",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLiveSpecSurvivesJSONReopenAndRejectsShortenedMovieInEveryReceiptPath",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLiveCombinedGrantRequiresBothOwnedCompletedComponentsBeforeSigning",
+          "Action": "pass",
+          "Elapsed": 0.15
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLLiveMovieWaitsForStillsAndFinalizesAllThreeComponents",
+          "Action": "pass",
+          "Elapsed": 0.03
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLLoginChallengeConsumedOnceAcrossServiceInstances",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginChallengeProofIsHashedAndSingleUse",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginHTTPPublicBoundariesAndLimits",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginHTTPAccountAndLogout",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginLimitCanonicalAddressAndPrivacy",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestRedisAlbumLoginLimitAcrossInstances",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginPipelineOnlyIssuesSessionAfterVerifiedAccount/failure_",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginPipelineOnlyIssuesSessionAfterVerifiedAccount/failure_exchange",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginPipelineOnlyIssuesSessionAfterVerifiedAccount/failure_account",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginPipelineOnlyIssuesSessionAfterVerifiedAccount/failure_session",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginPipelineOnlyIssuesSessionAfterVerifiedAccount",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLoginWrongProofDoesNotReachProviderOrConsumeChallenge",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMissingLiveResourceCannotConfirmBackup",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestEditedPhotoRequiresCurrentDisplayResource",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestDigestIsCanonicalAndVersionBound",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestSizeOrActualHashMismatchCannotConfirmBackup",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestManifestRejectsSizeOverflowAndUnsafeIdentifiers",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestResourceDescriptorsAreCompleteRoleBoundAndDigestBound",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestLegacyManifestDigestDoesNotChangeWhenMetadataAbsent",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestDescriptorRejectsInvalidTypeSizeAndEncoding",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAssetMetadataIsDigestBoundAndValidatesDomain",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/success",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/preflight",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/generic-error",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/missing-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/database",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats/cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartCompletionPersistsOutcomeAndNeverBlindlyRepeats",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPAccountFlowMatchesContractAndPersistsState",
+          "Action": "pass",
+          "Elapsed": 0.1
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/body",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/query",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/other-owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/other-app",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/unauthenticated",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/bad-part",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome/zero-part",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartHTTPRejectsScopeInjectionAndUnknownOutcome",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/initiating",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/ready",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/missing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/database",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/wrong-owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession/submitted",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestInitializationReconcileBindsOnlyDiscoveredSession",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/completing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/mismatch",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/database",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/already-assembled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/retryable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/wrong-owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion/stale-operation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartReconciliationOnlyCommitsVerifiedVersion",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/success",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/unknown",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/database-before",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/database-after",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding/expiry",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServiceInitializationPersistsBeforeProviderAndReusesBinding",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMultipartServicePartsUseStoredOwnershipAndManifest",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLLivePairReservesOnceAfterComponentFinalizationAndFencesEverySeal",
+          "Action": "pass",
+          "Elapsed": 0.05
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLLivePairRecoversLostCopyResponseWithoutRepeatingAndPublishesPinnedRead",
+          "Action": "pass",
+          "Elapsed": 0.03
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLLivePairRejectsSourceReceiptSubstitutionAndRetainsEscrowOnHashMismatch",
+          "Action": "pass",
+          "Elapsed": 0.04
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoWriteOnlyOneWriterAndSingleQuotaTransfer",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoWriteQuotaFailureRollsBackReceipt",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoDerivativeResumesAcrossServiceAndDatabaseReopen",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoPreviewGrantOnlyAfterReceiptAndQuotaCommit",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionsAdmissionDowngradeAndRetention",
+          "Action": "pass",
+          "Elapsed": 0.48
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionChainCanBelongToOnlyOneAccount",
+          "Action": "pass",
+          "Elapsed": 0.38
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumReservationAndVerificationTransactions",
+          "Action": "pass",
+          "Elapsed": 0.82
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoCandidateSelectsDisplayedVersionAndRejectsIncompleteBackup",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoCandidateDoesNotProcessOtherAccountsOrUnknownPresets",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoQueuePublishesOnceClaimsAndFencesLeases",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoWorkersSerializeGenerationAndResumeLostWrites",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLPhotoWorkerCrashLimitDoesNotLoopForever",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/unsettled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/null_version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/cross_owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/cross_source",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/changed_manifest",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/wrong_preset",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/bad_dimensions",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/bad_checksum",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord/partial_original",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadRequiresCompletedOwnedSourceBoundRecord",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewReadHTTPContractAndNoSideEffects",
+          "Action": "pass",
+          "Elapsed": 0.11
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSPhotoPreviewGrantPinsExactVersionAndOnlyGET",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewLiveStillNeverAuthorizesReplacementAndVideoIsRejected/live_photo",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewLiveStillNeverAuthorizesReplacementAndVideoIsRejected/video",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoPreviewLiveStillNeverAuthorizesReplacementAndVideoIsRejected",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestOriginalReadGrantRequiresOwnedCompleteImmutableVersion",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestOriginalReadHTTPIsBodylessScopedAndContractValid",
+          "Action": "pass",
+          "Elapsed": 0.07
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestCOSReadGrantPinsVersionHostVerbAndExpiry",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel/success",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel/contended",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel/cancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel/failed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel/oversized",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationWorkerClaimsBeforeReadingAndFinishesOnCancel",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestReconciliationPollStopsOnCancellation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderWindowsRetryAndRestart",
+          "Action": "pass",
+          "Elapsed": 0.43
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderRenewalInvalidatesClaim",
+          "Action": "pass",
+          "Elapsed": 0.71
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderDowntimeAndConcurrentClaim",
+          "Action": "pass",
+          "Elapsed": 1.57
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderSchedulingRollsBackSubscription",
+          "Action": "pass",
+          "Elapsed": 1.12
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestSessionCredentialParsingAndRedaction",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSharingConfigIsOptInPrivateAndIsolated",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSharingFilenameRemovesPathsControlsAndBidiSpoofing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments",
+          "Action": "pass",
+          "Elapsed": 3
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery",
+          "Action": "pass",
+          "Elapsed": 4.12
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSharingLastClaimConcurrencyAndPoolBoundedGrants",
+          "Action": "pass",
+          "Elapsed": 0.86
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState",
+          "Action": "pass",
+          "Elapsed": 0.77
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSharingLeaseExpiryCannotBeReplayedForFree",
+          "Action": "pass",
+          "Elapsed": 0.9
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSharingLiveBundleRejectsIncompleteEvidence",
+          "Action": "pass",
+          "Elapsed": 0.45
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/disabled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/test",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/production",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/production-id-missing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/flag-invalid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/issuer-invalid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/key-id-invalid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/key-unavailable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/key-oversized",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/roots-invalid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound/invalid-deployment",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/multipart-part-paid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/multipart-part-expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/multipart-init-paid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/multipart-init-expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/live-pair-paid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization/live-pair-expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionBoundsMultipartAndLivePhotoAuthorization",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery",
+          "Action": "pass",
+          "Elapsed": 0.6
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshClockExpiryKeepsSameSignedTransaction",
+          "Action": "pass",
+          "Elapsed": 0.48
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshFreshnessFailureAndRecovery",
+          "Action": "pass",
+          "Elapsed": 0.4
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshLeaseFencesCrashAndClientChange",
+          "Action": "pass",
+          "Elapsed": 0.38
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/active-50",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/upgrade-500",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/expired",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/retrying",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/grace",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/revoked",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/missing-token",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/wrong-submitted-owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/wrong-current-owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/tampered",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/health-bundle",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/health-product",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/wrong-environment",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/family-shared",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/missing-current",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/provider-failure",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/unknown-status",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/future-expired-status",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/wrong-renewal",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence/upgraded-old-transaction",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumSubscriptionUsesCurrentAccountBoundAppleEvidence",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumRetentionUsesSixClampedCalendarMonths",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadReceiptCannotVerifyAndOtherAccountCannotRead",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVerificationReadsSealedVersionAndCompletionIsIdempotent",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestWrongBytesSizeOrUnversionedObjectNeverBecomeBackup/wrong_hash",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestWrongBytesSizeOrUnversionedObjectNeverBecomeBackup/too_large",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestWrongBytesSizeOrUnversionedObjectNeverBecomeBackup/too_short",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestWrongBytesSizeOrUnversionedObjectNeverBecomeBackup/no_version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestWrongBytesSizeOrUnversionedObjectNeverBecomeBackup",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadRequestReplayCannotChangeManifest",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadHTTPRejectsHostAppAndClientOwnerInjection",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim/missing",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim/null",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim/edited_without_render",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLVideoPublicationClaimAndSubmissionAreOnceAndLeaseFenced",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLVideoLostPOSTResumesAfterDatabaseReopenAndChargesOnce",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLVideoWaitingDoesNotExhaustRetriesAndHasDeadline",
+          "Action": "pass",
+          "Elapsed": 0.03
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLVideoBudgetBeforePaidSubmissionAndReceiptQuotaRollback",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/pending",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/manifest",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/source",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/result-version",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/result-hash",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/result-fps",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt/partial-backup",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewReadRequiresCompleteOwnedSourceBoundReceipt",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoPreviewHTTPContractIsBodylessScopedAndHasNoProcessingSideEffects",
+          "Action": "pass",
+          "Elapsed": 0.1
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerConfigurationNeedsNoAISettings",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVideoProcessingRequiresExplicitEnableAndQueue",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_DATABASE_DSN",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_COS_UPLOAD_SECRET_KEY",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_COS_UPLOAD_SECRET_ID",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_COS_REGION",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_MAX_ORIGINAL_BYTES",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_MAX_DERIVED_BYTES",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_PHOTO_PROCESSING_ENABLED",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets/ALBUM_DERIVED_CLEANUP_ENABLED",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestAlbumWorkerRejectsIncompleteOrUnsafeConfigurationWithoutSecrets",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestPhotoProcessingExplicitEnable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestDerivedCleanupRequiresExplicitEnable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVerificationWorkerContinuesAfterFailureAndResumesExpiredLease",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVerificationWorkerCancellationStopsPolling",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestVerificationWorkerReportsUnfinishedCleanupWithoutBackup",
+          "Action": "pass",
+          "Elapsed": 0
+        }
+      ]
+    },
+    {
+      "name": "final-reminder-and-subscription-race",
+      "exitCode": 0,
+      "logSHA256": "241f17bb18ef5bb3af03e746d193900545e2bd7892a005397f1286cd5ad3e6aa",
+      "counts": {
+        "pass": 8
+      },
+      "results": [
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderWindowsRetryAndRestart",
+          "Action": "pass",
+          "Elapsed": 0.44
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderRenewalInvalidatesClaim",
+          "Action": "pass",
+          "Elapsed": 0.32
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderDowntimeAndConcurrentClaim",
+          "Action": "pass",
+          "Elapsed": 0.36
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumRetentionReminderSchedulingRollsBackSubscription",
+          "Action": "pass",
+          "Elapsed": 0.34
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery",
+          "Action": "pass",
+          "Elapsed": 0.45
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshClockExpiryKeepsSameSignedTransaction",
+          "Action": "pass",
+          "Elapsed": 0.33
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshFreshnessFailureAndRecovery",
+          "Action": "pass",
+          "Elapsed": 0.34
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Test": "TestMySQLAlbumSubscriptionRefreshLeaseFencesCrashAndClientChange",
+          "Action": "pass",
+          "Elapsed": 0.35
+        }
+      ]
+    },
+    {
+      "name": "gateway-worker-race",
+      "exitCode": 0,
+      "logSHA256": "9b3d7d283ff8b2970fece530a77e9eaf4ce0c1c26f8ec5e59fc0bcae0eefb594",
+      "counts": {
+        "pass": 7
+      },
+      "results": [
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse/ready",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse/other_response",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse/oversize",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse/redirect",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse/unavailable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Test": "TestContainerProbeChecksHostRouteAndBoundedReadinessResponse",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+          "Test": "TestInvalidDatabaseFailureIsSanitized",
+          "Action": "pass",
+          "Elapsed": 0
+        }
+      ]
+    },
+    {
+      "name": "Vet",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Build",
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "countsOverlap": true,
+  "sourceBindingNote": "The 451-entry regression precedes only two additional assertions in the reconciliation integration tests; the final targeted run verifies those assertions on the recorded source. The initial trigger fixture was replaced by a schema CHECK for failure injection.",
+  "initialFailure": "Rollback fixture CREATE TRIGGER was denied by binary-log SUPER policy (1419). Replaced with a test-schema CHECK constraint; no global privileges or server safety settings changed.",
+  "verified": [
+    "six-calendar-month UTC deadline with August month-end clamped to February",
+    "30/7/1 day windows and stale-stage suppression after downtime",
+    "duplicate reconciliation preserves delivery identity and receipts",
+    "eight concurrent claimers yield one current lease",
+    "new repository instance recovers expired leases and rejects old acknowledgement",
+    "bounded retry backoff and no claim at or after cutoff",
+    "renewal cancels pending events and active leases; later expiry gets a new deadline",
+    "account and Sandbox/Production isolation",
+    "mid-schedule SQL failure rolls back subscription, revision and earlier reminder inserts",
+    "empty account does not schedule; reminder operations retain storage usage",
+    "verified Apple notifications schedule before acknowledgement",
+    "server subscription refresh schedules without app interaction"
+  ],
+  "servicesStopped": true,
+  "runtimeEnabled": false,
+  "liveProviderAcceptance": false,
+  "unverified": [
+    "APNs/device registration, consent, routing and actual delivery",
+    "fresh live Apple entitlement check immediately before notification; current queue rechecks database state only",
+    "message provider delivery idempotency and renewal racing an in-flight external send",
+    "permanent all-version COS purge, recycle bin and account deletion",
+    "production migration, deployment, real Apple/COS and device integration"
+  ]
+}

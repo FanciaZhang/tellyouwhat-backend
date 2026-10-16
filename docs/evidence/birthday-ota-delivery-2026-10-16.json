@@ -1,0 +1,97 @@
+{
+  "application": "Birthday",
+  "bundle_id": "cn.tellyouwhat.birthday.dev",
+  "version": "1.0",
+  "build": "2",
+  "source_commit": "d29ed1846736719189ad394446d9e246995c0e93",
+  "origin": "https://install.tellyouwhat.cn",
+  "active_download": {
+    "checked_at_utc": "2026-10-15T19:27:29.744948+00:00",
+    "active_link_download_verified": true,
+    "ipa_sha256": "789af9b2e6ec143b27e5e3281cbfd9975a17a600dcac17a9e5d7e5481d4d72be",
+    "ipa_bytes": 3596417,
+    "page_manifest_and_ipa_status": 200,
+    "head_verified": true,
+    "range_verified": true,
+    "equivalent_host_variants": {
+      "INSTALL.TELLYOUWHAT.CN": 200,
+      "install.tellyouwhat.cn:443": 200
+    },
+    "privacy_headers_verified": true,
+    "tls_trust_verified": true,
+    "expires_at": "2026-10-15T19:27:53.992141644Z",
+    "source_commit": "d29ed1846736719189ad394446d9e246995c0e93",
+    "device_installation_verified": false
+  },
+  "expiration": {
+    "checked_at_utc": "2026-10-15T19:28:02.900974+00:00",
+    "expires_at": "2026-10-15T19:27:53.992141644Z",
+    "real_clock_used": true,
+    "expiration_verified": true,
+    "responses": {
+      "page": 410,
+      "manifest.plist": 410,
+      "app.ipa": 410
+    },
+    "automatic_cleanup_verified": false
+  },
+  "fresh_installation_link": {
+    "checked_at_utc": "2026-10-15T19:29:07.584965+00:00",
+    "active_link_download_verified": true,
+    "ipa_sha256": "789af9b2e6ec143b27e5e3281cbfd9975a17a600dcac17a9e5d7e5481d4d72be",
+    "ipa_bytes": 3596417,
+    "page_manifest_and_ipa_status": 200,
+    "head_verified": true,
+    "range_verified": true,
+    "equivalent_host_variants": {
+      "INSTALL.TELLYOUWHAT.CN": 200,
+      "install.tellyouwhat.cn:443": 200
+    },
+    "privacy_headers_verified": true,
+    "tls_trust_verified": true,
+    "expires_at": "2026-10-16T19:28:14.747936654Z",
+    "source_commit": "d29ed1846736719189ad394446d9e246995c0e93",
+    "device_installation_verified": false
+  },
+  "producer_cleanup": {
+    "apple_delivery": {
+      "configured": true,
+      "grants_removed": 1,
+      "packages_removed": 0
+    },
+    "completed_at": 1792092496,
+    "errors": [],
+    "free_bytes_after": 25890349056,
+    "free_bytes_before": 25890357248,
+    "operation": "artifacts-apple-development",
+    "passed": true,
+    "reclaimed_bytes": -8192,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "cleanup_trigger": "manual owned publication wrapper; not a scheduled run",
+  "package_retention": "package retained because fresh lease is active and orphan grace is two hours",
+  "private_receipts_saved": true,
+  "raw_links_and_device_identifiers_omitted": true,
+  "development_gates": {
+    "source_commit": "d29ed1846736719189ad394446d9e246995c0e93",
+    "source_archive_sha256": "42e0800fa6765747d08ffc34ae10d877309f4e807c79f000d3c3621419077656",
+    "remote_main_is_ancestor": true,
+    "app_unit_and_environment_ui": {
+      "result": "Passed",
+      "passedTests": 54,
+      "failedTests": 0,
+      "skippedTests": 1,
+      "totalTestCount": 55
+    },
+    "domain_package_tests_passed": 27,
+    "native_signature_verified": true,
+    "development_delivery_gate_passed": true,
+    "formal_release_gate_passed": false,
+    "real_test_api_verified": false,
+    "all_ui_tests_run": false
+  },
+  "device_installation_verified": false,
+  "real_test_api_verified": false,
+  "formal_release_gate_verified": false
+}

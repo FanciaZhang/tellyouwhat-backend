@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 )
 
@@ -129,7 +130,11 @@ func (r *unreadableAudio) Read([]byte) (int, error) { r.reads++; return 0, io.EO
 
 func TestRecordingRouteAuthorizesBeforeReadingAudio(t *testing.T) {
 	f := newRecordingFixture(t, 100)
-	path := recordingPrefix + uuid.NewString()
+	before, err := os.ReadDir(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := recordinghttp.Prefix + uuid.NewString()
 	input := &unreadableAudio{}
 	f.token = strings.Repeat("x", 43)
 	if w := f.request("PUT", path, "audio/wav", input); w.Code != 401 {
@@ -147,16 +152,21 @@ func TestRecordingRouteAuthorizesBeforeReadingAudio(t *testing.T) {
 	if input.reads != 0 || f.provider.submissions != 0 {
 		t.Fatal("unauthorized audio was read or sent")
 	}
-	entries, _ := os.ReadDir(f.root)
-	if len(entries) != 0 {
+	entries, err := os.ReadDir(f.root)
+	if err != nil || len(entries) != len(before) {
 		t.Fatal("unauthorized source persisted")
+	}
+	for i := range entries {
+		if entries[i].Name() != before[i].Name() {
+			t.Fatal("unauthorized request changed processing storage")
+		}
 	}
 }
 
 func TestRecordingRouteStreamsLargeUploadAndDeduplicatesWithOwnerIsolation(t *testing.T) {
 	f := newRecordingFixture(t, 201)
 	f.grant()
-	path := recordingPrefix + uuid.NewString()
+	path := recordinghttp.Prefix + uuid.NewString()
 	audio := recordingWAV(200_000) // Exceeds ordinary gateway JSON limits.
 	first := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(audio)), 202)
 	again := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(audio)), 202)
@@ -198,14 +208,14 @@ func TestRecordingRouteStreamsLargeUploadAndDeduplicatesWithOwnerIsolation(t *te
 func TestRecordingRouteRejectsMalformedAndExpiredResults(t *testing.T) {
 	f := newRecordingFixture(t, 100)
 	f.grant()
-	path := recordingPrefix + uuid.NewString()
+	path := recordinghttp.Prefix + uuid.NewString()
 	if w := f.request("PUT", path, "audio/mpeg", strings.NewReader("bad")); w.Code != 415 {
 		t.Fatal(w.Code, w.Body)
 	}
 	if w := f.request("PUT", path, "audio/wav", strings.NewReader("bad")); w.Code != 422 {
 		t.Fatal(w.Code, w.Body)
 	}
-	if w := f.request("PUT", recordingPrefix+"invalid", "audio/wav", nil); w.Code != 422 {
+	if w := f.request("PUT", recordinghttp.Prefix+"invalid", "audio/wav", nil); w.Code != 422 {
 		t.Fatal(w.Code, w.Body)
 	}
 	if w := f.request("POST", path+"/process", "application/json", strings.NewReader("{}")); w.Code != 422 {
@@ -230,7 +240,7 @@ func TestRecordingRouteRejectsMalformedAndExpiredResults(t *testing.T) {
 func TestRecordingRouteBudgetRejectsProviderCall(t *testing.T) {
 	f := newRecordingFixture(t, 1)
 	f.grant()
-	path := recordingPrefix + uuid.NewString()
+	path := recordinghttp.Prefix + uuid.NewString()
 	jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(2000))), 202)
 	if w := f.request("POST", path+"/process", "", nil); w.Code != 429 || !strings.Contains(w.Body.String(), "recording_budget_exceeded") {
 		t.Fatal(w.Code, w.Body)
@@ -267,7 +277,7 @@ func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	f := newRecordingFixture(t, 100, model)
 	f.grant()
 	id := uuid.NewString()
-	path := recordingPrefix + id
+	path := recordinghttp.Prefix + id
 	job := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(1000))), 202)
 	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 202)
 	job = jobFrom(t, f.request("POST", path+"/process", "", nil), 200)
@@ -278,7 +288,7 @@ func TestRecordingPreviewUsesOwnedSourceAndReusesSameRequest(t *testing.T) {
 	analysis.Text = "38周加一天。"
 	analysis.Utterances[0].Text = analysis.Text
 	analysis.Utterances[0].Speaker = "wife"
-	input := recordingPreviewRequest{RequestID: uuid.NewString(), AudioHash: job.AudioHash, ReviewRevision: 7, Snapshot: voice.Snapshot{Revision: 4, Transcript: analysis.Text, Blocks: []voice.Block{{ID: uuid.NewString(), Text: "原正文"}}, RecordingContext: &voice.RecordingContext{Mode: "narrative", Speakers: []voice.RecordingSpeaker{{ID: "wife", Name: "妻子"}}, Analysis: analysis}}}
+	input := recordinghttp.PreviewRequest{RequestID: uuid.NewString(), AudioHash: job.AudioHash, ReviewRevision: 7, Snapshot: voice.Snapshot{Revision: 4, Transcript: analysis.Text, Blocks: []voice.Block{{ID: uuid.NewString(), Text: "原正文"}}, RecordingContext: &voice.RecordingContext{Mode: "narrative", Speakers: []voice.RecordingSpeaker{{ID: "wife", Name: "妻子"}}, Analysis: analysis}}}
 	call := func() *httptest.ResponseRecorder {
 		body, _ := json.Marshal(input)
 		return f.request("POST", path+"/preview", "application/json", bytes.NewReader(body))
@@ -322,7 +332,7 @@ func TestRecordingHTTPMissingSubmissionRetryKeepsIdentityAndAuthorization(t *tes
 	f := newRecordingFixture(t, 2)
 	f.grant()
 	id := uuid.NewString()
-	path := recordingPrefix + id
+	path := recordinghttp.Prefix + id
 	original := jobFrom(t, f.request("PUT", path, "audio/wav", bytes.NewReader(recordingWAV(1000))), 202)
 	f.provider.submitErr = context.Canceled
 	if w := f.request("POST", path+"/process", "application/json", nil); w.Code != 503 {

@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "634bf9304c56ad9726ff5446451d328ab5f1b15a",
+  "scope": "Albums production resource admission into the existing shared gateway release, snapshot and recovery paths",
+  "source_sha256": {
+    ".github/workflows/deploy.yml": "a0ba8be9c3a922296cb02055e3cc5d869f173cf03d0ece2add279d43b0e39260",
+    "compose.albums-production.yaml": "ead7894d5fc548f577ecfac7f4542468006601f039b9f8b91c401b778b68ec22",
+    "deploy/albums/README.md": "99b510a45e0b787d6fc70fb052dd771a862680e9611eaae12539a86486113ac0",
+    "deploy/albums/production.env.example": "6c346cc5a6851d818c788623fa2a051a6bb63d6f8c20da03e41119730c1e796c",
+    "deploy/tencent/blue_green.py": "ea1f561c9e1a734ed2dc1f9f3eec0f2dcc8b48d22c82d4b4c0c5f4596ca440a4",
+    "deploy/tencent/disruptive_release.py": "7da57465601d83dbdfc125b328e83999554f68c21de34779c111423fba6711aa",
+    "deploy/tencent/offsite_test.py": "6545d1b5b970188ffb7aa446da7ab2e6fd6566ce0eb1dd90ef88c5d374801ec8",
+    "deploy/tencent/ops_common.py": "9b66b141610af852a455f5d4e12d49470a0028836fcfbc90a32fbdafcf63001b",
+    "deploy/tencent/ops_offsite.py": "cc25e8cc9e7878e1036245adceaa8a6164f4b4060ba3b551e81f24b66748b801",
+    "deploy/tencent/platform_test_deploy.py": "b053cb9688d319c0722c5e37ded3ea83b6250cebcc97d2231a4e395ca7651e3b",
+    "deploy/tencent/release.py": "75990cb2cd481d5ed8c465047c1e484a0d2165902a77f0a45a0ece56bdc410bd",
+    "compose.shared-albums-production.yaml": "fe90762403adab8bde7f388084635459848e899a6de7537d566ec1bd957220da",
+    "deploy/tencent/ops_albums.py": "e1088986496dac2e1e2da505c0d3c08b930c7ddfa62c68074f0df03c0950447c",
+    "deploy/tencent/production_albums_test.py": "8bfb1b5227c5e13c6c0d12895b5e0bd7864fff1f6f52092a591cc94d51ecc97c",
+    "deploy/tencent/albums_compose_test.py": "ca4fb42317b75c5fb6d1a27ee6665e63a09a14b7831c98cd832ac75a467aa63a"
+  },
+  "verification": {
+    "operations_unittests": {
+      "total": 249,
+      "skipped": 2,
+      "passed": true,
+      "skip_reasons": [
+        "local native Docker Compose unavailable",
+        "local native Caddy unavailable"
+      ]
+    },
+    "native_compose": {
+      "host": "existing Tencent host",
+      "passed": true,
+      "synthetic_credentials_only": true,
+      "containers_started": false,
+      "checks": [
+        "four-service Albums data and media stack; no API service or ports",
+        "only shared gateway receives Albums secret env and readonly key mount",
+        "shared core database uses explicit IP",
+        "external Albums network attached only to shared gateway",
+        "no root database password in media worker"
+      ]
+    },
+    "workflow_yaml_parsed": true,
+    "git_diff_check": true,
+    "initial_compose_failures": [
+      "Compose serialized mem_limit as a string; verifier now compares integer value",
+      "Compose omits false create_host_path; verifier uses false for an omitted field"
+    ],
+    "production_core_data_hosts_read_only": {
+      "mysql": "10.0.0.6",
+      "redis": "10.0.0.4"
+    }
+  },
+  "admission_rules": [
+    "matching registered resource source and private configuration",
+    "isolated credentials and production identity",
+    "live database Redis and media worker match selection",
+    "preflight failure before backup/migration/service changes",
+    "actual gateway networks proxy host address and readonly key mount verified",
+    "shared services cannot receive Albums private credentials",
+    "snapshot/recovery includes gateway configuration and requires full matching Albums checkpoint",
+    "existing non-Albums deployment capacity threshold preserved",
+    "media worker runtime credentials match the selected source and no host/private-key mount is permitted"
+  ],
+  "not_performed": [
+    "production resource bootstrap",
+    "cloud IAM or CI activation",
+    "production/test gateway deployment",
+    "database migration",
+    "public route changes",
+    "actual backup/restore of new production data",
+    "real login or media business journey",
+    "Git push"
+  ],
+  "remaining": [
+    "create and register production data/worker through the managed release path",
+    "complete pending production IAM and CI permissions",
+    "deploy matched scheduled operations and shared gateway selections",
+    "route four production and test domains to their corresponding single gateway",
+    "verify real-device authentication cloud media and restore journeys"
+  ]
+}

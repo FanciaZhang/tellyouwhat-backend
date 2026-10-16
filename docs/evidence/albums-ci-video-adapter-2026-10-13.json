@@ -1,0 +1,542 @@
+{
+  "date": "2026-10-13",
+  "baselineCommit": "b4c4d8a",
+  "scope": "production COS video adapter against fixed test bucket; no account/API/worker DB or deletion",
+  "fixes": [
+    "accept omitted CI metadata version header only with unchanged HEAD version/size before and after; reject contradictory header",
+    "use numeric timezone offset for DescribeMediaJobs time filters",
+    "omit explicit Fps instead of rounding source frame rate; verify output rate",
+    "recognize wholly empty Audio XML record as silent; reject partially populated malformed audio"
+  ],
+  "finalLiveCases": {
+    "fractional": {
+      "jobID": "j6b33d9dec6a811f18d9e19ceb25c3ccf",
+      "localJobID": "2c474674-5f4c-41ca-a733-7bbc0a2cf3cc",
+      "passed": true,
+      "post": {
+        "jobID": "j6b33d9dec6a811f18d9e19ceb25c3ccf",
+        "status": 200
+      },
+      "result": {
+        "object": {
+          "resourceID": "daily_mp4_1080_v1",
+          "key": "albums/video-previews/f0afbb62-8135-4624-8db2-cb0418d6ea92/2c474674-5f4c-41ca-a733-7bbc0a2cf3cc/daily_mp4_1080_v1",
+          "versionID": "MTg0NDQ5NTIyMTc1MDA1OTc0ODY",
+          "sizeBytes": 1202856,
+          "sha256": "6cc677521e6b2a44495ccd1fa27098745a69c550343c4bd45ef29891af1feece"
+        },
+        "profile": {
+          "width": 960,
+          "height": 540,
+          "durationMilliseconds": 3003,
+          "frameRate": 29.97003,
+          "audioChannels": 0
+        }
+      },
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/f0afbb62-8135-4624-8db2-cb0418d6ea92/c6e3893d-5af7-44c7-b1b3-8d4b67a9c05e/movie",
+        "versionID": "MTg0NDQ5NTIyMTc1MDI4NjE4MTc",
+        "sizeBytes": 3096016,
+        "sha256": "8e664412a3934e258a56bcc8a0cdf1294fcc37a29b47c21b937ba3d88c354b32"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "sourceProfile": {
+        "width": 960,
+        "height": 540,
+        "durationMilliseconds": 3003,
+        "frameRate": 29.97003,
+        "audioChannels": 0
+      },
+      "submittedAt": "2026-10-13T01:50:06.608456Z"
+    },
+    "fps60": {
+      "jobID": "j7ffc6cc8c6a811f19fcea7184b862780",
+      "localJobID": "2f8ac8db-607c-4f87-8a25-68305d54a77b",
+      "passed": true,
+      "post": {
+        "jobID": "j7ffc6cc8c6a811f19fcea7184b862780",
+        "status": 200
+      },
+      "result": {
+        "object": {
+          "resourceID": "daily_mp4_1080_v1",
+          "key": "albums/video-previews/5a9fdd3c-6689-4941-849e-795ef965e8a8/2f8ac8db-607c-4f87-8a25-68305d54a77b/daily_mp4_1080_v1",
+          "versionID": "MTg0NDQ5NTIyMTc0NjU0Mzg0NTY",
+          "sizeBytes": 1112992,
+          "sha256": "471171fdd975ea6cbd70f7521fcd92e2aae073f7c2fcd9b7eb557edf4d63dfe1"
+        },
+        "profile": {
+          "width": 960,
+          "height": 540,
+          "durationMilliseconds": 2000,
+          "frameRate": 60,
+          "audioChannels": 0
+        }
+      },
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/5a9fdd3c-6689-4941-849e-795ef965e8a8/1b293f10-345b-4a27-bd07-a7111db98602/movie",
+        "versionID": "MTg0NDQ5NTIyMTc0NjgyMjYxNzc",
+        "sizeBytes": 3545610,
+        "sha256": "b7556bb0d45b666e31c07717f57eb64484f4e01f11047387b9ea35a71c63f7b0"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "sourceProfile": {
+        "width": 960,
+        "height": 540,
+        "durationMilliseconds": 2000,
+        "frameRate": 60,
+        "audioChannels": 0
+      },
+      "submittedAt": "2026-10-13T01:50:41.254768Z"
+    },
+    "portrait-matrix": {
+      "jobID": "j80297fcec6a811f181133dda83ca9a4f",
+      "localJobID": "d6adb346-09c8-4ecd-8cb8-ded2f5d017d1",
+      "passed": true,
+      "post": {
+        "jobID": "j80297fcec6a811f181133dda83ca9a4f",
+        "status": 200
+      },
+      "result": {
+        "object": {
+          "resourceID": "daily_mp4_1080_v1",
+          "key": "albums/video-previews/7a9f2b43-7401-4145-adad-4103dc64348f/d6adb346-09c8-4ecd-8cb8-ded2f5d017d1/daily_mp4_1080_v1",
+          "versionID": "MTg0NDQ5NTIyMTc0NjQ1Mjk2NTg",
+          "sizeBytes": 938641,
+          "sha256": "1077d2c2a8b4f0fe8174e081c553b0b2f069aff971437c4fe6c0a49c842002fb"
+        },
+        "profile": {
+          "width": 1080,
+          "height": 1920,
+          "durationMilliseconds": 3008,
+          "frameRate": 30,
+          "audioChannels": 2
+        }
+      },
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/7a9f2b43-7401-4145-adad-4103dc64348f/2b5c803b-b2dc-4982-a1b9-f0949dfc324b/movie",
+        "versionID": "MTg0NDQ5NTIyMTc0NjgyMjUwMjA",
+        "sizeBytes": 10869721,
+        "sha256": "65b1e1375046d68439db73e4516192dc959c283a53415ff88015c0f8db7c6cf8"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "sourceProfile": {
+        "width": 1080,
+        "height": 1920,
+        "durationMilliseconds": 3000,
+        "frameRate": 30,
+        "audioChannels": 2
+      },
+      "submittedAt": "2026-10-13T01:50:41.242344Z"
+    }
+  },
+  "decodedMedia": {
+    "fractional": {
+      "source": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 960,
+            "height": 540,
+            "avg_frame_rate": "30000/1001",
+            "start_time": "0.000000",
+            "duration": "3.003000",
+            "nb_read_frames": "90"
+          }
+        ],
+        "format": {
+          "duration": "3.003000",
+          "size": "3096016"
+        },
+        "fullDecodePassed": true
+      },
+      "output": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 960,
+            "height": 540,
+            "avg_frame_rate": "30000/1001",
+            "start_time": "0.000000",
+            "duration": "3.003000",
+            "nb_read_frames": "90"
+          }
+        ],
+        "format": {
+          "duration": "3.003000",
+          "size": "1202856"
+        },
+        "fullDecodePassed": true
+      }
+    },
+    "fps60": {
+      "source": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 960,
+            "height": 540,
+            "avg_frame_rate": "60/1",
+            "start_time": "0.000000",
+            "duration": "2.000000",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "2.000000",
+          "size": "3545610"
+        },
+        "fullDecodePassed": true
+      },
+      "output": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 960,
+            "height": 540,
+            "avg_frame_rate": "60/1",
+            "start_time": "0.000000",
+            "duration": "2.000000",
+            "nb_read_frames": "120"
+          }
+        ],
+        "format": {
+          "duration": "2.000000",
+          "size": "1112992"
+        },
+        "fullDecodePassed": true
+      }
+    },
+    "portrait-matrix": {
+      "source": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 1920,
+            "height": 1080,
+            "avg_frame_rate": "30/1",
+            "start_time": "0.000000",
+            "duration": "3.000000",
+            "nb_read_frames": "90",
+            "side_data_list": [
+              {
+                "rotation": 90
+              }
+            ]
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "channels": 2,
+            "avg_frame_rate": "0/0",
+            "start_time": "0.000000",
+            "duration": "3.000000",
+            "nb_read_frames": "141"
+          }
+        ],
+        "format": {
+          "duration": "3.000000",
+          "size": "10869721"
+        },
+        "decodedAudioPeak": 3000,
+        "fullDecodePassed": true
+      },
+      "output": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 1080,
+            "height": 1920,
+            "avg_frame_rate": "30/1",
+            "start_time": "0.000000",
+            "duration": "3.000000",
+            "nb_read_frames": "90"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio",
+            "channels": 2,
+            "avg_frame_rate": "0/0",
+            "start_time": "0.000000",
+            "duration": "3.008005",
+            "nb_read_frames": "130"
+          }
+        ],
+        "format": {
+          "duration": "3.008005",
+          "size": "938641"
+        },
+        "decodedAudioPeak": 2997,
+        "fullDecodePassed": true
+      }
+    }
+  },
+  "initialFailures": {
+    "missingVersionHeader": {
+      "mediaInfo": {
+        "Format": {
+          "Bitrate": "28985.922000",
+          "Duration": "3.000000",
+          "FormatLongName": "QuickTime / MOV",
+          "FormatName": "mov,mp4,m4a,3gp,3g2,mj2",
+          "NumProgram": "0",
+          "NumStream": "2",
+          "Size": "10869721",
+          "StartTime": "0.000000"
+        },
+        "Stream": {
+          "Audio": [
+            {
+              "Bitrate": "128.139000",
+              "Channel": "2",
+              "ChannelLayout": "stereo",
+              "CodecLongName": "AAC (Advanced Audio Coding)",
+              "CodecName": "aac",
+              "CodecTag": "0x6134706d",
+              "CodecTagString": "mp4a",
+              "CodecTimeBase": "1/48000",
+              "Duration": "3.000000",
+              "Index": "1",
+              "Language": "und",
+              "SampleFmt": "fltp",
+              "SampleRate": "48000",
+              "StartTime": "0.000000",
+              "Timebase": "1/48000"
+            }
+          ],
+          "Subtitle": "",
+          "Video": [
+            {
+              "AvgFps": "30.000000",
+              "Bitrate": "28846.200000",
+              "CodecLongName": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+              "CodecName": "h264",
+              "CodecTag": "0x31637661",
+              "CodecTagString": "avc1",
+              "CodecTimeBase": "1/15360",
+              "Dar": "16:9",
+              "Duration": "3.000000",
+              "Fps": "30.000000",
+              "HasBFrame": "0",
+              "Height": "1080",
+              "Index": "0",
+              "Language": "und",
+              "Level": "40",
+              "NumFrames": "90",
+              "PixFormat": "yuv420p",
+              "Profile": "Constrained Baseline",
+              "RefFrames": "1",
+              "Rotation": "0.000000",
+              "Sar": "1:1",
+              "StartTime": "0.000000",
+              "Timebase": "1/15360",
+              "Width": "1920",
+              "ColorRange": "unknown",
+              "ColorTransfer": "unknown",
+              "ColorPrimaries": "unknown"
+            }
+          ]
+        }
+      },
+      "mediaInfoRequestSucceeded": true,
+      "mediaInfoStatus": 200,
+      "mediaInfoVersion": "",
+      "passed": false,
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/1656ad3a-1358-4896-9c0d-80d5119ac89d/1b2784b4-22ce-43db-83bc-7da7035b76fb/movie",
+        "versionID": "MTg0NDQ5NTIyMTc5NTQzOTk0Mzg",
+        "sizeBytes": 10869721,
+        "sha256": "6f3ff98a3efca3caafe777a4899ee1ac4b0278fc47c8c815df23ccab9dff679c"
+      },
+      "submittedAt": "2026-10-13T01:42:35.06578Z"
+    },
+    "decimal30Fps": {
+      "localJobID": "2301d04c-0284-4273-af66-110242513389",
+      "passed": false,
+      "post": {
+        "code": "InvalidArgument",
+        "message": "Video.Fps is invalid, (0,60] Fps: 30.000000",
+        "status": 400
+      },
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/0b2fd16c-7237-4eaf-b899-e24f46663309/e51fd336-5b89-47ca-8f1e-527ac4eb3a92/movie",
+        "versionID": "MTg0NDQ5NTIyMTc3MzYyNzQ4MzQ",
+        "sizeBytes": 10869721,
+        "sha256": "6f3ff98a3efca3caafe777a4899ee1ac4b0278fc47c8c815df23ccab9dff679c"
+      },
+      "sourceProfile": {
+        "width": 1920,
+        "height": 1080,
+        "durationMilliseconds": 3000,
+        "frameRate": 30,
+        "audioChannels": 2
+      },
+      "stage": "submit",
+      "submittedAt": "2026-10-13T01:46:12.908317Z"
+    },
+    "silentAudioNode": {
+      "localJobID": "2546dc4a-b865-4054-99a7-a1773e33c5e2",
+      "mediaInfo": {
+        "Format": {
+          "Bitrate": "8247.794000",
+          "Duration": "3.003000",
+          "FormatLongName": "QuickTime / MOV",
+          "FormatName": "mov,mp4,m4a,3gp,3g2,mj2",
+          "NumProgram": "0",
+          "NumStream": "1",
+          "Size": "3096016",
+          "StartTime": "0.000000"
+        },
+        "Stream": {
+          "Audio": [
+            {
+              "Bitrate": "",
+              "Channel": "",
+              "ChannelLayout": "",
+              "CodecLongName": "",
+              "CodecName": "",
+              "CodecTag": "",
+              "CodecTagString": "",
+              "CodecTimeBase": "",
+              "Duration": "",
+              "Index": "",
+              "Language": "",
+              "SampleFmt": "",
+              "SampleRate": "",
+              "StartTime": "",
+              "Timebase": ""
+            }
+          ],
+          "Subtitle": "",
+          "Video": [
+            {
+              "AvgFps": "29.970030",
+              "Bitrate": "8244.547000",
+              "CodecLongName": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+              "CodecName": "h264",
+              "CodecTag": "0x31637661",
+              "CodecTagString": "avc1",
+              "CodecTimeBase": "1/30000",
+              "Dar": "16:9",
+              "Duration": "3.003000",
+              "Fps": "29.970030",
+              "HasBFrame": "0",
+              "Height": "540",
+              "Index": "0",
+              "Language": "und",
+              "Level": "31",
+              "NumFrames": "90",
+              "PixFormat": "yuv420p",
+              "Profile": "Constrained Baseline",
+              "RefFrames": "1",
+              "Rotation": "0.000000",
+              "Sar": "1:1",
+              "StartTime": "0.000000",
+              "Timebase": "1/30000",
+              "Width": "960",
+              "ColorRange": "unknown",
+              "ColorTransfer": "unknown",
+              "ColorPrimaries": "unknown"
+            }
+          ]
+        }
+      },
+      "mediaInfoRequestSucceeded": true,
+      "mediaInfoStatus": 200,
+      "mediaInfoVersion": "",
+      "passed": false,
+      "post": {},
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/f5dd4e13-df44-4636-a7b3-cf967a383fec/e15a88b1-9295-4520-a873-68da65575dd0/movie",
+        "versionID": "MTg0NDQ5NTIyMTc2MjY2NjQ0NzM",
+        "sizeBytes": 3096016,
+        "sha256": "8e664412a3934e258a56bcc8a0cdf1294fcc37a29b47c21b937ba3d88c354b32"
+      },
+      "submittedAt": "2026-10-13T01:48:02.797317Z"
+    },
+    "fractionalFps": {
+      "localJobID": "2dfc43a4-e7ba-4408-9d02-0332cc151adf",
+      "passed": false,
+      "post": {
+        "code": "InvalidArgument",
+        "message": "Video.Fps is invalid, (0,60] Fps: 29.97003",
+        "status": 400
+      },
+      "scope": "production COS video adapter; synthetic fixture; no database, account, app or deletion",
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/7e4ed97d-087b-444f-afa1-594b25661d69/e21ce16a-9ef8-407c-8f77-9230b56da459/movie",
+        "versionID": "MTg0NDQ5NTIyMTc1NTU1MTE1NjY",
+        "sizeBytes": 3096016,
+        "sha256": "8e664412a3934e258a56bcc8a0cdf1294fcc37a29b47c21b937ba3d88c354b32"
+      },
+      "sourceProfile": {
+        "width": 960,
+        "height": 540,
+        "durationMilliseconds": 3003,
+        "frameRate": 29.97003,
+        "audioChannels": 0
+      },
+      "stage": "submit",
+      "submittedAt": "2026-10-13T01:49:13.948929Z"
+    },
+    "recoveryFilter": "DescribeMediaJobs rejected RFC3339 startCreationTime; +0000 accepted; previous input query returned no matches"
+  },
+  "regression": {
+    "command": "go test -race ./internal/albums -run '^TestCOSVideo|^TestVideoProfile|^TestVideoSource|^TestLivePhoto' -count=1 -json",
+    "topLevelTests": 8,
+    "passedEventsIncludingSubtests": 35,
+    "failed": 0,
+    "skipped": 0,
+    "vet": "go vet ./internal/albums passed",
+    "build": "go build ./cmd/albumgateway ./cmd/albumworker passed"
+  },
+  "limitations": [
+    "synthetic short SDR testsrc/sine only; not natural visual-quality acceptance",
+    "not a full App upload/account/subscription/worker flow",
+    "not Live Photo pairing",
+    "no cross-bucket test or object deletion",
+    "processing flags remain off",
+    "not deployed to server",
+    "first attempted portrait fixture lacked rotation metadata; not counted as portrait evidence"
+  ],
+  "references": [
+    "https://cloud.tencent.com/document/product/460/49284",
+    "https://cloud.tencent.com/document/product/460/76947"
+  ],
+  "sourceSHA256": {
+    "internal/albums/cos_video_derivatives.go": "85ff1dda46a21619db400daea64c47c098a2561f2c08a7c19b111c2294fd214d",
+    "internal/albums/cos_video_derivatives_test.go": "5a2f13757962cde3db91359246bee5cebf429a24f842c271d45031906c060df7",
+    "internal/albums/cos_video_live_test.go": "f80aa0e4987dad1158536c413126204b9f7d42e60b64073aab3b51b246618508"
+  }
+}

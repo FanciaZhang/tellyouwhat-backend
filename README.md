@@ -50,6 +50,10 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 Health 方舟推理请求在普通与流式路径均显式发送 `store: false` 和 `caching.type: disabled`，关闭可供后续请求使用的响应保存和上下文缓存。这些请求参数不证明供应商整体零留存，也不代替其服务政策或本后端数据库、媒体及备份的保留期核验。
 
+## 环境隔离
+
+正式域名对应 `APP_ENV=production`。开发服务使用 `APP_ENV=development`，默认 Bundle ID 为正式 ID 加 `.dev`，域名为 `api-test.<app>.tellyouwhat.cn`。配置了相反环境的身份或域名时，gateway/worker 在启动前拒绝运行。详细迁移与验收边界见[统一环境与交付](docs/unified-app-environments.md)。
+
 ## 本地运行
 
 ```sh
@@ -60,7 +64,7 @@ go run ./cmd/migrate
 go run ./cmd/gateway
 ```
 
-本地请求仍需 Development App Attest。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
+本地默认使用 Development App Attest；Ad Hoc 导出若使用 production App Attest，须显式配置对应 App 的 `APP_ATTEST_ENV`，并核对签名产物。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
 
 ## 生产部署
 
@@ -80,4 +84,4 @@ swift test --package-path Contracts/HTTP
 
 测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health/Journal 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。
 
-CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机未提供这两个变量时，对应测试会跳过；MySQL 集成测试会重置测试表，数据库名必须以 `_test` 结尾，禁止使用业务数据库。
+CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN`、`MYSQL_TEST_ADMIN_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机缺少所需变量时，对应测试会跳过。管理 DSN 用于创建、删除独立测试库；包含整表重置和旧结构模拟的持久化测试不再修改跨包共用库。所有 DSN 的数据库名必须以 `_test` 结尾，禁止使用业务数据库。

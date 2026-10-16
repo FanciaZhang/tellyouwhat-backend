@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "98904dceb4e7a022e0393075808a8b41a5dc333c",
+  "journal_client_commit": "fc1f9eb",
+  "scope": "Shared development entitlement verification for Health and Journal; no backend runtime behavior changed",
+  "checks": {
+    "signed_http": [
+      "verified app identity and allowed build",
+      "no unsigned activation",
+      "Health free quota preserved before activation and after expiry",
+      "Journal quota rejected before activation and after expiry",
+      "30-day grant and renewal",
+      "nonce replay rejected",
+      "production dependency set returns 404"
+    ],
+    "commands_passed": [
+      "go test ./internal/gateway -run TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP -count=1",
+      "go test -race ./internal/gateway -run TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP -count=1",
+      "go test ./internal/entitlement"
+    ],
+    "test_attestation_roots": true,
+    "real_apple_device": false
+  },
+  "test_source_sha256": "0893fbf8e2be3ce7214083b6fa3f05af4fd97d40b7560cee1443861eea9bc59f",
+  "initial_test_failure": "The added pre-grant check incorrectly expected Health quota to reject; corrected the test to preserve Health free-plan behavior. No server implementation was changed.",
+  "remote_read_only": {
+    "health_birthday_shared_test_gateway": true,
+    "journal_private_api_running": true,
+    "albums_development_api_running": true,
+    "production_gateway_running": true,
+    "scheduled_backup_last_result": "success",
+    "scheduled_maintenance_last_result": "success",
+    "mutations": false
+  },
+  "remaining": [
+    "shared scheduled operations installation",
+    "shared test deployment and route changes",
+    "Albums production network and private credential mounts",
+    "real device authentication and complete business journeys",
+    "signed client delivery"
+  ],
+  "not_performed": [
+    "deployment",
+    "route switch",
+    "Git push",
+    "OTA or TestFlight delivery"
+  ]
+}

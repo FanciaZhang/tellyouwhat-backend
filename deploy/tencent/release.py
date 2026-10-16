@@ -19,7 +19,7 @@ from ops_backup import create_backup, verify_backup
 from ops_artifacts import cleanup
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
@@ -38,7 +38,7 @@ def copy_runtime(source, destination):
             target = destination / relative
             target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
             shutil.copy2(origin, target)
-            if relative == ".env.production":
+            if relative in (".env.production", "albums.env"):
                 target.chmod(0o600)
 
 
@@ -80,10 +80,15 @@ def validate(source, tag, registry, acceptance):
             raise OperationError("production application domains are required")
     if config.get("PUBLIC_PROXY_MODE", "docker") not in ("external", "docker"):
         raise OperationError("PUBLIC_PROXY_MODE must be docker or external")
+    from ops_albums import validate as validate_albums
+    validate_albums(source, config)
+    readiness_checks(config)
+    from ops_recording import configured_root
+    configured_root(config, 'production')
     return config
 
 
-def probe(url, host, status):
+def probe(url, host, status, field="status"):
     with tempfile.TemporaryDirectory(prefix="tellyouwhat-readiness-") as directory:
         response = Path(directory) / "response.json"
         result = subprocess.run(["curl", "--fail", "--silent", "--show-error", "--connect-timeout", "2",
@@ -93,18 +98,48 @@ def probe(url, host, status):
             return False
         try:
             value = json.loads(response.read_text())
-            return isinstance(value, dict) and value.get("status") == status
+            return isinstance(value, dict) and value.get(field) == status
         except (ValueError, OSError):
             return False
 
 
+def readiness_checks(config, ports=(18080, 18081, 18082)):
+    checks = [("health_gateway", f"http://127.0.0.1:{ports[0]}/readyz", config["HEALTH_API_DOMAIN"], "ready"),
+              ("journal_gateway", f"http://127.0.0.1:{ports[0]}/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
+              ("worker", f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
+              ("admin", f"http://127.0.0.1:{ports[2]}/readyz", config["ADMIN_DOMAIN"], "ready")]
+    if "birthday" in [app.strip() for app in config.get("PLATFORM_APPS", "health,journal").split(",")]:
+        hosts = config.get("BIRTHDAY_API_HOSTS", "").strip() or "api.birthday.tellyouwhat.cn"
+        for host in hosts.split(","):
+            host = host.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]", host):
+                raise OperationError("invalid birthday production API host")
+            checks.append(("birthday_gateway", f"http://127.0.0.1:{ports[0]}/readyz", host, "ready"))
+    if "albums" in [app.strip() for app in config.get("PLATFORM_APPS", "health,journal").split(",")]:
+        host = config.get("ALBUM_API_HOST", "").strip()
+        if host != "api.albums.tellyouwhat.cn" or config.get("ALBUM_DEPLOYMENT_ENVIRONMENT") != "production":
+            raise OperationError("invalid album production API host or environment")
+        checks.append(("albums_gateway", f"http://127.0.0.1:{ports[0]}/readyz", host, "ok", "code"))
+    return checks
+
+
+def public_targets(config):
+    targets = []
+    for name, _url, host, status, *field in readiness_checks(config):
+        if name == 'worker':
+            continue
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]', host):
+            raise OperationError('public verification requires valid DNS hosts')
+        targets.append({'domain': host, 'field': field[0] if field else 'status', 'value': status})
+    if len({target['domain'] for target in targets}) != len(targets):
+        raise OperationError('public verification hosts must be distinct')
+    return targets
+
+
 def internally_ready(config, attempts, ports=(18080, 18081, 18082)):
-    checks = [(f"http://127.0.0.1:{ports[0]}/readyz", config["HEALTH_API_DOMAIN"], "ready"),
-              (f"http://127.0.0.1:{ports[0]}/readyz", config["JOURNAL_API_DOMAIN"], "ready"),
-              (f"http://127.0.0.1:{ports[1]}/healthz", "localhost", "ok"),
-              (f"http://127.0.0.1:{ports[2]}/readyz", config["ADMIN_DOMAIN"], "ready")]
+    checks = readiness_checks(config, ports)
     for attempt in range(attempts):
-        if all(probe(*check) for check in checks):
+        if all(probe(*check[1:]) for check in checks):
             return True
         if attempt + 1 < attempts:
             time.sleep(5)
@@ -157,8 +192,13 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-
     if strategy not in ("blue-green", "disruptive"):
         raise OperationError("unsupported release strategy")
     source = Path(bundle).resolve() if bundle else runtime.root
-    validate(source, tag, registry, acceptance)
+    config = validate(source, tag, registry, acceptance)
+    from ops_recording import prepare, require_continuity
+    require_continuity(runtime.config, config)
+    from ops_albums import require_resources
+    require_resources(runtime, source, config)
     require_disk_space(runtime)
+    prepare(runtime, config)
     backup = create_backup(runtime)
     verify_backup(runtime, runtime.backups / backup["filename"])
     runtime.record("release_backup", tag=tag, registry=registry, source_run=source_run,
@@ -235,6 +275,8 @@ def rollback(runtime, attempts):
         raise OperationError("no verified previous release is available")
     current = record["current"]
     require_automation_compatibility(current, previous)
+    from ops_recording import require_continuity
+    require_continuity(runtime.config, read_environment(runtime.root / previous['snapshot'] / '.env.production'))
     try:
         recover(runtime, previous, attempts)
     except Exception:
@@ -254,7 +296,11 @@ def main():
     parser.add_argument("--strategy", choices=["blue-green", "disruptive"], default="blue-green")
     parser.add_argument("--source-run", default="")
     parser.add_argument("--confirm-interruption", default="")
+    parser.add_argument('--albums-resources', help='bootstrap only the selected Albums production data/worker source; does not switch the API')
     args = parser.parse_args()
+    if args.albums_resources and (args.action != 'deploy' or args.tag or args.registry or args.bundle
+                                 or args.strategy != 'blue-green' or args.acceptance != 'internal' or args.confirm_interruption):
+        parser.error('--albums-resources must be a separate internal resource deployment')
     os.umask(0o077)
     try:
         attempts = int(os.getenv("READINESS_ATTEMPTS", "18"))
@@ -267,11 +313,16 @@ def main():
         with operations_lock, runtime.lock("deployment", wait_seconds=lock_wait):
             runtime.refresh()
             if args.action == "deploy":
-                if not args.tag or not args.registry:
-                    raise OperationError("image tag and registry are required")
-                result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
+                if args.albums_resources:
+                    from albums_production import bootstrap
+                    require_disk_space(runtime)
+                    result = bootstrap(runtime, args.albums_resources, args.source_run)
+                else:
+                    if not args.tag or not args.registry:
+                        raise OperationError("image tag and registry are required")
+                    result = deploy(runtime, args.tag, args.registry, args.acceptance, args.bundle, attempts, args.strategy, args.source_run, args.confirm_interruption)
                 try:
-                    receipt = cleanup(runtime, "production")
+                    receipt = cleanup(runtime, 'albums-production' if args.albums_resources else 'production')
                     result["cleanup"] = {"passed": True, "completed_at": receipt["completed_at"]}
                 except (OperationError, OSError) as error:
                     result["cleanup"] = {"passed": False, "error": str(error)}

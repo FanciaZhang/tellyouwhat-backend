@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "f58227b",
+  "scope": "Albums API admission into one shared test gateway, preserving existing data services and media worker",
+  "source_sha256": {
+    "compose.platform-albums-test.yaml": "57038263f918d602a7b21cf72838f77fdb79a683a003585b998fe6ac420980a7",
+    "deploy/tencent/platform_test_albums.py": "389dfed0eef3676a4a5dc37df5cd3026e46d8a7fd2cb17a1c8d410daf83d610c",
+    "deploy/tencent/platform_test_albums_test.py": "dc28a97145b06943cd1fb9790cafe6793775df4c01117336abd4448d5f08b776",
+    "deploy/tencent/platform_test_deploy.py": "2321d227a11f79c456b50f8cda58de5d5f86f68ab07b89f1a4dce64874de5817",
+    "deploy/tencent/platform_test_deploy_test.py": "3b2c46702c0f1a092c66ae925108aa7fd93554688a659d70a79bb0fb2c80d1cc",
+    "deploy/tencent/platform_test_artifacts.py": "3cf07bf4ea364d7e01c5a8661b3d13554f53e131644656765cbb4cb18ae6115c",
+    "deploy/tencent/platform_test_artifacts_test.py": "4c6f0ebdcc713c217ea45e6a9342523a51c066088c2a0138164ec22620c4cc5e",
+    "deploy/tencent/ops_offsite.py": "701927aa830340d72b45bf712db3d3c97822be0b02cec3e65927bd106e29f2cf",
+    "deploy/tencent/operations_test.py": "75a70709ebcc4d26d526cbc7091728bb3df18ec029ede7b42b0b31fc1b8feef0"
+  },
+  "validation": {
+    "python_operations": {
+      "run": 235,
+      "skipped": 1,
+      "skip_reason": "native Caddy unavailable on Mac",
+      "passed": true
+    },
+    "final_targeted_tests": {
+      "run": 50,
+      "passed": true
+    },
+    "compose": {
+      "passed": true,
+      "checks": [
+        "only shared gateway changed",
+        "worker maintenance migrate mysql redis unchanged",
+        "four distinct database/cache addresses",
+        "credentials confined to gateway",
+        "existing external Albums network",
+        "read-only secret bind without auto-create",
+        "existing recording storage retained",
+        "no new ports or volumes"
+      ],
+      "containers_started": false
+    },
+    "worker_recording_fix": {
+      "commit": "f58227b",
+      "go_packages": [
+        "internal/config",
+        "cmd/worker",
+        "cmd/gateway",
+        "cmd/maintenance"
+      ],
+      "passed": true
+    }
+  },
+  "remote_read_only_observation": {
+    "shared_test_source": "761dc7bc01f103670639f3172e23dde147be1289",
+    "shared_test_apps": [
+      "health",
+      "birthday"
+    ],
+    "albums_development_source": "42165fed8a08049ffa1250345901beef1b61c11a",
+    "both_databases_migrations": 66,
+    "production_phase": "STABLE"
+  },
+  "acceptance_guards": [
+    "Source-bound Albums env copy and readonly secret directory only on gateway",
+    "Existing registered Albums MySQL Redis and worker verified before admission",
+    "Explicit data-service names prevent cross-network mysql/redis alias ambiguity",
+    "Full Albums encrypted backup and deletion ledger required alongside platform backup",
+    "Configuration recovery includes selected overlay and Albums env; rejects missing Albums data recovery",
+    "Readiness checks each of four hosts using its actual API contract",
+    "Failure restores previous shared gateway configuration without changing Albums database Redis worker or public route",
+    "AI worker loads shared app configuration without API-only Journal recording storage"
+  ],
+  "limits": [
+    "No remote deployment or public route switch",
+    "Synthetic Compose parsing does not prove running network, authentication or mounted file access",
+    "Existing separate test APIs still running until cutover acceptance",
+    "Server scheduled operations must support this selection before activation",
+    "Native Journal migration and real-device login/media journeys remain incomplete",
+    "No Git push or Apple release"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-14",
+  "scope": "Explicit expiry of one authenticated offsite recovery bundle and all identical historical versions; not complete account erasure",
+  "go_tests": {
+    "top_level_passed": 9,
+    "passed_events": 36,
+    "failures": 0,
+    "skips": 0
+  },
+  "go_command": "go test -race -json -count=1 ./cmd/albumbackup",
+  "python_tests": {
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "command": "python3 -m unittest backup_test offsite_test deletion_ledger_test"
+  },
+  "vet_passed": true,
+  "build_passed": true,
+  "controlled_cases": [
+    "two-page inventory; old/current versions and delete markers",
+    "all contents verified before any delete",
+    "strict versionId query and final empty inventory",
+    "lost DELETE response followed by idempotent retry",
+    "late version and final-list failure do not prove completion",
+    "foreign keys, corrupt bytes, missing truncation, repeated pagination and redirects rejected",
+    "4 GiB verification traffic limit checked before reads",
+    "HMAC authenticated 14-day expiry; local receipt retained"
+  ],
+  "cloud_permissions_changed": false,
+  "deployed": false,
+  "real_objects_deleted": false,
+  "limitations": [
+    "Controlled signed HTTP transport, not real COS permissions or deletion",
+    "Orphan uploads without local receipts require separate reconciliation",
+    "No account-specific erasure or independent deletion-ledger retirement",
+    "No scheduled cleanup deployment"
+  ],
+  "official_sources": [
+    "https://intl.cloud.tencent.com/document/product/436/7743",
+    "https://www.tencentcloud.com/document/product/436/31551",
+    "https://cloud.tencent.com/document/product/436/71306"
+  ],
+  "source_sha256": {
+    "cmd/albumbackup/main.go": "d0a63e8b97e614eefa5e6710c5ef29c401e29dfeefc4ea1debb622acb4b883a2",
+    "cmd/albumbackup/expiry.go": "7126c6d20062218100824bd75c2a64e18f322a25642c40afedd36a36c3694a6e",
+    "cmd/albumbackup/expiry_test.go": "24618f1fc5462305f2c3ec7e6778fb282a252871a5d531053890a9e7890a9b15",
+    "deploy/albums/backup.py": "8fbc843f5e4994145c0804069f56762038511acb9f5e3e8a5d37e71286fdda63",
+    "deploy/albums/offsite.py": "1fd5f94a56533d6220d3a0955a05105626110480f5008f305646d92932a1c756",
+    "deploy/albums/offsite_test.py": "23a25bad9fe204c966fc9974973e820bc521bcfdf0a6988afaef5520543d784a",
+    "deploy/albums/cam-test-backup-expiry.policy.json": "0dd716e4021e29d9e3b8d6f9a78006e3ab644d7da046a0d8fd3024591a324808"
+  }
+}

@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
-	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
@@ -356,23 +355,10 @@ func (h *IllustrationRuntime) process(ctx context.Context, path string) {
 	}
 	current.Input = nil
 	if failure != nil {
-		current.Problem = "network"
+		current.Problem = illustration.FailureProblem(failure)
 		var rejection illustration.Rejected
 		if errors.As(failure, &rejection) {
 			slog.Warn("Journal image provider rejected request", "status", rejection.Status)
-			switch rejection.Status {
-			case 401, 403, 404:
-				current.Problem = "unavailable"
-			case 429:
-				current.Problem = "quota"
-			default:
-				current.Problem = "rejected"
-			}
-		} else if errors.Is(failure, illustration.ErrResult) {
-			current.Problem = "invalidImage"
-		}
-		if errors.Is(failure, costcontrol.ErrBudgetExceeded) || errors.Is(failure, costcontrol.ErrConcurrencyExceeded) {
-			current.Problem = "quota"
 		}
 	}
 	var notDispatched illustration.NotDispatched

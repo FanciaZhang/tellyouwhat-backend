@@ -389,6 +389,170 @@ paths:
             Cache-Control: {schema: {type: string}, required: true}
         default:
           "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}":
+    put:
+      operationId: uploadJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: X-Tellyouwhat-Content-SHA256
+          in: header
+          required: true
+          description: SHA-256 of WAV bytes; also used as the App Attest canonical body digest and verified while streaming.
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+    get:
+      operationId: getJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/process":
+    post:
+      operationId: processJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/retry":
+    post:
+      operationId: retryJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/preview":
+    post:
+      operationId: previewJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingPreviewResponse"}
+        default:
+          "$ref": "#/components/responses/Error"
   "/v1/journal/voice/sessions":
     post:
       operationId: createJournalVoiceSession
@@ -1008,6 +1172,50 @@ components:
         signedTransaction:
           type: string
           minLength: 1
+    RecordingTask:
+      type: object
+      required: [id, providerTaskID, audioHash, milliseconds, state, revision, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        providerTaskID: {type: string, format: uuid}
+        audioHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        milliseconds: {type: integer, minimum: 1, maximum: 1800000}
+        state: {type: string, enum: [uploaded, submitting, processing, completed, failed]}
+        revision: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+        errorCode: {type: string}
+        result: {"$ref": "#/components/schemas/RecordingAnalysis"}
+    RecordingAnalysis:
+      type: object
+      required: [taskID, version, milliseconds, text, utterances]
+      properties:
+        taskID: {type: string, format: uuid}
+        version: {type: string, enum: [journal-recording-v1]}
+        milliseconds: {type: integer, minimum: 1, maximum: 1800000}
+        text: {type: string}
+        utterances:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [id, speaker, startMilliseconds, endMilliseconds, text]
+            properties:
+              id: {type: string}
+              speaker: {type: string}
+              startMilliseconds: {type: integer, minimum: 0}
+              endMilliseconds: {type: integer, minimum: 0}
+              text: {type: string}
+              acousticEmotion: {type: string}
+    RecordingPreviewResponse:
+      type: object
+      required: [requestID, reviewRevision, revision]
+      properties:
+        requestID: {type: string, format: uuid}
+        reviewRevision: {type: integer, minimum: 0}
+        revision:
+          type: object
+          description: Validated Journal voice revision; see the voice protocol document.
+          additionalProperties: true
     WritingStyleMetadata: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "example", "order", "enabled"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "example": {"type": "string"}, "order": {"type": "integer"}, "enabled": {"type": "boolean"}}}
     WritingStyleCatalog: {"type": "object", "additionalProperties": false, "required": ["version", "defaultStyle", "styles"], "properties": {"version": {"type": "string"}, "defaultStyle": {"type": "string"}, "styles": {"type": "array", "items": {"$ref": "#/components/schemas/WritingStyleMetadata"}}}}
     VoiceSessionRequest:

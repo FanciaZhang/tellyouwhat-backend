@@ -1,0 +1,4 @@
+# Import inside the root Caddyfile's global options block.
+log default {
+    exclude http.log.error.apple_delivery
+}

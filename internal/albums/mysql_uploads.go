@@ -1,0 +1,324 @@
+package albums
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"math"
+	"time"
+)
+
+type MySQLUploads struct {
+	db                     *sql.DB
+	billingEnvironment     string
+	productionSandboxQuota int64
+	developmentCloud       *DevelopmentCloudConfig
+	billingNow             func() time.Time
+}
+
+func NewMySQLUploads(db *sql.DB) *MySQLUploads { return &MySQLUploads{db: db} }
+
+// Gateway always enables this, including its isolated Sandbox environment.
+// Internal protocol fixtures can still provision a capacity without StoreKit.
+func (r *MySQLUploads) WithSubscriptionEnvironment(environment string, clock ...func() time.Time) *MySQLUploads {
+	r.billingEnvironment = environment
+	r.billingNow = time.Now
+	if len(clock) > 0 && clock[0] != nil {
+		r.billingNow = clock[0]
+	}
+	return r
+}
+
+// ProvisionAccount is an internal account/billing operation, never a client quota setter.
+// An existing account's quota is not replaced by a replay of signup provisioning.
+func (r *MySQLUploads) ProvisionAccount(ctx context.Context, owner string, quota int64) error {
+	if !validOwner(owner) || quota < 0 {
+		return ErrOwner
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO album_storage_accounts(owner_id, quota_bytes) VALUES (?, ?)
+		ON DUPLICATE KEY UPDATE owner_id = VALUES(owner_id)`, owner, quota)
+	return err
+}
+
+type quotaBalance struct {
+	limit, used, reserved int64
+	verifiedUntil         time.Time
+}
+
+func lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, error) {
+	var b quotaBalance
+	if err := lockRecoveryState(ctx, tx); err != nil {
+		return b, err
+	}
+	err := tx.QueryRowContext(ctx, `SELECT quota_bytes, used_bytes, reserved_bytes FROM album_storage_accounts WHERE owner_id=? FOR UPDATE`, owner).Scan(&b.limit, &b.used, &b.reserved)
+	if errors.Is(err, sql.ErrNoRows) {
+		return b, ErrOwner
+	}
+	return b, err
+}
+
+func (r *MySQLUploads) lockAccount(ctx context.Context, tx *sql.Tx, owner string) (quotaBalance, error) {
+	b, err := lockAccount(ctx, tx, owner)
+	if err != nil || r.billingEnvironment == "" {
+		return b, err
+	}
+	if r.billingEnvironment != "Sandbox" && r.billingEnvironment != "Production" {
+		return quotaBalance{}, ErrSubscriptionRequired
+	}
+	clock := r.billingNow
+	if clock == nil {
+		clock = time.Now
+	}
+	account, err := r.cloudAccountInTransaction(ctx, tx, owner, clock().UTC())
+	if err != nil {
+		return b, err
+	}
+	b.limit = account.QuotaBytes
+	if account.VerificationExpiresAt != nil {
+		b.verifiedUntil = *account.VerificationExpiresAt
+	}
+	return b, nil
+}
+
+const uploadColumns = `upload_id, owner_id, request_id, manifest_json, manifest_digest, state, original_bytes, derived_budget, expires_at, lease_token, lease_until, sealed_objects, lifecycle_epoch`
+
+type rowScanner interface{ Scan(...any) error }
+
+func scanUpload(row rowScanner) (Upload, error) {
+	var u Upload
+	var manifest, objects []byte
+	var lease sql.NullString
+	var until sql.NullTime
+	err := row.Scan(&u.ID, &u.OwnerID, &u.RequestID, &manifest, &u.Digest, &u.State, &u.OriginalBytes, &u.DerivedBudget, &u.ExpiresAt, &lease, &until, &objects, &u.LifecycleEpoch)
+	if errors.Is(err, sql.ErrNoRows) {
+		return u, ErrNotFound
+	}
+	if err != nil {
+		return u, err
+	}
+	if err := json.Unmarshal(manifest, &u.Manifest); err != nil {
+		return u, err
+	}
+	if len(objects) > 0 {
+		if err := json.Unmarshal(objects, &u.Objects); err != nil {
+			return u, err
+		}
+	}
+	u.LeaseToken = lease.String
+	u.LeaseUntil = until.Time
+	return u, nil
+}
+
+func (r *MySQLUploads) Reserve(ctx context.Context, u Upload) (Upload, error) {
+	digest, err := u.Manifest.Digest()
+	if err != nil || digest != u.Digest || !validOwner(u.OwnerID) || !validOwner(u.ID) || !validOwner(u.RequestID) ||
+		u.OriginalBytes <= 0 || u.DerivedBudget <= 0 || u.OriginalBytes > math.MaxInt64-u.DerivedBudget {
+		return Upload{}, ErrInvalidManifest
+	}
+	var total int64
+	for _, resource := range u.Manifest.Resources {
+		total += resource.SizeBytes
+	}
+	if total != u.OriginalBytes || u.State != Uploading {
+		return Upload{}, ErrInvalidManifest
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Upload{}, err
+	}
+	defer tx.Rollback()
+	account, err := r.lockAccount(ctx, tx, u.OwnerID)
+	if err != nil {
+		return Upload{}, err
+	}
+	lifecycle, err := ensureActiveAsset(ctx, tx, u.OwnerID, u.Manifest.AssetID)
+	if err != nil {
+		return Upload{}, err
+	}
+	u.LifecycleEpoch = lifecycle.epoch
+	old, err := scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND request_id=? FOR UPDATE`, u.OwnerID, u.RequestID))
+	if err == nil {
+		if old.Digest != u.Digest {
+			return Upload{}, ErrConflict
+		}
+		if old.State != OriginalsVerified && old.LifecycleEpoch != lifecycle.epoch {
+			return Upload{}, ErrConflict
+		}
+		return old, tx.Commit()
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Upload{}, err
+	}
+	old, err = scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND manifest_digest=? AND (state='originals_verified' OR lifecycle_epoch=?) ORDER BY state='originals_verified' DESC LIMIT 1 FOR UPDATE`, u.OwnerID, u.Digest, lifecycle.epoch))
+	if err == nil {
+		if old.State != OriginalsVerified && old.LifecycleEpoch != lifecycle.epoch {
+			return Upload{}, ErrConflict
+		}
+		return old, tx.Commit()
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Upload{}, err
+	}
+	reserve := u.OriginalBytes + u.DerivedBudget
+	if r.billingEnvironment != "" && account.limit == 0 {
+		return Upload{}, ErrSubscriptionRequired
+	}
+	if r.billingEnvironment != "" && !r.billingNow().Before(account.verifiedUntil) {
+		return Upload{}, ErrSubscriptionStale
+	}
+	if account.used > account.limit || account.reserved > account.limit-account.used || reserve > account.limit-account.used-account.reserved {
+		return Upload{}, ErrQuota
+	}
+	manifest, err := json.Marshal(u.Manifest)
+	if err != nil {
+		return Upload{}, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO album_uploads(upload_id,owner_id,request_id,manifest_json,manifest_digest,state,original_bytes,derived_budget,expires_at,lifecycle_epoch,direct_upload_issued)
+		VALUES (?,?,?,?,?,?,?,?,?,?,FALSE)`, u.ID, u.OwnerID, u.RequestID, manifest, u.Digest, u.State, u.OriginalBytes, u.DerivedBudget, u.ExpiresAt, u.LifecycleEpoch)
+	if err != nil {
+		return Upload{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE album_storage_accounts SET reserved_bytes=reserved_bytes+? WHERE owner_id=?`, reserve, u.OwnerID)
+	if err != nil {
+		return Upload{}, err
+	}
+	return u, tx.Commit()
+}
+
+func (r *MySQLUploads) Get(ctx context.Context, owner, id string) (Upload, error) {
+	return scanUpload(r.db.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND upload_id=?`, owner, id))
+}
+
+func (r *MySQLUploads) mutate(ctx context.Context, owner, id string, action func(*sql.Tx, Upload) (Upload, error)) (Upload, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Upload{}, err
+	}
+	defer tx.Rollback()
+	if _, err := r.lockAccount(ctx, tx, owner); err != nil {
+		return Upload{}, err
+	}
+	upload, err := scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads WHERE owner_id=? AND upload_id=? FOR UPDATE`, owner, id))
+	if err != nil {
+		return Upload{}, err
+	}
+	result, err := action(tx, upload)
+	if err != nil {
+		return Upload{}, err
+	}
+	return result, tx.Commit()
+}
+
+func (r *MySQLUploads) Submit(ctx context.Context, owner, id string, now time.Time) (Upload, error) {
+	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return Upload{}, err
+		}
+		if u.State == OriginalsVerified || u.State == Queued || u.State == Verifying {
+			return u, nil
+		}
+		if !now.Before(u.ExpiresAt) {
+			return Upload{}, ErrExpired
+		}
+		if u.State != Uploading {
+			return Upload{}, ErrConflict
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE album_uploads SET state='queued',updated_at=? WHERE owner_id=? AND upload_id=?`, now, owner, id)
+		u.State = Queued
+		return u, err
+	})
+}
+
+func (r *MySQLUploads) Claim(ctx context.Context, owner, id, token string, now, until time.Time) (Upload, error) {
+	if !validOwner(token) || !until.After(now) {
+		return Upload{}, ErrLease
+	}
+	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if err := requireActiveUpload(ctx, tx, u); err != nil {
+			return Upload{}, err
+		}
+		if u.State == OriginalsVerified {
+			return u, nil
+		}
+		if !now.Before(u.ExpiresAt) {
+			return Upload{}, ErrExpired
+		}
+		if u.State != Queued && !(u.State == Verifying && !now.Before(u.LeaseUntil)) {
+			return Upload{}, ErrLease
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE album_uploads SET state='verifying',lease_token=?,lease_until=?,updated_at=? WHERE owner_id=? AND upload_id=?`, token, until, now, owner, id)
+		u.State = Verifying
+		u.LeaseToken = token
+		u.LeaseUntil = until
+		return u, err
+	})
+}
+
+func (r *MySQLUploads) Complete(ctx context.Context, owner, id, token string, objects []SealedObject, now time.Time) (Upload, error) {
+	return r.mutate(ctx, owner, id, func(tx *sql.Tx, u Upload) (Upload, error) {
+		if u.State == OriginalsVerified {
+			return u, publishAssetVersion(ctx, tx, u, u.Objects, now)
+		}
+		if u.State != Verifying || u.LeaseToken != token || !now.Before(u.LeaseUntil) {
+			return Upload{}, ErrLease
+		}
+		observations := make([]Observation, 0, len(objects))
+		for _, object := range objects {
+			if object.Key != sealedKey(u, object.ResourceID) || object.VersionID == "" {
+				return Upload{}, ErrIncompleteBackup
+			}
+			observations = append(observations, Observation{object.ResourceID, object.SizeBytes, object.SHA256})
+		}
+		if digest, err := VerifyBackup(u.Manifest, observations); err != nil || digest != u.Digest {
+			return Upload{}, ErrIncompleteBackup
+		}
+		if err := publishAssetVersion(ctx, tx, u, objects, now); err != nil {
+			return Upload{}, err
+		}
+		encoded, err := json.Marshal(objects)
+		if err != nil {
+			return Upload{}, err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE album_storage_accounts SET used_bytes=used_bytes+?,reserved_bytes=reserved_bytes-? WHERE owner_id=? AND reserved_bytes>=?`, u.OriginalBytes, u.OriginalBytes, owner, u.OriginalBytes)
+		if err != nil {
+			return Upload{}, err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return Upload{}, err
+		}
+		if count != 1 {
+			return Upload{}, ErrConflict
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE album_uploads SET state='originals_verified',sealed_objects=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE owner_id=? AND upload_id=?`, encoded, now, owner, id)
+		u.State = OriginalsVerified
+		u.Objects = objects
+		u.LeaseToken = ""
+		u.LeaseUntil = time.Time{}
+		return u, err
+	})
+}
+
+// Pending is a trusted-worker inventory; account-scoped HTTP endpoints never call it.
+func (r *MySQLUploads) Pending(ctx context.Context, now time.Time, limit int) ([]Upload, error) {
+	if limit < 1 || limit > 100 {
+		return nil, ErrConflict
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT `+uploadColumns+` FROM album_uploads u WHERE EXISTS(SELECT 1 FROM album_storage_accounts s WHERE s.owner_id=u.owner_id AND s.deletion_requested_at IS NULL) AND expires_at>? AND
+        EXISTS(SELECT 1 FROM album_asset_lifecycle a WHERE a.owner_id=u.owner_id AND a.asset_id=JSON_UNQUOTE(JSON_EXTRACT(u.manifest_json,'$.assetID')) AND a.state='active' AND a.lifecycle_epoch=u.lifecycle_epoch) AND
+		(state='queued' OR (state='verifying' AND lease_until<=?)) ORDER BY created_at,upload_id LIMIT ?`, now, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Upload
+	for rows.Next() {
+		u, err := scanUpload(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, u)
+	}
+	return result, rows.Err()
+}

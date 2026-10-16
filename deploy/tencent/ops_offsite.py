@@ -41,6 +41,9 @@ def create_recovery_bundle(runtime, filename):
     if state and state.get("phase") != "STABLE":
         raise OperationError("configuration backup requires a stable production release")
     slots = {k: v for k, v in state.items() if k in ("current", "previous") and v}
+    if state and 'proxy' not in slots['current']:
+        from blue_green import capture_proxy
+        slots['current'] = dict(slots['current'], proxy=capture_proxy(runtime))
     if not slots:
         slots = {"current": {"path": str(runtime.compose_root)}}
     images = {k: v.get("images", {}) for k, v in slots.items()}
@@ -58,6 +61,8 @@ def create_recovery_bundle(runtime, filename):
             copy_runtime(source, target)
             env = target / ".env.production"
             values = read_environment(env)
+            from ops_albums import require_configuration
+            require_configuration(runtime, source, values)
             # The decryption key is preserved separately from its encrypted backup.
             env.write_text("\n".join(line for line in env.read_text().splitlines() if not line.lstrip().startswith("BACKUP_ENCRYPTION_KEY=")) + "\n")
             external = values.get("ARK_MANAGEMENT_CREDENTIAL_HOST_FILE")
@@ -75,13 +80,28 @@ def create_recovery_bundle(runtime, filename):
         for path in (runtime.root / "deploy/tencent").glob("*"):
             if path.is_file() and not path.is_symlink() and path.suffix in (".py", ".sh") and not path.name.endswith("_test.py"):
                 shutil.copy2(path, scripts / path.name)
+        from test_routes import backup_configuration
+        test_routing = backup_configuration(runtime, bundle / 'test-routing')
+        from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
+        apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
+        from albums_artifacts import backup_configuration as backup_albums
+        albums_development = backup_albums(runtime, bundle / 'albums-development', 'development')
+        albums_production = backup_albums(runtime, bundle / 'albums-production', 'production')
+        from platform_test_artifacts import backup_configuration as backup_platform_test
+        platform_test = backup_platform_test(runtime, bundle / 'platform-test')
+        from journal_development_artifacts import backup_configuration as backup_journal_development
+        journal_development = backup_journal_development(runtime, bundle / 'journal-development')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
         encrypted = temporary / "recovery.enc"
         crypt(runtime, compressed, encrypted)
         os.replace(encrypted, destination)
-    return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination), "recovery_images": images}
+    return {"recovery_filename": destination.name, "recovery_sha256": file_digest(destination),
+            "recovery_images": images, "recovery_test_routing": test_routing,
+            "recovery_apple_delivery": apple_delivery, "recovery_albums_development": albums_development,
+            "recovery_albums_production": albums_production,
+            "recovery_platform_test": platform_test, "recovery_journal_development": journal_development}
 
 
 def publish(runtime, source, manifest):
@@ -127,13 +147,50 @@ def verify_recovery_bundle(runtime, source, manifest):
         crypt(runtime, encrypted, archive_path, decrypt=True)
         with tarfile.open(archive_path, "r:gz") as archive:
             members = archive.getmembers()
-            if sum(m.size for m in members) > 64 * 1024**2 or any(
+            # Independent app sources, rollback selections and encrypted SQL share this bundle.
+            if sum(m.size for m in members) > 512 * 1024**2 or any(
                 Path(m.name).is_absolute() or ".." in Path(m.name).parts or not (m.isfile() or m.isdir()) for m in members):
                 raise OperationError("unsafe or oversized configuration recovery archive")
             selection = json.load(archive.extractfile("recovery/selection.json"))
             images = {k: v.get("images", {}) for k, v in selection["slots"].items()}
             if images != manifest["recovery_images"]:
                 raise OperationError("configuration recovery images differ from the authenticated manifest")
+            apple_delivery = manifest.get('recovery_apple_delivery', {})
+            if apple_delivery:
+                from apple_delivery_artifacts import verify_recovery
+                verify_recovery(archive, apple_delivery)
+            from albums_artifacts import verify_recovery as verify_albums
+            for environment in ('development', 'production'):
+                if manifest.get('recovery_albums_' + environment):
+                    verify_albums(archive, manifest['recovery_albums_' + environment], environment)
+            if manifest.get('recovery_platform_test'):
+                if ('current/albums.env' in manifest['recovery_platform_test']
+                        and not manifest.get('recovery_albums_development')):
+                    raise OperationError('shared test Albums recovery is missing its independent data and keys')
+                from platform_test_artifacts import verify_recovery as verify_platform_test
+                verify_platform_test(archive, manifest['recovery_platform_test'])
+            if manifest.get('recovery_journal_development'):
+                from journal_development_artifacts import verify_recovery as verify_journal_development
+                verify_journal_development(archive, manifest['recovery_journal_development'])
+                from journal_development_artifacts import verify_runtime_recovery
+                checkpoint = Path(directory) / 'journal-checkpoint'
+                checkpoint.mkdir(mode=0o700)
+                for name in manifest['recovery_journal_development']:
+                    (checkpoint / name).write_bytes(archive.extractfile('recovery/journal-development/' + name).read())
+                    (checkpoint / name).chmod(0o600)
+                verify_runtime_recovery(runtime, checkpoint, manifest['filename'])
+            test_routing = manifest.get('recovery_test_routing', {})
+            if test_routing:
+                import hashlib
+                if set(test_routing) != {'Caddyfile', 'test.caddy', 'state.json'}:
+                    raise OperationError('test routing recovery selection is incomplete')
+                for name, digest in test_routing.items():
+                    try:
+                        member = archive.getmember('recovery/test-routing/' + name)
+                    except KeyError as error:
+                        raise OperationError('test routing recovery file is missing') from error
+                    if not member.isfile() or hashlib.sha256(archive.extractfile(member).read()).hexdigest() != digest:
+                        raise OperationError('test routing recovery differs from the authenticated manifest')
             for label in selection["slots"]:
                 prefix = "recovery/" + label + "/"
                 if label not in ("current", "previous") or not archive.getmember(prefix + ".env.production").isfile():
@@ -141,6 +198,32 @@ def verify_recovery_bundle(runtime, source, manifest):
                 content = archive.extractfile(prefix + ".env.production").read().decode()
                 if any(line.lstrip().startswith("BACKUP_ENCRYPTION_KEY=") for line in content.splitlines()):
                     raise OperationError("backup decryption key must be preserved separately")
+                from ops_recording import configured_root
+                recovered_env = Path(directory) / (label + '.env')
+                recovered_env.touch(mode=0o600)
+                recovered_env.write_text(content)
+                if configured_root(read_environment(recovered_env), 'production') is not None:
+                    try:
+                        overlay = archive.getmember(prefix + 'compose.journal-recording.yaml')
+                    except KeyError as error:
+                        raise OperationError('recording recovery mount configuration is missing') from error
+                    if not overlay.isfile():
+                        raise OperationError('recording recovery mount configuration is invalid')
+                from ops_albums import selected as albums_selected, OVERLAY as albums_overlay
+                values = read_environment(recovered_env)
+                if albums_selected(values):
+                    if not manifest.get('recovery_albums_production'):
+                        raise OperationError('shared Albums API recovery requires its full production checkpoint')
+                    for name in ('albums.env', albums_overlay):
+                        try:
+                            item = archive.getmember(prefix + name)
+                        except KeyError as error:
+                            raise OperationError('shared Albums API recovery configuration is missing') from error
+                        if not item.isfile() or not 0 < item.size <= 32768:
+                            raise OperationError('shared Albums API recovery configuration is invalid')
+                    state = json.loads(archive.extractfile('recovery/albums-production/state.json').read())
+                    if values.get('ALBUM_RESOURCE_SOURCE') != state.get('source'):
+                        raise OperationError('shared Albums API recovery differs from its data selection')
                 for name in ["compose.production.yaml", *["secrets/" + key for key in KEY_FILES]]:
                     if not archive.getmember(prefix + name).isfile():
                         raise OperationError("configuration recovery signing or Compose files are incomplete")

@@ -1,0 +1,9 @@
+<LifecycleConfiguration>
+  <Rule>
+    <ID>albums-originals-ia-30d</ID>
+    <Status>Enabled</Status>
+    <Filter><Prefix>albums/originals/</Prefix></Filter>
+    <Transition><Days>30</Days><StorageClass>MAZ_STANDARD_IA</StorageClass></Transition>
+    <NoncurrentVersionTransition><NoncurrentDays>30</NoncurrentDays><StorageClass>MAZ_STANDARD_IA</StorageClass></NoncurrentVersionTransition>
+  </Rule>
+</LifecycleConfiguration>

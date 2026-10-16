@@ -46,7 +46,7 @@ func saveCircuit(ctx context.Context, tx *sql.Tx, app, op string, c Circuit, now
 
 func automationOperations(app string) []string {
 	if app == "journal" {
-		return []string{"journal.organize.lite", "journal.organize.pro", "journal.voice.rewrite", "journal.voice.speech"}
+		return []string{"journal.organize.lite", "journal.organize.pro", "journal.voice.rewrite", "journal.voice.speech", "journal.voice.recording", "journal.illustration"}
 	}
 	return Operations(app)
 }

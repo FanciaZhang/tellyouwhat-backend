@@ -1,0 +1,13 @@
+# Applied by the deployment wrapper only when recording storage is configured.
+services:
+  gateway:
+    volumes:
+      - &recording-storage
+        type: bind
+        source: ${JOURNAL_RECORDING_ROOT:?Set the environment recording directory}
+        target: ${JOURNAL_RECORDING_ROOT:?Set the environment recording directory}
+        bind:
+          create_host_path: false
+  maintenance:
+    volumes:
+      - *recording-storage

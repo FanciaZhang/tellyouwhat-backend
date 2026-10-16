@@ -1,0 +1,414 @@
+{
+  "date": "2026-10-13",
+  "scope": "synthetic native Live Photo through real COS media and live-pair storage adapters; controlled account/catalog state; not a published backup",
+  "initialComponentsFailure": {
+    "job": {
+      "ID": "258eb074-b297-46bf-8f04-c8677927674c",
+      "OwnerID": "046afbcb-ad37-46e7-b7cc-86f9f2c77130",
+      "VersionID": "c5cf2cdf-0810-4636-94c7-79236608d700",
+      "ManifestDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Preset": "daily_mp4_1080_v1",
+      "State": "running",
+      "Failures": 0,
+      "LeaseToken": "f2cdade7-2087-4da6-bf7c-66ddeab4f87b",
+      "LeaseUntil": "2026-10-13T02:29:15.893313Z",
+      "Deadline": "2026-10-14T02:19:15.893313Z",
+      "SubmittedAt": "2026-10-13T02:19:17.713714Z",
+      "ProviderJobID": "j7e41f4e4c6ac11f1bf721735f87a4927",
+      "Spec": {
+        "source": {
+          "resourceID": "movie",
+          "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/movie",
+          "versionID": "MTg0NDQ5NTIyMTU3NTMzOTQ1MTc",
+          "sizeBytes": 73403,
+          "sha256": "401ff775102e4dcf385fdd1ebf9a6d57ffac3d838e81dadac6cefc06c189e21f"
+        },
+        "profile": {
+          "width": 1920,
+          "height": 1280,
+          "durationMilliseconds": 1000,
+          "frameRate": 29.032258,
+          "audioChannels": 1
+        },
+        "maxBytes": 33554432,
+        "queueID": "p543daa336f7a4d4b896654b933f8881b",
+        "livePhotoTiming": {
+          "photoResourceID": "photo",
+          "videoResourceID": "movie",
+          "photoTimeMicroseconds": 200000,
+          "durationMicroseconds": 1000000
+        }
+      },
+      "Result": null,
+      "RetirementStartedAt": "0001-01-01T00:00:00Z",
+      "RetiredAt": "0001-01-01T00:00:00Z"
+    },
+    "ownerID": "046afbcb-ad37-46e7-b7cc-86f9f2c77130",
+    "passed": false,
+    "photo": {
+      "resourceID": "daily_jpeg_v1",
+      "key": "albums/derivatives/046afbcb-ad37-46e7-b7cc-86f9f2c77130/d500abd8-ad14-4b50-b8e3-c387149b58cf/daily_jpeg_v1",
+      "versionID": "MTg0NDQ5NTIyMTU3NTI3NDU2Njc",
+      "sizeBytes": 10645,
+      "sha256": "053324febb95b6a0527d89ca620bb89181007631c4b9477eec3f50193f2a3f58"
+    },
+    "scope": "synthetic native pair through production media adapters; no database or published backup",
+    "sources": {
+      "movie": {
+        "resourceID": "movie",
+        "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/movie",
+        "versionID": "MTg0NDQ5NTIyMTU3NTMzOTQ1MTc",
+        "sizeBytes": 73403,
+        "sha256": "401ff775102e4dcf385fdd1ebf9a6d57ffac3d838e81dadac6cefc06c189e21f"
+      },
+      "photo": {
+        "resourceID": "photo",
+        "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/photo",
+        "versionID": "MTg0NDQ5NTIyMTU3NTM1NjQwNDA",
+        "sizeBytes": 40245,
+        "sha256": "3c8f0740ce81f91495c3450c31b12854c3df536520dd99f315dec500ea06615d"
+      }
+    },
+    "timing": {
+      "photoResourceID": "photo",
+      "videoResourceID": "movie",
+      "photoTimeMicroseconds": 200000,
+      "durationMicroseconds": 1000000
+    },
+    "versionID": "c5cf2cdf-0810-4636-94c7-79236608d700"
+  },
+  "components": {
+    "job": {
+      "ID": "258eb074-b297-46bf-8f04-c8677927674c",
+      "OwnerID": "046afbcb-ad37-46e7-b7cc-86f9f2c77130",
+      "VersionID": "c5cf2cdf-0810-4636-94c7-79236608d700",
+      "ManifestDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Preset": "daily_mp4_1080_v1",
+      "State": "running",
+      "Failures": 0,
+      "LeaseToken": "f2cdade7-2087-4da6-bf7c-66ddeab4f87b",
+      "LeaseUntil": "2026-10-13T02:29:15.893313Z",
+      "Deadline": "2026-10-14T02:19:15.893313Z",
+      "SubmittedAt": "2026-10-13T02:19:17.713714Z",
+      "ProviderJobID": "j7e41f4e4c6ac11f1bf721735f87a4927",
+      "Spec": {
+        "source": {
+          "resourceID": "movie",
+          "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/movie",
+          "versionID": "MTg0NDQ5NTIyMTU3NTMzOTQ1MTc",
+          "sizeBytes": 73403,
+          "sha256": "401ff775102e4dcf385fdd1ebf9a6d57ffac3d838e81dadac6cefc06c189e21f"
+        },
+        "profile": {
+          "width": 1920,
+          "height": 1280,
+          "durationMilliseconds": 1000,
+          "frameRate": 30,
+          "audioChannels": 1
+        },
+        "maxBytes": 33554432,
+        "queueID": "p543daa336f7a4d4b896654b933f8881b",
+        "livePhotoTiming": {
+          "photoResourceID": "photo",
+          "videoResourceID": "movie",
+          "photoTimeMicroseconds": 200000,
+          "durationMicroseconds": 1000000
+        }
+      },
+      "Result": null,
+      "RetirementStartedAt": "0001-01-01T00:00:00Z",
+      "RetiredAt": "0001-01-01T00:00:00Z"
+    },
+    "ownerID": "046afbcb-ad37-46e7-b7cc-86f9f2c77130",
+    "passed": true,
+    "photo": {
+      "key": "albums/derivatives/046afbcb-ad37-46e7-b7cc-86f9f2c77130/d500abd8-ad14-4b50-b8e3-c387149b58cf/daily_jpeg_v1",
+      "resourceID": "daily_jpeg_v1",
+      "sha256": "053324febb95b6a0527d89ca620bb89181007631c4b9477eec3f50193f2a3f58",
+      "sizeBytes": 10645,
+      "versionID": "MTg0NDQ5NTIyMTU3NTI3NDU2Njc"
+    },
+    "readOnlyResume": true,
+    "scope": "synthetic native pair through production media adapters; no database or published backup",
+    "sourceLatestAndBytesUnchanged": true,
+    "sources": {
+      "movie": {
+        "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/movie",
+        "resourceID": "movie",
+        "sha256": "401ff775102e4dcf385fdd1ebf9a6d57ffac3d838e81dadac6cefc06c189e21f",
+        "sizeBytes": 73403,
+        "versionID": "MTg0NDQ5NTIyMTU3NTMzOTQ1MTc"
+      },
+      "photo": {
+        "key": "albums/originals/046afbcb-ad37-46e7-b7cc-86f9f2c77130/c5cf2cdf-0810-4636-94c7-79236608d700/photo",
+        "resourceID": "photo",
+        "sha256": "3c8f0740ce81f91495c3450c31b12854c3df536520dd99f315dec500ea06615d",
+        "sizeBytes": 40245,
+        "versionID": "MTg0NDQ5NTIyMTU3NTM1NjQwNDA"
+      }
+    },
+    "timing": {
+      "durationMicroseconds": 1000000,
+      "photoResourceID": "photo",
+      "photoTimeMicroseconds": 200000,
+      "videoResourceID": "movie"
+    },
+    "versionID": "c5cf2cdf-0810-4636-94c7-79236608d700",
+    "video": {
+      "object": {
+        "resourceID": "daily_mp4_1080_v1",
+        "key": "albums/video-previews/046afbcb-ad37-46e7-b7cc-86f9f2c77130/258eb074-b297-46bf-8f04-c8677927674c/daily_mp4_1080_v1",
+        "versionID": "MTg0NDQ5NTIyMTU3NTAxOTM2NzA",
+        "sizeBytes": 23075,
+        "sha256": "3b24c1b1764089917a70c7bffd1c9f1fd455c4bf75166a8d1681346b56a58cb8"
+      },
+      "profile": {
+        "width": 1620,
+        "height": 1080,
+        "durationMilliseconds": 1020,
+        "frameRate": 30,
+        "audioChannels": 1
+      }
+    }
+  },
+  "pair": {
+    "anonymousStatuses": [
+      403,
+      403
+    ],
+    "descriptor": {
+      "sourcePhoto": {
+        "preset": "daily_jpeg_v1",
+        "sizeBytes": 10645,
+        "sha256": "053324febb95b6a0527d89ca620bb89181007631c4b9477eec3f50193f2a3f58",
+        "width": 1920,
+        "height": 1280,
+        "contentType": "image/jpeg"
+      },
+      "sourceVideo": {
+        "preset": "daily_mp4_1080_v1",
+        "sizeBytes": 23075,
+        "sha256": "3b24c1b1764089917a70c7bffd1c9f1fd455c4bf75166a8d1681346b56a58cb8",
+        "width": 1620,
+        "height": 1080,
+        "durationMilliseconds": 1020,
+        "frameRate": 30,
+        "audioChannels": 1
+      },
+      "timing": {
+        "photoResourceID": "photo",
+        "videoResourceID": "movie",
+        "photoTimeMicroseconds": 200000,
+        "durationMicroseconds": 1000000
+      },
+      "photo": {
+        "sizeBytes": 10657,
+        "sha256": "f2db6f2c065eb194ea10b0149101326f9cb9d4b0f3fcf955a6492e628652d3d9"
+      },
+      "movie": {
+        "sizeBytes": 23522,
+        "sha256": "fccbd42e0d6f1e608a62976357e5bd6a81fe160cd6b4cc1e9f3a3f498c1d4d7b"
+      },
+      "pair": {
+        "identifier": "843ddcc7-7f97-41df-9425-bb3fde9979a6",
+        "photoTime": 0.2,
+        "duration": 1.0185487528344672,
+        "photoWidth": 1920,
+        "photoHeight": 1280,
+        "hasAudio": true,
+        "hasHDRVideo": false
+      }
+    },
+    "objects": [
+      {
+        "resourceID": "photo",
+        "key": "albums/live-pairs/046afbcb-ad37-46e7-b7cc-86f9f2c77130/63c41fb9-7a89-498f-b733-1af7f92c5034/photo",
+        "versionID": "MTg0NDQ5NTIyMTU0NzQ2OTU4OTQ",
+        "sizeBytes": 10657,
+        "sha256": "f2db6f2c065eb194ea10b0149101326f9cb9d4b0f3fcf955a6492e628652d3d9"
+      },
+      {
+        "resourceID": "motion",
+        "key": "albums/live-pairs/046afbcb-ad37-46e7-b7cc-86f9f2c77130/63c41fb9-7a89-498f-b733-1af7f92c5034/motion",
+        "versionID": "MTg0NDQ5NTIyMTU0NzM4Mzg1NDk",
+        "sizeBytes": 23522,
+        "sha256": "fccbd42e0d6f1e608a62976357e5bd6a81fe160cd6b4cc1e9f3a3f498c1d4d7b"
+      }
+    ],
+    "ownerID": "046afbcb-ad37-46e7-b7cc-86f9f2c77130",
+    "pairUploadID": "63c41fb9-7a89-498f-b733-1af7f92c5034",
+    "passed": true,
+    "scope": "production signed PUT, seal, reconcile and fixed-version read; no repository receipt",
+    "versionID": "c5cf2cdf-0810-4636-94c7-79236608d700"
+  },
+  "outputMediaInfo": {
+    "Format": {
+      "Bitrate": "180.980000",
+      "Duration": "1.020000",
+      "FormatLongName": "QuickTime / MOV",
+      "FormatName": "mov,mp4,m4a,3gp,3g2,mj2",
+      "NumProgram": "0",
+      "NumStream": "2",
+      "Size": "23075",
+      "StartTime": "0.000000"
+    },
+    "Stream": {
+      "Audio": [
+        {
+          "Bitrate": "134.009000",
+          "Channel": "1",
+          "ChannelLayout": "mono",
+          "CodecLongName": "AAC (Advanced Audio Coding)",
+          "CodecName": "aac",
+          "CodecTag": "0x6134706d",
+          "CodecTagString": "mp4a",
+          "CodecTimeBase": "1/44100",
+          "Duration": "1.020000",
+          "Index": "1",
+          "Language": "und",
+          "SampleFmt": "fltp",
+          "SampleRate": "44100",
+          "StartTime": "0.000000",
+          "Timebase": "1/44100"
+        }
+      ],
+      "Subtitle": "",
+      "Video": [
+        {
+          "AvgFps": "30.000000",
+          "Bitrate": "27.832000",
+          "CodecLongName": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+          "CodecName": "h264",
+          "CodecTag": "0x31637661",
+          "CodecTagString": "avc1",
+          "CodecTimeBase": "1/15360",
+          "Dar": "3:2",
+          "Duration": "1.000000",
+          "Fps": "30.000000",
+          "HasBFrame": "2",
+          "Height": "1080",
+          "Index": "0",
+          "Language": "und",
+          "Level": "40",
+          "NumFrames": "30",
+          "PixFormat": "yuv420p",
+          "Profile": "High",
+          "RefFrames": "1",
+          "Rotation": "0.000000",
+          "Sar": "1:1",
+          "StartTime": "0.000000",
+          "Timebase": "1/15360",
+          "Width": "1620",
+          "ColorRange": "unknown",
+          "ColorTransfer": "unknown",
+          "ColorPrimaries": "unknown"
+        }
+      ]
+    }
+  },
+  "audioPCM": [
+    {
+      "file": "source.mov",
+      "pcmSamples": 47921,
+      "peak": 0.10005220025777817
+    },
+    {
+      "file": "component.mp4",
+      "pcmSamples": 48960,
+      "peak": 0.10079722851514816
+    },
+    {
+      "file": "paired.mov",
+      "pcmSamples": 48960,
+      "peak": 0.10079722851514816
+    }
+  ],
+  "sourceProbe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "duration": "0.998345",
+        "nb_frames": "46"
+      },
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1920,
+        "height": 1280,
+        "r_frame_rate": "30/1",
+        "avg_frame_rate": "900/31",
+        "duration": "1.000000",
+        "nb_frames": "30"
+      },
+      {
+        "codec_type": "data",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "duration": "0.033333",
+        "nb_frames": "1"
+      }
+    ]
+  },
+  "outputProbe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1620,
+        "height": 1080,
+        "r_frame_rate": "30/1",
+        "avg_frame_rate": "30/1",
+        "duration": "1.000000",
+        "nb_frames": "30"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "duration": "1.020000",
+        "nb_frames": "46"
+      }
+    ]
+  },
+  "regression": {
+    "topLevelPassed": 11,
+    "passEventsIncludingSubtests": 43,
+    "failed": 0,
+    "skipped": 0,
+    "command": "go test -race ./internal/albums -run '^(TestCOSVideo|TestVideoJob|TestLivePair|TestCOSLive)' -count=1 -json",
+    "vetBuild": "go vet ./internal/albums and go build ./cmd/albumgateway ./cmd/albumworker passed"
+  },
+  "failureReproduction": "--- FAIL: TestCOSVideoProfileUsesNominalRateForNativeContract (0.00s)\n    --- FAIL: TestCOSVideoProfileUsesNominalRateForNativeContract/short-b-frame-mov (0.00s)\n        cos_video_derivatives_test.go:405: nominal frame rate = 29.032258, want 30; error <nil>\n    --- FAIL: TestCOSVideoProfileUsesNominalRateForNativeContract/fractional (0.00s)\n        cos_video_derivatives_test.go:405: nominal frame rate = 29.97003, want 29.97002997002997; error <nil>\n    --- FAIL: TestCOSVideoProfileUsesNominalRateForNativeContract/unsupported-nominal (0.00s)\n        cos_video_derivatives_test.go:400: unsupported rate accepted\nFAIL\nFAIL\tgithub.com/tellyouwhat/backend/internal/albums\t0.469s\nFAIL\n",
+  "logs": {
+    "components.log": "=== RUN   TestLiveCOSLiveComponents\n    cos_live_roundtrip_test.go:151: video verification failed\n--- FAIL: TestLiveCOSLiveComponents (6.41s)\nFAIL\nFAIL\tgithub.com/tellyouwhat/backend/internal/albums\t6.986s\nFAIL\n",
+    "resume-initial.log": "=== RUN   TestLiveCOSLiveResume\n    cos_live_roundtrip_test.go:315: recorded output verification failed\n--- FAIL: TestLiveCOSLiveResume (2.37s)\nFAIL\nFAIL\tgithub.com/tellyouwhat/backend/internal/albums\t3.067s\nFAIL\n",
+    "resume-final.log": "=== RUN   TestLiveCOSLiveResume\n--- PASS: TestLiveCOSLiveResume (3.09s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/albums\t3.558s\n",
+    "pair.log": "=== RUN   TestLiveCOSLivePair\n--- PASS: TestLiveCOSLivePair (2.17s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/albums\t2.653s\n",
+    "refresh.log": "=== RUN   TestLiveCOSLiveRefreshReadGrants\n--- PASS: TestLiveCOSLiveRefreshReadGrants (0.58s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/albums\t1.062s\n",
+    "refresh26.log": "=== RUN   TestLiveCOSLiveRefreshReadGrants\n--- PASS: TestLiveCOSLiveRefreshReadGrants (0.51s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/albums\t1.014s\n"
+  },
+  "sourceSHA256": {
+    "internal/albums/cos_video_derivatives.go": "250ab8e26e741b398aae82fe3a27addb87ca58bd9df9b6392dc98eaa3e7095a9",
+    "internal/albums/cos_video_derivatives_test.go": "ea834db89c5ba1914b8e21f9a8b8360d69d936d395c1eecb71484119fe33fe09",
+    "internal/albums/cos_live_roundtrip_test.go": "7cf1630a2eb4893b7426855a0a269ba95bb2d73c5f0db91206dfccb33f809895"
+  },
+  "limitations": [
+    "No database worker, Apple account/API/subscription or source-deletion proof.",
+    "One generated SDR Live Photo, not real camera captures, HDR, HEIC or natural quality validation.",
+    "First task retained; corrected profile re-read into test fixture only; no production persisted job modified.",
+    "Existing jobs with old AvgFps profile may remain rejected and require independent reconciliation.",
+    "No new permissions, object deletion, deployment or automatic media processing.",
+    "Read-grant bearer URLs deliberately excluded from permanent evidence."
+  ],
+  "references": [
+    "https://cloud.tencent.com/document/product/460/49284"
+  ]
+}

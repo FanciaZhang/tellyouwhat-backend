@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-16",
+  "scope": "Shared gateway test routing and configuration-derived public verification",
+  "base_commit": "e9f39422b5450641ee214fc963d7da4cbc95fdf2",
+  "source_sha256": {
+    "deploy/tencent/test_routes.py": "d0be498c58fe9dc46e76b6fccbc57778fa981bfce948112470cb16a581471c8d",
+    "deploy/tencent/test_routes_test.py": "ac7a59f7d8833807a1af1626a3aaf93e8e839687229d96326d156651eba3b04d",
+    "deploy/tencent/platform_test_deploy.py": "b15203824e09a899bf2870e1ed0326137dd5c5529f08c7ea8a904ea71823ac2a",
+    "deploy/tencent/release.py": "f89e8e3097107ff8c8a0840eeb61b63bc642732a0f09a39b70216cc78bd2f9bd",
+    "deploy/tencent/release_test.py": "d7c4bef35ebf6ae84be476cdafeefaee7ad51c1fc5dcd047d4f4ffe03f4afd46",
+    "deploy/tencent/readiness.sh": "91668dea09794ad3e721ebf19159914d7e7f52579cbcdee5b4442a6feca3f4d4",
+    "deploy/tencent/verify-public.sh": "c49c37bcfa0fd2e5680045d60ba4600611adcea84ca8a0874d416a337c8cf899",
+    "deploy/tencent/verify-public_test.sh": "46e0fdbaaee51aa91f53c44d398fbbbb359a2335d63041f6d3e73cc33d71bfe6",
+    ".github/workflows/deploy.yml": "0b6f0a66ca83b473fda32b3d45004e09649555d4e02739f60ec5e85571635c7a",
+    ".github/workflows/backend.yml": "bf1b01e890a6c19c6e79639b0dc11e7922b296ed9d162b02c114d94cd6971d3c",
+    ".github/workflows/disruptive-deploy.yml": "9bf4d4a416555b28df05b8ff1727752748a387cf2066063a4a66576a134f09cb"
+  },
+  "checks": {
+    "python_operations": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "total": 256,
+      "passed": 254,
+      "skipped": 2,
+      "skip_reason": "Local native Caddy and Docker availability"
+    },
+    "public_verifier": {
+      "command": "bash deploy/tencent/verify-public_test.sh",
+      "passed": true,
+      "coverage": [
+        "default Health/Journal/admin targets",
+        "all four Apps and admin",
+        "TLS certificate failure",
+        "redirect refusal",
+        "HTTP and wrong JSON failure",
+        "Birthday-only and Albums-only failures",
+        "invalid, empty and duplicate target rejection before requests"
+      ]
+    },
+    "workflow_yaml": {
+      "parser": "Ruby YAML.parse_file",
+      "passed": true,
+      "files": [
+        ".github/workflows/deploy.yml",
+        ".github/workflows/backend.yml",
+        ".github/workflows/disruptive-deploy.yml"
+      ]
+    },
+    "shell_syntax": {
+      "passed": true
+    },
+    "native_caddy": {
+      "host": "106.55.105.177",
+      "command": "caddy adapt --adapter caddyfile",
+      "passed": true,
+      "hosts": [
+        "api-test.albums.tellyouwhat.cn",
+        "api-test.birthday.tellyouwhat.cn",
+        "api-test.health.tellyouwhat.cn",
+        "api-test.journal.tellyouwhat.cn"
+      ],
+      "upstreams": [
+        "127.0.0.1:18790"
+      ],
+      "temporary_files_removed": true,
+      "active_configuration_changed": false
+    }
+  },
+  "remote_mutations": false,
+  "deployment_completed": false,
+  "git_pushed": false,
+  "remaining": [
+    "Managed shared test gateway deployment and real DNS/TLS route switch",
+    "Production Birthday/Albums route migration and legacy path removal",
+    "Real Apple device authentication and App-specific business journeys"
+  ]
+}

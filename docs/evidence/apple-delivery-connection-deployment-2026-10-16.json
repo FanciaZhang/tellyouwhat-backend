@@ -1,0 +1,75 @@
+{
+  "service_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "previous_source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+  "backup_filename": "mysql-20261015T205233Z-6ad9e6.sql.gz.enc",
+  "recovery_filename": "recovery-mysql-20261015T205233Z-6ad9e6.tar.gz.enc",
+  "recovery_sha256": "aea4c867071b481c6ee75ec38af1dfa529b874c35aa7ddf0157848c25aa4a9a3",
+  "recovery_files": 20,
+  "authenticated": true,
+  "decrypted_files_verified": true,
+  "cos_objects_sha256_readback": 3,
+  "scheduled_acceptance": false,
+  "sql_restore_tested": false,
+  "deployment_registered": true,
+  "logging_guard_verified": true,
+  "existing_installation_links_verified": [
+    {
+      "bundle_id": "cn.tellyouwhat.birthday.dev",
+      "manifest": 200,
+      "ipa_head": 200,
+      "ipa_bytes": 3596417,
+      "original_grant_preserved": true
+    },
+    {
+      "bundle_id": "cn.tellyouwhat.healthapp.dev",
+      "manifest": 200,
+      "ipa_head": 200,
+      "ipa_bytes": 148975431,
+      "original_grant_preserved": true
+    }
+  ],
+  "binary_sha256": "f872df7f5c32148bda50f8d467c685c8857c81a69abfd3eb7d88b905443edcdf",
+  "native_device_import_verified": false,
+  "connection_https_verified": true,
+  "connection_https": {
+    "checked_at_utc": "2026-10-15T20:57:49.581370+00:00",
+    "https_decrypted_profile_matches_local": true,
+    "requests": [
+      {
+        "method": "GET",
+        "host": null,
+        "status": 200
+      },
+      {
+        "method": "HEAD",
+        "host": null,
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "host": "INSTALL.TELLYOUWHAT.CN",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "host": "install.tellyouwhat.cn:443",
+        "status": 200
+      }
+    ],
+    "tampered_and_query_rejected": true,
+    "private_headers_verified": true,
+    "expires_at": "2026-10-15T20:58:25.842925094Z",
+    "real_clock_expiry_verified": true,
+    "native_file_import_verified": false,
+    "raw_url_and_token_omitted": true,
+    "expired_status": 410,
+    "expiry_checked_at_utc": "2026-10-15T20:59:46.426723+00:00"
+  },
+  "private_connection_logs": {
+    "caddy_journal_checked": true,
+    "examined_lines": 40,
+    "raw_profile_token_logged": false,
+    "encrypted_link_logged": false,
+    "window_start_utc": "2026-10-15T20:52:00Z"
+  }
+}

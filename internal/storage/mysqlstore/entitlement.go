@@ -80,6 +80,23 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		return err
 	}
 	defer func() { _ = transaction.Rollback() }()
+	if record.Environment == "development" {
+		// Share the purchase promotion lock so a stale development request cannot replace a verified purchase.
+		var boundID string
+		if err := transaction.QueryRowContext(ctx, `SELECT transaction_id FROM app_attest_keys
+			WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID); err != nil {
+			return err
+		}
+		var environment string
+		err := transaction.QueryRowContext(ctx, `SELECT environment FROM managed_entitlements
+			WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&environment)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if boundID != "" || (err == nil && environment != "development") {
+			return entitlement.ErrActivationDenied
+		}
+	}
 	if err := repository.upsert(ctx, transaction, record); err != nil {
 		return err
 	}

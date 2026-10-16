@@ -1,0 +1,85 @@
+{
+  "verified_at_utc": "2026-10-15T22:23:33.507413+00:00",
+  "current_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "previous_source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+  "both_actual_deployments_used_owner_wrapper": true,
+  "exact_selected_binary_configuration_and_image_validated": true,
+  "previous_version_checks": {
+    "cn.tellyouwhat.healthapp.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "b7ac19370b68f87e7b4f90eeffc0786679f093788c6140cf2d4c10475457b047"
+    },
+    "cn.tellyouwhat.journalapp.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "cc8b66aa8b49bfc42d2c64c502aad746828d0c66dff25018b75121577ea8c795"
+    },
+    "cn.tellyouwhat.birthday.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "789af9b2e6ec143b27e5e3281cbfd9975a17a600dcac17a9e5d7e5481d4d72be"
+    },
+    "cn.tellyouwhat.albums.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872"
+    }
+  },
+  "current_version_checks": {
+    "cn.tellyouwhat.healthapp.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "b7ac19370b68f87e7b4f90eeffc0786679f093788c6140cf2d4c10475457b047"
+    },
+    "cn.tellyouwhat.journalapp.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "cc8b66aa8b49bfc42d2c64c502aad746828d0c66dff25018b75121577ea8c795"
+    },
+    "cn.tellyouwhat.birthday.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "789af9b2e6ec143b27e5e3281cbfd9975a17a600dcac17a9e5d7e5481d4d72be"
+    },
+    "cn.tellyouwhat.albums.dev": {
+      "page": 200,
+      "manifest": 200,
+      "head": 200,
+      "range": 206,
+      "original_receipt_preserved": true,
+      "digest": "c658da13cfac1b5095fc096fa621e8d323488d77c72e11c9db0f527df19fa872"
+    }
+  },
+  "same_four_packages_and_original_grants_preserved": true,
+  "connection_sealing_key_preserved": true,
+  "active_proxy_unchanged_and_log_guard_verified": true,
+  "other_running_container_ids_unchanged": true,
+  "production_route_verified_at_both_versions": true,
+  "current_and_previous_recovery_files_verified": 20,
+  "current_version_restored": true,
+  "real_phone_installation_verified": false,
+  "scheduled_cleanup_verified": false,
+  "raw_capability_urls_omitted": true
+}

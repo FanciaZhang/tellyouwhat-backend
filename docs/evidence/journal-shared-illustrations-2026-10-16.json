@@ -1,0 +1,81 @@
+{
+  "scope": "Journal illustration integration into one shared API gateway per environment; local implementation only",
+  "base": "9da998401decc0ca981b5ddabdf6ea9389754b8d",
+  "production_modified": false,
+  "remote_schema_modified": false,
+  "validation": {
+    "go_all": {
+      "passed_packages": 59,
+      "packages_without_tests": 13,
+      "passed_test_events_including_subtests": 2310,
+      "skipped_test_events_including_subtests": 650,
+      "failures": 0
+    },
+    "race_packages": [
+      "cmd/gateway",
+      "internal/config",
+      "internal/gateway",
+      "internal/journal/illustration",
+      "internal/journal/development",
+      "internal/platformops",
+      "migrations"
+    ],
+    "real_mysql_race": {
+      "tests": [
+        "TestMySQLIllustrationEncryptionIsolationAndAtomicClaim",
+        "TestMySQLIllustrationOverlappingWorkersCancelAndLateResult",
+        "TestMySQLIllustrationCrashAndExpiryNeverRedispatch",
+        "TestMySQLIllustrationPrivacyDeletionFencesLateWrites",
+        "TestMySQLIllustrationMaintenanceWorksWithGenerationDisabled",
+        "TestMySQLIllustrationStandbyAndReleaseDrain",
+        "TestMySQLIllustrationUnavailableEntitlementsDoNotStarveQueue"
+      ],
+      "provider": "synthetic generator; no cloud call",
+      "server": "temporary local MySQL 8.4, unix socket only",
+      "stopped_and_removed": true
+    },
+    "management_browser": "scripts/platform-admin-ui-test.mjs passed with local Chrome and synthetic API fixtures",
+    "diff_check": "passed"
+  },
+  "corrections_during_verification": [
+    "Moved durable illustration storage out of mysqlstore to remove test import cycle",
+    "Corrected test fixture authenticated key and expected migration list",
+    "Added retry deferral after review found unavailable entitlements could starve later queue entries"
+  ],
+  "not_verified": [
+    "Remote migration, deployment, route activation and rollback",
+    "Real cloud generation through shared gateway",
+    "Native App Attest, real entitlement and user journey",
+    "Recording-file import migration",
+    "Private service state transition and retirement"
+  ],
+  "sha256": {
+    "cmd/gateway/main.go": "e7b1881ace446ca3b1c39071177ad5dc6db98cecb248d738cf2deb71ec51c76b",
+    "cmd/maintenance/main.go": "947a79ee296db4fadba897deb379ca1103ac5e837db4a27c753f32bd15a3dbf2",
+    "deploy/single-server/production.env.example": "14aabe6bed3c89e6075e7362c464585a5580ce6db67bf10ea49dd5b91d146c1d",
+    "docs/journal-development-illustrations.md": "64773d46f7656fb4560e549297dbcde0c516443185f925df587f3920d16618e7",
+    "docs/journal-shared-illustrations.md": "18f8119a8d790da24852f37532a1236372b25fa2e17a5e2046356c6cbaadac9b",
+    "docs/unified-app-environments.md": "d3965188ee0d1259ccd4e34d650b32ecc0e05f981b225baab952ba93c14e240f",
+    "internal/adminui/static/platform.js": "266cff2c19941d294676c553f638108094e3f2e464409d611e391158bb4d199c",
+    "internal/config/journal_images_test.go": "864b176f046d3628b63a9f6099b3317048b24db1e8c3adad0ef6f4faee2ffbb7",
+    "internal/config/platform.go": "359e77c8b1b9b9c4db962e9d7edc60c18e069cfb5cb2d404976ef96f39344002",
+    "internal/gateway/journal_illustration_handlers.go": "228ca2160cef8cad947be865a3a89895ac1aa9a5f2d698d33b3b476c94b6d8a6",
+    "internal/gateway/journal_illustration_handlers_test.go": "237f15d45b9bf8e8979d3ecbe2f81b7d2092199cc61d0367823fe49b92016e31",
+    "internal/gateway/router.go": "c029d0978742949767db7a537b37a607988bd2108c4c753fea137e2bd384c696",
+    "internal/gateway/server.go": "06fa5a68614ce871711a61a94a09d2e78753a493ddc431300801eba12303f939",
+    "internal/journal/development/illustration.go": "8a53696339bcaf83e3f865465f6d76821df0e0b48543e464cadcc06bfdf182fb",
+    "internal/journal/illustration/budget.go": "070ca29b72e3d37f9aef87472ef016e1bb56b238c1bfccb1b6276668d845efaa",
+    "internal/journal/illustration/budget_test.go": "7de2a987763db59b90a3b9b89126c93969c644f04565217a08c847dee4f74f78",
+    "internal/journal/illustration/service.go": "76a9a59bf7718143120171237b9873f739b5482f11db776737ce3e903d38c4ba",
+    "internal/journal/illustrationstore/mysql.go": "cac336fd6c7d153d40039dcc9f4bc1bbde75a16bd8e46587d279c283c708a23e",
+    "internal/journal/illustrationstore/mysql_test.go": "fcf4d71818424d4d538e71147d2544fc803337aed3caab9cc510aecfab8784c9",
+    "internal/platformops/automation_patrol.go": "20e82e3abf8cb95061aa1609b66692b704ddd2b0c122162721a096b7c95c4427",
+    "internal/platformops/automation_store.go": "b012fc677e9013de8ae53f10bc0e20f6a26b8246a6b60d9cc1bfa4388d2d80f8",
+    "internal/platformops/metrics.go": "a0f53f7f22bbb3d64a12dd4cc0d3e6eda2e0cbec7ae068db1e7522fbb3e5f3e1",
+    "internal/platformops/policy.go": "27ad37a2396462490b626dc7f70765bb4817b2e1c727182a86c5796c64338119",
+    "internal/platformops/policy_test.go": "b5897ad4b8529a9d49673ded7909e4b485fb2543125639a4723880f9edda7940",
+    "migrations/0065_journal_illustration_jobs.sql": "7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6",
+    "migrations/embed_test.go": "352769e7bb7872b13211e420201e1378ff51865e29ed44014527750aae203c1c",
+    "scripts/platform-admin-ui-test.mjs": "342955692552eda88a5dd93aa6f61cc6e3be569ebc2a1d7e27b866ef5f74963f"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "verified_at_utc": "2026-10-11T10:00:24.053609+00:00",
+  "base_commit": "1c6a6498e0bc621dedce6ac466b5b63a66de1768",
+  "scope": "Independent album gateway assembly and isolated deployment definition",
+  "batches": {
+    "albums_race_regression": {
+      "exit_code": 0,
+      "passed_including_subtests": 386,
+      "failed": 0,
+      "skipped": 0,
+      "log_sha256": "85f7e54af3331a75f06432f5268b78cb59878b88a1debe4413a1a9b1ad43905e"
+    },
+    "final_gateway_race": {
+      "exit_code": 0,
+      "passed_including_subtests": 35,
+      "failed": 0,
+      "skipped": 0,
+      "log_sha256": "38ee399894c9e77c83399a125cd81ef0941ddf432af9ee02781c6c02d9d27599"
+    }
+  },
+  "batches_overlap": true,
+  "checks": {
+    "probe-tests": 0,
+    "vet": 0,
+    "build": 0,
+    "diff": 0
+  },
+  "source_sha256": {
+    ".github/workflows/backend.yml": "ad53c8c1ecccaefe6862d5577e2229e84f53add364a2710d66d70f692f594c3d",
+    "cmd/albumgateway/main.go": "1246164508cc1aab6ddcd0e7c2ade4135d1e8f8d1cc538d414fe368608df167c",
+    "cmd/albumgateway/main_test.go": "094f6a51874d14f0ef5dedc4c5fcde711c763102497f8cd28c8a78aae056884f",
+    "internal/albums/gateway.go": "df0fb6da4288b5150a714c90c7a73a441c2a01b88c8c66dd936bc3af12a23ddf",
+    "internal/albums/gateway_config.go": "5231c600b0828d3cc1dc41170db3141535ba8f13a71d3e8182b7d25b62d39631",
+    "internal/albums/gateway_config_test.go": "622f90aff34cc6de40236267e44d30334dd4224527d7fc9beeb7b4c4f99b8243",
+    "internal/albums/gateway_integration_test.go": "525f543d520cf2d1a53dbf3f57a7783e1442ffaf50e18b2e4e256c5c6c473867",
+    "internal/albums/deployment_test.go": "a5eb52a73e8782c411d37a003722b0dc417ec7bd5f2fb952bf60770ffa753113",
+    "compose.albums-test.yaml": "c4d4354e3d6867c82c82c5e5b4e383e59fbd4830d75bcdecf5a6bd6b62e3c2d5",
+    "deploy/albums/test.env.example": "e5392b2d266e63ba673bd410616e9cedd5ad91ef19c90ebe76b9056bb08bf9a8",
+    "deploy/albums/runtime.env.example": "e46ce7e7d07c16042fa281ea8703c219f355ef01d47e6e2fe10120ecaad581b2",
+    "deploy/albums/Caddyfile.external": "3c7ccf72c621d1c299b898896974ca803d5b66ce303800780aec113e5469dd97",
+    "deploy/albums/README.md": "c8ac8667ed494cea212c798a00110b619ece26843a65043c9aa15c1aba708b71",
+    "deploy/albums/cam-upload.policy.json": "1ea964fd165eb3d2d27a06320440f20aa0f51b3d9089bdb2f3e632e9576b3506",
+    "deploy/albums/cam-backend.policy.json": "d447863b8ea5adef259244955bb790e3f1140be8c8187a7cd7f8b7eb8c3faae5",
+    "docs/albums-implementation.md": "8ac13f9af0a1496d7771d35b52e07c2888a02331079aaceeb2ed6a46152090b5"
+  },
+  "real_components": [
+    "HTTP sockets",
+    "RSA identity signatures",
+    "ECDSA client secret signatures",
+    "AES-GCM grant encryption",
+    "isolated MySQL schema and database user",
+    "Unix-socket Redis"
+  ],
+  "controlled_providers": [
+    "Apple identity/code responses",
+    "COS versioning response"
+  ],
+  "real_cos_requests": 0,
+  "new_cam_permissions_applied": false,
+  "server_deployed": false,
+  "api_https_probe": {
+    "http_status": "000",
+    "curl_exit": 35,
+    "tls_verified": false
+  },
+  "deletion_or_processing_enabled": false,
+  "initial_failure": "Temporary MySQL/Redis were reaped when launcher cell exited; rerun kept launch, tests and shutdown in one cell",
+  "limitations": [
+    "No real Apple login/App ID/Sign in Key acceptance",
+    "No real COS/CI, queue/role/fee acceptance",
+    "No Docker/Caddy runtime on this Mac; exact-head CI still required",
+    "No remote test deployment/TLS",
+    "No subscription/test account entitlement provisioning",
+    "No canonical/staging terminal retirement or source-release acceptance",
+    "No physical-device/WeChat/SMS/quality/power acceptance"
+  ]
+}
