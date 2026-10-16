@@ -100,6 +100,14 @@ func LoadPlatform() (PlatformConfig, error) {
 	if err != nil {
 		return PlatformConfig{}, err
 	}
+	for i := range result.Apps {
+		if result.Apps[i].Registry.ID == appregistry.Journal {
+			result.Apps[i].JournalRecording, err = LoadJournalRecording(result.Environment)
+			if err != nil {
+				return PlatformConfig{}, err
+			}
+		}
+	}
 	if err := result.Validate(); err != nil {
 		return PlatformConfig{}, err
 	}
@@ -107,8 +115,12 @@ func LoadPlatform() (PlatformConfig, error) {
 }
 
 func LoadWorkerPlatform() (PlatformConfig, error) {
-	result, err := LoadPlatform()
+	// Recording storage belongs to the gateway and maintenance, not the AI worker.
+	result, err := loadPlatformUnchecked()
 	if err != nil {
+		return PlatformConfig{}, err
+	}
+	if err := result.Validate(); err != nil {
 		return PlatformConfig{}, err
 	}
 	if result.StorageMode != "mysql" {
@@ -295,11 +307,6 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
 		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
-		var err error
-		config.JournalRecording, err = LoadJournalRecording(environment)
-		if err != nil {
-			return AppConfig{}, err
-		}
 		config.JournalAI = JournalAIConfig{
 			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
 			APIKey:         prefixedValue(prefix, "ARK_API_KEY", ""),
