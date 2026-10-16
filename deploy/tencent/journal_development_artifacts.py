@@ -119,7 +119,8 @@ def backup_configuration(runtime, destination):
     container = json.loads(runtime.execute('backup-journal-runtime', ['docker', 'inspect', 'journal-private-development']))[0]
     env = dict(value.split('=', 1) for value in container['Config']['Env'] if '=' in value)
     mounts = {m['Destination']: m for m in container['Mounts']}
-    if (not container['State']['Running'] or container['Image'] not in owner['images']
+    # Retired containers still hold the pinned configuration needed to preserve their recovery material.
+    if (container['Image'] not in owner['images']
             or container['Config']['Image'] != state['image'] or container['Config']['User'] != '65532:65532'
             or any(env.get(k) for k in ('DATABASE_DSN', 'REDIS_URL', 'JOURNAL_PROMPT_DATABASE_DSN'))
             or env.get('APP_ENV') == 'production' or env.get('JOURNAL_PROMPT_FILE') != '/journal-config/prompt.json'
