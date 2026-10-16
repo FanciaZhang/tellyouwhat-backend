@@ -17,6 +17,7 @@ from ops_artifacts import development_deploy, require_operator
 from ops_common import OperationError, Runtime, atomic_json, read_environment
 from test_routes import RejectRedirects
 import platform_test_journal as journal
+import platform_test_storage as recording
 
 PROJECT = 'tellyouwhat-platform-test'
 HOST = 'api-test.birthday.tellyouwhat.cn'
@@ -39,6 +40,10 @@ def applications(folder):
 
 def running_services(folder):
     return ('gateway', 'worker') if 'health' in applications(folder) else ('gateway',)
+
+
+def image_services(folder):
+    return (*running_services(folder), 'migrate', *(('maintenance',) if recording.available(folder) else ()))
 
 
 def private_file(runtime, path, limit):
@@ -123,8 +128,12 @@ def selection(runtime, source):
             raise OperationError('Health test identity, media or model resources are invalid')
     elif any(k.startswith(('HEALTH_', 'TOS_')) for k in app):
         raise OperationError('Birthday-only test service cannot receive Health or media credentials')
+    if recording.available(folder) and 'health' not in applications(folder):
+        raise OperationError('shared test maintenance requires the isolated Health media configuration')
     if 'journal' in applications(folder):
         journal.validate(app)
+        if app.get('JOURNAL_RECORDING_ENABLED') == 'true' and not recording.available(folder):
+            raise OperationError('Journal recordings require the reviewed test storage mount')
     elif any(k.startswith('JOURNAL_') for k in app):
         raise OperationError('Journal credentials require its explicit test application selection')
     return folder, record, migrations
@@ -158,7 +167,7 @@ def ready(folder=None):
 
 
 def build_images(runtime, folder, record, source):
-    for service in (*running_services(folder), 'migrate'):
+    for service in image_services(folder):
         image = PROJECT + '-' + service + ':' + source
         existing = runtime.execute('platform-test-image-existing', ['docker', 'image', 'ls', '-q', image]).strip()
         if existing:
@@ -181,6 +190,8 @@ def verify_running(runtime, folder, source, label):
         if (running['Config']['Image'] != PROJECT + '-' + service + ':' + source or not running['State']['Running']
                 or running['State'].get('OOMKilled') or running.get('RestartCount')):
             raise OperationError('platform test process differs from the selected healthy image')
+        if service == 'gateway' and recording.available(folder):
+            recording.verify_gateway(running)
         if service == 'worker':
             for attempt in range(30):
                 try:
@@ -213,9 +224,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
             or owner.get('current', {}).get('source') != previous_source
             or str(old) not in owner['current'].get('paths', [])):
         raise OperationError('platform test update does not match the registered running release')
-    # Infrastructure changes still need a separately checked topology transition.
-    if (folder / 'compose.platform-test.yaml').read_bytes() != (old / 'compose.platform-test.yaml').read_bytes():
-        raise OperationError('enrollment update cannot change the platform test topology')
+    recording.require_transition(old, folder)
     before_apps, after_apps = applications(old), applications(folder)
     if not set(before_apps) <= set(after_apps):
         raise OperationError('platform test update cannot silently disable an existing application')
@@ -226,7 +235,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
     if 'journal' not in before_apps and 'journal' in after_apps:
         permitted |= journal.SETTINGS
     if 'journal' in after_apps:
-        permitted.add('JOURNAL_ALLOWED_APP_BUILDS')
+        permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'}
     for filename, allowed in [('compose.env', {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}),
                               ('runtime.env', permitted)]:
         before, after = read_environment(old / filename), read_environment(folder / filename)
@@ -249,6 +258,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
     manifest = verify_backup(runtime, runtime.backups / snapshot['filename'])
     if not manifest.get('recovery_platform_test'):
         raise OperationError('platform test update requires an authenticated offsite recovery selection')
+    recording.prepare(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
     if pending_migration:
@@ -302,6 +312,7 @@ def activate(runtime, source, update_from=None):
             'docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + PROJECT]).strip()
             or runtime.execute('platform-test-volumes', ['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + PROJECT + '_']).strip()):
         raise OperationError('platform test data already exists; do not repeat bootstrap')
+    recording.prepare(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
     try:
@@ -344,7 +355,7 @@ def main():
     command = [sys.executable, str(Path(__file__).resolve()), '--backend-dir', str(runtime.root), '--source', args.source, '--activate']
     if args.update_from:
         command += ['--update-from', args.update_from]
-    result = development_deploy(runtime, 'platform-test', [str(folder)], [PROJECT + '-' + s + ':' + args.source for s in (*running_services(folder), 'migrate')],
+    result = development_deploy(runtime, 'platform-test', [str(folder)], [PROJECT + '-' + s + ':' + args.source for s in image_services(folder)],
                                args.source, args.source_run, command, 'http://127.0.0.1:18790/readyz', verify_host=HOST)
     print(json.dumps(result, sort_keys=True))
 

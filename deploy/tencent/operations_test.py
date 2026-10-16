@@ -222,6 +222,15 @@ class BackupSafetyTests(unittest.TestCase):
         record = json.loads((self.runtime.state / "maintenance.json").read_text())
         self.assertEqual(record["expired_backups_removed"], 1)
 
+    def test_test_environment_cleanup_failure_does_not_skip_other_maintenance(self):
+        with patch.object(self.runtime, 'execute') as execute, patch('operations.cleanup') as cleanup, \
+                patch('platform_test_maintenance.maintain', side_effect=OperationError('test cleanup failed')):
+            with self.assertRaisesRegex(OperationError, 'test cleanup failed'):
+                operate(self.runtime, SimpleNamespace(operation='maintenance'))
+        execute.assert_called_once()
+        cleanup.assert_called_once()
+        self.assertFalse((self.runtime.state / 'maintenance.json').exists())
+
     def test_invalid_snapshot_does_not_skip_other_expired_snapshots_or_database_cleanup(self):
         corrupt = create_backup(self.runtime)
         corrupt_path = self.runtime.backups / corrupt["filename"]

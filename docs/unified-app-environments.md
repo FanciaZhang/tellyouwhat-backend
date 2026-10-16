@@ -10,9 +10,9 @@
 
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
-| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 独立测试 API、worker、受限云身份与 HTTPS 已接通；新开发包、真实 App Attest 和云同步待验收 |
+| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 与生日共用测试网关 18790，独立测试 worker、受限云身份与 HTTPS 已接通；真实 App Attest 和云同步待验收 |
 | 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务、Prompt、推理及语音身份已接通；配置与费用账本独立加密备份；手机业务旅程和 CloudKit 待验收 |
-| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
+| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 与健康共用测试网关 18790、测试 MySQL/Redis 及备份，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
 
 正式身份为对应 Bundle ID 去掉 `.dev`，目标域名为 `api.<app>.tellyouwhat.cn`。现有健康/手记正式服务仍为 18180；正式相册域名仍指向旧测试栈，不能据域名宣称已具备生产环境。生日正式域名及推理身份仍需迁移。未上线 App 的旧路径不作为兼容交付要求。
@@ -206,3 +206,11 @@ Pro 接入点已完成 260628 切换，控制台与真实响应一致。测试�
 升级入口仅允许新增已逐字节固定的 `0065_journal_illustration_jobs.sql`，既有迁移不得更改或移除，其他新增迁移仍拒绝。先验证备份和实际完整迁移列表，再运行迁移；失败不切换 API、不恢复部分数据备份。新 API 启动失败时恢复旧 API，保留兼容的新增表并记录真实 schema；再次尝试不会重复迁移。运维脚本随同一源码完整打包，避免部署入口缺少导入模块。
 
 只读核对远端当前测试源码为 `761dc7bc01f103670639f3172e23dde147be1289`，66 条迁移。隔离的临时 MySQL 8.4 按该源码建立原库、插入合成身份后，用实际 `cmd/migrate` 升至 67 条：92 张原业务表行数据逐字节不变，重复迁移不改变数据，健康旧表可写、手记新表和删除级联通过；临时库已停止并移除。运维 Python 回归通过。尚未在远端执行升级、部署新镜像或切换路由。测试录音挂载、相册接入、原生认证、旧私有状态处理与真实手机旅程仍待完成。证据：`evidence/platform-test-journal-admission-2026-10-16.json`。
+
+## 测试录音挂载与统一维护入口（2026-10-16）
+
+测试 Compose 已让网关、维护任务共用 `/opt/tellyouwhat/journal-recordings/development`，目录由既有部署锁内的受限准备步骤创建，Docker 不自动创建目录。维护镜像与源码一起构建并登记，宿主机原有 maintenance 定时入口按当前登记的测试版本运行；不依赖 API 运行或生成功能开启，失败会使整体维护失败，同时继续执行其余清理。新拓扑要求完整的健康测试媒体凭据，避免维护任务无法清理测试媒体。
+
+拓扑迁移仅放行已固定摘要的旧/新 Compose 对，保留数据库、Redis、网络及已有服务配置。先部署已接入手记、已挂载目录但关闭录音生成的版本，再允许开启；不允许移除持久目录。启动后检查实际容器用户、环境、挂载源/目标及读写属性。此前“测试录音必须关闭”的代码限制已改为上述验收前提。
+
+230 项 Python 运维测试完成（1 项本机 Caddy 条件跳过），维护命令 Linux/amd64 编译通过；服务器 Docker Compose 以合成配置核对旧/新拓扑差异通过，仅解析配置，没有创建容器、准备正式目录或改动路由。远端部署、真实定时清理、相册共享测试接入与手机旅程仍待完成。证据：`evidence/platform-test-recording-storage-2026-10-16.json`。

@@ -70,7 +70,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
     def enable_journal(self):
         self.enable_health()
         self.app.update(dev.journal.FIXED)
-        self.app.update(PLATFORM_APPS='health,journal,birthday', JOURNAL_ALLOWED_APP_BUILDS='20')
+        self.app.update(PLATFORM_APPS='health,journal,birthday', JOURNAL_ALLOWED_APP_BUILDS='20', JOURNAL_RECORDING_ENABLED='false')
         for key in dev.journal.RESOURCE_KEYS:
             self.app[key] = 'ep-journal-test' if key.endswith('_MODEL_ID') else 'journal-test-key'
         self.app['JOURNAL_IMAGE_MAX_COST_NANOS'] = '100000000'
@@ -87,6 +87,22 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             item = tarfile.TarInfo('migrations/' + name)
             item.size = len(contents)
             archive.addfile(item, io.BytesIO(contents))
+        self.save()
+
+    def set_topology(self, *, mounted):
+        root = Path(__file__).resolve().parents[2]
+        path = root / ('compose.platform-test.yaml' if mounted else 'deploy/tencent/testdata/platform-test-before-recording.yaml')
+        data = path.read_bytes()
+        with tarfile.open(self.folder / 'source.tar') as archive:
+            entries = [(m.name, archive.extractfile(m).read()) for m in archive.getmembers()]
+        with tarfile.open(self.folder / 'source.tar', 'w') as archive:
+            for name, content in entries:
+                if name == 'compose.platform-test.yaml':
+                    content = data
+                item = tarfile.TarInfo(name)
+                item.size = len(content)
+                archive.addfile(item, io.BytesIO(content))
+        (self.folder / 'compose.platform-test.yaml').write_bytes(data)
         self.save()
 
     def save(self):
@@ -238,11 +254,18 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             if label.endswith('-worker-status'):
                 return b'{"httpEnabled":true,"backgroundEnabled":true}'
             if label in ('platform-test-update-running-gateway', 'platform-test-update-check-gateway',
-                         'platform-test-rollback-check-gateway', 'platform-test-update-check-worker'):
+                         'platform-test-rollback-check-gateway', 'platform-test-update-check-worker',
+                         'platform-test-update-running-worker', 'platform-test-rollback-check-worker'):
                 source = self.source if label.startswith('platform-test-update-check') else self.old_source
                 service = 'worker' if label.endswith('-worker') else 'gateway'
-                return json.dumps([{'State': {'Running': True}, 'RestartCount': 0,
-                                    'Config': {'Image': dev.PROJECT + '-' + service + ':' + source}}]).encode()
+                container = {'State': {'Running': True}, 'RestartCount': 0,
+                             'Config': {'Image': dev.PROJECT + '-' + service + ':' + source}}
+                folder = self.folder if source == self.source else self.old_folder
+                if service == 'gateway' and dev.recording.available(folder):
+                    container['Config'].update(User='65532:65532', Env=['APP_ENV=development', 'JOURNAL_RECORDING_ROOT=' + dev.recording.ROOT])
+                    container['Mounts'] = [{'Type': 'bind', 'Source': dev.recording.ROOT,
+                                            'Destination': dev.recording.ROOT, 'RW': True}]
+                return json.dumps([container]).encode()
             if label == 'platform-test-update-schema':
                 return b'1\t0001_example.sql\n'
             if label == 'platform-test-migration-names':
@@ -519,6 +542,65 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'either reviewed release'):
             self.update()
         self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_reviewed_storage_transition_prepares_directory_and_builds_maintenance(self):
+        self.set_topology(mounted=False)
+        self.prepare_update()
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        result = self.update()
+        self.assertEqual(result['apps'], ['health', 'journal', 'birthday'])
+        self.assertEqual(dev.image_services(self.folder), ('gateway', 'worker', 'migrate', 'maintenance'))
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('recording-storage-prepare'), labels.index('platform-test-update-start'))
+        builds = [c.args[1] for c in self.runtime.execute.call_args_list if c.args[0].startswith('platform-test-build-')]
+        self.assertEqual({c[c.index('--target') + 1] for c in builds}, {'gateway', 'worker', 'migrate', 'maintenance'})
+        self.assertFalse(any('down' in c.args[1] or '--volumes' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_recordings_enable_only_after_mounted_journal_baseline(self):
+        self.set_topology(mounted=False)
+        self.prepare_update()
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.app['JOURNAL_RECORDING_ENABLED'] = 'true'
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'disabled before enabling'):
+            self.update()
+        self.assertFalse(any(c.args[0] == 'recording-storage-prepare' for c in self.runtime.execute.call_args_list))
+
+    def test_mounted_journal_can_enable_recording_generation(self):
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.prepare_update()
+        self.app['JOURNAL_RECORDING_ENABLED'] = 'true'
+        self.save()
+        self.update()
+        self.assertEqual(dev.read_environment(self.folder / 'runtime.env')['JOURNAL_RECORDING_ENABLED'], 'true')
+
+    def test_disabling_recordings_keeps_storage_and_maintenance(self):
+        self.enable_journal()
+        self.app['JOURNAL_RECORDING_ENABLED'] = 'true'
+        self.set_topology(mounted=True)
+        self.prepare_update()
+        self.app['JOURNAL_RECORDING_ENABLED'] = 'false'
+        self.save()
+        self.update()
+        self.assertTrue(dev.recording.available(self.folder))
+        self.assertIn('maintenance', dev.image_services(self.folder))
+
+    def test_unreviewed_topology_and_removing_storage_are_rejected(self):
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.prepare_update()
+        self.set_topology(mounted=False)
+        with self.assertRaisesRegex(OperationError, 'topology'):
+            self.update()
+        self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
+
+    def test_new_maintenance_topology_requires_test_media_cleanup_credentials(self):
+        self.set_topology(mounted=True)
+        with self.assertRaisesRegex(OperationError, 'Health media configuration'):
+            dev.selection(self.runtime, self.source)
 
 
 if __name__ == '__main__':

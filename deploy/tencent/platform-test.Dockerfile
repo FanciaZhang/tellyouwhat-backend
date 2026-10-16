@@ -7,7 +7,7 @@ COPY go.mod go.sum ./
 RUN GOPROXY="${GOPROXY}" go mod download
 COPY . .
 # Reuse the compiler cache across the isolated platform service images.
-RUN set -e; for service in gateway worker migrate servicecheck; do \
+RUN set -e; for service in gateway worker migrate maintenance servicecheck; do \
       CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/${service} ./cmd/${service}; \
     done
 
@@ -30,3 +30,5 @@ FROM runtime AS worker
 COPY --from=build /out/worker /service
 FROM runtime AS migrate
 COPY --from=build /out/migrate /service
+FROM runtime AS maintenance
+COPY --from=build /out/maintenance /service

@@ -33,6 +33,13 @@ services:
       PORT: "8080"
       TRUSTED_CLIENT_IP_HEADER: X-Real-IP
       GOMEMLIMIT: "180MiB"
+      JOURNAL_RECORDING_ROOT: /opt/tellyouwhat/journal-recordings/development
+    volumes:
+      - &recording-storage
+        type: bind
+        source: /opt/tellyouwhat/journal-recordings/development
+        target: /opt/tellyouwhat/journal-recordings/development
+        bind: {create_host_path: false}
     ports: ["127.0.0.1:${PLATFORM_TEST_API_PORT:-18790}:8080/tcp"]
     depends_on:
       mysql: {condition: service_healthy}
@@ -71,6 +78,22 @@ services:
       target: migrate
     depends_on:
       mysql: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 50
+
+  maintenance:
+    <<: *app
+    restart: "no"
+    profiles: [operations]
+    image: "tellyouwhat-platform-test-maintenance:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
+    build:
+      context: .
+      dockerfile: deploy/tencent/platform-test.Dockerfile
+      target: maintenance
+    environment:
+      <<: *environment
+      JOURNAL_RECORDING_ROOT: /opt/tellyouwhat/journal-recordings/development
+    volumes: [*recording-storage]
     mem_limit: 128m
     pids_limit: 50
 

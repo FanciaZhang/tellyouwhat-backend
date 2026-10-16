@@ -5,13 +5,11 @@ import re
 from ops_common import OperationError, read_environment
 
 HOST = 'api-test.journal.tellyouwhat.cn'
-# shortcut: recording-file processing stays off until test storage and maintenance are mounted.
 FIXED = {'JOURNAL_APPLE_BUNDLE_ID': 'cn.tellyouwhat.journalapp.dev', 'JOURNAL_APPLE_TEAM_ID': 'T6DD96HY2B',
          'JOURNAL_API_HOSTS': HOST, 'JOURNAL_APP_ATTEST_ENV': 'production',
          'JOURNAL_ARK_BASE_URL': 'https://ark.cn-beijing.volces.com/api/v3',
          'JOURNAL_IMAGE_BASE_URL': 'https://ark.cn-beijing.volces.com/api/v3',
-         'JOURNAL_VOICE_ENABLED': 'true', 'JOURNAL_IMAGE_ENABLED': 'true',
-         'JOURNAL_RECORDING_ENABLED': 'false'}
+         'JOURNAL_VOICE_ENABLED': 'true', 'JOURNAL_IMAGE_ENABLED': 'true'}
 RESOURCE_KEYS = {'JOURNAL_ARK_API_KEY': 'JOURNAL_ARK_API_KEY',
                  'JOURNAL_ARK_LITE_MODEL_ID': 'JOURNAL_ARK_LITE_MODEL',
                  'JOURNAL_ARK_PRO_MODEL_ID': 'JOURNAL_ARK_PRO_MODEL',
@@ -20,11 +18,12 @@ RESOURCE_KEYS = {'JOURNAL_ARK_API_KEY': 'JOURNAL_ARK_API_KEY',
                  'JOURNAL_IMAGE_API_KEY': 'JOURNAL_IMAGE_API_KEY',
                  'JOURNAL_IMAGE_MODEL_ID': 'JOURNAL_IMAGE_MODEL_ID',
                  'JOURNAL_IMAGE_MAX_COST_NANOS': 'JOURNAL_IMAGE_MAX_COST_NANOS'}
-SETTINGS = set(FIXED) | set(RESOURCE_KEYS) | {'JOURNAL_ALLOWED_APP_BUILDS'}
+SETTINGS = set(FIXED) | set(RESOURCE_KEYS) | {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'}
 
 
 def validate(app):
     if (any(app.get(k) != v for k, v in FIXED.items())
+            or app.get('JOURNAL_RECORDING_ENABLED') not in ('false', 'true')
             or not re.fullmatch(r'\d+(,\d+)*', app.get('JOURNAL_ALLOWED_APP_BUILDS', ''))
             or any(not app.get(k) for k in RESOURCE_KEYS)
             or any(k.startswith('JOURNAL_') and k not in SETTINGS for k in app)
