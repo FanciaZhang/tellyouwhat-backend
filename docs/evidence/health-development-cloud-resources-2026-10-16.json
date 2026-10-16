@@ -1,0 +1,95 @@
+{
+  "observedAt": "2026-10-16T02:54:25.544395+00:00",
+  "scope": "Health development cloud resources; not API activation",
+  "bucket": {
+    "name": "health-ai-test",
+    "region": "cn-beijing",
+    "project": "default",
+    "storageClass": "STANDARD",
+    "multiAZ": false,
+    "versioning": false,
+    "encryption": "SSE-TOS",
+    "defaultObjectACL": "private",
+    "publicBucketACL": [],
+    "lifecycleConfigured": false,
+    "verification": "TOS console overview and bucket ACL readback"
+  },
+  "endpoints": [
+    {
+      "Id": "ep-20261016104637-869cv",
+      "Name": "healthapp_dev_seed_mini",
+      "Status": "Running",
+      "ModelReference": {
+        "FoundationModel": {
+          "Name": "doubao-seed-2-0-mini",
+          "ModelVersion": "260428"
+        }
+      },
+      "SupportRolling": true
+    },
+    {
+      "Id": "ep-20261016105050-bcl4b",
+      "Name": "healthapp_dev_seed_lite",
+      "Status": "Running",
+      "ModelReference": {
+        "FoundationModel": {
+          "Name": "doubao-seed-2-0-lite",
+          "ModelVersion": "260428"
+        }
+      },
+      "SupportRolling": true
+    },
+    {
+      "Id": "ep-20261016105205-wt9gw",
+      "Name": "healthapp_dev_seed_pro",
+      "Status": "Running",
+      "ModelReference": {
+        "FoundationModel": {
+          "Name": "doubao-seed-2-1-pro",
+          "ModelVersion": "260628"
+        }
+      },
+      "SupportRolling": true
+    }
+  ],
+  "billing": "postpaid tokens, no reserved compute",
+  "plannedEndpointMapping": {
+    "HEALTH_ARK_ENDPOINT_DIET_ANALYSIS": "ep-20261016104637-869cv",
+    "HEALTH_ARK_ENDPOINT_HEALTH_BEHAVIOR_ANALYSIS": "ep-20261016104637-869cv",
+    "HEALTH_ARK_ENDPOINT_HEALTH_NUTRITION_ANALYSIS": "ep-20261016104637-869cv",
+    "HEALTH_ARK_ENDPOINT_HYDRATION_CUP_ESTIMATE": "ep-20261016104637-869cv",
+    "HEALTH_ARK_ENDPOINT_MEAL_DECISION": "ep-20261016104637-869cv",
+    "HEALTH_ARK_ENDPOINT_MEAL_PHOTO_CAPTURE": "ep-20261016105205-wt9gw",
+    "HEALTH_ARK_ENDPOINT_MEAL_TEXT_CAPTURE": "ep-20261016105050-bcl4b",
+    "HEALTH_ARK_ENDPOINT_VOICE_TRANSCRIPTION": "ep-20261016104637-869cv"
+  },
+  "modelDifference": {
+    "feature": "MEAL_PHOTO_CAPTURE",
+    "productionModel": "doubao-seed-2-0-pro/260215",
+    "developmentModel": "doubao-seed-2-1-pro/260628",
+    "reason": "Console marks 2.0 pro 260215 as retiring and disables new selection",
+    "qualityAcceptance": "pending"
+  },
+  "iam": {
+    "identity": "healthapp-development-backend",
+    "status": "prepared_not_created",
+    "consoleAccess": false,
+    "selfManageKeys": false,
+    "policies": [
+      "config/iam/health-development-media-only.json",
+      "config/iam/health-development-inference-only.json"
+    ],
+    "runtimeCredentialsConfigured": false,
+    "isolationNegativeProbes": "pending"
+  },
+  "healthProduction": {
+    "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:ac7e9d601ba9215f5409a769dfb53cd12e4e54d4fd17354a8889d16699199427",
+    "startedAt": "2026-10-13T06:51:32.051220621Z",
+    "running": true,
+    "changedByThisStep": false
+  },
+  "testAPIEnrollment": false,
+  "deviceAcceptance": false,
+  "screenshot": "health-development-endpoints-2026-10-16.jpg",
+  "screenshotSHA256": "546b9392c7d71bd3459a03b59e9957d66cfadb881cdae2f09380bcc81ec31e47"
+}

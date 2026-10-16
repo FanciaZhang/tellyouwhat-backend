@@ -8,7 +8,7 @@
 
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
-| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 开发包已交付，独立测试存储与服务尚未完成 |
+| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 开发包已交付；测试桶与模型端点已创建，受限身份和测试 API 待接通 |
 | 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt 已脱离正式库，配置与费用账本独立加密备份；真实语音、供应商身份和 CloudKit 待验收 |
 | 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
@@ -25,7 +25,7 @@
 
 源码 `7c0e6d2` 已以 `PLATFORM_APPS=birthday` 部署，允许构建 4、5；只读取所选 App 的身份和提供商配置。健康仍未接入，要求 `health,birthday`、独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动所需 gateway/worker；检查所选 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
 
-健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；尚未在云端创建或绑定。需要完成控制台登录、独立模型与身份配置，再实际检查本前缀可读写、其他前缀与正式桶拒绝；名称和配置不作为权限验收证据。
+健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；尚未在云端创建或绑定。测试桶与模型端点已创建；独立身份与策略绑定仍待完成，随后检查本前缀可读写、其他前缀与正式桶拒绝。推理策略在 `health-development-inference-only.json`，仅包含三个测试端点；名称和配置不作为权限验收证据。
 
 生产发布使用 `release.py deploy`；测试和 OTA 使用已登记的产物所有者入口，由 ubuntu 执行，锁定准确源码、镜像与匹配配置。不得通过 root wrapper、移动镜像标签或独立迁移替代既有流程。只保留恢复所需的当前/上一版，不要求未上线 App 继续运行旧协议。见 [产物与备份责任](host-artifact-lifecycle.md)。
 
@@ -79,3 +79,9 @@
 ## 手记独立开发 CloudKit schema（2026-10-16）
 
 `iCloud.cn.tellyouwhat.journalapp.dev` 的 Development 原先只有 Users。现已从现有手记 Development 结构核对当前源码的 14 种模型、字段和索引，导入独立开发容器并部署到该容器的 Production，供 Ad Hoc 使用。完整 Production schema 导出与导入内容一致；新业务类型仅保留 creator 写权限，未复制公共数据库的读取/创建授权，Users 不变。正式容器及用户记录未改动，没有 App 构建输入变化或新签名包。真实手机上传、下载、跨设备同步和容器隔离仍待验收。见 `evidence/journal-development-cloudkit-schema-2026-10-16.json`；可复现结构在手记仓库 `docs/journal-development.ckdb`。
+
+## 健康测试云资源（2026-10-16）
+
+`health-ai-test` 已创建并读回：北京、标准单 AZ、私有桶与默认私有对象、SSE-TOS；未启用版本控制或生命周期删除。独立 mini 260428、lite 260428、pro 2.1 / 260628 三个按 Token 付费端点已创建，管理 API 均返回 Running，八项功能的接入映射已准备，计划按模型复用三个端点，尚未部署。正式图片识别的 pro 2.0 / 260215 已禁止新建，测试改用 2.1 / 260628；正式端点未改，测试效果和结构化输出尚待验收。
+
+`healthapp-development-backend` 尚未创建；媒体前缀和三个端点的最小权限策略已准备，未授予权限、生成凭据或接通健康测试 API。下一步为创建受限身份、验证正式资源访问被拒绝，再通过现有平台测试部署入口接入。正式健康运行镜像和 2026-10-13 启动时间未变。证据：`evidence/health-development-cloud-resources-2026-10-16.json`。
