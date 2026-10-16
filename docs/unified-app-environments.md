@@ -4,9 +4,11 @@
 
 **统一层级（2026-10-16 用户确认）**：每个环境一个共享 API 网关进程，四个 App 按 Host 进入各自路由与认证；测试与生产分别运行。相册媒体 worker 可独立，数据库、桶和凭据继续按 App/环境隔离。发布时允许暂存待切换候选，但不维持四套独立 API。现有手记和相册独立测试 API 是待迁移起点，不是目标架构。
 
-相册共享测试 API 的接入代码已准备，尚未部署：`compose.platform-albums-test.yaml` 只给共享网关增加现有相册测试网络、独立凭据文件和只读密钥挂载，继续使用原相册数据库、Redis、媒体 worker。两套数据服务使用明确的容器地址，避免双网络同名解析。接入前必须匹配已登记的相册配置并验证完整相册异地备份；失败恢复原网关，不回退数据库或删除相册数据。运维单元测试及服务器 Compose 配置解析通过，容器运行、公开路由切换和真实登录仍待验收。证据见 `evidence/platform-test-albums-admission-2026-10-16.json`。
+**当前部署（2026-10-16）**：后端 PR #48 已合并，主分支 `30d118e` 的 CI、8 个镜像发布、生产部署和定时运维安装均通过。健康/手记正式共享网关已切到 blue 槽位 18080，公网与稳定状态检查通过，旧槽位正常退出；上一版及匹配配置保留。
 
-测试部署入口还会核对服务器定时任务使用的运维脚本是否与候选匹配，不允许先启动新网关再遗漏备份/维护升级。当前服务器缺少六个相关模块、四个模块仍为旧版，检查会在任何备份、迁移或服务变更前拒绝激活；运维代码按现有生产发布入口安装。51 项针对性测试通过。见 `evidence/platform-test-operations-admission-2026-10-16.json`。
+四个测试域名现均指向共享网关 18790，运行同一 `30d118e`；相册继续使用独立数据库、Redis、媒体 worker 和只读密钥挂载。手记录音先部署具备持久存储的关闭版本，再启用；测试库由 66 项迁移到 67 项，仅新增已审阅的插图任务表。四 App 就绪、公开鉴权、错误 Host 拒绝及清理通过。切换后备份已上传 COS，并完成 94 张控制面表的隔离恢复；这不是实际用户登录或新一轮定时备份的证据。
+
+旧独立测试进程尚待受管退役；源码 `ca36105` 已补齐停止容器的备份校验和登记退役入口。290 项运维测试中 288 项通过、2 项因本机缺少原生工具跳过；服务器只读预检确认四个旧 API 镜像与登记一致，活动路由已无依赖。匹配脚本仍须经生产发布安装，尚未停止服务。见 `evidence/test-api-retirement-preflight-2026-10-16.json`。生日/相册正式资源与接入、真实设备和 CloudKit 旅程仍未完成。部署证据见 `evidence/shared-gateway-deployment-2026-10-16.json`。
 
 仅健康已上线，需要保留正式用户升级与数据兼容。相册、手记、生日直接迁到目标身份、接口和存储模型，不新增旧开发包适配或过渡路由；已有数据、备份和用户未提交源码仍保留。旧服务退役与不可恢复的数据删除是两件事。
 
@@ -14,14 +16,18 @@
 
 | App | 开发身份 | 测试 API | 当前状态 |
 | --- | --- | --- | --- |
-| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 与生日共用测试网关 18790，独立测试 worker、受限云身份与 HTTPS 已接通；真实 App Attest 和云同步待验收 |
-| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务、Prompt、推理及语音身份已接通；配置与费用账本独立加密备份；手机业务旅程和 CloudKit 待验收 |
-| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 与健康共用测试网关 18790、测试 MySQL/Redis 及备份，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
-| 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
+| 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 四 App 共用测试网关 18790，独立测试 worker、受限云身份与 HTTPS 已接通；真实 App Attest 和云同步待验收 |
+| 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 共享测试网关 18790 已接通，独立推理/语音身份及录音存储已启用；旧服务尚待受管退役；手机业务旅程和 CloudKit 待验收 |
+| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 四 App 共用测试网关 18790、测试 MySQL/Redis 及备份，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
+| 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 共享测试网关 18790 已接通，保留独立数据服务与媒体 worker；真实登录、容量与媒体旅程待完成 |
 
-正式身份为对应 Bundle ID 去掉 `.dev`，目标域名为 `api.<app>.tellyouwhat.cn`。现有健康/手记正式服务仍为 18180；正式相册域名仍指向旧测试栈，不能据域名宣称已具备生产环境。生日正式域名及推理身份仍需迁移。未上线 App 的旧路径不作为兼容交付要求。
+正式身份为对应 Bundle ID 去掉 `.dev`，目标域名为 `api.<app>.tellyouwhat.cn`。当前健康/手记正式服务为 18080；正式相册域名仍指向旧测试栈，不能据域名宣称已具备生产环境。生日正式域名及推理身份仍需迁移。未上线 App 的旧路径不作为兼容交付要求。
 
-`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `398b2ff`、1.0 (5)，自动验证设备并支持 Debug 诊断导出；测试后端 `7c0e6d2` 保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
+`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `398b2ff`、1.0 (5)，自动验证设备并支持 Debug 诊断导出；当前共享测试后端保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
+
+手记最新 Ad Hoc 为 1.0 (21)、源码 `fc1f9eb`，已接入共享测试 API 并发布；公网完整包摘要、Manifest、HEAD/Range 和私有响应头通过，上传暂存已清理。手机先前安装的是构建 20，新包尚待设备验收。见 `evidence/journal-shared-gateway-ota-2026-10-16.json`。
+
+以下各节保留实施阶段记录；当前部署状态以上述“当前服务”和最新部署证据为准。
 
 ## 共享路由与公网验收（2026-10-16）
 

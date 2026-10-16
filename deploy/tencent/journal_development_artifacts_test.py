@@ -102,6 +102,16 @@ class JournalRecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'authentication'):
             journal.read_checkpoint(self.runtime, target)
 
+    def test_stopped_runtime_keeps_recoverable_policy_and_ledger_without_relaxing_identity(self):
+        self.container['State']['Running'] = False
+        target, _ = self.backup()
+        data = journal.read_checkpoint(self.runtime, target)
+        self.assertEqual(data['journaldevserver'], self.program)
+        self.assertEqual(json.loads(data['cost-events.json']), self.events)
+        self.container['Image'] = 'sha256:unregistered'
+        with self.assertRaisesRegex(OperationError, 'boundary'):
+            self.backup('unregistered')
+
     def test_database_access_unmatched_source_and_mutable_configuration_are_rejected(self):
         self.container['Config']['Env'].append('JOURNAL_PROMPT_DATABASE_DSN=do-not-export')
         with self.assertRaisesRegex(OperationError, 'boundary'):

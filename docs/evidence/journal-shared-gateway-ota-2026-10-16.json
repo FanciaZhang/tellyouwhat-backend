@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-10-16T10:52:51.427010+00:00",
+  "source_commit": "fc1f9eb73fc0b4591a9596660f212ce991b6db0d",
+  "build": "21",
+  "page_manifest_head_range_hosts_privacy_passed": true,
+  "tls_verified": true,
+  "full_download_sha256": "53ed562349efc45f8a8cf3d399ee1c4cc79c2ce8f649e3fe1b88d3e3f669ad5e",
+  "bytes": 70961939,
+  "expires_at": "2026-10-17T10:48:32.18335422Z",
+  "device_installation_verified": false,
+  "raw_installation_link_omitted": true,
+  "backend_source": "30d118efb02b455025f9f8c2a3bef93e1340c94c",
+  "api_origin": "https://api-test.journal.tellyouwhat.cn",
+  "native_verification_reference": "shared-gateway-adhoc-2026-10-16.json",
+  "tested_source_hashes_match": true,
+  "owned_staging_removed": true,
+  "owner_publication_cleanup_passed": true,
+  "remote_ci": false,
+  "formal_release_gate_passed": false,
+  "pushed": false,
+  "real_app_attest_verified": false,
+  "real_cloud_sync_verified": false
+}

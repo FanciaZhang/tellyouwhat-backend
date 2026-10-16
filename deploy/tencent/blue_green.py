@@ -133,24 +133,26 @@ def assert_route(slot):
             raise OperationError('public App host does not route exclusively to the selected shared slot')
 
 
+def proxy_dials(item):
+    found = set()
+    if isinstance(item, dict):
+        if 'dial' in item:
+            found.add(item['dial'])
+        for child in item.values():
+            found.update(proxy_dials(child))
+    elif isinstance(item, list):
+        for child in item:
+            found.update(proxy_dials(child))
+    return found
+
+
 def proxy_hosts(value):
     found = {}
-    def dials(item):
-        found = set()
-        if isinstance(item, dict):
-            if 'dial' in item:
-                found.add(item['dial'])
-            for child in item.values():
-                found.update(dials(child))
-        elif isinstance(item, list):
-            for child in item:
-                found.update(dials(child))
-        return found
     def walk(item):
         if isinstance(item, dict):
             for match in item.get('match', []):
                 for host in match.get('host', []):
-                    found.setdefault(host, set()).update(dials(item))
+                    found.setdefault(host, set()).update(proxy_dials(item))
             for child in item.values():
                 walk(child)
         elif isinstance(item, list):
