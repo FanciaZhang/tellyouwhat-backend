@@ -63,3 +63,11 @@
 生日远程诊断已交付 `398b2ff`、1.0 (5)：Debug 可导出本次进程的受限 AI 元数据，Release 无入口或实现；56 项 Debug 检查、1 项 Release 界面检查及 27 项核心测试通过，另跳过 1 项真实服务测试。原生双目标签名及公网完整 IPA 摘要、HEAD/Range 通过；发布就绪路径误用 `/healthz` 后，改用实际 `/readyz` 完成 owner 检查和清理，复用原回执，未重复发布。平台测试更新到 `7c0e6d2` 后，MySQL、Redis 和正式网关未重启，66 项 schema 未变，匹配的新加密备份已认证。见 `evidence/birthday-remote-diagnostics-ota-2026-10-16.json`；实际手机安装/注册与推理仍未验收。
 
 相册正式桶已创建（2026-10-16）：`tellyouwhat-albums-production-1251995834` / `ap-guangzhou`，私有、多 AZ、版本控制开启。`albums/originals/` 当前/历史版本 30 天转多 AZ 低频已由控制台保存并读回，无对象年龄删除规则。既有开发桶不迁作正式桶；正式 CAM/CI、部署、路由和真实媒体旅程未就绪，禁止将新桶存在等同正式服务可用。证据：`evidence/albums-production-storage-2026-10-16.json`。
+
+## 健康引导测试入口隔离（2026-10-16）
+
+源码 `8c3df1fd` 将 `UI_TEST_GUIDE_PAGE` 的读取限制为 Debug；正式版继续按真实初始页面决定是否推迟引导。已核对受测源码摘要：iPhone 17 / iOS 26.5 上 35 项单元测试、2 项 UI 测试通过，普通 iOS Release 编译通过，发布二进制不含该开关。另以原样策略源码在 macOS 验证了 6 项非 Debug 断言。未执行新的签名、OTA 或完整发布门禁；截图尚待用户确认。见 `evidence/health-guide-runtime-boundary-2026-10-16.json`。
+
+## 健康独立开发 CloudKit schema（2026-10-16）
+
+独立容器 `iCloud.cn.tellyouwhat.healthapp.dev` 已导入当前同步代码所需的 `AppObjectV2`、`AppMediaV2`，并部署到该开发容器自己的 Production 环境，供 Ad Hoc 包使用。控制台读回确认记录类型、字段及 `manifest` 加密类型；既有 Users 类型不变，未操作业务记录，也未修改正式容器。此证据仅证明 schema 就绪，真实手机写入、恢复、跨设备同步及正式容器隔离仍待验收。见 `evidence/health-development-cloudkit-schema-2026-10-16.json`；可复现 schema 保存在健康仓库 `docs/ci/health-development.ckdb`。
