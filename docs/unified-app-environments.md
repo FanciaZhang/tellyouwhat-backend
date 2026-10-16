@@ -75,3 +75,7 @@
 ## 相册后台任务数据库隔离（2026-10-16）
 
 源码 `15a5b31` 将 API 既有数据库/环境检查移到与 worker 共用的配置入口，阻止独立 worker 在错误环境连接数据库。28 组配置覆盖测试/生产互串、其他 App 数据库、缺失环境；另外验证 root、空用户和错误 DSN 的拒绝及日志脱敏。相关三个 Go 包共 235 项顶层测试通过、220 项真实集成条件检查跳过。现有 Compose 已给两个进程注入相同配置，新增回归断言；未更新远端服务。见 `evidence/albums-worker-environment-2026-10-16.json`。
+
+## 手记独立开发 CloudKit schema（2026-10-16）
+
+`iCloud.cn.tellyouwhat.journalapp.dev` 的 Development 原先只有 Users。现已从现有手记 Development 结构核对当前源码的 14 种模型、字段和索引，导入独立开发容器并部署到该容器的 Production，供 Ad Hoc 使用。完整 Production schema 导出与导入内容一致；新业务类型仅保留 creator 写权限，未复制公共数据库的读取/创建授权，Users 不变。正式容器及用户记录未改动，没有 App 构建输入变化或新签名包。真实手机上传、下载、跨设备同步和容器隔离仍待验收。见 `evidence/journal-development-cloudkit-schema-2026-10-16.json`；可复现结构在手记仓库 `docs/journal-development.ckdb`。
