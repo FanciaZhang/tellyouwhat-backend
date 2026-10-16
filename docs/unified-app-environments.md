@@ -10,20 +10,20 @@
 | --- | --- | --- | --- |
 | 健康 | cn.tellyouwhat.healthapp.dev | api-test.health.tellyouwhat.cn | 开发包已交付，独立测试存储与服务尚未完成 |
 | 手记 | cn.tellyouwhat.journalapp.dev | api-test.journal.tellyouwhat.cn | 独立开发服务 18787 已接通；Prompt 已脱离正式库，配置与费用账本独立加密备份；真实语音、供应商身份和 CloudKit 待验收 |
-| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通；真实手机注册/推理待完成 |
+| 生日 | cn.tellyouwhat.birthday.dev | api-test.birthday.tellyouwhat.cn | 独立测试网关 18790、MySQL/Redis 及备份已接通，开发包 1.0 (5) 支持诊断导出；真实手机注册/推理待完成 |
 | 相册 | cn.tellyouwhat.albums.dev | api-test.albums.tellyouwhat.cn | 独立 API/worker 18092 及备份已接通；真实登录、容量与媒体旅程待完成 |
 
 正式身份为对应 Bundle ID 去掉 `.dev`，目标域名为 `api.<app>.tellyouwhat.cn`。现有健康/手记正式服务仍为 18180；正式相册域名仍指向旧测试栈，不能据域名宣称已具备生产环境。生日正式域名及推理身份仍需迁移。未上线 App 的旧路径不作为兼容交付要求。
 
-`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `3354a9a`、1.0 (4)，已取消手输激活码，首次使用自动验证设备；测试后端 `fb5cd0b` 保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
+`install.tellyouwhat.cn` 已交付四个 App 的签名开发包，安装服务实际回滚并恢复当前版通过。生日最新为源码 `398b2ff`、1.0 (5)，自动验证设备并支持 Debug 诊断导出；测试后端 `7c0e6d2` 保留 App Attest、构建白名单及额度限制。详见 [OTA 与验收边界](apple-development-delivery.md)及 `evidence/birthday-automatic-enrollment-ota-2026-10-16.json`。
 
 ## 隔离和部署
 
 平台 `APP_ENV=development` 默认使用 `.dev` 与 `api-test.*`，production 使用正式身份和 `api.*`。配置相反的身份、域名或数据库时，连接数据库前拒绝启动；开发库和账号均以 `_test` 结尾，生产两者均不得以该后缀结尾，且均不能使用 root。实际 MySQL grants、Redis、对象存储及会话/载荷密钥仍须分别验证，命名检查不能代替权限隔离。
 
-`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `fb5cd0b` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
+`compose.platform-test.yaml` 是独立项目、网络和数据卷，默认子网 `172.29.93.0/24`，仅 gateway 的 18790 端口发布到回环地址。当前源码 `7c0e6d2` 只启用生日，66 项迁移完成；健康须先准备自己的测试媒体资源再接入。生日开发推理身份仍被旧 TestFlight 服务使用，正式推理资源隔离尚未完成。
 
-待部署源码 `7c0e6d2` 使用 `PLATFORM_APPS` 显式选择 App，只读取所选 App 的身份和提供商配置。健康接入要求 `health,birthday`、独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动 gateway/worker；同时检查两种 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
+源码 `7c0e6d2` 已以 `PLATFORM_APPS=birthday` 部署，允许构建 4、5；只读取所选 App 的身份和提供商配置。健康仍未接入，要求 `health,birthday`、独立 `health-ai-test` 私有桶、测试模型端点与独立凭据；部署前逐项拒绝与当前正式配置相同的凭据或端点。更新保留原 MySQL、Redis、网络、加密密钥和 schema，先验证异地备份，再启动所需 gateway/worker；检查所选 Host 和 worker 的实际运行状态，失败恢复匹配的旧配置。旧 source/configuration 只为已登记备份及回滚校验保留，不提供旧开发客户端适配。
 
 健康媒体 IAM 策略已准备在 [health-development-media-only.json](../config/iam/health-development-media-only.json)，仅允许 `health-ai-test/ai-temp/health/*` 的上传、读取和删除对象；尚未在云端创建或绑定。需要完成控制台登录、独立模型与身份配置，再实际检查本前缀可读写、其他前缀与正式桶拒绝；名称和配置不作为权限验收证据。
 
@@ -52,8 +52,10 @@
 
 ## 剩余工作
 
-健康独立测试资源与真实云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源与日志导出；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
+健康独立测试资源与真实云同步；手记独立供应商身份、真实语音与 CloudKit；生日正式 API/推理资源；相册正式资源、真实登录/容量及媒体链路；四个 App 的手机安装、真实权益和普通 Release TestFlight 候选。健康继续验证正式用户升级，其他 App 不再增加历史开发包兼容门禁。
 
 手记隔离证据：`evidence/journal-development-isolation-2026-10-16.json`，后端源码 `29b832c`。旧正式库只读凭据已撤销，所有运行/停止容器均无依赖，旧配置及临时恢复资源已清理。合成日记通过真实模型整理，响应使用独立 Prompt 修订且请求/内容绑定正确；这不代表手机语音、编辑保存或 CloudKit 已通过。供应商权限身份仍待独立，文件分开不作为云端 IAM 隔离证据。
 
 健康自动开发认证证据：`evidence/health-automatic-development-access-2026-10-16.json`。客户端 69 项定向测试、普通 Release 编译及真实产物检查通过；后端全量 Go 测试、178 项运维 Python 检查（1 项跳过）、3 项独立真实 MySQL 集成检查通过。正式健康网关仍为原镜像、未重启；这批源码尚未部署健康测试 API，也未导出新开发安装包。
+
+生日远程诊断已交付 `398b2ff`、1.0 (5)：Debug 可导出本次进程的受限 AI 元数据，Release 无入口或实现；56 项 Debug 检查、1 项 Release 界面检查及 27 项核心测试通过，另跳过 1 项真实服务测试。原生双目标签名及公网完整 IPA 摘要、HEAD/Range 通过；发布就绪路径误用 `/healthz` 后，改用实际 `/readyz` 完成 owner 检查和清理，复用原回执，未重复发布。平台测试更新到 `7c0e6d2` 后，MySQL、Redis 和正式网关未重启，66 项 schema 未变，匹配的新加密备份已认证。见 `evidence/birthday-remote-diagnostics-ota-2026-10-16.json`；实际手机安装/注册与推理仍未验收。
