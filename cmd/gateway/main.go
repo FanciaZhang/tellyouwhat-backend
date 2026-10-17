@@ -597,7 +597,7 @@ func buildAppHandler(
 
 func configureHealthConsents(dependencies *gateway.Dependencies) {
 	dependencies.AllowedConsentScopes = []string{
-		privacy.AdultScope, privacy.Age14PlusScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+		privacy.AdultScope, privacy.Age14PlusScope, privacy.GuardianConsentScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
 		privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
 	}
 	dependencies.RequiredConsentScopes = []string{privacy.HealthEligibilityScope, privacy.SensitiveHealthScope}
