@@ -8,7 +8,7 @@ Health 托管 AI 继续单独要求所选 AI 模式和敏感健康信息同意�
 | 已发布十四岁声明 | age_14_plus 与 privacy_and_terms 均已同意 | 年龄为 2026-10-01；一般协议为 2026-10-01 或 2026-10-10 |
 | 监护人同意版 | privacy_and_terms 已同意 | 2026-10-17 |
 
-`guardian_consent` 是 Health 专用的监护人声明记录，版本为 2026-10-17；不等同于身份证明或已满14岁的声明。App 在已知未满14周岁时要求监护人明确确认，撤回或缺少该同意时禁止相应处理，并同步 privacy_and_terms=false。年龄未知时提示由监护人操作，不强制填写出生日期。
+`guardian_consent` 是 Health 专用的监护人声明记录，版本为 2026-10-17；不等同于身份证明或已满14岁的声明。App 在已知未满14周岁时要求监护人明确确认，撤回或缺少该同意时禁止相应处理，并同步 privacy_and_terms=false。年龄未知或已满14周岁时不显示儿童专属提示或链接，不强制填写出生日期。
 
 新客户端发送 adult=false、age_14_plus=false，避免撤回新协议后回退到旧年龄记录；旧 scope 的语义和记录保留。授权数组最多八项，Health 的 guardian_consent 与新一般协议版本不能用于 Journal 或其他 App。health_eligibility 仅为内部资格检查名，不接受客户端上报。服务不接收此授权用途的生日或精确年龄。
 
