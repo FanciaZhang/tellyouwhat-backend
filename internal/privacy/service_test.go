@@ -70,6 +70,11 @@ func TestHealthEligibilityRequiresCompleteVersionPair(t *testing.T) {
 		want     bool
 	}{
 		{"legacy", []Consent{{AdultScope, GeneralDocumentVersion, true}, {PrivacyTermsScope, GeneralDocumentVersion, true}}, true},
+		{"newGeneralWithoutAgeClaim", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, true}}, true},
+		{"guardian", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, true}, {GuardianConsentScope, HealthCurrentDocumentVersion, true}}, true},
+		{"guardianWithoutGeneral", []Consent{{GuardianConsentScope, HealthCurrentDocumentVersion, true}}, false},
+		{"revokedNewGeneral", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, false}}, false},
+		{"publishedICloud", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, HealthICloudDocumentVersion, true}}, true},
 		{"current", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, HealthGeneralDocumentVersion, true}}, true},
 		{"mixed", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, GeneralDocumentVersion, true}}, false},
 		{"revoked", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, false}, {PrivacyTermsScope, HealthGeneralDocumentVersion, true}}, false},
@@ -94,8 +99,14 @@ func TestHealthEligibilityRequiresCompleteVersionPair(t *testing.T) {
 func TestNewHealthConsentDoesNotAuthorizeJournal(t *testing.T) {
 	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
 	principal := attestation.Principal{AppID: "journal", KeyID: "key", DeviceID: "device"}
-	if _, err := service.RecordConsents(context.Background(), principal, []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}}); err != ErrInvalidConsent {
-		t.Fatalf("got %v", err)
+	for _, consent := range []Consent{
+		{Age14PlusScope, HealthGeneralDocumentVersion, true},
+		{GuardianConsentScope, HealthCurrentDocumentVersion, true},
+		{PrivacyTermsScope, HealthCurrentDocumentVersion, true},
+	} {
+		if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != ErrInvalidConsent {
+			t.Fatalf("cross-app consent %s: got %v", consent.Scope, err)
+		}
 	}
 }
 

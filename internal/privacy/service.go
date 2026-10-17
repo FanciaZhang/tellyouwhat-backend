@@ -13,6 +13,9 @@ const (
 	Age14PlusScope                     = "age_14_plus"
 	HealthEligibilityScope             = "health_eligibility"
 	HealthGeneralDocumentVersion       = "2026-10-01"
+	HealthICloudDocumentVersion        = "2026-10-10"
+	HealthCurrentDocumentVersion       = "2026-10-17"
+	GuardianConsentScope               = "guardian_consent"
 	PrivacyTermsScope                  = "privacy_and_terms"
 	LifetimeBYOKScope                  = "lifetime_byok"
 	ManagedAIScope                     = "managed_subscription"
@@ -83,14 +86,14 @@ func NewService(repository Repository, objects ObjectCleaner, cache CacheCleaner
 }
 
 func (service *Service) RecordConsents(ctx context.Context, principal attestation.Principal, values []Consent) (time.Time, error) {
-	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 7 {
+	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 8 {
 		return time.Time{}, ErrInvalidConsent
 	}
 	recordedAt := service.now().UTC().Truncate(time.Microsecond)
 	records := make([]Record, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if (value.Scope == Age14PlusScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion == HealthGeneralDocumentVersion)) && principal.AppID != "health" {
+		if (value.Scope == Age14PlusScope || value.Scope == GuardianConsentScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion != GeneralDocumentVersion)) && principal.AppID != "health" {
 			return time.Time{}, ErrInvalidConsent
 		}
 		if !validConsent(value) || (value.Scope == JournalIllustrationScope && principal.AppID != "journal") {
@@ -156,13 +159,24 @@ func (service *Service) HasRequiredConsents(
 		requirements = append(requirements, requirement)
 	}
 	if healthEligibility {
-		// Versions are checked as complete pairs, never mixed across generations.
 		current, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
-			{Scope: Age14PlusScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
-			{Scope: PrivacyTermsScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
+			{Scope: PrivacyTermsScope, DocumentVersion: HealthCurrentDocumentVersion, Granted: true},
 		})
 		if err != nil {
 			return false, err
+		}
+		// Published clients retain their original age declarations and document versions.
+		for _, version := range []string{HealthICloudDocumentVersion, HealthGeneralDocumentVersion} {
+			if current {
+				break
+			}
+			current, err = reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+				{Scope: Age14PlusScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
+				{Scope: PrivacyTermsScope, DocumentVersion: version, Granted: true},
+			})
+			if err != nil {
+				return false, err
+			}
 		}
 		if !current {
 			legacy, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
@@ -216,8 +230,10 @@ func validConsent(value Consent) bool {
 		return value.DocumentVersion == JournalIllustrationDocumentVersion
 	case Age14PlusScope:
 		return value.DocumentVersion == HealthGeneralDocumentVersion
+	case GuardianConsentScope:
+		return value.DocumentVersion == HealthCurrentDocumentVersion
 	case PrivacyTermsScope:
-		return value.DocumentVersion == GeneralDocumentVersion || value.DocumentVersion == HealthGeneralDocumentVersion
+		return value.DocumentVersion == GeneralDocumentVersion || value.DocumentVersion == HealthGeneralDocumentVersion || value.DocumentVersion == HealthICloudDocumentVersion || value.DocumentVersion == HealthCurrentDocumentVersion
 	case AdultScope:
 		return value.DocumentVersion == GeneralDocumentVersion
 	case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:

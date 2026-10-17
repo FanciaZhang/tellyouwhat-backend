@@ -48,6 +48,8 @@ func TestHealthRuntimeRecordsCurrentAndLegacyAgeConsent(t *testing.T) {
 	}{
 		{"legacy", legacy, true},
 		{"current", current, true},
+		{"newGuardian", `{"consents":[{"scope":"adult","documentVersion":"2026-08-24","granted":false},{"scope":"age_14_plus","documentVersion":"2026-10-01","granted":false},{"scope":"guardian_consent","documentVersion":"2026-10-17","granted":true},{"scope":"privacy_and_terms","documentVersion":"2026-10-17","granted":true},{"scope":"sensitive_health_ai","documentVersion":"2026-08-24","granted":true},{"scope":"managed_subscription","documentVersion":"2026-08-24","granted":true},{"scope":"lifetime_byok","documentVersion":"2026-08-24","granted":false},{"scope":"free_managed_recognition","documentVersion":"2026-08-24","granted":false}]}`, true},
+		{"newRevoked", `{"consents":[{"scope":"adult","documentVersion":"2026-08-24","granted":false},{"scope":"age_14_plus","documentVersion":"2026-10-01","granted":false},{"scope":"guardian_consent","documentVersion":"2026-10-17","granted":false},{"scope":"privacy_and_terms","documentVersion":"2026-10-17","granted":false},{"scope":"sensitive_health_ai","documentVersion":"2026-08-24","granted":true}]}`, false},
 		{"revoked", strings.Replace(current, `"scope":"age_14_plus","documentVersion":"2026-10-01","granted":true`, `"scope":"age_14_plus","documentVersion":"2026-10-01","granted":false`, 1), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
