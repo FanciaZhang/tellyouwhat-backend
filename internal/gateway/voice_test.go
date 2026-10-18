@@ -112,12 +112,12 @@ func TestGeneratedVoiceStreamUpgradesAndRejectsTicketReplay(t *testing.T) {
 	}
 }
 
-func TestDevelopmentVoiceGrantUsesDeviceOwnerAndExpires(t *testing.T) {
+func TestLegacyDevelopmentGrantNeverAuthorizesVoice(t *testing.T) {
 	now := time.Now()
 	for _, expired := range []bool{false, true} {
 		store := entitlement.NewMemoryStore()
 		expires := now.Add(time.Hour)
-		want := 201
+		want := 403
 		if expired {
 			expires = now.Add(-time.Second)
 			want = 403

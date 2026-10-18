@@ -61,6 +61,7 @@ func TestFreeRecognitionConfigurationCoversBoundedOutputReservations(t *testing.
 	app := AppConfig{
 		Registry: appregistry.App{ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"},
 			TeamID: "TEAM", BundleID: "health.bundle.dev", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
+		AppStore:               validProductionAppStoreConfig("Sandbox"),
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
 		AllowedBuilds:          map[string]struct{}{"100": {}}, ManagedAIProductIDs: []string{"health.ai.monthly"},
 		SchemaManifestPath: "fixture-manifest", Ark: ark.Config{BaseURL: "https://ark.test", APIKey: "fixture", Routes: routes},
@@ -87,7 +88,7 @@ func TestJournalDefaultPlansRemainSeparateFromHealth(t *testing.T) {
 			continue
 		}
 		if !slices.Equal(app.ManagedAIProductIDs, []string{
-			"journal.ai.subscription.monthly", "journal.ai.subscription.annual",
+			"journal.ai.subscription.monthly.dev", "journal.ai.subscription.annual.dev",
 		}) {
 			t.Fatalf("unexpected Journal subscription allowlist: %v", app.ManagedAIProductIDs)
 		}
@@ -122,6 +123,7 @@ func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {
 			TeamID: "TEAM", BundleID: "journal.bundle.dev", ManagedAIProductID: "journal.ai.monthly",
 			AllowedOperationPrefix: "journal.",
 		},
+		AppStore:               validProductionAppStoreConfig("Sandbox"),
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
 		AllowedBuilds:          map[string]struct{}{"100": {}},
 		ManagedAIProductIDs:    []string{"journal.ai.monthly"},

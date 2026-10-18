@@ -93,6 +93,28 @@ class PlatformTestRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(OperationError, 'incomplete'):
                 artifacts.verify_recovery(tar, {k: v for k, v in hashes.items() if k != 'current/albums.env'})
 
+    def test_sandbox_recovery_requires_both_signing_key_and_trust_roots(self):
+        names = {'state.json', 'owner.json', 'database.env', 'backup.env',
+                 *('current/' + name for name in (*artifacts.FILES, 'selection.json', *artifacts.albums.FILES)),
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc',
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc.json',
+                 'secrets/album-app-store.p8', 'secrets/apple-app-store-roots.pem'}
+        contents = {n: n.encode() for n in names}
+        contents['current/albums.env'] = b'ALBUM_SUBSCRIPTIONS_ENABLED=true\n'
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for n, content in contents.items():
+                entry = tarfile.TarInfo('recovery/platform-test/' + n)
+                entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+        data.seek(0)
+        hashes = {n:hashlib.sha256(c).hexdigest() for n,c in contents.items()}
+        with tarfile.open(fileobj=data) as archive:
+            artifacts.verify_recovery(archive, hashes)
+            for name in ('secrets/album-app-store.p8', 'secrets/apple-app-store-roots.pem'):
+                with self.subTest(name=name), self.assertRaisesRegex(OperationError, 'incomplete'):
+                    artifacts.verify_recovery(archive, {k:v for k,v in hashes.items() if k != name})
+
     def test_absent_test_stack_leaves_existing_backups_unchanged(self):
         self.assertEqual(artifacts.backup_configuration(self.runtime, self.base / 'unused'), {})
         self.runtime.execute.assert_not_called()

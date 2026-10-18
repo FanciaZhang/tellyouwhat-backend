@@ -612,8 +612,8 @@ func commerceServices(
 	if appConfig.Registry.ID == appregistry.Birthday {
 		return nil, nil, nil, nil
 	}
-	if environment == "development" {
-		return entitlement.NewDevelopmentService(string(appConfig.Registry.ID), store, 30*24*time.Hour, time.Now), nil, nil, nil
+	if environment == "development" && appConfig.AppStore.Environment != "Sandbox" {
+		return nil, nil, nil, errors.New("development purchases require Apple Sandbox")
 	}
 	rootPEM, err := os.ReadFile(appConfig.AppStore.RootPEMPath)
 	if err != nil {

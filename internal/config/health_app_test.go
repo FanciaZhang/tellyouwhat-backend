@@ -112,6 +112,7 @@ func TestProductionAppRequiresAppStoreServerCredentials(t *testing.T) {
 	app.Registry.BundleID = "health.bundle"
 	app.AttestationEnvironment = attestation.EnvironmentProduction
 	app.AllowedBuilds = nil
+	app.AppStore = AppStoreConfig{}
 	if err := app.Validate("production"); err == nil || !strings.Contains(err.Error(), "APP_STORE") {
 		t.Fatalf("production accepted missing App Store credentials: %v", err)
 	}
@@ -152,6 +153,7 @@ func validHealthAppConfig() AppConfig {
 			TeamID: "TEAM", BundleID: "health.bundle.dev", ManagedAIProductID: "health.premium.subscription.monthly",
 			AllowedOperations: allowedOperations,
 		},
+		AppStore:               validProductionAppStoreConfig("Sandbox"),
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
 		AllowedBuilds:          map[string]struct{}{"100": {}},
 		ManagedAIProductIDs:    []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
@@ -178,5 +180,15 @@ func validProductionAppStoreConfig(environment string) AppStoreConfig {
 		Environment: environment, IssuerID: "issuer-id", KeyID: "key-id",
 		PrivateKeyPath: "/secrets/SubscriptionKey.p8", RootPEMPath: "/config/apple-roots.pem",
 		AppAppleID: 1234567890,
+	}
+}
+
+func TestDevelopmentRejectsProductionStoreKitVerification(t *testing.T) {
+	for _, environment := range []string{"Production", "Both", ""} {
+		app := validHealthAppConfig()
+		app.AppStore = validProductionAppStoreConfig(environment)
+		if err := app.Validate("development"); err == nil {
+			t.Fatalf("development accepted %q", environment)
+		}
 	}
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/testutil/appattest"
 )
 
-func TestDevelopmentAccessUsesVerifiedDeviceWithoutManualSecretHTTP(t *testing.T) {
+func TestLegacyDevelopmentGrantCannotAuthorizePaidServiceHTTP(t *testing.T) {
 	for _, app := range []struct {
 		id     appregistry.AppID
 		bundle string
@@ -112,9 +112,10 @@ func verifyDevelopmentAccessHTTP(t *testing.T, id appregistry.AppID, bundle stri
 	if err != nil || !found || record.Environment != "development" || record.TransactionID != "" || !record.ExpiresAt.Equal(now.Add(30*24*time.Hour)) {
 		t.Fatal("development access was not separately bounded")
 	}
-	quota := serve(request(http.MethodGet, "/v1/ai/quota"), 200)
-	if !strings.Contains(quota.Body.String(), `"plan":"managed_subscription"`) {
-		t.Fatal("verified developer access not applied")
+	if id == appregistry.Journal {
+		serve(request(http.MethodGet, "/v1/ai/quota"), 403)
+	} else if response := serve(request(http.MethodGet, "/v1/ai/quota"), 200); !strings.Contains(response.Body.String(), `"plan":"free"`) {
+		t.Fatal("legacy grant replaced the free plan")
 	}
 	now = now.Add(31 * 24 * time.Hour)
 	if id == appregistry.Journal {
@@ -123,7 +124,11 @@ func verifyDevelopmentAccessHTTP(t *testing.T, id appregistry.AppID, bundle stri
 		t.Fatal("Health must retain its existing free plan")
 	}
 	serve(request(http.MethodPost, path), 200)
-	serve(request(http.MethodGet, "/v1/ai/quota"), 200)
+	if id == appregistry.Journal {
+		serve(request(http.MethodGet, "/v1/ai/quota"), 403)
+	} else {
+		serve(request(http.MethodGet, "/v1/ai/quota"), 200)
+	}
 	// Production installs no development activator, regardless of client headers.
 	server.activator = nil
 	serve(request(http.MethodPost, path), 404)

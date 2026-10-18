@@ -9,7 +9,8 @@ from ops_common import OperationError
 
 # New table only; no existing schema/data changes. Do not infer safety from SQL keywords.
 ADDITIONS = {'migrations/0065_journal_illustration_jobs.sql':
-             '7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6'}
+             '7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6',
+             'migrations/0066_verified_entitlement_environments.sql': '04b74a306bb945b495a7b842207a95234ea84d9d2f0df3f9d6090653ebeb00e9'}
 
 
 def hashes(folder):

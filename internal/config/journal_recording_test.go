@@ -60,6 +60,8 @@ func TestRecordingRuntimeRejectsMissingVoiceDurabilityOrBudget(t *testing.T) {
 
 func TestWorkerDoesNotRequireGatewayRecordingStorage(t *testing.T) {
 	for key, value := range map[string]string{
+		"JOURNAL_APP_STORE_ENV": "Sandbox", "JOURNAL_APP_STORE_ISSUER_ID": "fixture", "JOURNAL_APP_STORE_KEY_ID": "fixture",
+		"JOURNAL_APP_STORE_PRIVATE_KEY_PATH": "fixture.p8", "JOURNAL_APP_STORE_ROOT_PEM_PATH": "fixture.pem",
 		"APP_ENV": "development", "PLATFORM_APPS": "journal", "APPLE_TEAM_ID": "TEAM",
 		"STORAGE_MODE": "mysql", "DATABASE_DSN": "journal_test:synthetic@tcp(localhost:3306)/platform_test",
 		"REDIS_URL": "redis://localhost", "PAYLOAD_ENCRYPTION_KEY": "synthetic",

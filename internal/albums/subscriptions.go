@@ -28,9 +28,9 @@ var (
 
 func subscriptionCapacity(product string) int64 {
 	switch product {
-	case Cloud50GBAnnualProduct:
+	case Cloud50GBAnnualProduct, Cloud50GBAnnualProduct + ".dev":
 		return 50_000_000_000
-	case Cloud500GBAnnualProduct:
+	case Cloud500GBAnnualProduct, Cloud500GBAnnualProduct + ".dev":
 		return 500_000_000_000
 	default:
 		return 0

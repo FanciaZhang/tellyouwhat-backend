@@ -143,7 +143,7 @@ func TestAlbumSubscriptionVerifierRejectsOtherBundle(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	fixture := newAlbumReceiptFixture(t, now)
 	for _, audience := range []string{albumAppleAudience, albumDevelopmentAudience} {
-		config := &AlbumSubscriptionConfig{BundleID: audience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+		config := &AlbumSubscriptionConfig{SandboxQuotaBytes: 1_000_000_000, BundleID: audience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 		service, err := newConfiguredAlbumSubscriptions(NewMySQLUploads(nil).WithSubscriptionEnvironment("Sandbox"), config, appleTestTransport(func(*http.Request) (*http.Response, error) {
 			t.Fatal("verification must not require a provider request")
 			return nil, errors.New("unexpected request")
@@ -151,9 +151,22 @@ func TestAlbumSubscriptionVerifierRejectsOtherBundle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if audience == albumDevelopmentAudience {
+			if service.repository.(*MySQLUploads).productionSandboxQuota != 1_000_000_000 {
+				t.Fatal("development Sandbox is uncapped")
+			}
+			payload := fixture.payload(uuid.NewString())
+			payload["bundleId"] = audience
+			if _, err := service.resolver.verifier.VerifyTransaction(fixture.sign(t, payload)); err == nil {
+				t.Fatal("development accepted formal catalogue")
+			}
+		}
 		for _, signedAudience := range []string{albumAppleAudience, albumDevelopmentAudience} {
 			payload := fixture.payload(uuid.NewString())
 			payload["bundleId"] = signedAudience
+			if signedAudience == albumDevelopmentAudience {
+				payload["productId"] = Cloud50GBAnnualProduct + ".dev"
+			}
 			_, err := service.resolver.verifier.VerifyTransaction(fixture.sign(t, payload))
 			if (err == nil) != (audience == signedAudience) {
 				t.Fatalf("subscription bundle binding: want %s, receipt %s, error %v", audience, signedAudience, err)

@@ -80,6 +80,9 @@ func TestAppValidationRejectsCrossEnvironmentConfiguration(t *testing.T) {
 			app.Registry.Hosts = []string{tc.host}
 			app.AttestationEnvironment = attestation.EnvironmentProduction
 			app.AppStore = validProductionAppStoreConfig("Both")
+			if tc.environment == "development" {
+				app.AppStore.Environment = "Sandbox"
+			}
 			err := app.Validate(tc.environment)
 			if tc.wantError == "" {
 				if err != nil {

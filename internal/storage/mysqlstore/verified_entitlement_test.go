@@ -204,6 +204,13 @@ func TestMySQLVerifiedSubscriptionEnvironmentRoundTrip(t *testing.T) {
 			if err := db.QueryRow(`SELECT production_transaction_id, sandbox_transaction_id FROM app_attest_keys WHERE app_id='health' AND key_id=?`, key.KeyID).Scan(&productionAnchor, &sandboxAnchor); err != nil || productionAnchor != "production-purchase" || sandboxAnchor != "sandbox-purchase" {
 				t.Fatalf("lost environment binding: %v", err)
 			}
+			for _, env := range []string{"sandbox", "production"} {
+				var id string
+				var expiry time.Time
+				if err := db.QueryRow(`SELECT original_transaction_id, expires_at FROM managed_entitlement_environments WHERE app_id='health' AND key_id=? AND environment=?`, key.KeyID, env).Scan(&id, &expiry); err != nil || id != makeRecord(env).TransactionID || !expiry.After(time.Now()) {
+					t.Fatalf("lost verified %s state: %s %v", env, id, err)
+				}
+			}
 			// A notification updates only the matching active environment.
 			for _, env := range []string{"sandbox", "production"} {
 				id := makeRecord(env).TransactionID
@@ -225,7 +232,7 @@ func TestMySQLVerifiedSubscriptionEnvironmentRoundTrip(t *testing.T) {
 			if err := privacyStore.DeletePrincipal(ctx, principal); err != nil {
 				t.Fatal(err)
 			}
-			for _, table := range []string{"app_attest_keys", "managed_entitlements", "app_store_notifications"} {
+			for _, table := range []string{"app_attest_keys", "managed_entitlements", "managed_entitlement_environments", "app_store_notifications"} {
 				var count int
 				if err := db.QueryRow("SELECT COUNT(*) FROM " + table + " WHERE app_id='health'").Scan(&count); err != nil || count != 0 {
 					t.Fatalf("environment state retained in %s: %d %v", table, count, err)

@@ -61,6 +61,12 @@ func (repository *EntitlementRepository) ApplyNotification(
 	); err != nil {
 		return false, err
 	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE managed_entitlement_environments
+        SET expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
+        WHERE app_id = ? AND original_transaction_id = ? AND environment = ?`,
+		state.ExpiresAt, purchasePrice(state.CurrentPayment), repository.appID, state.OriginalTransactionID, state.Environment); err != nil {
+		return false, err
+	}
 	if err := observePurchase(ctx, transaction, repository.appID, "", state.Environment, state.Payment); err != nil {
 		return false, err
 	}
@@ -159,6 +165,19 @@ func (repository *EntitlementRepository) upsert(ctx context.Context, transaction
 		purchasePrice(record.Payment),
 	); err != nil {
 		return err
+	}
+	// Switching the active TestFlight/App Store subscription must retain both verified states.
+	if record.Environment == "production" || record.Environment == "sandbox" {
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO managed_entitlement_environments
+            (app_id, key_id, original_transaction_id, environment, expires_at, started_at, price_milli)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE original_transaction_id=VALUES(original_transaction_id),
+            expires_at=VALUES(expires_at), started_at=COALESCE(VALUES(started_at), started_at),
+            price_milli=VALUES(price_milli), updated_at=UTC_TIMESTAMP(6)`,
+			repository.appID, record.KeyID, record.TransactionID, record.Environment, record.ExpiresAt,
+			nullableVoiceDate(record.StartedAt), purchasePrice(record.Payment)); err != nil {
+			return err
+		}
 	}
 	if err := observePurchase(ctx, transaction, repository.appID, record.KeyID, record.Environment, record.Payment); err != nil {
 		return err

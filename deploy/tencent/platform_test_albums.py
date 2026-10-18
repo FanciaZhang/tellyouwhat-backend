@@ -19,6 +19,26 @@ COMPOSE_KEYS = {'PLATFORM_ALBUM_ENV_FILE', 'PLATFORM_ALBUM_SOURCE',
                 'PLATFORM_ALBUM_MYSQL_PASSWORD', 'PLATFORM_ALBUM_REDIS_PASSWORD'}
 
 
+SUBSCRIPTION_SETTINGS = {'ALBUM_SUBSCRIPTIONS_ENABLED', 'ALBUM_APP_STORE_APP_APPLE_ID',
+    'ALBUM_APP_STORE_ISSUER_ID', 'ALBUM_APP_STORE_KEY_ID', 'ALBUM_APP_STORE_KEY_FILE', 'ALBUM_APP_STORE_ROOTS_FILE',
+    'ALBUM_DEVELOPMENT_CLOUD_ACCOUNTS', 'ALBUM_DEVELOPMENT_CLOUD_QUOTA_BYTES', 'ALBUM_DEVELOPMENT_CLOUD_EXPIRES_AT'}
+
+def require_subscription_transition(before, after):
+    old = read_environment(before / ('albums.env' if (before / 'albums.env').exists() else 'runtime.env'))
+    new = read_environment(after / 'albums.env')
+    if old == new:
+        return
+    expected = {'ALBUM_SUBSCRIPTIONS_ENABLED': 'true', 'ALBUM_APP_STORE_APP_APPLE_ID': '6824089160',
+        'ALBUM_APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8', 'ALBUM_APP_STORE_KEY_ID': '4TVBWNCPNR',
+        'ALBUM_APP_STORE_KEY_FILE': '/album-secrets/album-app-store.p8',
+        'ALBUM_APP_STORE_ROOTS_FILE': '/album-secrets/apple-app-store-roots.pem'}
+    if (any(new.get(k) != v for k, v in expected.items())
+            or any(k.startswith('ALBUM_DEVELOPMENT_CLOUD_') for k in new)
+            or {k:v for k,v in old.items() if k not in SUBSCRIPTION_SETTINGS} !=
+               {k:v for k,v in new.items() if k not in SUBSCRIPTION_SETTINGS}):
+        raise OperationError('Albums subscription change must preserve approved resources and use the reviewed Sandbox catalogue')
+
+
 def selected(folder):
     return 'albums' in read_environment(folder / 'runtime.env').get('PLATFORM_APPS', '').split(',')
 
@@ -65,8 +85,7 @@ def require_configuration(runtime, folder):
                        for s in (owner.get('current'), owner.get('previous')))):
         raise OperationError('shared test Albums resources must match their registered development selection')
     approved = selected_files(runtime, original, source, ALBUM_FILES)
-    if approved['runtime.env'] != (folder / 'albums.env').read_bytes():
-        raise OperationError('shared test Albums configuration differs from its approved resources')
+    require_subscription_transition(original, folder)
     previous = read_environment(original / 'compose.env')
     if (previous.get('ALBUM_TEST_SECRET_DIRECTORY') != '/opt/tellyouwhat/albums-development/secrets'
             or previous.get('ALBUM_TEST_MYSQL_USER') != 'albums_development_test'

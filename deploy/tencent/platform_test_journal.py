@@ -22,11 +22,12 @@ SETTINGS = set(FIXED) | set(RESOURCE_KEYS) | {'JOURNAL_ALLOWED_APP_BUILDS', 'JOU
 
 
 def validate(app):
+    from platform_test_deploy import STOREKIT_SETTINGS
     if (any(app.get(k) != v for k, v in FIXED.items())
             or app.get('JOURNAL_RECORDING_ENABLED') not in ('false', 'true')
             or not re.fullmatch(r'\d+(,\d+)*', app.get('JOURNAL_ALLOWED_APP_BUILDS', ''))
             or any(not app.get(k) for k in RESOURCE_KEYS)
-            or any(k.startswith('JOURNAL_') and k not in SETTINGS for k in app)
+            or any(k.startswith('JOURNAL_') and k not in SETTINGS | STOREKIT_SETTINGS for k in app)
             or any(not re.fullmatch(r'ep-[a-z0-9-]+', app.get(k, '')) for k in RESOURCE_KEYS if k.endswith('_MODEL_ID'))
             or not re.fullmatch(r'\d{1,10}', app.get('JOURNAL_IMAGE_MAX_COST_NANOS', ''))):
         raise OperationError('Journal test identity, inference or resource boundary is invalid')

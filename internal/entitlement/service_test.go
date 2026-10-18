@@ -34,8 +34,8 @@ func TestDevelopmentActivationRequiresVerifiedAppPrincipalAndExpiresWithoutPurch
 		t.Fatalf("unexpected expiry: %s", expiresAt)
 	}
 	allowed, _ := service.HasManagedSubscription(context.Background(), principal)
-	if !allowed {
-		t.Fatal("activated principal should be entitled")
+	if allowed {
+		t.Fatal("legacy development grant must not unlock cloud service")
 	}
 	record, ok, err := store.Get(context.Background(), principal.KeyID)
 	if err != nil || !ok || record.Environment != "development" || record.TransactionID != "" || record.Payment.TransactionID != "" || record.Payment.HasPrice() {

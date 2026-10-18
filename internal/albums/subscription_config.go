@@ -64,6 +64,8 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 	c := &AlbumSubscriptionConfig{BundleID: albumAudienceForDeployment(deployment), RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
 	if deployment == "production" {
 		c.Environment = "Both"
+	}
+	if deployment == "production" || deployment == "test" {
 		c.SandboxQuotaBytes = 1_000_000_000
 		if raw := strings.TrimSpace(getenv("ALBUM_SANDBOX_QUOTA_BYTES")); raw != "" {
 			var err error
@@ -136,6 +138,12 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
 		return nil, ErrSubscriptionUnavailable
 	}
+	if c.Environment == "Sandbox" {
+		if c.SandboxQuotaBytes <= 0 || c.SandboxQuotaBytes > 50_000_000_000 {
+			return nil, ErrSubscriptionUnavailable
+		}
+		repository.productionSandboxQuota = c.SandboxQuotaBytes
+	}
 	base := "https://api.storekit.apple.com"
 	if c.Environment == "Sandbox" {
 		base = "https://api.storekit-sandbox.apple.com"
@@ -144,8 +152,14 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	}
 	httpClient := &http.Client{Transport: transportOrDefault(transport), Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("album App Store redirect refused") }}
+	products := []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}
+	if c.BundleID == albumDevelopmentAudience {
+		for i := range products {
+			products[i] += ".dev"
+		}
+	}
 	verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: c.Roots, BundleID: c.BundleID, AppAppleID: c.AppAppleID,
-		Environment: c.Environment, ProductIDs: []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}})
+		Environment: c.Environment, ProductIDs: products})
 	client := appstore.NewAPIClient(appstore.APIClientConfig{BaseURL: base, KeyID: c.KeyID, IssuerID: c.IssuerID,
 		BundleID: c.BundleID, AppAppleID: c.AppAppleID, Environment: c.Environment, SigningKey: c.SigningKey, HTTPClient: httpClient})
 	resolver, err := NewAlbumSubscriptionResolver(verifier, client, c.Environment, time.Now)

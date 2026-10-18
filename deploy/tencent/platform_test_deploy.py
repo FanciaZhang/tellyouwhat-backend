@@ -1,6 +1,7 @@
 """Deploy the independent platform test database and selected development APIs."""
 
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -33,6 +34,23 @@ HEALTH_SETTINGS = HEALTH_ENDPOINTS | {'HEALTH_APPLE_BUNDLE_ID', 'HEALTH_APPLE_TE
     'HEALTH_APP_ATTEST_ENV', 'HEALTH_ALLOWED_APP_BUILDS', 'HEALTH_SCHEMA_MANIFEST_PATH',
     'HEALTH_ARK_API_KEY', 'HEALTH_ARK_BASE_URL',
     'HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION', 'HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION'}
+
+
+STOREKIT_FIELDS = {'APP_STORE_ENV', 'APP_STORE_ISSUER_ID', 'APP_STORE_KEY_ID',
+                  'APP_STORE_PRIVATE_KEY_PATH', 'APP_STORE_ROOT_PEM_PATH', 'APP_STORE_APP_APPLE_ID'}
+STOREKIT_SETTINGS = {prefix + '_' + key for prefix in ('HEALTH', 'JOURNAL') for key in STOREKIT_FIELDS}
+HEALTH_SETTINGS |= {k for k in STOREKIT_SETTINGS if k.startswith('HEALTH_')}
+
+def validate_storekit(app, prefix):
+    values = {k: app.get(prefix + '_' + k) for k in STOREKIT_FIELDS}
+    if not any(v is not None for v in values.values()):
+        return  # Retained selections used server development grants.
+    expected = {'APP_STORE_ENV': 'Sandbox', 'APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8',
+                'APP_STORE_KEY_ID': '4TVBWNCPNR', 'APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
+                'APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
+                'APP_STORE_APP_APPLE_ID': {'HEALTH': '6824089036', 'JOURNAL': '6824089154'}[prefix]}
+    if values != expected or 'albums' not in app.get('PLATFORM_APPS', '').split(','):
+        raise OperationError('development StoreKit must use the reviewed Sandbox app and mounted key')
 
 
 def applications(folder):
@@ -146,6 +164,8 @@ def selection(runtime, source):
             raise OperationError('Journal recordings require the reviewed test storage mount')
     elif any(k.startswith('JOURNAL_') for k in app):
         raise OperationError('Journal credentials require its explicit test application selection')
+    for prefix in ('HEALTH', 'JOURNAL'):
+        validate_storekit(app, prefix)
     albums.validate(folder, app, compose)
     if albums.selected(folder) and not recording.available(folder):
         raise OperationError('Albums admission requires the reviewed shared test topology')
@@ -274,14 +294,15 @@ def update_configuration(runtime, source, previous_source, folder, record):
         permitted |= journal.SETTINGS
     if 'journal' in after_apps:
         permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'}
+    permitted |= STOREKIT_SETTINGS
     compose_changes = {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}
     if 'albums' in after_apps:
         compose_changes.add('PLATFORM_ALBUM_ENV_FILE')
         if 'albums' not in before_apps:
             permitted |= set(albums.REGISTRY)
             compose_changes |= albums.COMPOSE_KEYS
-        elif (old / 'albums.env').read_bytes() != (folder / 'albums.env').read_bytes():
-            raise OperationError('enrollment update cannot replace Albums credentials or feature settings')
+        else:
+            albums.require_subscription_transition(old, folder)
     for filename, allowed in [('compose.env', compose_changes),
                               ('runtime.env', permitted)]:
         before, after = read_environment(old / filename), read_environment(folder / filename)
@@ -337,6 +358,47 @@ def update_configuration(runtime, source, previous_source, folder, record):
         raise
 
 
+@contextlib.contextmanager
+def test_operations_transition(runtime, update_from):
+    # Test-only validators travel with the registered test release; production operations stay fixed.
+    names = ('platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py', 'platform_test_artifacts.py')
+    source, installed = Path(__file__).resolve().parent, runtime.root / 'deploy/tencent'
+    changed = {n: (source / n).read_bytes() for n in names if (installed / n).read_bytes() != (source / n).read_bytes()}
+    if not changed:
+        yield
+        return
+    if not update_from:
+        raise OperationError('install matched scheduled operations or update an existing registered test release')
+    state = json.loads(private_file(runtime, runtime.state / 'platform-test.json', 16384))
+    if state.get('source') != update_from:
+        raise OperationError('test operations update does not match the running source')
+    previous, _, _ = selection(runtime, update_from)
+    originals = {}
+    with tarfile.open(previous / 'source.tar') as archive:
+        for name in changed:
+            path = installed / name
+            if path.is_symlink() or path.stat().st_uid != runtime.root.stat().st_uid or path.stat().st_mode & 0o022:
+                raise OperationError('test operations must be operator owned')
+            originals[name] = path.read_bytes()
+            member = archive.getmember('deploy/tencent/' + name)
+            if not member.isfile() or member.size > 131072 or archive.extractfile(member).read() != originals[name]:
+                raise OperationError('installed test operations differ from the registered rollback source')
+    def replace(files):
+        for name, data in files.items():
+            target = installed / name
+            temporary = installed / ('.' + name + '.transition')
+            with temporary.open('xb') as output:
+                output.write(data)
+            temporary.chmod(0o644)
+            temporary.replace(target)
+    try:
+        replace(changed)
+        yield
+    except BaseException:
+        replace(originals)
+        raise
+
+
 def activate(runtime, source, update_from=None):
     require_operator(runtime.root)
     for name in ('operations', 'deployment'):
@@ -346,6 +408,11 @@ def activate(runtime, source, update_from=None):
             except BlockingIOError:
                 continue
             raise OperationError('platform test bootstrap requires both owner locks')
+    with test_operations_transition(runtime, update_from):
+        return activate_selected(runtime, source, update_from)
+
+
+def activate_selected(runtime, source, update_from):
     folder, record, migrations = selection(runtime, source)
     require_installed_operations(runtime, folder)
     require_separate_health_resources(runtime, folder)

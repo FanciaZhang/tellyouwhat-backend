@@ -118,6 +118,44 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         for p in self.folder.iterdir():
             p.chmod(0o600)
 
+    def test_test_only_operations_update_rolls_back_and_rejects_drift(self):
+        name = 'platform_test_journal.py'
+        installed = self.root / 'deploy/tencent' / name
+        original = b'# previous registered test validator\n'
+        installed.write_bytes(original)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo('deploy/tencent/' + name)
+            entry.size = len(original)
+            archive.addfile(entry, io.BytesIO(original))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source}))
+        state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertNotEqual(installed.read_bytes(), original)
+                raise RuntimeError('activation failed')
+        self.assertEqual(installed.read_bytes(), original)
+        installed.write_bytes(b'# unexpected drift\n')
+        with self.assertRaisesRegex(OperationError, 'rollback source'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('accepted changed operations')
+        self.assertEqual(installed.read_bytes(), b'# unexpected drift\n')
+
+    def test_storekit_configuration_is_sandbox_only_and_app_specific(self):
+        app = {'PLATFORM_APPS': 'health,journal,birthday,albums',
+               'HEALTH_APP_STORE_ENV': 'Sandbox',
+               'HEALTH_APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8',
+               'HEALTH_APP_STORE_KEY_ID': '4TVBWNCPNR',
+               'HEALTH_APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
+               'HEALTH_APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
+               'HEALTH_APP_STORE_APP_APPLE_ID': '6824089036'}
+        dev.validate_storekit(app, 'HEALTH')
+        for key, value in [('HEALTH_APP_STORE_ENV', 'Both'), ('HEALTH_APP_STORE_APP_APPLE_ID', '6804425507'),
+                           ('HEALTH_APP_STORE_PRIVATE_KEY_PATH', '/production/key.p8'), ('PLATFORM_APPS', 'health,birthday')]:
+            with self.subTest(key=key), self.assertRaises(OperationError):
+                dev.validate_storekit({**app, key:value}, 'HEALTH')
+
     def test_selected_source_rejects_mixed_identity_credentials_and_configuration(self):
         self.assertEqual(dev.selection(self.runtime, self.source)[2], ['0001_example.sql'])
         for target, key, value in [(self.app, 'BIRTHDAY_APPLE_BUNDLE_ID', 'cn.tellyouwhat.birthday'),

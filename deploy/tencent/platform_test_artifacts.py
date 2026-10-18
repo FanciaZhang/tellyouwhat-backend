@@ -68,6 +68,14 @@ def backup_configuration(runtime, destination):
               **{'current/' + name: folder / name for name in (*selection_files(folder), 'selection.json')}}
     data = {name: private_file(runtime, path, 64 * 1024**2 if name.endswith('source.tar') else 32768)
             for name, path in inputs.items()}
+    if albums.selected(folder) and read_environment(folder / 'albums.env').get('ALBUM_SUBSCRIPTIONS_ENABLED') == 'true':
+        for name in ('album-app-store.p8', 'apple-app-store-roots.pem'):
+            path = runtime.root.parent / 'albums-development/secrets' / name
+            if (path.parent.is_symlink() or path.is_symlink() or not path.is_file() or path.stat().st_uid != 0
+                    or path.stat().st_gid != 65532 or path.stat().st_mode & 0o777 != 0o440
+                    or not 0 < path.stat().st_size <= 16384):
+                raise OperationError('unsafe Sandbox recovery credential')
+            data['secrets/' + name] = runtime.execute('backup-platform-sandbox-key', ['sudo', '-n', 'cat', '--', str(path)])
     child = checkpoint_runtime(runtime)
     snapshot = create_backup(child)
     manifest = verify_backup(child, child.backups / snapshot['filename'])
@@ -92,6 +100,14 @@ def verify_recovery(archive, hashes):
     expected = {'state.json', 'owner.json', 'database.env', 'backup.env', *('current/' + name for name in (*FILES, 'selection.json'))}
     if any('current/' + name in hashes for name in albums.FILES):
         expected.update('current/' + name for name in albums.FILES)
+    if 'current/albums.env' in hashes:
+        try:
+            content = archive.extractfile('recovery/platform-test/current/albums.env').read().decode()
+            settings = dict(line.split('=', 1) for line in content.splitlines() if '=' in line and not line.startswith('#'))
+        except (KeyError, UnicodeError, AttributeError) as error:
+            raise OperationError('platform test recovery configuration is missing') from error
+        if settings.get('ALBUM_SUBSCRIPTIONS_ENABLED') == 'true':
+            expected.update({'secrets/album-app-store.p8', 'secrets/apple-app-store-roots.pem'})
     extra = set(hashes) - expected
     snapshots = [name for name in extra if re.fullmatch(r'checkpoint/mysql-\d{8}T\d{6}Z-[a-f0-9]{6}\.sql\.gz\.enc', name)]
     if not expected <= set(hashes) or len(extra) != 2 or len(snapshots) != 1 or snapshots[0] + '.json' not in extra:

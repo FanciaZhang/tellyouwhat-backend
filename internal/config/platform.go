@@ -210,6 +210,12 @@ type appDefaults struct {
 func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
 	if environment == "development" {
 		defaults.BundleID += ".dev"
+		if defaults.ID != appregistry.Birthday {
+			defaults.ProductID += ".dev"
+			for i := range defaults.ProductIDs {
+				defaults.ProductIDs[i] += ".dev"
+			}
+		}
 		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
 	}
 	if defaults.ID == appregistry.Albums {
@@ -428,9 +434,12 @@ func (config AppConfig) Validate(environment string) error {
 	if environment == "development" && len(config.AllowedBuilds) == 0 {
 		return errors.New("ALLOWED_APP_BUILDS is required in development")
 	}
-	if environment == "production" && config.Registry.ID != appregistry.Birthday {
+	if config.Registry.ID != appregistry.Birthday {
 		if err := config.AppStore.validate(); err != nil {
 			return err
+		}
+		if environment == "development" && config.AppStore.Environment != "Sandbox" {
+			return errors.New("development APP_STORE_ENV must be Sandbox")
 		}
 	}
 	switch config.Registry.ID {

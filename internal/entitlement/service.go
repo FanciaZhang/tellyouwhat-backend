@@ -61,7 +61,8 @@ func (checker *Checker) HasManagedSubscription(
 	if err != nil || !ok {
 		return false, err
 	}
-	return checker.now().Before(record.ExpiresAt), nil
+	return (record.Environment == "sandbox" || record.Environment == "production") &&
+		record.TransactionID != "" && checker.now().Before(record.ExpiresAt), nil
 }
 
 func NewDevelopmentService(
