@@ -29,7 +29,7 @@ def require_subscription_transition(before, after):
     if old == new:
         return
     expected = {'ALBUM_SUBSCRIPTIONS_ENABLED': 'true', 'ALBUM_APP_STORE_APP_APPLE_ID': '6824089160',
-        'ALBUM_APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8', 'ALBUM_APP_STORE_KEY_ID': 'YTX5GYG2Z5',
+        'ALBUM_APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8', 'ALBUM_APP_STORE_KEY_ID': ('4TVBWNCPNR' if after.name == '0a6a8acd32414df5d55186c4a4f30e42f87f0b5e' else 'YTX5GYG2Z5'),
         'ALBUM_APP_STORE_KEY_FILE': '/album-secrets/album-app-store.p8',
         'ALBUM_APP_STORE_ROOTS_FILE': '/album-secrets/apple-app-store-roots.pem'}
     if (any(new.get(k) != v for k, v in expected.items())
