@@ -41,12 +41,13 @@ STOREKIT_FIELDS = {'APP_STORE_ENV', 'APP_STORE_ISSUER_ID', 'APP_STORE_KEY_ID',
 STOREKIT_SETTINGS = {prefix + '_' + key for prefix in ('HEALTH', 'JOURNAL') for key in STOREKIT_FIELDS}
 HEALTH_SETTINGS |= {k for k in STOREKIT_SETTINGS if k.startswith('HEALTH_')}
 
-def validate_storekit(app, prefix):
+def validate_storekit(app, prefix, source=None):
     values = {k: app.get(prefix + '_' + k) for k in STOREKIT_FIELDS}
     if not any(v is not None for v in values.values()):
         return  # Retained selections used server development grants.
+    # Read the exact retained rollback selection; new selections require the verified key.
     expected = {'APP_STORE_ENV': 'Sandbox', 'APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8',
-                'APP_STORE_KEY_ID': 'YTX5GYG2Z5', 'APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
+                'APP_STORE_KEY_ID': ('4TVBWNCPNR' if source == '0a6a8acd32414df5d55186c4a4f30e42f87f0b5e' else 'YTX5GYG2Z5'), 'APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
                 'APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
                 'APP_STORE_APP_APPLE_ID': {'HEALTH': '6824089036', 'JOURNAL': '6824089154'}[prefix]}
     if values != expected or 'albums' not in app.get('PLATFORM_APPS', '').split(','):
@@ -165,7 +166,7 @@ def selection(runtime, source):
     elif any(k.startswith('JOURNAL_') for k in app):
         raise OperationError('Journal credentials require its explicit test application selection')
     for prefix in ('HEALTH', 'JOURNAL'):
-        validate_storekit(app, prefix)
+        validate_storekit(app, prefix, source)
     albums.validate(folder, app, compose)
     if albums.selected(folder) and not recording.available(folder):
         raise OperationError('Albums admission requires the reviewed shared test topology')

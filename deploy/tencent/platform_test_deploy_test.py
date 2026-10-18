@@ -151,6 +151,10 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                'HEALTH_APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
                'HEALTH_APP_STORE_APP_APPLE_ID': '6824089036'}
         dev.validate_storekit(app, 'HEALTH')
+        historical = {**app, 'HEALTH_APP_STORE_KEY_ID': '4TVBWNCPNR'}
+        dev.validate_storekit(historical, 'HEALTH', '0a6a8acd32414df5d55186c4a4f30e42f87f0b5e')
+        with self.assertRaises(OperationError):
+            dev.validate_storekit(historical, 'HEALTH')
         for key, value in [('HEALTH_APP_STORE_ENV', 'Both'), ('HEALTH_APP_STORE_APP_APPLE_ID', '6804425507'),
                            ('HEALTH_APP_STORE_PRIVATE_KEY_PATH', '/production/key.p8'), ('PLATFORM_APPS', 'health,birthday')]:
             with self.subTest(key=key), self.assertRaises(OperationError):
