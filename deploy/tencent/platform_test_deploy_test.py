@@ -146,7 +146,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         app = {'PLATFORM_APPS': 'health,journal,birthday,albums',
                'HEALTH_APP_STORE_ENV': 'Sandbox',
                'HEALTH_APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8',
-               'HEALTH_APP_STORE_KEY_ID': '4TVBWNCPNR',
+               'HEALTH_APP_STORE_KEY_ID': 'YTX5GYG2Z5',
                'HEALTH_APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
                'HEALTH_APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
                'HEALTH_APP_STORE_APP_APPLE_ID': '6824089036'}

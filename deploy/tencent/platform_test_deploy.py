@@ -46,7 +46,7 @@ def validate_storekit(app, prefix):
     if not any(v is not None for v in values.values()):
         return  # Retained selections used server development grants.
     expected = {'APP_STORE_ENV': 'Sandbox', 'APP_STORE_ISSUER_ID': '1f4f7f07-26b1-4226-9518-5bd19f8440b8',
-                'APP_STORE_KEY_ID': '4TVBWNCPNR', 'APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
+                'APP_STORE_KEY_ID': 'YTX5GYG2Z5', 'APP_STORE_PRIVATE_KEY_PATH': '/album-secrets/album-app-store.p8',
                 'APP_STORE_ROOT_PEM_PATH': '/config/apple-app-store-roots.pem',
                 'APP_STORE_APP_APPLE_ID': {'HEALTH': '6824089036', 'JOURNAL': '6824089154'}[prefix]}
     if values != expected or 'albums' not in app.get('PLATFORM_APPS', '').split(','):
