@@ -142,6 +142,180 @@ func (e OrganizeRequestContractVersion) Valid() bool {
 	}
 }
 
+// Defines values for ReadAloudAllowancePurpose.
+const (
+	ReadAloudAllowancePurposeJournal ReadAloudAllowancePurpose = "journal"
+	ReadAloudAllowancePurposePreview ReadAloudAllowancePurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudAllowancePurpose enum.
+func (e ReadAloudAllowancePurpose) Valid() bool {
+	switch e {
+	case ReadAloudAllowancePurposeJournal:
+		return true
+	case ReadAloudAllowancePurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudEventKind.
+const (
+	Audio     ReadAloudEventKind = "audio"
+	Heartbeat ReadAloudEventKind = "heartbeat"
+	State     ReadAloudEventKind = "state"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudEventKind enum.
+func (e ReadAloudEventKind) Valid() bool {
+	switch e {
+	case Audio:
+		return true
+	case Heartbeat:
+		return true
+	case State:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionChannels.
+const (
+	N1 ReadAloudSessionChannels = 1
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionChannels enum.
+func (e ReadAloudSessionChannels) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionEncoding.
+const (
+	PcmS16le ReadAloudSessionEncoding = "pcm_s16le"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionEncoding enum.
+func (e ReadAloudSessionEncoding) Valid() bool {
+	switch e {
+	case PcmS16le:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionPurpose.
+const (
+	ReadAloudSessionPurposeJournal ReadAloudSessionPurpose = "journal"
+	ReadAloudSessionPurposePreview ReadAloudSessionPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionPurpose enum.
+func (e ReadAloudSessionPurpose) Valid() bool {
+	switch e {
+	case ReadAloudSessionPurposeJournal:
+		return true
+	case ReadAloudSessionPurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionSampleRate.
+const (
+	N24000 ReadAloudSessionSampleRate = 24000
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionSampleRate enum.
+func (e ReadAloudSessionSampleRate) Valid() bool {
+	switch e {
+	case N24000:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionState.
+const (
+	ReadAloudSessionStateCancelled ReadAloudSessionState = "cancelled"
+	ReadAloudSessionStateFailed    ReadAloudSessionState = "failed"
+	ReadAloudSessionStatePreparing ReadAloudSessionState = "preparing"
+	ReadAloudSessionStateReserved  ReadAloudSessionState = "reserved"
+	ReadAloudSessionStateRunning   ReadAloudSessionState = "running"
+	ReadAloudSessionStateSucceeded ReadAloudSessionState = "succeeded"
+	ReadAloudSessionStateUnknown   ReadAloudSessionState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionState enum.
+func (e ReadAloudSessionState) Valid() bool {
+	switch e {
+	case ReadAloudSessionStateCancelled:
+		return true
+	case ReadAloudSessionStateFailed:
+		return true
+	case ReadAloudSessionStatePreparing:
+		return true
+	case ReadAloudSessionStateReserved:
+		return true
+	case ReadAloudSessionStateRunning:
+		return true
+	case ReadAloudSessionStateSucceeded:
+		return true
+	case ReadAloudSessionStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSynthesisRequestPurpose.
+const (
+	ReadAloudSynthesisRequestPurposeJournal ReadAloudSynthesisRequestPurpose = "journal"
+	ReadAloudSynthesisRequestPurposePreview ReadAloudSynthesisRequestPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSynthesisRequestPurpose enum.
+func (e ReadAloudSynthesisRequestPurpose) Valid() bool {
+	switch e {
+	case ReadAloudSynthesisRequestPurposeJournal:
+		return true
+	case ReadAloudSynthesisRequestPurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSynthesisRequestStyle.
+const (
+	Calm         ReadAloudSynthesisRequestStyle = "calm"
+	Natural      ReadAloudSynthesisRequestStyle = "natural"
+	Storytelling ReadAloudSynthesisRequestStyle = "storytelling"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSynthesisRequestStyle enum.
+func (e ReadAloudSynthesisRequestStyle) Valid() bool {
+	switch e {
+	case Calm:
+		return true
+	case Natural:
+		return true
+	case Storytelling:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RecordingAnalysisVersion.
 const (
 	JournalRecordingV1 RecordingAnalysisVersion = "journal-recording-v1"
@@ -159,25 +333,25 @@ func (e RecordingAnalysisVersion) Valid() bool {
 
 // Defines values for RecordingTaskState.
 const (
-	Completed  RecordingTaskState = "completed"
-	Failed     RecordingTaskState = "failed"
-	Processing RecordingTaskState = "processing"
-	Submitting RecordingTaskState = "submitting"
-	Uploaded   RecordingTaskState = "uploaded"
+	RecordingTaskStateCompleted  RecordingTaskState = "completed"
+	RecordingTaskStateFailed     RecordingTaskState = "failed"
+	RecordingTaskStateProcessing RecordingTaskState = "processing"
+	RecordingTaskStateSubmitting RecordingTaskState = "submitting"
+	RecordingTaskStateUploaded   RecordingTaskState = "uploaded"
 )
 
 // Valid indicates whether the value is a known member of the RecordingTaskState enum.
 func (e RecordingTaskState) Valid() bool {
 	switch e {
-	case Completed:
+	case RecordingTaskStateCompleted:
 		return true
-	case Failed:
+	case RecordingTaskStateFailed:
 		return true
-	case Processing:
+	case RecordingTaskStateProcessing:
 		return true
-	case Submitting:
+	case RecordingTaskStateSubmitting:
 		return true
-	case Uploaded:
+	case RecordingTaskStateUploaded:
 		return true
 	default:
 		return false
@@ -211,6 +385,24 @@ func (e TagType) Valid() bool {
 	case TagTypePlace:
 		return true
 	case TagTypeTopic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetJournalReadAloudAllowanceParamsPurpose.
+const (
+	GetJournalReadAloudAllowanceParamsPurposeJournal GetJournalReadAloudAllowanceParamsPurpose = "journal"
+	GetJournalReadAloudAllowanceParamsPurposePreview GetJournalReadAloudAllowanceParamsPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the GetJournalReadAloudAllowanceParamsPurpose enum.
+func (e GetJournalReadAloudAllowanceParamsPurpose) Valid() bool {
+	switch e {
+	case GetJournalReadAloudAllowanceParamsPurposeJournal:
+		return true
+	case GetJournalReadAloudAllowanceParamsPurposePreview:
 		return true
 	default:
 		return false
@@ -369,6 +561,19 @@ type OrganizeResponse struct {
 	Tags                        []Tag                        `json:"tags"`
 }
 
+// ReadAloudAllowance defines model for ReadAloudAllowance.
+type ReadAloudAllowance struct {
+	Limit     int                       `json:"limit"`
+	PeriodEnd time.Time                 `json:"periodEnd"`
+	Purpose   ReadAloudAllowancePurpose `json:"purpose"`
+	Remaining int                       `json:"remaining"`
+	Reserved  int                       `json:"reserved"`
+	Used      int                       `json:"used"`
+}
+
+// ReadAloudAllowancePurpose defines model for ReadAloudAllowance.Purpose.
+type ReadAloudAllowancePurpose string
+
 // ReadAloudCatalog defines model for ReadAloudCatalog.
 type ReadAloudCatalog struct {
 	DefaultVoiceID string           `json:"defaultVoiceID"`
@@ -376,6 +581,75 @@ type ReadAloudCatalog struct {
 	Version        string           `json:"version"`
 	Voices         []ReadAloudVoice `json:"voices"`
 }
+
+// ReadAloudEvent defines model for ReadAloudEvent.
+type ReadAloudEvent struct {
+	Kind   ReadAloudEventKind `json:"kind"`
+	Offset *int               `json:"offset,omitempty"`
+	Pcm    *[]byte            `json:"pcm,omitempty"`
+
+	// Sequence Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries.
+	Sequence  int                `json:"sequence"`
+	Session   *ReadAloudSession  `json:"session,omitempty"`
+	SessionID openapi_types.UUID `json:"sessionID"`
+}
+
+// ReadAloudEventKind defines model for ReadAloudEvent.Kind.
+type ReadAloudEventKind string
+
+// ReadAloudSession defines model for ReadAloudSession.
+type ReadAloudSession struct {
+	AudioBytes      int                      `json:"audioBytes"`
+	BufferAvailable bool                     `json:"bufferAvailable"`
+	Channels        ReadAloudSessionChannels `json:"channels"`
+	Encoding        ReadAloudSessionEncoding `json:"encoding"`
+	ExpiresAt       time.Time                `json:"expiresAt"`
+	Id              openapi_types.UUID       `json:"id"`
+
+	// LastSequence Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries.
+	LastSequence int                        `json:"lastSequence"`
+	Problem      *string                    `json:"problem,omitempty"`
+	Purpose      ReadAloudSessionPurpose    `json:"purpose"`
+	SampleRate   ReadAloudSessionSampleRate `json:"sampleRate"`
+	State        ReadAloudSessionState      `json:"state"`
+}
+
+// ReadAloudSessionChannels defines model for ReadAloudSession.Channels.
+type ReadAloudSessionChannels int
+
+// ReadAloudSessionEncoding defines model for ReadAloudSession.Encoding.
+type ReadAloudSessionEncoding string
+
+// ReadAloudSessionPurpose defines model for ReadAloudSession.Purpose.
+type ReadAloudSessionPurpose string
+
+// ReadAloudSessionSampleRate defines model for ReadAloudSession.SampleRate.
+type ReadAloudSessionSampleRate int
+
+// ReadAloudSessionState defines model for ReadAloudSession.State.
+type ReadAloudSessionState string
+
+// ReadAloudSynthesisRequest defines model for ReadAloudSynthesisRequest.
+type ReadAloudSynthesisRequest struct {
+	ConsentVersion string                           `json:"consentVersion"`
+	Dialect        string                           `json:"dialect"`
+	Language       string                           `json:"language"`
+	Pitch          int                              `json:"pitch"`
+	Purpose        ReadAloudSynthesisRequestPurpose `json:"purpose"`
+	RequestID      openapi_types.UUID               `json:"requestID"`
+	Style          ReadAloudSynthesisRequestStyle   `json:"style"`
+
+	// Text At most 900 UTF-8 bytes. Must be empty for preview; the server selects its public sample.
+	Text          string `json:"text"`
+	VoiceID       string `json:"voiceID"`
+	VoiceRevision string `json:"voiceRevision"`
+}
+
+// ReadAloudSynthesisRequestPurpose defines model for ReadAloudSynthesisRequest.Purpose.
+type ReadAloudSynthesisRequestPurpose string
+
+// ReadAloudSynthesisRequestStyle defines model for ReadAloudSynthesisRequest.Style.
+type ReadAloudSynthesisRequestStyle string
 
 // ReadAloudVoice defines model for ReadAloudVoice.
 type ReadAloudVoice struct {
@@ -535,6 +809,37 @@ type OrganizeJournalParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// GetJournalReadAloudAllowanceParams defines parameters for GetJournalReadAloudAllowance.
+type GetJournalReadAloudAllowanceParams struct {
+	Purpose               *GetJournalReadAloudAllowanceParamsPurpose `form:"purpose,omitempty" json:"purpose,omitempty"`
+	XTellyouwhatRequestID RequestIDHeader                            `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudAllowanceParamsPurpose defines parameters for GetJournalReadAloudAllowance.
+type GetJournalReadAloudAllowanceParamsPurpose string
+
+// CreateJournalReadAloudSynthesisParams defines parameters for CreateJournalReadAloudSynthesis.
+type CreateJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// CancelJournalReadAloudSynthesisParams defines parameters for CancelJournalReadAloudSynthesis.
+type CancelJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudSynthesisParams defines parameters for GetJournalReadAloudSynthesis.
+type GetJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// StreamJournalReadAloudSynthesisParams defines parameters for StreamJournalReadAloudSynthesis.
+type StreamJournalReadAloudSynthesisParams struct {
+	// After Resume at an even, exclusive PCM byte cursor from the last accepted event sequence.
+	After                 *int            `form:"after,omitempty" json:"after,omitempty"`
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
 // GetJournalReadAloudVoicesParams defines parameters for GetJournalReadAloudVoices.
 type GetJournalReadAloudVoicesParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
@@ -596,6 +901,9 @@ type CancelJournalIllustrationJSONRequestBody = IllustrationCancellation
 // OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
 type OrganizeJournalJSONRequestBody = OrganizeRequest
 
+// CreateJournalReadAloudSynthesisJSONRequestBody defines body for CreateJournalReadAloudSynthesis for application/json ContentType.
+type CreateJournalReadAloudSynthesisJSONRequestBody = ReadAloudSynthesisRequest
+
 // PreviewJournalRecordingJSONRequestBody defines body for PreviewJournalRecording for application/json ContentType.
 type PreviewJournalRecordingJSONRequestBody PreviewJournalRecordingJSONBody
 
@@ -625,6 +933,21 @@ type ServerInterface interface {
 
 	// (POST /v1/journal/organization)
 	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
+
+	// (GET /v1/journal/read-aloud/allowance)
+	GetJournalReadAloudAllowance(c *gin.Context, params GetJournalReadAloudAllowanceParams)
+
+	// (POST /v1/journal/read-aloud/syntheses)
+	CreateJournalReadAloudSynthesis(c *gin.Context, params CreateJournalReadAloudSynthesisParams)
+
+	// (DELETE /v1/journal/read-aloud/syntheses/{synthesisID})
+	CancelJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params CancelJournalReadAloudSynthesisParams)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID})
+	GetJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params GetJournalReadAloudSynthesisParams)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID}/events)
+	StreamJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params StreamJournalReadAloudSynthesisParams)
 	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
 	// (GET /v1/journal/read-aloud/voices)
 	GetJournalReadAloudVoices(c *gin.Context, params GetJournalReadAloudVoicesParams)
@@ -946,6 +1269,264 @@ func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
 	}
 
 	siw.Handler.OrganizeJournal(c, params)
+}
+
+// GetJournalReadAloudAllowance operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalReadAloudAllowance(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalReadAloudAllowanceParams
+
+	// ------------- Optional query parameter "purpose" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "purpose", c.Request.URL.Query(), &params.Purpose, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter purpose: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalReadAloudAllowance(c, params)
+}
+
+// CreateJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) CreateJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateJournalReadAloudSynthesis(c, params)
+}
+
+// CancelJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) CancelJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelJournalReadAloudSynthesis(c, synthesisID, params)
+}
+
+// GetJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalReadAloudSynthesis(c, synthesisID, params)
+}
+
+// StreamJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) StreamJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StreamJournalReadAloudSynthesisParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", c.Request.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter after: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StreamJournalReadAloudSynthesis(c, synthesisID, params)
 }
 
 // GetJournalReadAloudVoices operation middleware
@@ -1405,6 +1986,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/v1/journal/read-aloud/syntheses", wrapper.CreateJournalReadAloudSynthesis)
+	router.DELETE(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.CancelJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.GetJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID/events", wrapper.StreamJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/allowance", wrapper.GetJournalReadAloudAllowance)
 	router.GET(options.BaseURL+"/v1/journal/read-aloud/voices", wrapper.GetJournalReadAloudVoices)
 	router.GET(options.BaseURL+"/v1/journal/writing-styles", wrapper.GetJournalWritingStyles)
 	router.GET(options.BaseURL+"/v1/journal/voice/recordings/:recordingID", wrapper.GetJournalRecording)
@@ -1784,6 +2370,234 @@ type OrganizeJournaldefaultJSONResponse struct {
 }
 
 func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudAllowanceRequestObject struct {
+	Params GetJournalReadAloudAllowanceParams
+}
+
+type GetJournalReadAloudAllowanceResponseObject interface {
+	VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error
+}
+
+type GetJournalReadAloudAllowance200JSONResponse ReadAloudAllowance
+
+func (response GetJournalReadAloudAllowance200JSONResponse) VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudAllowancedefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalReadAloudAllowancedefaultJSONResponse) VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateJournalReadAloudSynthesisRequestObject struct {
+	Params CreateJournalReadAloudSynthesisParams
+	Body   *CreateJournalReadAloudSynthesisJSONRequestBody
+}
+
+type CreateJournalReadAloudSynthesisResponseObject interface {
+	VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type CreateJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response CreateJournalReadAloudSynthesis200JSONResponse) VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateJournalReadAloudSynthesisdefaultJSONResponse) VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      CancelJournalReadAloudSynthesisParams
+}
+
+type CancelJournalReadAloudSynthesisResponseObject interface {
+	VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type CancelJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response CancelJournalReadAloudSynthesis200JSONResponse) VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CancelJournalReadAloudSynthesisdefaultJSONResponse) VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      GetJournalReadAloudSynthesisParams
+}
+
+type GetJournalReadAloudSynthesisResponseObject interface {
+	VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type GetJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response GetJournalReadAloudSynthesis200JSONResponse) VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalReadAloudSynthesisdefaultJSONResponse) VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      StreamJournalReadAloudSynthesisParams
+}
+
+type StreamJournalReadAloudSynthesisResponseObject interface {
+	VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type StreamJournalReadAloudSynthesis200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamJournalReadAloudSynthesis200TexteventStreamResponse) VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type StreamJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response StreamJournalReadAloudSynthesisdefaultJSONResponse) VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2277,6 +3091,21 @@ type StrictServerInterface interface {
 
 	// (POST /v1/journal/organization)
 	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/allowance)
+	GetJournalReadAloudAllowance(ctx context.Context, request GetJournalReadAloudAllowanceRequestObject) (GetJournalReadAloudAllowanceResponseObject, error)
+
+	// (POST /v1/journal/read-aloud/syntheses)
+	CreateJournalReadAloudSynthesis(ctx context.Context, request CreateJournalReadAloudSynthesisRequestObject) (CreateJournalReadAloudSynthesisResponseObject, error)
+
+	// (DELETE /v1/journal/read-aloud/syntheses/{synthesisID})
+	CancelJournalReadAloudSynthesis(ctx context.Context, request CancelJournalReadAloudSynthesisRequestObject) (CancelJournalReadAloudSynthesisResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID})
+	GetJournalReadAloudSynthesis(ctx context.Context, request GetJournalReadAloudSynthesisRequestObject) (GetJournalReadAloudSynthesisResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID}/events)
+	StreamJournalReadAloudSynthesis(ctx context.Context, request StreamJournalReadAloudSynthesisRequestObject) (StreamJournalReadAloudSynthesisResponseObject, error)
 	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
 	// (GET /v1/journal/read-aloud/voices)
 	GetJournalReadAloudVoices(ctx context.Context, request GetJournalReadAloudVoicesRequestObject) (GetJournalReadAloudVoicesResponseObject, error)
@@ -2543,6 +3372,146 @@ func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJourna
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(OrganizeJournalResponseObject); ok {
 		if err := validResponse.VisitOrganizeJournalResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalReadAloudAllowance operation middleware
+func (sh *strictHandler) GetJournalReadAloudAllowance(ctx *gin.Context, params GetJournalReadAloudAllowanceParams) {
+	var request GetJournalReadAloudAllowanceRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalReadAloudAllowance(ctx, request.(GetJournalReadAloudAllowanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalReadAloudAllowance")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalReadAloudAllowanceResponseObject); ok {
+		if err := validResponse.VisitGetJournalReadAloudAllowanceResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) CreateJournalReadAloudSynthesis(ctx *gin.Context, params CreateJournalReadAloudSynthesisParams) {
+	var request CreateJournalReadAloudSynthesisRequestObject
+
+	request.Params = params
+
+	var body CreateJournalReadAloudSynthesisJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateJournalReadAloudSynthesis(ctx, request.(CreateJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitCreateJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) CancelJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params CancelJournalReadAloudSynthesisParams) {
+	var request CancelJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelJournalReadAloudSynthesis(ctx, request.(CancelJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitCancelJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) GetJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params GetJournalReadAloudSynthesisParams) {
+	var request GetJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalReadAloudSynthesis(ctx, request.(GetJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitGetJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) StreamJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params StreamJournalReadAloudSynthesisParams) {
+	var request StreamJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamJournalReadAloudSynthesis(ctx, request.(StreamJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(StreamJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitStreamJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -2817,74 +3786,88 @@ func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJou
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"7F3dchu5cn4V1ORc8leWFVl7Rcs+Z5W1dx1J3k3FpZwCZ5okVjPAGMBQ5rr0AEmu8gZ5glReIG+TpPIY",
+	"KfzNYIbgcEj9rHWOfGWRM0Cj++sfNLrBr1HMspxRoFJEJ1+jHHOcgQSu/zqHzwUIefbme8AJcPURodFJ",
+	"tDB/9iKKM4hOon/oX0Karlhxs8Cyb9/qn72JehGHzwXhkEQnkhfQi0S8gAyrkWaMZ1hGJ1FRkCTqRXKV",
+	"q7GE5ITOo9vbW/WyyBkVoIl5jZM/YQk3eKX+ihmVQKX6L87zlMRYEkaHvwpG1WfVNH/gMItOor8ZVgsd",
+	"mm/F8C3njJ/bScyUCYiYk1wNFp1EHzhbkgQ4mmGSQoIYRxxkwSkkCFNE6BKnJEEcRJHKQXTbi04ZnaUk",
+	"lo9H4wRxyFO86iGSQJYzCTRe9RSpQmIJKLYUIRbHBeeQaDr1sI9IJEWgnkFOpJqIPzI+JUkC9PEIuVwA",
+	"inGaAkdEIFzIBVCp5oIETQuJUhxfCyQXgBxykXpAppABNSL+gFcpw8klY+8wn8Pj0s6NciH4EgMkQqGQ",
+	"5cD1fH2RQ0xmJEaC/AYoJRkxFF8AX5IYPlK8xCTF0xQeF56WkcKQgRLIgSYKpkoGRUWVJvaSsfeYrqwV",
+	"EY9H6d8XTGKlNzGjWlMUgZqJiAOOF1ZzPlKFGsbJb8qqPRobK6QSRhWVjEJfkkzBOcdTkhK5QtocmSeM",
+	"xbIU55zFIITi8VuF5tXvA9olYSmWYPQrwxTPtdYJQkEIxXbJcawge+schbH8jF2fKmK/GGKThKjBcfqB",
+	"K+xLohzEDKcCelHufWSWiAkVb6nkes3WyUwZSwHTqEnt1yjDX94BnctFdHI0Gq15pV5Ekg7Oy3nG2njj",
+	"g1Evyggt/173eb6//BTpkfVAdTJ7jXVdlQOx6a8Qy9K+vwGJSbozzxLwWFUtKVMImoe/4y5SCHzbWJUe",
+	"vxrNf3fjQkqA7bYUcE5uK4Itp5q0mgGCZH0hQhI6V9g8h5hlGVCjeTvSOGXs2rBtK6Y4YLGG0oPDHVFl",
+	"JyyHC63uLE0LIY1Xec2JYt5Oi0o0O/V/iYRMbJOBP58TRU+t8sy8fXSo12j/qpaIOccr9aj20A3OvBjt",
+	"yBkzSK+kfhtnTjGNIU33kTqHJRH2tVLuhMqjw0jTTLIi8ykmVMIc+BrJ5TjbaN3LFFwTqq0dUEXNp0gU",
+	"ZuxeJEAq9GtTlOVMEGuYhFxpFjK5AF9xKhA7K+4J6ni0q6Q0YXasbSu3gcSuaulQ3xW2Rk1utW0WQOW5",
+	"J+GaEzjeslS10hmo6ANq6JiupLabHsDNv6O2IS6+nxy8PDJbOymBK5f8T59wfzbqv7r6enR4+4ewpfHM",
+	"+Va7tASuVtrp6TX8uon8YXqW/evM3C5stRPbUdYLIPOFA6XVvCOHyY2a2ItIZt3hfjLKiAkRnHbp4Ya5",
+	"1irz/19zmAeV6IYkavDdCG5GF5lxv5oMN2TPMWMboy+K+RzEHpbPtxd11XgZjLf2dHqVieoyiWAFj0Ft",
+	"AKDutJrh4JY5K4/1os1h9aKCks8F2K8lL+DW2c5AzLhOrrXDgaVtY0qRZdiEwneJTN0wvR1cQo3HnaOP",
+	"Cmd72nGWrNYF2YFTdnf0PRaLh7WeodAlJPYWy+nT2ivDGL30Xfi7V4yNKU5XgoifjfXew93dgdOf1ZZ9",
+	"m5f+ic8xJb9p6OHd5SNqlq5rOODZx+6Sa/LSLXCbEC+xuN51a/QlJxzERNZ4kGBpkgrR/jvfnLNpCpnv",
+	"2SjIG8avtd2rUlBudYo7alWghrMp1TPtnK6CyrVn5KwsEZY1j/u5gELPygtKje0SRRwDJObTiqyCxsDV",
+	"llvJzIT9kATpu0MwpB/xoyBDsLfmnie3ECh+hBu1Id3bOe+aDNkry3EHn84hxRKSSzzf6KYPd/HSxx0c",
+	"c0NIwXyMXVCdwJCA6rZoR0vrJ28DiSxM0tUluwYqziHDhLrgx+nEKKQTGaNysfN7DZ4Ep944ds9bSRuP",
+	"7tvhr+Fgyth19xyFn4WsgUj7uGZC4g5OzeVBPY+qtkHKjPzKCk5x2meWRf3lODQC2OTUvenJy/FBpxDW",
+	"WcxLPP8RZ/DYk/8OYZcvqNZArCGVAK8cINt14ukFabAxVdpd+VrSrc1tV1MTadMndp913Z3WJjtYn+wx",
+	"AlLZ1Oq2uS7xFpd3l+hUGiS3CTjI/7a49hxwMklZkUzSlN1gmwXbAev6xG6748uBE5a8pUn3ADgveM5E",
+	"LYK0BjlSRMCSwM2GmLWzP+YggC/NyWL7k4XY/lRDtm4BPcskO4g3q0+rz6NWSZ1iiVM23znWnOEilT8z",
+	"EoNBftMkhXzCZA4XEDOaiFr66/josJb+OgqybBk0f8Hk3FKR1V3NSl7o5TT8l0s3bDq+aEhpWepXg0VN",
+	"BpRUtkrn7dId8u6f+MdFQpi3IVkA5nIKWAbhzmYzAY186vjlwaieoQxrZZyFEqqB5N7nwmXI6+fNb7/E",
+	"aSHIEtCH0/dIvY/iggvGewinZE4hQZIhjMZH/SmRSOAsT+E7RKirSpCIzVCRC8kBZ2jGcQZoygqaYE5A",
+	"DIwUdluVACE65A9KkV3Y56tX99lO2kOSagSPba2IuajI3SXGUBh5vbIZ1J15NC1mM+CT9j1OvMCUgjlY",
+	"tNgcX4VGAxqzxBpcB+I8zv4sxkdpOK/wcAmRFAt58aTw6qVw/G3U4X36RLOQ83pG5uBwNBpddcrd5Bxy",
+	"zI2f8t1XMJNjimFquRu1h7im7IYGqAvlZSrf6YygB/iGkNfR7OOrtnYP0x5q29VzReUCBBH7bZDtkVp4",
+	"K/DiICCqhOB0/bhhfBTEOp0X9lRs27M5kXHjEOvAQ2bf2/b52Nw/CNsp6+sOY8ocJpYF15PEOM00DBhf",
+	"SUjTusDWT7obhVwSZUxI9Go0Qh8v/9g/1jovBuh9ISSaAoIslys0YxzZ1Xyny6U0wjkSoEQhEJEC5cU0",
+	"JbE1CYP6ueOrYMZjWQVb/g5u0v9H3P9t1H/156uv49744Di8kdNv++fa/hij/ivcn23aBbZsMirFWpZx",
+	"Tn0my0qHmOpIyQHTw12vie9WVTLR2n3lSMNni5bIeiy5DpbGRtL4lq0RsVv3jqMH8rbHo2AuXyPw4/m7",
+	"ZrJ2dHi8JTnfHRxWoDuuQRR5zrgUH5wZaYYLnavpKiaWlHhia87Uay+6URtgroz4xG6XNS9qCMpImhIR",
+	"2MWMj0ejDnUHEouuJWPOBq19USjhKGdY53ojpItZISSJ32bMwX09bqLJ++Z6WoMLg+x1COSAr02PQQAe",
+	"mMvdZtmw8BAm3MyhedbX11J1RIvUxq6m16GJWG/72XBdfe5Q01+OtwckFgA9b6uYBWisSbkVqx+MnvvZ",
+	"xWa92i7O043mVUBtSXpUT4YtsWFo3ZP+bIqdIUF/Z7iItNtAbrTvkADQvtN8nnMmWcxSlLC4MNX8azxp",
+	"8VONRXU1A+5sNrBZCiVTt1lKXZF6uqlEt+OO5K4GKLdtMZfdDREvC7Pad8BN49lAx44HvEWeMmy2AKKY",
+	"ZsRVqNh6+KpcJQXpbxRC4VyRa7B13yAGdxF1zvU8IKzpcOD0t6IhhLlLvGsOLhAHdDiaMR94WzHg5vQz",
+	"T7He/djjKWz9K+gMVC+SLCexPhdkSUuNaPjAVT8UWrWO4WzK4r52RIF8095pGD//0iE29ZdzSeJr2HU1",
+	"Vpmb7jJkdW2mt8ujAuROuZFdGKaQcQ10u7v2WWle2bSKXpAN3kJCrP+FE2UfLlQIeKec9oXbPHYJdNvs",
+	"oU/Re5A4webAqCWyaOfgWm75wlXnGcK2saUk4k57pkAQqeKmJJz0gy96g9vi8DbWpaynpnlSizE3Fsdu",
+	"3Cw4atxYFfFXoWhCQFxwIlcXSqKGGZM8n0gJQk6EUCwyPKnHNq+xgKPDvk4IQYImeY7MOwi7l3SKQOp2",
+	"RsooiXFa9llNCVVOdKDrqbb261ZkVMDKyQ+gkVUS+wOsjDLXCT2HORESeJ3Ia1ghkgCVZEaAd6TjB1iZ",
+	"nuHNRPzIgjnUn8pWuAVOU6BzQEucFtBxYjNq27znfvhbn/sduwEeYwHo48ezNybzigiVTMumlFZHUmq9",
+	"05vpuSQZCImzPCCQP56iFy9evPKAIt3THYmoRg/Q8AaWkLJcxc+TWJJl2f3SYeA3sOx7LwVGD3s/bQ61",
+	"VQDM9fD2xYWUuWk6JHTG1plxWqrGJM+r9tiyY1aUSvQ///Yv//1f//6///yv//cf/+laE/uTMzQ3LecD",
+	"dLkANAeqXoTEpd5cBQjCqWCI0DgtEtveKBZYKcWHFEvl/iYfzgZlSchJ5HYs720T5OQMTT6ceTu6k2g8",
+	"GA1G2mblQHFOopPoxWA8GKk4C8uFNiXDBeBULn6LTr7e9qIhB5ys3B/L8RCToStIcJ8oNkjGYUiZUs64",
+	"rMNwD2h8DUtFWv/qGlbehwksh16DtBhiI1+oHql9LTmmQj1Tm9Vug4fEK2rti3rFRs5MYFcK7yyJTiJb",
+	"VmD56RfFaj5Vtxl8Cnva6pFh87aD26syafzaFpXdS8tse3n7bd0VlbVN3k0IB6PRgxOzuaH3p9w4fSRi",
+	"oIDmXFk8UDbP4L5QtECCrEyRhC+mC91GHJsoKpdoOjJr3lOLL+Q3P12tu6jaZ9Zj1D7zrHntc8+qfrpS",
+	"0jeVNp+ctka9aHIWXd22gLYFqaccsISnCtRvAJ46k9LeGq9g6L1RGXr/io6nj8N2CA6/mvzgrVrhHAJQ",
+	"/BM8jMHs2ShA+acqBiizlfvfBXP1DLFvE2JDc6DeYvX0908QbQ9rTmut48829QkBvkpk72BabVvys4G1",
+	"jHhGXAhxtbT5RovqqseroPTbjB6bbTyPbOXWOiaCd1MtyzNEAbqQTgkJYZqgKWPXyNuCatAdjsbbAVe7",
+	"IEq/9GL7S9VVaPqNV9vfKG+aUy+MO0zRvLdMvXdw0GU969dH6Xc7ENm8zOu2F70cdZjTu+xPv9JheYFL",
+	"zv6CN50ccNLHKSuSIfYbJbY4pUB3xb05pc8F6CsBrFfyCiZLhS2l4dXs7VLF96B+KsCbgM048wpv4wXm",
+	"OJbAUSmDv1Tf5OFNmPpT6JrrWC9c/WZ91uYa20f2XuutAOtIfG0Tb7qEANmzUe27koIr+4eEWwVihYxZ",
+	"9leFzuHXcvk2F5JACqY+pGWP+hBoDYftHnnfbOz+jMN2HPY6O9xnOD3D6f7N2lDXVomNkd+F7gp6sljs",
+	"rZcbiCIDhCXCFKm19xBsaqBCM84yfSaVYiERjmPI1U5Pswy5VrjyTLwRvuKZNDXB68HraOeWqg5KJeGL",
+	"NNLsm1auPbTKtHoGdOri4q3VJ90fJtCMqYAVEjRdIVzd0CyBZ0Sf7UksYYAcuxUvApx0Kmo5ib6/vPyA",
+	"EiJiRinEElHQLSsScykQRqYMq1LfvwK1rdqIu/qJn80ba4oZLK84m/V/ZBT677FtjCnx4reljA9+Jyvv",
+	"iuhCN+sX05SIBSS2ODs2jw5Mc3Fif4DgFMcL6J8yKjlLXR162JSs1729tfWw3d9Rb70YHa7XkZhb42NF",
+	"riUUEYHMJeHy96f5bjp05V0LaOQSoyVwMiOldDJb9metbULoHMUcdIUXTk3CzJU26x8cIPPCwHwQdVAY",
+	"Pcmw7IEQw6/l/7sdY5Z14w/l0Dx6vuHgym85COhc+QCSWFwjxr30p825aJN8YDJ0j02UK9ZHuvXRFeg/",
+	"USdRaVT9YONmwVKo2n28hZp2lYTFwnMkrivI3b3Sr274H2RJWLl6UV4EtOWjZu9TU5i1CPDi+0n/4OUR",
+	"YjP0y+Rn0zz7nam/K4SKSUz5nVeMWtXHTlmyQgmZ6zpamlRW7mZB1L5Cx13dC2dPjYL07R3LbcvcoVO2",
+	"PbWlIq7hDV7WNbC6L4NQcy9r8Nd0Hi979WyJni3Rjm5+6NL+G7PKtkvxSfr8/XLVbc2QzV6D30fDm52j",
+	"d1D2Z9V6QNXSBLSpln7gOZx+dmLPmnYXTeNgf2kqrGfn6utnB/YNObBn7X7W7qZ220OnrgUOftPaN1va",
+	"EGqT76Rz4wchwTb3BYvyxIJx2U/JEhKkhJ1CvxCAfoHpBVNvIalffvpgTzKiD7LqP0MqiqnixxS4ufmP",
+	"gygyffBpkrEWnXvgefi17KC/HVanTDa52qzHTQjTWRJ3/4Q7O8IckHl2atq+fDXs6xmVuumOSSMpRIQ9",
+	"CyqPjghFGH08f6dW0XJk2a5aoZNH74qA+4srx0YL6hyq8Fjkc44TKFd3L8gMtcI2EfTRTmy7jRv33NwQ",
+	"uUDYVyHTP1vqTwcA3Zjm/351ccGWVLx/W8Ddj7EeM+APXf+w6ReEzckPstxBmjvPZ1jf1hlWXTjuCGuA",
+	"fmRKRbJcChs8mWMr+/tVolUtck6WOF4N7UUuXguz+8bejlF+ypIilmLoWsoxUV9q4vnSKcXaj46rd+yN",
+	"Pzy1fe7iZDjEORlYzRzIKhM9iGm0nil/x2KcoqTq168NdzIcjg/+djAajAbjk+PR8SjyzrbdzUCRa1/X",
+	"w9vPbKG1/5ElWfifGffn7ugvP37rdYPXh9D8q42Q52ltGicO/5mz6Pbq9v8DAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

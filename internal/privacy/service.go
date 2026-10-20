@@ -23,6 +23,8 @@ const (
 	SensitiveHealthScope               = "sensitive_health_ai"
 	JournalIllustrationScope           = "journal_illustration"
 	JournalIllustrationDocumentVersion = "2026-09-27"
+	JournalReadAloudScope              = "journal_read_aloud"
+	JournalReadAloudDocumentVersion    = "2026-10-20"
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -96,7 +98,7 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 		if (value.Scope == Age14PlusScope || value.Scope == GuardianConsentScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion != GeneralDocumentVersion)) && principal.AppID != "health" {
 			return time.Time{}, ErrInvalidConsent
 		}
-		if !validConsent(value) || (value.Scope == JournalIllustrationScope && principal.AppID != "journal") {
+		if !validConsent(value) || ((value.Scope == JournalIllustrationScope || value.Scope == JournalReadAloudScope) && principal.AppID != "journal") {
 			return time.Time{}, ErrInvalidConsent
 		}
 		key := value.Scope + "\x00" + value.DocumentVersion
@@ -144,6 +146,11 @@ func (service *Service) HasRequiredConsents(
 		}
 		requirement := Consent{Scope: scope, Granted: true}
 		switch scope {
+		case JournalReadAloudScope:
+			if principal.AppID != "journal" {
+				return false, ErrInvalidConsent
+			}
+			requirement.DocumentVersion = JournalReadAloudDocumentVersion
 		case JournalIllustrationScope:
 			if principal.AppID != "journal" {
 				return false, ErrInvalidConsent
@@ -226,6 +233,8 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 
 func validConsent(value Consent) bool {
 	switch value.Scope {
+	case JournalReadAloudScope:
+		return value.DocumentVersion == JournalReadAloudDocumentVersion
 	case JournalIllustrationScope:
 		return value.DocumentVersion == JournalIllustrationDocumentVersion
 	case Age14PlusScope:

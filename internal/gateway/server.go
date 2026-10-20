@@ -18,6 +18,7 @@ import (
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -137,6 +138,8 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	ReadAloudSessions          *readaloud.SessionService
+	ReadAloudAccess            ReadAloudAccess
 	ReadAloudCatalog           ReadAloudCatalogReader
 	JournalRecordings          *recordinghttp.Handler
 	JournalIllustrations       *illustration.Service
@@ -179,6 +182,9 @@ type Dependencies struct {
 }
 
 type Server struct {
+	readAloudSessions          *readaloud.SessionService
+	readAloudAccess            ReadAloudAccess
+	readAloudStreams           chan struct{}
 	readAloudCatalog           ReadAloudCatalogReader
 	journalRecordings          *recordinghttp.Handler
 	journalIllustrations       *illustration.Service
@@ -235,7 +241,7 @@ func New(dependencies Dependencies) *Server {
 	}
 	if len(dependencies.AllowedConsentScopes) == 0 {
 		if dependencies.App.ID == appregistry.Journal {
-			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
 		} else {
 			dependencies.AllowedConsentScopes = []string{
 				privacy.AdultScope, privacy.Age14PlusScope, privacy.GuardianConsentScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
@@ -248,6 +254,9 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		readAloudSessions:    dependencies.ReadAloudSessions,
+		readAloudAccess:      dependencies.ReadAloudAccess,
+		readAloudStreams:     make(chan struct{}, 64),
 		readAloudCatalog:     dependencies.ReadAloudCatalog,
 		journalIllustrations: dependencies.JournalIllustrations,
 		journalRecordings:    dependencies.JournalRecordings,

@@ -1115,6 +1115,7 @@ components:
             - free_managed_recognition
             - sensitive_health_ai
             - journal_illustration
+            - journal_read_aloud
         documentVersion:
           type: string
           minLength: 1

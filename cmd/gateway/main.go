@@ -433,6 +433,19 @@ func buildAppHandler(
 		storage.privacyCache = recordingPrivacy
 		runRecordingRetention(ctx, store, storage.background, logger)
 	}
+	var speechConfig *readAloudConfig
+	var speechPrivacy *readAloudPrivacy
+	if app.ID == appregistry.Journal {
+		var err error
+		speechConfig, err = loadReadAloudConfig()
+		if err != nil {
+			return nil, err
+		}
+		if speechConfig != nil {
+			speechPrivacy = &readAloudPrivacy{next: storage.privacyCache}
+			storage.privacyCache = speechPrivacy
+		}
+	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
@@ -508,8 +521,19 @@ func buildAppHandler(
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
 	case appregistry.Journal:
-		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
 		dependencies.ReadAloudCatalog = storage.voiceCatalog
+		if speechConfig != nil {
+			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService)
+			if err != nil {
+				return nil, err
+			}
+			dependencies.ReadAloudSessions = speech
+			dependencies.ReadAloudAccess = access
+			speechPrivacy.sessions = speech
+			storage.background.Add(1)
+			go func() { defer storage.background.Done(); speech.Run() }()
+		}
 		if appConfig.JournalImage != nil {
 			if storage.images == nil || storage.background == nil || costController == nil {
 				return nil, errors.New("Journal images require durable storage and managed background tasks")

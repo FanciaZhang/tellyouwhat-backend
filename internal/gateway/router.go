@@ -194,6 +194,8 @@ func requestBodyLimit(method, path string) int64 {
 		return 64 << 10
 	case "POST /v1/journal/voice/sessions":
 		return 8 << 10
+	case "POST /v1/journal/read-aloud/syntheses":
+		return 8 << 10
 	case "POST /v1/attest/challenges":
 		return 8 << 10
 	case "POST /v1/attest/keys":

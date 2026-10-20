@@ -284,6 +284,13 @@ func (server *Server) RecordPrivacyConsents(
 		failure = newAPIFailure(http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", requestID.String())
 		return platformhttpapi.RecordPrivacyConsents503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
+	if server.readAloudSessions != nil {
+		for _, consent := range consents {
+			if consent.Scope == privacy.JournalReadAloudScope && !consent.Granted {
+				server.readAloudSessions.CancelAccessKey(principal.KeyID)
+			}
+		}
+	}
 	return platformhttpapi.RecordPrivacyConsents200JSONResponse{RecordedAt: recordedAt, Count: len(consents)}, nil
 }
 

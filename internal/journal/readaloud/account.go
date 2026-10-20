@@ -52,6 +52,11 @@ func (s *AccountSynthesizer) Synthesize(ctx context.Context, input Synthesis, em
 	if replay {
 		return SynthesisUsage{}, ErrRequestConflict
 	}
+	return s.synthesizeClaimed(ctx, input, r, emit)
+}
+
+func (s *AccountSynthesizer) synthesizeClaimed(ctx context.Context, input Synthesis, r RequestRecord, emit func([]byte) error) (SynthesisUsage, error) {
+	var err error
 	if err = s.store.MarkRunning(ctx, s.grant.Subject, r.ID); err != nil {
 		settleContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
