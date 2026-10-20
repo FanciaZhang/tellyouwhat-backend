@@ -30,6 +30,38 @@ func identityFixture(texts ...string) IdentityRequest {
 	return r
 }
 
+func TestVoiceInstructionsDoNotSupplyPersonalAppellationExamples(t *testing.T) {
+	for _, instructions := range []string{identityInstructions, polishInstructions + narratorInstructions} {
+		for _, sample := range []string{"老婆宝", "老公宝"} {
+			if strings.Contains(instructions, sample) {
+				t.Fatalf("production instructions supply a personal sample appellation: %s", sample)
+			}
+		}
+	}
+}
+
+func TestIdentityNamesUseExactSourceAppellations(t *testing.T) {
+	for _, name := range []string{"老婆", "妻子", "爱人", "小岚", "老婆宝"} {
+		t.Run(name, func(t *testing.T) {
+			r := identityFixture("我叫" + name + "，今天去买菜。")
+			a := IdentityAssignment{SpeakerKey: r.Speakers[0].Key, Scope: "voice", SourceIDs: []string{r.Turns[0].ID}, Name: name, PersonID: r.NarratorPersonID,
+				Kind: "introduction", EvidenceIDs: []string{r.Turns[0].ID}}
+			decode := func() error {
+				data, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{a}, "narratorSourceID": "", "narratorEvidenceIDs": []string{}, "commands": []IdentityCommand{}})
+				_, err := decodeIdentity(string(data), r)
+				return err
+			}
+			if err := decode(); err != nil {
+				t.Fatal("exact source appellation rejected", err)
+			}
+			a.Name += "宝"
+			if err := decode(); err == nil {
+				t.Fatal("invented affectionate suffix accepted")
+			}
+		})
+	}
+}
+
 func TestUnchangedNarratorEchoWithEvidenceDoesNotCreateAnOperation(t *testing.T) {
 	r := identityFixture("我和我老婆宝在河边散步，很开心。", "我和我老公宝也觉得今天很好。")
 	body, _ := json.Marshal(map[string]any{"assignments": []IdentityAssignment{}, "narratorSourceID": r.Turns[0].ID,
@@ -370,6 +402,9 @@ func TestIdentityWithConfiguredAI(t *testing.T) {
 		sharedVoice bool
 	}{
 		{"reciprocal-affection", []string{"我跟我老婆宝在杭州旅游，非常非常开心。", "对，我跟我老公宝确实很开心，我们两个人出去玩就很合拍。"}, map[int]string{0: "老公宝", 1: "老婆宝"}, false, -1, false},
+		{"reciprocal-ordinary", []string{"我和我老婆在海边散步，看到了灯塔。", "对，我和我老公一起走到灯塔，今天玩得很开心。"}, map[int]string{0: "老公", 1: "老婆"}, false, -1, false},
+		{"ambiguous-different-appellations", []string{"今天我和爱人一起去了花市，买了一盆花。", "对，我和小周去花市买了一盆茉莉花。"}, nil, true, -1, false},
+		{"explicit-names-and-relationships", []string{"我叫小周，今天我和爱人一起去了花市，买了一盆花。", "我叫阿岚，对，我和小周去花市买了一盆茉莉花。"}, map[int]string{0: "小周", 1: "阿岚"}, false, -1, false},
 		{"self-introduction", []string{"今天在河边散步很舒服。", "我叫小林，我也觉得今天的天气很好。"}, map[int]string{1: "小林"}, false, -1, false},
 		{"two-friends", []string{"我昨天跟我老婆去了杭州旅游，很开心。", "我上个月也和我老婆去了苏州，玩得不错。"}, nil, true, -1, false},
 		{"quoted-introduction", []string{"我今天读到一段故事，里面的人说：我叫小林，明天去北京。"}, nil, true, -1, false},
