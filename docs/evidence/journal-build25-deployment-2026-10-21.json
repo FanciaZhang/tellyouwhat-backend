@@ -1,0 +1,12 @@
+{
+  "state": "test-build-admission-deployed",
+  "source": "a52aaaf859a920fafe456f00114403737be3fb8a",
+  "previous": "9f9921c2a42aa097bf86922d808265ba66c67dac",
+  "only_runtime_change": "Append Journal build 25",
+  "configuration_tests_passed": 43,
+  "running_gateway_worker_allowlist_verified": true,
+  "post_update_backup_authenticated_and_decrypted_recovery_verified": true,
+  "production_deployment": false,
+  "app_source": "783ebcbd025fc9c58ad7e1e55a8e24dd080901f7",
+  "ota_https_full_sha256_verified": true
+}
