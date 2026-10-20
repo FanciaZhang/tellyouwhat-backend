@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -55,6 +57,8 @@ func (config AICostConfig) Valid() bool {
 }
 
 type AppConfig struct {
+	ReadAloudSimulatorCredentialsFile string
+
 	JournalRecording       *JournalRecordingConfig
 	JournalImage           *JournalImageConfig
 	Registry               appregistry.App
@@ -250,6 +254,7 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		managedProductIDs = append([]string{managedProductID}, managedProductIDs...)
 	}
 	config := AppConfig{
+		ReadAloudSimulatorCredentialsFile: prefixedValue(prefix, "READ_ALOUD_SIMULATOR_CREDENTIALS_FILE", ""),
 		Registry: appregistry.App{
 			ID:                     defaults.ID,
 			DisplayName:            prefixedValue(prefix, "DISPLAY_NAME", defaults.DisplayName),
@@ -396,6 +401,13 @@ func (config PlatformConfig) Validate() error {
 }
 
 func (config AppConfig) Validate(environment string) error {
+	if path := config.ReadAloudSimulatorCredentialsFile; path != "" {
+		if environment != "development" || config.Registry.ID != appregistry.Journal ||
+			config.Registry.BundleID != simulatortest.BundleID || len(config.Registry.Hosts) != 1 ||
+			config.Registry.Hosts[0] != simulatortest.Host || !filepath.IsAbs(path) {
+			return errors.New("READ_ALOUD_SIMULATOR_CREDENTIALS_FILE requires the isolated Journal development gateway and an absolute path")
+		}
+	}
 	if err := config.Registry.Validate(); err != nil {
 		return err
 	}

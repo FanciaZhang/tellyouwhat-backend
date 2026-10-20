@@ -41,6 +41,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
@@ -446,6 +447,21 @@ func buildAppHandler(
 			storage.privacyCache = speechPrivacy
 		}
 	}
+	var simulator *simulatortest.Service
+	if path := appConfig.ReadAloudSimulatorCredentialsFile; path != "" {
+		if speechConfig == nil || storage.voiceCatalog == nil {
+			return nil, errors.New("simulator read-aloud integration requires enabled TTS and durable storage")
+		}
+		simulator, err = simulatortest.New(path, platform.Environment, app, storage.nonces, time.Now)
+		if err != nil {
+			return nil, err
+		}
+		repository := simulatortest.PrivacyRepository{Repository: storage.privacy, DB: storage.voiceCatalog.DB, Simulator: simulator}
+		if err := repository.Ready(ctx); err != nil {
+			return nil, err
+		}
+		storage.privacy = repository
+	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
@@ -466,6 +482,9 @@ func buildAppHandler(
 			PrivacyChoicesURL: appConfig.Product.PrivacyChoicesURL, SupportURL: appConfig.Product.SupportURL,
 		},
 		HTTPMiddleware: observability.MiddlewareForApp(logger, string(app.ID)),
+	}
+	if simulator != nil {
+		dependencies.ReadAloudSimulatorAuthenticator = simulator
 	}
 	if platform.TrustedIPHeader != "" {
 		dependencies.IPResolver = func(request *http.Request) string {
@@ -524,7 +543,7 @@ func buildAppHandler(
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
 		dependencies.ReadAloudCatalog = storage.voiceCatalog
 		if speechConfig != nil {
-			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService)
+			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService, simulator)
 			if err != nil {
 				return nil, err
 			}

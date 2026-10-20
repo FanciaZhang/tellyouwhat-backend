@@ -16,8 +16,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
@@ -63,11 +65,28 @@ func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) 
 
 func (server *Server) apiAuthenticateProof(ctx context.Context, requestID uuid.UUID, proof RequestProof) (Principal, *apiFailure) {
 	requestIDString := requestID.String()
-	if server.authenticator == nil {
+	authenticator := server.authenticator
+	ginContext := strictGinContext(ctx)
+	if schemes := ginContext.Request.Header.Values("X-Tellyouwhat-Authentication"); len(schemes) != 0 {
+		if len(schemes) != 1 || schemes[0] != simulatortest.Scheme || server.readAloudSimulatorAuthenticator == nil ||
+			server.app.ID != appregistry.Journal || server.app.BundleID != simulatortest.BundleID || ginContext.Request.Host != simulatortest.Host {
+			ginContext.Set(observability.AuthenticationFailureStageContextKey, "app_scope")
+			return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+		}
+		proof.Path = ginContext.Request.URL.RequestURI()
+		if !simulatortest.Allowed(proof.Method, proof.Path) {
+			ginContext.Set(observability.AuthenticationFailureStageContextKey, "app_scope")
+			return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+		}
+		authenticator = server.readAloudSimulatorAuthenticator
+	} else if simulatortest.IsKey(proof.KeyID) {
+		return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+	}
+	if authenticator == nil {
 		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	principal, err := server.authenticator.Authenticate(ctx, proof)
+	principal, err := authenticator.Authenticate(ctx, proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {
 			strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "app_scope")

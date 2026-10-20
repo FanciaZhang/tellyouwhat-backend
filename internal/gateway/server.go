@@ -138,6 +138,8 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	ReadAloudSimulatorAuthenticator Authenticator
+
 	ReadAloudSessions          *readaloud.SessionService
 	ReadAloudAccess            ReadAloudAccess
 	ReadAloudCatalog           ReadAloudCatalogReader
@@ -182,6 +184,8 @@ type Dependencies struct {
 }
 
 type Server struct {
+	readAloudSimulatorAuthenticator Authenticator
+
 	readAloudSessions          *readaloud.SessionService
 	readAloudAccess            ReadAloudAccess
 	readAloudStreams           chan struct{}
@@ -254,6 +258,8 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		readAloudSimulatorAuthenticator: dependencies.ReadAloudSimulatorAuthenticator,
+
 		readAloudSessions:    dependencies.ReadAloudSessions,
 		readAloudAccess:      dependencies.ReadAloudAccess,
 		readAloudStreams:     make(chan struct{}, 64),

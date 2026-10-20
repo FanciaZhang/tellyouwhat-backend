@@ -22,7 +22,7 @@ func TestReadAloudConfigurationRequiresExplicitEnableAndAllowance(t *testing.T) 
 	if err != nil || cfg.journal != 10000 || cfg.preview != 1000 {
 		t.Fatal(cfg, err)
 	}
-	if _, _, err := configuredReadAloud(context.Background(), cfg, appStorage{}, nil, nil); err == nil {
+	if _, _, err := configuredReadAloud(context.Background(), cfg, appStorage{}, nil, nil, nil); err == nil {
 		t.Fatal("TTS started without durable storage and cost protection")
 	}
 	t.Setenv("JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS", "-1")

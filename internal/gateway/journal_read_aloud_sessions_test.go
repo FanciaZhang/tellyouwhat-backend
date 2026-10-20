@@ -1,9 +1,17 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,9 +22,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/aiconfig"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journalhttpapi"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -125,12 +135,72 @@ func (p *speechHTTPProvider) Synthesize(ctx context.Context, in readaloud.Synthe
 	return readaloud.SynthesisUsage{Characters: utf8.RuneCountInString(in.Text), UsageKnown: true, AudioBytes: 4}, nil
 }
 func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *testing.T) {
+	runReadAloudHTTPAccounting(t, false)
+}
+
+func TestMySQLSignedSimulatorReadAloudHTTPAccountingAndConsent(t *testing.T) {
+	runReadAloudHTTPAccounting(t, true)
+}
+
+func runReadAloudHTTPAccounting(t *testing.T, simulatorIdentity bool) {
+	t.Helper()
 	db := testutil.MySQL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
+	app := appregistry.App{ID: appregistry.Journal}
+	var simulator *simulatortest.Service
+	aliases := map[string]string{}
+	privateKeys := map[string]ed25519.PrivateKey{}
+	nonces := attestation.NewMemoryNonceStore()
+	if simulatorIdentity {
+		app.BundleID = simulatortest.BundleID
+		app.Hosts = []string{simulatortest.Host}
+		registry := simulatortest.Registry{Version: 1}
+		sharedSubject := uuid.NewString()
+		start, end := now.Add(-time.Hour), now.Add(24*time.Hour)
+		for _, name := range []string{"valid-key", "second-device", "other-key"} {
+			public, private, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := "simulator_" + uuid.NewString()
+			aliases[name] = key
+			privateKeys[key] = private
+			subject := sharedSubject
+			if name == "other-key" {
+				subject = uuid.NewString()
+			}
+			registry.Credentials = append(registry.Credentials, simulatortest.Credential{KeyID: key, PublicKey: base64.StdEncoding.EncodeToString(public), SubjectID: subject, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), SubscriptionStartedAt: &start, SubscriptionExpiresAt: &end, JournalCharacters: 3, PreviewCharacters: 1000})
+		}
+		dir := t.TempDir()
+		if err := os.Chmod(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "registry.json")
+		body, err := json.Marshal(registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		simulator, err = simulatortest.New(path, "development", app, nonces, time.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	keyFor := func(name string) string {
+		if key, ok := aliases[name]; ok {
+			return key
+		}
+		return name
+	}
 	entitlements := mysqlstore.NewEntitlementRepository(db, "journal")
 	for _, key := range []string{"valid-key", "second-device", "other-key"} {
+		if simulatorIdentity {
+			continue
+		}
 		if err := mysqlstore.NewKeyRepository(db, "journal").Register(ctx, attestation.RegisteredKey{KeyID: key, DeviceID: key, Environment: "production", PublicKey: []byte("synthetic"), Receipt: []byte("synthetic")}); err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +212,15 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 			t.Fatal(err)
 		}
 	}
-	consents := privacy.NewService(mysqlstore.NewPrivacyRepository(db, "journal"), nil, nil, time.Now)
+	var consentRepository privacy.Repository = mysqlstore.NewPrivacyRepository(db, "journal")
+	if simulatorIdentity {
+		repository := simulatortest.PrivacyRepository{Repository: consentRepository, DB: db, Simulator: simulator}
+		if err := repository.Ready(ctx); err != nil {
+			t.Fatal(err)
+		}
+		consentRepository = repository
+	}
+	consents := privacy.NewService(consentRepository, nil, nil, time.Now)
 	actor := uuid.NewString()
 	if _, err := db.ExecContext(ctx, "INSERT INTO admin_users(id,webauthn_id,display_name,role,status,created_at,updated_at) VALUES(?,UNHEX(REPLACE(UUID(),'-','')),'Speech HTTP test','admin','active',?,?)", actor, now, now); err != nil {
 		t.Fatal(err)
@@ -184,8 +262,14 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	access := &readaloud.Access{Entitlements: entitlements, Consents: consents, JournalCharacters: 3, PreviewCharacters: 1000, Now: time.Now}
-	speech, err := readaloud.NewSessionService(ctx, readaloud.QuotaStore{DB: db}, metered, catalog, access.Authorize, time.Now)
+	normalAccess := &readaloud.Access{Entitlements: entitlements, Consents: consents, JournalCharacters: 3, PreviewCharacters: 1000, Now: time.Now}
+	var access ReadAloudAccess = normalAccess
+	authorize := normalAccess.Authorize
+	if simulatorIdentity {
+		testAccess := simulatortest.Access{Simulator: simulator, Normal: normalAccess}
+		access, authorize = testAccess, testAccess.Authorize
+	}
+	speech, err := readaloud.NewSessionService(ctx, readaloud.QuotaStore{DB: db}, metered, catalog, authorize, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +278,44 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 	defer func() { speech.Close(); <-done }()
 	accessFault := &speechAccessFault{ReadAloudAccess: access}
 	accessFault.remaining.Store(-1)
-	s := New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Authenticator: speechHTTPAuth{}, Privacy: consents, Consent: consents, ReadAloudSessions: speech, ReadAloudAccess: accessFault, ReadAloudCatalog: catalog})
+	dependencies := Dependencies{App: app, Authenticator: speechHTTPAuth{}, Privacy: consents, Consent: consents, ReadAloudSessions: speech, ReadAloudAccess: accessFault, ReadAloudCatalog: catalog}
+	if simulator != nil {
+		dependencies.ReadAloudSimulatorAuthenticator = simulator
+	}
+	s := New(dependencies)
+	sign := func(req *http.Request, name string) {
+		t.Helper()
+		key := keyFor(name)
+		req.Header.Set("X-Tellyouwhat-Key-ID", key)
+		req.Header.Set("X-Tellyouwhat-Assertion", "fixture")
+		req.Header.Set("X-Tellyouwhat-Nonce", uuid.NewString())
+		if !simulatorIdentity {
+			return
+		}
+		req.Host = simulatortest.Host
+		req.Header.Set("X-Tellyouwhat-Authentication", simulatortest.Scheme)
+		if key == "" {
+			return
+		}
+		nonce, err := nonces.Issue(ctx, key, 5*time.Minute, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body []byte
+		if req.Body != nil {
+			var err error
+			body, err = io.ReadAll(req.Body)
+			req.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		proof := RequestProof{Method: req.Method, Path: req.URL.RequestURI(), RequestID: req.Header.Get("X-Tellyouwhat-Request-ID"), KeyID: key, Nonce: nonce, Timestamp: time.Now().UTC().Format(time.RFC3339), BodySHA256: contracts.BodySHA256(body)}
+		req.Header.Set("X-Tellyouwhat-Nonce", nonce)
+		req.Header.Set("X-Tellyouwhat-Timestamp", proof.Timestamp)
+		req.Header.Set("X-Tellyouwhat-Assertion", base64.StdEncoding.EncodeToString(ed25519.Sign(privateKeys[key], simulatortest.Message(proof))))
+	}
 	call := func(method, path, key string, body any, want int) *httptest.ResponseRecorder {
 		t.Helper()
 		raw := ""
@@ -213,9 +334,7 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 		req = req.WithContext(ctx)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Tellyouwhat-Request-ID", id)
-		req.Header.Set("X-Tellyouwhat-Key-ID", key)
-		req.Header.Set("X-Tellyouwhat-Assertion", "fixture")
-		req.Header.Set("X-Tellyouwhat-Nonce", uuid.NewString())
+		sign(req, key)
 		w := httptest.NewRecorder()
 		s.Router().ServeHTTP(w, req)
 		if w.Code != want {
@@ -317,9 +436,7 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 	streamCtx, stopStream := context.WithCancel(ctx)
 	req := httptest.NewRequest("GET", base+"/syntheses/"+preview.RequestID.String()+"/events", nil).WithContext(streamCtx)
 	req.Header.Set("X-Tellyouwhat-Request-ID", uuid.NewString())
-	req.Header.Set("X-Tellyouwhat-Key-ID", "valid-key")
-	req.Header.Set("X-Tellyouwhat-Assertion", "fixture")
-	req.Header.Set("X-Tellyouwhat-Nonce", uuid.NewString())
+	sign(req, "valid-key")
 	recorder := &speechFlushRecorder{ResponseRecorder: httptest.NewRecorder(), flushed: make(chan struct{})}
 	streamDone := make(chan struct{})
 	go func() { s.Router().ServeHTTP(recorder, req); close(streamDone) }()
@@ -334,7 +451,7 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 	case <-time.After(2 * time.Second):
 		t.Fatal("SSE ignored the actual request cancellation")
 	}
-	subject, err := access.Subject(ctx, "valid-key")
+	subject, err := access.Subject(ctx, keyFor("valid-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,5 +467,13 @@ func TestMySQLReadAloudHTTPStreamingResumptionConsentAndSubscriptionQuota(t *tes
 	call("DELETE", base+"/syntheses/"+request.RequestID.String(), "valid-key", nil, 200)
 	if provider.calls.Load() != 2 {
 		t.Fatal("withdrawal or recovery bought another synthesis")
+	}
+	if simulatorIdentity {
+		for _, table := range []string{"app_attest_keys", "managed_entitlements", "privacy_consents"} {
+			var count int
+			if err := db.QueryRow("SELECT COUNT(*) FROM " + table + " WHERE key_id LIKE 'simulator_%'").Scan(&count); err != nil || count != 0 {
+				t.Fatal("simulator polluted Apple identity or purchases", table, count, err)
+			}
+		}
 	}
 }

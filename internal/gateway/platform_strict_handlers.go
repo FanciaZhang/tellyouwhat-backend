@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
@@ -267,6 +268,10 @@ func (server *Server) RecordPrivacyConsents(
 	}
 	consents := make([]privacy.Consent, 0, len(request.Body.Consents))
 	for _, consent := range request.Body.Consents {
+		if simulatortest.IsKey(principal.KeyID) && string(consent.Scope) != privacy.JournalReadAloudScope {
+			failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope is not available for this identity", requestID.String())
+			return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
+		}
 		if _, allowed := server.allowedConsentScopes[string(consent.Scope)]; !allowed {
 			failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope is not available for this application", requestID.String())
 			return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil

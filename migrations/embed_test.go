@@ -20,7 +20,7 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	expected = append(expected, "0063_album_account_record_erasure.sql")
 	expected = append(expected, "0064_album_identity_retirement.sql", "0065_journal_illustration_jobs.sql", "0066_verified_entitlement_environments.sql")
 	expected = append(expected, "0067_journal_illustration_consent_scope.sql", "0068_journal_read_aloud_quota.sql", "0069_journal_voice_catalog.sql")
-	expected = append(expected, "0070_journal_read_aloud_consent.sql")
+	expected = append(expected, "0070_journal_read_aloud_consent.sql", "0071_journal_simulator_read_aloud_consents.sql")
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}

@@ -1,6 +1,6 @@
 # Journal 全文朗读服务
 
-2026-10-20，实施中。产品与 App 验收基线在 JournalApp 仓库的 `docs/read-aloud-product-plan.md`。本文记录后端实际进度，不代表 TTS 已开通、已部署或 App 已完成联调。
+2026-10-21，实施中。产品与 App 验收基线在 JournalApp 仓库的 `docs/read-aloud-product-plan.md`。本文记录后端实际进度，不代表 TTS 已开通、已部署或 App 已完成联调。
 
 ## 已有基础
 
@@ -36,6 +36,7 @@ HTTP 契约和生成绑定已更新：
 | `JOURNAL_TTS_ENABLED=true` | 显式启用网关合成会话，默认关闭；仅配置后台验证密钥不会自动启用 App 合成 |
 | `JOURNAL_TTS_MONTHLY_CHARACTERS` | 网关启用时必须配置的每订阅周期字符上限；测试值不构成正式订阅承诺 |
 | `JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS` | 每订阅的个性化试听日额度，默认 1,000 字符，与正文额度独立 |
+| `JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE` | 可选私有测试身份登记文件；仅隔离的手记开发网关可启用，仍需显式启用 TTS、持久存储和费用保护 |
 
 两个凭据文件均需普通文件、无符号链接且组和其他用户不可读，最多 8 KiB；错误不回显凭据。合成文件内容还拒绝控制字符和请求头注入。验证默认单价沿用标准公共 TTS 2.0 的 3 元／万字符，正式启用前核对账号价格。库存凭据和合成凭据不是同一种格式，不能互相替换。
 
@@ -43,7 +44,33 @@ HTTP 契约和生成绑定已更新：
 
 迁移 `0070` 在保留原有授权的同时增加 `journal_read_aloud`，文档版本为 `2026-10-20`。转写、整理或配图授权不授予朗读权限。首次新合成正文检查独立授权；撤回成功后取消该认证设备的在途会话并清除其服务端音频。隐私资料删除也接入既有清理链，取消各相关设备的会话。
 
-正文额度沿用现有语音功能的原始购买日期月周期；试听使用 UTC 日周期。账户按购买环境与原始交易生成摘要，同一订阅的多个认证设备共用字符账户，重新安装不会创建新额度；各设备的上传授权保持独立。过期订阅可以查询或取消已有请求、读取仍有授权的已生成音频，不能创建新合成。旧 development 权益记录不被当作已验证购买；受限模拟器身份仍待接入。
+正文额度沿用现有语音功能的原始购买日期月周期；试听使用 UTC 日周期。账户按购买环境与原始交易生成摘要，同一订阅的多个认证设备共用字符账户，重新安装不会创建新额度；各设备的上传授权保持独立。过期订阅可以查询或取消已有请求、读取仍有授权的已生成音频，不能创建新合成。旧 development 权益记录不被当作已验证购买。受限模拟器身份的服务端接入见下文；App 注入、部署及真实豆包联调仍待完成。
+
+## 受限模拟器身份
+
+服务端已接入 `internal/journal/simulatortest`。它只替换显式测试身份的认证与订阅来源；普通设备继续使用 App Attest 和真实 Apple Sandbox / Production 购买。默认关闭，`APP_ENV=production`、其他 App、正式 Bundle ID、其他或多个 Host 都不能启用。固定允许的身份为 `cn.tellyouwhat.journalapp.dev` 和 `api-test.journal.tellyouwhat.cn`。
+
+登记文件是版本为 1 的 JSON，包含 `credentials`。每项保存 `keyID`（`simulator_` 加规范 UUID）、Ed25519 `publicKey`（标准 Base64）、`subjectID`（规范 UUID）、`issuedAt`、`expiresAt`、`revoked`、可空的 `subscriptionStartedAt` / `subscriptionExpiresAt`，以及 `journalCharacters` / `previewCharacters`。不保存私钥、Apple 交易或设备证明。文件及其直接父目录必须私有、无符号链接；文件最多 32 KiB、16 个身份，单个身份有效期不超过 24 小时。每次认证和流授权重读，撤销或文件异常后停止授权。
+
+同一 `subjectID` 的多个测试密钥共享 `simulator:<UUID>` 字符账户，额度和订阅周期必须一致；各密钥的隐私授权独立。订阅日期全空表示未订阅，过去的到期时间表示已到期；测试字符上限由服务端登记，正文最多 100,000、试听最多 10,000，仍受现有项目总费用上限约束。
+
+客户端沿用公开的 App Attest challenge 接口取得绑定 `keyID` 的随机 nonce，但不注册虚构的 Apple 密钥。业务请求显式增加 `X-Tellyouwhat-Authentication: journal-simulator-v1`，其余请求 UUID、Key ID、Nonce、Timestamp、Assertion 头沿用现有名称。Assertion 是以下 UTF-8 文本的 Ed25519 签名，使用标准 Base64 编码；各行之间仅一个换行，末尾没有换行：
+
+```text
+journal-simulator-v1
+cn.tellyouwhat.journalapp.dev
+api-test.journal.tellyouwhat.cn
+<keyID>
+<RequestBindingDigest>
+```
+
+`RequestBindingDigest` 使用既有规范：大写 HTTP 方法、包含原始查询串的请求 URI、请求 UUID、nonce、RFC3339 时间和正文 SHA-256，以换行连接后计算 SHA-256 十六进制摘要。正常 App Attest 的路径绑定不变。签名有效后才原子消费既有 nonce；过期、未知 nonce 和重放被拒绝，未知或重复认证类型不回退普通认证。
+
+只允许朗读会话的创建 / 查询 / 取消 / 有界游标事件、朗读额度及 `POST /v1/privacy/consents`。授权接口额外限制为当前 `journal_read_aloud` 文档，不能借此授权整理、配图或调用其他付费接口。
+
+既有隐私表关联真实 App Attest 密钥。迁移 `0071` 因此增加独立测试授权表，沿用现有隐私服务的版本校验、同意 / 撤回接口和会话停止逻辑；普通隐私数据及其外键不变。网关启用时检查此表，测试身份不写入 `app_attest_keys`、`managed_entitlements` 或普通 `privacy_consents`。测试结束需要撤销身份、取消会话并清理测试资料；迁移仅在隔离数据库实测，尚未应用到运行中的服务。
+
+2026-10-21：八个相关 Go 包的 205 项顶层检查在 `-race -count=1` 下通过，0 失败；本机 10 项数据库检查明确跳过。现有测试 MySQL 上另用临时受限账号执行三个隔离检查：新授权持久化 / 撤回及 DDL 重放、签名身份的完整 HTTP / SSE / 额度 / 取消旅程、原有购买授权旅程回归。均通过，临时账号、数据库和测试程序已清理。证据保存在 `/Users/harborzeng/Documents/JournalBackendReleases/read-aloud-20261020/simulator-identity/`；仍使用合成 PCM，不代表 App 或豆包实音验收。
 
 | 方法与路径 | 行为 |
 | --- | --- |

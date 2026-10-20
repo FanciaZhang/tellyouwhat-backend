@@ -9,7 +9,9 @@ import (
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
@@ -40,7 +42,7 @@ func loadReadAloudConfig() (*readAloudConfig, error) {
 	}
 	return c, nil
 }
-func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appStorage, costs *costcontrol.Controller, consents *privacy.Service) (*readaloud.SessionService, *readaloud.Access, error) {
+func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appStorage, costs *costcontrol.Controller, consents *privacy.Service, simulator *simulatortest.Service) (*readaloud.SessionService, gateway.ReadAloudAccess, error) {
 	if c == nil {
 		return nil, nil, nil
 	}
@@ -56,8 +58,14 @@ func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appSto
 		return nil, nil, err
 	}
 	access := &readaloud.Access{Entitlements: storage.entitlements, Consents: consents, JournalCharacters: c.journal, PreviewCharacters: c.preview, Now: time.Now}
-	s, err := readaloud.NewSessionService(ctx, readaloud.QuotaStore{DB: storage.voiceCatalog.DB}, metered, storage.voiceCatalog, access.Authorize, time.Now)
-	return s, access, err
+	var gatewayAccess gateway.ReadAloudAccess = access
+	authorize := access.Authorize
+	if simulator != nil {
+		testAccess := simulatortest.Access{Normal: access, Simulator: simulator}
+		gatewayAccess, authorize = testAccess, testAccess.Authorize
+	}
+	s, err := readaloud.NewSessionService(ctx, readaloud.QuotaStore{DB: storage.voiceCatalog.DB}, metered, storage.voiceCatalog, authorize, time.Now)
+	return s, gatewayAccess, err
 }
 
 type readAloudPrivacy struct {
