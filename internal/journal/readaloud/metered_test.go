@@ -65,7 +65,7 @@ func TestMeteredSpeechCountsUnicodeAndSettlesProviderUsage(t *testing.T) {
 	input := validSynthesis()
 	input.Text = "你a e\u0301🙂\n"
 	_, err := s.Synthesize(context.Background(), input, func([]byte) error { return nil })
-	if err != nil || len(store.attempts) != 1 || store.attempts[0].ReservedNanos != 7*StandardCharacterNanos || !store.known || store.actual != 7*StandardCharacterNanos {
+	if err != nil || len(store.attempts) != 1 || store.attempts[0].ReservedNanos != 7*StandardCharacterNanos || store.attempts[0].Operation != "journal.read_aloud" || !store.known || store.actual != 7*StandardCharacterNanos {
 		t.Fatal("wrong character reservation or actual settlement", err, store)
 	}
 	if _, err = CharacterCount(string([]byte{0xff})); err == nil {
@@ -73,7 +73,7 @@ func TestMeteredSpeechCountsUnicodeAndSettlesProviderUsage(t *testing.T) {
 	}
 }
 func TestMeteredSpeechDeniesSpendingBeforeCallingProvider(t *testing.T) {
-	for _, denied := range []error{costcontrol.ErrBudgetExceeded, costcontrol.ErrConcurrencyExceeded, costcontrol.ErrProtectionActive} {
+	for _, denied := range []error{costcontrol.ErrBudgetExceeded, costcontrol.ErrConcurrencyExceeded, costcontrol.ErrProtectionActive, costcontrol.ErrPaused} {
 		store := &spendStore{reserveError: denied}
 		p := &spendingProvider{}
 		_, err := metered(t, store, p).Synthesize(context.Background(), validSynthesis(), func([]byte) error { return nil })

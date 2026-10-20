@@ -65,7 +65,7 @@ func TestAccountSpeechDoesNotTreatSuccessfulAudioAsFree(t *testing.T) {
 	}
 }
 func TestAccountSpeechReleasesKnownPreProviderRejectionAndRetainsCancelledUsage(t *testing.T) {
-	for _, failure := range []error{costcontrol.ErrBudgetExceeded, costcontrol.ErrConcurrencyExceeded, costcontrol.ErrProtectionActive} {
+	for _, failure := range []error{costcontrol.ErrBudgetExceeded, costcontrol.ErrConcurrencyExceeded, costcontrol.ErrProtectionActive, costcontrol.ErrPaused} {
 		f := &reservationFixture{}
 		s, _ := NewAccountSynthesizer(f, &spendingProvider{err: failure}, quotaGrant(time.Now()), "revision", time.Now)
 		_, err := s.Synthesize(context.Background(), validSynthesis(), func([]byte) error { return nil })

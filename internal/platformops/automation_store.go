@@ -46,7 +46,7 @@ func saveCircuit(ctx context.Context, tx *sql.Tx, app, op string, c Circuit, now
 
 func automationOperations(app string) []string {
 	if app == "journal" {
-		return []string{"journal.organize.lite", "journal.organize.pro", "journal.voice.rewrite", "journal.voice.speech", "journal.voice.recording", "journal.illustration"}
+		return []string{"journal.organize.lite", "journal.organize.pro", "journal.voice.rewrite", "journal.voice.speech", "journal.voice.recording", "journal.illustration", "journal.read_aloud"}
 	}
 	return Operations(app)
 }
@@ -81,6 +81,10 @@ func (s Store) CheckAutomation(ctx context.Context, app, op string) error {
 // ReserveAutomation is called under the shared cost-control lock. Its probe
 // claim rolls back if normal budget, concurrency, or persistence checks fail.
 func ReserveAutomation(ctx context.Context, tx *sql.Tx, p Policy, a costcontrol.Attempt) error {
+	// TTS has no token transport gate; check its published pause under the reservation lock.
+	if a.AppID == "journal" && a.Operation == "journal.read_aloud" && p.Check(a.AppID, a.Operation) != nil {
+		return costcontrol.ErrPaused
+	}
 	if p.AutomationRules().Mode != "protect" || !validAutomationOperation(a.AppID, a.Operation) {
 		return nil
 	}

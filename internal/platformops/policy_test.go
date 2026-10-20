@@ -2,6 +2,7 @@ package platformops_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/testutil"
@@ -53,6 +55,143 @@ func TestPolicyBoundariesAndAppIsolation(t *testing.T) {
 		t.Fatal("free sessions can exceed the safety token budget")
 	}
 }
+func TestReadAloudHasIndependentOperationAndAppPause(t *testing.T) {
+	p := policy()
+	if err := p.Check("journal", "journal.read_aloud"); err != nil {
+		t.Fatal("read-aloud is missing from Journal operations", err)
+	}
+	a := p.Apps["journal"]
+	a.PausedOperations = []string{"journal.read_aloud"}
+	p.Apps["journal"] = a
+	if p.Validate() != nil || !errors.Is(p.Check("journal", "journal.read_aloud"), platformops.ErrPaused) {
+		t.Fatal("read-aloud cannot be paused independently")
+	}
+	if p.Check("journal", "journal.voice") != nil || p.Check("health", "meal_text_capture") != nil || p.Check("health", "journal.read_aloud") == nil {
+		t.Fatal("read-aloud pause crossed an operation or app boundary")
+	}
+	a.PausedOperations, a.Paused = nil, true
+	p.Apps["journal"] = a
+	if !errors.Is(p.Check("journal", "journal.read_aloud"), platformops.ErrPaused) {
+		t.Fatal("Journal app pause did not pause read-aloud")
+	}
+}
+
+type readAloudProvider struct{ calls int }
+
+func (p *readAloudProvider) Synthesize(_ context.Context, _ readaloud.Synthesis, emit func([]byte) error) (readaloud.SynthesisUsage, error) {
+	p.calls++
+	return readaloud.SynthesisUsage{Characters: 2, UsageKnown: true, AudioBytes: 2}, emit([]byte{1, 2})
+}
+
+func TestReadAloudMySQLPauseBlocksNewPaidCallsBeforeReservation(t *testing.T) {
+	s, actor, costs := fixture(t)
+	provider := &readAloudProvider{}
+	speaker, err := readaloud.NewMeteredSynthesizer(provider, costs, readaloud.StandardCharacterNanos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	play := func() error {
+		_, err := speaker.Synthesize(context.Background(), readaloud.Synthesis{RequestID: uuid.NewString(), Text: "测试", VoiceID: "zh_female_xiaohe_uranus_bigtts"}, func([]byte) error { return nil })
+		return err
+	}
+	for _, appPause := range []bool{true, false} {
+		publish(t, s, actor, func(p *platformops.Policy) {
+			rules := platformops.DefaultAutomationPolicy()
+			rules.Mode = "observe"
+			p.Automation = &rules
+			a := p.Apps["journal"]
+			a.Paused = appPause
+			if appPause {
+				a.PausedOperations = nil
+			} else {
+				a.PausedOperations = []string{"journal.read_aloud"}
+			}
+			p.Apps["journal"] = a
+		})
+		if err := play(); !errors.Is(err, costcontrol.ErrPaused) || provider.calls != 0 {
+			t.Fatal("published pause allowed a paid call", err, provider.calls)
+		}
+	}
+	var count int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM ai_cost_attempts`).Scan(&count); err != nil || count != 0 {
+		t.Fatal("paused read-aloud reserved money", err, count)
+	}
+	metrics, err := s.Metrics(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paused int64
+	for _, row := range metrics.Rejections {
+		if row.AppID == "journal" && row.Operation == "journal.read_aloud" && row.Reason == "paused" {
+			paused += row.Count
+		}
+	}
+	if paused != 2 {
+		t.Fatal("manual pauses were not recorded as pauses", paused)
+	}
+	publish(t, s, actor, func(p *platformops.Policy) {
+		a := p.Apps["journal"]
+		a.Paused = false
+		a.PausedOperations = []string{"journal.voice"}
+		p.Apps["journal"] = a
+	})
+	if err := play(); err != nil || provider.calls != 1 {
+		t.Fatal("unrelated voice pause blocked read-aloud", err, provider.calls)
+	}
+	var operation, status string
+	if err := s.DB.QueryRow(`SELECT operation,status FROM ai_cost_attempts`).Scan(&operation, &status); err != nil || operation != "journal.read_aloud" || status != "settled" {
+		t.Fatal("read-aloud did not use its own metered operation", err, operation, status)
+	}
+}
+
+func TestReadAloudMySQLAutomaticProtectionAndSingleRecoveryProbe(t *testing.T) {
+	s, _, costs := fixture(t)
+	ctx := context.Background()
+	setCircuit := func(phase string) {
+		raw, err := json.Marshal(platformops.Circuit{Phase: phase, RetryAt: time.Now().Add(time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.DB.Exec(`INSERT INTO platform_ops_circuits(app_id,operation,document,updated_at) VALUES('journal','journal.read_aloud',?,?) ON DUPLICATE KEY UPDATE document=VALUES(document),updated_at=VALUES(updated_at)`, raw, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setCircuit("open")
+	provider := &readAloudProvider{}
+	speaker, err := readaloud.NewMeteredSynthesizer(provider, costs, readaloud.StandardCharacterNanos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = speaker.Synthesize(ctx, readaloud.Synthesis{RequestID: uuid.NewString(), Text: "测试", VoiceID: "zh_female_xiaohe_uranus_bigtts"}, func([]byte) error { return nil })
+	if !errors.Is(err, costcontrol.ErrProtectionActive) || provider.calls != 0 {
+		t.Fatal("automatic protection allowed paid TTS", err, provider.calls)
+	}
+	setCircuit("probe")
+	lease, err := costs.Reserve(ctx, "journal", "journal.read_aloud", readaloud.ResourceID, 600000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = costs.Reserve(ctx, "journal", "journal.read_aloud", readaloud.ResourceID, 600000); !errors.Is(err, costcontrol.ErrProtectionActive) {
+		t.Fatal("read-aloud admitted more than one recovery probe", err)
+	}
+	if err = lease.Finish(ctx, 600000, true, costcontrol.Outcome{Success: true, UsageKnown: true, Model: readaloud.ResourceID}); err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := s.Metrics(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, circuit := range metrics.Automation.Circuits {
+		if circuit.AppID == "journal" && circuit.Operation == "journal.read_aloud" {
+			if circuit.Phase != "probe" || circuit.Successes != 1 || circuit.ProbeOccupied {
+				t.Fatal("read-aloud did not finish its recovery probe", circuit)
+			}
+			return
+		}
+	}
+	t.Fatal("read-aloud recovery circuit disappeared")
+}
+
 func fixture(t *testing.T) (platformops.Store, string, *costcontrol.Controller) {
 	db := testutil.MySQL(t)
 	s := platformops.Store{DB: db}

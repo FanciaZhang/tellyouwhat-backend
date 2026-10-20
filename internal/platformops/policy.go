@@ -57,7 +57,7 @@ type Reader interface {
 
 func Operations(app string) []string {
 	if app == "journal" {
-		return []string{"journal.organize", "journal.voice", "journal.illustration"}
+		return []string{"journal.organize", "journal.voice", "journal.illustration", "journal.read_aloud"}
 	}
 	if app != "health" {
 		return nil

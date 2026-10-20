@@ -80,7 +80,7 @@ func (s *AccountSynthesizer) synthesizeClaimed(ctx context.Context, input Synthe
 		state = "cancelled"
 	}
 	// The project controller rejected admission before a paid call was made.
-	if errors.Is(err, costcontrol.ErrBudgetExceeded) || errors.Is(err, costcontrol.ErrConcurrencyExceeded) || errors.Is(err, costcontrol.ErrProtectionActive) {
+	if errors.Is(err, costcontrol.ErrBudgetExceeded) || errors.Is(err, costcontrol.ErrConcurrencyExceeded) || errors.Is(err, costcontrol.ErrProtectionActive) || errors.Is(err, costcontrol.ErrPaused) {
 		state, actual, known = "failed", 0, true
 	}
 	settleContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

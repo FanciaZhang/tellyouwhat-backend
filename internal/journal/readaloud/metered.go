@@ -43,7 +43,7 @@ func (s *MeteredSynthesizer) Synthesize(ctx context.Context, input Synthesis, em
 		return SynthesisUsage{}, err
 	}
 	characters, _ := CharacterCount(input.Text)
-	lease, err := s.costs.Reserve(ctx, "journal", "read_aloud", ResourceID, int64(characters)*s.nanosPerCharacter)
+	lease, err := s.costs.Reserve(ctx, "journal", "journal.read_aloud", ResourceID, int64(characters)*s.nanosPerCharacter)
 	if err != nil {
 		return SynthesisUsage{}, err
 	}

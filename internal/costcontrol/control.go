@@ -15,6 +15,7 @@ const NanosPerCNY int64 = 1_000_000_000
 
 var (
 	ErrProtectionActive      = errors.New("automatic service protection is active")
+	ErrPaused                = errors.New("service is paused")
 	ErrBudgetExceeded        = errors.New("project AI monthly budget exceeded")
 	ErrConcurrencyExceeded   = errors.New("project AI concurrency exceeded")
 	ErrConfigurationConflict = errors.New("project AI budget configuration conflicts with the active month")
@@ -104,6 +105,8 @@ func (controller *Controller) Reserve(ctx context.Context, appID, operation, met
 			reason := ""
 			if errors.Is(err, ErrBudgetExceeded) {
 				reason = "budget"
+			} else if errors.Is(err, ErrPaused) {
+				reason = "paused"
 			} else if errors.Is(err, ErrConcurrencyExceeded) {
 				reason = "concurrency"
 			} else if errors.Is(err, ErrProtectionActive) {
