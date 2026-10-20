@@ -1,0 +1,7 @@
+{
+  "application": "Journal development",
+  "build": "26",
+  "app_source": "b10879fc6979b499a322a219bb1ab60fed3b4295",
+  "scope": "Append build 26 to existing test allowlist; preserve business code, credentials, other apps and data",
+  "production_deployment": false
+}
