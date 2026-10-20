@@ -564,6 +564,19 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             self.update()
         self.assertFalse(any('build' in c.args[1] for c in self.runtime.execute.call_args_list))
 
+    def test_reviewed_illustration_consent_upgrade_is_bound_to_exact_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        self.add_illustration_migration(name='0067_journal_illustration_consent_scope.sql')
+        before, after = plan(self.old_folder, self.folder)
+        self.assertEqual(before, ['0001_example.sql'])
+        self.assertEqual(after, ['0001_example.sql', '0067_journal_illustration_consent_scope.sql'])
+        self.write_archive()
+        self.add_illustration_migration(b'ALTER TABLE privacy_consents DROP CHECK privacy_consents_scope_chk;',
+                                       name='0067_journal_illustration_consent_scope.sql')
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+
     def test_candidate_retry_after_rollback_does_not_repeat_migration(self):
         self.prepare_migration()
         with self.assertRaises(OperationError):
