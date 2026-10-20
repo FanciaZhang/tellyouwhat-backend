@@ -49,7 +49,7 @@ func (s *MeteredSynthesizer) Synthesize(ctx context.Context, input Synthesis, em
 	}
 	usage, err := s.provider.Synthesize(ctx, input, emit)
 	actual := int64(0)
-	known := usage.UsageKnown && usage.Characters >= 0 && usage.Characters <= MaximumTextBytes*2
+	known := usage.UsageKnown && usage.Characters >= 0 && usage.Characters <= MaximumTextBytes*2 && (usage.Characters > 0 || err != nil)
 	if known {
 		actual = int64(usage.Characters) * s.nanosPerCharacter
 	}

@@ -37,7 +37,7 @@ func TestCatalogRequiresRealProbeEvidenceForEnabledCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if voice.Enabled || !voice.IsVerified() || len(provider.calls) != 5 || len(audio) != 4 {
+	if voice.Enabled || !voice.IsVerified() || len(provider.calls) != 6 || provider.calls[1].Language != "en" || len(audio) != 4 {
 		t.Fatal("probe did not cover advertised controls or enabled the voice implicitly")
 	}
 	voice.Enabled = true

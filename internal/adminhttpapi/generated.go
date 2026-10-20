@@ -467,6 +467,54 @@ func (e UserUpdateRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for VoiceConfigurationBillingClass.
+const (
+	Premium     VoiceConfigurationBillingClass = "premium"
+	Standard    VoiceConfigurationBillingClass = "standard"
+	Unavailable VoiceConfigurationBillingClass = "unavailable"
+	Unreviewed  VoiceConfigurationBillingClass = "unreviewed"
+	VoiceSlot   VoiceConfigurationBillingClass = "voice-slot"
+)
+
+// Valid indicates whether the value is a known member of the VoiceConfigurationBillingClass enum.
+func (e VoiceConfigurationBillingClass) Valid() bool {
+	switch e {
+	case Premium:
+		return true
+	case Standard:
+		return true
+	case Unavailable:
+		return true
+	case Unreviewed:
+		return true
+	case VoiceSlot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VoiceConfigurationStyles.
+const (
+	Calm         VoiceConfigurationStyles = "calm"
+	Natural      VoiceConfigurationStyles = "natural"
+	Storytelling VoiceConfigurationStyles = "storytelling"
+)
+
+// Valid indicates whether the value is a known member of the VoiceConfigurationStyles enum.
+func (e VoiceConfigurationStyles) Valid() bool {
+	switch e {
+	case Calm:
+		return true
+	case Natural:
+		return true
+	case Storytelling:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreatePersonalDeliveryJSONBodyAction.
 const (
 	Create CreatePersonalDeliveryJSONBodyAction = "create"
@@ -887,6 +935,43 @@ type UserUpdateRequestRole string
 // UserUpdateRequestStatus defines model for UserUpdateRequest.Status.
 type UserUpdateRequestStatus string
 
+// VoiceCatalogDraft defines model for VoiceCatalogDraft.
+type VoiceCatalogDraft struct {
+	BaseVersion    string               `json:"baseVersion"`
+	DefaultVoiceID string               `json:"defaultVoiceID"`
+	Voices         []VoiceConfiguration `json:"voices"`
+}
+
+// VoiceCatalogPublication defines model for VoiceCatalogPublication.
+type VoiceCatalogPublication struct {
+	BaseVersion string             `json:"baseVersion"`
+	Revision    openapi_types.UUID `json:"revision"`
+}
+
+// VoiceConfiguration defines model for VoiceConfiguration.
+type VoiceConfiguration struct {
+	BillingClass VoiceConfigurationBillingClass `json:"billingClass"`
+	Description  string                         `json:"description"`
+	Dialects     []string                       `json:"dialects"`
+	Enabled      bool                           `json:"enabled"`
+	Id           string                         `json:"id"`
+	Languages    []string                       `json:"languages"`
+	Name         string                         `json:"name"`
+	PreviewURL   string                         `json:"previewURL"`
+
+	// ProbeText Public synthetic sample; at most 180 UTF-8 bytes.
+	ProbeText     string                     `json:"probeText"`
+	Rank          int                        `json:"rank"`
+	Styles        []VoiceConfigurationStyles `json:"styles"`
+	SupportsPitch bool                       `json:"supportsPitch"`
+}
+
+// VoiceConfigurationBillingClass defines model for VoiceConfiguration.BillingClass.
+type VoiceConfigurationBillingClass string
+
+// VoiceConfigurationStyles defines model for VoiceConfiguration.Styles.
+type VoiceConfigurationStyles string
+
 // WebAuthnCredential defines model for WebAuthnCredential.
 type WebAuthnCredential map[string]interface{}
 
@@ -1134,6 +1219,34 @@ type FinishSetupParams struct {
 	XAdminCeremonyID *CeremonyID `json:"X-Admin-Ceremony-ID,omitempty"`
 }
 
+// CreateVoiceCatalogDraftParams defines parameters for CreateVoiceCatalogDraft.
+type CreateVoiceCatalogDraftParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListVoiceCatalogHistoryParams defines parameters for ListVoiceCatalogHistory.
+type ListVoiceCatalogHistoryParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ProbeVoiceCatalogVoiceParams defines parameters for ProbeVoiceCatalogVoice.
+type ProbeVoiceCatalogVoiceParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// PublishVoiceCatalogParams defines parameters for PublishVoiceCatalog.
+type PublishVoiceCatalogParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// SyncVoiceCatalogParams defines parameters for SyncVoiceCatalog.
+type SyncVoiceCatalogParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // PublicOfferClaimJSONBody defines parameters for PublicOfferClaim.
 type PublicOfferClaimJSONBody struct {
 	Action PublicOfferClaimJSONBodyAction `json:"action"`
@@ -1250,6 +1363,15 @@ type FinishSetupJSONRequestBody = WebAuthnCredential
 
 // BeginSetupJSONRequestBody defines body for BeginSetup for application/json ContentType.
 type BeginSetupJSONRequestBody = SetupRequest
+
+// CreateVoiceCatalogDraftJSONRequestBody defines body for CreateVoiceCatalogDraft for application/json ContentType.
+type CreateVoiceCatalogDraftJSONRequestBody = VoiceCatalogDraft
+
+// ProbeVoiceCatalogVoiceJSONRequestBody defines body for ProbeVoiceCatalogVoice for application/json ContentType.
+type ProbeVoiceCatalogVoiceJSONRequestBody = VoiceConfiguration
+
+// PublishVoiceCatalogJSONRequestBody defines body for PublishVoiceCatalog for application/json ContentType.
+type PublishVoiceCatalogJSONRequestBody = VoiceCatalogPublication
 
 // PublicOfferClaimJSONRequestBody defines body for PublicOfferClaim for application/json ContentType.
 type PublicOfferClaimJSONRequestBody PublicOfferClaimJSONBody
@@ -1430,6 +1552,27 @@ type ServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(c *gin.Context)
+
+	// (GET /api/v1/journal/read-aloud/catalog)
+	GetVoiceCatalog(c *gin.Context)
+
+	// (POST /api/v1/journal/read-aloud/catalog/drafts)
+	CreateVoiceCatalogDraft(c *gin.Context, params CreateVoiceCatalogDraftParams)
+
+	// (GET /api/v1/journal/read-aloud/catalog/history)
+	ListVoiceCatalogHistory(c *gin.Context, params ListVoiceCatalogHistoryParams)
+
+	// (POST /api/v1/journal/read-aloud/catalog/probe)
+	ProbeVoiceCatalogVoice(c *gin.Context, params ProbeVoiceCatalogVoiceParams)
+
+	// (POST /api/v1/journal/read-aloud/catalog/publish)
+	PublishVoiceCatalog(c *gin.Context, params PublishVoiceCatalogParams)
+
+	// (GET /api/v1/journal/read-aloud/catalog/revisions/{revision})
+	GetVoiceCatalogRevision(c *gin.Context, revision string)
+
+	// (POST /api/v1/journal/read-aloud/catalog/sync)
+	SyncVoiceCatalog(c *gin.Context, params SyncVoiceCatalogParams)
 
 	// (POST /api/v1/offer-claim)
 	PublicOfferClaim(c *gin.Context)
@@ -3891,6 +4034,288 @@ func (siw *ServerInterfaceWrapper) BeginSetup(c *gin.Context) {
 	siw.Handler.BeginSetup(c)
 }
 
+// GetVoiceCatalog operation middleware
+func (siw *ServerInterfaceWrapper) GetVoiceCatalog(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetVoiceCatalog(c)
+}
+
+// CreateVoiceCatalogDraft operation middleware
+func (siw *ServerInterfaceWrapper) CreateVoiceCatalogDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateVoiceCatalogDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateVoiceCatalogDraft(c, params)
+}
+
+// ListVoiceCatalogHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListVoiceCatalogHistory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListVoiceCatalogHistoryParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListVoiceCatalogHistory(c, params)
+}
+
+// ProbeVoiceCatalogVoice operation middleware
+func (siw *ServerInterfaceWrapper) ProbeVoiceCatalogVoice(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ProbeVoiceCatalogVoiceParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ProbeVoiceCatalogVoice(c, params)
+}
+
+// PublishVoiceCatalog operation middleware
+func (siw *ServerInterfaceWrapper) PublishVoiceCatalog(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PublishVoiceCatalogParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PublishVoiceCatalog(c, params)
+}
+
+// GetVoiceCatalogRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetVoiceCatalogRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "revision" -------------
+	var revision string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetVoiceCatalogRevision(c, revision)
+}
+
+// SyncVoiceCatalog operation middleware
+func (siw *ServerInterfaceWrapper) SyncVoiceCatalog(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SyncVoiceCatalogParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SyncVoiceCatalog(c, params)
+}
+
 // PublicOfferClaim operation middleware
 func (siw *ServerInterfaceWrapper) PublicOfferClaim(c *gin.Context) {
 
@@ -4384,6 +4809,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/v1/journal/read-aloud/catalog", wrapper.GetVoiceCatalog)
+	router.GET(options.BaseURL+"/api/v1/journal/read-aloud/catalog/history", wrapper.ListVoiceCatalogHistory)
+	router.GET(options.BaseURL+"/api/v1/journal/read-aloud/catalog/revisions/:revision", wrapper.GetVoiceCatalogRevision)
+	router.POST(options.BaseURL+"/api/v1/journal/read-aloud/catalog/drafts", wrapper.CreateVoiceCatalogDraft)
+	router.POST(options.BaseURL+"/api/v1/journal/read-aloud/catalog/publish", wrapper.PublishVoiceCatalog)
+	router.POST(options.BaseURL+"/api/v1/journal/read-aloud/catalog/probe", wrapper.ProbeVoiceCatalogVoice)
+	router.POST(options.BaseURL+"/api/v1/journal/read-aloud/catalog/sync", wrapper.SyncVoiceCatalog)
 	router.POST(options.BaseURL+"/api/v1/offer-claim", wrapper.PublicOfferClaim)
 	router.GET(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.ListEvaluationSamples)
 	router.POST(options.BaseURL+"/api/v1/ai/evaluations/samples", wrapper.SaveEvaluationSample)
@@ -6645,6 +7077,281 @@ func (response BeginSetupdefaultJSONResponse) VisitBeginSetupResponse(w http.Res
 	return err
 }
 
+type GetVoiceCatalogRequestObject struct {
+}
+
+type GetVoiceCatalogResponseObject interface {
+	VisitGetVoiceCatalogResponse(w http.ResponseWriter) error
+}
+
+type GetVoiceCatalog200JSONResponse struct{ OKJSONResponse }
+
+func (response GetVoiceCatalog200JSONResponse) VisitGetVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVoiceCatalogdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetVoiceCatalogdefaultJSONResponse) VisitGetVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateVoiceCatalogDraftRequestObject struct {
+	Params CreateVoiceCatalogDraftParams
+	Body   *CreateVoiceCatalogDraftJSONRequestBody
+}
+
+type CreateVoiceCatalogDraftResponseObject interface {
+	VisitCreateVoiceCatalogDraftResponse(w http.ResponseWriter) error
+}
+
+type CreateVoiceCatalogDraft200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateVoiceCatalogDraft200JSONResponse) VisitCreateVoiceCatalogDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateVoiceCatalogDraftdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateVoiceCatalogDraftdefaultJSONResponse) VisitCreateVoiceCatalogDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListVoiceCatalogHistoryRequestObject struct {
+	Params ListVoiceCatalogHistoryParams
+}
+
+type ListVoiceCatalogHistoryResponseObject interface {
+	VisitListVoiceCatalogHistoryResponse(w http.ResponseWriter) error
+}
+
+type ListVoiceCatalogHistory200JSONResponse struct{ OKJSONResponse }
+
+func (response ListVoiceCatalogHistory200JSONResponse) VisitListVoiceCatalogHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListVoiceCatalogHistorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ListVoiceCatalogHistorydefaultJSONResponse) VisitListVoiceCatalogHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeVoiceCatalogVoiceRequestObject struct {
+	Params ProbeVoiceCatalogVoiceParams
+	Body   *ProbeVoiceCatalogVoiceJSONRequestBody
+}
+
+type ProbeVoiceCatalogVoiceResponseObject interface {
+	VisitProbeVoiceCatalogVoiceResponse(w http.ResponseWriter) error
+}
+
+type ProbeVoiceCatalogVoice200JSONResponse struct{ OKJSONResponse }
+
+func (response ProbeVoiceCatalogVoice200JSONResponse) VisitProbeVoiceCatalogVoiceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeVoiceCatalogVoicedefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ProbeVoiceCatalogVoicedefaultJSONResponse) VisitProbeVoiceCatalogVoiceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishVoiceCatalogRequestObject struct {
+	Params PublishVoiceCatalogParams
+	Body   *PublishVoiceCatalogJSONRequestBody
+}
+
+type PublishVoiceCatalogResponseObject interface {
+	VisitPublishVoiceCatalogResponse(w http.ResponseWriter) error
+}
+
+type PublishVoiceCatalog200JSONResponse struct{ OKJSONResponse }
+
+func (response PublishVoiceCatalog200JSONResponse) VisitPublishVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishVoiceCatalogdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PublishVoiceCatalogdefaultJSONResponse) VisitPublishVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVoiceCatalogRevisionRequestObject struct {
+	Revision string `json:"revision"`
+}
+
+type GetVoiceCatalogRevisionResponseObject interface {
+	VisitGetVoiceCatalogRevisionResponse(w http.ResponseWriter) error
+}
+
+type GetVoiceCatalogRevision200JSONResponse struct{ OKJSONResponse }
+
+func (response GetVoiceCatalogRevision200JSONResponse) VisitGetVoiceCatalogRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVoiceCatalogRevisiondefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetVoiceCatalogRevisiondefaultJSONResponse) VisitGetVoiceCatalogRevisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncVoiceCatalogRequestObject struct {
+	Params SyncVoiceCatalogParams
+}
+
+type SyncVoiceCatalogResponseObject interface {
+	VisitSyncVoiceCatalogResponse(w http.ResponseWriter) error
+}
+
+type SyncVoiceCatalog200JSONResponse struct{ OKJSONResponse }
+
+func (response SyncVoiceCatalog200JSONResponse) VisitSyncVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncVoiceCatalogdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response SyncVoiceCatalogdefaultJSONResponse) VisitSyncVoiceCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PublicOfferClaimRequestObject struct {
 	Body *PublicOfferClaimJSONRequestBody
 }
@@ -7361,6 +8068,27 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/auth/setup/options)
 	BeginSetup(ctx context.Context, request BeginSetupRequestObject) (BeginSetupResponseObject, error)
+
+	// (GET /api/v1/journal/read-aloud/catalog)
+	GetVoiceCatalog(ctx context.Context, request GetVoiceCatalogRequestObject) (GetVoiceCatalogResponseObject, error)
+
+	// (POST /api/v1/journal/read-aloud/catalog/drafts)
+	CreateVoiceCatalogDraft(ctx context.Context, request CreateVoiceCatalogDraftRequestObject) (CreateVoiceCatalogDraftResponseObject, error)
+
+	// (GET /api/v1/journal/read-aloud/catalog/history)
+	ListVoiceCatalogHistory(ctx context.Context, request ListVoiceCatalogHistoryRequestObject) (ListVoiceCatalogHistoryResponseObject, error)
+
+	// (POST /api/v1/journal/read-aloud/catalog/probe)
+	ProbeVoiceCatalogVoice(ctx context.Context, request ProbeVoiceCatalogVoiceRequestObject) (ProbeVoiceCatalogVoiceResponseObject, error)
+
+	// (POST /api/v1/journal/read-aloud/catalog/publish)
+	PublishVoiceCatalog(ctx context.Context, request PublishVoiceCatalogRequestObject) (PublishVoiceCatalogResponseObject, error)
+
+	// (GET /api/v1/journal/read-aloud/catalog/revisions/{revision})
+	GetVoiceCatalogRevision(ctx context.Context, request GetVoiceCatalogRevisionRequestObject) (GetVoiceCatalogRevisionResponseObject, error)
+
+	// (POST /api/v1/journal/read-aloud/catalog/sync)
+	SyncVoiceCatalog(ctx context.Context, request SyncVoiceCatalogRequestObject) (SyncVoiceCatalogResponseObject, error)
 
 	// (POST /api/v1/offer-claim)
 	PublicOfferClaim(ctx context.Context, request PublicOfferClaimRequestObject) (PublicOfferClaimResponseObject, error)
@@ -9045,6 +9773,207 @@ func (sh *strictHandler) BeginSetup(ctx *gin.Context) {
 	}
 }
 
+// GetVoiceCatalog operation middleware
+func (sh *strictHandler) GetVoiceCatalog(ctx *gin.Context) {
+	var request GetVoiceCatalogRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVoiceCatalog(ctx, request.(GetVoiceCatalogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVoiceCatalog")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetVoiceCatalogResponseObject); ok {
+		if err := validResponse.VisitGetVoiceCatalogResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateVoiceCatalogDraft operation middleware
+func (sh *strictHandler) CreateVoiceCatalogDraft(ctx *gin.Context, params CreateVoiceCatalogDraftParams) {
+	var request CreateVoiceCatalogDraftRequestObject
+
+	request.Params = params
+
+	var body CreateVoiceCatalogDraftJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateVoiceCatalogDraft(ctx, request.(CreateVoiceCatalogDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateVoiceCatalogDraft")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateVoiceCatalogDraftResponseObject); ok {
+		if err := validResponse.VisitCreateVoiceCatalogDraftResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListVoiceCatalogHistory operation middleware
+func (sh *strictHandler) ListVoiceCatalogHistory(ctx *gin.Context, params ListVoiceCatalogHistoryParams) {
+	var request ListVoiceCatalogHistoryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListVoiceCatalogHistory(ctx, request.(ListVoiceCatalogHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListVoiceCatalogHistory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ListVoiceCatalogHistoryResponseObject); ok {
+		if err := validResponse.VisitListVoiceCatalogHistoryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProbeVoiceCatalogVoice operation middleware
+func (sh *strictHandler) ProbeVoiceCatalogVoice(ctx *gin.Context, params ProbeVoiceCatalogVoiceParams) {
+	var request ProbeVoiceCatalogVoiceRequestObject
+
+	request.Params = params
+
+	var body ProbeVoiceCatalogVoiceJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ProbeVoiceCatalogVoice(ctx, request.(ProbeVoiceCatalogVoiceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProbeVoiceCatalogVoice")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ProbeVoiceCatalogVoiceResponseObject); ok {
+		if err := validResponse.VisitProbeVoiceCatalogVoiceResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishVoiceCatalog operation middleware
+func (sh *strictHandler) PublishVoiceCatalog(ctx *gin.Context, params PublishVoiceCatalogParams) {
+	var request PublishVoiceCatalogRequestObject
+
+	request.Params = params
+
+	var body PublishVoiceCatalogJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishVoiceCatalog(ctx, request.(PublishVoiceCatalogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishVoiceCatalog")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PublishVoiceCatalogResponseObject); ok {
+		if err := validResponse.VisitPublishVoiceCatalogResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVoiceCatalogRevision operation middleware
+func (sh *strictHandler) GetVoiceCatalogRevision(ctx *gin.Context, revision string) {
+	var request GetVoiceCatalogRevisionRequestObject
+
+	request.Revision = revision
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVoiceCatalogRevision(ctx, request.(GetVoiceCatalogRevisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVoiceCatalogRevision")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetVoiceCatalogRevisionResponseObject); ok {
+		if err := validResponse.VisitGetVoiceCatalogRevisionResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SyncVoiceCatalog operation middleware
+func (sh *strictHandler) SyncVoiceCatalog(ctx *gin.Context, params SyncVoiceCatalogParams) {
+	var request SyncVoiceCatalogRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SyncVoiceCatalog(ctx, request.(SyncVoiceCatalogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SyncVoiceCatalog")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(SyncVoiceCatalogResponseObject); ok {
+		if err := validResponse.VisitSyncVoiceCatalogResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // PublicOfferClaim operation middleware
 func (sh *strictHandler) PublicOfferClaim(ctx *gin.Context) {
 	var request PublicOfferClaimRequestObject
@@ -9436,94 +10365,101 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"U4GtMk8SMcm2zvtFmSc6zLF52PxfAAAA//8=",
+	"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",
+	"8q2LflHuiQ5zrG/X/x8AAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

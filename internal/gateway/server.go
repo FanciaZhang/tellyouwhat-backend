@@ -137,6 +137,7 @@ type PolicyResolver interface {
 }
 
 type Dependencies struct {
+	ReadAloudCatalog           ReadAloudCatalogReader
 	JournalRecordings          *recordinghttp.Handler
 	JournalIllustrations       *illustration.Service
 	BirthdayAssistant          birthday.Assistant
@@ -178,6 +179,7 @@ type Dependencies struct {
 }
 
 type Server struct {
+	readAloudCatalog           ReadAloudCatalogReader
 	journalRecordings          *recordinghttp.Handler
 	journalIllustrations       *illustration.Service
 	birthdayAssistant          birthday.Assistant
@@ -246,6 +248,7 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
+		readAloudCatalog:     dependencies.ReadAloudCatalog,
 		journalIllustrations: dependencies.JournalIllustrations,
 		journalRecordings:    dependencies.JournalRecordings,
 		birthdayAssistant:    dependencies.BirthdayAssistant,

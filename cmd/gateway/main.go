@@ -38,6 +38,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
@@ -75,6 +76,7 @@ type sharedStorage struct {
 }
 
 type appStorage struct {
+	voiceCatalog               *readaloud.CatalogStore
 	images                     *illustrationstore.Store
 	background                 *sync.WaitGroup
 	prompts                    *promptconfig.Cache
@@ -357,6 +359,7 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
 		images:            &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
+		voiceCatalog:      &readaloud.CatalogStore{DB: shared.database},
 		operations:        ops,
 		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
 		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
@@ -506,6 +509,7 @@ func buildAppHandler(
 		dependencies.Contracts = manifest
 	case appregistry.Journal:
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
+		dependencies.ReadAloudCatalog = storage.voiceCatalog
 		if appConfig.JournalImage != nil {
 			if storage.images == nil || storage.background == nil || costController == nil {
 				return nil, errors.New("Journal images require durable storage and managed background tasks")

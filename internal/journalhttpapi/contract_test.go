@@ -16,7 +16,7 @@ func TestEmbeddedContractIsValidAndEveryOperationIsNamed(t *testing.T) {
 		t.Fatalf("validate embedded OpenAPI contract: %v", err)
 	}
 
-	const expectedOperationCount = 14
+	const expectedOperationCount = 15
 	operationIDs := make(map[string]struct{}, expectedOperationCount)
 	operationCount := 0
 	for path, item := range document.Paths.Map() {

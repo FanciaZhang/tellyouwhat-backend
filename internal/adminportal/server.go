@@ -23,6 +23,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/appstoreconnect"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/offerdelivery"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
@@ -53,6 +54,10 @@ type OfferManager interface {
 }
 
 type Config struct {
+	VoiceCatalog            *readaloud.CatalogStore
+	VoiceDiscovery          VoiceDiscovery
+	VoiceProbe              *readaloud.CatalogProbe
+	VoiceWritesEnabled      bool
 	Delivery                *offerdelivery.Store
 	Evaluations             *prompteval.Store
 	EvaluationSpeechPrice   costcontrol.DurationPrice
@@ -139,7 +144,11 @@ func limitAdminRequestBody() gin.HandlerFunc {
 	return func(context *gin.Context) {
 		switch context.Request.Method {
 		case http.MethodPost, http.MethodPut, http.MethodPatch:
-			context.Request.Body = http.MaxBytesReader(context.Writer, context.Request.Body, maximumAdminRequestBodyBytes)
+			limit := int64(maximumAdminRequestBodyBytes)
+			if context.Request.URL.Path == "/api/v1/journal/read-aloud/catalog/drafts" {
+				limit = 32 << 20
+			}
+			context.Request.Body = http.MaxBytesReader(context.Writer, context.Request.Body, limit)
 		}
 		context.Next()
 	}
@@ -300,7 +309,7 @@ func (server *Server) Router() *gin.Engine {
 func (server *Server) securityAndRateLimit() gin.HandlerFunc {
 	return func(context *gin.Context) {
 		writer, request := context.Writer, context.Request
-		writer.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		writer.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob: https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		writer.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")

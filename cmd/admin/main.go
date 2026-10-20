@@ -28,6 +28,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	platformconfig "github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/offerdelivery"
 	"github.com/tellyouwhat/backend/internal/platformops"
@@ -196,9 +197,16 @@ func run(logger *slog.Logger) error {
 			}
 		}(appID, source)
 	}
+	voiceDiscovery, voiceProbe, err := readAloudServices(database, evaluationCost.Limits)
+	if err != nil {
+		return err
+	}
 	portal, err := adminportal.NewServer(authentication, offerClients, adminportal.NewMySQLOperationStore(database), adminportal.NewMySQLMetricsReader(database), adminportal.Config{
-		Delivery: deliveryStore,
-		AI:       ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
+		Delivery:       deliveryStore,
+		VoiceCatalog:   &readaloud.CatalogStore{DB: database},
+		VoiceDiscovery: voiceDiscovery, VoiceProbe: voiceProbe,
+		VoiceWritesEnabled: strings.EqualFold(os.Getenv("JOURNAL_TTS_WRITES_ENABLED"), "true"),
+		AI:                 ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
 		Prompts: &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,
@@ -229,7 +237,7 @@ func run(logger *slog.Logger) error {
 	server := &http.Server{
 		Addr: ":" + configuration.port, Handler: control.Handler(portal.Router()),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
-		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+		WriteTimeout: 90 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)

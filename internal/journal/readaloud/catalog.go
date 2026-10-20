@@ -84,6 +84,11 @@ func validSet(values []string, limit int) bool {
 }
 
 func (voice Voice) Validate() error {
+	switch voice.BillingClass {
+	case "unreviewed", "standard", "premium", "voice-slot", "unavailable":
+	default:
+		return ErrCatalog
+	}
 	if !voiceIDPattern.MatchString(voice.ID) || strings.TrimSpace(voice.Name) == "" || utf8.RuneCountInString(voice.Name) > 80 ||
 		utf8.RuneCountInString(voice.Description) > 500 || voice.ResourceID != ResourceID ||
 		len(voice.Languages) == 0 || !validSet(voice.Languages, 40) || !validSet(voice.Styles, 3) ||
@@ -137,8 +142,12 @@ func (voice Voice) policyHash() string {
 
 func (voice Voice) IsVerified() bool {
 	v := voice.Verification
+	if v == nil {
+		return false
+	}
+	audioHash, err := hex.DecodeString(v.AudioSHA256)
 	return voice.Validate() == nil && voice.BillingClass == "standard" && v != nil && !v.VerifiedAt.IsZero() &&
-		v.Cases == len(voice.probes()) && v.PolicySHA256 == voice.policyHash() && len(v.AudioSHA256) == 64
+		v.Cases == len(voice.probes()) && v.PolicySHA256 == voice.policyHash() && err == nil && len(audioHash) == sha256.Size
 }
 
 func (voice Voice) Allows(input Synthesis) bool {
@@ -194,7 +203,7 @@ func (catalog Catalog) Public() (PublicCatalog, error) {
 			continue
 		}
 		result.Voices = append(result.Voices, PublicVoice{voice.ID, voice.Name, voice.Description,
-			voice.Languages, voice.Styles, voice.Dialects, voice.SupportsPitch, voice.PreviewURL, voice.policyHash()})
+			voice.Languages, voice.Styles, append([]string{}, voice.Dialects...), voice.SupportsPitch, voice.PreviewURL, voice.policyHash()})
 	}
 	return result, nil
 }
@@ -202,6 +211,11 @@ func (catalog Catalog) Public() (PublicCatalog, error) {
 func (voice Voice) probes() []Synthesis {
 	base := Synthesis{Text: voice.ProbeText, VoiceID: voice.ID, Style: "natural", Language: voice.Languages[0]}
 	result := []Synthesis{base}
+	for _, language := range voice.Languages[1:] {
+		probe := base
+		probe.Language = language
+		result = append(result, probe)
+	}
 	for _, style := range voice.Styles {
 		if style != "natural" {
 			probe := base

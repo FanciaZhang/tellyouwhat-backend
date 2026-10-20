@@ -100,3 +100,12 @@ func TestMeteredSpeechReportsUnsettledCostWithoutLeakingStorageErrors(t *testing
 		t.Fatal("unsafe settlement error", err)
 	}
 }
+
+func TestMeteredSpeechDoesNotReleaseZeroUsageForSuccessfulAudio(t *testing.T) {
+	store := &spendStore{}
+	p := &spendingProvider{usage: SynthesisUsage{UsageKnown: true}}
+	_, err := metered(t, store, p).Synthesize(context.Background(), validSynthesis(), func([]byte) error { return nil })
+	if err != nil || store.known || len(store.attempts) != 1 {
+		t.Fatal("nonempty synthesis falsely settled as free", err, store)
+	}
+}
