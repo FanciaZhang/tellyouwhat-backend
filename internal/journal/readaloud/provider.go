@@ -88,7 +88,7 @@ func NewProvider(endpoint, apiKey string, client *http.Client) (*Provider, error
 }
 
 func (input Synthesis) Valid() bool {
-	if _, err := uuid.Parse(input.RequestID); err != nil {
+	if id, err := uuid.Parse(input.RequestID); err != nil || id == uuid.Nil {
 		return false
 	}
 	if !utf8.ValidString(input.Text) || len(input.Text) > MaximumTextBytes || strings.TrimSpace(input.Text) == "" ||
