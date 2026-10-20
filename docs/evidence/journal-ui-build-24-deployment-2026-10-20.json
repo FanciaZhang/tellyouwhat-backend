@@ -1,0 +1,23 @@
+{
+  "state": "test-admission-deployed-and-verified",
+  "source_commit": "1a8710919673a1d78195d0679b683de69e8bdce4",
+  "app_source": "022f451fb78b0ac2a2c76a4a31935b2010045016",
+  "bundle_id": "cn.tellyouwhat.journalapp.dev",
+  "build": "24",
+  "journal_allowed_builds": [
+    "21",
+    "22",
+    "23",
+    "24"
+  ],
+  "runtime_gateway_and_worker_readback_verified": true,
+  "only_runtime_change": "Append Journal build 24",
+  "business_code_changes": false,
+  "production_deployment": false,
+  "pre_update_backup_verified": true,
+  "post_update_backup_authenticated_and_decrypted_recovery_verified": true,
+  "producer_cleanup_verified": true,
+  "ota_https_full_sha256_verified": true,
+  "device_installation_verified": false,
+  "raw_installation_link_omitted": true
+}
