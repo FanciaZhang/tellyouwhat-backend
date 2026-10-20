@@ -97,6 +97,20 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             archive.addfile(item, io.BytesIO(contents))
         self.save()
 
+    def enable_read_aloud(self):
+        self.enable_journal()
+        self.app.update(JOURNAL_TTS_ENABLED='true', JOURNAL_TTS_API_KEY_FILE=dev.journal.KEY_FILE,
+                        JOURNAL_TTS_MONTHLY_CHARACTERS='10000', JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS='1000',
+                        JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE=dev.journal.SIMULATOR_FILE)
+        name = dev.journal.READ_ALOUD_OVERLAY
+        body = (Path(__file__).resolve().parents[2] / name).read_bytes()
+        (self.folder / name).write_bytes(body)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            item = tarfile.TarInfo(name)
+            item.size = len(body)
+            archive.addfile(item, io.BytesIO(body))
+        self.save()
+
     def set_topology(self, *, mounted):
         root = Path(__file__).resolve().parents[2]
         path = root / ('compose.platform-test.yaml' if mounted else 'deploy/tencent/testdata/platform-test-before-recording.yaml')
@@ -315,6 +329,17 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                     container['Config'].update(User='65532:65532', Env=['APP_ENV=development', 'JOURNAL_RECORDING_ROOT=' + dev.recording.ROOT])
                     container['Mounts'] = [{'Type': 'bind', 'Source': dev.recording.ROOT,
                                             'Destination': dev.recording.ROOT, 'RW': True}]
+                if dev.journal.read_aloud_selected(folder):
+                    env = dict(e.split('=', 1) for e in container['Config'].get('Env', []))
+                    if service == 'gateway':
+                        env['APP_ENV'] = 'development'
+                        env.update({k: v for k, v in dev.read_environment(folder / 'runtime.env').items() if k in dev.journal.READ_ALOUD_SETTINGS})
+                        container['Config']['User'] = '65532:65532'
+                        container.setdefault('Mounts', []).append({'Type': 'bind', 'Source': str(dev.journal.PRIVATE_BASE / 'development'),
+                                                                  'Destination': '/journal-read-aloud', 'RW': False})
+                    else:
+                        env.update({k: 'false' if k == 'JOURNAL_TTS_ENABLED' else '' for k in dev.journal.READ_ALOUD_SETTINGS})
+                    container['Config']['Env'] = [k + '=' + v for k, v in env.items()]
                 return json.dumps([container]).encode()
             if label == 'platform-test-update-schema':
                 return b'1\t0001_example.sql\n'
@@ -472,6 +497,62 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(len(starts), 1)
         self.assertEqual(starts[0][-2:], ['gateway', 'worker'])
         self.assertFalse(any('journal-private-development' in c or 'down' in c for c in commands))
+
+    def test_read_aloud_update_selects_private_mount_and_preserves_rollback(self):
+        self.enable_journal()
+        self.prepare_update()
+        self.enable_read_aloud()
+        result = self.update()
+        self.assertEqual(result['previous']['source'], self.old_source)
+        self.assertIn(dev.journal.READ_ALOUD_OVERLAY, result['files'])
+        commands = self.runtime.execute.call_args_list
+        labels = [c.args[0] for c in commands]
+        self.assertLess(labels.index('journal-read-aloud-private-prepare'), labels.index('platform-test-update-start'))
+        prepare = next(c.args[1] for c in commands if c.args[0] == 'journal-read-aloud-private-prepare')
+        self.assertEqual(prepare[:3], ['sudo', '-n', 'python3'])
+        self.assertEqual(prepare[-1], str(self.folder / 'runtime.env'))
+        self.assertIn(str(self.folder / dev.journal.READ_ALOUD_OVERLAY), dev.compose(self.folder, 'config', '--quiet'))
+        self.assertNotIn(str(self.old_folder / dev.journal.READ_ALOUD_OVERLAY), dev.compose(self.old_folder, 'config', '--quiet'))
+
+    def test_read_aloud_configuration_rejects_arbitrary_files_and_excessive_allowances(self):
+        self.enable_read_aloud()
+        for key, value in [('JOURNAL_TTS_API_KEY_FILE', '/album-secrets/private-key'),
+                           ('JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE', '/tmp/identities.json'),
+                           ('JOURNAL_TTS_ENABLED', 'yes'), ('JOURNAL_TTS_MONTHLY_CHARACTERS', '100001'),
+                           ('JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS', '10001')]:
+            before = dict(self.app)
+            self.app[key] = value
+            self.save()
+            with self.subTest(key=key), self.assertRaises(OperationError):
+                dev.selection(self.runtime, self.source)
+            self.app = before
+        self.save()
+        overlay = self.folder / dev.journal.READ_ALOUD_OVERLAY
+        overlay.write_bytes(overlay.read_bytes().replace(b'read_only: true', b'read_only: false'))
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'reviewed source'):
+            dev.selection(self.runtime, self.source)
+
+    def test_read_aloud_mount_never_reaches_worker_or_an_unselected_gateway(self):
+        self.enable_read_aloud()
+        mount = {'Type': 'bind', 'Source': str(dev.journal.PRIVATE_BASE / 'development'),
+                 'Destination': '/journal-read-aloud', 'RW': False}
+        env = ['APP_ENV=development'] + [k + '=' + v for k, v in self.app.items() if k in dev.journal.READ_ALOUD_SETTINGS]
+        container = {'Config': {'User': '65532:65532', 'Env': env}, 'Mounts': [mount]}
+        dev.journal.verify_read_aloud(container, self.folder, 'gateway')
+        with self.assertRaises(OperationError):
+            dev.journal.verify_read_aloud(container, self.folder, 'worker')
+        mount['RW'] = True
+        with self.assertRaises(OperationError):
+            dev.journal.verify_read_aloud(container, self.folder, 'gateway')
+        container['Mounts'] = []
+        with self.assertRaises(OperationError):
+            dev.journal.verify_read_aloud(container, self.folder, 'gateway')
+        for k in dev.journal.READ_ALOUD_SETTINGS:
+            self.app.pop(k)
+        self.save()
+        with self.assertRaises(OperationError):
+            dev.journal.verify_read_aloud(container, self.folder, 'gateway')
 
     def test_journal_rejects_formal_identity_and_unmounted_or_unscoped_credentials(self):
         self.enable_journal()

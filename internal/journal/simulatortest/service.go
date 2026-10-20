@@ -104,7 +104,7 @@ func (s *Service) load() (Registry, error) {
 	decoder.DisallowUnknownFields()
 	var registry Registry
 	if decoder.Decode(&registry) != nil || decoder.Decode(&struct{}{}) != io.EOF || registry.Version != 1 ||
-		len(registry.Credentials) < 1 || len(registry.Credentials) > 16 {
+		registry.Credentials == nil || len(registry.Credentials) > 16 {
 		return invalid()
 	}
 	keys, subjects := map[string]bool{}, map[string]Credential{}

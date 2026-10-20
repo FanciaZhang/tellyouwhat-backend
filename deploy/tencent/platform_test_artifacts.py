@@ -12,6 +12,7 @@ from ops_backup import create_backup, verify_backup
 import ops_offsite
 from platform_test_deploy import FILES, private_file, selection, selection_files
 import platform_test_albums as albums
+import platform_test_journal as journal
 
 
 def checkpoint_runtime(runtime):
@@ -98,6 +99,19 @@ def backup_configuration(runtime, destination):
 
 def verify_recovery(archive, hashes):
     expected = {'state.json', 'owner.json', 'database.env', 'backup.env', *('current/' + name for name in (*FILES, 'selection.json'))}
+    overlay = 'current/' + journal.READ_ALOUD_OVERLAY
+    try:
+        raw = archive.extractfile('recovery/platform-test/current/runtime.env').read().decode()
+        app = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line and not line.startswith('#'))
+    except (KeyError, AttributeError, UnicodeError) as error:
+        raise OperationError('platform test recovery configuration is missing') from error
+    journal.validate_read_aloud(app)
+    if bool(app.get('JOURNAL_TTS_API_KEY_FILE')) != (overlay in hashes):
+        raise OperationError('platform test read-aloud recovery mount is incomplete')
+    if overlay in hashes:
+        if hashes[overlay] != journal.READ_ALOUD_OVERLAY_SHA256:
+            raise OperationError('platform test read-aloud recovery overlay is unreviewed')
+        expected.add(overlay)
     if any('current/' + name in hashes for name in albums.FILES):
         expected.update('current/' + name for name in albums.FILES)
     if 'current/albums.env' in hashes:

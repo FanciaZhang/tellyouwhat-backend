@@ -188,8 +188,33 @@ func TestSimulatorRevocationAndExpiryReloadWithoutRestart(t *testing.T) {
 	}
 }
 
+func TestSimulatorEmptyRegistryStartsWithoutGrantingAnyIdentity(t *testing.T) {
+	f := newFixture(t)
+	proof := f.proof(t, "POST", "/v1/journal/read-aloud/syntheses")
+	credential := f.r.Credentials[0]
+	f.r.Credentials = []Credential{}
+	f.write(t)
+	service, err := New(f.s.path, "development", f.app, f.nonces, func() time.Time { return f.now })
+	if err != nil {
+		t.Fatal("empty explicit registry must support a disabled integration state", err)
+	}
+	if _, err := service.Authenticate(context.Background(), proof); !errors.Is(err, attestation.ErrAuthentication) {
+		t.Fatal("empty registry granted or misreported access", err)
+	}
+	f.r.Credentials = []Credential{credential}
+	f.write(t)
+	if _, err := service.Authenticate(context.Background(), proof); err != nil {
+		t.Fatal("registered identity was not reloaded", err)
+	}
+	f.r.Credentials = []Credential{}
+	f.write(t)
+	if _, err := service.Lookup(credential.KeyID); !errors.Is(err, attestation.ErrAuthentication) {
+		t.Fatal("removing the final identity did not revoke it", err)
+	}
+}
+
 func TestSimulatorRegistryRequiresPrivateBoundedUnambiguousCredentials(t *testing.T) {
-	for _, name := range []string{"world readable", "public parent", "symlink", "oversized", "unknown field", "trailing json", "version", "empty", "too many", "duplicate", "inconsistent shared subject", "long lifetime", "zero lifetime", "invalid key", "invalid public key", "invalid subject", "half subscription", "invalid subscription", "unbounded journal", "unbounded preview"} {
+	for _, name := range []string{"world readable", "public parent", "symlink", "oversized", "unknown field", "trailing json", "missing credentials", "version", "null credentials", "too many", "duplicate", "inconsistent shared subject", "long lifetime", "zero lifetime", "invalid key", "invalid public key", "invalid subject", "half subscription", "invalid subscription", "unbounded journal", "unbounded preview"} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			writeInvalid := func(body []byte) {
@@ -231,12 +256,14 @@ func TestSimulatorRegistryRequiresPrivateBoundedUnambiguousCredentials(t *testin
 					t.Fatal(err)
 				}
 				writeInvalid(append(body, []byte(`{}`)...))
+			case "missing credentials":
+				writeInvalid([]byte(`{"version":1}`))
 			default:
 				c := &f.r.Credentials[0]
 				switch name {
 				case "version":
 					f.r.Version = 2
-				case "empty":
+				case "null credentials":
 					f.r.Credentials = nil
 				case "too many":
 					for len(f.r.Credentials) < 17 {

@@ -119,6 +119,33 @@ class PlatformTestRecoveryTests(unittest.TestCase):
         self.assertEqual(artifacts.backup_configuration(self.runtime, self.base / 'unused'), {})
         self.runtime.execute.assert_not_called()
 
+    def test_read_aloud_recovery_requires_its_selected_readonly_overlay(self):
+        names = {'state.json', 'owner.json', 'database.env', 'backup.env',
+                 *('current/' + name for name in (*artifacts.FILES, 'selection.json')),
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc',
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc.json'}
+        contents = {name: name.encode() for name in names}
+        journal = artifacts.journal
+        contents['current/runtime.env'] = ('JOURNAL_TTS_ENABLED=true\nJOURNAL_TTS_API_KEY_FILE=' + journal.KEY_FILE
+            + '\nJOURNAL_TTS_MONTHLY_CHARACTERS=10000\nJOURNAL_TTS_PREVIEW_DAILY_CHARACTERS=1000\n').encode()
+        overlay = 'current/' + journal.READ_ALOUD_OVERLAY
+        contents[overlay] = (Path(__file__).resolve().parents[2] / journal.READ_ALOUD_OVERLAY).read_bytes()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, content in contents.items():
+                entry = tarfile.TarInfo('recovery/platform-test/' + name)
+                entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+        data.seek(0)
+        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in contents.items()}
+        with tarfile.open(fileobj=data) as archive:
+            artifacts.verify_recovery(archive, hashes)
+            with self.assertRaisesRegex(OperationError, 'mount is incomplete'):
+                artifacts.verify_recovery(archive, {k: v for k, v in hashes.items() if k != overlay})
+            hashes[overlay] = '0' * 64
+            with self.assertRaisesRegex(OperationError, 'unreviewed'):
+                artifacts.verify_recovery(archive, hashes)
+
     def test_recovery_keeps_the_independent_decryption_key_out_of_the_outer_bundle(self):
         source = 'a' * 40
         folder = self.root / '.platform-test/releases' / source

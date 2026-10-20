@@ -59,7 +59,8 @@ def applications(folder):
 
 
 def selection_files(folder):
-    return {**FILES, **(albums.FILES if albums.selected(folder) else {})}
+    return {**FILES, **(albums.FILES if albums.selected(folder) else {}),
+            **(journal.READ_ALOUD_FILES if journal.read_aloud_selected(folder) else {})}
 
 
 def running_services(folder):
@@ -125,6 +126,7 @@ def selection(runtime, source):
         if albums.selected(folder) and (albums.OVERLAY not in names or
                 archive.extractfile(albums.OVERLAY).read() != (folder / albums.OVERLAY).read_bytes()):
             raise OperationError('Albums overlay differs from selected source')
+        journal.validate_read_aloud_overlay(folder, archive)
         config = archive.extractfile('internal/config/platform.go') if 'internal/config/platform.go' in names else None
         explicit_apps = config is not None and b'"PLATFORM_APPS"' in config.read()
         # Retained recovery selections must be validated using their own configuration contract.
@@ -176,7 +178,8 @@ def selection(runtime, source):
 def compose(folder, *args):
     return ['docker', 'compose', '--project-name', PROJECT, '--env-file', str(folder / 'compose.env'),
             '-f', str(folder / 'compose.platform-test.yaml'),
-            *(['-f', str(folder / albums.OVERLAY)] if albums.selected(folder) else []), *args]
+            *(['-f', str(folder / albums.OVERLAY)] if albums.selected(folder) else []),
+            *(['-f', str(folder / journal.READ_ALOUD_OVERLAY)] if journal.read_aloud_selected(folder) else []), *args]
 
 
 def ready(folder=None):
@@ -230,6 +233,7 @@ def verify_running(runtime, folder, source, label):
             raise OperationError('platform test process differs from the selected healthy image')
         if service == 'gateway' and recording.available(folder):
             recording.verify_gateway(running)
+        journal.verify_read_aloud(running, folder, service)
         if albums.selected(folder):
             if service == 'gateway':
                 albums.verify_gateway(running, folder)
@@ -294,7 +298,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
     if 'journal' not in before_apps and 'journal' in after_apps:
         permitted |= journal.SETTINGS
     if 'journal' in after_apps:
-        permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'}
+        permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'} | journal.READ_ALOUD_SETTINGS
     permitted |= STOREKIT_SETTINGS
     compose_changes = {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}
     if 'albums' in after_apps:
@@ -329,6 +333,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
     if 'albums' in after_apps and not manifest.get('recovery_albums_development'):
         raise OperationError('Albums shared API admission requires its full authenticated development backup')
     recording.prepare(runtime, folder)
+    journal.prepare_read_aloud(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
     if pending_migration:
@@ -434,6 +439,7 @@ def activate_selected(runtime, source, update_from):
             or runtime.execute('platform-test-volumes', ['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + PROJECT + '_']).strip()):
         raise OperationError('platform test data already exists; do not repeat bootstrap')
     recording.prepare(runtime, folder)
+    journal.prepare_read_aloud(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
     try:
