@@ -1,0 +1,21 @@
+{
+  "checked_at_utc": "2026-10-20T16:55:04.882136+00:00",
+  "deployed_source": "bc25a0267cb29dd9986cf5063de7c1dc30ed747f",
+  "previous_source": "a52aaaf859a920fafe456f00114403737be3fb8a",
+  "app_source": "b10879fc6979b499a322a219bb1ab60fed3b4295",
+  "journal_build": "26",
+  "running_gateway_and_worker_allowlist": [
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26"
+  ],
+  "only_runtime_configuration_change": "Append Journal build 26",
+  "configuration_tests_passed": 43,
+  "post_update_backup_verified": true,
+  "authenticated_decrypted_recovery_verified": true,
+  "production_changed": false,
+  "credentials_and_raw_receipts_omitted": true
+}
