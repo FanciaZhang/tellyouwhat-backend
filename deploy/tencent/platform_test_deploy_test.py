@@ -11,6 +11,9 @@ from unittest.mock import Mock, patch
 import platform_test_deploy as dev
 from ops_common import OperationError
 
+READ_ALOUD_MIGRATIONS = ('0068_journal_read_aloud_quota.sql', '0069_journal_voice_catalog.sql',
+                         '0070_journal_read_aloud_consent.sql', '0071_journal_simulator_read_aloud_consents.sql')
+
 
 class PlatformTestBootstrapTests(unittest.TestCase):
     def setUp(self):
@@ -510,16 +513,17 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             dev.ready(self.folder)
         self.assertEqual(seen, [dev.HOST, dev.HEALTH_HOST, dev.journal.HOST])
 
-    def prepare_migration(self):
+    def prepare_migration(self, names=('0065_journal_illustration_jobs.sql',)):
         self.prepare_update()
-        self.add_illustration_migration()
+        for name in names:
+            self.add_illustration_migration(name=name)
         execute = self.runtime.execute.side_effect
         self.migrated = False
         def migrate(label, command, **kwargs):
             if label == 'platform-test-update-migrate':
                 self.migrated = True
             if label == 'platform-test-migration-names':
-                return b'0001_example.sql\n' + (b'0065_journal_illustration_jobs.sql\n' if self.migrated else b'')
+                return ('0001_example.sql\n' + (''.join(name + '\n' for name in names) if self.migrated else '')).encode()
             return execute(label, command, **kwargs)
         self.runtime.execute.side_effect = migrate
 
@@ -576,6 +580,42 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                                        name='0067_journal_illustration_consent_scope.sql')
         with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
             plan(self.old_folder, self.folder)
+
+    def test_read_aloud_migrations_require_each_exact_reviewed_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        for name in READ_ALOUD_MIGRATIONS:
+            with self.subTest(name=name):
+                self.write_archive()
+                self.add_illustration_migration(name=name)
+                self.assertEqual(plan(self.old_folder, self.folder)[1], ['0001_example.sql', name])
+                self.write_archive()
+                self.add_illustration_migration(b'CREATE TABLE unreviewed (id INT);', name=name)
+                with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+                    plan(self.old_folder, self.folder)
+
+    def test_read_aloud_migrations_finish_before_candidate_activation(self):
+        self.enable_journal()
+        self.prepare_migration(READ_ALOUD_MIGRATIONS)
+        result = self.update()
+        self.assertEqual(result['migrations'], 5)
+        self.assertEqual(result['latest_migration'], READ_ALOUD_MIGRATIONS[-1])
+        self.assertEqual(result['previous']['migrations'], 5)
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-migrate'), labels.index('platform-test-update-start'))
+
+    def test_read_aloud_failed_candidate_retains_schema_and_recovers_previous_selection(self):
+        self.enable_journal()
+        self.prepare_migration(READ_ALOUD_MIGRATIONS)
+        with self.assertRaisesRegex(OperationError, 'not ready'):
+            self.update(ready_error=[OperationError('not ready'), None])
+        retained = json.loads((self.runtime.state / 'platform-test.json').read_text())
+        self.assertEqual(retained['source'], self.old_source)
+        self.assertEqual(retained['migrations'], 5)
+        self.assertEqual(retained['schema_source'], self.source)
+        rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-rollback')
+        self.assertIn(str(self.old_folder / 'compose.env'), rollback)
+        self.assertFalse(any('down' in c.args[1] or '--volumes' in c.args[1] for c in self.runtime.execute.call_args_list))
 
     def test_candidate_retry_after_rollback_does_not_repeat_migration(self):
         self.prepare_migration()
