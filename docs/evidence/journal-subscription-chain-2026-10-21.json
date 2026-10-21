@@ -9,12 +9,17 @@
     "returned_subscription_status": 1,
     "sandbox_bundle": "cn.tellyouwhat.journalapp.dev"
   },
-  "fix": "Query the original transaction ID from the verified client JWS; retain verification of the current Apple-signed transaction, original-chain matching, expiry, revocation, upgrade and grace handling",
+  "fix": "For Sandbox only, when status API returns exactly 5000001, fetch the current signed transaction from the Apple Get Transaction Info API. Verify its certificate chain and JWS, exact submitted transaction/original chain/product, app/environment, expiry, revocation and upgrade before returning access. Production keeps the status API path.",
   "focused_go_packages_passed": [
     "internal/appstore",
     "internal/entitlement",
     "internal/gateway"
   ],
   "deployment_verified": false,
-  "raw_transaction_identifiers_omitted": true
+  "raw_transaction_identifiers_omitted": true,
+  "original_id_only_change_was_insufficient": true,
+  "original_id_later_also_returned_5000001": true,
+  "first_test_deployment_source": "326d2a710352804d527e1687163943b76469f42b",
+  "first_real_notification_replay_http_status": 503,
+  "sandbox_fresh_transaction_security_cases_passed": 15
 }

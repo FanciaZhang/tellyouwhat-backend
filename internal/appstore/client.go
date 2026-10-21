@@ -111,35 +111,13 @@ func (client *APIClient) subscriptionStatuses(ctx context.Context, transactionID
 	if client == nil || !client.validConfig() || transactionID == "" || len(transactionID) > 128 {
 		return nil, ErrStatusUnavailable
 	}
-	bearer, err := client.bearerToken()
-	if err != nil {
-		return nil, fmt.Errorf("%w: create authorization token", ErrStatusUnavailable)
-	}
-	endpoint := strings.TrimRight(client.config.BaseURL, "/") +
-		"/inApps/v1/subscriptions/" + url.PathEscape(transactionID)
+	path := "/inApps/v1/subscriptions/" + url.PathEscape(transactionID)
 	if !all {
-		endpoint += "?status=1&status=4"
+		path += "?status=1&status=4"
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	data, err := client.get(ctx, path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: create status request", ErrStatusUnavailable)
-	}
-	request.Header.Set("Authorization", "Bearer "+bearer)
-	request.Header.Set("Accept", "application/json")
-	response, err := client.config.HTTPClient.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("%w: request current status", ErrStatusUnavailable)
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusNotFound {
-		return nil, ErrTransactionNotFound
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: status code %d", ErrStatusUnavailable, response.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, maximumAPIResponseBytes+1))
-	if err != nil || len(data) > maximumAPIResponseBytes {
-		return nil, ErrInvalidAPIResponse
+		return nil, err
 	}
 	var payload statusResponse
 	if err := json.Unmarshal(data, &payload); err != nil {
@@ -161,13 +139,67 @@ func (client *APIClient) subscriptionStatuses(ctx context.Context, transactionID
 				continue
 			}
 			statuses = append(statuses, SubscriptionStatus{
-				Status:            transaction.Status,
-				SignedTransaction: transaction.SignedTransactionInfo,
-				SignedRenewal:     transaction.SignedRenewalInfo,
+				Status: transaction.Status, SignedTransaction: transaction.SignedTransactionInfo,
+				SignedRenewal: transaction.SignedRenewalInfo,
 			})
 		}
 	}
 	return statuses, nil
+}
+
+func (client *APIClient) SignedTransaction(ctx context.Context, transactionID string) (string, error) {
+	if client == nil || !client.validConfig() || transactionID == "" || len(transactionID) > 128 {
+		return "", ErrStatusUnavailable
+	}
+	data, err := client.get(ctx, "/inApps/v1/transactions/"+url.PathEscape(transactionID))
+	if err != nil {
+		return "", err
+	}
+	var payload struct {
+		SignedTransaction string `json:"signedTransactionInfo"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.SignedTransaction == "" {
+		return "", ErrInvalidAPIResponse
+	}
+	return payload.SignedTransaction, nil
+}
+
+func (client *APIClient) get(ctx context.Context, path string) ([]byte, error) {
+	bearer, err := client.bearerToken()
+	if err != nil {
+		return nil, fmt.Errorf("%w: create authorization token", ErrStatusUnavailable)
+	}
+	endpoint := strings.TrimRight(client.config.BaseURL, "/") + path
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: create status request", ErrStatusUnavailable)
+	}
+	request.Header.Set("Authorization", "Bearer "+bearer)
+	request.Header.Set("Accept", "application/json")
+	response, err := client.config.HTTPClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("%w: request current status", ErrStatusUnavailable)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusNotFound {
+		return nil, ErrTransactionNotFound
+	}
+	if response.StatusCode != http.StatusOK {
+		if response.StatusCode == http.StatusInternalServerError {
+			var failure struct {
+				ErrorCode int `json:"errorCode"`
+			}
+			if json.NewDecoder(io.LimitReader(response.Body, maximumAPIResponseBytes)).Decode(&failure) == nil && failure.ErrorCode == 5000001 {
+				return nil, errRetryableStatus
+			}
+		}
+		return nil, fmt.Errorf("%w: status code %d", ErrStatusUnavailable, response.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, maximumAPIResponseBytes+1))
+	if err != nil || len(data) > maximumAPIResponseBytes {
+		return nil, ErrInvalidAPIResponse
+	}
+	return data, nil
 }
 
 func (client *APIClient) validConfig() bool {
