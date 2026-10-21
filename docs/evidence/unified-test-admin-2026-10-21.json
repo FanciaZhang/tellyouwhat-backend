@@ -1,0 +1,194 @@
+{
+  "observedAt": "2026-10-21T02:10:07.134473+00:00",
+  "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+  "testAdmin": "https://admin-test.tellyouwhat.cn",
+  "productionAdmin": "https://admin.tellyouwhat.cn",
+  "apps": [
+    "albums",
+    "birthday",
+    "health",
+    "journal"
+  ],
+  "containers": [
+    {
+      "service": "gateway",
+      "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "image": "tellyouwhat-platform-test-gateway:cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    },
+    {
+      "service": "worker",
+      "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "image": "tellyouwhat-platform-test-worker:cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    },
+    {
+      "service": "admin",
+      "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "image": "tellyouwhat-platform-test-admin:cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    }
+  ],
+  "privateConfigurationVerified": true,
+  "installedOperationsVerified": true,
+  "productionStateUnchanged": true,
+  "productionSHA256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+  "rootCaddyUnchanged": true,
+  "rootCaddySHA256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+  "publicChecks": [
+    {
+      "path": "https://api-test.journal.tellyouwhat.cn/readyz",
+      "status": 200,
+      "body": {
+        "status": "ready"
+      }
+    },
+    {
+      "path": "https://api-test.health.tellyouwhat.cn/readyz",
+      "status": 200,
+      "body": {
+        "status": "ready"
+      }
+    },
+    {
+      "path": "https://api-test.birthday.tellyouwhat.cn/readyz",
+      "status": 200,
+      "body": {
+        "status": "ready"
+      }
+    },
+    {
+      "path": "https://api-test.albums.tellyouwhat.cn/readyz",
+      "status": 200,
+      "body": {
+        "code": "ok"
+      }
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/",
+      "status": 200,
+      "bytes": 11763,
+      "sha256": "a2c3a85da74195a3a881bca8b67726028e8e904096f727a365eb8bd1a72749b1"
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/setup",
+      "status": 200,
+      "bytes": 11763,
+      "sha256": "a2c3a85da74195a3a881bca8b67726028e8e904096f727a365eb8bd1a72749b1"
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/enroll",
+      "status": 200,
+      "bytes": 11763,
+      "sha256": "a2c3a85da74195a3a881bca8b67726028e8e904096f727a365eb8bd1a72749b1"
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/api/v1/session",
+      "status": 401,
+      "bytes": 85,
+      "sha256": "7613e320c95c9a9cc929fb81b0e04a3ab026e53231fd0f49a1edca422eda3137"
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/internal/lifecycle",
+      "status": 404,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "url": "https://admin-test.tellyouwhat.cn/v1/journal/read-aloud/voices",
+      "status": 404,
+      "bytes": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "url": "https://api-test.journal.tellyouwhat.cn/",
+      "status": 404,
+      "bytes": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "url": "https://api-test.journal.tellyouwhat.cn/setup",
+      "status": 404,
+      "bytes": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "url": "https://api-test.journal.tellyouwhat.cn/api/v1/session",
+      "status": 404,
+      "bytes": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "url": "https://api-test.journal.tellyouwhat.cn/internal/lifecycle",
+      "status": 404,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "url": "https://api-test.journal.tellyouwhat.cn/v1/journal/read-aloud/voices",
+      "status": 503,
+      "bytes": 115,
+      "sha256": "eea929eb25f0966598b8bbe7ed16301e3bf70bbdbbaf7e0d17bd406eabccb8ca"
+    },
+    {
+      "url": "https://admin.tellyouwhat.cn/",
+      "status": 200,
+      "testLabelAbsent": true
+    }
+  ],
+  "cleanup": {
+    "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+    "previousSource": "41f34db916e03ac9d0d86bcc413ff6052809bd39",
+    "compilerCacheCleared": true,
+    "rollbackImagesPresent": true
+  },
+  "backup": {
+    "adminConfigurationBound": true,
+    "configurationRecoveryVerified": true,
+    "exitCode": 0,
+    "filename": "mysql-20261021T020732Z-c9ed16.sql.gz.enc",
+    "finishedAt": 1792548482.5576932,
+    "manifestAuthenticated": true,
+    "newTestSourceBound": true,
+    "newTestStateBound": true,
+    "offsiteReadbackVerifiedObjects": 3,
+    "pid": 1436757,
+    "readAloudOverlayBound": true,
+    "recoveryFilename": "recovery-mysql-20261021T020732Z-c9ed16.tar.gz.enc",
+    "selectedFilesBound": 9,
+    "sha256": "26cb6fc64c9def1e1171ba045c93b6107a062ecf080df8cbdba1f41c6cf00012",
+    "source": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+    "startedAt": 1792548441.8660522,
+    "testAdminRoutingBound": true
+  },
+  "existingTestAdminAccountPreserved": true,
+  "oldTestCredentialsRevoked": true,
+  "newDomainPasskeyRegistrationVerified": false,
+  "authenticatedBusinessWritesVerified": false,
+  "browserPublicPageVerified": true,
+  "localChecks": {
+    "goPackages": 3,
+    "goRacePassedTestsAndSubtests": 48,
+    "goSkipped": {
+      "mysql": 7,
+      "explicitBrowserService": 1,
+      "explicitLiveModel": 1
+    },
+    "pythonTestsPassed": 88,
+    "fourAppBrowserGeometryPassed": true,
+    "offerBrowserRegressionPassed": true
+  },
+  "failedCandidate": "6ef1639bf2f4891a0d30d6dd1b37b71bd46d9c63",
+  "failedCandidateRolledBackTo": "41f34db916e03ac9d0d86bcc413ff6052809bd39",
+  "paidProviderRequestsThisChange": 0,
+  "evidenceDirectory": "/Users/harborzeng/Documents/JournalBackendReleases/unified-test-admin-20261021"
+}
