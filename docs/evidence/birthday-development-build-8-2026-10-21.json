@@ -1,0 +1,9 @@
+{
+  "app": "birthday",
+  "bundle_id": "cn.tellyouwhat.birthday.dev",
+  "version": "1.0",
+  "build": "8",
+  "app_source": "4de6c51819c7216a3bb58149be34cf2d99cc33d3",
+  "previous_backend_source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461",
+  "configuration_change": "Add build 8 to BIRTHDAY_ALLOWED_APP_BUILDS; retain all other runtime values, schemas and application code."
+}
