@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-21",
+  "reason": "Ad Hoc Journal 1.0 (27) read aloud trial",
+  "deployment": {
+    "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461",
+    "previousSource": "78bdb99e3b00450fc48768fef314d660f42766b9",
+    "allowedBuilds": "21,22,23,24,25,26,27",
+    "onlyRuntimeChangeIsBuildAdmission": true,
+    "storeKitEnvironment": "Sandbox",
+    "independentDevStoreKitApp": true,
+    "containers": [
+      {
+        "name": "gateway",
+        "running": true,
+        "restarts": 0,
+        "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461"
+      },
+      {
+        "name": "worker",
+        "running": true,
+        "restarts": 0,
+        "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461"
+      },
+      {
+        "name": "admin",
+        "running": true,
+        "restarts": 0,
+        "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461"
+      }
+    ],
+    "ready": [
+      {
+        "app": "health",
+        "status": 200
+      },
+      {
+        "app": "journal",
+        "status": 200
+      },
+      {
+        "app": "birthday",
+        "status": 200
+      },
+      {
+        "app": "albums",
+        "status": 200
+      }
+    ],
+    "catalogVoices": 466,
+    "catalogUnchanged": true,
+    "productionSHA256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+    "caddySHA256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+    "ownerRegistered": true,
+    "cleanupCompleted": true,
+    "deviceAppAttestVerified": false
+  },
+  "focusedConfigurationChecks": {
+    "command": "python3 -m unittest discover -s deploy/tencent -p platform_test_deploy_test.py",
+    "testsPassed": 60,
+    "exitCode": 0,
+    "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461"
+  },
+  "postDeploymentBackup": {
+    "adminConfigurationBound": true,
+    "configurationRecoveryVerified": true,
+    "exitCode": 0,
+    "filename": "mysql-20261021T074823Z-adf32e.sql.gz.enc",
+    "finishedAt": 1792568932.6149793,
+    "manifestAuthenticated": true,
+    "newTestSourceBound": true,
+    "newTestStateBound": true,
+    "offsiteReadbackVerifiedObjects": 3,
+    "pid": 2616680,
+    "readAloudOverlayBound": true,
+    "recoveryFilename": "recovery-mysql-20261021T074823Z-adf32e.tar.gz.enc",
+    "selectedFilesBound": 9,
+    "sha256": "89616e210dd20560b9673f6c712ee09dc6c560eb05476a5a8a66f92b71a19252",
+    "source": "1f381625ef2f4c35b86cd4c656a1b18326b1b461",
+    "startedAt": 1792568891.6376615,
+    "testAdminRoutingBound": true
+  },
+  "appSource": "ecb26d36fec6b3b87a6c78ee186f982ab476a1e4",
+  "appIPAUnchanged": true,
+  "realDeviceAuthenticationAndPurchase": "pending user trial",
+  "newProviderSynthesisCalls": 0,
+  "productionDeployed": false,
+  "rawInstallationLinkOmitted": true
+}
