@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-21",
+  "purpose": "Admit real Sandbox diagnostics build 1.0 (30)",
+  "source": "1aa05a9fbd376b6eb399cdad6c80b9323ba36b81",
+  "previous_source": "c2245f513cd1f71919a29ef0675800e6d9028c17",
+  "runtime_change": "Journal allowed build 30",
+  "journal_allowed_builds": "21,22,23,24,25,26,27,28,29,30",
+  "ready": [
+    {
+      "app": "health",
+      "status": 200
+    },
+    {
+      "app": "journal",
+      "status": 200
+    },
+    {
+      "app": "birthday",
+      "status": 200
+    },
+    {
+      "app": "albums",
+      "status": 200
+    }
+  ],
+  "owner_registered": true,
+  "cleanup_completed": true,
+  "catalog_unchanged": true,
+  "catalog_voices": 466,
+  "production_sha256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+  "caddy_sha256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+  "authenticated_recovery_backup": true,
+  "offsite_objects_readback": 3,
+  "device_app_attest_verified": false,
+  "fresh_purchase_and_phone_activation_verified": false
+}
