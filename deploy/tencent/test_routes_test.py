@@ -65,38 +65,55 @@ class TestRouteTests(unittest.TestCase):
         self.assertLess(self.calls.index('test-route-validate'), self.calls.index('test-route-commit'))
         self.runtime.record.assert_called_once()
 
-    def test_journal_admin_keeps_native_api_routes_and_internal_block_on_the_test_host(self):
-        plain = routes.render(['health', 'journal'])
-        text = routes.render(['health', 'journal'], True)
-        self.assertIn('@native path /v1 /v1/* /livez /healthz /readyz', text)
-        self.assertIn('handle @internal {\n        respond 404', text)
+    def test_unified_admin_has_its_own_host_and_all_app_apis_keep_their_native_target(self):
+        apps = list(routes.ROUTES)
+        text = routes.render(apps, True)
         self.assertEqual(text.count('reverse_proxy 127.0.0.1:18792'), 1)
-        self.assertEqual(text.split('api-test.journal.')[0], plain.split('api-test.journal.')[0])
-        self.assertNotIn('admin.tellyouwhat.cn', text)
-        with self.assertRaises(OperationError): routes.render(['health'], True)
+        self.assertIn('admin-test.tellyouwhat.cn {', text)
+        for app in apps:
+            block = text.split(routes.ROUTES[app][0] + ' {', 1)[1].split('\n}\n', 1)[0]
+            self.assertIn('reverse_proxy 127.0.0.1:18790', block)
+            self.assertNotIn(':18792', block)
+            self.assertIn('respond @internal 404', block)
+        self.assertNotIn('\nadmin.tellyouwhat.cn {', text)
+        with self.assertRaises(OperationError): routes.render(['journal'], True)
         with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin') as ready:
-            routes.configure(self.runtime, ['journal'], True)
+            routes.configure(self.runtime, apps, True)
         ready.assert_called_once_with(self.runtime)
-        self.assertEqual(self.main.read_text(), self.before.rstrip() + '\n\nimport ' + str(self.fragment) + '\n')
-        self.assertTrue(self.runtime.record.call_args.kwargs['journal_admin'])
+        self.assertTrue(self.runtime.record.call_args.kwargs['admin'])
 
     def test_admin_readiness_failure_leaves_all_caddy_files_unchanged(self):
         with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin', side_effect=OperationError('not ready')):
-            with self.assertRaises(OperationError): routes.configure(self.runtime, ['journal'], True)
+            with self.assertRaises(OperationError): routes.configure(self.runtime, list(routes.ROUTES), True)
         self.assertEqual(self.main.read_text(), self.before)
         self.assertFalse(self.fragment.exists())
         self.assertNotIn('test-route-stage', self.calls)
 
-    def test_future_route_update_preserves_selected_admin(self):
-        text = routes.render(['journal'], True)
+    def test_future_route_update_preserves_selected_unified_admin(self):
+        apps = list(routes.ROUTES)
+        text = routes.render(apps, True)
         self.fragment.write_text(text)
         self.main.write_text(self.before + 'import ' + str(self.fragment) + '\n')
         (self.runtime.state / 'test-routing.json').write_text(json.dumps({
-            'apps': ['journal'], 'journal_admin': True, 'fragment_sha256': hashlib.sha256(text.encode()).hexdigest()}))
+            'apps': apps, 'admin': True, 'fragment_sha256': hashlib.sha256(text.encode()).hexdigest()}))
         with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin') as ready:
             routes.configure(self.runtime, ['health'])
         ready.assert_called_once()
-        self.assertIn('reverse_proxy 127.0.0.1:18792', self.fragment.read_text())
+        self.assertIn('admin-test.tellyouwhat.cn {', self.fragment.read_text())
+
+    def test_existing_journal_admin_route_is_replaced_without_touching_production_root(self):
+        old = (Path(__file__).parent / 'testdata/previous-journal-admin.caddy').read_text()
+        self.fragment.write_text(old)
+        self.main.write_text(self.before + 'import ' + str(self.fragment) + '\n')
+        root_before = self.main.read_bytes()
+        (self.runtime.state / 'test-routing.json').write_text(json.dumps({
+            'apps': list(routes.ROUTES), 'journal_admin': True, 'fragment_sha256': hashlib.sha256(old.encode()).hexdigest()}))
+        with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin'):
+            routes.configure(self.runtime, list(routes.ROUTES), True)
+        self.assertEqual(self.main.read_bytes(), root_before)
+        self.assertIn('admin-test.tellyouwhat.cn {', self.fragment.read_text())
+        self.assertNotIn('@native', self.fragment.read_text())
+        self.assertNotIn('journal_admin', self.runtime.record.call_args.kwargs)
 
     def test_invalid_configuration_does_not_change_active_files(self):
         self.fail_validate = True

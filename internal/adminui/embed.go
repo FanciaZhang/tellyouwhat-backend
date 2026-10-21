@@ -11,7 +11,7 @@ import (
 var files embed.FS
 
 // Handle serves the embedded administration shell directly from Gin.
-func Handle(context *gin.Context) {
+func Handle(context *gin.Context, testEnvironment bool) {
 	name := strings.TrimPrefix(context.Request.URL.Path, "/")
 	if name == "" || name == "setup" || name == "enroll" {
 		name = "index.html"
@@ -23,6 +23,12 @@ func Handle(context *gin.Context) {
 	if err != nil || strings.Contains(name, "..") {
 		context.Status(404)
 		return
+	}
+	if name == "index.html" && testEnvironment {
+		shell := strings.NewReplacer("Tellyouwhat 管理后台", "Tellyouwhat 测试管理后台",
+			"<h1>管理后台</h1>", "<h1>测试管理后台</h1>",
+			`<p class="eyebrow">Tellyouwhat</p>`, `<p class="eyebrow">Tellyouwhat · 测试环境</p>`)
+		data = []byte(shell.Replace(string(data)))
 	}
 	contentType := "application/octet-stream"
 	if strings.HasSuffix(name, ".html") {

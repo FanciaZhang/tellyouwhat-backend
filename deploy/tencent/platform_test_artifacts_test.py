@@ -183,6 +183,10 @@ class PlatformTestRecoveryTests(unittest.TestCase):
                 artifacts.backup_configuration(self.runtime, self.base / 'rejected')
 
     def test_admin_recovery_requires_selected_overlay_and_only_its_private_keys(self):
+        self.admin_recovery_recipe(False)
+        self.admin_recovery_recipe(True)
+
+    def admin_recovery_recipe(self, previous):
         names = {'state.json', 'owner.json', 'database.env', 'backup.env',
                  *('current/' + name for name in (*artifacts.FILES, 'selection.json', *artifacts.admin.FILES)),
                  'current/' + artifacts.journal.READ_ALOUD_OVERLAY,
@@ -198,6 +202,8 @@ class PlatformTestRecoveryTests(unittest.TestCase):
             + ''.join(key + '=ep-journal-test\n' for key in sorted(artifacts.admin.MODELS))).encode()
         for overlay in (artifacts.journal.READ_ALOUD_OVERLAY, artifacts.admin.OVERLAY):
             contents['current/' + overlay] = (Path(__file__).resolve().parents[2] / overlay).read_bytes()
+        if previous:
+            contents['current/' + artifacts.admin.OVERLAY] = (Path(__file__).parent / 'testdata/previous-platform-admin-test.yaml').read_bytes()
         data = io.BytesIO()
         with tarfile.open(fileobj=data, mode='w') as archive:
             for name, content in contents.items():

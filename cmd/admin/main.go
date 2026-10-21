@@ -214,6 +214,7 @@ func run(logger *slog.Logger) error {
 		PreviewSigningKey:       configuration.previewSigningKey,
 		WritesEnabled:           configuration.writesEnabled,
 		Apps:                    adminApps,
+		Environment:             configuration.environment,
 		Readiness: func(ctx context.Context) error {
 			if err := database.PingContext(ctx); err != nil {
 				return err
@@ -258,6 +259,7 @@ func run(logger *slog.Logger) error {
 
 type config struct {
 	port, databaseDSN, redisURL, rpID, origin string
+	environment                               string
 	apps                                      []adminAppConfig
 	previewSigningKey                         []byte
 	writesEnabled                             bool
@@ -280,12 +282,17 @@ func loadConfig() (config, error) {
 		origin:            value("ADMIN_ORIGIN", "https://admin.tellyouwhat.cn"),
 		previewSigningKey: previewSigningKey,
 		writesEnabled:     strings.EqualFold(os.Getenv("ADMIN_WRITES_ENABLED"), "true"),
+		environment:       value("APP_ENV", "production"),
+	}
+	if configuration.environment != "production" && configuration.environment != "development" {
+		return config{}, errors.New("admin environment must be production or development")
 	}
 	if _, err := mysql.ParseDSN(configuration.databaseDSN); err != nil || configuration.redisURL == "" {
 		return config{}, errors.New("admin database and Redis configuration are required")
 	}
 	definitions := map[string]struct{ prefix, name string }{
 		"health": {"HEALTH", "告你健康"}, "journal": {"JOURNAL", "告你手记"},
+		"birthday": {"BIRTHDAY", "告你生日"}, "albums": {"ALBUM", "告你相册"},
 	}
 	seen := map[string]bool{}
 	var promptApps []platformconfig.AppConfig

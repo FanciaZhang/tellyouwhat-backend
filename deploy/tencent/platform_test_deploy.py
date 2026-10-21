@@ -214,20 +214,26 @@ def ready(folder=None):
 
 
 def build_images(runtime, folder, record, source):
-    for service in image_services(folder):
-        image = PROJECT + '-' + service + ':' + source
-        existing = runtime.execute('platform-test-image-existing', ['docker', 'image', 'ls', '-q', image]).strip()
-        if existing:
-            labels = json.loads(runtime.execute('platform-test-image-check', ['docker', 'image', 'inspect', image]))[0]['Config']['Labels']
-            if labels.get('org.opencontainers.image.revision') != source or labels.get('cn.tellyouwhat.source-tar-sha256') != record['files']['source.tar']:
-                raise OperationError('platform test image tag identifies different source')
-            continue
-        runtime.execute('platform-test-build-' + service, ['docker', 'build', '--network=default',
-            '--memory=1024m', '--memory-swap=1536m', '--cpu-quota=100000',
-            '--build-arg', 'GOPROXY=https://goproxy.cn,direct', '--target', service,
-            '-f', 'deploy/tencent/platform-test.Dockerfile', '--label', 'org.opencontainers.image.revision=' + source,
-            '--label', 'cn.tellyouwhat.source-tar-sha256=' + record['files']['source.tar'], '-t', image, '-'],
-            input=(folder / 'source.tar').read_bytes(), timeout=700)
+    try:
+        for service in image_services(folder):
+            image = PROJECT + '-' + service + ':' + source
+            existing = runtime.execute('platform-test-image-existing', ['docker', 'image', 'ls', '-q', image]).strip()
+            if existing:
+                labels = json.loads(runtime.execute('platform-test-image-check', ['docker', 'image', 'inspect', image]))[0]['Config']['Labels']
+                if labels.get('org.opencontainers.image.revision') != source or labels.get('cn.tellyouwhat.source-tar-sha256') != record['files']['source.tar']:
+                    raise OperationError('platform test image tag identifies different source')
+                continue
+            runtime.execute('platform-test-build-' + service, ['docker', 'build', '--force-rm', '--network=default',
+                '--memory=1024m', '--memory-swap=1536m', '--cpu-quota=100000',
+                '--build-arg', 'GOPROXY=https://goproxy.cn,direct',
+                '--build-arg', 'PLATFORM_TEST_BUILD_SOURCE=' + source, '--target', service,
+                '-f', 'deploy/tencent/platform-test.Dockerfile', '--label', 'org.opencontainers.image.revision=' + source,
+                '--label', 'cn.tellyouwhat.source-tar-sha256=' + record['files']['source.tar'], '-t', image, '-'],
+                input=(folder / 'source.tar').read_bytes(), timeout=700)
+    finally:
+        # Runtime images start from scratch and never inherit this build-only label.
+        runtime.execute('platform-test-cache-cleanup', ['docker', 'image', 'prune', '--force',
+            '--filter', 'label=cn.tellyouwhat.platform-test-build-source=' + source], timeout=120)
 
 
 def verify_running(runtime, folder, source, label):

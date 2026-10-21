@@ -6,6 +6,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOPROXY="${GOPROXY}" go mod download
 COPY . .
+ARG PLATFORM_TEST_BUILD_SOURCE
+LABEL cn.tellyouwhat.platform-test-build-source="${PLATFORM_TEST_BUILD_SOURCE}"
 # Reuse the compiler cache across the isolated platform service images.
 RUN set -e; for service in gateway worker migrate maintenance servicecheck admin adminctl; do \
       CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/${service} ./cmd/${service}; \

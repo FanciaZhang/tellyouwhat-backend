@@ -1,4 +1,4 @@
-# Journal catalog administration shares the isolated test database and HTTPS origin.
+# Unified administration shares the isolated test database and its own HTTPS origin.
 services:
   admin:
     image: "tellyouwhat-platform-test-admin:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
@@ -12,10 +12,14 @@ services:
     environment:
       APP_ENV: development
       ADMIN_PORT: "8082"
-      ADMIN_APPS: journal
-      ADMIN_RP_ID: api-test.journal.tellyouwhat.cn
-      ADMIN_ORIGIN: https://api-test.journal.tellyouwhat.cn
-      ADMIN_WRITES_ENABLED: "false"
+      ADMIN_APPS: health,journal,birthday,albums
+      ADMIN_RP_ID: admin-test.tellyouwhat.cn
+      ADMIN_ORIGIN: https://admin-test.tellyouwhat.cn
+      ADMIN_WRITES_ENABLED: "true"
+      PLATFORM_OPERATIONS_WRITES_ENABLED: "true"
+      HEALTH_APP_STORE_CONNECT_ENABLED: "false"
+      BIRTHDAY_APP_STORE_CONNECT_ENABLED: "false"
+      ALBUM_APP_STORE_CONNECT_ENABLED: "false"
       JOURNAL_APP_STORE_CONNECT_ENABLED: "false"
       JOURNAL_TTS_WRITES_ENABLED: "true"
       JOURNAL_TTS_API_KEY_FILE: /journal-api-key.txt

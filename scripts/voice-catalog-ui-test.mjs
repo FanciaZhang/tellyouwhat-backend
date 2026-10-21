@@ -9,7 +9,7 @@ const csp="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 
 const server=http.createServer(async(req,res)=>{try{
  const file=path.join(root,req.url==='/'?'index.html':req.url);
  res.setHeader('Content-Security-Policy',csp);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');
- res.end(await fs.readFile(file));
+ let body=await fs.readFile(file);if(file.endsWith('index.html'))body=Buffer.from(body.toString().replace('Tellyouwhat 管理后台','Tellyouwhat 测试管理后台').replace('<h1>管理后台</h1>','<h1>测试管理后台</h1>').replace('<p class="eyebrow">Tellyouwhat</p>','<p class="eyebrow">Tellyouwhat · 测试环境</p>'));res.end(body);
 }catch{res.writeHead(404);res.end();}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
@@ -23,13 +23,14 @@ let current={version:'version-one',defaultVoiceID:'voice_one',voices:[voice('voi
 const initial=structuredClone(current),drafts=[],probes=new Map();
 let actualProbeCalls=0,probeHTTPCalls=0,publishCalls=0,firstProbeResponseLost=true;
 let isolatedAdmin=true;
+const registeredApps=[{id:'health',displayName:'告你健康'},{id:'journal',displayName:'告你手记'},{id:'birthday',displayName:'告你生日'},{id:'albums',displayName:'告你相册'}],offerAppReads=[];
 const base='/api/v1/journal/read-aloud/catalog';
 await page.route('**/api/**',async route=>{
  const request=route.request(),u=new URL(request.url());let data,status=200;
- if(u.pathname==='/api/v1/session'){if(isolatedAdmin)data={csrfToken:'fixture-csrf',user:{id:'fixture',displayName:'手记测试管理',role:'admin'}};else{status=401;data={error:{message:'fixture login'}};}}
- else if(u.pathname==='/api/v1/apps')data={apps:[{id:'journal',displayName:'手记测试'}]};
- else if(u.pathname==='/api/v1/apps/journal/offers'){status=503;data={error:{code:'offer_service_unavailable',message:'此环境未配置 App Store Connect'}};}
- else if(u.pathname==='/api/v1/apps/journal/metrics/offers')data={metrics:[]};
+ if(u.pathname==='/api/v1/session'){if(isolatedAdmin)data={csrfToken:'fixture-csrf',user:{id:'fixture',displayName:'测试管理员',role:'admin'}};else{status=401;data={error:{message:'fixture login'}};}}
+ else if(u.pathname==='/api/v1/apps')data={apps:registeredApps};
+ else if(/^\/api\/v1\/apps\/(health|journal|birthday|albums)\/offers$/.test(u.pathname)){offerAppReads.push(u.pathname.split('/')[4]);status=503;data={error:{code:'offer_service_unavailable',message:'此环境未配置 App Store Connect'}};}
+ else if(u.pathname.endsWith('/metrics/offers'))data={metrics:[]};
  else if(u.pathname==='/api/v1/ai/health'){if(isolatedAdmin){status=503;data={error:{code:'ai_not_configured',message:'尚未配置火山管理服务身份'}};}else data={operations:[],writesEnabled:true};}
  else if(u.pathname===base)data={current,writesEnabled:true,syncEnabled:true,probesEnabled:true};
  else if(u.pathname===base+'/sync')data={voices:[voice('voice_two','不要覆盖本机修改'),voice('voice_three','云舟')],issues:[],providerCount:2};
@@ -56,6 +57,10 @@ async function capture(name){if(screenshots)await page.screenshot({path:path.joi
 async function captureViewport(name){if(screenshots)await page.screenshot({path:path.join(screenshots,name+'.png')});}
 async function geometry(){
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');
+ const header=await page.locator('.topbar').evaluate(el=>[...el.children].map(child=>child.getBoundingClientRect()).filter(r=>r.width&&r.height).map(r=>({x:r.x,y:r.y,w:r.width,h:r.height})));
+ for(let i=0;i<header.length;i++)for(let j=i+1;j<header.length;j++){const a=header[i],b=header[j];assert.ok(Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)<=.5||Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)<=.5,'header overlap');}
+ if(await page.locator('#app-picker').isVisible()){const picker=await page.locator('#app-picker').boundingBox();assert.ok(picker.height>=44&&picker.x>=0&&picker.x+picker.width<=await page.evaluate(()=>innerWidth),'App selector clipping');}
+
  const targets=await page.locator('#ai-view button:visible, #ai-view input:visible, #ai-view textarea:visible, #ai-view select:visible').evaluateAll(elements=>elements.map(el=>{
   const target=el.type==='checkbox'?el.closest('label'):el,r=target.getBoundingClientRect();
   return {name:el.name||el.textContent,x:r.x,y:r.y,width:r.width,height:r.height};
@@ -73,9 +78,15 @@ try{
  await page.getByRole('status').filter({hasText:'Offer 服务尚未启用'}).waitFor();
  assert.equal(await page.locator('#auth').isVisible(),false);assert.equal(await page.locator('#new-offer').isDisabled(),true);
  assert.equal(await page.locator('#offer-service').isVisible(),false);await geometry();
+ assert.deepEqual(await page.locator('#app-picker option').evaluateAll(options=>options.map(option=>option.textContent)),registeredApps.map(app=>app.displayName));
+ for(const app of registeredApps){
+  if((await page.locator('#app-picker').inputValue())!==app.id)await Promise.all([page.waitForResponse(response=>new URL(response.url()).pathname==='/api/v1/apps/'+app.id+'/offers'),page.locator('#app-picker').selectOption(app.id)]);
+  assert.equal(await page.locator('#app-picker').inputValue(),app.id);assert.ok(offerAppReads.includes(app.id));await geometry();await capture('unified-admin-'+app.id);
+ }
  await capture('isolated-admin-offers-unavailable');
  await page.locator('#ai-tab').click();await page.locator('[data-prompt-open="voices"]').waitFor();
- assert.equal(await page.locator('[data-prompt-open="health"]').count(),0);
+ assert.equal(await page.locator('[data-prompt-open="health"]').count(),1);
+ assert.equal(await page.locator('[data-prompt-open="voices"]').count(),1);
  await geometry();await capture('isolated-admin-journal-management');
  await page.locator('[data-prompt-open="voices"]').scrollIntoViewIfNeeded();await capture('isolated-admin-voice-entry');
  await page.locator('[data-prompt-open="voices"]').click();await page.getByRole('heading',{name:'手记 · 朗读音色',exact:true}).waitFor();
@@ -136,5 +147,5 @@ try{
  assert.equal(await page.evaluate(()=>voices.edit.voices.find(v=>v.id==='voice_one').description),'另一位管理员更新的说明');
  await page.evaluate(()=>{const blob=voiceWAV('AQIDBA==',24000);if(blob.size!==48)throw Error('bad WAV framing');});
  assert.deepEqual(errors,[]);
- console.log('PASS: catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
+ console.log('PASS: four-App selection and scoped unavailable services, test-environment header geometry, catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

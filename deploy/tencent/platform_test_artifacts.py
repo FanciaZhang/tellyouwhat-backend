@@ -115,7 +115,7 @@ def verify_recovery(archive, hashes):
         expected.add(overlay)
     if any('current/' + name in hashes for name in admin.FILES):
         expected.update('current/' + name for name in admin.FILES)
-        if hashes.get('current/' + admin.OVERLAY) != admin.OVERLAY_SHA256:
+        if hashes.get('current/' + admin.OVERLAY) not in admin.OVERLAY_SETTINGS:
             raise OperationError('platform test admin recovery overlay is unreviewed')
         try:
             raw = archive.extractfile('recovery/platform-test/current/admin.env').read().decode()

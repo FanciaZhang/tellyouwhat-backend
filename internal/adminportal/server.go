@@ -54,6 +54,7 @@ type OfferManager interface {
 }
 
 type Config struct {
+	Environment             string
 	VoiceCatalog            *readaloud.CatalogStore
 	VoiceDiscovery          VoiceDiscovery
 	VoiceProbe              *readaloud.CatalogProbe
@@ -136,7 +137,7 @@ func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operatio
 			writeFailure(context.Writer, status, "invalid_parameter", "请求参数无效")
 		},
 	})
-	router.NoRoute(adminui.Handle)
+	router.NoRoute(func(context *gin.Context) { adminui.Handle(context, config.Environment == "development") })
 	return server, nil
 }
 

@@ -1,4 +1,4 @@
-"""The Journal catalog admin uses only the existing isolated test resources."""
+"""Unified administration uses only the existing isolated test resources."""
 
 import base64
 import hashlib
@@ -10,15 +10,35 @@ from ops_common import OperationError, read_environment
 import platform_test_journal as journal
 
 OVERLAY = 'compose.platform-admin-test.yaml'
-OVERLAY_SHA256 = 'd8b51b450846c7b28553ee05d98b0afcc8c607627e7b50b7d4dfab706683d51e'
+OVERLAY_SHA256 = 'ce7c101ee6bfa2cb04b0e5bfca5676f3d1f515d5bedce98e5e67235874dc8636'
+ROLLBACK_OVERLAY_SHA256 = 'd8b51b450846c7b28553ee05d98b0afcc8c607627e7b50b7d4dfab706683d51e'
+HOST = 'admin-test.tellyouwhat.cn'
 FILES = {OVERLAY: 32768, 'admin.env': 8192}
 MODELS = {'JOURNAL_ARK_LITE_MODEL_ID', 'JOURNAL_ARK_PRO_MODEL_ID', 'JOURNAL_VOICE_MODEL_ID'}
 KEY_FILE = '/journal-api-key.txt'
-FIXED = {'APP_ENV': 'development', 'ADMIN_PORT': '8082', 'ADMIN_APPS': 'journal',
-         'ADMIN_RP_ID': journal.HOST, 'ADMIN_ORIGIN': 'https://' + journal.HOST,
-         'ADMIN_WRITES_ENABLED': 'false', 'JOURNAL_APP_STORE_CONNECT_ENABLED': 'false',
+FIXED = {'APP_ENV': 'development', 'ADMIN_PORT': '8082', 'ADMIN_APPS': 'health,journal,birthday,albums',
+         'ADMIN_RP_ID': HOST, 'ADMIN_ORIGIN': 'https://' + HOST,
+         'ADMIN_WRITES_ENABLED': 'true', 'PLATFORM_OPERATIONS_WRITES_ENABLED': 'true',
+         'HEALTH_APP_STORE_CONNECT_ENABLED': 'false', 'BIRTHDAY_APP_STORE_CONNECT_ENABLED': 'false',
+         'ALBUM_APP_STORE_CONNECT_ENABLED': 'false', 'JOURNAL_APP_STORE_CONNECT_ENABLED': 'false',
          'JOURNAL_TTS_WRITES_ENABLED': 'true', 'JOURNAL_TTS_API_KEY_FILE': KEY_FILE,
          'JOURNAL_TTS_PROBE_DAILY_CHARACTERS': '10000', 'AI_PROJECT_MONTHLY_BUDGET_CNY': '10'}
+
+
+# The exact previous recipe remains readable for matched rollback and backup.
+ROLLBACK_FIXED = {k: v for k, v in {**FIXED, 'ADMIN_APPS': 'journal',
+    'ADMIN_RP_ID': journal.HOST, 'ADMIN_ORIGIN': 'https://' + journal.HOST,
+    'ADMIN_WRITES_ENABLED': 'false'}.items() if k not in {
+        'PLATFORM_OPERATIONS_WRITES_ENABLED', 'HEALTH_APP_STORE_CONNECT_ENABLED',
+        'BIRTHDAY_APP_STORE_CONNECT_ENABLED', 'ALBUM_APP_STORE_CONNECT_ENABLED'}}
+OVERLAY_SETTINGS = {OVERLAY_SHA256: FIXED, ROLLBACK_OVERLAY_SHA256: ROLLBACK_FIXED}
+
+
+def settings(folder):
+    result = OVERLAY_SETTINGS.get(hashlib.sha256((folder / OVERLAY).read_bytes()).hexdigest())
+    if result is None:
+        raise OperationError('test admin overlay differs from its reviewed source')
+    return result
 
 
 def selected(folder):
@@ -55,27 +75,30 @@ def validate(folder, compose, archive):
         original = archive.extractfile(OVERLAY)
     except KeyError as error:
         raise OperationError('test admin overlay is absent from its source') from error
-    if original is None or original.read() != body or hashlib.sha256(body).hexdigest() != OVERLAY_SHA256:
+    if original is None or original.read() != body or hashlib.sha256(body).hexdigest() not in OVERLAY_SETTINGS:
         raise OperationError('test admin overlay differs from its reviewed source')
 
 
 def require_transition(before, after):
     if selected(before) and (not selected(after) or (before / 'admin.env').read_bytes() != (after / 'admin.env').read_bytes()):
         raise OperationError('test admin update must preserve its active private configuration')
+    if selected(before) and not set(settings(before)['ADMIN_APPS'].split(',')) <= set(settings(after)['ADMIN_APPS'].split(',')):
+        raise OperationError('test admin update cannot narrow its active application scope')
 
 
 def verify(container, folder):
     config = container.get('Config', {})
     env = dict(item.split('=', 1) for item in config.get('Env', []) if '=' in item)
     compose = read_environment(folder / 'compose.env')
-    expected = {**FIXED, **read_environment(folder / 'admin.env'),
+    fixed = settings(folder)
+    expected = {**fixed, **read_environment(folder / 'admin.env'),
                 'DATABASE_DSN': 'platform_test:' + compose['PLATFORM_TEST_MYSQL_PASSWORD'] + '@tcp(mysql:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true',
                 'REDIS_URL': 'redis://:' + compose['PLATFORM_TEST_REDIS_PASSWORD'] + '@redis:6379/1'}
     mounts = container.get('Mounts', [])
     host = container.get('HostConfig', {})
     if (not selected(folder) or config.get('User') != '65532:65532'
             or any(env.get(k) != v for k, v in expected.items())
-            or any(k.startswith(('HEALTH_', 'ALBUM_', 'ARK_', 'JOURNAL_')) and k not in FIXED and k not in MODELS and k != 'HEALTH_SCHEMA_MANIFEST_PATH' for k in env)
+            or any(k.startswith(('HEALTH_', 'ALBUM_', 'BIRTHDAY_', 'ARK_', 'JOURNAL_')) and k not in fixed and k not in MODELS and k != 'HEALTH_SCHEMA_MANIFEST_PATH' for k in env)
             or len(mounts) != 1 or mounts[0].get('Source') != str(journal.PRIVATE_BASE / 'development/api-key.txt')
             or mounts[0].get('Destination') != KEY_FILE or mounts[0].get('Type') != 'bind' or mounts[0].get('RW') is not False
             or host.get('PortBindings') != {'8082/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18792'}]}

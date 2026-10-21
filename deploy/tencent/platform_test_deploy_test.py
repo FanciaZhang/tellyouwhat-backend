@@ -543,12 +543,13 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(starts[0][-2:], ['gateway', 'worker'])
         self.assertFalse(any('journal-private-development' in c or 'down' in c for c in commands))
 
-    def enable_admin(self):
+    def enable_admin(self, previous=False):
         values = {'PAYLOAD_ENCRYPTION_KEY': self.app['PAYLOAD_ENCRYPTION_KEY'],
                   'ADMIN_PREVIEW_SIGNING_KEY': base64.b64encode(b's' * 32).decode().rstrip('='),
                   **{key: self.app[key] for key in dev.admin.MODELS}}
         (self.folder / 'admin.env').write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
-        body = (Path(__file__).resolve().parents[2] / dev.admin.OVERLAY).read_bytes()
+        path = Path(__file__).parent / 'testdata/previous-platform-admin-test.yaml' if previous else Path(__file__).resolve().parents[2] / dev.admin.OVERLAY
+        body = path.read_bytes()
         (self.folder / dev.admin.OVERLAY).write_bytes(body)
         with tarfile.open(self.folder / 'source.tar', 'a') as archive:
             entry = tarfile.TarInfo(dev.admin.OVERLAY); entry.size = len(body)
@@ -558,7 +559,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
 
     def admin_container(self, folder):
         compose = dev.read_environment(folder / 'compose.env')
-        env = {**dev.admin.FIXED, **dev.read_environment(folder / 'admin.env'),
+        env = {**dev.admin.settings(folder), **dev.read_environment(folder / 'admin.env'),
                'DATABASE_DSN': 'platform_test:' + compose['PLATFORM_TEST_MYSQL_PASSWORD'] + '@tcp(mysql:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true',
                'REDIS_URL': 'redis://:' + compose['PLATFORM_TEST_REDIS_PASSWORD'] + '@redis:6379/1'}
         return {'State': {'Running': True}, 'RestartCount': 0,
@@ -583,6 +584,27 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         (next_folder / 'admin.env').write_text(''.join(k + '=' + v + '\n' for k, v in old.items()))
         with self.assertRaisesRegex(OperationError, 'preserve its active private'):
             dev.admin.require_transition(self.folder, next_folder)
+
+    def test_journal_admin_migrates_to_unified_recipe_with_unchanged_private_keys(self):
+        self.enable_journal(); self.enable_read_aloud(); self.enable_admin(previous=True)
+        self.prepare_update(); self.enable_admin()
+        self.assertEqual((self.old_folder/'admin.env').read_bytes(), (self.folder/'admin.env').read_bytes())
+        result = self.update()
+        self.assertEqual(result['previous']['source'], self.old_source)
+        self.assertEqual(dev.admin.settings(self.old_folder)['ADMIN_APPS'], 'journal')
+        self.assertEqual(dev.admin.settings(self.folder)['ADMIN_APPS'], 'health,journal,birthday,albums')
+        with self.assertRaisesRegex(OperationError, 'narrow'):
+            dev.admin.require_transition(self.folder, self.old_folder)
+
+    def test_unified_admin_activation_failure_restores_the_matched_journal_admin(self):
+        self.enable_journal(); self.enable_read_aloud(); self.enable_admin(previous=True)
+        self.prepare_update(); self.enable_admin()
+        with self.assertRaises(OperationError):
+            self.update(ready_error=[OperationError('new admin unavailable'), None])
+        self.assertEqual(json.loads((self.runtime.state/'platform-test.json').read_text()), self.previous)
+        rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0]=='platform-test-update-rollback')
+        self.assertEqual(rollback[-3:], ['gateway','worker','admin'])
+        self.assertEqual(dev.admin.settings(self.old_folder)['ADMIN_RP_ID'], 'api-test.journal.tellyouwhat.cn')
 
     def test_first_admin_failure_stops_added_service_and_restores_prior_gateway(self):
         self.enable_journal(); self.enable_read_aloud(); self.prepare_update(); self.enable_admin()
@@ -627,7 +649,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                      lambda c: c['Config']['Env'].append('HEALTH_ARK_API_KEY=production'),
                      lambda c: c['Config']['Env'].append('JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE=/private.json'),
                      lambda c: c['Config']['Env'].append('ADMIN_ORIGIN=https://admin.tellyouwhat.cn'),
-                     lambda c: c['Config']['Env'].append('ADMIN_WRITES_ENABLED=true'),
+                     lambda c: c['Config']['Env'].append('ADMIN_WRITES_ENABLED=false'),
                      lambda c: c['Config']['Env'].append('DATABASE_DSN=production'),
                      lambda c: c['NetworkSettings']['Networks'].update(production={})]
         for mutate in mutations:
@@ -1072,6 +1094,27 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         path.symlink_to(Path(__file__).resolve().parent / path.name)
         with self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
             self.activate()
+
+
+
+
+class SourceBoundBuildCacheTests(unittest.TestCase):
+    def test_cache_cleanup_is_source_scoped_and_runs_after_failed_build(self):
+        runtime=Mock()
+        runtime.execute.side_effect=lambda label,*args,**kw: (_ for _ in ()).throw(OperationError('compile failure')) if label=='platform-test-build-gateway' else b''
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);(folder/'source.tar').write_bytes(b'fixture archive')
+            with patch.object(dev,'image_services',return_value=('gateway',)):
+                with self.assertRaisesRegex(OperationError,'compile failure'):
+                    dev.build_images(runtime,folder,{'files':{'source.tar':'fixture-hash'}},'a'*40)
+        build=next(c.args[1] for c in runtime.execute.call_args_list if c.args[0]=='platform-test-build-gateway')
+        self.assertIn('--force-rm',build)
+        self.assertIn('PLATFORM_TEST_BUILD_SOURCE='+'a'*40,build)
+        self.assertEqual(runtime.execute.call_args_list[-1].args[1],['docker','image','prune','--force','--filter','label=cn.tellyouwhat.platform-test-build-source='+'a'*40])
+        dockerfile=(Path(__file__).resolve().parents[2]/'deploy/tencent/platform-test.Dockerfile').read_text()
+        build_stage,runtime_stage=dockerfile.split('FROM scratch',1)
+        self.assertIn('LABEL cn.tellyouwhat.platform-test-build-source=',build_stage)
+        self.assertNotIn('platform-test-build-source',runtime_stage)
 
 
 if __name__ == '__main__':

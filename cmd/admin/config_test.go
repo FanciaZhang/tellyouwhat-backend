@@ -19,6 +19,7 @@ func adminConfigFixture(t *testing.T) {
 		"REDIS_URL":    "redis://127.0.0.1:6379", "ADMIN_APPS": "journal",
 		"ADMIN_PREVIEW_SIGNING_KEY":        base64.RawStdEncoding.EncodeToString(make([]byte, 32)),
 		"HEALTH_APP_STORE_CONNECT_ENABLED": "false", "JOURNAL_APP_STORE_CONNECT_ENABLED": "false",
+		"BIRTHDAY_APP_STORE_CONNECT_ENABLED": "false", "ALBUM_APP_STORE_CONNECT_ENABLED": "false",
 		"HEALTH_APP_STORE_CONNECT_PRIVATE_KEY_PATH":  "/unavailable-health-key",
 		"JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY_PATH": "/unavailable-journal-key",
 		"JOURNAL_ARK_LITE_MODEL_ID":                  "ep-journal-lite", "JOURNAL_ARK_PRO_MODEL_ID": "ep-journal-pro",
@@ -87,7 +88,7 @@ func TestAdminConfigDefaultAppRegistryAndRequiredAppleCredentialsRemain(t *testi
 }
 
 func TestAdminConfigRejectsUnknownDuplicateAppsAndInvalidEnableFlags(t *testing.T) {
-	for _, apps := range []string{"journal,journal", "albums", ",journal", "health,", "JOURNAL"} {
+	for _, apps := range []string{"journal,journal", "unknown-app", ",journal", "health,", "JOURNAL"} {
 		t.Run(apps, func(t *testing.T) {
 			adminConfigFixture(t)
 			t.Setenv("ADMIN_APPS", apps)
@@ -126,5 +127,38 @@ func TestAdminConfigExplicitAppleClientStillLoadsTheSigningKey(t *testing.T) {
 	configuration, err := loadConfig()
 	if err != nil || len(configuration.apps) != 1 || configuration.apps[0].signingKey == nil {
 		t.Fatal("enabled Apple client failed to load", err)
+	}
+}
+
+func TestUnifiedAdminRegistersAllFourAppsWithoutUnrelatedAppleKeys(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("ADMIN_APPS", "health,journal,birthday,albums")
+	t.Setenv("APP_ENV", "development")
+	configuration, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"health", "journal", "birthday", "albums"}
+	if len(configuration.apps) != len(expected) {
+		t.Fatal("incomplete unified admin", configuration.apps)
+	}
+	for i, id := range expected {
+		if configuration.apps[i].id != id || configuration.apps[i].signingKey != nil {
+			t.Fatal("wrong app or unrelated Apple credentials loaded", id)
+		}
+	}
+	if configuration.promptDefaults["journal"].Journal == nil {
+		t.Fatal("Journal prompt module was not loaded")
+	}
+	if _, present := configuration.promptDefaults["health:meal_decision"]; !present {
+		t.Fatal("Health prompt module was not loaded")
+	}
+}
+
+func TestAdminRejectsUnknownEnvironment(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("APP_ENV", "unknown")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("unknown management environment accepted")
 	}
 }
