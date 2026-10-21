@@ -5,5 +5,19 @@
   "build": "28",
   "previous_backend_source": "45dd8d97a0fce8b07b8ee47e0ab3b5e0ae2a2a5b",
   "configuration_change": "Append build 28 to JOURNAL_ALLOWED_APP_BUILDS; preserve every other runtime setting, including Birthday build 8 admission.",
-  "deployment_verified": false
+  "deployment_verified": true,
+  "deployed_source": "4bfec12dfdffe305441422dc96887365fa99b4b1",
+  "previous_source": "45dd8d97a0fce8b07b8ee47e0ab3b5e0ae2a2a5b",
+  "allowed_builds": "21,22,23,24,25,26,27,28",
+  "only_runtime_change_is_build_admission": true,
+  "preserved_other_apps": true,
+  "all_four_app_health_checks_passed": true,
+  "voice_count": 466,
+  "voice_catalog_unchanged": true,
+  "production_unchanged": true,
+  "registered_cleanup_passed": true,
+  "authenticated_recovery_backup_passed": true,
+  "offsite_readback_verified_objects": 3,
+  "device_app_attest_verified": false,
+  "real_sandbox_purchase_verified": false
 }
