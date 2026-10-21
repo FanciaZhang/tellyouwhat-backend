@@ -106,7 +106,7 @@ func (voice Voice) Validate() error {
 	for _, language := range voice.Languages {
 		probe := base
 		probe.Language = language
-		if !probe.Valid() {
+		if !probe.Valid() || languageProbeSamples[language] == "" {
 			return ErrCatalog
 		}
 	}
@@ -129,12 +129,19 @@ func (voice Voice) Validate() error {
 
 func (voice Voice) policyHash() string {
 	// Presentation-only edits do not invalidate audio or require paid synthesis.
+	texts := []string{voice.ProbeText}
+	for i, language := range voice.Languages {
+		if i > 0 {
+			texts = append(texts, languageProbeSamples[language])
+		}
+	}
 	policy := struct {
-		ID, Resource, Billing, Text string
+		ID, Resource, Billing       string
+		Texts                       []string
 		Languages, Styles, Dialects []string
 		Pitch                       bool
 	}{
-		voice.ID, voice.ResourceID, voice.BillingClass, voice.ProbeText, voice.Languages, voice.Styles, voice.Dialects, voice.SupportsPitch}
+		voice.ID, voice.ResourceID, voice.BillingClass, texts, voice.Languages, voice.Styles, voice.Dialects, voice.SupportsPitch}
 	raw, _ := json.Marshal(policy)
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
@@ -214,6 +221,7 @@ func (voice Voice) probes() []Synthesis {
 	for _, language := range voice.Languages[1:] {
 		probe := base
 		probe.Language = language
+		probe.Text = languageProbeSamples[language]
 		result = append(result, probe)
 	}
 	for _, style := range voice.Styles {

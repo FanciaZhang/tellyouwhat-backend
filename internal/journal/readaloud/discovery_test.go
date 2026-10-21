@@ -94,3 +94,14 @@ func TestVoiceDiscoveryRejectsUnsafeCredentialFilesAndBoundsProbeText(t *testing
 		t.Fatal("invalid UTF-8 probe boundary")
 	}
 }
+
+func TestDiscoveryFallbackUsesNativeLanguagePublicSample(t *testing.T) {
+	speaker := inventoryVoice("fr_female_fixture_uranus_bigtts")
+	speaker.Languages = speaker.Languages[:1]
+	speaker.Languages[0].Language = volcengine.String("fr")
+	speaker.Languages[0].Text = nil
+	voice, issue := discoveredVoice(speaker)
+	if issue != "" || voice.ProbeText == "" || voice.ProbeText == "A quiet day can hold a moment worth remembering." {
+		t.Fatal("native language fallback is unavailable", voice, issue)
+	}
+}

@@ -37,7 +37,7 @@ func TestCatalogRequiresRealProbeEvidenceForEnabledCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if voice.Enabled || !voice.IsVerified() || len(provider.calls) != 6 || provider.calls[1].Language != "en" || len(audio) != 4 {
+	if voice.Enabled || !voice.IsVerified() || len(provider.calls) != 6 || provider.calls[1].Language != "en" || provider.calls[1].Text == voice.ProbeText || len(audio) != 4 {
 		t.Fatal("probe did not cover advertised controls or enabled the voice implicitly")
 	}
 	voice.Enabled = true
@@ -108,5 +108,42 @@ func TestFailedProbeCannotLeavePublishableEvidence(t *testing.T) {
 	voice, audio, err := VerifyVoice(context.Background(), voice, &catalogSynthesizer{failure: ErrProvider}, time.Now())
 	if !errors.Is(err, ErrProvider) || voice.IsVerified() || len(audio) != 0 {
 		t.Fatal("failed verification retained stale proof or audio")
+	}
+}
+
+func TestAdditionalLanguageProbesUseMatchingPublicTextAndBindEvidence(t *testing.T) {
+	voice := draftVoice()
+	voice.Languages = []string{"zh-cn", "en", "fr"}
+	for _, probe := range voice.probes()[1:3] {
+		if strings.ContainsAny(probe.Text, "今天的风很轻，适合停下来听一听。") || probe.Text == voice.ProbeText {
+			t.Fatal("language probe reused Chinese text", probe.Language)
+		}
+		probe.RequestID = uuid.NewString()
+		if !probe.Valid() {
+			t.Fatal("invalid language sample", probe.Language)
+		}
+	}
+	verified, _, err := VerifyVoice(context.Background(), voice, &catalogSynthesizer{}, time.Now())
+	if err != nil || !verified.IsVerified() {
+		t.Fatal("language samples could not be verified", err)
+	}
+	before := verified.policyHash()
+	verified.ProbeText = "换一句公开短句。"
+	if before == verified.policyHash() || verified.IsVerified() {
+		t.Fatal("changed sample reused earlier evidence")
+	}
+}
+
+func TestPublicLanguageSamplesAreBoundedAndAcceptedByProvider(t *testing.T) {
+	for language, text := range languageProbeSamples {
+		input := validSynthesis()
+		input.Language = language
+		input.Text = text
+		voice := draftVoice()
+		voice.Languages = []string{language}
+		voice.ProbeText = text
+		if !input.Valid() || voice.Validate() != nil {
+			t.Fatal("invalid public sample", language)
+		}
 	}
 }

@@ -181,11 +181,7 @@ func discoveredVoice(s *speechsaasprod.SpeakerForListSpeakersOutput) (Voice, str
 		return v, "unsupported_language"
 	}
 	if v.ProbeText == "" {
-		if v.Languages[0] == "zh-cn" {
-			v.ProbeText = "今天的风很轻，平常的日子也有值得记住的片刻。"
-		} else {
-			v.ProbeText = "A quiet day can hold a moment worth remembering."
-		}
+		v.ProbeText = languageProbeSamples[v.Languages[0]]
 	}
 	if v.Validate() != nil {
 		return v, "invalid_metadata"
