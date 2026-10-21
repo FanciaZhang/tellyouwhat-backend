@@ -22,12 +22,13 @@ const voice=(id,name,extra={})=>({id,name,description:'适合安静地听一篇�
 let current={version:'version-one',defaultVoiceID:'voice_one',voices:[voice('voice_one','小何 <script>',{billingClass:'standard',enabled:true,verification:proof}),voice('voice_two','Vivi')],createdAt:at,publishedAt:at};
 const initial=structuredClone(current),drafts=[],probes=new Map();
 let actualProbeCalls=0,probeHTTPCalls=0,publishCalls=0,firstProbeResponseLost=true;
+let heldProbe,releaseProbe,probeArrived;
 let isolatedAdmin=true;
 const registeredApps=[{id:'health',displayName:'告你健康'},{id:'journal',displayName:'告你手记'},{id:'birthday',displayName:'告你生日'},{id:'albums',displayName:'告你相册'}],offerAppReads=[];
 const base='/api/v1/journal/read-aloud/catalog';
 await page.route('**/api/**',async route=>{
  const request=route.request(),u=new URL(request.url());let data,status=200;
- if(u.pathname==='/api/v1/session'){if(isolatedAdmin)data={csrfToken:'fixture-csrf',user:{id:'fixture',displayName:'测试管理员',role:'admin'}};else{status=401;data={error:{message:'fixture login'}};}}
+ if(u.pathname==='/api/v1/session'){if(isolatedAdmin)data={csrfToken:'fixture-csrf',recentlyReauthenticated:true,user:{id:'fixture',displayName:'测试管理员',role:'admin'}};else{status=401;data={error:{message:'fixture login'}};}}
  else if(u.pathname==='/api/v1/apps')data={apps:registeredApps};
  else if(/^\/api\/v1\/apps\/(health|journal|birthday|albums)\/offers$/.test(u.pathname)){offerAppReads.push(u.pathname.split('/')[4]);status=503;data={error:{code:'offer_service_unavailable',message:'此环境未配置 App Store Connect'}};}
  else if(u.pathname.endsWith('/metrics/offers'))data={metrics:[]};
@@ -39,8 +40,9 @@ await page.route('**/api/**',async route=>{
   const key=request.headers()['idempotency-key'];assert.ok(key);
   const body=request.postDataJSON();assert.equal(body.verification,undefined);assert.equal(body.resourceID,undefined);
   if(!probes.has(key)){actualProbeCalls++;probes.set(key,{voice:{...body,verification:{...proof,cases:5}},sampleRate:24000});}
+  if(body.id==='cancel_voice_1'&&heldProbe){probeArrived();await heldProbe;}
   data={...probes.get(key),replayed:probeHTTPCalls>1};
-  if(firstProbeResponseLost){firstProbeResponseLost=false;status=503;data={error:{message:'fixture: response was lost'}};}
+  if(firstProbeResponseLost||body.id.startsWith('unavailable_voice_')){firstProbeResponseLost=false;status=503;data={error:{message:'fixture: response was lost'}};}
  }
  else if(u.pathname===base+'/drafts'){
   const body=request.postDataJSON();assert.ok(body.voices.every(v=>v.verification===undefined&&v.resourceID===undefined));
@@ -146,6 +148,54 @@ try{
  assert.equal(await page.evaluate(()=>voices.edit.voices.find(v=>v.id==='voice_one').enabled),false);
  assert.equal(await page.evaluate(()=>voices.edit.voices.find(v=>v.id==='voice_one').description),'另一位管理员更新的说明');
  await page.evaluate(()=>{const blob=voiceWAV('AQIDBA==',24000);if(blob.size!==48)throw Error('bad WAV framing');});
+ // Import is atomic, preserves existing edits, and cannot import proof or enable voices.
+ current={...structuredClone(initial),voices:[structuredClone(initial.voices[0])]};isolatedAdmin=true;
+ await page.evaluate(()=>sessionStorage.clear());await page.reload({waitUntil:'networkidle'});
+ await page.locator('#ai-tab').click();await page.locator('[data-prompt-open="voices"]').click();
+ await page.evaluate(()=>{window.reauthChecks=0;reauthenticate=async()=>window.reauthChecks++;});
+ const importCandidates=async voices=>{await page.locator('#voice-import-file').setInputFiles({name:'candidates.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({defaultVoiceID:'bulk-voice-0',voices}))});};
+ await importCandidates([voice('safe_new','安全候选'),{...voice('forged','伪造证据'),verification:proof}]);
+ await page.getByRole('alert').filter({hasText:'夹带验证证据'}).waitFor();
+ assert.equal(await page.evaluate(()=>voices.edit.voices.length),1,'partial invalid import changed draft');
+ const bulk=Array.from({length:466},(_,i)=>voice('bulk-voice-'+i,'候选 '+i,{enabled:true,billingClass:'standard',rank:i}));
+ await importCandidates([voice('voice_one','不得覆盖原名'),...bulk]);
+ await page.locator('#voice-count').filter({hasText:'共 467 个声音'}).waitFor();
+ assert.equal(await page.evaluate(()=>voices.edit.voices[0].name),initial.voices[0].name);
+ assert.equal(await page.evaluate(()=>voices.edit.voices.filter(v=>v.id.startsWith('bulk-')&&(v.enabled||v.billingClass!=='unreviewed')).length),0);
+ await geometry();await capture('imported-466-mobile');
+ await page.locator('#voice-search').fill('bulk-voice-0');await page.locator('[data-voice-edit]').click();
+ const identifier=page.locator('#voice-form [name="id"]');assert.equal(await identifier.evaluate(el=>el.validity.patternMismatch),false,'official hyphen ID rejected by HTML');
+ await identifier.fill('bad/path');assert.equal(await identifier.evaluate(el=>el.validity.patternMismatch),true);await identifier.fill('bulk-voice-0');
+ await page.getByRole('button',{name:'返回音色目录',exact:true}).click();await page.locator('#voice-search').fill('');
+ firstProbeResponseLost=true;const beforeBulk=actualProbeCalls;
+ await page.locator('#voice-batch').click();await geometry();await capture('bulk-validation-mobile');
+ await page.locator('#voice-batch-start').click();assert.equal(actualProbeCalls,beforeBulk,'price review was not required');
+ await page.locator('#voice-batch-price').check();await page.locator('#voice-batch-start').click();
+ await page.locator('#voice-batch-status').filter({hasText:'本轮已结束'}).waitFor({timeout:90000});
+ assert.equal(actualProbeCalls,beforeBulk+466);assert.equal(await page.locator('#voice-batch-errors li').count(),1);
+ await geometry();await capture('bulk-validation-results-mobile');
+ assert.equal(await page.evaluate(()=>voices.edit.voices.filter(v=>v.enabled).length),1,'verification enabled voices without review');
+ await page.locator('#voice-batch-enable').click();await page.locator('#voice-count').filter({hasText:'已启用 466 个'}).waitFor();
+ await page.locator('#voice-batch').click();assert.equal(await page.locator('#voice-batch-start').isDisabled(),true,'unresolved paid probe was scheduled again');
+ await page.locator('#voice-batch-back').click();await page.locator('#voice-search').fill('bulk-voice-0');await page.locator('[data-voice-edit]').click();
+ await page.getByRole('button',{name:'检查上次验证结果',exact:true}).click();await page.locator('#voice-proof').filter({hasText:'验证完成'}).waitFor();
+ assert.equal(actualProbeCalls,beforeBulk+466,'checking uncertain result repeated provider synthesis');
+ await page.getByRole('button',{name:'返回音色目录',exact:true}).click();await page.locator('#voice-search').fill('');
+ // Stop finishes only the submitted voice, and a service outage stops after three attempts.
+ await importCandidates([voice('cancel_voice_1','取消一'),voice('cancel_voice_2','取消二')]);
+ await page.getByRole('status').filter({hasText:'已导入 2 个'}).waitFor();
+ const arrived=new Promise(resolve=>probeArrived=resolve);heldProbe=new Promise(resolve=>releaseProbe=resolve);
+ await page.locator('#voice-batch').click();await page.locator('#voice-batch-price').check();await page.locator('#voice-batch-start').click();await arrived;
+ await page.locator('#voice-batch-stop').click();releaseProbe();await page.locator('#voice-batch-status').filter({hasText:'本轮已结束'}).waitFor();
+ assert.equal(actualProbeCalls,beforeBulk+467);heldProbe=null;
+ await page.locator('#voice-batch-back').click();
+ await importCandidates(Array.from({length:4},(_,i)=>voice('unavailable_voice_'+i,'故障 '+i)));
+ await page.getByRole('status').filter({hasText:'已导入 4 个'}).waitFor();
+ await page.locator('#voice-batch').click();await page.locator('#voice-batch-price').check();await page.locator('#voice-batch-start').click();
+ await page.locator('#voice-batch-status').filter({hasText:'连续三项失败'}).waitFor();
+ assert.equal(actualProbeCalls,beforeBulk+471,'batch did not stop after three failed voices');
+ assert.equal(await page.evaluate(()=>window.reauthChecks),1,'fresh server authentication was not reused for the batch');
+ await page.setViewportSize({width:1100,height:900});await geometry();await capture('bulk-validation-desktop');
  assert.deepEqual(errors,[]);
- console.log('PASS: four-App selection and scoped unavailable services, test-environment header geometry, catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
+ console.log('PASS: atomic 466-voice import, HTML hyphen IDs, reviewed batch validation, uncertain-result replay, cancellation and outage stop, four-App selection and scoped unavailable services, test-environment header geometry, catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

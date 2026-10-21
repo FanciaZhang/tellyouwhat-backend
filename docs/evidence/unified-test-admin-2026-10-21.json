@@ -172,7 +172,7 @@
   },
   "existingTestAdminAccountPreserved": true,
   "oldTestCredentialsRevoked": true,
-  "newDomainPasskeyRegistrationVerified": false,
+  "newDomainPasskeyRegistrationVerified": true,
   "authenticatedBusinessWritesVerified": false,
   "browserPublicPageVerified": true,
   "localChecks": {
@@ -190,5 +190,6 @@
   "failedCandidate": "6ef1639bf2f4891a0d30d6dd1b37b71bd46d9c63",
   "failedCandidateRolledBackTo": "41f34db916e03ac9d0d86bcc413ff6052809bd39",
   "paidProviderRequestsThisChange": 0,
-  "evidenceDirectory": "/Users/harborzeng/Documents/JournalBackendReleases/unified-test-admin-20261021"
+  "evidenceDirectory": "/Users/harborzeng/Documents/JournalBackendReleases/unified-test-admin-20261021",
+  "authenticatedAppRegistryVerified": true
 }
