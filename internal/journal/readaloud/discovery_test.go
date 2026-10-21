@@ -33,7 +33,7 @@ func inventoryVoice(id string) *speechsaasprod.SpeakerForListSpeakersOutput {
 	return &speechsaasprod.SpeakerForListSpeakersOutput{VoiceType: volcengine.String(id), Name: volcengine.String("候选声音"), ResourceID: volcengine.String(ResourceID), TrialURL: volcengine.String("https://example.com/public-voice.mp3"), Languages: []*speechsaasprod.LanguageForListSpeakersOutput{{Language: volcengine.String("zh_CN"), Text: volcengine.String("今天沿着河岸散步。")}, {Language: volcengine.String("en-US")}}}
 }
 func TestVoiceDiscoveryPaginatesWithoutEnablingOrClaimingPriceVerification(t *testing.T) {
-	first, second := inventoryVoice("voice_first"), inventoryVoice("voice_second")
+	first, second := inventoryVoice("tl_male_jonathan-palad_uranus_bigtts"), inventoryVoice("voice_second")
 	f := &inventoryFixture{pages: []*speechsaasprod.ListSpeakersOutput{{Total: volcengine.Int32(2), Speakers: []*speechsaasprod.SpeakerForListSpeakersOutput{first}}, {Total: volcengine.Int32(2), Speakers: []*speechsaasprod.SpeakerForListSpeakersOutput{second}}}}
 	r, err := (&Discovery{api: f}).Candidates(context.Background())
 	if err != nil || f.calls != 2 || len(r.Voices) != 2 || r.ProviderCount != 2 {

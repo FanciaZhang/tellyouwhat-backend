@@ -20,6 +20,7 @@ func validSynthesis() Synthesis {
 
 func TestProviderStreamsPCMAndAccountsOnlyFinalUsage(t *testing.T) {
 	input := validSynthesis()
+	input.VoiceID = "tl_male_jonathan-palad_uranus_bigtts"
 	input.Pitch = -2
 	input.Style = "calm"
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,5 +143,26 @@ func TestProviderDoesNotFollowRedirectWithCredentials(t *testing.T) {
 	_, err := provider.Synthesize(context.Background(), validSynthesis(), func([]byte) error { return nil })
 	if !errors.Is(err, ErrProvider) || leaked {
 		t.Fatal("provider redirect forwarded credentials")
+	}
+}
+
+func TestOfficialVoiceIdentifiersKeepHyphensWithoutAdmittingPaths(t *testing.T) {
+	for _, id := range []string{"tl_male_jonathan-palad_uranus_bigtts", "pt_male_eduardo-s_uranus_bigtts", "en_male_adam-imitation_uranus_bigtts"} {
+		input := validSynthesis()
+		input.VoiceID = id
+		voice := draftVoice()
+		voice.ID = id
+		if !input.Valid() || voice.Validate() != nil {
+			t.Errorf("official identifier rejected: %s", id)
+		}
+	}
+	for _, id := range []string{"", "../voice", "voice/name", "voice?key=value", "voice name", "声音", strings.Repeat("a", 129)} {
+		input := validSynthesis()
+		input.VoiceID = id
+		voice := draftVoice()
+		voice.ID = id
+		if input.Valid() || voice.Validate() == nil {
+			t.Errorf("unsafe identifier admitted: %q", id)
+		}
 	}
 }

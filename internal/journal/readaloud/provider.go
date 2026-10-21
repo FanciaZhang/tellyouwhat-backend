@@ -30,7 +30,7 @@ var (
 	ErrInput       = errors.New("invalid read-aloud input")
 	ErrProvider    = errors.New("read-aloud provider unavailable")
 	ErrIncomplete  = errors.New("incomplete read-aloud audio")
-	voiceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,128}$`)
+	voiceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 )
 
 // ProviderError never includes the upstream response body, which may echo text.
