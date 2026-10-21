@@ -13,6 +13,7 @@ import ops_offsite
 from platform_test_deploy import FILES, private_file, selection, selection_files
 import platform_test_albums as albums
 import platform_test_journal as journal
+import platform_test_admin as admin
 
 
 def checkpoint_runtime(runtime):
@@ -112,6 +113,16 @@ def verify_recovery(archive, hashes):
         if hashes[overlay] != journal.READ_ALOUD_OVERLAY_SHA256:
             raise OperationError('platform test read-aloud recovery overlay is unreviewed')
         expected.add(overlay)
+    if any('current/' + name in hashes for name in admin.FILES):
+        expected.update('current/' + name for name in admin.FILES)
+        if hashes.get('current/' + admin.OVERLAY) != admin.OVERLAY_SHA256:
+            raise OperationError('platform test admin recovery overlay is unreviewed')
+        try:
+            raw = archive.extractfile('recovery/platform-test/current/admin.env').read().decode()
+            values = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line and not line.startswith('#'))
+            admin.validate_config(values, app)
+        except (KeyError, AttributeError, UnicodeError) as error:
+            raise OperationError('platform test admin recovery configuration is missing') from error
     if any('current/' + name in hashes for name in albums.FILES):
         expected.update('current/' + name for name in albums.FILES)
     if 'current/albums.env' in hashes:

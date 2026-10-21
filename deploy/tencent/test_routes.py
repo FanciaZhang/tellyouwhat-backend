@@ -38,10 +38,29 @@ def development_environment(runtime, app):
     return env
 
 
-def render(apps):
-    if not apps or not set(apps) <= ROUTES.keys():
+def render(apps, journal_admin=False):
+    if not apps or not set(apps) <= ROUTES.keys() or type(journal_admin) is not bool or journal_admin and 'journal' not in apps:
         raise OperationError('select known test applications')
-    return '\n'.join(f'''{ROUTES[app][0]} {{
+    def proxy(port):
+        return f'''    reverse_proxy 127.0.0.1:{port} {{
+        stream_close_delay 4h
+        header_up X-Real-IP {{remote_host}}
+        flush_interval -1
+    }}'''
+    blocks = []
+    for app in sorted(set(apps)):
+        routing = proxy(ROUTES[app][1])
+        internal = '    respond @internal 404'
+        if app == 'journal' and journal_admin:
+            internal = '    handle @internal {\n        respond 404\n    }'
+            routing = f'''    @native path /v1 /v1/* /livez /healthz /readyz
+    handle @native {{
+{routing}
+    }}
+    handle {{
+{proxy(18792)}
+    }}'''
+        blocks.append(f'''{ROUTES[app][0]} {{
     header {{
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
@@ -49,14 +68,11 @@ def render(apps):
         -Server
     }}
     @internal path /internal/*
-    respond @internal 404
-    reverse_proxy 127.0.0.1:{ROUTES[app][1]} {{
-        stream_close_delay 4h
-        header_up X-Real-IP {{remote_host}}
-        flush_interval -1
-    }}
+{internal}
+{routing}
 }}
-''' for app in sorted(set(apps)))
+''')
+    return '\n'.join(blocks)
 
 
 class RejectRedirects(urllib.request.HTTPRedirectHandler):
@@ -78,6 +94,22 @@ def ready(runtime, app):
                 raise OperationError('shared test service readiness failed')
     except (OSError, ValueError) as error:
         raise OperationError('shared test service readiness failed') from error
+
+
+def ready_admin(runtime):
+    from platform_test_deploy import selection, private_file
+    import platform_test_admin as admin
+    state = json.loads(private_file(runtime, runtime.state / 'platform-test.json', 16384))
+    owner = json.loads(private_file(runtime, runtime.state / 'artifact-owners/platform-test.json', 16384))
+    folder, _, _ = selection(runtime, state.get('source'))
+    if not admin.selected(folder) or owner.get('current', {}).get('source') != state['source']:
+        raise OperationError('test admin is not the registered current selection')
+    container = json.loads(runtime.execute('test-admin-route-identity', ['docker', 'inspect', 'tellyouwhat-platform-test-admin-1']))[0]
+    if (not container.get('State', {}).get('Running') or container['State'].get('OOMKilled')
+            or container.get('RestartCount') or container['Config'].get('Image') != 'tellyouwhat-platform-test-admin:' + state['source']):
+        raise OperationError('test admin is not the registered healthy image')
+    admin.verify(container, folder)
+    admin.ready()
 
 
 def install(runtime, source, destination):
@@ -102,7 +134,7 @@ def backup_configuration(runtime, destination):
         raise OperationError('test routing recovery file is missing, oversized or a symlink')
     record = json.loads(state.read_text())
     content = FRAGMENT.read_text()
-    render(record['apps'])  # Validate ownership; older pinned routes remain recoverable during migration.
+    render(record['apps'], record.get('journal_admin', False))
     if (hashlib.sha256(content.encode()).hexdigest() != record['fragment_sha256']
             or ROOT.read_text().splitlines().count('import ' + str(FRAGMENT)) != 1):
         raise OperationError('test routing differs from its managed recovery state')
@@ -115,20 +147,23 @@ def backup_configuration(runtime, destination):
     return hashes
 
 
-def configure(runtime, enabled):
+def configure(runtime, enabled, journal_admin=False):
     require_operator(runtime.root)
     with runtime.lock(wait_seconds=600), runtime.lock('deployment', wait_seconds=600):
         runtime.refresh()
         state_path = runtime.state / 'test-routing.json'
         prior = json.loads(state_path.read_text()) if state_path.exists() else {}
         apps = sorted(set(prior.get('apps', [])) | set(enabled))
-        text = render(apps)
+        journal_admin = prior.get('journal_admin', False) or journal_admin
+        text = render(apps, journal_admin)
         stable = json.loads((runtime.state / 'blue-green.json').read_text())
         if stable.get('phase') != 'STABLE':
             raise OperationError('wait for the production release to become stable')
         assert_route(stable['current'])
         for app in apps:
             ready(runtime, app)
+        if journal_admin:
+            ready_admin(runtime)
         before = ROOT.read_text()
         existed = FRAGMENT.exists()
         previous = FRAGMENT.read_text() if existed else None
@@ -169,7 +204,7 @@ def configure(runtime, enabled):
             except Exception:
                 raise OperationError('test route activation and Caddy recovery failed; operator recovery required') from error
             raise OperationError('test route activation failed; previous Caddy configuration restored') from error
-        return runtime.record('test-routing', passed=True, apps=apps, changed=True, recovery=str(folder),
+        return runtime.record('test-routing', passed=True, apps=apps, journal_admin=journal_admin, changed=True, recovery=str(folder),
                               production_routes_verified=True,
                               script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                               fragment_sha256=hashlib.sha256(text.encode()).hexdigest(),
@@ -180,9 +215,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend-dir', default='/opt/tellyouwhat/backend')
     parser.add_argument('--enable', nargs='+', choices=ROUTES, required=True)
+    parser.add_argument('--journal-admin', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
-    print(json.dumps(configure(Runtime(args.backend_dir), args.enable), sort_keys=True))
+    print(json.dumps(configure(Runtime(args.backend_dir), args.enable, args.journal_admin), sort_keys=True))
 
 
 if __name__ == '__main__':

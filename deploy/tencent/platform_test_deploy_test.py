@@ -1,4 +1,6 @@
 import hashlib
+import base64
+import copy
 import io
 import json
 import shutil
@@ -40,6 +42,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                     'BIRTHDAY_APPLE_BUNDLE_ID': 'cn.tellyouwhat.birthday.dev', 'BIRTHDAY_APPLE_TEAM_ID': 'T6DD96HY2B',
                     'BIRTHDAY_API_HOSTS': dev.HOST, 'BIRTHDAY_APP_ATTEST_ENV': 'production',
                     'AI_PROJECT_MONTHLY_BUDGET_CNY': '10', 'BIRTHDAY_ALLOWED_APP_BUILDS': '4'}
+        self.app['PAYLOAD_ENCRYPTION_KEY'] = base64.b64encode(b'p' * 32).decode()
         self.compose = {'PLATFORM_TEST_ENV_FILE': str(self.folder / 'runtime.env'), 'PLATFORM_TEST_IMAGE_TAG': self.source,
                         'PLATFORM_TEST_API_PORT': '18790', 'PLATFORM_TEST_NETWORK_CIDR': '172.29.93.0/24',
                         'PLATFORM_TEST_MYSQL_PASSWORD': '1' * 64, 'PLATFORM_TEST_MYSQL_ROOT_PASSWORD': '2' * 64,
@@ -158,6 +161,17 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             with dev.test_operations_transition(self.runtime, self.source):
                 self.fail('accepted changed operations')
         self.assertEqual(installed.read_bytes(), b'# unexpected drift\n')
+
+    def test_new_admin_helper_is_removed_when_first_activation_fails(self):
+        installed = self.root / 'deploy/tencent/platform_test_admin.py'
+        installed.unlink()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertTrue(installed.is_file())
+                raise RuntimeError('activation failed')
+        self.assertFalse(installed.exists())
 
     def test_shared_backup_update_accepts_only_reviewed_catalog_retention_and_rolls_back(self):
         name = 'ops_backup.py'
@@ -336,11 +350,16 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.folder = self.old_folder.parent / self.source
         shutil.copytree(self.old_folder, self.folder)
         self.compose.update(PLATFORM_TEST_ENV_FILE=str(self.folder / 'runtime.env'), PLATFORM_TEST_IMAGE_TAG=self.source)
+        if dev.admin.selected(self.folder):
+            self.compose['PLATFORM_TEST_ADMIN_ENV_FILE'] = str(self.folder / 'admin.env')
         self.app.pop('BIRTHDAY_DEV_ACTIVATION_SECRET', None)
         self.app['BIRTHDAY_ALLOWED_APP_BUILDS'] = '4'
         self.save()
         self.runtime.backups = self.root / 'backups'
         def execute(label, command, **kwargs):
+            if label in ('platform-test-update-running-admin', 'platform-test-update-check-admin', 'platform-test-rollback-check-admin'):
+                folder = self.folder if label.startswith('platform-test-update-check') else self.old_folder
+                return json.dumps([self.admin_container(folder)]).encode()
             if label.endswith('-worker-status'):
                 return b'{"httpEnabled":true,"backgroundEnabled":true}'
             if label in ('platform-test-update-running-gateway', 'platform-test-update-check-gateway',
@@ -489,7 +508,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             self.update(ready_error=[OperationError('not ready'), None])
         self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
         labels = [c.args[0] for c in self.runtime.execute.call_args_list]
-        self.assertLess(labels.index('platform-test-update-stop-worker'), labels.index('platform-test-update-rollback'))
+        self.assertLess(labels.index('platform-test-update-stop-added'), labels.index('platform-test-update-rollback'))
         self.assertIn('platform-test-rollback-check-gateway', labels)
 
     def test_worker_cleanup_failure_still_restores_old_gateway_and_reports_failure(self):
@@ -497,7 +516,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.enable_health()
         execute = self.runtime.execute.side_effect
         def fail_worker_stop(label, command, **kwargs):
-            if label == 'platform-test-update-stop-worker':
+            if label == 'platform-test-update-stop-added':
                 raise OperationError('worker stop failed')
             return execute(label, command, **kwargs)
         self.runtime.execute.side_effect = fail_worker_stop
@@ -523,6 +542,87 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(len(starts), 1)
         self.assertEqual(starts[0][-2:], ['gateway', 'worker'])
         self.assertFalse(any('journal-private-development' in c or 'down' in c for c in commands))
+
+    def enable_admin(self):
+        values = {'PAYLOAD_ENCRYPTION_KEY': self.app['PAYLOAD_ENCRYPTION_KEY'],
+                  'ADMIN_PREVIEW_SIGNING_KEY': base64.b64encode(b's' * 32).decode().rstrip('=')}
+        (self.folder / 'admin.env').write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
+        body = (Path(__file__).resolve().parents[2] / dev.admin.OVERLAY).read_bytes()
+        (self.folder / dev.admin.OVERLAY).write_bytes(body)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo(dev.admin.OVERLAY); entry.size = len(body)
+            archive.addfile(entry, io.BytesIO(body))
+        self.compose['PLATFORM_TEST_ADMIN_ENV_FILE'] = str(self.folder / 'admin.env')
+        self.save()
+
+    def admin_container(self, folder):
+        compose = dev.read_environment(folder / 'compose.env')
+        env = {**dev.admin.FIXED, **dev.read_environment(folder / 'admin.env'),
+               'DATABASE_DSN': 'platform_test:' + compose['PLATFORM_TEST_MYSQL_PASSWORD'] + '@tcp(mysql:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true',
+               'REDIS_URL': 'redis://:' + compose['PLATFORM_TEST_REDIS_PASSWORD'] + '@redis:6379/1'}
+        return {'State': {'Running': True}, 'RestartCount': 0,
+                'Config': {'Image': dev.PROJECT + '-admin:' + folder.name, 'User': '65532:65532',
+                           'Env': [k + '=' + v for k, v in env.items()]},
+                'Mounts': [{'Source': str(dev.journal.PRIVATE_BASE / 'development/api-key.txt'),
+                            'Destination': dev.admin.KEY_FILE, 'Type': 'bind', 'RW': False}],
+                'HostConfig': {'ReadonlyRootfs': True, 'PortBindings': {'8082/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18792'}]}},
+                'NetworkSettings': {'Networks': {dev.PROJECT + '_platform-test': {}}}}
+
+    def test_admin_update_uses_selected_private_inputs_and_keeps_existing_keys(self):
+        self.enable_journal(); self.enable_read_aloud(); self.prepare_update(); self.enable_admin()
+        result = self.update()
+        self.assertEqual(dev.running_services(self.folder), ('gateway', 'worker', 'admin'))
+        self.assertIn('admin.env', result['files'])
+        self.assertIn(str(self.folder / dev.admin.OVERLAY), dev.compose(self.folder, 'config', '--quiet'))
+        self.assertEqual(result['previous']['source'], self.old_source)
+        next_folder = self.folder.parent / ('c' * 40)
+        shutil.copytree(self.folder, next_folder)
+        old = dev.read_environment(next_folder / 'admin.env')
+        old['ADMIN_PREVIEW_SIGNING_KEY'] = base64.b64encode(b'n' * 32).decode().rstrip('=')
+        (next_folder / 'admin.env').write_text(''.join(k + '=' + v + '\n' for k, v in old.items()))
+        with self.assertRaisesRegex(OperationError, 'preserve its active private'):
+            dev.admin.require_transition(self.folder, next_folder)
+
+    def test_first_admin_failure_stops_added_service_and_restores_prior_gateway(self):
+        self.enable_journal(); self.enable_read_aloud(); self.prepare_update(); self.enable_admin()
+        with self.assertRaises(OperationError):
+            self.update(ready_error=[OperationError('admin did not become ready'), None])
+        calls = self.runtime.execute.call_args_list
+        stop = next(c.args[1] for c in calls if c.args[0] == 'platform-test-update-stop-added')
+        rollback = next(c.args[1] for c in calls if c.args[0] == 'platform-test-update-rollback')
+        self.assertEqual(stop[-1], 'admin')
+        self.assertEqual(rollback[-2:], ['gateway', 'worker'])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), self.previous)
+
+    def test_admin_rejects_unrelated_secrets_and_unreviewed_overlay(self):
+        self.enable_journal(); self.enable_read_aloud(); self.enable_admin()
+        dev.selection(self.runtime, self.source)
+        with (self.folder / 'admin.env').open('a') as output: output.write('HEALTH_ARK_API_KEY=unexpected\n')
+        self.save()
+        with self.assertRaisesRegex(OperationError, 'unrelated service credentials'):
+            dev.selection(self.runtime, self.source)
+        self.enable_admin()
+        (self.folder / dev.admin.OVERLAY).write_text('services: {admin: {privileged: true}}'); self.save()
+        with self.assertRaisesRegex(OperationError, 'reviewed source'):
+            dev.selection(self.runtime, self.source)
+
+    def test_admin_process_rejects_public_ports_production_credentials_and_simulator_mount(self):
+        self.enable_journal(); self.enable_read_aloud(); self.enable_admin()
+        original = self.admin_container(self.folder)
+        dev.admin.verify(original, self.folder)
+        mutations = [lambda c: c['HostConfig']['PortBindings']['8082/tcp'][0].update(HostIp='0.0.0.0'),
+                     lambda c: c['Mounts'][0].update(RW=True),
+                     lambda c: c['Mounts'][0].update(Source='/production/key.txt'),
+                     lambda c: c['Mounts'].append({'Destination': '/journal-read-aloud'}),
+                     lambda c: c['Config']['Env'].append('HEALTH_ARK_API_KEY=production'),
+                     lambda c: c['Config']['Env'].append('JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE=/private.json'),
+                     lambda c: c['Config']['Env'].append('ADMIN_ORIGIN=https://admin.tellyouwhat.cn'),
+                     lambda c: c['Config']['Env'].append('ADMIN_WRITES_ENABLED=true'),
+                     lambda c: c['Config']['Env'].append('DATABASE_DSN=production'),
+                     lambda c: c['NetworkSettings']['Networks'].update(production={})]
+        for mutate in mutations:
+            candidate = copy.deepcopy(original); mutate(candidate)
+            with self.assertRaises(OperationError): dev.admin.verify(candidate, self.folder)
 
     def test_read_aloud_update_selects_private_mount_and_preserves_rollback(self):
         self.enable_journal()

@@ -20,6 +20,7 @@ from test_routes import RejectRedirects
 import platform_test_journal as journal
 import platform_test_storage as recording
 import platform_test_albums as albums
+import platform_test_admin as admin
 
 PROJECT = 'tellyouwhat-platform-test'
 HOST = 'api-test.birthday.tellyouwhat.cn'
@@ -60,11 +61,12 @@ def applications(folder):
 
 def selection_files(folder):
     return {**FILES, **(albums.FILES if albums.selected(folder) else {}),
-            **(journal.READ_ALOUD_FILES if journal.read_aloud_selected(folder) else {})}
+            **(journal.READ_ALOUD_FILES if journal.read_aloud_selected(folder) else {}),
+            **(admin.FILES if admin.selected(folder) else {})}
 
 
 def running_services(folder):
-    return ('gateway', 'worker') if 'health' in applications(folder) else ('gateway',)
+    return (('gateway', 'worker') if 'health' in applications(folder) else ('gateway',)) + (('admin',) if admin.selected(folder) else ())
 
 
 def image_services(folder):
@@ -127,6 +129,7 @@ def selection(runtime, source):
                 archive.extractfile(albums.OVERLAY).read() != (folder / albums.OVERLAY).read_bytes()):
             raise OperationError('Albums overlay differs from selected source')
         journal.validate_read_aloud_overlay(folder, archive)
+        admin.validate(folder, compose, archive)
         config = archive.extractfile('internal/config/platform.go') if 'internal/config/platform.go' in names else None
         explicit_apps = config is not None and b'"PLATFORM_APPS"' in config.read()
         # Retained recovery selections must be validated using their own configuration contract.
@@ -179,7 +182,8 @@ def compose(folder, *args):
     return ['docker', 'compose', '--project-name', PROJECT, '--env-file', str(folder / 'compose.env'),
             '-f', str(folder / 'compose.platform-test.yaml'),
             *(['-f', str(folder / albums.OVERLAY)] if albums.selected(folder) else []),
-            *(['-f', str(folder / journal.READ_ALOUD_OVERLAY)] if journal.read_aloud_selected(folder) else []), *args]
+            *(['-f', str(folder / journal.READ_ALOUD_OVERLAY)] if journal.read_aloud_selected(folder) else []),
+            *(['-f', str(folder / admin.OVERLAY)] if admin.selected(folder) else []), *args]
 
 
 def ready(folder=None):
@@ -200,8 +204,10 @@ def ready(folder=None):
                     payload = json.load(response)
                     if response.status != 200 or (payload.get('code') != 'ok' if host == albums.HOST else payload.get('status') != 'ready'):
                         raise ValueError('not ready')
+            if folder and admin.selected(folder):
+                admin.ready()
             return
-        except (OSError, ValueError):
+        except (OSError, ValueError, OperationError):
             pass
         time.sleep(1)
     raise OperationError('platform test readiness failed')
@@ -233,7 +239,10 @@ def verify_running(runtime, folder, source, label):
             raise OperationError('platform test process differs from the selected healthy image')
         if service == 'gateway' and recording.available(folder):
             recording.verify_gateway(running)
-        journal.verify_read_aloud(running, folder, service)
+        if service == 'admin':
+            admin.verify(running, folder)
+        else:
+            journal.verify_read_aloud(running, folder, service)
         if albums.selected(folder):
             if service == 'gateway':
                 albums.verify_gateway(running, folder)
@@ -271,7 +280,7 @@ def require_installed_operations(runtime, folder):
     installed = runtime.root / 'deploy/tencent'
     for name in ('operations.py', 'ops_common.py', 'ops_backup.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
-                 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py'):
+                 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_admin.py', 'platform_test_schema.py'):
         path = installed / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
                 or path.stat().st_mode & 0o022 or path.read_bytes() != (source / name).read_bytes()):
@@ -288,6 +297,7 @@ def update_configuration(runtime, source, previous_source, folder, record):
             or str(old) not in owner['current'].get('paths', [])):
         raise OperationError('platform test update does not match the registered running release')
     recording.require_transition(old, folder)
+    admin.require_transition(old, folder)
     before_apps, after_apps = applications(old), applications(folder)
     if not set(before_apps) <= set(after_apps):
         raise OperationError('platform test update cannot silently disable an existing application')
@@ -301,6 +311,8 @@ def update_configuration(runtime, source, previous_source, folder, record):
         permitted |= {'JOURNAL_ALLOWED_APP_BUILDS', 'JOURNAL_RECORDING_ENABLED'} | journal.READ_ALOUD_SETTINGS
     permitted |= STOREKIT_SETTINGS
     compose_changes = {'PLATFORM_TEST_ENV_FILE', 'PLATFORM_TEST_IMAGE_TAG'}
+    if admin.selected(folder):
+        compose_changes.add('PLATFORM_TEST_ADMIN_ENV_FILE')
     if 'albums' in after_apps:
         compose_changes.add('PLATFORM_ALBUM_ENV_FILE')
         if 'albums' not in before_apps:
@@ -355,8 +367,9 @@ def update_configuration(runtime, source, previous_source, folder, record):
         return result
     except Exception:
         try:
-            if 'worker' in running_services(folder) and 'worker' not in running_services(old):
-                runtime.execute('platform-test-update-stop-worker', compose(folder, 'stop', '-t', '30', 'worker'), timeout=90)
+            added = tuple(service for service in running_services(folder) if service not in running_services(old))
+            if added:
+                runtime.execute('platform-test-update-stop-added', compose(folder, 'stop', '-t', '30', *added), timeout=90)
         finally:
             runtime.execute('platform-test-update-rollback', compose(old, 'up', '-d', '--no-build', '--no-deps', *running_services(old)), timeout=120)
             ready(old)
@@ -367,9 +380,10 @@ def update_configuration(runtime, source, previous_source, folder, record):
 @contextlib.contextmanager
 def test_operations_transition(runtime, update_from):
     # Test validators travel with the release; the shared backup change is pinned below.
-    names = ('platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py', 'platform_test_artifacts.py')
+    names = ('platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
+             'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py')
     source, installed = Path(__file__).resolve().parent, runtime.root / 'deploy/tencent'
-    changed = {n: (source / n).read_bytes() for n in names if (installed / n).read_bytes() != (source / n).read_bytes()}
+    changed = {n: (source / n).read_bytes() for n in names if not (installed / n).exists() or (installed / n).read_bytes() != (source / n).read_bytes()}
     backup = 'ops_backup.py'
     if (installed / backup).read_bytes() != (source / backup).read_bytes():
         reviewed = ('e367cbe4f1e5068664b3ad2ca9e152d9dbac73e2df46ae988d9d13ae8e50c577',
@@ -390,6 +404,13 @@ def test_operations_transition(runtime, update_from):
     with tarfile.open(previous / 'source.tar') as archive:
         for name in changed:
             path = installed / name
+            if name == 'platform_test_admin.py' and not path.exists() and not path.is_symlink():
+                try:
+                    archive.getmember('deploy/tencent/' + name)
+                except KeyError:
+                    originals[name] = None
+                    continue
+                raise OperationError('registered test helper is unexpectedly missing')
             if path.is_symlink() or path.stat().st_uid != runtime.root.stat().st_uid or path.stat().st_mode & 0o022:
                 raise OperationError('test operations must be operator owned')
             originals[name] = path.read_bytes()
@@ -397,8 +418,13 @@ def test_operations_transition(runtime, update_from):
             if not member.isfile() or member.size > 131072 or archive.extractfile(member).read() != originals[name]:
                 raise OperationError('installed test operations differ from the registered rollback source')
     def replace(files):
-        for name, data in files.items():
+        # Install imported modules first; remove new modules last on rollback.
+        for name in sorted(files, key=lambda name: (files[name] is None, name != 'platform_test_admin.py')):
+            data = files[name]
             target = installed / name
+            if data is None:
+                target.unlink(missing_ok=True)
+                continue
             temporary = installed / ('.' + name + '.transition')
             with temporary.open('xb') as output:
                 output.write(data)

@@ -65,6 +65,39 @@ class TestRouteTests(unittest.TestCase):
         self.assertLess(self.calls.index('test-route-validate'), self.calls.index('test-route-commit'))
         self.runtime.record.assert_called_once()
 
+    def test_journal_admin_keeps_native_api_routes_and_internal_block_on_the_test_host(self):
+        plain = routes.render(['health', 'journal'])
+        text = routes.render(['health', 'journal'], True)
+        self.assertIn('@native path /v1 /v1/* /livez /healthz /readyz', text)
+        self.assertIn('handle @internal {\n        respond 404', text)
+        self.assertEqual(text.count('reverse_proxy 127.0.0.1:18792'), 1)
+        self.assertEqual(text.split('api-test.journal.')[0], plain.split('api-test.journal.')[0])
+        self.assertNotIn('admin.tellyouwhat.cn', text)
+        with self.assertRaises(OperationError): routes.render(['health'], True)
+        with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin') as ready:
+            routes.configure(self.runtime, ['journal'], True)
+        ready.assert_called_once_with(self.runtime)
+        self.assertEqual(self.main.read_text(), self.before.rstrip() + '\n\nimport ' + str(self.fragment) + '\n')
+        self.assertTrue(self.runtime.record.call_args.kwargs['journal_admin'])
+
+    def test_admin_readiness_failure_leaves_all_caddy_files_unchanged(self):
+        with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin', side_effect=OperationError('not ready')):
+            with self.assertRaises(OperationError): routes.configure(self.runtime, ['journal'], True)
+        self.assertEqual(self.main.read_text(), self.before)
+        self.assertFalse(self.fragment.exists())
+        self.assertNotIn('test-route-stage', self.calls)
+
+    def test_future_route_update_preserves_selected_admin(self):
+        text = routes.render(['journal'], True)
+        self.fragment.write_text(text)
+        self.main.write_text(self.before + 'import ' + str(self.fragment) + '\n')
+        (self.runtime.state / 'test-routing.json').write_text(json.dumps({
+            'apps': ['journal'], 'journal_admin': True, 'fragment_sha256': hashlib.sha256(text.encode()).hexdigest()}))
+        with patch.object(routes, 'ready'), patch.object(routes, 'ready_admin') as ready:
+            routes.configure(self.runtime, ['health'])
+        ready.assert_called_once()
+        self.assertIn('reverse_proxy 127.0.0.1:18792', self.fragment.read_text())
+
     def test_invalid_configuration_does_not_change_active_files(self):
         self.fail_validate = True
         with self.assertRaises(OperationError): self.configure()

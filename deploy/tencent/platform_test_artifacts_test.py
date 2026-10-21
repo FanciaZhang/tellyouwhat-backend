@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import io
 import json
 from pathlib import Path
@@ -180,6 +181,35 @@ class PlatformTestRecoveryTests(unittest.TestCase):
             (folder / 'runtime.env').write_text('KEY=' + self.config['BACKUP_ENCRYPTION_KEY'])
             with self.assertRaisesRegex(OperationError, 'decryption key'):
                 artifacts.backup_configuration(self.runtime, self.base / 'rejected')
+
+    def test_admin_recovery_requires_selected_overlay_and_only_its_private_keys(self):
+        names = {'state.json', 'owner.json', 'database.env', 'backup.env',
+                 *('current/' + name for name in (*artifacts.FILES, 'selection.json', *artifacts.admin.FILES)),
+                 'current/' + artifacts.journal.READ_ALOUD_OVERLAY,
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc',
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc.json'}
+        contents = {name: name.encode() for name in names}
+        payload = base64.b64encode(b'p' * 32).decode()
+        contents['current/runtime.env'] = ('JOURNAL_TTS_ENABLED=true\nJOURNAL_TTS_API_KEY_FILE=' + artifacts.journal.KEY_FILE
+            + '\nJOURNAL_TTS_MONTHLY_CHARACTERS=10000\nJOURNAL_TTS_PREVIEW_DAILY_CHARACTERS=1000\nPAYLOAD_ENCRYPTION_KEY=' + payload + '\n').encode()
+        contents['current/admin.env'] = ('PAYLOAD_ENCRYPTION_KEY=' + payload + '\nADMIN_PREVIEW_SIGNING_KEY='
+            + base64.b64encode(b's' * 32).decode().rstrip('=') + '\n').encode()
+        for overlay in (artifacts.journal.READ_ALOUD_OVERLAY, artifacts.admin.OVERLAY):
+            contents['current/' + overlay] = (Path(__file__).resolve().parents[2] / overlay).read_bytes()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, content in contents.items():
+                entry = tarfile.TarInfo('recovery/platform-test/' + name); entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+        data.seek(0)
+        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in contents.items()}
+        with tarfile.open(fileobj=data) as archive:
+            artifacts.verify_recovery(archive, hashes)
+            for name in artifacts.admin.FILES:
+                with self.assertRaises(OperationError):
+                    artifacts.verify_recovery(archive, {k: v for k, v in hashes.items() if k != 'current/' + name})
+            with self.assertRaisesRegex(OperationError, 'authenticated manifest'):
+                artifacts.verify_recovery(archive, {**hashes, 'current/admin.env': '0' * 64})
 
 
 if __name__ == '__main__':
