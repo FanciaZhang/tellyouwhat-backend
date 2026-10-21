@@ -1,0 +1,151 @@
+{
+  "environment": "shared-platform-test",
+  "adminOrigin": "https://admin-test.tellyouwhat.cn",
+  "deployedSource": "78bdb99e3b00450fc48768fef314d660f42766b9",
+  "database": {
+    "voiceIDs": 466,
+    "latestDraft": {
+      "voices": 466,
+      "enabled": 466,
+      "revision": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+      "publishedAt": null
+    },
+    "catalogUsage": [
+      {
+        "used": 4733,
+        "purpose": "preview",
+        "reserved": 0
+      }
+    ],
+    "probeMutations": [
+      {
+        "count": 470,
+        "state": "succeeded"
+      }
+    ],
+    "currentRevision": null,
+    "verificationCount": 470,
+    "observedAt": "2026-10-21T05:12:39.272991+00:00",
+    "nominalStandardPriceCNY": 1.4199
+  },
+  "capabilities": {
+    "recommended": [
+      {
+        "id": "zh_female_vv_uranus_bigtts",
+        "name": "Vivi 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_female_xiaohe_uranus_bigtts",
+        "name": "小何 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_male_m191_uranus_bigtts",
+        "name": "云舟 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_male_taocheng_uranus_bigtts",
+        "name": "小天 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      }
+    ],
+    "totalVerificationCases": 518.0
+  },
+  "draftVersion": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+  "defaultVoiceID": "zh_female_xiaohe_uranus_bigtts",
+  "published": false,
+  "providerResource": "seed-tts-2.0",
+  "publicVoiceCount": 466,
+  "languages": 17,
+  "realSynthesisCases": 518,
+  "failures": 0,
+  "testBudgetCNY": 10,
+  "priceCNYPer10000Characters": 3,
+  "nominalCostCNY": 1.4199,
+  "voiceSlotOrPremiumPurchased": false,
+  "manualAuditionComplete": false,
+  "appCloudPlaybackComplete": false,
+  "remaining": [
+    "Existing passkey confirmation for test catalog publication",
+    "App live cloud playback and audio acceptance",
+    "Published catalog backup recovery evidence"
+  ],
+  "stoppedFirstWave": {
+    "verified": 415,
+    "message": "请求过于频繁，请稍后重试",
+    "cause": "Existing admin API limit, 180 requests per minute per address",
+    "resumedRemaining": 51,
+    "completed": 51
+  },
+  "evidence": {
+    "real-verification-database.json": "a023b55e4e5478035407d5758946727c7b7092430dc4f26438121cbbf49bfe62",
+    "recommended-capability-database.json": "f5b733e73c3eecdd492b18f861fabd70f6d00416afa3090e78bdd8545892ef4a",
+    "review-466.txt": "071247b17625c54221fd79d0b675483e95a7e7a988fb34a6307cc2eb5c4c3180"
+  }
+}
