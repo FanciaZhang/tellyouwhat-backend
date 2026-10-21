@@ -269,7 +269,7 @@ def require_installed_operations(runtime, folder):
     # Scheduled jobs import the host copy, even when activation runs from a staged release.
     source = Path(__file__).resolve().parent
     installed = runtime.root / 'deploy/tencent'
-    for name in ('operations.py', 'ops_common.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
+    for name in ('operations.py', 'ops_common.py', 'ops_backup.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
                  'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py'):
         path = installed / name
@@ -366,10 +366,17 @@ def update_configuration(runtime, source, previous_source, folder, record):
 
 @contextlib.contextmanager
 def test_operations_transition(runtime, update_from):
-    # Test-only validators travel with the registered test release; production operations stay fixed.
+    # Test validators travel with the release; the shared backup change is pinned below.
     names = ('platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py', 'platform_test_artifacts.py')
     source, installed = Path(__file__).resolve().parent, runtime.root / 'deploy/tencent'
     changed = {n: (source / n).read_bytes() for n in names if (installed / n).read_bytes() != (source / n).read_bytes()}
+    backup = 'ops_backup.py'
+    if (installed / backup).read_bytes() != (source / backup).read_bytes():
+        reviewed = ('e367cbe4f1e5068664b3ad2ca9e152d9dbac73e2df46ae988d9d13ae8e50c577',
+                    'c4f84df20f967623fbfe79c529ba04bf9a041bc52e323a4f6c8bfcbef8c98a59')
+        if tuple(hashlib.sha256((folder / backup).read_bytes()).hexdigest() for folder in (installed, source)) != reviewed:
+            raise OperationError('shared backup update is outside the reviewed voice catalog retention change')
+        changed[backup] = (source / backup).read_bytes()
     if not changed:
         yield
         return

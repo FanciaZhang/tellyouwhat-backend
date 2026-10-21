@@ -159,6 +159,32 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                 self.fail('accepted changed operations')
         self.assertEqual(installed.read_bytes(), b'# unexpected drift\n')
 
+    def test_shared_backup_update_accepts_only_reviewed_catalog_retention_and_rolls_back(self):
+        name = 'ops_backup.py'
+        current = (Path(__file__).parent / name).read_bytes()
+        added = b''.join(b'    "' + table + b'",\n' for table in (
+            b'journal_voice_catalog_revisions', b'journal_voice_catalog_current',
+            b'journal_voice_verifications', b'journal_voice_catalog_mutations'))
+        original = current.replace(added, b'')
+        installed = self.root / 'deploy/tencent' / name
+        installed.write_bytes(original)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo('deploy/tencent/' + name)
+            entry.size = len(original)
+            archive.addfile(entry, io.BytesIO(original))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertEqual(installed.read_bytes(), current)
+                raise RuntimeError('activation failed')
+        self.assertEqual(installed.read_bytes(), original)
+        installed.write_bytes(original + b'# unreviewed shared operation\n')
+        with self.assertRaisesRegex(OperationError, 'outside the reviewed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('accepted an unrelated shared backup change')
+
     def test_storekit_configuration_is_sandbox_only_and_app_specific(self):
         app = {'PLATFORM_APPS': 'health,journal,birthday,albums',
                'HEALTH_APP_STORE_ENV': 'Sandbox',
