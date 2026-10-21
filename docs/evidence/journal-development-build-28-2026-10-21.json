@@ -1,0 +1,9 @@
+{
+  "app": "journal",
+  "bundle_id": "cn.tellyouwhat.journalapp.dev",
+  "version": "1.0",
+  "build": "28",
+  "previous_backend_source": "45dd8d97a0fce8b07b8ee47e0ab3b5e0ae2a2a5b",
+  "configuration_change": "Append build 28 to JOURNAL_ALLOWED_APP_BUILDS; preserve every other runtime setting, including Birthday build 8 admission.",
+  "deployment_verified": false
+}
