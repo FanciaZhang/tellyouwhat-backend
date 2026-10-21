@@ -570,6 +570,22 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                 'HostConfig': {'ReadonlyRootfs': True, 'PortBindings': {'8082/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18792'}]}},
                 'NetworkSettings': {'Networks': {dev.PROJECT + '_platform-test': {}}}}
 
+    def test_unified_admin_is_not_checked_as_an_albums_worker(self):
+        self.enable_read_aloud(); self.enable_admin(); self.prepare_update()
+        with patch.object(dev.albums, 'selected', return_value=True), patch.object(dev.albums, 'verify_gateway'):
+            dev.verify_running(self.runtime, self.folder, self.source, 'platform-test-update-check')
+            execute = self.runtime.execute.side_effect
+            def with_worker_secret(label, command, **kwargs):
+                body = execute(label, command, **kwargs)
+                if label == 'platform-test-update-check-worker':
+                    container = json.loads(body)[0]
+                    container['Config'].setdefault('Env', []).append('ALBUM_APP_STORE_CONNECT_ENABLED=false')
+                    return json.dumps([container]).encode()
+                return body
+            self.runtime.execute.side_effect = with_worker_secret
+            with self.assertRaisesRegex(OperationError, 'AI worker received Albums'):
+                dev.verify_running(self.runtime, self.folder, self.source, 'platform-test-update-check')
+
     def test_admin_update_uses_selected_private_inputs_and_keeps_existing_keys(self):
         self.enable_journal(); self.enable_read_aloud(); self.prepare_update(); self.enable_admin()
         result = self.update()
@@ -647,6 +663,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                      lambda c: c['Mounts'][0].update(Source='/production/key.txt'),
                      lambda c: c['Mounts'].append({'Destination': '/journal-read-aloud'}),
                      lambda c: c['Config']['Env'].append('HEALTH_ARK_API_KEY=production'),
+                     lambda c: c['Config']['Env'].append('ALBUM_TOS_SECRET_KEY=production'),
                      lambda c: c['Config']['Env'].append('JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE=/private.json'),
                      lambda c: c['Config']['Env'].append('ADMIN_ORIGIN=https://admin.tellyouwhat.cn'),
                      lambda c: c['Config']['Env'].append('ADMIN_WRITES_ENABLED=false'),

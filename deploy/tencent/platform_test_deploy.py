@@ -252,7 +252,7 @@ def verify_running(runtime, folder, source, label):
         if albums.selected(folder):
             if service == 'gateway':
                 albums.verify_gateway(running, folder)
-            elif any(e.split('=', 1)[0].startswith('ALBUM_') and e.split('=', 1)[0] not in albums.REGISTRY
+            elif service == 'worker' and any(e.split('=', 1)[0].startswith('ALBUM_') and e.split('=', 1)[0] not in albums.REGISTRY
                      for e in running.get('Config', {}).get('Env', [])):
                 raise OperationError('AI worker received Albums private credentials')
         if service == 'worker':
