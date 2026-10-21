@@ -53,6 +53,33 @@ type voiceBodyFixture struct{}
 
 func (*voiceBodyFixture) Read(p []byte) (int, error) { return len(p), nil }
 
+func TestVoiceCatalogAdminStartsWithoutAnAppleOfferClientAndKeepsAuthentication(t *testing.T) {
+	now := time.Now().UTC()
+	auth, err := adminauth.NewService(&aiAuthFixture{}, adminauth.NewMemoryStateStore(time.Now),
+		adminauth.Config{RPID: "admin.example.test", Origin: "https://admin.example.test", AppIDs: []string{"journal"}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(auth, nil, NewMySQLOperationStore(nil), NewMySQLMetricsReader(nil), Config{
+		Apps: []AdminApp{{ID: "journal", DisplayName: "手记测试"}}, PreviewSigningKey: make([]byte, 32),
+		VoiceCatalog: &readaloud.CatalogStore{},
+	}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.Router().ServeHTTP(response, httptest.NewRequest("GET", "/api/v1/journal/read-aloud/catalog", nil))
+	if response.Code != 401 {
+		t.Fatal("voice catalog no longer requires admin authentication", response.Code)
+	}
+	for app, status := range map[string]int{"journal": 503, "health": 404} {
+		response := httptest.NewRecorder()
+		if _, _, ok := server.offerManager(response, app); ok || response.Code != status {
+			t.Fatal("disabled or unselected offer service was accepted", app, response.Code)
+		}
+	}
+}
+
 func TestVoiceCatalogHTTPAuthCSRFWriteGateAndNoClientVerification(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &aiAuthFixture{user: adminauth.User{ID: uuid.NewString(), Role: adminauth.RoleAdmin, Status: adminauth.UserStatusActive}}

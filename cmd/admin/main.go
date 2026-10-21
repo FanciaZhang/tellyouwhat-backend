@@ -95,6 +95,10 @@ func run(logger *slog.Logger) error {
 	offerClients := make(map[string]adminportal.OfferManager, len(configuration.apps))
 	adminApps := make([]adminportal.AdminApp, 0, len(configuration.apps))
 	for _, app := range configuration.apps {
+		adminApps = append(adminApps, adminportal.AdminApp{ID: app.id, DisplayName: app.displayName})
+		if app.signingKey == nil {
+			continue
+		}
 		client, err := appstoreconnect.NewClient(appstoreconnect.Config{
 			BaseURL: app.baseURL, IssuerID: app.issuerID, KeyID: app.keyID,
 			SubscriptionID: app.subscriptionID, AppAppleID: app.appAppleID, VendorNumber: app.vendorNumber, SigningKey: app.signingKey,
@@ -103,7 +107,6 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("configure App Store Connect for %s: %w", app.id, err)
 		}
 		offerClients[app.id] = client
-		adminApps = append(adminApps, adminportal.AdminApp{ID: app.id, DisplayName: app.displayName})
 	}
 	var bills *cloudbilling.Cache
 	var ai *adminportal.AIConfig
@@ -283,10 +286,18 @@ func loadConfig() (config, error) {
 	if _, err := mysql.ParseDSN(configuration.databaseDSN); err != nil || configuration.redisURL == "" {
 		return config{}, errors.New("admin database and Redis configuration are required")
 	}
-	for _, definition := range []struct{ prefix, id, name string }{
-		{"HEALTH", "health", "告你健康"}, {"JOURNAL", "journal", "告你手记"},
-	} {
-		app, err := loadAdminApp(definition.prefix, definition.id, definition.name)
+	definitions := map[string]struct{ prefix, name string }{
+		"health": {"HEALTH", "告你健康"}, "journal": {"JOURNAL", "告你手记"},
+	}
+	seen := map[string]bool{}
+	for _, id := range strings.Split(value("ADMIN_APPS", "health,journal"), ",") {
+		id = strings.TrimSpace(id)
+		definition, ok := definitions[id]
+		if !ok || seen[id] {
+			return config{}, errors.New("ADMIN_APPS must contain unique supported application IDs")
+		}
+		seen[id] = true
+		app, err := loadAdminApp(definition.prefix, id, definition.name)
 		if err != nil {
 			return config{}, err
 		}
@@ -297,6 +308,13 @@ func loadConfig() (config, error) {
 
 func loadAdminApp(prefix, id, displayName string) (adminAppConfig, error) {
 	read := func(key string) string { return strings.TrimSpace(os.Getenv(prefix + "_" + key)) }
+	switch read("APP_STORE_CONNECT_ENABLED") {
+	case "false":
+		return adminAppConfig{id: id, displayName: displayName}, nil
+	case "", "true":
+	default:
+		return adminAppConfig{}, fmt.Errorf("%s App Store Connect enabled flag must be true or false", id)
+	}
 	privateKeyPEM, err := os.ReadFile(read("APP_STORE_CONNECT_PRIVATE_KEY_PATH"))
 	if err != nil {
 		return adminAppConfig{}, fmt.Errorf("read %s App Store Connect private key: %w", id, err)

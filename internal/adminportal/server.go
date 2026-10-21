@@ -101,11 +101,11 @@ var _ adminhttpapi.ServerInterface = (*adminHTTPServer)(nil)
 var configureAdminGinOnce sync.Once
 
 func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operations OperationStore, metrics MetricsReader, config Config, now func() time.Time) (*Server, error) {
-	if auth == nil || len(offers) == 0 || operations == nil || metrics == nil || len(config.PreviewSigningKey) < 32 || len(config.Apps) == 0 {
+	if auth == nil || operations == nil || metrics == nil || len(config.PreviewSigningKey) < 32 || len(config.Apps) == 0 {
 		return nil, errors.New("admin portal dependencies and a 32-byte preview key are required")
 	}
 	for _, app := range config.Apps {
-		if cleanID(app.ID) == "" || strings.TrimSpace(app.DisplayName) == "" || offers[app.ID] == nil {
+		if cleanID(app.ID) == "" || strings.TrimSpace(app.DisplayName) == "" {
 			return nil, errors.New("admin application registry is invalid")
 		}
 	}
@@ -172,8 +172,12 @@ func (server *Server) ListAdminApps(context *gin.Context) {
 func (server *Server) offerManager(writer http.ResponseWriter, rawAppID string) (string, OfferManager, bool) {
 	appID := cleanID(rawAppID)
 	manager := server.offers[appID]
-	if appID == "" || manager == nil {
+	if appID == "" || !slices.ContainsFunc(server.config.Apps, func(app AdminApp) bool { return app.ID == appID }) {
 		writeFailure(writer, http.StatusNotFound, "app_not_found", "未找到这个 App")
+		return "", nil, false
+	}
+	if manager == nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "offer_service_unavailable", "这个环境未配置 App Store Connect")
 		return "", nil, false
 	}
 	return appID, manager, true
