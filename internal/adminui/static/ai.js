@@ -33,7 +33,10 @@ function aiHome(){aiNavigate("home");ai.dirty=false;renderAI();}
 async function loadAI(){
   aiNavigate("home");const generation=ai.generation;
   if(!ai.rows.length)aiView().innerHTML='<p class="muted">正在同步功能与实际模型…</p>';
-  const data=await api("/api/v1/ai/health");if(generation!==ai.generation)return;
+  const data=await api("/api/v1/ai/health").catch(error=>{
+    if(error.status===503&&error.code==='ai_not_configured')return {operations:[],modelManagementUnavailable:true};
+    throw error;
+  });if(generation!==ai.generation)return;
   ai.data=data;ai.rows=data.operations||[];
   ai.rows.forEach(r=>{if(r.endpoint?.Id)ai.endpoints.set(r.endpoint.Id,{...ai.endpoints.get(r.endpoint.Id),endpoint:r.endpoint,syncedAt:r.syncedAt});});
   ai.screen="home";renderAI();
@@ -45,6 +48,10 @@ async function aiLoadEndpoints(generation){
 }
 function renderAI(){
   if(ai.screen!=="home")return;
+  if(ai.data.modelManagementUnavailable){
+    aiFrame('AI 管理','管理提示词、写作风格和朗读音色。',promptEntryCards()+'<p class="muted" role="status">此环境未配置模型管理身份，其他管理功能可以独立使用。</p>');
+    promptBindEntries();return;
+  }
   const tabs=[['functions','功能配置'],['endpoints','模型与接入点'],['history','变更记录']];
   let body=promptEntryCards()+`<div class="ai-tabs" role="tablist" aria-label="AI 管理区域">${tabs.map(([id,label])=>`<button role="tab" id="ai-${id}-tab" aria-controls="ai-content" aria-selected="${ai.tab===id}" tabindex="${ai.tab===id?0:-1}" data-ai-tab="${id}">${label}</button>`).join("")}</div><div id="ai-content" role="tabpanel" aria-labelledby="ai-${ai.tab}-tab">`;
   if(ai.tab==='functions'){

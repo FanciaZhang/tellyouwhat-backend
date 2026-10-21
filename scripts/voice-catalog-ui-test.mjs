@@ -22,11 +22,15 @@ const voice=(id,name,extra={})=>({id,name,description:'适合安静地听一篇�
 let current={version:'version-one',defaultVoiceID:'voice_one',voices:[voice('voice_one','小何 <script>',{billingClass:'standard',enabled:true,verification:proof}),voice('voice_two','Vivi')],createdAt:at,publishedAt:at};
 const initial=structuredClone(current),drafts=[],probes=new Map();
 let actualProbeCalls=0,probeHTTPCalls=0,publishCalls=0,firstProbeResponseLost=true;
+let isolatedAdmin=true;
 const base='/api/v1/journal/read-aloud/catalog';
 await page.route('**/api/**',async route=>{
  const request=route.request(),u=new URL(request.url());let data,status=200;
- if(u.pathname==='/api/v1/session'){status=401;data={error:{message:'fixture login'}};}
- else if(u.pathname==='/api/v1/ai/health')data={operations:[],writesEnabled:true};
+ if(u.pathname==='/api/v1/session'){if(isolatedAdmin)data={csrfToken:'fixture-csrf',user:{id:'fixture',displayName:'手记测试管理',role:'admin'}};else{status=401;data={error:{message:'fixture login'}};}}
+ else if(u.pathname==='/api/v1/apps')data={apps:[{id:'journal',displayName:'手记测试'}]};
+ else if(u.pathname==='/api/v1/apps/journal/offers'){status=503;data={error:{code:'offer_service_unavailable',message:'此环境未配置 App Store Connect'}};}
+ else if(u.pathname==='/api/v1/apps/journal/metrics/offers')data={metrics:[]};
+ else if(u.pathname==='/api/v1/ai/health'){if(isolatedAdmin){status=503;data={error:{code:'ai_not_configured',message:'尚未配置火山管理服务身份'}};}else data={operations:[],writesEnabled:true};}
  else if(u.pathname===base)data={current,writesEnabled:true,syncEnabled:true,probesEnabled:true};
  else if(u.pathname===base+'/sync')data={voices:[voice('voice_two','不要覆盖本机修改'),voice('voice_three','云舟')],issues:[],providerCount:2};
  else if(u.pathname===base+'/probe'){
@@ -66,6 +70,17 @@ async function geometry(){
 }
 try{
  await page.goto('http://127.0.0.1:'+server.address().port,{waitUntil:'networkidle'});
+ await page.getByRole('status').filter({hasText:'Offer 服务尚未启用'}).waitFor();
+ assert.equal(await page.locator('#auth').isVisible(),false);assert.equal(await page.locator('#new-offer').isDisabled(),true);
+ assert.equal(await page.locator('#offer-service').isVisible(),false);await geometry();
+ await capture('isolated-admin-offers-unavailable');
+ await page.locator('#ai-tab').click();await page.locator('[data-prompt-open="voices"]').waitFor();
+ assert.equal(await page.locator('[data-prompt-open="health"]').count(),0);
+ await geometry();await capture('isolated-admin-journal-management');
+ await page.locator('[data-prompt-open="voices"]').scrollIntoViewIfNeeded();await capture('isolated-admin-voice-entry');
+ await page.locator('[data-prompt-open="voices"]').click();await page.getByRole('heading',{name:'手记 · 朗读音色',exact:true}).waitFor();
+ assert.equal(await page.locator('#workspace').isVisible(),true);
+ isolatedAdmin=false;
  await page.evaluate(async()=>{state.user={id:'fixture',role:'admin'};state.csrf='fixture-csrf';window.reauthChecks=0;reauthenticate=async()=>window.reauthChecks++;$('#auth').classList.add('hidden');$('#workspace').classList.remove('hidden');$('#ai-section').classList.remove('hidden');$('#operations-section').classList.add('hidden');await loadAI();});
  await page.getByRole('button',{name:'手记 · 朗读音色',exact:false}).click();
  await page.getByRole('heading',{name:'手记 · 朗读音色',exact:true}).waitFor();

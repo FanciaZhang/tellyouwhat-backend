@@ -545,7 +545,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
 
     def enable_admin(self):
         values = {'PAYLOAD_ENCRYPTION_KEY': self.app['PAYLOAD_ENCRYPTION_KEY'],
-                  'ADMIN_PREVIEW_SIGNING_KEY': base64.b64encode(b's' * 32).decode().rstrip('=')}
+                  'ADMIN_PREVIEW_SIGNING_KEY': base64.b64encode(b's' * 32).decode().rstrip('='),
+                  **{key: self.app[key] for key in dev.admin.MODELS}}
         (self.folder / 'admin.env').write_text(''.join(k + '=' + v + '\n' for k, v in values.items()))
         body = (Path(__file__).resolve().parents[2] / dev.admin.OVERLAY).read_bytes()
         (self.folder / dev.admin.OVERLAY).write_bytes(body)
@@ -605,6 +606,15 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         (self.folder / dev.admin.OVERLAY).write_text('services: {admin: {privileged: true}}'); self.save()
         with self.assertRaisesRegex(OperationError, 'reviewed source'):
             dev.selection(self.runtime, self.source)
+
+    def test_admin_requires_the_existing_journal_models_before_deployment(self):
+        self.enable_journal(); self.enable_read_aloud(); self.enable_admin()
+        values = dev.read_environment(self.folder / 'admin.env')
+        for key in dev.admin.MODELS:
+            missing = {k: v for k, v in values.items() if k != key}
+            with self.assertRaises(OperationError): dev.admin.validate_config(missing, self.app)
+            with self.assertRaisesRegex(OperationError, 'model identifiers'):
+                dev.admin.validate_config({**values, key: 'ep-unselected-project'}, self.app)
 
     def test_admin_process_rejects_public_ports_production_credentials_and_simulator_mount(self):
         self.enable_journal(); self.enable_read_aloud(); self.enable_admin()

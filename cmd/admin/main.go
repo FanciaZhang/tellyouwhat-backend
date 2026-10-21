@@ -31,6 +31,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/offerdelivery"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformops"
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/prompteval"
@@ -150,12 +151,8 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	background = lifecycle.WithController(background, control)
-	promptDefaults, err := platformconfig.LoadPromptDefaults()
-	if err != nil {
-		return err
-	}
 	prompts := promptconfig.Store{DB: database}
-	promptCache, err := promptconfig.Start(background, prompts, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") })
+	promptCache, err := promptconfig.Start(background, prompts, configuration.promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") })
 	if err != nil {
 		return err
 	}
@@ -264,6 +261,7 @@ type config struct {
 	apps                                      []adminAppConfig
 	previewSigningKey                         []byte
 	writesEnabled                             bool
+	promptDefaults                            map[string]promptconfig.Policy
 }
 
 type adminAppConfig struct {
@@ -290,6 +288,7 @@ func loadConfig() (config, error) {
 		"health": {"HEALTH", "告你健康"}, "journal": {"JOURNAL", "告你手记"},
 	}
 	seen := map[string]bool{}
+	var promptApps []platformconfig.AppConfig
 	for _, id := range strings.Split(value("ADMIN_APPS", "health,journal"), ",") {
 		id = strings.TrimSpace(id)
 		definition, ok := definitions[id]
@@ -302,6 +301,11 @@ func loadConfig() (config, error) {
 			return config{}, err
 		}
 		configuration.apps = append(configuration.apps, app)
+		promptApps = append(promptApps, platformconfig.AppConfig{Registry: appregistry.App{ID: appregistry.AppID(id)}})
+	}
+	configuration.promptDefaults, err = platformconfig.LoadPromptDefaults(promptApps...)
+	if err != nil {
+		return config{}, fmt.Errorf("configure selected admin prompts: %w", err)
 	}
 	return configuration, nil
 }

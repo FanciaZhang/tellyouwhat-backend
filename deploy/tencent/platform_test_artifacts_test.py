@@ -191,9 +191,11 @@ class PlatformTestRecoveryTests(unittest.TestCase):
         contents = {name: name.encode() for name in names}
         payload = base64.b64encode(b'p' * 32).decode()
         contents['current/runtime.env'] = ('JOURNAL_TTS_ENABLED=true\nJOURNAL_TTS_API_KEY_FILE=' + artifacts.journal.KEY_FILE
-            + '\nJOURNAL_TTS_MONTHLY_CHARACTERS=10000\nJOURNAL_TTS_PREVIEW_DAILY_CHARACTERS=1000\nPAYLOAD_ENCRYPTION_KEY=' + payload + '\n').encode()
+            + '\nJOURNAL_TTS_MONTHLY_CHARACTERS=10000\nJOURNAL_TTS_PREVIEW_DAILY_CHARACTERS=1000\nPAYLOAD_ENCRYPTION_KEY=' + payload + '\n'
+            + ''.join(key + '=ep-journal-test\n' for key in sorted(artifacts.admin.MODELS))).encode()
         contents['current/admin.env'] = ('PAYLOAD_ENCRYPTION_KEY=' + payload + '\nADMIN_PREVIEW_SIGNING_KEY='
-            + base64.b64encode(b's' * 32).decode().rstrip('=') + '\n').encode()
+            + base64.b64encode(b's' * 32).decode().rstrip('=') + '\n'
+            + ''.join(key + '=ep-journal-test\n' for key in sorted(artifacts.admin.MODELS))).encode()
         for overlay in (artifacts.journal.READ_ALOUD_OVERLAY, artifacts.admin.OVERLAY):
             contents['current/' + overlay] = (Path(__file__).resolve().parents[2] / overlay).read_bytes()
         data = io.BytesIO()

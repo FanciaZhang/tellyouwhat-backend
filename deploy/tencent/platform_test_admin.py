@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import re
 import urllib.request
 
 from ops_common import OperationError, read_environment
@@ -11,6 +12,7 @@ import platform_test_journal as journal
 OVERLAY = 'compose.platform-admin-test.yaml'
 OVERLAY_SHA256 = 'd8b51b450846c7b28553ee05d98b0afcc8c607627e7b50b7d4dfab706683d51e'
 FILES = {OVERLAY: 32768, 'admin.env': 8192}
+MODELS = {'JOURNAL_ARK_LITE_MODEL_ID', 'JOURNAL_ARK_PRO_MODEL_ID', 'JOURNAL_VOICE_MODEL_ID'}
 KEY_FILE = '/journal-api-key.txt'
 FIXED = {'APP_ENV': 'development', 'ADMIN_PORT': '8082', 'ADMIN_APPS': 'journal',
          'ADMIN_RP_ID': journal.HOST, 'ADMIN_ORIGIN': 'https://' + journal.HOST,
@@ -24,8 +26,10 @@ def selected(folder):
 
 
 def validate_config(values, app):
-    if set(values) != {'PAYLOAD_ENCRYPTION_KEY', 'ADMIN_PREVIEW_SIGNING_KEY'}:
+    if set(values) != {'PAYLOAD_ENCRYPTION_KEY', 'ADMIN_PREVIEW_SIGNING_KEY'} | MODELS:
         raise OperationError('test admin cannot receive unrelated service credentials')
+    if any(not re.fullmatch('ep-[a-z0-9-]+', values[k]) or values[k] != app.get(k) for k in MODELS):
+        raise OperationError('test admin model identifiers must match the selected Journal configuration')
     try:
         payload = base64.b64decode(values['PAYLOAD_ENCRYPTION_KEY'], validate=True)
         preview = base64.b64decode(values['ADMIN_PREVIEW_SIGNING_KEY'] + '=', validate=True)
@@ -71,7 +75,7 @@ def verify(container, folder):
     host = container.get('HostConfig', {})
     if (not selected(folder) or config.get('User') != '65532:65532'
             or any(env.get(k) != v for k, v in expected.items())
-            or any(k.startswith(('HEALTH_', 'ALBUM_', 'ARK_', 'JOURNAL_')) and k not in FIXED and k != 'HEALTH_SCHEMA_MANIFEST_PATH' for k in env)
+            or any(k.startswith(('HEALTH_', 'ALBUM_', 'ARK_', 'JOURNAL_')) and k not in FIXED and k not in MODELS and k != 'HEALTH_SCHEMA_MANIFEST_PATH' for k in env)
             or len(mounts) != 1 or mounts[0].get('Source') != str(journal.PRIVATE_BASE / 'development/api-key.txt')
             or mounts[0].get('Destination') != KEY_FILE or mounts[0].get('Type') != 'bind' or mounts[0].get('RW') is not False
             or host.get('PortBindings') != {'8082/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18792'}]}

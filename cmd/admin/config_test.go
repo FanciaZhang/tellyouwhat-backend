@@ -21,6 +21,8 @@ func adminConfigFixture(t *testing.T) {
 		"HEALTH_APP_STORE_CONNECT_ENABLED": "false", "JOURNAL_APP_STORE_CONNECT_ENABLED": "false",
 		"HEALTH_APP_STORE_CONNECT_PRIVATE_KEY_PATH":  "/unavailable-health-key",
 		"JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY_PATH": "/unavailable-journal-key",
+		"JOURNAL_ARK_LITE_MODEL_ID":                  "ep-journal-lite", "JOURNAL_ARK_PRO_MODEL_ID": "ep-journal-pro",
+		"JOURNAL_VOICE_MODEL_ID": "ep-journal-voice",
 	} {
 		t.Setenv(key, value)
 	}
@@ -35,6 +37,38 @@ func TestAdminConfigSelectsJournalWithoutLoadingEitherAppleKey(t *testing.T) {
 	}
 	if len(configuration.apps) != 1 || configuration.apps[0].id != "journal" || configuration.apps[0].signingKey != nil {
 		t.Fatal("unselected app or disabled App Store Connect was initialized")
+	}
+	if len(configuration.promptDefaults) != 1 || configuration.promptDefaults["journal"].Journal == nil {
+		t.Fatal("unselected prompt scopes were loaded")
+	}
+}
+
+func TestAdminConfigRejectsMissingOrInvalidSelectedPromptModels(t *testing.T) {
+	for name, value := range map[string]string{
+		"JOURNAL_ARK_LITE_MODEL_ID": "", "JOURNAL_ARK_PRO_MODEL_ID": "", "JOURNAL_VOICE_MODEL_ID": "invalid model",
+	} {
+		t.Run(name, func(t *testing.T) {
+			adminConfigFixture(t)
+			t.Setenv(name, value)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("invalid prompt dependencies were deferred until after database initialization")
+			}
+		})
+	}
+}
+
+func TestHealthOnlyAdminDoesNotRequireUnselectedJournalModels(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("ADMIN_APPS", "health")
+	for _, name := range []string{"JOURNAL_ARK_LITE_MODEL_ID", "JOURNAL_ARK_PRO_MODEL_ID", "JOURNAL_VOICE_MODEL_ID"} {
+		t.Setenv(name, "")
+	}
+	configuration, err := loadConfig()
+	if err != nil || len(configuration.promptDefaults) == 0 {
+		t.Fatal("Health-only admin still requires Journal configuration", err)
+	}
+	if _, present := configuration.promptDefaults["journal"]; present {
+		t.Fatal("Journal was not selected")
 	}
 }
 

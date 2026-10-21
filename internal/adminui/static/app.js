@@ -196,7 +196,10 @@ async function loadOffers() {
     $('#offers').innerHTML='<article class="card empty">当前账号没有可管理的 App。</article>';return;
   }
   const [data,metricData]=await Promise.all([
-    api(`/api/v1/apps/${encodeURIComponent(app)}/offers`),
+    api(`/api/v1/apps/${encodeURIComponent(app)}/offers`).catch(error=>{
+      if(error.status===503&&error.code==='offer_service_unavailable')return {serviceUnavailable:true};
+      throw error;
+    }),
     api(`/api/v1/apps/${encodeURIComponent(app)}/metrics/offers`).catch(()=>null)
   ]);
   if(generation!==state.offerLoadGeneration||app!==state.currentApp)return;
@@ -207,6 +210,11 @@ async function loadOffers() {
 function renderOffers(){
   const data=state.offerData,metricData=state.offerMetrics;
   if(!data)return;
+  $('#offer-service').classList.toggle('hidden',!!data.serviceUnavailable);
+  if(data.serviceUnavailable){
+    state.offerCreationAllowed=false;syncPersistentControls();
+    $('#offers').innerHTML='<article class="card empty" role="status">此环境的 Offer 服务尚未启用。可以使用其他管理功能。</article>';return;
+  }
   const environment=$('#offer-environment').value;
   const offers=Array.isArray(data.offers)?data.offers:[];
   const rows=metricData?.metrics||[];
