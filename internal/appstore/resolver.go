@@ -72,7 +72,8 @@ func (resolver *SubscriptionResolver) Resolve(
 	if err != nil {
 		return SubscriptionState{}, err
 	}
-	statuses, err := resolver.client.CurrentTransactions(ctx, submitted.TransactionID)
+	// Query the stable subscription chain; Sandbox can reject a renewal ID.
+	statuses, err := resolver.client.CurrentTransactions(ctx, submitted.OriginalTransactionID)
 	if err != nil {
 		if errors.Is(err, ErrTransactionNotFound) {
 			return SubscriptionState{}, ErrTransactionNotFound

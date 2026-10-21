@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-21",
+  "problem": "Apple Sandbox status lookup returns 5000001 for a renewal transaction, but succeeds for its original subscription transaction",
+  "real_apple_readonly_checks": {
+    "transaction_info_http_status": 200,
+    "latest_transaction_status_http_status": 500,
+    "latest_transaction_error_code": 5000001,
+    "original_transaction_status_http_status": 200,
+    "returned_subscription_status": 1,
+    "sandbox_bundle": "cn.tellyouwhat.journalapp.dev"
+  },
+  "fix": "Query the original transaction ID from the verified client JWS; retain verification of the current Apple-signed transaction, original-chain matching, expiry, revocation, upgrade and grace handling",
+  "focused_go_packages_passed": [
+    "internal/appstore",
+    "internal/entitlement",
+    "internal/gateway"
+  ],
+  "deployment_verified": false,
+  "raw_transaction_identifiers_omitted": true
+}
