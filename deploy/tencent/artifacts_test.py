@@ -7,7 +7,7 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from ops_artifacts import GRACE_SECONDS, development_deploy, plan_cleanup, register
+from ops_artifacts import GRACE_SECONDS, development_deploy, plan_cleanup, register, inspect_host, cleanup
 from ops_common import OperationError
 
 
@@ -92,6 +92,88 @@ class ArtifactRetentionTests(unittest.TestCase):
             "previous": {"paths": [str(versions[4])]}, "lease": {"expires_at": self.now + 1, "paths": [str(versions[3])]}}))
         plan = plan_cleanup(self.root, self.state, [], [], now=self.now)
         self.assertEqual({p["path"] for p in plan["files"]}, {str(p) for p in versions[:3]})
+
+    def test_time_or_distinct_version_limit_and_protected_exceptions(self):
+        images = []
+        for revision in range(7):
+            for service in ('gateway', 'worker'):
+                image = self.image(f'{service}-{revision}', [f'tellyouwhat-platform-test-{service}:r{revision}'])
+                image['Created'] = datetime.fromtimestamp(self.now - 60 - revision, timezone.utc).isoformat()
+                images.append(image)
+        # Current, previous, stopped-container and lease protections override rank.
+        register(Mock(root=self.root, state=self.root / '.operations'), 'platform-test',
+                 images=['tellyouwhat-platform-test-gateway:r6'], source='current')
+        containers = [{'Image': 'sha256:worker-6'}]
+        plan = plan_cleanup(self.root, self.state, containers, images, now=self.now)
+        self.assertEqual({i['id'] for i in plan['images']}, {'sha256:gateway-5', 'sha256:worker-5'})
+        images[0]['Created'] = datetime.fromtimestamp(self.now - GRACE_SECONDS, timezone.utc).isoformat()
+        images[1]['Created'] = images[0]['Created']
+        selected = {i['id'] for i in plan_cleanup(self.root, self.state, containers, images, now=self.now)['images']}
+        self.assertIn('sha256:gateway-0', selected)
+
+    def test_recent_release_directories_over_five_are_expired(self):
+        folders = [self.root / '.platform-test/releases' / (str(i) * 40) for i in range(7)]
+        for i, folder in enumerate(folders):
+            self.file(folder / 'compose.env', age=60 + i)
+            os.utime(folder, (self.now - 60 - i,) * 2)
+        plan = plan_cleanup(self.root, self.state, [], [], owners=['platform-test'], now=self.now)
+        self.assertEqual({f['path'] for f in plan['files']}, {str(p) for p in folders[5:]})
+
+    def test_untagged_sources_share_version_rank_and_keep_unknown_images(self):
+        images = []
+        for revision in range(6):
+            tagged = self.image(str(revision), [f'tellyouwhat-platform-test-gateway:r{revision}'])
+            tagged['Created'] = datetime.fromtimestamp(self.now - 60 - revision, timezone.utc).isoformat()
+            tagged['Config'] = {'Labels': {'cn.tellyouwhat.source-tar-sha256': str(revision)}}
+            images.extend([tagged, {**tagged, 'Id': f'untagged-{revision}', 'RepoTags': []}])
+        unknown = self.image('unknown')
+        unknown['RepoTags'] = []
+        images.append(unknown)
+        plan = plan_cleanup(self.root, self.state, [], images, owners=['platform-test'], now=self.now)
+        self.assertEqual({i['id'] for i in plan['images']}, {'sha256:5', 'untagged-5'})
+
+    def test_build_version_limit_removes_only_exclusive_ancestry_child_first(self):
+        shared = {**self.image('shared'), 'RepoTags': []}
+        private = {**self.image('private'), 'RepoTags': [], 'Parent': shared['Id']}
+        builds = [{**self.image(f'build-{i}'), 'RepoTags': [], 'build_owner': 'platform-test',
+                   'Parent': private['Id'] if i == 5 else shared['Id'],
+                   'Created': datetime.fromtimestamp(self.now - 60 - i, timezone.utc).isoformat()} for i in range(6)]
+        plan = plan_cleanup(self.root, self.state, [], [shared, private, *builds], owners=['platform-test'], now=self.now)
+        self.assertEqual([i['id'] for i in plan['images']], ['sha256:build-5', 'sha256:private'])
+        containers = [{'Image': private['Id']}]
+        plan = plan_cleanup(self.root, self.state, containers, [shared, private, *builds], owners=['platform-test'], now=self.now)
+        self.assertEqual([i['id'] for i in plan['images']], ['sha256:build-5'])
+
+    def test_old_legacy_lifecycle_residue_is_full_maintenance_only(self):
+        legacy = {**self.image('legacy'), 'RepoTags': [], 'Config': {'Labels': {'cn.tellyouwhat.lifecycle': '1'}}}
+        self.assertEqual([i['id'] for i in plan_cleanup(self.root, self.state, [], [legacy], now=self.now)['images']], ['sha256:legacy'])
+        self.assertFalse(plan_cleanup(self.root, self.state, [], [legacy], owners=['platform-test'], now=self.now)['images'])
+        legacy['RepoDigests'] = ['other@sha256:keep']
+        self.assertFalse(plan_cleanup(self.root, self.state, [], [legacy], now=self.now)['images'])
+
+    def test_inventory_includes_intermediates_and_identifies_compiler_owner(self):
+        image = {**self.image('compiler'), 'RepoTags': []}
+        runtime = Mock()
+        runtime.execute.side_effect = [b'', b'compiler', json.dumps([image]).encode(),
+            b'for service in gateway worker admin migrate maintenance servicecheck; do go build -o /out/${service} ./cmd/${service}; done']
+        containers, images = inspect_host(runtime)
+        self.assertEqual(runtime.execute.call_args_list[1].args[1], ['docker', 'image', 'ls', '-aq', '--no-trunc'])
+        self.assertEqual(images[0]['build_owner'], 'platform-test')
+
+    def test_deletion_rechecks_aliases_and_never_forces_or_prunes_parents(self):
+        image = {**self.image('old'), 'RepoTags': []}
+        plan = {'files': [], 'images': [{'owner': 'platform-test', 'id': image['Id'], 'tags': []}]}
+        for aliases in ([], ['foreign:new']):
+            runtime = Mock(root=self.root)
+            runtime.execute.return_value = json.dumps([{**image, 'RepoTags': aliases}]).encode()
+            runtime.record.side_effect = lambda operation, **kw: kw
+            with patch('ops_artifacts.inspect_host', return_value=([], [image])), \
+                    patch('ops_artifacts.read_state', return_value=self.state), \
+                    patch('ops_artifacts.plan_cleanup', return_value=plan):
+                result = cleanup(runtime, 'platform-test')
+            removals = [c.args[1] for c in runtime.execute.call_args_list if c.args[0] == 'artifacts-remove-image']
+            self.assertEqual(removals, [] if aliases else [['docker', 'image', 'rm', '--no-prune', image['Id']]])
+            self.assertTrue(result['passed'])
 
     def deployment_runtime(self):
         runtime = Mock()
