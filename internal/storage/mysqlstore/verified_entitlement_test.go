@@ -135,6 +135,66 @@ func TestMySQLConcurrentVerifiedPromotionsChooseOnePurchase(t *testing.T) {
 	}
 }
 
+func TestMySQLExpiredSandboxReplacementIsAtomicAndPreservesProduction(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx := context.Background()
+	keys := mysqlstore.NewKeyRepository(db, "health")
+	store := mysqlstore.NewEntitlementRepository(db, "health")
+	key := attestation.RegisteredKey{KeyID: "sandbox-replacement", DeviceID: uuid.NewString(), PublicKey: []byte("fixture"), Environment: "production", Receipt: []byte("fixture")}
+	if err := keys.Register(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	paid := entitlement.Record{KeyID: key.KeyID, TransactionID: "paid", Environment: "production", ExpiresAt: now.Add(30 * 24 * time.Hour)}
+	old := entitlement.Record{KeyID: key.KeyID, TransactionID: "old-test", Environment: "sandbox", ExpiresAt: now.Add(-time.Hour)}
+	for _, record := range []entitlement.Record{paid, old} {
+		if err := store.UpsertVerified(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertState := func(want entitlement.Record) {
+		t.Helper()
+		got, ok, err := store.Get(ctx, key.KeyID)
+		bound, keyErr := keys.Get(ctx, key.KeyID)
+		if err != nil || keyErr != nil || !ok || got.TransactionID != want.TransactionID || bound.TransactionID != want.TransactionID || !got.ExpiresAt.Equal(want.ExpiresAt) {
+			t.Fatalf("non-atomic replacement: %+v %v %v", got, err, keyErr)
+		}
+		var productionID, sandboxID string
+		if err := db.QueryRow(`SELECT production_transaction_id, sandbox_transaction_id FROM app_attest_keys WHERE app_id='health' AND key_id=?`, key.KeyID).Scan(&productionID, &sandboxID); err != nil || productionID != paid.TransactionID || sandboxID != want.TransactionID {
+			t.Fatalf("incorrect anchors: %s %s %v", productionID, sandboxID, err)
+		}
+	}
+	next := old
+	next.TransactionID, next.ExpiresAt = "new-test", now.Add(time.Hour)
+	broken := next
+	broken.OfferTransactionID, broken.OfferIdentifier = "offer", strings.Repeat("x", 1024)
+	broken.OfferType, broken.OfferSignedAt = 3, now
+	if err := store.UpsertVerified(ctx, broken); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	assertState(old)
+	if err := store.UpsertVerified(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	assertState(next)
+	other := next
+	other.TransactionID = "another-test"
+	if err := store.UpsertVerified(ctx, other); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
+		t.Fatalf("active purchase replaced: %v", err)
+	}
+	if _, err := store.ApplyNotification(ctx, entitlement.NotificationState{NotificationUUID: uuid.NewString(), OriginalTransactionID: old.TransactionID, Environment: "sandbox", ExpiresAt: now.Add(2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	assertState(next)
+	for _, want := range []entitlement.Record{paid, next} {
+		var id string
+		var expiry time.Time
+		if err := db.QueryRow(`SELECT original_transaction_id, expires_at FROM managed_entitlement_environments WHERE app_id='health' AND key_id=? AND environment=?`, key.KeyID, want.Environment).Scan(&id, &expiry); err != nil || id != want.TransactionID || !expiry.Equal(want.ExpiresAt) {
+			t.Fatalf("verified environment changed: %s %v %v", id, expiry, err)
+		}
+	}
+}
+
 func TestMySQLVerifiedSubscriptionEnvironmentRoundTrip(t *testing.T) {
 	for _, first := range []string{"sandbox", "production"} {
 		t.Run(first, func(t *testing.T) {

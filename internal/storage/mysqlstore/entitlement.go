@@ -125,12 +125,12 @@ func (repository *EntitlementRepository) UpsertVerified(ctx context.Context, rec
 		return err
 	}
 	var existing entitlement.Record
-	err = transaction.QueryRowContext(ctx, `SELECT original_transaction_id, environment FROM managed_entitlements
-		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&existing.TransactionID, &existing.Environment)
+	err = transaction.QueryRowContext(ctx, `SELECT original_transaction_id, environment, expires_at FROM managed_entitlements
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&existing.TransactionID, &existing.Environment, &existing.ExpiresAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	bindings, allowed := entitlement.BindVerifiedTransaction(boundID, existing, record, bindings)
+	bindings, allowed := entitlement.BindVerifiedTransaction(boundID, existing, record, bindings, time.Now())
 	if !allowed {
 		return entitlement.ErrSubscriptionBindingConflict
 	}

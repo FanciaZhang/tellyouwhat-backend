@@ -36,8 +36,14 @@ An attested device can synchronize an active, Apple-verified sandbox or producti
 subscription. The current entitlement and active transaction binding switch
 atomically. Each environment retains its original transaction binding, so a
 production → sandbox → production round trip restores the same production
-purchase. A different purchase in an already bound environment still returns
-`subscription_binding_conflict`.
+purchase. A different production purchase, or a different sandbox purchase while
+the bound sandbox entitlement is active, returns `subscription_binding_conflict`.
+An expired, persisted sandbox entitlement can be replaced atomically by a new
+Apple-verified active sandbox purchase, supporting tester account changes.
+Unknown expiry, inconsistent anchors, and replacement via a production record
+remain denied. Existing production anchors and verified production expiry are
+retained; late notifications for the replaced sandbox chain cannot update its
+replacement.
 
 Existing verified entitlements initialize the environment anchors on their next
 successful synchronization. App Store notifications refresh matching active

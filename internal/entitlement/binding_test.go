@@ -27,7 +27,7 @@ func TestVerifiedBindingTransitionPolicy(t *testing.T) {
 		{"empty transaction", "", "", "", "", "production", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, got := BindVerifiedTransaction(test.bound, Record{TransactionID: test.existingID, Environment: test.existingEnv}, Record{TransactionID: test.incomingID, Environment: test.incomingEnv}, VerifiedTransactionBindings{})
+			_, got := BindVerifiedTransaction(test.bound, Record{TransactionID: test.existingID, Environment: test.existingEnv}, Record{TransactionID: test.incomingID, Environment: test.incomingEnv}, VerifiedTransactionBindings{}, time.Now())
 			if got != test.allowed {
 				t.Fatalf("allowed=%v, want %v", got, test.allowed)
 			}
@@ -91,20 +91,54 @@ func TestVerifiedBindingRetainsBothEnvironments(t *testing.T) {
 			}
 			for _, env := range []string{first, other, first, other} {
 				incoming := Record{TransactionID: env + "-purchase", Environment: env}
-				next, allowed := BindVerifiedTransaction(bound, existing, incoming, bindings)
+				next, allowed := BindVerifiedTransaction(bound, existing, incoming, bindings, time.Now())
 				if !allowed {
 					t.Fatalf("switch to %s rejected", env)
 				}
 				bindings, bound, existing = next, incoming.TransactionID, incoming
 			}
 			for _, env := range []string{"production", "sandbox"} {
-				if _, allowed := BindVerifiedTransaction(bound, existing, Record{TransactionID: "other", Environment: env}, bindings); allowed {
+				if _, allowed := BindVerifiedTransaction(bound, existing, Record{TransactionID: "other", Environment: env}, bindings, time.Now()); allowed {
 					t.Fatalf("switching environments replaced %s purchase", env)
 				}
 			}
 		})
 	}
-	if _, allowed := BindVerifiedTransaction("paid", Record{TransactionID: "paid", Environment: "production"}, Record{TransactionID: "test", Environment: "sandbox"}, VerifiedTransactionBindings{ProductionID: "other"}); allowed {
+	if _, allowed := BindVerifiedTransaction("paid", Record{TransactionID: "paid", Environment: "production"}, Record{TransactionID: "test", Environment: "sandbox"}, VerifiedTransactionBindings{ProductionID: "other"}, time.Now()); allowed {
 		t.Fatal("inconsistent stored anchor accepted")
+	}
+}
+
+func TestVerifiedSandboxAccountReplacementRequiresExpiredEvidence(t *testing.T) {
+	now := time.Date(2026, 10, 21, 14, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name, environment    string
+		oldExpiry, newExpiry time.Time
+		anchor               string
+		allowed              bool
+	}{
+		{"expired sandbox", "sandbox", now.Add(-time.Second), now.Add(time.Hour), "old", true},
+		{"at expiry", "sandbox", now, now.Add(time.Hour), "old", true},
+		{"still active", "sandbox", now.Add(time.Second), now.Add(time.Hour), "old", false},
+		{"missing expiry", "sandbox", time.Time{}, now.Add(time.Hour), "old", false},
+		{"new expired", "sandbox", now.Add(-time.Hour), now, "old", false},
+		{"mismatched anchor", "sandbox", now.Add(-time.Hour), now.Add(time.Hour), "other", false},
+		{"expired production", "production", now.Add(-time.Hour), now.Add(time.Hour), "old", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bindings := VerifiedTransactionBindings{ProductionID: "paid", SandboxID: test.anchor}
+			if test.environment == "production" {
+				bindings.ProductionID = test.anchor
+			}
+			next, allowed := BindVerifiedTransaction("old",
+				Record{TransactionID: "old", Environment: test.environment, ExpiresAt: test.oldExpiry},
+				Record{TransactionID: "new", Environment: test.environment, ExpiresAt: test.newExpiry}, bindings, now)
+			if allowed != test.allowed {
+				t.Fatalf("allowed=%v, want %v", allowed, test.allowed)
+			}
+			if allowed && (next.SandboxID != "new" || next.ProductionID != "paid") {
+				t.Fatalf("lost environment binding: %+v", next)
+			}
+		})
 	}
 }
