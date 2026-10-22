@@ -1,6 +1,7 @@
 """Check live dependencies and the freshness of scheduled operations."""
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
@@ -8,6 +9,26 @@ import time
 
 from release import probe, readiness_checks
 from ops_common import OperationError
+
+
+def recent_consent_failures(runtime, slot):
+    from blue_green import compose
+    container = runtime.execute("health-gateway-container", compose(runtime, slot, "ps", "--quiet", "gateway"), timeout=10).decode().strip()
+    if not re.fullmatch(r"[a-f0-9]{12,64}", container):
+        raise OperationError("active gateway container is unavailable")
+    lines = runtime.execute("health-consent-requests", ["docker", "logs", "--since", "5m", "--tail", "5000", container], timeout=10).splitlines()
+    if len(lines) >= 5000:
+        raise OperationError("API log window exceeds the bounded health scan")
+    failed = set()
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if (isinstance(event, dict) and event.get("path") == "/v1/privacy/consents"
+                and isinstance(event.get("status"), int) and event["status"] >= 500):
+            failed.add(event.get("app_id"))
+    return failed
 
 
 def backup_valid(runtime, record):
@@ -48,6 +69,14 @@ def health(runtime):
     for name, *request in readiness_checks(runtime.config, ports):
         passed = probe(*request)
         services[name] = services.get(name, True) and passed
+    if deployment:
+        try:
+            failed_apps = recent_consent_failures(runtime, deployment["current"])
+        except (OperationError, OSError, ValueError):
+            failed_apps = {"health", "journal", "birthday"}
+        for app in failed_apps:
+            if app and app + "_gateway" in services:
+                services[app + "_gateway"] = False
     checks.extend({"name": name, "passed": passed} for name, passed in services.items())
     disk = shutil.disk_usage(runtime.root)
     checks.append({"name": "disk_space", "passed": disk.free >= max(2 * 1024**3, disk.total * 0.15),

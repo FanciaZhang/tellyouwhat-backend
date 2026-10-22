@@ -6,8 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ops_common import Runtime
-from ops_health import health, report_health
+from ops_common import Runtime, OperationError
+from ops_health import health, report_health, recent_consent_failures
 from ops_backup import file_digest, manifest_signature
 
 
@@ -107,6 +107,33 @@ class OperationalHealthTests(unittest.TestCase):
         self.assertEqual(set(payload), {"checkedAt", "checks"})
         self.assertNotIn(".env", json.dumps(payload))
         self.assertEqual(execute.call_args.args[1][-2:], ["adminctl", "operations-health"])
+
+    def test_recent_consent_failures_are_scoped_to_the_active_gateway(self):
+        events = b'non-json startup line\n' + b'\n'.join(json.dumps(value).encode() for value in [
+            {"path": "/v1/privacy/consents", "app_id": "health", "status": 503},
+            {"path": "/v1/privacy/consents", "app_id": "journal", "status": 200},
+            {"path": "/readyz", "app_id": "journal", "status": 503},
+        ])
+        with patch('blue_green.compose', return_value=['selected-slot']), patch.object(
+                self.runtime, 'execute', side_effect=[b'a' * 64, events]) as execute:
+            self.assertEqual(recent_consent_failures(self.runtime, {}), {'health'})
+        self.assertEqual(execute.call_args.args[1], ['docker', 'logs', '--since', '5m', '--tail', '5000', 'a' * 64])
+
+    def test_unavailable_or_truncated_request_logs_do_not_pass(self):
+        for outputs in ([b''], [b'a' * 64, b'\n' * 5000]):
+            with self.subTest(outputs=bool(outputs[0])), patch('blue_green.compose', return_value=[]), patch.object(
+                    self.runtime, 'execute', side_effect=outputs), self.assertRaises(OperationError):
+                recent_consent_failures(self.runtime, {})
+
+    def test_consent_outage_fails_the_existing_service_alert(self):
+        self.runtime.record('deployment_health', passed=True)
+        with patch('blue_green.read_state', return_value={'phase': 'STABLE', 'current': {}}), patch(
+                'ops_health.probe', return_value=True), patch('ops_health.recent_consent_failures', return_value={'health'}):
+            result = health(self.runtime)
+        self.assertFalse(result['passed'])
+        checks = {c['name']: c['passed'] for c in result['checks']}
+        self.assertFalse(checks['health_gateway'])
+        self.assertTrue(checks['journal_gateway'])
 
 
 if __name__ == "__main__":

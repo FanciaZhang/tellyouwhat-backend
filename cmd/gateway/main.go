@@ -592,6 +592,15 @@ func buildAppHandler(
 	default:
 		return nil, errors.New("unsupported app runtime")
 	}
+	if repository, ok := storage.privacy.(*mysqlstore.PrivacyRepository); ok {
+		base := dependencies.Readiness
+		dependencies.Readiness = gateway.ReadinessFunc(func(ctx context.Context) error {
+			if err := base.Ready(ctx); err != nil {
+				return err
+			}
+			return repository.CheckConsentScopes(ctx, dependencies.AllowedConsentScopes)
+		})
+	}
 	return gateway.New(dependencies).Router(), nil
 }
 
