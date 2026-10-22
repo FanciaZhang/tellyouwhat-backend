@@ -19,6 +19,7 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	expected = append(expected, "0043_album_deletion_storage_fence.sql", "0044_album_deletion_video_jobs.sql", "0045_album_deletion_original_checks.sql", "0046_album_live_pair_copy_receipts.sql", "0047_album_deletion_live_pair_checks.sql", "0048_album_deletion_photo_checks.sql", "0049_album_direct_upload_evidence.sql", "0050_album_live_pair_multiparts.sql", "0051_album_live_multipart_reconciliation.sql", "0052_album_deletion_multipart_checks.sql", "0053_album_deletion_media_quiescence.sql", "0054_album_account_object_purges.sql", "0055_album_account_media_settlement.sql", "0056_album_account_access_erasure.sql", "0057_album_account_media_erasure_schedule.sql", "0058_album_storekit_account_token.sql", "0059_album_deletion_subscription_jobs.sql", "0060_album_deletion_ledger.sql", "0061_album_recovery_quarantine.sql", "0062_album_subscription_completion_receipt.sql")
 	expected = append(expected, "0063_album_account_record_erasure.sql")
 	expected = append(expected, "0064_album_identity_retirement.sql", "0065_journal_illustration_jobs.sql")
+	expected = append(expected, "0066_privacy_consent_scopes.sql")
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}

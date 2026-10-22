@@ -69,7 +69,7 @@ func TestMySQLHealthConsentScopeMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// This is the complete seven-scope batch sent by current Health clients.
+	// Published clients before guardian consent send this seven-scope batch.
 	currentConsents := []privacy.Consent{
 		{Scope: privacy.AdultScope, DocumentVersion: privacy.GeneralDocumentVersion, Granted: false},
 		{Scope: privacy.Age14PlusScope, DocumentVersion: privacy.HealthGeneralDocumentVersion, Granted: true},
@@ -130,6 +130,107 @@ func TestMySQLHealthConsentScopeMigration(t *testing.T) {
 		}
 	}
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != 13 {
+		t.Fatalf("migration replay changed existing consents: count=%d err=%v", count, err)
+	}
+}
+
+func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, `ALTER TABLE privacy_consents
+		DROP CHECK privacy_consents_scope_chk,
+		ADD CONSTRAINT privacy_consents_scope_chk CHECK (scope IN
+		('adult', 'age_14_plus', 'privacy_and_terms', 'lifetime_byok',
+		'managed_subscription', 'free_managed_recognition', 'sensitive_health_ai'))`); err != nil {
+		t.Fatal(err)
+	}
+	const migration = "0066_privacy_consent_scopes.sql"
+	if _, err := db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE name = ?`, migration); err != nil {
+		t.Fatal(err)
+	}
+	principal := attestation.Principal{AppID: "health", KeyID: "guardian-consent", DeviceID: "00000000-0000-4000-8000-000000000083"}
+	journal := principal
+	journal.AppID = "journal"
+	for _, value := range []attestation.Principal{principal, journal} {
+		if err := mysqlstore.NewKeyRepository(db, value.AppID).Register(ctx, attestation.RegisteredKey{
+			KeyID: value.KeyID, DeviceID: value.DeviceID, PublicKey: []byte("fixture"),
+			Environment: "production", Receipt: []byte("fixture"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository := mysqlstore.NewPrivacyRepository(db, "health")
+	service := privacy.NewService(repository, nil, nil, time.Now)
+	consents := []privacy.Consent{
+		{Scope: privacy.AdultScope, DocumentVersion: privacy.GeneralDocumentVersion},
+		{Scope: privacy.Age14PlusScope, DocumentVersion: privacy.HealthGeneralDocumentVersion},
+		{Scope: privacy.GuardianConsentScope, DocumentVersion: privacy.HealthCurrentDocumentVersion},
+		{Scope: privacy.PrivacyTermsScope, DocumentVersion: privacy.HealthCurrentDocumentVersion, Granted: true},
+		{Scope: privacy.LifetimeBYOKScope, DocumentVersion: privacy.AIDocumentVersion},
+		{Scope: privacy.ManagedAIScope, DocumentVersion: privacy.AIDocumentVersion, Granted: true},
+		{Scope: privacy.FreeRecognitionScope, DocumentVersion: privacy.AIDocumentVersion},
+		{Scope: privacy.SensitiveHealthScope, DocumentVersion: privacy.AIDocumentVersion, Granted: true},
+	}
+	_, err := service.RecordConsents(ctx, principal, consents)
+	var constraintError *mysql.MySQLError
+	if !errors.As(err, &constraintError) || constraintError.Number != 3819 {
+		t.Fatalf("expected the production guardian scope rejection, got %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected batch was partially saved: count=%d err=%v", count, err)
+	}
+	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	for _, granted := range []bool{false, true} {
+		consents[2].Granted = granted
+		if _, err := service.RecordConsents(ctx, principal, consents); err != nil {
+			t.Fatalf("guardian granted=%v failed after migration: %v", granted, err)
+		}
+		var stored bool
+		if err := db.QueryRowContext(ctx, `SELECT granted FROM privacy_consents
+			WHERE app_id='health' AND key_id=? AND scope='guardian_consent'`, principal.KeyID).Scan(&stored); err != nil || stored != granted {
+			t.Fatalf("guardian state changed: got=%v want=%v err=%v", stored, granted, err)
+		}
+		allowed, err := service.HasRequiredConsents(ctx, principal, []string{privacy.HealthEligibilityScope, privacy.ManagedAIScope, privacy.SensitiveHealthScope})
+		if err != nil || !allowed {
+			t.Fatalf("complete consent batch denied: allowed=%v err=%v", allowed, err)
+		}
+	}
+	consents[3].Granted = false
+	if _, err := service.RecordConsents(ctx, principal, consents); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := service.HasRequiredConsents(ctx, principal, []string{privacy.HealthEligibilityScope}); err != nil || allowed {
+		t.Fatalf("guardian consent replaced revoked general consent: allowed=%v err=%v", allowed, err)
+	}
+	journalService := privacy.NewService(mysqlstore.NewPrivacyRepository(db, "journal"), nil, nil, time.Now)
+	if _, err := journalService.RecordConsents(ctx, journal, consents[2:3]); !errors.Is(err, privacy.ErrInvalidConsent) {
+		t.Fatalf("Health guardian consent crossed the app boundary: %v", err)
+	}
+	illustration := []privacy.Consent{{Scope: privacy.JournalIllustrationScope, DocumentVersion: privacy.JournalIllustrationDocumentVersion, Granted: true}}
+	if _, err := journalService.RecordConsents(ctx, journal, illustration); err != nil {
+		t.Fatalf("existing Journal contract scope rejected: %v", err)
+	}
+	if _, err := service.RecordConsents(ctx, principal, illustration); !errors.Is(err, privacy.ErrInvalidConsent) {
+		t.Fatalf("Journal illustration consent crossed the app boundary: %v", err)
+	}
+	if err := repository.RecordConsents(ctx, []privacy.Record{{KeyID: principal.KeyID, DeviceID: principal.DeviceID,
+		Scope: "unknown_scope", DocumentVersion: privacy.AIDocumentVersion, RecordedAt: time.Now()}}); err == nil {
+		t.Fatal("migration removed the database scope allowlist")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE name = ?`, migration); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := migrations.Run(ctx, db); err != nil {
+			t.Fatalf("migration checkpoint recovery failed: %v", err)
+		}
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != 9 {
 		t.Fatalf("migration replay changed existing consents: count=%d err=%v", count, err)
 	}
 }
