@@ -19,7 +19,7 @@ from ops_backup import create_backup, verify_backup
 from ops_artifacts import cleanup
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "test-operations.json", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
