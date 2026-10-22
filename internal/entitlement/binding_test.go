@@ -109,7 +109,7 @@ func TestVerifiedBindingRetainsBothEnvironments(t *testing.T) {
 	}
 }
 
-func TestVerifiedSandboxAccountReplacementRequiresExpiredEvidence(t *testing.T) {
+func TestVerifiedSandboxAccountReplacementRequiresVerifiedActivePurchase(t *testing.T) {
 	now := time.Date(2026, 10, 21, 14, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
 		name, environment    string
@@ -119,7 +119,7 @@ func TestVerifiedSandboxAccountReplacementRequiresExpiredEvidence(t *testing.T) 
 	}{
 		{"expired sandbox", "sandbox", now.Add(-time.Second), now.Add(time.Hour), "old", true},
 		{"at expiry", "sandbox", now, now.Add(time.Hour), "old", true},
-		{"still active", "sandbox", now.Add(time.Second), now.Add(time.Hour), "old", false},
+		{"old account still renewing", "sandbox", now.Add(time.Hour), now.Add(time.Minute), "old", true},
 		{"missing expiry", "sandbox", time.Time{}, now.Add(time.Hour), "old", false},
 		{"new expired", "sandbox", now.Add(-time.Hour), now, "old", false},
 		{"mismatched anchor", "sandbox", now.Add(-time.Hour), now.Add(time.Hour), "other", false},

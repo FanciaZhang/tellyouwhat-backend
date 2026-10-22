@@ -135,7 +135,7 @@ func TestMySQLConcurrentVerifiedPromotionsChooseOnePurchase(t *testing.T) {
 	}
 }
 
-func TestMySQLExpiredSandboxReplacementIsAtomicAndPreservesProduction(t *testing.T) {
+func TestMySQLSandboxAccountReplacementIsAtomicAndPreservesProduction(t *testing.T) {
 	db := testutil.MySQL(t)
 	ctx := context.Background()
 	keys := mysqlstore.NewKeyRepository(db, "health")
@@ -146,7 +146,7 @@ func TestMySQLExpiredSandboxReplacementIsAtomicAndPreservesProduction(t *testing
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	paid := entitlement.Record{KeyID: key.KeyID, TransactionID: "paid", Environment: "production", ExpiresAt: now.Add(30 * 24 * time.Hour)}
-	old := entitlement.Record{KeyID: key.KeyID, TransactionID: "old-test", Environment: "sandbox", ExpiresAt: now.Add(-time.Hour)}
+	old := entitlement.Record{KeyID: key.KeyID, TransactionID: "old-test", Environment: "sandbox", ExpiresAt: now.Add(2 * time.Hour)}
 	for _, record := range []entitlement.Record{paid, old} {
 		if err := store.UpsertVerified(ctx, record); err != nil {
 			t.Fatal(err)
@@ -177,11 +177,6 @@ func TestMySQLExpiredSandboxReplacementIsAtomicAndPreservesProduction(t *testing
 		t.Fatal(err)
 	}
 	assertState(next)
-	other := next
-	other.TransactionID = "another-test"
-	if err := store.UpsertVerified(ctx, other); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
-		t.Fatalf("active purchase replaced: %v", err)
-	}
 	if _, err := store.ApplyNotification(ctx, entitlement.NotificationState{NotificationUUID: uuid.NewString(), OriginalTransactionID: old.TransactionID, Environment: "sandbox", ExpiresAt: now.Add(2 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
@@ -250,16 +245,13 @@ func TestMySQLVerifiedSubscriptionEnvironmentRoundTrip(t *testing.T) {
 					t.Fatalf("switch to %s: %v", env, err)
 				}
 				assertState(active)
-				// Neither a different production purchase nor a different sandbox
-				// purchase can use an environment hop to replace an existing anchor.
-				for _, deniedEnv := range []string{"production", "sandbox"} {
-					denied := makeRecord(deniedEnv)
-					denied.TransactionID = "other-purchase"
-					if err := store.UpsertVerified(ctx, denied); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
-						t.Fatalf("replacement accepted: %v", err)
-					}
-					assertState(active)
+				// Paid purchase anchors remain fixed across environment switches.
+				denied := makeRecord("production")
+				denied.TransactionID = "other-purchase"
+				if err := store.UpsertVerified(ctx, denied); !errors.Is(err, entitlement.ErrSubscriptionBindingConflict) {
+					t.Fatalf("replacement accepted: %v", err)
 				}
+				assertState(active)
 			}
 			if err := db.QueryRow(`SELECT production_transaction_id, sandbox_transaction_id FROM app_attest_keys WHERE app_id='health' AND key_id=?`, key.KeyID).Scan(&productionAnchor, &sandboxAnchor); err != nil || productionAnchor != "production-purchase" || sandboxAnchor != "sandbox-purchase" {
 				t.Fatalf("lost environment binding: %v", err)

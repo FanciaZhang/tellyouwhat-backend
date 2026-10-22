@@ -97,10 +97,10 @@ func BindVerifiedTransaction(boundID string, existing Record, incoming Record, b
 	if boundID != "" && !bind(boundID, existing.Environment) {
 		return bindings, false
 	}
-	// Sandbox testers can change accounts after expiry; production anchors stay fixed.
+	// Old Sandbox accounts keep renewing after sign-out; verified client sync selects the current account.
 	if existing.Environment == "sandbox" && incoming.Environment == "sandbox" &&
 		existing.TransactionID != incoming.TransactionID && !existing.ExpiresAt.IsZero() &&
-		!existing.ExpiresAt.After(now) && incoming.ExpiresAt.After(now) {
+		incoming.ExpiresAt.After(now) {
 		bindings.SandboxID = ""
 	}
 	if !bind(incoming.TransactionID, incoming.Environment) {
