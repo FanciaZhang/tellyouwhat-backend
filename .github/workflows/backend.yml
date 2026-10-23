@@ -235,7 +235,9 @@ jobs:
         id: source
         run: |
           set -euo pipefail
-          archive_sha256=$(git archive "$GITHUB_SHA" | sha256sum | cut -d ' ' -f 1)
+          source_commit=$(git rev-parse HEAD)
+          archive_sha256=$(git archive "$source_commit" | sha256sum | cut -d ' ' -f 1)
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
           echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -257,7 +259,7 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:main
           build-args: SERVICE=${{ matrix.service }}
           labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
             cn.tellyouwhat.source-tar-sha256=${{ steps.source.outputs.archive_sha256 }}
             cn.tellyouwhat.source-run=${{ github.run_id }}
 

@@ -81,6 +81,16 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertEqual(list(self.runtime.backups.iterdir()), [])
         self.assertFalse((self.runtime.state / 'backup.json').exists())
 
+    def test_failed_recovery_assembly_removes_its_own_unpublished_file(self):
+        def interrupted(runtime, filename, **unused):
+            recovery = runtime.backups / ('recovery-' + filename.replace('.sql.gz.enc', '.tar.gz.enc'))
+            recovery.write_bytes(b'uncommitted')
+            raise OperationError('recovery assembly interrupted')
+        with patch('ops_offsite.enabled', return_value=True), patch('ops_offsite.create_recovery_bundle', side_effect=interrupted):
+            with self.assertRaisesRegex(OperationError, 'assembly interrupted'):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+
     def test_interrupted_backup_temporaries_expire_without_collecting_unknown_files(self):
         self.runtime.backups.mkdir()
         stale = self.runtime.backups / '.backup-abcdefgh'

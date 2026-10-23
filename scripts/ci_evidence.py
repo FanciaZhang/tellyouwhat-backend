@@ -56,6 +56,7 @@ def receipt(repo, run):
 def select_evidence(repo, commit, image, runs, current_run):
     keys = fingerprints(commit, image)
     result = {scope: '' for scope in (*keys, 'images')}
+    blocked = set()
     for run in runs:
         source = run.get('head_sha', '')
         if (str(run['id']) == str(current_run) or not re.fullmatch('[a-f0-9]{40}', source)
@@ -66,19 +67,33 @@ def select_evidence(repo, commit, image, runs, current_run):
             # Unmerged or unrelated PR code cannot supply production verification.
             subprocess.run(['git', 'merge-base', '--is-ancestor', source, commit], check=True, capture_output=True)
             expected = fingerprints(source, image)
-            scopes = [scope for scope in keys if not result[scope] and keys[scope] == expected[scope]]
-            if not scopes and (result['images'] or source != commit):
+            matching = [scope for scope in keys if scope not in blocked and not result[scope] and keys[scope] == expected[scope]]
+            scopes = matching
+            trusted_main = run.get('head_branch') == 'main' and run['event'] != 'pull_request'
+            if keys['full'] != expected['full'] and not trusted_main:
+                scopes = []
+            if not scopes and (result['images'] or source != commit) and not (
+                    matching and run.get('conclusion') in ('failure', 'cancelled', 'timed_out')):
+                continue
+            jobs = json.loads(api(f'repos/{repo}/actions/runs/{run["id"]}/jobs?per_page=100'))['jobs']
+            verification = next((job for job in jobs if job['name'] == 'verify'), {})
+            if verification.get('conclusion') == 'failure':
+                failed = [step['name'] for step in verification.get('steps', []) if step.get('conclusion') == 'failure']
+                affected = {'Test Albums with real storage': {'full', 'albums'},
+                            'Test with MySQL and Redis': {'full', 'albums'},
+                            'Run swift test --package-path Contracts/HTTP': {'full', 'swift'}}
+                for name in failed or ['unknown']:
+                    blocked.update(affected.get(name, set(keys)) & set(matching))
+                continue
+            if verification.get('conclusion') != 'success':
                 continue
             record = receipt(repo, run)
             if (not record or record.get('version') != 1 or record.get('commit') != source
                     or record.get('image') != image or record.get('keys') != expected):
                 continue
-            jobs = json.loads(api(f'repos/{repo}/actions/runs/{run["id"]}/jobs?per_page=100'))['jobs']
-            if not any(job['name'] == 'verify' and job['conclusion'] == 'success' for job in jobs):
-                continue
             for scope in scopes:
                 result[scope] = str(run['id'])
-            published = run.get('head_branch') == 'main' and run['event'] != 'pull_request'
+            published = trusted_main
             # Non-release checks reuse build results; production requires published main images.
             if (source == commit and (published or os.getenv('GITHUB_REF') != 'refs/heads/main')
                     and {f'container ({name})' for name in SERVICES}.issubset(
@@ -95,6 +110,8 @@ def main():
     commit = git('rev-parse', 'HEAD').decode().strip()
     image = os.getenv('ImageOS', '') + ':' + os.getenv('ImageVersion', '')
     if sys.argv[1] == 'record':
+        if git('status', '--porcelain', '--untracked-files=no').strip():
+            raise SystemExit('Verification changed tracked source; refusing a receipt.')
         Path(sys.argv[2]).write_text(json.dumps({'version': 1, 'commit': commit, 'image': image,
                                                'reused_from': {scope: os.getenv('CI_REUSED_' + scope.upper(), '') for scope in ('full', 'albums', 'swift')},
                                                'keys': fingerprints(commit, image)}, sort_keys=True) + '\n')
@@ -105,6 +122,8 @@ def main():
         raise SystemExit('Update the PR with its current base before verification.')
     result = {scope: '' for scope in ('full', 'albums', 'swift', 'images')}
     try:
+        if int(os.getenv('GITHUB_RUN_ATTEMPT', '1')) > 1:
+            raise ValueError('verification retry requires fresh checks')
         if not os.getenv('ImageVersion'):
             raise ValueError('runner image identity is unavailable')
         repo = os.environ['GITHUB_REPOSITORY']

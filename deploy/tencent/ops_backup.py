@@ -81,6 +81,7 @@ def require_backup_capacity(runtime):
     used = sum(path.stat().st_size for path in runtime.backups.rglob('*') if path.is_file() and not path.is_symlink())
     if used >= budget or disk.free < 2 * 1024**3:
         raise OperationError('backup storage budget exceeded; retain valid snapshots and review producer growth')
+    return min(budget - used, disk.free - 2 * 1024**3)
 
 
 def prune_backup_temporaries(runtime):
@@ -141,7 +142,7 @@ def export_backup(runtime, *, scope='host'):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     prune_backups(runtime)
-    require_backup_capacity(runtime)
+    available_bytes = require_backup_capacity(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
@@ -150,7 +151,7 @@ def export_backup(runtime, *, scope='host'):
                   "--user=" + runtime.config["MYSQL_USER"]]
     child_env = {"MYSQL_PWD": runtime.config["MYSQL_PASSWORD"]}
     table_output = runtime.execute("backup-table-inventory", [
-        "docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
+        "docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
         "--database=" + database, "--batch", "--skip-column-names",
         "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
     ], env=child_env, timeout=300)
@@ -166,7 +167,7 @@ def export_backup(runtime, *, scope='host'):
         raise OperationError("database does not contain the required application schema; no backup published")
     included_data_tables = [table for table in RECOVERY_DATA_TABLES if table in database_tables]
     excluded_data_tables = sorted(set(database_tables) - set(included_data_tables))
-    command = ["docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
+    command = ["docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
                *connection, "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
                "--skip-comments"]
@@ -198,6 +199,9 @@ def export_backup(runtime, *, scope='host'):
                                     raise OperationError("database export included excluded application data; no backup published")
                                 counts[table] = counts.get(table, 0) + 1
                             archive.write(line)
+                            # Reserve room for encryption and recovery assembly before writing more SQL.
+                            if output.tell() > available_bytes // 4:
+                                raise OperationError('SQL export exceeds its temporary storage budget')
                         returncode = process.wait(timeout=900)
                     finally:
                         process.stdout.close()

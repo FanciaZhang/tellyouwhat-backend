@@ -2,14 +2,37 @@ import io
 import json
 import os
 import subprocess
+import sys
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 import zipfile
 
-from ci_evidence import fingerprints, receipt, select_evidence, SERVICES
+from ci_evidence import fingerprints, receipt, select_evidence, SERVICES, main
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_dirty_verified_workspace_cannot_issue_a_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'receipt.json'
+            with patch.object(sys, 'argv', ['ci_evidence.py', 'record', str(output)]), patch(
+                    'ci_evidence.git', side_effect=[b'a' * 40, b' M changed.go']), self.assertRaises(SystemExit):
+                main()
+            self.assertFalse(output.exists())
+
+    def test_changed_tree_component_reuse_requires_a_main_source(self):
+        current = dict(full='new', albums='same', swift='same')
+        previous = dict(full='old', albums='same', swift='same')
+        run = dict(id=10, head_sha='b' * 40, status='completed', event='pull_request', head_branch='feature/x', head_repository={'full_name': 'owner/repo'})
+        record = dict(version=1, commit=run['head_sha'], image='runner', keys=previous)
+        jobs = json.dumps({'jobs': [{'name': 'verify', 'conclusion': 'success'}]}).encode()
+        for event, branch, reused in [('pull_request', 'feature/x', ''), ('push', 'main', '10')]:
+            with self.subTest(event=event), patch.dict(run, event=event, head_branch=branch), patch(
+                    'ci_evidence.fingerprints', side_effect=[current, previous]), patch('ci_evidence.subprocess.run'), patch(
+                    'ci_evidence.api', return_value=jobs), patch('ci_evidence.receipt', return_value=record):
+                self.assertEqual(select_evidence('owner/repo', 'a' * 40, 'runner', [run], 20)['albums'], reused)
+
     def test_operations_only_changes_reuse_albums_but_code_and_toolchain_changes_do_not(self):
         def inventory(ops=b'a', code=b'a'):
             return b'100644 blob ' + code + b'\tinternal/albums/store.go\0' + b'100644 blob ' + ops + b'\tdeploy/tencent/ops_health.py\0'
@@ -58,6 +81,34 @@ class EvidenceTests(unittest.TestCase):
         artifacts = {'artifacts': [{'id': 2, 'name': 'backend-verification-1', 'expired': False}]}
         with patch('ci_evidence.api', side_effect=[json.dumps(artifacts).encode(), data.getvalue()]):
             self.assertEqual(receipt('owner/repo', {'id': 1}), {'version': 1})
+
+    def test_newer_failed_test_cannot_be_hidden_by_older_success(self):
+        commit = 'a' * 40
+        keys = dict(full='full', albums='albums', swift='swift')
+        run = dict(head_sha=commit, status='completed', event='pull_request', head_repository={'full_name': 'owner/repo'})
+        failed = {'jobs': [{'name': 'verify', 'conclusion': 'failure', 'steps': [{'name': 'Test Albums with real storage', 'conclusion': 'failure'}]}]}
+        passed = {'jobs': [{'name': 'verify', 'conclusion': 'success'}]}
+        record = dict(version=1, commit=commit, image='runner', keys=keys)
+        with patch('ci_evidence.fingerprints', return_value=keys), patch('ci_evidence.subprocess.run'), patch(
+                'ci_evidence.receipt', return_value=record), patch('ci_evidence.api', side_effect=[json.dumps(failed).encode(), json.dumps(passed).encode()]):
+            result = select_evidence('owner/repo', commit, 'runner', [{**run, 'id': 11}, {**run, 'id': 10}], 20)
+        self.assertEqual(result, dict(full='', albums='', swift='10', images=''))
+
+    def test_failed_matching_pr_tests_also_invalidate_older_main_component_evidence(self):
+        current = dict(full='current', albums='same', swift='same')
+        pr_keys = {**current, 'full': 'pr'}
+        main_keys = {**current, 'full': 'main'}
+        common = dict(status='completed', head_repository={'full_name': 'owner/repo'})
+        runs = [{**common, 'id': 11, 'head_sha': 'b' * 40, 'event': 'pull_request', 'conclusion': 'failure'},
+                {**common, 'id': 10, 'head_sha': 'c' * 40, 'event': 'push', 'head_branch': 'main'}]
+        failed = {'jobs': [{'name': 'verify', 'conclusion': 'failure', 'steps': [{'name': 'Test Albums with real storage', 'conclusion': 'failure'}]}]}
+        passed = {'jobs': [{'name': 'verify', 'conclusion': 'success'}]}
+        record = dict(version=1, commit='c' * 40, image='runner', keys=main_keys)
+        with patch('ci_evidence.fingerprints', side_effect=[current, pr_keys, main_keys]), patch('ci_evidence.subprocess.run'), patch(
+                'ci_evidence.receipt', return_value=record), patch('ci_evidence.api', side_effect=[json.dumps(failed).encode(), json.dumps(passed).encode()]):
+            result = select_evidence('owner/repo', 'a' * 40, 'runner', runs, 20)
+        self.assertEqual(result['albums'], '')
+        self.assertEqual(result['swift'], '10')
 
 
 if __name__ == '__main__':
