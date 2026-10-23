@@ -251,3 +251,70 @@ func (t *creativeCaptureTransport) RoundTrip(r *http.Request) (*http.Response, e
 	response.Body = io.NopCloser(bytes.NewReader(body))
 	return response, nil
 }
+
+func TestLivePersonUnderstanding(t *testing.T) {
+	if os.Getenv("BIRTHDAY_CREATIVE_LIVE_CHECK") != "1" {
+		t.Skip("explicit synthetic understanding acceptance only")
+	}
+	cfg := Config{BaseURL: os.Getenv("BIRTHDAY_ARK_BASE_URL"), APIKey: os.Getenv("BIRTHDAY_ARK_API_KEY"), Model: os.Getenv("BIRTHDAY_ARK_MODEL_ID")}
+	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
+		t.Fatal("missing scoped provider configuration")
+	}
+	guard, err := costcontrol.New(costcontrol.NewMemoryStore(), costcontrol.Limits{MonthlyBudgetNanos: 2_000_000_000, MaxConcurrent: 1, LeaseDuration: 75 * time.Second}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := New(cfg, &http.Client{Timeout: 70 * time.Second}, guard, costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000})
+	r := sampleRequest()
+	r.PromptVersion = 2
+	r.PlanDetail = "ideas"
+	r.Effort = "simple"
+	r.SkipQuestions = true
+	amount := 100.0
+	r.BudgetMaximum = &amount
+	r.BudgetText = "100元以内"
+	r.RelationshipTags = []string{"朋友"}
+	r.Idea = "同城，生日当天有30分钟见面。我想根据这些了解准备一个小安排。不要把我的私下评价写给对方。"
+	date := func(value string) *string { return &value }
+	r.Evidence = []Evidence{
+		{ID: "f-389c8435b6d0499a841830f4c39d607e", Kind: "preference", Text: "【他说过】生日态度：记得就好，不希望公开庆祝", Date: date("2026-10-20")},
+		{ID: "f-7db7dab5ea2a488386b18509f3195622", Kind: "preference", Text: "【他说过】喜欢：最近很喜欢手写明信片", Date: date("2026-10-20")},
+		{ID: "f-a24c43f32db440b9930585c2e8c520bc", Kind: "preference", Text: "【我的感觉】我的印象：铁直男，不懂浪漫", Date: date("2026-01-01")},
+		{ID: "f-d9a7cf57dcef4f079794e8165b09234c", Kind: "preference", Text: "【我观察到的；较早近况，待确认，不代表目前状态】最近状态：搬家很忙，没空见面", Date: date("2025-03-01")},
+		{ID: "f-87b9aa3e373542c4a0bb9e160865a37b", Kind: "preference", Text: "【未注明】星座灵感：处女座，不知道他是否喜欢星座", Date: date("2026-10-20")},
+	}
+	first, err := client.Assist(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Operation = "revise"
+	r.PlanDetail = "full"
+	r.CurrentProposal = &first.Value.Proposals[0]
+	r.Change = "保留这个创意，展开具体方案"
+	r.DraftRevision++
+	full, err := client.Assist(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := full.Value.Proposals[0]
+	card := p.Blueprint.Keepsake.Title + p.Blueprint.Keepsake.Body + p.Blueprint.Keepsake.Footer
+	for _, private := range []string{"铁直男", "不懂浪漫", "处女座", "搬家", "我的感觉", "我观察到的"} {
+		if strings.Contains(card, private) {
+			t.Fatalf("private or uncertain trait leaked into invitation: %s", private)
+		}
+	}
+	minutes := 0
+	for _, m := range p.Blueprint.Moments {
+		minutes += m.Minutes
+	}
+	if minutes > 30 {
+		t.Fatal("available time ignored")
+	}
+	raw, _ := json.Marshal(full.Value)
+	t.Log(string(raw))
+	if dir := os.Getenv("BIRTHDAY_CREATIVE_EVIDENCE_DIR"); dir != "" {
+		if err := os.WriteFile(filepath.Join(dir, "person-understanding.json"), raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

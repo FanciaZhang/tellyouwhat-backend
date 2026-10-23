@@ -349,6 +349,17 @@ func schema(t reflect.Type, r Request) map[string]any {
 			if name == "amount" && r.BudgetMaximum == nil {
 				field = map[string]any{"type": "null"}
 			}
+			if name == "evidenceIDs" && t == reflect.TypeOf(Proposal{}) {
+				ids := make([]string, 0, len(r.Evidence))
+				for _, evidence := range r.Evidence {
+					ids = append(ids, evidence.ID)
+				}
+				if len(ids) == 0 {
+					field["maxItems"] = 0
+				} else {
+					field["items"] = map[string]any{"type": "string", "enum": ids}
+				}
+			}
 			if name == "choices" && t == reflect.TypeOf(Question{}) {
 				field["minItems"], field["maxItems"] = 2, 5
 			}

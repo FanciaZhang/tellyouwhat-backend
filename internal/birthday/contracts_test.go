@@ -79,6 +79,22 @@ func TestSchemaConstrainsKindsAndUnknownBudget(t *testing.T) {
 		t.Fatal("dining taboo is missing from model kinds")
 	}
 }
+func TestSchemaKeepsSessionScopedEvidenceAliases(t *testing.T) {
+	r := sampleRequest()
+	r.PlanDetail = "full"
+	r.Evidence = []Evidence{{ID: "f-389c8435b6d0499a841830f4c39d607e", Kind: "preference", Text: "喜欢纸卡"}}
+	fields := ResponseSchema(r)["properties"].(map[string]any)
+	aliases := fields["evidenceIDs"].(map[string]any)["items"].(map[string]any)["enum"].([]string)
+	if len(aliases) != 1 || aliases[0] != r.Evidence[0].ID {
+		t.Fatal("evidence references are not bounded to the current request")
+	}
+	r.Evidence = nil
+	fields = ResponseSchema(r)["properties"].(map[string]any)
+	if fields["evidenceIDs"].(map[string]any)["maxItems"] != 0 {
+		t.Fatal("no evidence must not invent aliases")
+	}
+}
+
 func TestDiningTabooAndAvoidedGiftAreRejected(t *testing.T) {
 	r, m := sampleRequest(), sampleResult()
 	r.Evidence = []Evidence{{ID: "f1", Kind: "taboo", Text: "不喜欢聚餐"}}
@@ -108,7 +124,7 @@ func TestProviderUsesServerPromptAndValidatesActualHTTPOutput(t *testing.T) {
 		}
 		var payload map[string]any
 		_ = json.NewDecoder(req.Body).Decode(&payload)
-		if payload["store"] != false || !strings.Contains(payload["instructions"].(string), "累计最多两问") {
+		if payload["store"] != false || (!strings.Contains(payload["instructions"].(string), "累计最多两问") || !strings.Contains(payload["instructions"].(string), UnderstandingInstructions)) {
 			t.Error("server prompt/store policy missing")
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": string(modelJSON)}}}}, "usage": map[string]int{"input_tokens": 12, "output_tokens": 25}})
