@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run:
-        description: Failed Backend CI/CD run with successful verification and all six published images
+        description: Verified image source run ID from the server capacity refusal
         required: true
         type: string
       expected_sha:
@@ -34,7 +34,7 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - name: Verify exact failed production run and explicit confirmation
+      - name: Verify image source and explicit interruption confirmation
         run: python3 deploy/tencent/verify_interruption.py
         env:
           GH_TOKEN: ${{ github.token }}
