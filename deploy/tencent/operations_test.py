@@ -63,6 +63,18 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertFalse((self.runtime.state / "backup.json").exists())
         self.assertFalse(json.loads((self.runtime.state / "backup-failure.json").read_text())["passed"])
 
+    def test_production_checkpoint_does_not_replace_host_backup_or_failure_evidence(self):
+        host = create_backup(self.runtime)
+        self.runtime.record('backup-failure', passed=False)
+        production = create_backup(self.runtime, scope='production')
+        self.assertEqual(production['operation'], 'production_backup')
+        self.assertEqual(json.loads((self.runtime.state / 'backup.json').read_text())['filename'], host['filename'])
+        self.assertTrue((self.runtime.state / 'backup-failure.json').exists())
+        self.assertEqual(verify_backup(self.runtime, self.runtime.backups / production['filename'])['recovery_scope'], 'production')
+        with patch.dict(os.environ, {'DUMP_EXIT_CODE': '7'}), self.assertRaises(OperationError):
+            create_backup(self.runtime, scope='production')
+        self.assertTrue((self.runtime.state / 'production_backup-failure.json').exists())
+
     def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
         previous = create_backup(self.runtime)
         with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):

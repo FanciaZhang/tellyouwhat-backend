@@ -32,7 +32,7 @@ def transport(runtime, action, paths=()):
     return result
 
 
-def create_recovery_bundle(runtime, filename):
+def create_recovery_bundle(runtime, filename, *, scope='host'):
     from ops_backup import crypt, file_digest
     from release import copy_runtime, RUNTIME_FILES, KEY_FILES
     destination = runtime.backups / ("recovery-" + filename.replace(".sql.gz.enc", ".tar.gz.enc"))
@@ -80,17 +80,19 @@ def create_recovery_bundle(runtime, filename):
         for path in (runtime.root / "deploy/tencent").glob("*"):
             if path.is_file() and not path.is_symlink() and path.suffix in (".py", ".sh") and not path.name.endswith("_test.py"):
                 shutil.copy2(path, scripts / path.name)
-        from test_routes import backup_configuration
-        test_routing = backup_configuration(runtime, bundle / 'test-routing')
-        from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
-        apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
         from albums_artifacts import backup_configuration as backup_albums
-        albums_development = backup_albums(runtime, bundle / 'albums-development', 'development')
         albums_production = backup_albums(runtime, bundle / 'albums-production', 'production')
-        from platform_test_artifacts import backup_configuration as backup_platform_test
-        platform_test = backup_platform_test(runtime, bundle / 'platform-test')
-        from journal_development_artifacts import backup_configuration as backup_journal_development
-        journal_development = backup_journal_development(runtime, bundle / 'journal-development')
+        test_routing, apple_delivery, albums_development, platform_test, journal_development = {}, {}, {}, {}, {}
+        if scope == 'host':
+            from test_routes import backup_configuration
+            test_routing = backup_configuration(runtime, bundle / 'test-routing')
+            from apple_delivery_artifacts import backup_configuration as backup_apple_delivery
+            apple_delivery = backup_apple_delivery(runtime, bundle / 'apple-delivery')
+            albums_development = backup_albums(runtime, bundle / 'albums-development', 'development')
+            from platform_test_artifacts import backup_configuration as backup_platform_test
+            platform_test = backup_platform_test(runtime, bundle / 'platform-test')
+            from journal_development_artifacts import backup_configuration as backup_journal_development
+            journal_development = backup_journal_development(runtime, bundle / 'journal-development')
         compressed = temporary / "recovery.tar.gz"
         with tarfile.open(compressed, "w:gz") as archive:
             archive.add(bundle, arcname="recovery")
@@ -113,7 +115,8 @@ def publish(runtime, source, manifest):
     actual = {p["filename"]: p["sha256"] for p in result["objects"]}
     if expected != actual:
         raise OperationError("offsite readback differs from the encrypted local backup")
-    return runtime.record("offsite", filename=source.name, sha256=manifest["sha256"], bucket=result["bucket"],
+    operation = 'offsite-production' if manifest.get('recovery_scope') == 'production' else 'offsite'
+    return runtime.record(operation, filename=source.name, sha256=manifest["sha256"], bucket=result["bucket"],
                           recovery_filename=manifest["recovery_filename"], verified_objects=len(expected), passed=True)
 
 

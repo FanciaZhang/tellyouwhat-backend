@@ -104,17 +104,20 @@ def crypt(runtime, source, destination, *, decrypt=False):
     os.chmod(destination, 0o600)
 
 
-def create_backup(runtime):
+def create_backup(runtime, *, scope='host'):
+    if scope not in ('host', 'production'):
+        raise OperationError('unsupported backup recovery scope')
+    operation = 'backup' if scope == 'host' else 'production_backup'
     try:
-        result = export_backup(runtime)
+        result = export_backup(runtime, scope=scope)
     except (OperationError, OSError, subprocess.TimeoutExpired):
-        runtime.record("backup-failure", passed=False)
+        runtime.record(operation + '-failure', passed=False)
         raise
-    (runtime.state / "backup-failure.json").unlink(missing_ok=True)
+    (runtime.state / (operation + '-failure.json')).unlink(missing_ok=True)
     return result
 
 
-def export_backup(runtime):
+def export_backup(runtime, *, scope='host'):
     backup_secret(runtime)
     database = runtime.config.get("MYSQL_DATABASE", "")
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
@@ -193,8 +196,8 @@ def export_backup(runtime):
             raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
-        recovery = ops_offsite.create_recovery_bundle(runtime, destination.name) if ops_offsite.enabled(runtime) else {}
-        manifest = {"version": 1, "created_at": int(time.time()), "database": database,
+        recovery = ops_offsite.create_recovery_bundle(runtime, destination.name, scope=scope) if ops_offsite.enabled(runtime) else {}
+        manifest = {"version": 1, "created_at": int(time.time()), "database": database, 'recovery_scope': scope,
                     "filename": destination.name, "image": image, "table_rows": counts,
                     "included_data_tables": included_data_tables,
                     "excluded_data_tables": excluded_data_tables,
@@ -204,7 +207,7 @@ def export_backup(runtime):
         atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
     if ops_offsite.enabled(runtime):
         ops_offsite.publish(runtime, destination, manifest)
-    return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
+    return runtime.record('backup' if scope == 'host' else 'production_backup', filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
 
 
 def prune_backups(runtime):
@@ -234,6 +237,8 @@ def verify_backup(runtime, path):
             raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
+        if manifest.get('recovery_scope', 'host') not in ('host', 'production'):
+            raise OperationError('invalid backup recovery scope')
         if manifest.get("scope") not in (None, "control-plane"):
             raise OperationError("backup belongs to a different recovery scope")
         expected = manifest_signature(backup_secret(runtime), manifest)

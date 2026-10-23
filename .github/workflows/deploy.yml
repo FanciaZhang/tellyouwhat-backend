@@ -135,7 +135,6 @@ jobs:
           sudo -n chmod 2750 "$backend_dir/secrets"
           python3 "$stage/deploy/tencent/ark_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
           python3 "$stage/deploy/tencent/ops_albums.py" --backend-dir "$backend_dir" --bundle "$stage"
-          python3 "$stage/deploy/tencent/preserve_test_operations.py" --backend-dir "$backend_dir" --bundle "$stage"
           REMOTE
       - name: Deploy and verify internal services
         env:

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -13,6 +14,25 @@ import time
 
 class OperationError(RuntimeError):
     pass
+
+
+def install_operations(source, root):
+    source, root = Path(source), Path(root)
+    if source.resolve() == root.resolve():
+        return
+    target = root / 'deploy/tencent'
+    target.mkdir(mode=0o750, parents=True, exist_ok=True)
+    registered_test = (root / '.operations/platform-test.json').exists()
+    for script in (source / 'deploy/tencent').iterdir():
+        if script.suffix not in ('.py', '.sh') or script.name.endswith('_test.py'):
+            continue
+        destination = target / script.name
+        # Registered test producers own their validators independently of production releases.
+        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):
+            continue
+        if script.is_symlink() or destination.is_symlink() or not script.is_file():
+            raise OperationError('operations scripts must be regular files')
+        shutil.copy2(script, destination)
 
 
 def read_environment(path):
