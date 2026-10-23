@@ -49,7 +49,32 @@ type Preparation struct {
 	EstimatedDays *int     `json:"estimatedDays"`
 	TimingBasis   *string  `json:"timingBasis"`
 }
+type Moment struct {
+	Title   string `json:"title"`
+	Detail  string `json:"detail"`
+	Minutes int    `json:"minutes"`
+}
+type Material struct {
+	Name   string   `json:"name"`
+	Detail string   `json:"detail"`
+	Amount *float64 `json:"amount"`
+}
+type Keepsake struct {
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	Footer string `json:"footer"`
+}
+type Blueprint struct {
+	Scene              string     `json:"scene"`
+	Premise            string     `json:"premise"`
+	PreparationMinutes int        `json:"preparationMinutes"`
+	SceneItems         []string   `json:"sceneItems"`
+	Moments            []Moment   `json:"moments"`
+	Materials          []Material `json:"materials"`
+	Keepsake           Keepsake   `json:"keepsake"`
+}
 type Proposal struct {
+	Blueprint        *Blueprint    `json:"blueprint"`
 	ID               string        `json:"id"`
 	Title            string        `json:"title"`
 	Reason           string        `json:"reason"`
@@ -68,6 +93,8 @@ type Question struct {
 	Choices []string `json:"choices"`
 }
 type Request struct {
+	PlanDetail            string            `json:"planDetail,omitempty"`
+	Effort                string            `json:"effort,omitempty"`
 	ContractVersion       int               `json:"contractVersion"`
 	PromptVersion         int               `json:"promptVersion"`
 	RequestID             string            `json:"requestID"`
@@ -107,7 +134,16 @@ type Response struct {
 }
 
 func (r Request) Validate() error {
-	if r.ContractVersion != 2 || r.PromptVersion != 1 || r.DraftRevision < 0 || r.DraftRevision > 10000 ||
+	if r.PromptVersion != 2 && (r.PlanDetail != "" || r.Effort != "") {
+		return ErrInvalid
+	}
+	if !contains([]string{"", "ideas", "full"}, r.PlanDetail) || !contains([]string{"", "simple", "thoughtful"}, r.Effort) {
+		return ErrInvalid
+	}
+	if r.PlanDetail == "full" && (r.Operation != "revise" || r.CurrentProposal == nil) {
+		return ErrInvalid
+	}
+	if r.ContractVersion != 2 || (r.PromptVersion != 1 && r.PromptVersion != 2) || r.DraftRevision < 0 || r.DraftRevision > 10000 ||
 		(r.Operation != "propose" && r.Operation != "revise") || r.Currency != "CNY" || r.QuestionsAsked < 0 || r.QuestionsAsked > 2 ||
 		r.LeadTimeDays < 0 || r.LeadTimeDays > 36525 || len(r.Evidence) > 28 || len(r.History) > 8 || len(r.Answers) > 2 {
 		return ErrInvalid
@@ -184,6 +220,12 @@ func (m ModelResult) Validate(r Request) error {
 			return ErrInvalid
 		}
 		proposals[p.ID] = true
+		if r.PlanDetail == "full" && (p.Blueprint == nil || len(m.Proposals) != 1) {
+			return ErrInvalid
+		}
+		if p.Blueprint != nil && p.Blueprint.Validate(r, p.BudgetUpperBound) != nil {
+			return ErrInvalid
+		}
 		for _, ref := range p.EvidenceIDs {
 			if !sources[ref] {
 				return ErrInvalid
@@ -194,6 +236,10 @@ func (m ModelResult) Validate(r Request) error {
 		}
 		actions := map[string]bool{}
 		actionText := p.Title
+		if p.Blueprint != nil {
+			b, _ := json.Marshal(p.Blueprint)
+			actionText += string(b)
+		}
 		for _, a := range p.Actions {
 			if a.ID == "" || actions[a.ID] || a.Title == "" || a.Detail == "" || !contains(actionKinds(r), a.Kind) {
 				return ErrInvalid
@@ -220,7 +266,7 @@ func (m ModelResult) Validate(r Request) error {
 			if e.Kind != "taboo" {
 				continue
 			}
-			if strings.Contains(strings.ToLower(actionText), strings.ToLower(e.Text)) {
+			if containsAffirmative(actionText, e.Text) {
 				return ErrInvalid
 			}
 		}
@@ -260,7 +306,12 @@ func contains(values []string, target string) bool {
 func ReservationTokens(r Request) int { b, _ := json.Marshal(r); return len(b) + OutputTokens }
 
 // The schema is derived from the same typed output contract; nullable pointers are explicit.
-func ResponseSchema(r Request) map[string]any { return schema(reflect.TypeOf(ModelResult{}), r) }
+func ResponseSchema(r Request) map[string]any {
+	if r.PlanDetail == "full" {
+		return schema(reflect.TypeOf(Proposal{}), r)
+	}
+	return schema(reflect.TypeOf(ModelResult{}), r)
+}
 func schema(t reflect.Type, r Request) map[string]any {
 	switch t.Kind() {
 	case reflect.Pointer:
@@ -285,6 +336,19 @@ func schema(t reflect.Type, r Request) map[string]any {
 			if name == "kind" && t == reflect.TypeOf(Action{}) {
 				field["enum"] = actionKinds(r)
 			}
+			if name == "scene" && t == reflect.TypeOf(Blueprint{}) {
+				field["enum"] = []string{"gallery", "table", "walk", "audio"}
+			}
+			if name == "blueprint" {
+				if r.PlanDetail == "full" {
+					field = schema(reflect.TypeOf(Blueprint{}), r)
+				} else {
+					field = map[string]any{"type": "null"}
+				}
+			}
+			if name == "amount" && r.BudgetMaximum == nil {
+				field = map[string]any{"type": "null"}
+			}
 			if name == "choices" && t == reflect.TypeOf(Question{}) {
 				field["minItems"], field["maxItems"] = 2, 5
 			}
@@ -298,6 +362,78 @@ func schema(t reflect.Type, r Request) map[string]any {
 			if name == "budgetUpperBound" && r.BudgetMaximum == nil {
 				field = map[string]any{"type": "null"}
 			}
+			if t == reflect.TypeOf(Proposal{}) {
+				if contains([]string{"id", "title", "reason", "budgetNote", "tradeoff", "alternative"}, name) {
+					field["minLength"] = 1
+				}
+				if name == "actions" {
+					field["minItems"], field["maxItems"] = 1, 5
+					if r.PlanDetail != "" {
+						field["maxItems"] = 1
+					}
+				}
+				if name == "preparations" {
+					field["maxItems"] = 5
+					if r.PlanDetail != "" {
+						field["maxItems"] = 0
+					}
+				}
+			}
+			if t == reflect.TypeOf(Action{}) && name != "kind" {
+				field["minLength"] = 1
+			}
+			if t == reflect.TypeOf(Preparation{}) && contains([]string{"id", "actionID", "title", "completion"}, name) {
+				field["minLength"] = 1
+			}
+			if t == reflect.TypeOf(Question{}) && contains([]string{"id", "title"}, name) {
+				field["minLength"] = 1
+			}
+			if t == reflect.TypeOf(Blueprint{}) {
+				switch name {
+				case "premise":
+					field["minLength"], field["maxLength"] = 1, 120
+				case "preparationMinutes":
+					field["minimum"], field["maximum"] = 0, 1440
+					if r.Effort == "simple" {
+						field["maximum"] = 30
+					}
+				case "sceneItems":
+					field["minItems"], field["maxItems"] = 1, 5
+					field["items"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 24}
+				case "moments":
+					field["minItems"], field["maxItems"] = 1, 5
+					if r.Effort == "simple" {
+						field["maxItems"] = 3
+					}
+				case "materials":
+					field["maxItems"] = 8
+					if r.Effort == "simple" {
+						field["maxItems"] = 4
+					}
+				}
+			}
+			if t == reflect.TypeOf(Moment{}) {
+				switch name {
+				case "title":
+					field["minLength"], field["maxLength"] = 1, 40
+				case "detail":
+					field["minLength"], field["maxLength"] = 1, 240
+				case "minutes":
+					field["minimum"], field["maximum"] = 1, 240
+				}
+			}
+			if t == reflect.TypeOf(Material{}) {
+				switch name {
+				case "name":
+					field["minLength"], field["maxLength"] = 1, 40
+				case "detail":
+					field["minLength"], field["maxLength"] = 1, 120
+				}
+			}
+			if t == reflect.TypeOf(Keepsake{}) {
+				limits := map[string]int{"title": 40, "body": 240, "footer": 80}
+				field["minLength"], field["maxLength"] = 1, limits[name]
+			}
 			properties[name] = field
 			required = append(required, name)
 		}
@@ -310,5 +446,94 @@ func schema(t reflect.Type, r Request) map[string]any {
 		return map[string]any{"type": "number"}
 	default:
 		return map[string]any{"type": "string"}
+	}
+}
+
+func (b Blueprint) Validate(r Request, ceiling *float64) error {
+	if !contains([]string{"gallery", "table", "walk", "audio"}, b.Scene) || !shortText(b.Premise, 120) || b.PreparationMinutes < 0 || b.PreparationMinutes > 1440 || len(b.SceneItems) < 1 || len(b.SceneItems) > 5 || len(b.Moments) < 1 || len(b.Moments) > 5 || len(b.Materials) > 8 {
+		return ErrInvalid
+	}
+	if r.Effort == "simple" && (b.PreparationMinutes > 30 || len(b.Moments) > 3 || len(b.Materials) > 4) {
+		return ErrInvalid
+	}
+	for _, item := range b.SceneItems {
+		if !shortText(item, 24) {
+			return ErrInvalid
+		}
+	}
+	duration := 0
+	for _, m := range b.Moments {
+		duration += m.Minutes
+		if !shortText(m.Title, 40) || !shortText(m.Detail, 240) || m.Minutes < 1 || m.Minutes > 240 {
+			return ErrInvalid
+		}
+	}
+	if r.Effort == "simple" && duration > 45 {
+		return ErrInvalid
+	}
+	sum := 0.0
+	for _, m := range b.Materials {
+		if !shortText(m.Name, 40) || !shortText(m.Detail, 120) {
+			return ErrInvalid
+		}
+		if m.Amount != nil {
+			if r.BudgetMaximum == nil || ceiling == nil || math.IsNaN(*m.Amount) || math.IsInf(*m.Amount, 0) || *m.Amount < 0 {
+				return ErrInvalid
+			}
+			sum += *m.Amount
+		}
+	}
+	if ceiling != nil && sum > *ceiling+0.001 {
+		return ErrInvalid
+	}
+	if r.BudgetMaximum != nil && sum > *r.BudgetMaximum+0.001 {
+		return ErrInvalid
+	}
+	if !shortText(b.Keepsake.Title, 40) || !shortText(b.Keepsake.Body, 240) || !shortText(b.Keepsake.Footer, 80) {
+		return ErrInvalid
+	}
+	return nil
+}
+func shortText(s string, limit int) bool {
+	return strings.TrimSpace(s) != "" && len([]rune(s)) <= limit
+}
+
+// A direct negative restatement is not a proposed activity; keep checking all remaining occurrences.
+func containsAffirmative(text, taboo string) bool {
+	text, taboo = strings.ToLower(text), strings.ToLower(taboo)
+	for _, prefix := range []string{"不安排", "不做", "不要", "避免", "不"} {
+		text = strings.ReplaceAll(text, prefix+taboo, "")
+	}
+	return strings.Contains(text, taboo)
+}
+func (m *ModelResult) normalizeEmptyCollections() {
+	if m.Questions == nil {
+		m.Questions = []Question{}
+	}
+	if m.Changes == nil {
+		m.Changes = []string{}
+	}
+	if m.Proposals == nil {
+		m.Proposals = []Proposal{}
+	}
+	for i := range m.Proposals {
+		p := &m.Proposals[i]
+		if p.EvidenceIDs == nil {
+			p.EvidenceIDs = []string{}
+		}
+		if p.Preparations == nil {
+			p.Preparations = []Preparation{}
+		}
+		if p.Unknowns == nil {
+			p.Unknowns = []string{}
+		}
+		for j := range p.Preparations {
+			if p.Preparations[j].DependsOn == nil {
+				p.Preparations[j].DependsOn = []string{}
+			}
+		}
+		if p.Blueprint != nil && p.Blueprint.Materials == nil {
+			p.Blueprint.Materials = []Material{}
+		}
 	}
 }

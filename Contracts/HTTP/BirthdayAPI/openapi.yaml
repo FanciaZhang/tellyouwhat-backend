@@ -691,7 +691,9 @@ components:
       required: [contractVersion, promptVersion, requestID, sessionID, draftRevision, operation, celebrationDate, timeZone, leadTimeDays, relationshipTags, idea, budgetText, currency, evidence, history, answers, questionsAsked, skipQuestions, completedPreparations, change]
       properties:
         contractVersion: {type: integer, enum: [2]}
-        promptVersion: {type: integer, enum: [1]}
+        promptVersion: {type: integer, enum: [1, 2]}
+        planDetail: {type: string, enum: [ideas, full]}
+        effort: {type: string, enum: [simple, thoughtful]}
         requestID: {type: string, format: uuid}
         sessionID: {type: string, format: uuid}
         draftRevision: {type: integer, minimum: 0, maximum: 10000}
@@ -764,6 +766,42 @@ components:
         dependsOn: {type: array, items: {type: string}}
         estimatedDays: {type: integer, nullable: true, minimum: 0}
         timingBasis: {type: string, nullable: true}
+    BirthdayMoment:
+      type: object
+      additionalProperties: false
+      required: [title, detail, minutes]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 40}
+        detail: {type: string, minLength: 1, maxLength: 240}
+        minutes: {type: integer, minimum: 1, maximum: 240}
+    BirthdayMaterial:
+      type: object
+      additionalProperties: false
+      required: [name, detail, amount]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 40}
+        detail: {type: string, minLength: 1, maxLength: 120}
+        amount: {type: number, nullable: true, minimum: 0}
+    BirthdayKeepsake:
+      type: object
+      additionalProperties: false
+      required: [title, body, footer]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 40}
+        body: {type: string, minLength: 1, maxLength: 240}
+        footer: {type: string, minLength: 1, maxLength: 80}
+    BirthdayBlueprint:
+      type: object
+      additionalProperties: false
+      required: [scene, premise, preparationMinutes, sceneItems, moments, materials, keepsake]
+      properties:
+        scene: {type: string, enum: [gallery, table, walk, audio]}
+        premise: {type: string, minLength: 1, maxLength: 120}
+        preparationMinutes: {type: integer, minimum: 0, maximum: 1440}
+        sceneItems: {type: array, minItems: 1, maxItems: 5, items: {type: string, minLength: 1, maxLength: 24}}
+        moments: {type: array, minItems: 1, maxItems: 5, items: {$ref: '#/components/schemas/BirthdayMoment'}}
+        materials: {type: array, maxItems: 8, items: {$ref: '#/components/schemas/BirthdayMaterial'}}
+        keepsake: {$ref: '#/components/schemas/BirthdayKeepsake'}
     BirthdayProposal:
       type: object
       additionalProperties: false
@@ -787,6 +825,9 @@ components:
         unknowns: {type: array, items: {type: string}}
         tradeoff: {type: string}
         alternative: {type: string}
+        blueprint:
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/BirthdayBlueprint'}]
     BirthdayQuestion:
       type: object
       additionalProperties: false

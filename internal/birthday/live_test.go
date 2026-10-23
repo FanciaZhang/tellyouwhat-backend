@@ -1,10 +1,13 @@
 package birthday
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -147,4 +150,104 @@ func TestLiveBirthdayAssistant(t *testing.T) {
 			}
 		})
 	}
+}
+
+// This bounded check uses synthetic facts and a two-yuan reservation ceiling.
+func TestLiveCreativeBirthday(t *testing.T) {
+	if os.Getenv("BIRTHDAY_CREATIVE_LIVE_CHECK") != "1" {
+		t.Skip("explicit creative provider acceptance only")
+	}
+	cfg := Config{BaseURL: os.Getenv("BIRTHDAY_ARK_BASE_URL"), APIKey: os.Getenv("BIRTHDAY_ARK_API_KEY"), Model: os.Getenv("BIRTHDAY_ARK_MODEL_ID")}
+	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
+		t.Fatal("missing scoped provider configuration")
+	}
+	budget, err := costcontrol.New(costcontrol.NewMemoryStore(), costcontrol.Limits{MonthlyBudgetNanos: 2_000_000_000, MaxConcurrent: 1, LeaseDuration: 75 * time.Second}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := New(cfg, &http.Client{Timeout: 70 * time.Second}, budget, costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000})
+	if path := os.Getenv("BIRTHDAY_CREATIVE_EVIDENCE_DIR"); path != "" {
+		client.http.Transport = &creativeCaptureTransport{directory: path}
+	}
+	for _, effort := range []string{"thoughtful", "simple"} {
+		t.Run(effort, func(t *testing.T) {
+			r := sampleRequest()
+			r.PromptVersion = 2
+			r.PlanDetail = "ideas"
+			r.Effort = effort
+			r.SkipQuestions = true
+			amount := 500.0
+			r.BudgetMaximum = &amount
+			r.BudgetText = "500元以内"
+			r.RelationshipTags = []string{"家人"}
+			r.Idea = "同城，可以在家见面，只两个人，对方喜欢修理旧物，不喜欢公开庆祝。不要只推荐吃饭买蛋糕，也没有提供任何具体共同回忆。"
+			r.Evidence = []Evidence{{ID: "p1", Kind: "preference", Text: "喜欢修理旧物"}, {ID: "t1", Kind: "taboo", Text: "公开庆祝"}}
+			if effort == "simple" {
+				amount = 100
+				r.BudgetText = "100元以内"
+				r.Idea = "我们是亲近的家人但在不同城市，生日当天可以视频20分钟。喜欢画画，不喜欢公开庆祝。没有提供共同回忆，不要寄送或购买器材。"
+				r.Evidence[0].Text = "喜欢画画"
+			}
+			first, err := client.Assist(context.Background(), r)
+			if err != nil {
+				synthetic, _ := json.Marshal(first.Value)
+				t.Fatalf("%v; synthetic output=%s; tokens=%d/%d", err, synthetic, first.InputTokens, first.OutputTokens)
+			}
+			p := first.Value.Proposals[0]
+			r.Operation = "revise"
+			r.PlanDetail = "full"
+			r.CurrentProposal = &p
+			r.Change = "保留这个创意，展开具体方案"
+			r.DraftRevision++
+			result, err := client.Assist(context.Background(), r)
+			if err != nil {
+				synthetic, _ := json.Marshal(result.Value)
+				t.Fatalf("%v; synthetic output=%s; tokens=%d/%d", err, synthetic, result.InputTokens, result.OutputTokens)
+			}
+			if effort == "thoughtful" && strings.Contains(result.Value.Proposals[0].Blueprint.Keepsake.Footer, "视频") {
+				t.Fatal("in-person invitation introduced an unrelated video call")
+			}
+			if effort == "simple" {
+				minutes := 0
+				for _, moment := range result.Value.Proposals[0].Blueprint.Moments {
+					minutes += moment.Minutes
+				}
+				if minutes > 20 {
+					t.Fatal("plan exceeded explicitly available video time")
+				}
+			}
+			b, _ := json.Marshal(result.Value)
+			t.Log(string(b))
+			if path := os.Getenv("BIRTHDAY_CREATIVE_EVIDENCE_DIR"); path != "" {
+				if err := os.WriteFile(path+"/"+effort+".json", b, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// Only used by the explicitly opted-in, synthetic acceptance check.
+type creativeCaptureTransport struct {
+	directory string
+	count     int
+}
+
+func (t *creativeCaptureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 262145))
+	response.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	t.count++
+	name := "provider-synthetic-" + time.Now().UTC().Format("150405.000") + ".json"
+	if err := os.WriteFile(filepath.Join(t.directory, name), body, 0600); err != nil {
+		return nil, err
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	return response, nil
 }
