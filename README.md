@@ -85,3 +85,7 @@ swift test --package-path Contracts/HTTP
 测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health/Journal 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。
 
 CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN`、`MYSQL_TEST_ADMIN_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机缺少所需变量时，对应测试会跳过。管理 DSN 用于创建、删除独立测试库；包含整表重置和旧结构模拟的持久化测试不再修改跨包共用库。所有 DSN 的数据库名必须以 `_test` 结尾，禁止使用业务数据库。
+
+CI 先核对已有验证证据。PR 检查准确 head，且须包含该事件的 base；合并后源码树、测试输入与 runner 镜像版本一致时复用成功结果。证据必须来自本仓库祖先提交的成功 `verify` 作业，缺失或不匹配时重新执行。收据保留 14 天。Albums 恢复测试会执行运维代码，这些依赖也计入指纹；Swift 契约按独立输入核对。同一 main SHA 的八个镜像构建已成功时，后续发布复用原 source run 的不可变镜像。
+
+Albums 真实存储测试通过 `python3 scripts/run_album_tests.py` 编译一次并分为四个进程。每个进程有独立父数据库，每个隔离夹具保留独立数据库和清理；普通夹具不重复验证迁移重放，旧库升级、重放和失败恢复由迁移专项测试覆盖。测试清单必须非空、无重复且全部有执行结果。编译缓存用于加速，真实数据库测试仍强制执行。

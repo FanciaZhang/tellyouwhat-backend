@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
@@ -71,6 +72,22 @@ RECOVERY_DATA_TABLES = (
     "offer_redemption_report_sync",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
+BACKUP_BUDGET_BYTES = 6 * 1024**3
+
+
+def require_backup_capacity(runtime):
+    disk = shutil.disk_usage(runtime.backups)
+    budget = min(BACKUP_BUDGET_BYTES, disk.total // 6)
+    used = sum(path.stat().st_size for path in runtime.backups.rglob('*') if path.is_file() and not path.is_symlink())
+    if used >= budget or disk.free < 2 * 1024**3:
+        raise OperationError('backup storage budget exceeded; retain valid snapshots and review producer growth')
+
+
+def prune_backup_temporaries(runtime):
+    for path in runtime.backups.iterdir():
+        if (re.fullmatch(r'\.(backup|recovery)-[A-Za-z0-9_-]{6,}', path.name) and path.is_dir()
+                and not path.is_symlink() and path.stat().st_mtime < time.time() - 48 * 3600):
+            shutil.rmtree(path)
 
 
 def backup_secret(runtime):
@@ -124,6 +141,7 @@ def export_backup(runtime, *, scope='host'):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     prune_backups(runtime)
+    require_backup_capacity(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
@@ -196,21 +214,29 @@ def export_backup(runtime, *, scope='host'):
             raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
-        recovery = ops_offsite.create_recovery_bundle(runtime, destination.name, scope=scope) if ops_offsite.enabled(runtime) else {}
-        manifest = {"version": 1, "created_at": int(time.time()), "database": database, 'recovery_scope': scope,
-                    "filename": destination.name, "image": image, "table_rows": counts,
-                    "included_data_tables": included_data_tables,
-                    "excluded_data_tables": excluded_data_tables,
-                    "sha256": file_digest(encrypted), **recovery}
-        signature = manifest_signature(backup_secret(runtime), manifest)
-        os.replace(encrypted, destination)
-        atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+        try:
+            recovery = ops_offsite.create_recovery_bundle(runtime, destination.name, scope=scope) if ops_offsite.enabled(runtime) else {}
+            require_backup_capacity(runtime)
+            manifest = {"version": 1, "created_at": int(time.time()), "database": database, 'recovery_scope': scope,
+                        "filename": destination.name, "image": image, "table_rows": counts,
+                        "included_data_tables": included_data_tables,
+                        "excluded_data_tables": excluded_data_tables,
+                        "sha256": file_digest(encrypted), **recovery}
+            signature = manifest_signature(backup_secret(runtime), manifest)
+            os.replace(encrypted, destination)
+            atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            Path(str(destination) + '.json').unlink(missing_ok=True)
+            (destination.parent / ('recovery-' + destination.name.replace('.sql.gz.enc', '.tar.gz.enc'))).unlink(missing_ok=True)
+            raise
     if ops_offsite.enabled(runtime):
         ops_offsite.publish(runtime, destination, manifest)
     return runtime.record('backup' if scope == 'host' else 'production_backup', filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
 
 
 def prune_backups(runtime):
+    prune_backup_temporaries(runtime)
     cutoff = time.time() - BACKUP_RETENTION_SECONDS
     removed = 0
     failed = 0

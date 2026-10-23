@@ -46,10 +46,13 @@ jobs:
         run: python3 scripts/ci_evidence.py plan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
   verify:
     needs: plan
-    if: needs.plan.outputs.full == ''
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -81,19 +84,31 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: evidence
+        run: python3 scripts/ci_evidence.py plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        if: steps.evidence.outputs.full == ''
         with:
           go-version-file: go.mod
           cache: true
       - name: Validate workflow syntax and reusable deployment inputs
+        if: steps.evidence.outputs.full == ''
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
       - run: bash deploy/tencent/deploy-production_test.sh
+        if: steps.evidence.outputs.full == ''
       - run: bash deploy/tencent/verify-public_test.sh
+        if: steps.evidence.outputs.full == ''
       - name: Test operations and rollback protections
+        if: steps.evidence.outputs.full == ''
         run: |
           python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
           python3 -m unittest discover -s scripts -p '*_test.py' -v
       - name: Verify privacy-safe encrypted backup restoration
+        if: steps.evidence.outputs.full == ''
         run: python3 deploy/tencent/backup_mysql_integration.py
         env:
           BACKUP_TEST_MYSQL_HOST: 127.0.0.1
@@ -101,6 +116,7 @@ jobs:
           BACKUP_TEST_MYSQL_USER: root
           BACKUP_TEST_MYSQL_PASSWORD: ci-test-root-password
       - name: Validate deployment files
+        if: steps.evidence.outputs.full == ''
         run: |
           touch .env.production
           docker compose -f compose.production.yaml config --quiet
@@ -116,6 +132,7 @@ jobs:
           MYSQL_DATABASE: app
           REDIS_PASSWORD: placeholder
       - name: Validate isolated album test stack
+        if: steps.evidence.outputs.full == ''
         run: |
           cp deploy/albums/runtime.env.example "$RUNNER_TEMP/albums-test.env"
           docker compose --env-file deploy/albums/test.env.example -f compose.albums-test.yaml config --quiet
@@ -126,6 +143,7 @@ jobs:
           ALBUM_TEST_MYSQL_ROOT_PASSWORD: ci-root-placeholder
           ALBUM_TEST_REDIS_PASSWORD: ci-placeholder
       - name: Validate Caddy configuration
+        if: steps.evidence.outputs.full == ''
         run: |
           for config in Caddyfile Caddyfile.external; do
             docker run --rm --entrypoint caddy \
@@ -143,6 +161,7 @@ jobs:
             caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f validate --config /etc/caddy/Caddyfile
 
       - name: Test with MySQL and Redis
+        if: steps.evidence.outputs.full == ''
         run: |
           test -n "$MYSQL_TEST_DSN"
           test -n "$MYSQL_TEST_ADMIN_DSN"
@@ -154,13 +173,14 @@ jobs:
           MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
       - name: Test Albums with real storage
-        if: needs.plan.outputs.albums == ''
+        if: steps.evidence.outputs.full == '' && steps.evidence.outputs.albums == ''
         run: python3 scripts/run_album_tests.py
         env:
           MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
       - name: Verify real Caddy switching and long connections
+        if: steps.evidence.outputs.full == ''
         run: |
           container=$(docker create caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b)
           trap 'docker rm "$container" >/dev/null' EXIT
@@ -168,12 +188,19 @@ jobs:
           chmod +x "$RUNNER_TEMP/caddy"
           CADDY_TEST_BIN="$RUNNER_TEMP/caddy" go test -race -count=1 -v ./internal/lifecycle
       - run: go vet ./...
+        if: steps.evidence.outputs.full == ''
       - run: go build ./cmd/...
+        if: steps.evidence.outputs.full == ''
       - run: make verify-generated
+        if: steps.evidence.outputs.full == ''
       - run: swift test --package-path Contracts/HTTP
-        if: needs.plan.outputs.swift == ''
+        if: steps.evidence.outputs.full == '' && steps.evidence.outputs.swift == ''
       - name: Record verified source and test inputs
         run: python3 scripts/ci_evidence.py record "$RUNNER_TEMP/verification.json"
+        env:
+          CI_REUSED_FULL: ${{ steps.evidence.outputs.full }}
+          CI_REUSED_ALBUMS: ${{ steps.evidence.outputs.albums }}
+          CI_REUSED_SWIFT: ${{ steps.evidence.outputs.swift }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: backend-verification-${{ github.run_attempt }}
@@ -185,7 +212,7 @@ jobs:
     needs: [plan, verify]
     if: >-
       always() && needs.plan.result == 'success' &&
-      (needs.verify.result == 'success' || (needs.verify.result == 'skipped' && needs.plan.outputs.full != '')) &&
+      needs.verify.result == 'success' &&
       needs.plan.outputs.images == ''
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -235,7 +262,7 @@ jobs:
     needs: [plan, verify, container]
     if: >-
       always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' &&
-      (needs.verify.result == 'success' || (needs.verify.result == 'skipped' && needs.plan.outputs.full != '')) &&
+      needs.verify.result == 'success' &&
       (needs.container.result == 'success' || (needs.container.result == 'skipped' && needs.plan.outputs.images != '')) &&
       ((github.event_name == 'push' && vars.PRODUCTION_DEPLOY_ENABLED == 'true') ||
        (github.event_name == 'workflow_dispatch' && inputs.deployment != 'none'))

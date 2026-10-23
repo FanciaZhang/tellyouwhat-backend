@@ -25,7 +25,9 @@ def fingerprints(commit, image):
     for record in filter(None, records):
         path = record.split(b'\t', 1)[1].decode()
         selected['full'].append(record)
-        if (path in COMMON or not (path.startswith(('deploy/tencent/', 'docs/', '.github/')) or path.endswith('.md'))):
+        # Albums recovery tests execute operations code; health polling is independent.
+        if (path in COMMON or not (path.startswith(('docs/', '.github/')) or path.endswith('.md')
+                                   or path in ('deploy/tencent/ops_health.py', 'deploy/tencent/health_test.py'))):
             selected['albums'].append(record)
         if path in COMMON or path.startswith('Contracts/'):
             selected['swift'].append(record)
@@ -92,8 +94,13 @@ def main():
     image = os.getenv('ImageOS', '') + ':' + os.getenv('ImageVersion', '')
     if sys.argv[1] == 'record':
         Path(sys.argv[2]).write_text(json.dumps({'version': 1, 'commit': commit, 'image': image,
+                                               'reused_from': {scope: os.getenv('CI_REUSED_' + scope.upper(), '') for scope in ('full', 'albums', 'swift')},
                                                'keys': fingerprints(commit, image)}, sort_keys=True) + '\n')
         return
+    base = os.getenv('PR_BASE_SHA')
+    if base and (not re.fullmatch('[a-f0-9]{40}', base) or subprocess.run(
+            ['git', 'merge-base', '--is-ancestor', base, commit], capture_output=True).returncode):
+        raise SystemExit('Update the PR with its current base before verification.')
     result = {scope: '' for scope in ('full', 'albums', 'swift', 'images')}
     try:
         if not os.getenv('ImageVersion'):

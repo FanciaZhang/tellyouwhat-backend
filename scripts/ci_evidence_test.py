@@ -21,6 +21,8 @@ class EvidenceTests(unittest.TestCase):
         for records, image in [(inventory(code=b'b'), 'runner-1'), (inventory(), 'runner-2')]:
             with patch('ci_evidence.git', return_value=records):
                 self.assertNotEqual(original['albums'], fingerprints('source', image)['albums'])
+        with patch('ci_evidence.git', return_value=inventory().replace(b'ops_health.py', b'ops_backup.py')):
+            self.assertNotEqual(original['albums'], fingerprints('source', 'runner-1')['albums'])
 
     def test_successful_ancestor_receipt_is_required_and_failed_deployment_does_not_repeat_tests(self):
         commit = 'a' * 40

@@ -75,6 +75,25 @@ class BackupSafetyTests(unittest.TestCase):
             create_backup(self.runtime, scope='production')
         self.assertTrue((self.runtime.state / 'production_backup-failure.json').exists())
 
+    def test_backup_budget_failure_leaves_no_uncommitted_pair(self):
+        with patch('ops_backup.BACKUP_BUDGET_BYTES', 1), self.assertRaisesRegex(OperationError, 'storage budget'):
+            create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / 'backup.json').exists())
+
+    def test_interrupted_backup_temporaries_expire_without_collecting_unknown_files(self):
+        self.runtime.backups.mkdir()
+        stale = self.runtime.backups / '.backup-abcdefgh'
+        stale.mkdir()
+        (stale / 'plaintext').write_text('disposable')
+        os.utime(stale, (time.time() - 49 * 3600,) * 2)
+        for name in ('.backup-recent12', 'preserved'):
+            (self.runtime.backups / name).mkdir()
+        self.assertEqual(prune_backups(self.runtime), 0)
+        self.assertFalse(stale.exists())
+        self.assertTrue((self.runtime.backups / '.backup-recent12').exists())
+        self.assertTrue((self.runtime.backups / 'preserved').exists())
+
     def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
         previous = create_backup(self.runtime)
         with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):

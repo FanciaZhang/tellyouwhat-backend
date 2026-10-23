@@ -23,6 +23,10 @@ Full image inventory includes legacy intermediate images. Known platform/Albums 
 
 Each producer must finish its own cleanup before claiming completion. Nightly maintenance repairs missed cleanup and reports partial failure. Disk capacity alone does not mean a backup or a deployment succeeded. New production releases require at least 8 GiB and 20 percent disk space free.
 
+Production containers that have exited for 48 hours may be retired only in stable deployment state, for known production Compose projects and application services, and when neither their image nor its aliases belong to any recovery selection. Container removal never uses force or removes volumes. Running, recent, unknown and current/previous containers remain protected. The owner rechecks state immediately before removal, then recalculates image/file retention.
+
+Backup storage has a 6 GiB ceiling, additionally limited to one sixth of the containing filesystem, with at least 2 GiB free. Export checks both before work and before committing the authenticated pair; exceeding capacity fails backup without deleting valid snapshots or shortening their 14-day retention. Interrupted `.backup-*` and `.recovery-*` temporary directories expire after 48 hours under the existing operations lock. Failed local pair assembly removes only its own unpublished files; an offsite transfer failure retains the complete authenticated local pair for diagnosis and normal retention.
+
 For Birthday and Albums, first register the already verified current selection. Subsequent producers use the shared lock order and register only after readiness succeeds:
 
 Run the wrapper and registration as the backend directory owner (`ubuntu`), including when calling the Python functions directly. A different effective user is rejected before the producer runs or any recovery registration is replaced. Root-owned mode-600 records prevent the scheduled operator from reading the protected selections.

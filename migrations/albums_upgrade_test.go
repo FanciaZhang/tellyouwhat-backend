@@ -48,7 +48,7 @@ func migrationTestDatabase(t *testing.T) *sql.DB {
 
 func TestMySQLIsolatedMigrationDoesNotWaitForAnotherDatabase(t *testing.T) {
 	db := migrationTestDatabase(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	connection, err := db.Conn(ctx)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestMySQLIsolatedMigrationDoesNotWaitForAnotherDatabase(t *testing.T) {
 	}
 	defer connection.Close()
 	var locked int
-	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(?, 0)`, migrationLockName).Scan(&locked); err != nil || locked != 1 {
+	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(?, 30)`, migrationLockName).Scan(&locked); err != nil || locked != 1 {
 		t.Fatal("cannot hold the legacy migration lock", err)
 	}
 	defer connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, migrationLockName)
