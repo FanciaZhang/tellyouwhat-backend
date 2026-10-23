@@ -87,6 +87,11 @@ def select_evidence(repo, commit, image, runs, current_run):
                 continue
             if verification.get('conclusion') != 'success':
                 continue
+            if trusted_main and run['event'] == 'workflow_dispatch':
+                trusted_main = any(step.get('name') == 'Log in to GHCR' and step.get('conclusion') == 'success'
+                                   for job in jobs for step in job.get('steps', []))
+                if not trusted_main and keys['full'] != expected['full']:
+                    scopes = []
             record = receipt(repo, run)
             if (not record or record.get('version') != 1 or record.get('commit') != source
                     or record.get('image') != image or record.get('keys') != expected):

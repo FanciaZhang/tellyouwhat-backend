@@ -71,6 +71,8 @@ class EvidenceTests(unittest.TestCase):
                     self.assertEqual(select_evidence('owner/repo', commit, 'runner', [run], 20)['images'], '')
                 with patch.dict(os.environ, GITHUB_REF='refs/heads/feature/example'):
                     self.assertEqual(select_evidence('owner/repo', commit, 'runner', [run], 20)['images'], '10')
+            with patch.dict(run, event='workflow_dispatch', head_branch='main'), patch.dict(os.environ, GITHUB_REF='refs/heads/main'):
+                self.assertEqual(select_evidence('owner/repo', commit, 'runner', [run], 20)['images'], '')
 
     def test_expired_or_missing_receipt_cannot_authorize_reuse(self):
         with patch('ci_evidence.api', return_value=b'{"artifacts": []}'):
