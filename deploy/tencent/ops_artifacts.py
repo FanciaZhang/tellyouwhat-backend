@@ -103,7 +103,7 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
     owners = set(owners or OWNERS)
     now = time.time() if now is None else now
     mounts = {Path(m["Source"]).resolve() for c in containers for m in c.get("Mounts", []) if m.get("Type") == "bind"}
-    protected_images = {c["Image"] for c in containers}
+    protected_images = set()
     protected_paths = set(mounts)
     for kind, value in references(state):
         if kind == "image":
@@ -126,6 +126,22 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
         if lease and lease.get("expires_at", 0) > now:
             protected_paths.update(Path(p).resolve() for p in lease.get("paths", []))
             protected_images.update(lease.get("images", []))
+
+    retired_containers = []
+    if 'production' in owners and state.get('blue-green', state).get('phase') == 'STABLE':
+        recovery_ids = {i['Id'] for i in images if {i['Id'], *(i.get('RepoTags') or []), *(i.get('RepoDigests') or [])} & protected_images}
+        owned_ids = {i['Id'] for i in images if i.get('RepoTags') and all(owned_image(tag, 'production') for tag in i['RepoTags'])}
+        for container in containers:
+            labels = container.get('Config', {}).get('Labels') or {}
+            status = container.get('State', {})
+            finished = status.get('FinishedAt', '')
+            if (labels.get('com.docker.compose.project') in ('tellyouwhat-backend', 'tellyouwhat-blue', 'tellyouwhat-green')
+                    and labels.get('com.docker.compose.service') in ('gateway', 'worker', 'admin')
+                    and status.get('Status') == 'exited' and not status.get('Running', False)
+                    and finished and not finished.startswith('0001-') and timestamp(finished) <= now - GRACE_SECONDS
+                    and container['Image'] in owned_ids - recovery_ids):
+                retired_containers.append({'owner': 'production', 'id': container['Id'], 'name': container.get('Name', '')})
+    protected_images.update(c['Image'] for c in containers)
 
     # Legacy development deployments predate owner records: retain two builds per image family.
     for owner in ("birthday-development", "albums-test", "platform-test", "apple-development"):
@@ -267,7 +283,7 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
         if not leaves:
             raise OperationError("cyclic image ancestry")
         selected_images.extend(selected.pop(i) for i in leaves)
-    return {"files": selected_files, "images": selected_images,
+    return {"files": selected_files, "images": selected_images, 'containers': retired_containers,
             "protected_paths": sorted(str(p) for p in protected_paths), "protected_images": sorted(protected_images)}
 
 
@@ -288,7 +304,21 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
     plan = plan_cleanup(runtime.root, read_state(runtime), containers, images, [owner] if owner else None)
     if not apply:
         return {"dry_run": True, "free_bytes": before, **plan}
-    removed_files, removed_images, errors = [], [], []
+    removed_files, removed_images, removed_containers, errors = [], [], [], []
+    for item in plan.get('containers', []):
+        latest = inspect_containers(runtime)
+        fresh = plan_cleanup(runtime.root, read_state(runtime), latest, images, [owner] if owner else None)
+        if item['id'] not in {c['id'] for c in fresh['containers']}:
+            continue
+        try:
+            # No force and no volume removal: Docker refuses a concurrent restart.
+            runtime.execute('artifacts-remove-container', ['docker', 'rm', item['id']], timeout=30)
+            removed_containers.append(item)
+        except OperationError as error:
+            errors.append(str(error))
+    if removed_containers:
+        containers, images = inspect_host(runtime)
+        plan = plan_cleanup(runtime.root, read_state(runtime), containers, images, [owner] if owner else None)
     for item in plan["files"]:
         # Recheck live mounts immediately before deletion, including newly created containers.
         latest = inspect_containers(runtime)
@@ -345,6 +375,7 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
     after = shutil.disk_usage(runtime.root).free
     result = runtime.record("artifacts" + ("-" + owner if owner else ""), passed=not errors, errors=errors,
                           removed_files=removed_files, removed_images=removed_images,
+                          removed_containers=removed_containers,
                           free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before,
                           apple_delivery=apple_delivery)
     if errors:

@@ -167,8 +167,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run, con
         except Exception:
             raise OperationError("interrupted deployment failed; explicit recovery is required") from error
         raise OperationError("interrupted deployment failed; previous version restarted without restoring the database") from error
-    for script in (source / "deploy/tencent").iterdir():
-        if script.is_file() and script.suffix in (".py", ".sh"):
-            shutil.copy2(script, runtime.root / "deploy/tencent" / script.name)
+    from ops_common import install_operations
+    install_operations(source, runtime.root)
     shutil.rmtree(source)
     return {"passed": True, "deployment": "STABLE", "strategy": "disruptive", "current": candidate}

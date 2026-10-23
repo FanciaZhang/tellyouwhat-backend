@@ -45,6 +45,22 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual([p["path"] for p in plan["files"]], [str(old)])
         self.assertEqual([i["id"] for i in plan["images"]], ["sha256:obsolete"])
 
+    def test_only_expired_unreferenced_production_containers_are_retired(self):
+        images = [self.image(name, digest='registry@sha256:' + name) for name in ('current', 'previous', 'obsolete', 'recent', 'unknown')]
+        def container(name, age, project='tellyouwhat-backend'):
+            return {'Id': name, 'Name': name, 'Image': 'sha256:' + name,
+                    'Config': {'Labels': {'com.docker.compose.project': project, 'com.docker.compose.service': 'gateway'}},
+                    'State': {'Status': 'exited', 'FinishedAt': datetime.fromtimestamp(self.now - age, timezone.utc).isoformat()}}
+        containers = [container(name, GRACE_SECONDS + 1) for name in ('current', 'previous', 'obsolete')]
+        containers += [container('recent', 60), container('unknown', GRACE_SECONDS + 1, 'unmanaged')]
+        state = {**self.state, 'phase': 'STABLE'}
+        plan = plan_cleanup(self.root, state, containers, images, now=self.now)
+        self.assertEqual([c['id'] for c in plan['containers']], ['obsolete'])
+        self.assertFalse(plan_cleanup(self.root, {**state, 'phase': 'DRAINING'}, containers, images, now=self.now)['containers'])
+        self.assertFalse(plan_cleanup(self.root, state, containers, images, owners=['platform-test'], now=self.now)['containers'])
+        containers[2]['State']['Running'] = True
+        self.assertFalse(plan_cleanup(self.root, state, containers, images, now=self.now)['containers'])
+
     def test_journal_keeps_two_versions_and_any_container_reference(self):
         directory = self.root.parent / "journal-development/bin"
         versions = [self.file(directory / ("journaldevserver-" + str(i) * 16), age=GRACE_SECONDS + 10 + i) for i in range(5)]

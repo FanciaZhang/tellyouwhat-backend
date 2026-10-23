@@ -9,7 +9,7 @@ import socket
 import time
 import urllib.request
 
-from ops_common import OperationError, atomic_json, atomic_text, compose_command, read_environment
+from ops_common import OperationError, atomic_json, atomic_text, compose_command, read_environment, install_operations
 
 SERVICES = ("gateway", "worker", "admin")
 PORTS = {"legacy": (18080, 18081, 18082), "blue": (18080, 18081, 18082), "green": (18180, 18181, 18182)}
@@ -508,9 +508,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, source_run=""):
             raise OperationError("release failed; explicit recovery is required") from error
         raise OperationError("release failed; previous route restored and candidate retained for draining") from error
     # Keep code and release data separate; live slots retain immutable app files.
-    for script in (source / "deploy/tencent").iterdir():
-        if script.is_file() and script.suffix in (".py", ".sh"):
-            shutil.copy2(script, runtime.root / "deploy/tencent" / script.name)
+    install_operations(source, runtime.root)
     shutil.rmtree(source)
     return {"passed": True, "deployment": "DRAINING", "current": state["current"]}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/testutil"
@@ -173,6 +174,9 @@ func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
 		{Scope: privacy.FreeRecognitionScope, DocumentVersion: privacy.AIDocumentVersion},
 		{Scope: privacy.SensitiveHealthScope, DocumentVersion: privacy.AIDocumentVersion, Granted: true},
 	}
+	if err := repository.CheckConsentScopes(ctx, []string{privacy.GuardianConsentScope}); err == nil {
+		t.Fatal("readiness accepted the incompatible deployed constraint")
+	}
 	_, err := service.RecordConsents(ctx, principal, consents)
 	var constraintError *mysql.MySQLError
 	if !errors.As(err, &constraintError) || constraintError.Number != 3819 {
@@ -232,5 +236,41 @@ func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
 	}
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != 9 {
 		t.Fatalf("migration replay changed existing consents: count=%d err=%v", count, err)
+	}
+}
+
+func TestMySQLConsentContractScopesRemainWritable(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx := context.Background()
+	document, err := platformhttpapi.GetSwagger()
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := attestation.RegisteredKey{KeyID: "contract-scopes", DeviceID: "00000000-0000-4000-8000-000000000084", PublicKey: []byte("fixture"), Environment: "production", Receipt: []byte("fixture")}
+	if err := mysqlstore.NewKeyRepository(db, "health").Register(ctx, principal); err != nil {
+		t.Fatal(err)
+	}
+	repository := mysqlstore.NewPrivacyRepository(db, "health")
+	var scopes []string
+	for _, value := range document.Components.Schemas["PrivacyConsent"].Value.Properties["scope"].Value.Enum {
+		scope := value.(string)
+		scopes = append(scopes, scope)
+		for _, granted := range []bool{false, true} {
+			if err := repository.RecordConsents(ctx, []privacy.Record{{KeyID: principal.KeyID, DeviceID: principal.DeviceID, Scope: scope, DocumentVersion: "contract-fixture", Granted: granted, RecordedAt: time.Now()}}); err != nil {
+				t.Fatalf("contract scope %s granted=%v cannot be stored: %v", scope, granted, err)
+			}
+		}
+	}
+	if len(scopes) == 0 {
+		t.Fatal("consent contract enum is empty")
+	}
+	if err := repository.CheckConsentScopes(ctx, scopes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE privacy_consents ALTER CHECK privacy_consents_scope_chk NOT ENFORCED`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CheckConsentScopes(ctx, scopes); err == nil {
+		t.Fatal("readiness accepted a disabled database constraint")
 	}
 }

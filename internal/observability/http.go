@@ -1,16 +1,29 @@
 package observability
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
 )
 
 const OperationIDContextKey = "tellyouwhat.operation_id"
 const AuthenticationFailureStageContextKey = "tellyouwhat.authentication_failure_stage"
+const storageFailureContextKey = "tellyouwhat.storage_failure"
+
+// RecordStorageFailure records error types, never SQL text or driver messages.
+func RecordStorageFailure(context *gin.Context, err error) {
+	code := uint16(0)
+	var failure *mysql.MySQLError
+	if errors.As(err, &failure) {
+		code = failure.Number
+	}
+	context.Set(storageFailureContextKey, code)
+}
 
 // Recovery is Gin-native panic recovery for every HTTP runtime.
 func Recovery(logger *slog.Logger) gin.HandlerFunc {
@@ -86,7 +99,14 @@ func loggerMiddleware(logger *slog.Logger, appID string) gin.HandlerFunc {
 		if stage := context.GetString(AuthenticationFailureStageContextKey); stage != "" {
 			attributes = append(attributes, "authentication_failure_stage", stage)
 		}
-		logger.InfoContext(request.Context(), "http request", attributes...)
+		if code, exists := context.Get(storageFailureContextKey); exists {
+			attributes = append(attributes, "failure_class", "storage", "sql_error_code", code)
+		}
+		if context.Writer.Status() >= 500 {
+			logger.ErrorContext(request.Context(), "http request", attributes...)
+		} else {
+			logger.InfoContext(request.Context(), "http request", attributes...)
+		}
 	}
 }
 

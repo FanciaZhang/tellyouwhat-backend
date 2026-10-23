@@ -281,6 +281,7 @@ func (server *Server) RecordPrivacyConsents(
 		return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 	}
 	if err != nil {
+		observability.RecordStorageFailure(strictGinContext(ctx), err)
 		failure = newAPIFailure(http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", requestID.String())
 		return platformhttpapi.RecordPrivacyConsents503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
@@ -71,6 +72,23 @@ RECOVERY_DATA_TABLES = (
     "offer_redemption_report_sync",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
+BACKUP_BUDGET_BYTES = 6 * 1024**3
+
+
+def require_backup_capacity(runtime):
+    disk = shutil.disk_usage(runtime.backups)
+    budget = min(BACKUP_BUDGET_BYTES, disk.total // 6)
+    used = sum(path.stat().st_size for path in runtime.backups.rglob('*') if path.is_file() and not path.is_symlink())
+    if used >= budget or disk.free < 2 * 1024**3:
+        raise OperationError('backup storage budget exceeded; retain valid snapshots and review producer growth')
+    return min(budget - used, disk.free - 2 * 1024**3)
+
+
+def prune_backup_temporaries(runtime):
+    for path in runtime.backups.iterdir():
+        if (re.fullmatch(r'\.(backup|recovery)-[A-Za-z0-9_-]{6,}', path.name) and path.is_dir()
+                and not path.is_symlink() and path.stat().st_mtime < time.time() - 48 * 3600):
+            shutil.rmtree(path)
 
 
 def backup_secret(runtime):
@@ -104,23 +122,27 @@ def crypt(runtime, source, destination, *, decrypt=False):
     os.chmod(destination, 0o600)
 
 
-def create_backup(runtime):
+def create_backup(runtime, *, scope='host'):
+    if scope not in ('host', 'production'):
+        raise OperationError('unsupported backup recovery scope')
+    operation = 'backup' if scope == 'host' else 'production_backup'
     try:
-        result = export_backup(runtime)
+        result = export_backup(runtime, scope=scope)
     except (OperationError, OSError, subprocess.TimeoutExpired):
-        runtime.record("backup-failure", passed=False)
+        runtime.record(operation + '-failure', passed=False)
         raise
-    (runtime.state / "backup-failure.json").unlink(missing_ok=True)
+    (runtime.state / (operation + '-failure.json')).unlink(missing_ok=True)
     return result
 
 
-def export_backup(runtime):
+def export_backup(runtime, *, scope='host'):
     backup_secret(runtime)
     database = runtime.config.get("MYSQL_DATABASE", "")
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     prune_backups(runtime)
+    available_bytes = require_backup_capacity(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
@@ -129,7 +151,7 @@ def export_backup(runtime):
                   "--user=" + runtime.config["MYSQL_USER"]]
     child_env = {"MYSQL_PWD": runtime.config["MYSQL_PASSWORD"]}
     table_output = runtime.execute("backup-table-inventory", [
-        "docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
+        "docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
         "--database=" + database, "--batch", "--skip-column-names",
         "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
     ], env=child_env, timeout=300)
@@ -145,7 +167,7 @@ def export_backup(runtime):
         raise OperationError("database does not contain the required application schema; no backup published")
     included_data_tables = [table for table in RECOVERY_DATA_TABLES if table in database_tables]
     excluded_data_tables = sorted(set(database_tables) - set(included_data_tables))
-    command = ["docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
+    command = ["docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
                *connection, "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
                "--skip-comments"]
@@ -177,6 +199,9 @@ def export_backup(runtime):
                                     raise OperationError("database export included excluded application data; no backup published")
                                 counts[table] = counts.get(table, 0) + 1
                             archive.write(line)
+                            # Reserve room for encryption and recovery assembly before writing more SQL.
+                            if output.tell() > available_bytes // 4:
+                                raise OperationError('SQL export exceeds its temporary storage budget')
                         returncode = process.wait(timeout=900)
                     finally:
                         process.stdout.close()
@@ -193,21 +218,29 @@ def export_backup(runtime):
             raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
-        recovery = ops_offsite.create_recovery_bundle(runtime, destination.name) if ops_offsite.enabled(runtime) else {}
-        manifest = {"version": 1, "created_at": int(time.time()), "database": database,
-                    "filename": destination.name, "image": image, "table_rows": counts,
-                    "included_data_tables": included_data_tables,
-                    "excluded_data_tables": excluded_data_tables,
-                    "sha256": file_digest(encrypted), **recovery}
-        signature = manifest_signature(backup_secret(runtime), manifest)
-        os.replace(encrypted, destination)
-        atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+        try:
+            recovery = ops_offsite.create_recovery_bundle(runtime, destination.name, scope=scope) if ops_offsite.enabled(runtime) else {}
+            require_backup_capacity(runtime)
+            manifest = {"version": 1, "created_at": int(time.time()), "database": database, 'recovery_scope': scope,
+                        "filename": destination.name, "image": image, "table_rows": counts,
+                        "included_data_tables": included_data_tables,
+                        "excluded_data_tables": excluded_data_tables,
+                        "sha256": file_digest(encrypted), **recovery}
+            signature = manifest_signature(backup_secret(runtime), manifest)
+            os.replace(encrypted, destination)
+            atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            Path(str(destination) + '.json').unlink(missing_ok=True)
+            (destination.parent / ('recovery-' + destination.name.replace('.sql.gz.enc', '.tar.gz.enc'))).unlink(missing_ok=True)
+            raise
     if ops_offsite.enabled(runtime):
         ops_offsite.publish(runtime, destination, manifest)
-    return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
+    return runtime.record('backup' if scope == 'host' else 'production_backup', filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
 
 
 def prune_backups(runtime):
+    prune_backup_temporaries(runtime)
     cutoff = time.time() - BACKUP_RETENTION_SECONDS
     removed = 0
     failed = 0
@@ -234,6 +267,8 @@ def verify_backup(runtime, path):
             raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
+        if manifest.get('recovery_scope', 'host') not in ('host', 'production'):
+            raise OperationError('invalid backup recovery scope')
         if manifest.get("scope") not in (None, "control-plane"):
             raise OperationError("backup belongs to a different recovery scope")
         expected = manifest_signature(backup_secret(runtime), manifest)

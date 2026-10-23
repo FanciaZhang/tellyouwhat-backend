@@ -46,6 +46,25 @@ func migrationTestDatabase(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestMySQLIsolatedMigrationDoesNotWaitForAnotherDatabase(t *testing.T) {
+	db := migrationTestDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	connection, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	var locked int
+	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(?, 30)`, migrationLockName).Scan(&locked); err != nil || locked != 1 {
+		t.Fatal("cannot hold the legacy migration lock", err)
+	}
+	defer connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, migrationLockName)
+	if err := RunIsolatedTest(ctx, db); err != nil {
+		t.Fatal("independent test database waited for the production lock", err)
+	}
+}
+
 func TestMySQLAlbumDerivedMigrationFromEmptyAndVideoSchema(t *testing.T) {
 	for _, start := range []string{"empty", "0025", "0026-interrupted"} {
 		t.Run(start, func(t *testing.T) {

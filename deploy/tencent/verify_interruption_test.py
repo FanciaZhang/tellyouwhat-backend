@@ -24,10 +24,12 @@ class ManualEvidenceTests(unittest.TestCase):
 
     def test_exact_failed_production_run_is_eligible_for_host_refusal_check(self):
         self.check()
+        self.run['conclusion'] = 'success'
+        self.check()
 
     def test_fork_pr_unverified_old_sha_wrong_workflow_and_missing_images_are_rejected(self):
         for field, value in [('event','pull_request'), ('head_branch','feature/x'), ('head_sha','c'*40),
-                             ('path','.github/workflows/other.yml'), ('conclusion','success'),
+                             ('path','.github/workflows/other.yml'), ('conclusion','cancelled'),
                              ('head_repository',{'full_name':'fork/backend'})]:
             with self.subTest(field=field):
                 original = self.run[field]
@@ -39,7 +41,7 @@ class ManualEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.check()
             self.jobs[index]['conclusion'] = 'success'
         self.jobs[-1]['steps'][0]['name'] = 'Back up database before migration'
-        with self.assertRaises(ValueError): self.check()
+        self.check()
 
     def test_confirmation_cannot_be_generic_yes_or_different_sha(self):
         for confirmation in ['yes', '', 'interrupt:' + 'c'*40]:

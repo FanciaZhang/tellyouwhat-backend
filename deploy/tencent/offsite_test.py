@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from ops_common import OperationError, Runtime
 from ops_cos import transfer, validate_bucket
-from ops_offsite import download, publish, transport, verify_recovery_bundle
+from ops_offsite import download, publish, transport, verify_recovery_bundle, create_recovery_bundle
 
 
 class OffsiteSafetyTests(unittest.TestCase):
@@ -37,6 +37,20 @@ class OffsiteSafetyTests(unittest.TestCase):
                 validate_bucket(client, "private-backup", "backups/")
             client.put_object.assert_not_called()
         validate_bucket(self.client(), "private-backup", "backups/")
+
+    def test_production_checkpoint_skips_independent_test_and_development_readers(self):
+        with patch('test_routes.backup_configuration', side_effect=OperationError('invalid test routing')), \
+                patch('platform_test_artifacts.backup_configuration', side_effect=OperationError('new test format')), \
+                patch('apple_delivery_artifacts.backup_configuration', side_effect=OperationError('unrelated package')), \
+                patch('journal_development_artifacts.backup_configuration', side_effect=OperationError('unrelated journal')), \
+                patch('albums_artifacts.backup_configuration', return_value={}) as albums:
+            result = create_recovery_bundle(self.runtime, 'mysql-20261023T000000Z-abcdef.sql.gz.enc', scope='production')
+            self.assertEqual(result['recovery_platform_test'], {})
+            self.assertEqual(result['recovery_apple_delivery'], {})
+            self.assertEqual(albums.call_args.args[-1], 'production')
+            self.assertEqual(albums.call_count, 1)
+            with self.assertRaisesRegex(OperationError, 'invalid test routing'):
+                create_recovery_bundle(self.runtime, 'mysql-20261023T000001Z-abcdef.sql.gz.enc')
 
     def test_plaintext_and_symlink_uploads_are_rejected(self):
         client = self.client()
