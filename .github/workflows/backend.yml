@@ -163,11 +163,14 @@ jobs:
       - name: Test with MySQL and Redis
         if: steps.evidence.outputs.full == ''
         run: |
+          set -euo pipefail
           test -n "$MYSQL_TEST_DSN"
           test -n "$MYSQL_TEST_ADMIN_DSN"
           test -n "$REDIS_TEST_URL"
           packages=$(go list ./... | awk '!/\/internal\/albums$/')
-          go test -timeout=30m -count=1 -v $packages
+          test -n "$packages"
+          mapfile -t package_list <<< "$packages"
+          go test -timeout=30m -count=1 -v "${package_list[@]}"
         env:
           MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
           MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
