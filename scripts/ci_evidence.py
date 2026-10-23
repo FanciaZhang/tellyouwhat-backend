@@ -78,7 +78,9 @@ def select_evidence(repo, commit, image, runs, current_run):
                 continue
             for scope in scopes:
                 result[scope] = str(run['id'])
-            if (source == commit and run.get('head_branch') == 'main' and run['event'] != 'pull_request'
+            published = run.get('head_branch') == 'main' and run['event'] != 'pull_request'
+            # Non-release checks reuse build results; production requires published main images.
+            if (source == commit and (published or os.getenv('GITHUB_REF') != 'refs/heads/main')
                     and {f'container ({name})' for name in SERVICES}.issubset(
                         job['name'] for job in jobs if job['conclusion'] == 'success')):
                 result['images'] = str(run['id'])

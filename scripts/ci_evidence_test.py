@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -42,6 +43,11 @@ class EvidenceTests(unittest.TestCase):
                 self.assertFalse(any(select_evidence('owner/repo', commit, 'runner', [run], 20).values()))
             with patch.dict(run['head_repository'], full_name='untrusted/fork'):
                 self.assertFalse(any(select_evidence('owner/repo', commit, 'runner', [run], 20).values()))
+            with patch.dict(run, event='pull_request', head_branch='feature/example'):
+                with patch.dict(os.environ, GITHUB_REF='refs/heads/main'):
+                    self.assertEqual(select_evidence('owner/repo', commit, 'runner', [run], 20)['images'], '')
+                with patch.dict(os.environ, GITHUB_REF='refs/heads/feature/example'):
+                    self.assertEqual(select_evidence('owner/repo', commit, 'runner', [run], 20)['images'], '10')
 
     def test_expired_or_missing_receipt_cannot_authorize_reuse(self):
         with patch('ci_evidence.api', return_value=b'{"artifacts": []}'):
