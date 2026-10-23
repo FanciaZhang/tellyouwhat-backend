@@ -20,6 +20,17 @@ func TestStructuredMealSchemaAcceptsRegisteredShapes(t *testing.T) {
 	}
 }
 
+func TestStructuredMealSchemaAcceptsOptionalMealMemoryCue(t *testing.T) {
+	t.Parallel()
+	raw := strings.Replace(validV5MealSchemaJSON(), `"required":["dining_scene"]`, `"required":["dining_scene","memory_cue"]`, 1)
+	raw = strings.Replace(raw, `"properties":{"dining_scene":`, `"properties":{"memory_cue":{"type":"string","maxLength":64,"enum":["none","birthday","celebration","shared_meal","special_setting"]},"dining_scene":`, 1)
+	for _, operation := range []Operation{OperationMealPhotoCapture, OperationMealTextCapture} {
+		if err := ValidateStructuredMealSchema([]byte(raw), operation); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestStructuredMealSchemaRejectsHydrationCupEstimateRoot(t *testing.T) {
 	t.Parallel()
 
