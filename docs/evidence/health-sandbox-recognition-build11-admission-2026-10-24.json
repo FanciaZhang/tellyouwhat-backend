@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "ccbf15e2cc5b833b408c75814f8f1f2d5dbf92b6",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "11"
+  },
+  "appVersion": "1.6.0",
+  "clientFixFromCommit": "ac7653957af61573548fb85526531925bc3108de",
+  "observedFailure": "Legacy development entitlement activation returned HTTP 404 before photo inference",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false
+}
