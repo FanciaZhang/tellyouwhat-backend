@@ -14,12 +14,12 @@ import sys
 import tempfile
 import time
 
-from ops_common import OperationError, Runtime, read_environment, compose_command
+from ops_common import OperationError, Runtime, read_environment, compose_command, install_operations
 from ops_backup import create_backup, verify_backup
 from ops_artifacts import cleanup
 
 
-RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "deploy/single-server/Caddyfile",
+RUNTIME_FILES = [".env.production", "compose.production.yaml", "compose.ark-management.yaml", "compose.journal-recording.yaml", "compose.shared-albums-production.yaml", "albums.env", "test-operations.json", "deploy/single-server/Caddyfile",
                  "deploy/single-server/Caddyfile.external"]
 KEY_FILES = ["health-subscription.p8", "journal-subscription.p8", "health-marketing.p8", "journal-marketing.p8"]
 
@@ -199,7 +199,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-
     require_resources(runtime, source, config)
     require_disk_space(runtime)
     prepare(runtime, config)
-    backup = create_backup(runtime)
+    backup = create_backup(runtime, scope='production')
     verify_backup(runtime, runtime.backups / backup["filename"])
     runtime.record("release_backup", tag=tag, registry=registry, source_run=source_run,
                    filename=backup["filename"], sha256=backup["sha256"])
@@ -239,11 +239,7 @@ def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-
         activated = True
         if source != runtime.root:
             copy_runtime(source, runtime.root)
-            target = runtime.root / "deploy/tencent"
-            target.mkdir(parents=True, exist_ok=True)
-            for script in (source / "deploy/tencent").iterdir():
-                if script.is_file() and script.suffix in (".py", ".sh"):
-                    shutil.copy2(script, target / script.name)
+            install_operations(source, runtime.root)
         set_image(runtime.environment_file, tag, registry)
         activate(runtime, tag, registry)
         if not internally_ready(config, attempts):

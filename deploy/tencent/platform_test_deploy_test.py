@@ -173,7 +173,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                 raise RuntimeError('activation failed')
         self.assertFalse(installed.exists())
 
-    def test_shared_backup_update_accepts_only_reviewed_catalog_retention_and_rolls_back(self):
+    def test_shared_backup_update_does_not_replace_current_production_recovery(self):
         name = 'ops_backup.py'
         current = (Path(__file__).parent / name).read_bytes()
         added = b''.join(b'    "' + table + b'",\n' for table in (
@@ -189,10 +189,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.save()
         state = self.runtime.state / 'platform-test.json'
         state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
-        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+        with self.assertRaisesRegex(OperationError, 'outside the reviewed'):
             with dev.test_operations_transition(self.runtime, self.source):
-                self.assertEqual(installed.read_bytes(), current)
-                raise RuntimeError('activation failed')
+                self.fail('test updates must not replace the production recovery implementation')
         self.assertEqual(installed.read_bytes(), original)
         installed.write_bytes(original + b'# unreviewed shared operation\n')
         with self.assertRaisesRegex(OperationError, 'outside the reviewed'):
