@@ -837,6 +837,17 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
             plan(self.old_folder, self.folder)
 
+    def test_guardian_consent_migration_requires_exact_reviewed_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        name = '0072_health_guardian_consent_scope.sql'
+        self.add_illustration_migration(name=name)
+        self.assertEqual(plan(self.old_folder, self.folder)[1], ['0001_example.sql', name])
+        self.write_archive()
+        self.add_illustration_migration(b'ALTER TABLE privacy_consents DROP CHECK privacy_consents_scope_chk;', name=name)
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+
     def test_read_aloud_migrations_require_each_exact_reviewed_sql(self):
         from platform_test_schema import plan
         self.prepare_update()

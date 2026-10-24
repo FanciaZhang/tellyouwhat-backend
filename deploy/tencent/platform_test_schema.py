@@ -15,7 +15,8 @@ ADDITIONS = {'migrations/0065_journal_illustration_jobs.sql':
              'migrations/0068_journal_read_aloud_quota.sql': '0133b95c95ae8d7297e8bc507d4f8aad9eff31089e4c1a2529ce55379533f7e0',
              'migrations/0069_journal_voice_catalog.sql': '3cc56f88627e5f31f952891e9ecc4bc829fb208d57d8f2d031a406cd60459c60',
              'migrations/0070_journal_read_aloud_consent.sql': '4b26bac5e6ef50e28c2284c888e077fb2fe7bff3ccef358daef4fd3a4e2e0a95',
-             'migrations/0071_journal_simulator_read_aloud_consents.sql': '968c1b49952a41965312e9c47c88c08dc9c95affe5ea5d9a90dafb7b6f2b4631'}
+             'migrations/0071_journal_simulator_read_aloud_consents.sql': '968c1b49952a41965312e9c47c88c08dc9c95affe5ea5d9a90dafb7b6f2b4631',
+             'migrations/0072_health_guardian_consent_scope.sql': '987e13cd0bb2c6e06f3c9ef34349ff277dd58738d14cbe61724cc38982943574'}
 
 
 def hashes(folder):
