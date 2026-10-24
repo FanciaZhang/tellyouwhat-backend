@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "21942fd123939393ae1e8d3c1835d775cd1e354a",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "10"
+  },
+  "appSource": "f10363a13ce983d2d4505d303bb16c21e5b35c43",
+  "includedHealthMain": "16fc392d9623fee50f3017b4afbd84abae1ee782",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Health Ad Hoc rebuilt after integrating latest main"
+}
