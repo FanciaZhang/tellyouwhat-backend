@@ -1,0 +1,51 @@
+{
+  "observedLocalTime": "2026-10-24 17:35-17:36 Asia/Shanghai",
+  "failure": {
+    "path": "/v1/privacy/consents",
+    "status": 503,
+    "cause": "Database scope CHECK omitted guardian_consent, rejecting the complete eight-scope Health batch even for a false guardian decision",
+    "photoInferenceStarted": false
+  },
+  "migration": "0072_health_guardian_consent_scope.sql",
+  "migrationSHA256": "987e13cd0bb2c6e06f3c9ef34349ff277dd58738d14cbe61724cc38982943574",
+  "deployedTestSource": "b4b997813d7686a40986f14ba406f6df2a726502",
+  "onlyAddedAllowedHealthBuild": "12",
+  "backwardCompatible": true,
+  "existingRowsPreserved": true,
+  "isolatedMySQLRegression": {
+    "passed": 4,
+    "skipped": 0,
+    "covers": [
+      "deployed constraint rejection and transaction rollback",
+      "complete current eight-scope batch",
+      "migration replay",
+      "grant and revocation",
+      "unknown scope rejection",
+      "legacy Health and Journal scopes"
+    ]
+  },
+  "operationsRegression": {
+    "run": 323,
+    "skipped": 6,
+    "failed": 0
+  },
+  "goPackagesPassed": [
+    "internal/privacy",
+    "internal/gateway",
+    "migrations"
+  ],
+  "sharedRecoveryHelpersMatchInstalledProductionSource": "5124d4b356cd36a534466d5e73fcc4a0cf15e190",
+  "productionAndCaddyUnchangedDuringTestUpdate": true,
+  "backup": "mysql-20261024T100441Z-cc60ae.sql.gz.enc",
+  "backupVerifiedByManagedDeployment": true,
+  "readiness": {
+    "health": 200,
+    "journal": 200,
+    "birthday": 200,
+    "albums": 200
+  },
+  "publicHealthHTTPSReadiness": 200,
+  "producerCleanupPassed": true,
+  "realDeviceRetryVerified": false,
+  "appReleaseOrTestFlightChanged": false
+}
