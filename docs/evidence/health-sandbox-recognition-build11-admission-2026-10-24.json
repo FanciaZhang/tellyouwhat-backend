@@ -1,5 +1,5 @@
 {
-  "state": "planned",
+  "state": "activated-and-verified",
   "previousTestSource": "ccbf15e2cc5b833b408c75814f8f1f2d5dbf92b6",
   "onlyAddedBuild": {
     "HEALTH_ALLOWED_APP_BUILDS": "11"
@@ -9,5 +9,19 @@
   "observedFailure": "Legacy development entitlement activation returned HTTP 404 before photo inference",
   "runtimeCodeChanges": false,
   "migrations": false,
-  "productionChanges": false
+  "productionChanges": false,
+  "appSource": "426895496cb612f733d0fa2d369bc46445413237",
+  "deployedTestSource": "a2f9d163316ef6482feb7d5404a4fa92cc7eebc0",
+  "readiness": {
+    "health": 200,
+    "journal": 200,
+    "birthday": 200,
+    "albums": 200
+  },
+  "backup": "mysql-20261024T083326Z-250aab.sql.gz.enc",
+  "authenticatedAndDecryptedRecoveryVerified": true,
+  "producerCleanupPassed": true,
+  "productionSelectionUnchanged": true,
+  "caddyUnchanged": true,
+  "realAppAuthenticationVerified": false
 }
