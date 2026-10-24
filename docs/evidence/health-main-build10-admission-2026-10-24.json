@@ -1,5 +1,6 @@
 {
-  "state": "planned",
+  "state": "activated-and-verified",
+  "deployedTestSource": "ccbf15e2cc5b833b408c75814f8f1f2d5dbf92b6",
   "previousTestSource": "21942fd123939393ae1e8d3c1835d775cd1e354a",
   "onlyAddedBuild": {
     "HEALTH_ALLOWED_APP_BUILDS": "10"
@@ -9,5 +10,17 @@
   "runtimeCodeChanges": false,
   "migrations": false,
   "productionChanges": false,
+  "readiness": {
+    "health": 200,
+    "journal": 200,
+    "birthday": 200,
+    "albums": 200
+  },
+  "backup": "mysql-20261024T045404Z-85b90c.sql.gz.enc",
+  "authenticatedAndDecryptedRecoveryVerified": true,
+  "producerCleanupPassed": true,
+  "productionSelectionUnchanged": true,
+  "caddyUnchanged": true,
+  "realAppAuthenticationVerified": false,
   "purpose": "Health Ad Hoc rebuilt after integrating latest main"
 }
