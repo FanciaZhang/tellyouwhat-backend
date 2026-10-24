@@ -1,0 +1,18 @@
+{
+  "state": "planned",
+  "previousTestSource": "b1a49bddf6ac85ff3e890e49734f154e82d7c9c1",
+  "changes": {
+    "HEALTH_ALLOWED_APP_BUILDS": {
+      "add": "9",
+      "appSource": "a9bab9e80db9f121d9c9d0038018a00441531ae1"
+    },
+    "JOURNAL_ALLOWED_APP_BUILDS": {
+      "add": "34",
+      "appSource": "44c21f4c7f49f878bb98fa6b63bc0a0e7d6f569b"
+    }
+  },
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Ad Hoc meal memory integration builds"
+}
