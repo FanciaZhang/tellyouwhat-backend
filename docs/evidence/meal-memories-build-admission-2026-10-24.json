@@ -1,5 +1,5 @@
 {
-  "state": "planned",
+  "state": "activated",
   "previousTestSource": "b1a49bddf6ac85ff3e890e49734f154e82d7c9c1",
   "changes": {
     "HEALTH_ALLOWED_APP_BUILDS": {
@@ -14,5 +14,19 @@
   "runtimeCodeChanges": false,
   "migrations": false,
   "productionChanges": false,
-  "purpose": "Ad Hoc meal memory integration builds"
+  "purpose": "Ad Hoc meal memory integration builds",
+  "testSource": "21942fd123939393ae1e8d3c1835d775cd1e354a",
+  "ownerRegistered": true,
+  "readiness": {
+    "health": 200,
+    "journal": 200,
+    "birthday": 200,
+    "albums": 200
+  },
+  "productionSelectionUnchanged": true,
+  "caddyUnchanged": true,
+  "postUpdateBackup": "mysql-20261024T003927Z-1ca20a.sql.gz.enc",
+  "authenticatedAndDecryptedRecoveryVerified": true,
+  "appAuthenticationVerified": false,
+  "sqlRestorePerformed": false
 }
