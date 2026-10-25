@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-26",
+  "scope": "Hosted production native share form, real isolated HTTP handlers and MySQL, actual recipient web page, direct COS synthetic JPEG download",
+  "appBase": "c2311d05b48a4223334f2c50b7ac9ae9085515ac",
+  "backendBase": "e5acc2e0da8078a4dbcda38791d4ab7753d9c286",
+  "sourceSHA256": {
+    "AlbumsTests/AlbumShareStoreTests.swift": "feba6ebf491f13dd79d584aa70bd79cf2b36e3ae285cd84b294be1351201cbba",
+    "LegalSite/scripts/test-share-live.mjs": "685d62c15acddd256dd96c3f59fdf4cfd0ee2bd575fd529611afc61cfe6f0839",
+    "scripts/test-native-roundtrip.py": "df30c21532d51e6f61e78e2077f827fc942cbcc3cb2acf9d0610747cc6fe21bd",
+    "scripts/test-native-share-cleanup.py": "cf0d2d674cbd631dd25ae810f5a91bfce1fdc92f5c55b961ed098dd37f3300aa",
+    "internal/albums/sharing_live_test.go": "d3320d4d26736ee2eb71c42129a0ed71c7e7b596745e5b4296cbbccf6d47a103"
+  },
+  "build": "build-for-testing succeeded",
+  "runs": [
+    {
+      "system": "26",
+      "nativeResult": {
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "5B7E5ACF-09A9-436A-AA57-80E4E169B5AE",
+              "deviceName": "相册主线验收 iPhone 17 20261023",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 1,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "environmentDescription": "Albums · Built with macOS 27.0.1",
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "finishTime": 1792951948.261,
+        "passedTests": 1,
+        "result": "Passed",
+        "runtimeWarnings": [],
+        "skippedTests": 0,
+        "startTime": 1792951780.569,
+        "statistics": [],
+        "testFailures": [],
+        "title": "Test - Albums",
+        "topInsights": [],
+        "totalTestCount": 1
+      },
+      "backend": {
+        "exitCode": 0,
+        "passed": true
+      },
+      "browser": {
+        "scope": "actual recipient page, loopback HTTP sharing handlers, real COS JPEG download; synthetic owner session",
+        "passed": true,
+        "nativeOwnerUI": true,
+        "savedBytes": 777,
+        "savedSHA256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a",
+        "wrongPasswordRejected": true,
+        "claimReplayIDReused": true,
+        "refreshDidNotClaim": true,
+        "secondClaimDenied": true,
+        "revocationRemovedDownloadActions": true,
+        "mediaFetchedOnlyAfterClick": true
+      },
+      "provider": {
+        "bytes": 777,
+        "exactVersionCleanup": true,
+        "existingGrantStillReadableAfterRevoke": true,
+        "fullBytesAndRangeVerified": true,
+        "passed": true,
+        "recipientBrowserPassed": true,
+        "revokedLinkDeniedNewGrants": true,
+        "scope": "isolated MySQL sharing service and real COS; synthetic JPEG; no Apple or deployed gateway",
+        "sha256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a"
+      },
+      "cleanup": {
+        "exactVersionDeleted": true,
+        "fixedVersionReadStatus": 404
+      },
+      "servicesStopped": true,
+      "temporaryFilesRemoved": true
+    },
+    {
+      "system": "18",
+      "nativeResult": {
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "D1D24C71-6792-47C6-ADE4-A4FDCE5C93A0",
+              "deviceName": "相册视频编辑验收 iOS18.6 20261023",
+              "modelName": "iPhone 16",
+              "osBuildNumber": "22G86",
+              "osVersion": "18.6",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 1,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "environmentDescription": "Albums · Built with macOS 27.0.1",
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "finishTime": 1792952133.941,
+        "passedTests": 1,
+        "result": "Passed",
+        "runtimeWarnings": [],
+        "skippedTests": 0,
+        "startTime": 1792952018.901,
+        "statistics": [],
+        "testFailures": [],
+        "title": "Test - Albums",
+        "topInsights": [],
+        "totalTestCount": 1
+      },
+      "backend": {
+        "exitCode": 0,
+        "passed": true
+      },
+      "browser": {
+        "scope": "actual recipient page, loopback HTTP sharing handlers, real COS JPEG download; synthetic owner session",
+        "passed": true,
+        "nativeOwnerUI": true,
+        "savedBytes": 777,
+        "savedSHA256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a",
+        "wrongPasswordRejected": true,
+        "claimReplayIDReused": true,
+        "refreshDidNotClaim": true,
+        "secondClaimDenied": true,
+        "revocationRemovedDownloadActions": true,
+        "mediaFetchedOnlyAfterClick": true
+      },
+      "provider": {
+        "bytes": 777,
+        "exactVersionCleanup": true,
+        "existingGrantStillReadableAfterRevoke": true,
+        "fullBytesAndRangeVerified": true,
+        "passed": true,
+        "recipientBrowserPassed": true,
+        "revokedLinkDeniedNewGrants": true,
+        "scope": "isolated MySQL sharing service and real COS; synthetic JPEG; no Apple or deployed gateway",
+        "sha256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a"
+      },
+      "cleanup": {
+        "exactVersionDeleted": true,
+        "fixedVersionReadStatus": 404
+      },
+      "servicesStopped": true,
+      "temporaryFilesRemoved": true
+    }
+  ],
+  "screenshots": [
+    "native-real-share-revoked-ios26-2026-10-26.png",
+    "native-real-share-claimed-ios26-2026-10-26.png",
+    "native-real-share-created-ios26-2026-10-26.png",
+    "native-share-browser-recipient-download-ready-ios26-2026-10-26.png",
+    "native-share-browser-recipient-revoked-ios26-2026-10-26.png",
+    "native-real-share-revoked-ios18-2026-10-26.png",
+    "native-real-share-claimed-ios18-2026-10-26.png",
+    "native-real-share-created-ios18-2026-10-26.png",
+    "native-share-browser-recipient-download-ready-ios18-2026-10-26.png",
+    "native-share-browser-recipient-revoked-ios18-2026-10-26.png"
+  ],
+  "input": "external CUA taps on claim count, password switch, create and revoke; synthetic passcode typed using hardware keyboard",
+  "cleanupHelperTest": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-native-share-cleanup.py",
+    "passed": 1,
+    "cases": [
+      "successful probe",
+      "failed probe with upload intent",
+      "cancelled before upload intent"
+    ],
+    "note": "Helper extracted after native runs; behavior checked independently. Native test and backend sources unchanged during runs."
+  },
+  "limitations": [
+    "share form hosted directly, not navigation from main photo detail",
+    "owner session and entitlement seeded only into isolated database; no Apple login or StoreKit purchase",
+    "browser API requests use loopback adapter; deployed gateway, DNS/TLS and production storage allowlist unverified",
+    "test copies URL privately from real store result; OS share sheet and third-party clipboard handoff unverified",
+    "recipient uses desktop Chrome at narrow viewport; no iPhone Safari or Photos save",
+    "JPEG only; video and Live Photo recipient bundle remain unverified",
+    "list position and claim-count refresh driven by test; external scrolling not accepted",
+    "password field blank in attachments due system capture protection; software keyboard not exercised",
+    "top metadata partially behind navigation bar after test scroll; not a full top viewport screenshot"
+  ],
+  "cloudObjectsCreated": 2,
+  "cloudObjectsDeleted": 2,
+  "deployed": false,
+  "userAccepted": false
+}

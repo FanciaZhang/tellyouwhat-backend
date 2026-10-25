@@ -187,7 +187,8 @@ func runLiveSharingBrowser(t *testing.T, ctx context.Context, f sharingFixture, 
 	defer os.Remove(manifest)
 	roundtripJSON(t, root, "browser-fixture.json", map[string]any{
 		"apiOrigin": server.URL, "siteOrigin": "https://shares.example", "session": f.session.Token,
-		"versionID": f.version.VersionID, "sha256": object.SHA256, "sizeBytes": object.SizeBytes,
+		"nativeSession": f.session,
+		"versionID":     f.version.VersionID, "sha256": object.SHA256, "sizeBytes": object.SizeBytes,
 	})
 	command := exec.CommandContext(ctx, "node", script, manifest)
 	command.Cancel = func() error { return command.Process.Signal(os.Interrupt) }
