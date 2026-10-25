@@ -71,24 +71,31 @@ class MediaActivationTests(unittest.TestCase):
             else:
                 self.worker['State']['Running'] = True
             return b''
+        if label == 'albums-media-no-compose':
+            compile(command[2], '<compose-guard>', 'exec')
+            return b''
         if label == 'albums-media-startup':
             return b'{"msg":"album workers started"}\n'
         self.fail('unexpected command ' + label)
 
     def activate(self, *, post_proof=True):
         folder = media.prepare(self.runtime, self.run)
+        return self.run_activation(folder, post_proof=post_proof)
+
+    def run_activation(self, folder, *, post_proof=True, recover=False, interrupt_backup=False):
         proof = {'media/' + name: media.digest((folder / name).read_bytes()) for name in media.MEDIA_FILES}
         def verify(_runtime, path):
-            data = {'state.json': media.digest((self.state / 'albums-development.json').read_bytes()),
+            expected = self.old if path.name == 'before' else (self.state / 'albums-development.json').read_bytes()
+            data = {'state.json': media.digest(expected),
                     'current/selection.json': media.digest(self.files['selection.json']),
                     'checkpoint/albums-' + 'f' * 32 + '.sql.gz.enc': 'verified'}
             if path.name == 'after' and post_proof:
                 data.update(proof)
             return {'recovery_albums_development': data}
         with patch.object(media.fcntl, 'flock', side_effect=BlockingIOError), \
-             patch('ops_backup.create_backup', side_effect=[{'filename': 'before'}, {'filename': 'after'}]), \
+             patch('ops_backup.create_backup', side_effect=[{'filename': 'before'}, SystemExit('interrupted') if interrupt_backup else {'filename': 'after'}]), \
              patch('ops_backup.verify_backup', side_effect=verify):
-            return media.activate(self.runtime, self.run)
+            return media.activate(self.runtime, self.run, recover=recover)
 
     def test_prepare_keeps_runtime_unchanged_and_rejects_stale_or_repeated_input(self):
         folder = media.prepare(self.runtime, self.run)
@@ -127,6 +134,120 @@ class MediaActivationTests(unittest.TestCase):
             self.activate(post_proof=False)
         self.assertEqual(self.starts, ['after.yaml', 'before.yaml'])
         self.assertEqual((self.state / 'albums-development.json').read_bytes(), self.old)
+
+    def test_interrupted_activation_restores_before_and_after_state_write(self):
+        folder = media.prepare(self.runtime, self.run)
+        normal_execute = self.execute
+        def interrupted(label, command, **kwargs):
+            result = normal_execute(label, command, **kwargs)
+            if label == 'albums-media-start':
+                raise SystemExit('interrupted')
+            return result
+        self.runtime.execute.side_effect = interrupted
+        with self.assertRaises(SystemExit):
+            self.run_activation(folder)
+        self.assertEqual((self.state / 'albums-development.json').read_bytes(), self.old)
+        self.assertEqual(media.environment(self.worker)[media.FLAGS[0]], 'true')
+        self.runtime.execute.side_effect = normal_execute
+        with self.assertRaisesRegex(OperationError, 'previous media activation'):
+            self.run_activation(folder)
+        self.assertTrue(self.run_activation(folder, recover=True)['restored'])
+        self.assertEqual((self.state / 'albums-development.json').read_bytes(), self.old)
+        self.assertEqual(self.starts, ['after.yaml', 'before.yaml'])
+        # A second run stops after the state changed, before its recovery backup finished.
+        self.run = 'c' * 32
+        folder = media.prepare(self.runtime, self.run)
+        with self.assertRaises(SystemExit):
+            self.run_activation(folder, interrupt_backup=True)
+        self.assertIn('media', json.loads((self.state / 'albums-development.json').read_bytes()))
+        self.assertTrue(self.run_activation(folder, recover=True)['restored'])
+        self.assertEqual((self.state / 'albums-development.json').read_bytes(), self.old)
+        self.assertEqual(media.environment(self.worker)[media.FLAGS[0]], 'false')
+
+    def test_verified_retry_rechecks_receipt_without_restarting_worker(self):
+        result = self.activate()
+        folder = self.root / '.albums-development/media' / self.run
+        self.assertEqual(self.run_activation(folder), result)
+        self.assertEqual(self.starts, ['after.yaml'])
+        with self.assertRaisesRegex(OperationError, 'missing from verified recovery'):
+            self.run_activation(folder, post_proof=False)
+        self.assertEqual(self.starts, ['after.yaml'])
+
+    def test_orphan_compose_guard_prevents_any_mutation(self):
+        folder = media.prepare(self.runtime, self.run)
+        def guarded(label, command, **kwargs):
+            if label == 'albums-media-no-compose':
+                raise OperationError('existing Compose operation')
+            return self.execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = guarded
+        with self.assertRaisesRegex(OperationError, 'existing Compose'):
+            self.run_activation(folder)
+        self.assertEqual(self.starts, [])
+        self.assertFalse((folder / 'attempt.json').exists())
+        self.assertEqual((self.state / 'albums-development.json').read_bytes(), self.old)
+
+    def test_failed_start_does_not_race_an_orphan_during_rollback(self):
+        folder = media.prepare(self.runtime, self.run)
+        self.fail_startup = True
+        def guarded(label, command, **kwargs):
+            if label == 'albums-media-no-compose' and self.starts:
+                raise OperationError('existing Compose operation')
+            return self.execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = guarded
+        with self.assertRaisesRegex(OperationError, 'existing Compose'):
+            self.run_activation(folder)
+        self.assertEqual(self.starts, ['after.yaml'])
+        self.assertEqual(json.loads((folder / 'attempt.json').read_text())['phase'], 'applying')
+        self.runtime.execute.side_effect = self.execute
+        self.assertTrue(self.run_activation(folder, recover=True)['restored'])
+        self.assertEqual(self.starts, ['after.yaml', 'before.yaml'])
+
+    def test_compose_guard_reads_null_separated_process_arguments(self):
+        self.activate()
+        command = next(call.args[1] for call in self.runtime.execute.call_args_list
+                       if call.args[0] == 'albums-media-no-compose')
+        process = self.root / '12345'
+        process.mkdir()
+        for args, blocked in ((['/usr/bin/docker', 'compose', '--project-name', media.PROJECT], True),
+                              (['/usr/libexec/docker-compose', '--project-name=' + media.PROJECT], True),
+                              (['/usr/bin/docker', 'compose', '--project-name', 'another-app'], False)):
+            with self.subTest(args=args):
+                (process / 'cmdline').write_bytes(('\0'.join(args) + '\0').encode())
+                with patch.object(Path, 'iterdir', return_value=iter([process])), \
+                     patch('sys.argv', ['-c', media.PROJECT]):
+                    if blocked:
+                        with self.assertRaisesRegex(SystemExit, 'must finish first'):
+                            exec(command[2], {})
+                    else:
+                        exec(command[2], {})
+
+    def test_recovery_refuses_unrelated_state_and_image_changes(self):
+        folder = media.prepare(self.runtime, self.run)
+        with self.assertRaises(SystemExit):
+            self.run_activation(folder, interrupt_backup=True)
+        path = self.state / 'albums-development.json'
+        selected = path.read_bytes()
+        self.write(path, selected + b' ')
+        with self.assertRaisesRegex(OperationError, 'changed after preparation'):
+            self.run_activation(folder, recover=True)
+        self.write(path, selected)
+        self.worker['Image'] = 'sha256:' + 'e' * 64
+        with self.assertRaisesRegex(OperationError, 'isolation'):
+            self.run_activation(folder, recover=True)
+        self.assertEqual(self.starts, ['after.yaml'])
+
+    def test_invalid_journal_and_original_snapshot_are_rejected(self):
+        folder = media.prepare(self.runtime, self.run)
+        for value in ({}, [], {'phase': 'applying'}):
+            with self.subTest(value=value):
+                self.write(folder / 'attempt.json', json.dumps(value).encode())
+                with self.assertRaisesRegex(OperationError, 'journal'):
+                    self.run_activation(folder)
+        (folder / 'attempt.json').unlink()
+        self.write(folder / 'before-state.json', self.old + b' ')
+        with self.assertRaisesRegex(OperationError, 'recovery selection'):
+            self.run_activation(folder)
+        self.assertEqual(self.starts, [])
 
     def test_lock_and_worker_isolation_guards_prevent_activation(self):
         media.prepare(self.runtime, self.run)
@@ -173,6 +294,8 @@ class MediaRecoveryTests(albums_artifacts_test.AlbumsDevelopmentRecoveryTests):
         data = {'before.yaml': media.overlay(False), 'after.yaml': media.overlay(True)}
         record = {'run': run, 'source': state['source'], 'imageID': 'sha256:' + 'f' * 64,
                   'overlays': {name: media.digest(value) for name, value in data.items()}}
+        data['before-state.json'] = path.read_bytes()
+        record['stateSHA256'] = media.digest(data['before-state.json'])
         data['manifest.json'] = json.dumps(record).encode()
         for name, value in data.items():
             self.private(folder / name, value)
