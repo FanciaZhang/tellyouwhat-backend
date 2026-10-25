@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-26",
+  "scope": "Isolated MySQL sharing service with real test-bucket COS; separate assembled gateway regression uses a provider transport fixture.",
+  "backendBase": "79ba5db7632f48045429190195355b56f3b4069d",
+  "sources": {
+    "internal/albums/sharing_integration_test.go": "51ab5d449314f77bb56cb114994ba046c8a76c506416a6600b3ecf6b9764ca64",
+    "internal/albums/sharing_live_test.go": "7cbababdc51a10d8050373058dd724ea8cf0259129c0351a77b8e70ad5ce134c",
+    "internal/albums/sharing.go": "259770cd4d54a7c18b94600519633b2289c354be32e475d31a08437f77105ac6",
+    "internal/albums/sharing_cos.go": "b410954e044f9c3d2735df236c5c54d9a6d09c098d550143b460030c729fc767"
+  },
+  "initialFailure": {
+    "bytes": 777,
+    "exactVersionCleanup": false,
+    "existingGrantStillReadableAfterRevoke": true,
+    "fullBytesAndRangeVerified": true,
+    "passed": false,
+    "revokedLinkDeniedNewGrants": true,
+    "scope": "isolated MySQL sharing service and real COS; synthetic JPEG; no Apple or deployed gateway",
+    "sha256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a"
+  },
+  "initialObjectRecovery": {
+    "exactVersionDeleted": true,
+    "fixedVersionReadStatus": 404
+  },
+  "final": {
+    "bytes": 777,
+    "exactVersionCleanup": true,
+    "existingGrantStillReadableAfterRevoke": true,
+    "fullBytesAndRangeVerified": true,
+    "passed": true,
+    "revokedLinkDeniedNewGrants": true,
+    "scope": "isolated MySQL sharing service and real COS; synthetic JPEG; no Apple or deployed gateway",
+    "sha256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a"
+  },
+  "cleanupReadback": {
+    "exactVersionDeleted": true,
+    "fixedVersionReadStatus": 404
+  },
+  "tests": {
+    "exitCode": 0,
+    "tests": [
+      {
+        "test": "TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLastClaimConcurrencyAndPoolBoundedGrants",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLeaseExpiryCannotBeReplayedForFree",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLiveBundleRejectsIncompleteEvidence",
+        "result": "pass"
+      },
+      {
+        "test": "TestLiveCOSSharingOriginalDownloadAndRevocation",
+        "result": "pass"
+      },
+      {
+        "test": "TestLiveCOSSharingCleanupRecovery",
+        "result": "pass"
+      }
+    ]
+  },
+  "regressionCommand": "go test -race -json -count=1 -timeout=5m -tags albums_live ./internal/albums -run \"^(TestLiveCOSSharing.*|TestMySQLAlbumSharing.*|TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments)$\"",
+  "runtime": {
+    "mysql": "isolated MySQL 8.4, Unix socket only",
+    "redis": "isolated Redis, Unix socket only",
+    "processesStopped": true,
+    "temporaryDatabaseRemoved": true,
+    "cloudObjectsCreated": 2,
+    "cloudObjectsDeleted": 2,
+    "bytesPerObject": 777,
+    "cleanupCredentials": "existing separate identity; no permission changes"
+  },
+  "unverified": [
+    "deployed shared API gateway",
+    "real Apple login and Sandbox purchase",
+    "App to recipient browser to save flow",
+    "real devices",
+    "actual expiry of already-issued COS URLs",
+    "video and Live Photo recipient download"
+  ],
+  "userAccepted": false,
+  "deployed": false
+}
