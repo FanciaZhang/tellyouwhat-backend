@@ -83,6 +83,9 @@ def backup_configuration(runtime, destination, environment='development'):
     files = {'state.json': state_path, 'owner.json': owner_path,
              'database.env': runtime.root.parent / label / 'database.env'}
     data = {'current/' + name: content for name, content in selected_files(runtime, folder, source, required_files).items()}
+    if environment == 'development':
+        from albums_media import recovery_files
+        data.update(recovery_files(runtime, state))
     previous = owner.get('previous')
     if environment == 'production' and previous and previous.get('source') != source:
         revision = previous.get('source', '')
@@ -129,6 +132,16 @@ def verify_recovery(archive, manifest, environment='development'):
     expected = {'state.json', 'owner.json', 'database.env', 'backup.env',
                 *('current/' + name for name in required_files), *('secrets/' + name for name in KEYS)}
     optional = {'secrets/' + name for name in OPTIONAL_KEYS} if environment == 'production' else set()
+    if environment == 'development':
+        from albums_media import MEDIA_FILES, validate_media
+        try:
+            state = json.load(archive.extractfile('recovery/albums-development/state.json'))
+            if 'media' in state:
+                data = {name: archive.extractfile('recovery/albums-development/media/' + name).read() for name in MEDIA_FILES}
+                validate_media(data, state)
+                expected.update('media/' + name for name in MEDIA_FILES)
+        except (KeyError, ValueError, TypeError, AttributeError) as error:
+            raise OperationError('Albums media recovery files are incomplete or invalid') from error
     if environment == 'production' and any(name.startswith('previous/') for name in manifest):
         expected.update('previous/' + name for name in required_files)
     extra = set(manifest) - expected - optional
