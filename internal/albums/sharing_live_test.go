@@ -13,8 +13,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -155,6 +157,51 @@ func TestLiveCOSSharingOriginalDownloadAndRevocation(t *testing.T) {
 	download(false)
 	evidence["revokedLinkDeniedNewGrants"] = true
 	evidence["existingGrantStillReadableAfterRevoke"] = true
+	if script := os.Getenv("ALBUM_SHARE_BROWSER_SCRIPT"); script != "" {
+		runLiveSharingBrowser(t, ctx, f, root, script, object)
+		evidence["recipientBrowserPassed"] = true
+	}
+}
+
+func runLiveSharingBrowser(t *testing.T, ctx context.Context, f sharingFixture, root, script string, object SealedObject) {
+	t.Helper()
+	sessions, err := NewMySQLSessions(f.db, time.Now)
+	if err != nil {
+		t.Fatal("browser sessions setup failed")
+	}
+	pipeline := &loginPipelineFixture{}
+	challenges, _ := NewLoginChallengeService(&challengeTestStore{rows: map[string]StoredLoginChallenge{}, used: map[string]bool{}}, time.Now)
+	login, _ := NewLoginService(challenges, pipeline, pipeline, pipeline)
+	router, err := NewHTTPRouterWithLogin("albums.example", sessions, f.uploads, LoginHTTPOptions{
+		Service: login, Sessions: sessions, Limiter: &loginHTTPLimiter{}, Shares: f.service,
+		ShareLimiter: &loginHTTPLimiter{}, ShareClaimLimiter: &loginHTTPLimiter{}})
+	if err != nil {
+		t.Fatal("browser share router setup failed")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		request.Host = "albums.example"
+		router.ServeHTTP(w, request)
+	}))
+	defer server.Close()
+	manifest := filepath.Join(root, "browser-fixture.json")
+	defer os.Remove(manifest)
+	roundtripJSON(t, root, "browser-fixture.json", map[string]any{
+		"apiOrigin": server.URL, "siteOrigin": "https://shares.example", "session": f.session.Token,
+		"versionID": f.version.VersionID, "sha256": object.SHA256, "sizeBytes": object.SizeBytes,
+	})
+	command := exec.CommandContext(ctx, "node", script, manifest)
+	command.Cancel = func() error { return command.Process.Signal(os.Interrupt) }
+	command.WaitDelay = 15 * time.Second
+	// Browser diagnostics may contain bearer URLs; only retain them privately.
+	log, err := os.OpenFile(filepath.Join(root, "browser-private.log"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal("browser log setup failed")
+	}
+	defer log.Close()
+	command.Stdout, command.Stderr = log, log
+	if err = command.Run(); err != nil {
+		t.Fatal("recipient browser probe failed; inspect private log")
+	}
 }
 
 func liveSharingCleaner(t *testing.T) *COSObjects {

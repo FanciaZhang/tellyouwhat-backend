@@ -792,3 +792,10 @@ Apple/COS 均为受控 HTTP 响应，本轮未部署、未撤销真实用户授�
 复现需 `albums_live` 标签、`ALBUM_CI_LIVE_PROBE=1`、独立且可持久保留的私有 `ALBUM_CI_LIVE_DIRECTORY`，以及指向隔离 MySQL/Redis 的 `MYSQL_TEST_ADMIN_DSN` / `REDIS_TEST_URL`。使用现有 `albums-test` 凭据文件；首次执行用新目录，失败清理只运行 `TestLiveCOSSharingCleanupRecovery` 重试记录中的确切版本，不重跑上传。完整命令和源码摘要见[验证记录](evidence/sharing-real-cos-2026-10-26.json)。
 
 只增加测试和证据；未修改服务权限、业务实现或部署。真实 Apple 登录、已部署 Gateway、App 到接收方网页保存、视频/实况下载、真机和用户确认仍待验收。
+
+
+## 2026-10-26 接收方浏览器联调
+
+真实 COS 分享探针可用 `ALBUM_SHARE_BROWSER_SCRIPT` 显式指定相册仓库 `LegalSite/scripts/test-share-live.mjs`。原件验证后启动本机真实分享 HTTP 路由，私有 manifest 传递合成会话；子进程在 Chrome 中操作实际网页、直接从 COS 下载 JPEG 并核对文件摘要，验证错误提取码、重试标识、刷新不重复领取、另一页面次数拒绝和撤销。HTTP 登录/限流依赖为测试夹具，已部署平台、Apple 登录及公网未覆盖。
+
+最终后端 8 项 race 与网页 14 项通过。网页联调发现并修复次数耗尽仍能领取及撤销/授权过期残留旧有效期。子进程限时退出并关闭浏览器，后端退出时移除会话 manifest；云对象确切版本清理和读取 404 通过。页面源码/截图在相册仓库，本仓库只增加测试接线。[脱敏结果与源码摘要](evidence/sharing-recipient-browser-2026-10-26.json)。
