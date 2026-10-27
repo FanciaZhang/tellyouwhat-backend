@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "292670dd62883fb5fb5f4240ca1a3cbfdcb4c427",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "13"
+  },
+  "appSource": "5fb5d563347bae42cafbd5910643ceeb474f09de",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Health Ad Hoc camera control rotation and compact iPad plan layout"
+}
