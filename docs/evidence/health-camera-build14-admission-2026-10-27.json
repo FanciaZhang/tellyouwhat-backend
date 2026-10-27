@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "355a7046286488d866c31a5415521b1bd8ffb242",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "14"
+  },
+  "appSource": "59471c3ec40ecfc645a71ab27e8ebf8fe91b26d0",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Camera controls rotate with a spring around fixed centers; camera layout stays fixed"
+}
