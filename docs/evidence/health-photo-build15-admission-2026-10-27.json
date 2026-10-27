@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "89a96d7c09762e220a895148ee7d498f196da201",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "15"
+  },
+  "appSource": "3339c4ffe304eb9fe1bbba9d9a34d20f1e3609c5",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Prevent diet photo fullscreen opening animation replay for main and food crop photos"
+}
