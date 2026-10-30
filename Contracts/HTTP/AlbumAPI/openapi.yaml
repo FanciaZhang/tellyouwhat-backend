@@ -356,7 +356,7 @@ paths:
         - {name: preset, in: path, required: true, schema: {$ref: '#/components/schemas/PhotoPreset'}}
       responses:
         '200':
-          description: Five-minute owned immutable still-preview GET; does not authorize replacement or deletion, and does not include a Live Photo paired video
+          description: Five-minute owned immutable still-preview GET; videos support grid_jpeg_v1 covers only. Never authorizes replacement or deletion, and excludes Live Photo motion.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/PhotoPreviewReadGrant'}

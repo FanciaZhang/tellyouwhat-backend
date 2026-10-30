@@ -279,7 +279,7 @@ func TestMySQLPhotoPreviewGrantOnlyAfterReceiptAndQuotaCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.PhotoPreviewReadGrant(ctx, u.OwnerID, u.ID, PhotoGridPNG); !errors.Is(err, ErrNotFound) {
+	if _, err := service.PhotoPreviewReadGrant(ctx, u.OwnerID, u.ID, PhotoGridPNG); !errors.Is(err, ErrPhotoWriteUncertain) {
 		t.Fatal("missing preview granted", err)
 	}
 	record, _, err := repo.BeginPhotoWrite(ctx, u.ID, u.Digest, photoJournalSpec(u, c, PhotoGridPNG), time.Now())

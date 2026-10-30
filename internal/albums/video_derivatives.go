@@ -225,6 +225,9 @@ func (s *UploadService) livePhotoMovieBudget(ctx context.Context, owner string, 
 	return u.DerivedBudget - used, true, nil
 }
 
+// Leave bounded room for a concurrently generated cover, even for a short clip.
+func videoCoverBudget(maximum int64) int64 { return min(int64(2<<20), maximum/2) }
+
 func videoBitrate(p VideoProfile) int64 {
 	if p.FrameRate > 30.1 {
 		return 5000
@@ -252,6 +255,9 @@ func (s *UploadService) AdvanceVideoJob(ctx context.Context, j VideoJob, queueID
 	fresh := false
 	if j.SubmittedAt.IsZero() {
 		available := s.policy.MaxDerivedBytes
+		if photoPreviewEligible(version.Manifest, PhotoGridJPEG) && version.Manifest.Kind == Video {
+			available -= videoCoverBudget(available)
+		}
 		if version.Manifest.Kind == LivePhoto {
 			var ready bool
 			available, ready, err = s.livePhotoMovieBudget(ctx, j.OwnerID, version)

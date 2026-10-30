@@ -804,3 +804,11 @@ Apple/COS 均为受控 HTTP 响应，本轮未部署、未撤销真实用户授�
 ## 2026-10-26 原生创建/撤销与网页真实下载
 
 私有浏览器 fixture 增加完整合成会话对象，供相册的 `cloud-share` 原生联调使用。原生真实表单通过隔离 HTTP 创建链接，网页领取并从 COS 下载核对，原生撤销后网页拒绝新授权；后端业务、契约与部署未改。iOS 26.5 / 18.6 各一轮原生测试及 Go 探针通过，两次合成对象均精确清理并确认 404。App 测试将链接写入私有临时文件交接，未覆盖系统分享面板；正式 API、Apple、Safari 与视频/实况另行验收。[证据](evidence/native-recipient-share-2026-10-26.json)。
+
+### 视频封面缩略图
+
+普通视频（metadata 存在、mediaSubtypes 为 0）发布原件时排入一个 `grid_jpeg_v1` 静态任务，与日常视频分开。后台从当前已编辑或原始视频的不可变版本截帧，按旋转信息保持比例，最长边不超过 512；选择 min(1 秒, 时长的一半)，不把封面当作系统日常照片或删除凭证。COS GET snapshot 后仍校验响应、解码和源版本，沿用静态派生的持久写入、读回、五分钟授权、额度结算和精确版本清理。
+
+上传在原有派生预算上为封面预留最多 2 MiB，合计仍不超过 MaxDerivedBytes；低于 4 MiB 的配置最多预留该上限的一半。转码上限同时扣除这部分，避免并行任务互相占满预算。封面任务未结束时不能提前关闭派生预算；失败无已消耗写入时可释放，已有不确定写入仍保留对应额度。旧开发对象已关闭的预算不自动重开或改写，原件保留；本改动不部署服务。
+
+本地 `TestMySQLVideoCoverJobsQuotaFinalizationAndCleanupInventory` 检查唯一排队、真实预占、待处理保护、结算及保留副本的清理。`go test -tags albums_live ./internal/albums -run '^TestLiveCOSVideoCover$'` 需显式启用 ALBUM_CI_LIVE_PROBE 和自有 ALBUM_CI_LIVE_DIRECTORY，目录中只放本机生成的小型 source.mp4；它使用已批准的开发桶及受限身份直接验证供应商能力，不模拟 App 订阅。探针先记录唯一键意图，再记录已知对象版本，退出时以清理身份删除精确版本并检查 404；不明写入保留恢复意图，不宣称清理完成。真实 SDK 截帧、封面存储及签名读回已通过，两个精确版本清理通过；App 业务 API、真实登录与 Sandbox 属于独立验收。

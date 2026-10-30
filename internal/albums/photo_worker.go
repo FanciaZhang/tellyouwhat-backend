@@ -59,7 +59,7 @@ func (w *PhotoWorker) RunOnce(ctx context.Context) (PhotoJobBatch, error) {
 			return batch, ctx.Err()
 		}
 		// A concurrent trash may hide the version; restoration can resume this job.
-		terminal := errors.Is(err, ErrQuota) || errors.Is(err, ErrInvalidManifest) || errors.Is(err, ErrIncompleteBackup)
+		terminal := errors.Is(err, ErrQuota) || errors.Is(err, ErrInvalidManifest) || errors.Is(err, ErrIncompleteBackup) || errors.Is(err, ErrVideoUnsupported)
 		finishErr := w.queue.FinishPhotoJob(ctx, job, err == nil, terminal, w.service.now().UTC())
 		if errors.Is(finishErr, ErrLease) {
 			batch.Contended++

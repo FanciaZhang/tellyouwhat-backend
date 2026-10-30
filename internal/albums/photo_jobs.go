@@ -46,6 +46,12 @@ func scanPhotoJob(row rowScanner) (PhotoJob, error) {
 // These are still-image candidates; a Live Photo additionally needs its movie
 // and pairing. Non-JPEG uses PNG to avoid silently flattening transparency.
 func photoJobPresets(manifest Manifest) []PhotoPreset {
+	if manifest.Kind == Video {
+		if photoPreviewEligible(manifest, PhotoGridJPEG) {
+			return []PhotoPreset{PhotoGridJPEG}
+		}
+		return nil
+	}
 	if livePhotoPreviewEligible(manifest) {
 		return []PhotoPreset{PhotoGridJPEG, PhotoDailyJPEG}
 	}
@@ -62,7 +68,7 @@ func photoJobPresets(manifest Manifest) []PhotoPreset {
 	return presets
 }
 func enqueuePhotoJobs(ctx context.Context, tx *sql.Tx, u Upload, now time.Time) error {
-	if u.Manifest.Kind != Photo && u.Manifest.Kind != LivePhoto {
+	if u.Manifest.Kind != Photo && u.Manifest.Kind != LivePhoto && u.Manifest.Kind != Video {
 		return nil
 	}
 	presets := photoJobPresets(u.Manifest)
