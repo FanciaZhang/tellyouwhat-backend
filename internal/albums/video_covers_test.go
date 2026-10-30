@@ -263,3 +263,42 @@ func TestMySQLVideoCoverJobsQuotaFinalizationAndCleanupInventory(t *testing.T) {
 		t.Fatal("cover escaped owner")
 	}
 }
+
+func TestMySQLAccountDeletionObservesUncertainVideoCoverWithoutPublishingOrRefunding(t *testing.T) {
+	f := newPushFixture(t)
+	r := NewMySQLUploads(f.r.db)
+	u, _ := videoJournalUpload(t, f.r.db)
+	ctx := context.Background()
+	candidate, err := inspectPhotoCandidate(candidateImage(t, "jpeg", 11), PhotoGridJPEG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := PhotoWriteSpec{OwnerID: u.OwnerID, AttemptID: uuid.NewString(), Preset: PhotoGridJPEG, SizeBytes: int64(len(candidate.Bytes)), SHA256: candidate.SHA256, Width: candidate.Width, Height: candidate.Height}
+	record, fresh, err := r.BeginPhotoWrite(ctx, u.ID, u.Digest, spec, f.now)
+	if err != nil || !fresh {
+		t.Fatal(err)
+	}
+	deleteProtocolFixtureOwner(t, f, u.OwnerID)
+	beforeUsed, beforeReserved := photoJournalBalance(t, f.r.db, u.OwnerID)
+	observed := 0
+	batch, err := r.runPhotoDeletionBatch(ctx, func(_ context.Context, input PhotoWriteSpec) (string, error) {
+		if input != spec {
+			t.Fatal("wrong cover")
+		}
+		observed++
+		return "exact-cover-version", nil
+	}, 1, func() time.Time { return f.now })
+	if err != nil || observed != 1 || batch.Acknowledged != 1 {
+		t.Fatal("uncertain cover could not join account deletion", batch, err)
+	}
+	c := photoDeletionCheck{account: u.OwnerID, attempt: record.Spec.AttemptID, record: record}
+	assertPhotoDeletionObservation(t, r, c, "exact-cover-version")
+	p, err := r.PhotoWriteByAttempt(ctx, u.OwnerID, record.Spec.AttemptID)
+	if err != nil || p.ObjectVersion != "" {
+		t.Fatal("observation published cover", err)
+	}
+	used, reserved := photoJournalBalance(t, f.r.db, u.OwnerID)
+	if used != beforeUsed || reserved != beforeReserved {
+		t.Fatal("observation refunded cover")
+	}
+}

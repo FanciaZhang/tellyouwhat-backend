@@ -7,10 +7,12 @@ import (
 	"context"
 	"github.com/google/uuid"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +79,14 @@ func TestLiveCOSVideoCover(t *testing.T) {
 	if candidate.Format != "jpeg" || candidate.Width > 512 || candidate.Height > 512 {
 		t.Fatal("unbounded cover")
 	}
+	profile, err := objects.InspectVideoSource(ctx, source)
+	if err != nil {
+		t.Fatal("cover source profile unavailable")
+	}
+	scale := min(1.0, 512.0/float64(max(profile.Width, profile.Height)))
+	if math.Abs(float64(candidate.Width)-float64(profile.Width)*scale) > 2 || math.Abs(float64(candidate.Height)-float64(profile.Height)*scale) > 2 {
+		t.Fatal("cover orientation or aspect ratio differs from source")
+	}
 	spec := PhotoWriteSpec{OwnerID: j.OwnerID, AttemptID: uuid.NewString(), Preset: PhotoGridJPEG, SizeBytes: int64(len(candidate.Bytes)), SHA256: candidate.SHA256, Width: candidate.Width, Height: candidate.Height}
 	key, _ := spec.key()
 	intent = append(intent, SealedObject{ResourceID: string(spec.Preset), Key: key, SizeBytes: spec.SizeBytes, SHA256: spec.SHA256})
@@ -111,4 +121,38 @@ func TestLiveCOSVideoCover(t *testing.T) {
 		t.Fatal("cover evidence write failed")
 	}
 	roundtripJSON(t, root, "video-cover-result.json", map[string]any{"sourceBytes": len(payload), "coverBytes": len(data), "coverSHA256": candidate.SHA256, "width": candidate.Width, "height": candidate.Height, "contentType": fetched.Header.Get("Content-Type"), "signedReadStatus": fetched.StatusCode, "replacementEligible": false})
+}
+
+func TestLiveCOSVideoCoverCleanupRecovery(t *testing.T) {
+	objects, root, ctx := liveRoundtripFixture(t)
+	cleaner := liveSharingCleaner(t)
+	var intent, owned []SealedObject
+	roundtripRead(t, root, "video-cover-intent.json", &intent)
+	roundtripRead(t, root, "video-cover-owned.json", &owned)
+	if len(intent) < 1 || len(intent) > 2 || len(owned) != len(intent) {
+		t.Fatal("unknown write still needs recorded-key reconciliation; keep the intent")
+	}
+	for i, object := range owned {
+		expected := intent[i]
+		prefix := "originals"
+		if i == 1 {
+			prefix = "derivatives"
+		}
+		expected.VersionID = object.VersionID
+		if expected != object || !concreteCOSVersion(object.VersionID) || !validSHA256(object.SHA256) || object.SizeBytes <= 0 || object.SizeBytes > 2<<20 ||
+			!albumObjectKey(object.Key, prefix) || (i == 0 && object.ResourceID != "video") || (i == 1 && object.ResourceID != string(PhotoGridJPEG)) || !strings.HasSuffix(object.Key, "/"+object.ResourceID) {
+			t.Fatal("invalid exact-version cleanup record")
+		}
+		if cleaner.deleteObjectVersion(ctx, object.Key, object.VersionID) != nil {
+			t.Fatal("exact-version cleanup retry failed")
+		}
+		response, err := objects.client.Object.Get(ctx, object.Key, nil, url.QueryEscape(object.VersionID))
+		if response != nil && response.Body != nil {
+			response.Body.Close()
+		}
+		if err == nil || response == nil || response.StatusCode != http.StatusNotFound {
+			t.Fatal("fixed version absence unconfirmed")
+		}
+	}
+	roundtripJSON(t, root, "video-cover-cleanup-recovery.json", map[string]any{"complete": true, "exactVersions": len(owned)})
 }

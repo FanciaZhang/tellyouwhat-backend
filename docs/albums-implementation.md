@@ -812,3 +812,5 @@ Apple/COS 均为受控 HTTP 响应，本轮未部署、未撤销真实用户授�
 上传在原有派生预算上为封面预留最多 2 MiB，合计仍不超过 MaxDerivedBytes；低于 4 MiB 的配置最多预留该上限的一半。转码上限同时扣除这部分，避免并行任务互相占满预算。封面任务未结束时不能提前关闭派生预算；失败无已消耗写入时可释放，已有不确定写入仍保留对应额度。旧开发对象已关闭的预算不自动重开或改写，原件保留；本改动不部署服务。
 
 本地 `TestMySQLVideoCoverJobsQuotaFinalizationAndCleanupInventory` 检查唯一排队、真实预占、待处理保护、结算及保留副本的清理。`go test -tags albums_live ./internal/albums -run '^TestLiveCOSVideoCover$'` 需显式启用 ALBUM_CI_LIVE_PROBE 和自有 ALBUM_CI_LIVE_DIRECTORY，目录中只放本机生成的小型 source.mp4；它使用已批准的开发桶及受限身份直接验证供应商能力，不模拟 App 订阅。探针先记录唯一键意图，再记录已知对象版本，退出时以清理身份删除精确版本并检查 404；不明写入保留恢复意图，不宣称清理完成。真实 SDK 截帧、封面存储及签名读回已通过，两个精确版本清理通过；App 业务 API、真实登录与 Sandbox 属于独立验收。
+
+封面另验证了带真实 90° display matrix 的 MP4（先用 ffprobe 核对矩阵），COS 返回 240×320；960×600 视频返回 512×320。注销账户的未确认静态写入核对现接受视频 grid_jpeg_v1，观察对象版本不等于发布封面或退款。带独立 MySQL、Redis DB 0 的相关 61 项顶层定向检查通过；扩大全包回归因运行时限未完成，不标记整包已通过。清理失败时可在同一受限探针目录显式运行 `TestLiveCOSVideoCoverCleanupRecovery` 重试已记录的精确版本；版本尚未知时拒绝盲删并保留意图，先做对应唯一键的核对。成功探针的重复清理已验证 404。

@@ -114,7 +114,7 @@ func (r *MySQLUploads) lockDeletionPhoto(ctx context.Context, tx *sql.Tx, c phot
 	if err != nil {
 		return p, "", err
 	}
-	if v.ManifestDigest != p.ManifestDigest || v.Manifest.Kind != Photo && v.Manifest.Kind != LivePhoto {
+	if v.ManifestDigest != p.ManifestDigest || !photoPreviewEligible(v.Manifest, p.Spec.Preset) {
 		return p, "", ErrConflict
 	}
 	var observed sql.NullString
