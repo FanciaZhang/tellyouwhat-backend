@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "d333ad4b6915e4ad6c7ede6edc9f0d773bd2fbdc",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "17"
+  },
+  "appSource": "805739783d4f7106ba8ccb3d5f2b347155dddcf4",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Restore backup contents without renaming the protected iOS Documents root"
+}
