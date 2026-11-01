@@ -169,7 +169,7 @@ func Allowed(method, uri string) bool {
 	switch u.Path {
 	case "/v1/ai/quota":
 		return method == "GET" && u.RawQuery == ""
-	case "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organize":
+	case "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organization":
 		return method == "POST" && u.RawQuery == ""
 	case "/v1/privacy/consents":
 		return method == "POST" && u.RawQuery == ""
@@ -223,7 +223,7 @@ func (s *Service) Authenticate(ctx context.Context, proof attestation.RequestPro
 	if err != nil {
 		return attestation.Principal{}, err
 	}
-	if !s.AllowsVoice(c.KeyID) && (proof.Path == "/v1/ai/quota" || proof.Path == "/v1/dev/entitlements/activate" || proof.Path == "/v1/journal/voice/sessions" || proof.Path == "/v1/journal/organize") {
+	if !s.AllowsVoice(c.KeyID) && (proof.Path == "/v1/ai/quota" || proof.Path == "/v1/dev/entitlements/activate" || proof.Path == "/v1/journal/voice/sessions" || proof.Path == "/v1/journal/organization") {
 		return attestation.Principal{}, attestation.ErrAuthentication
 	}
 	pk, _ := base64.StdEncoding.DecodeString(c.PublicKey)

@@ -362,6 +362,7 @@ func TestSimulatorPathAllowlist(t *testing.T) {
 	}{
 		{"POST", "/v1/privacy/consents", true}, {"POST", "/v1/journal/read-aloud/syntheses", true},
 		{"GET", "/v1/journal/read-aloud/allowance?purpose=preview", true}, {"GET", session, true}, {"DELETE", session, true}, {"GET", session + "/events?after=11520000", true},
+		{"POST", "/v1/journal/organization", true}, {"POST", "/v1/journal/organize", false},
 		{"GET", "/v1/ai/quota", true}, {"DELETE", "/v1/privacy/data", false}, {"POST", "/v1/development/entitlement", false},
 		{"GET", session + "/events?after=1", false}, {"GET", session + "/events?after=11520002", false}, {"GET", session + "/events?after=02", false},
 		{"GET", session + "/events?after=0&after=2", false}, {"GET", session + "/events?after=0&purpose=preview", false}, {"GET", session + "/events/extra", false},
@@ -377,7 +378,7 @@ func TestSimulatorPathAllowlist(t *testing.T) {
 
 func TestVoiceIntegrationCapabilityIsExplicitAndCannotGrantPurchases(t *testing.T) {
 	f := newFixture(t)
-	for _, path := range []string{"/v1/ai/quota", "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organize"} {
+	for _, path := range []string{"/v1/ai/quota", "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organization"} {
 		method := "POST"
 		if path == "/v1/ai/quota" {
 			method = "GET"
