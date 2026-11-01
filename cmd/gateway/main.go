@@ -462,6 +462,7 @@ func buildAppHandler(
 			return nil, err
 		}
 		storage.privacy = repository
+		storage.media = simulatortest.MediaRegistry{Registry: storage.media, Simulator: simulator, Uses: storage.capabilityUses}
 	}
 	if simulator != nil {
 		access := &entitlement.DevelopmentAccess{AppID: string(app.ID), Purchases: storage.entitlements,
