@@ -123,3 +123,49 @@ func TestCreateAndGetPreserveReconstructionDescriptors(t *testing.T) {
 		t.Fatal("descriptor not bound to saved digest")
 	}
 }
+
+func TestNativeSlowMotionRecipeSurvivesHTTPAndRemainsBackupOnly(t *testing.T) {
+	service, _, _, owner, _ := uploadFixture(t)
+	manifest := nativeSlowMotionManifest()
+	router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", owner}}, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"requestID": uuid.NewString(), "manifest": manifest})
+	created := httptest.NewRecorder()
+	router.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "https://albums.example/v1/albums/uploads", bytes.NewReader(payload)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	var upload Upload
+	if err := json.Unmarshal(created.Body.Bytes(), &upload); err != nil {
+		t.Fatal(err)
+	}
+	fetched := httptest.NewRecorder()
+	router.ServeHTTP(fetched, httptest.NewRequest(http.MethodGet, "https://albums.example/v1/albums/uploads/"+upload.ID, nil))
+	if fetched.Code != http.StatusOK {
+		t.Fatalf("get: %d", fetched.Code)
+	}
+	var restored Upload
+	if err := json.Unmarshal(fetched.Body.Bytes(), &restored); err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := manifest.Digest()
+	if restored.Manifest.VideoRecipe != manifest.VideoRecipe || restored.Digest != digest {
+		t.Fatal("HTTP lost recipe proof")
+	}
+	doc, err := openapi3.NewLoader().LoadFromFile("../../Contracts/HTTP/AlbumAPI/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value any
+	if err := json.Unmarshal(fetched.Body.Bytes(), &value); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Components.Schemas["Upload"].Value.VisitJSON(value); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := videoSource(AssetVersion{Manifest: manifest}); err != ErrVideoUnsupported {
+		t.Fatal("native recipe allowed flattening")
+	}
+}

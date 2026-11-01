@@ -131,6 +131,9 @@ def verify_recovery(archive, manifest, environment='development'):
     optional = {'secrets/' + name for name in OPTIONAL_KEYS} if environment == 'production' else set()
     if environment == 'production' and any(name.startswith('previous/') for name in manifest):
         expected.update('previous/' + name for name in required_files)
+    implementation = {'checkpoint/backup.py', 'checkpoint/deletion_ledger.py'}
+    if environment == 'development' and implementation & set(manifest):
+        expected.update(implementation)
     extra = set(manifest) - expected - optional
     snapshots = [name for name in extra if re.fullmatch(r'checkpoint/albums-[a-f0-9]{32}\.sql\.gz\.enc', name)]
     ledgers = [name for name in extra if re.fullmatch(r'checkpoint/albums-deletions-[a-f0-9]{32}\.json', name)]

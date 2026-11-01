@@ -88,6 +88,11 @@ func (f albumReceiptFixture) payload(owner string) map[string]any {
 		"originalTransactionId": "1000000000000001", "transactionId": "1000000000000002", "originalPurchaseDate": f.now.Add(-time.Hour).UnixMilli(), "purchaseDate": f.now.Add(-time.Hour).UnixMilli(),
 		"expiresDate": f.now.AddDate(1, 0, 0).UnixMilli(), "signedDate": f.now.UnixMilli()}
 }
+func (f albumReceiptFixture) developmentPayload(owner string) map[string]any {
+	payload := f.payload(owner)
+	payload["productId"] = Cloud50GBAnnualProduct + ".dev"
+	return payload
+}
 func (f albumReceiptFixture) verifier() *appstore.TransactionVerifier {
 	return appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: f.roots, BundleID: albumDevelopmentAudience, Environment: "Sandbox", ProductIDs: []string{Cloud50GBAnnualProduct, Cloud500GBAnnualProduct}, Now: func() time.Time { return f.now }})
 }

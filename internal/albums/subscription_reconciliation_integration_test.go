@@ -45,9 +45,10 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	fixture := newAlbumReceiptFixture(t, now)
-	config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+	config.Subscriptions = &AlbumSubscriptionConfig{SandboxQuotaBytes: 1_000_000_000, BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 	owner := uuid.NewString()
 	repository := NewMySQLUploads(db).WithSubscriptionEnvironment("Sandbox")
+	repository.productionSandboxQuota = config.Subscriptions.SandboxQuotaBytes
 	if err := repository.ProvisionAccount(ctx, owner, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 		t.Error("unexpected provider operation")
 		return nil, ErrSubscriptionUnavailable
 	})
-	active := fixture.payload(owner)
+	active := fixture.developmentPayload(owner)
 	setCurrent(active, 1)
 	gateway, err := NewGateway(ctx, config, transport)
 	if err != nil {
@@ -116,7 +117,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 		t.Fatal("notification needed a user session or failed", status)
 	}
 	a, err := repository.CloudAccount(ctx, owner, time.Now())
-	if err != nil || a.QuotaBytes != 50_000_000_000 || a.Revision != 1 {
+	if err != nil || a.QuotaBytes != 1_000_000_000 || a.Revision != 1 {
 		t.Fatal("ack before durable capacity", a, err)
 	}
 	// Re-signing identical semantics does not change its replay identity.
@@ -146,7 +147,7 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 			t.Fatal("foreign audience or environment accepted", status, calls.Load())
 		}
 	}
-	refund := fixture.payload(owner)
+	refund := fixture.developmentPayload(owner)
 	refund["revocationDate"] = now.Add(-time.Minute).UnixMilli()
 	refund["signedDate"] = now.Add(time.Second).UnixMilli()
 	setCurrent(refund, 5)
@@ -158,12 +159,12 @@ func TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery(t 
 		t.Fatal("refund notification", status)
 	}
 	a, err = repository.CloudAccount(ctx, owner, time.Now())
-	if err != nil || a.QuotaBytes != 0 || a.State != "expired" || a.UsedBytes != 123 || a.RetentionDeadline == nil {
+	if err != nil || a.QuotaBytes != 0 || a.State != "expired" || a.UsedBytes != 123 || a.RetentionDeadline != nil {
 		t.Fatal("refund did not retain existing bytes", a, err)
 	}
 	var reminders int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_retention_reminders WHERE owner_id=? AND state='pending' AND retention_deadline=?`, owner, a.RetentionDeadline).Scan(&reminders); err != nil || reminders != 3 {
-		t.Fatal("notification acknowledged before reminder schedule", reminders, err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM album_retention_reminders WHERE owner_id=? AND state='pending'`, owner).Scan(&reminders); err != nil || reminders != 0 {
+		t.Fatal("Sandbox notification scheduled data-deletion reminders", reminders, err)
 	}
 	// A delayed renewal event still resolves the current revoked state.
 	if status, _ := send(encoded(fixture.notification(t, uuid.NewString(), "DID_RENEW", active)), "POST", config.APIHost); status != 200 {

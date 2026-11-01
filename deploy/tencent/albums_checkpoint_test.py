@@ -72,6 +72,19 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
         with self.assertRaises(OperationError):
             checkpoint.wrapper('sh')
 
+    def test_development_snapshot_implementation_must_be_operator_owned_regular_and_not_writable(self):
+        if self.environment != 'development':
+            return
+        target = self.root / 'deploy/albums/backup.py'
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b'x'); target.chmod(0o666)
+        with patch.object(checkpoint, '__file__', str(self.root / 'deploy/tencent/albums_checkpoint.py')):
+            with self.assertRaisesRegex(OperationError, 'implementation is unsafe'):
+                checkpoint.checkpoint(self.runtime, self.folder, self.environment)
+            target.unlink(); target.symlink_to(self.folder / 'source.tar')
+            with self.assertRaisesRegex(OperationError, 'implementation is unsafe'):
+                checkpoint.checkpoint(self.runtime, self.folder, self.environment)
+
     def test_verified_checkpoint_keeps_its_decryption_key_outside_the_bundle(self):
         child = SimpleNamespace(backups=self.app / 'backups', config=self.config)
         backup, ledger = Mock(), Mock()
@@ -108,7 +121,12 @@ class AlbumsDevelopmentCheckpointTests(unittest.TestCase):
                 patch.object(checkpoint.importlib.util, 'spec_from_file_location', return_value=Mock(loader=Mock())):
             result = checkpoint.checkpoint(self.runtime, self.folder, self.environment)
             self.assertIs(sys.modules['deletion_ledger'], previous_ledger)
-        self.assertEqual(len(result), 4)
+        self.assertEqual(len(result), 6 if self.environment == 'development' else 4)
+        if self.environment == 'development':
+            self.assertEqual(result['checkpoint/backup.py'], (Path(checkpoint.__file__).resolve().parent.parent / 'albums/backup.py').read_bytes())
+            self.assertEqual(result['checkpoint/deletion_ledger.py'], b'x')
+        else:
+            self.assertNotIn('checkpoint/backup.py', result)
         self.assertNotIn(b'ALBUM_BACKUP_ENCRYPTION_KEY', result['backup.env'])
         self.assertNotIn(self.config['ALBUM_BACKUP_ENCRYPTION_KEY'].encode(), b''.join(result.values()))
         self.assertIn(self.config['ALBUM_BACKUP_ENCRYPTION_KEY'], (self.app / 'backup.env').read_text())

@@ -120,6 +120,58 @@ class PlatformTestRecoveryTests(unittest.TestCase):
         self.assertEqual(artifacts.backup_configuration(self.runtime, self.base / 'unused'), {})
         self.runtime.execute.assert_not_called()
 
+    def test_media_recovery_requires_both_scoped_configuration_and_reviewed_recipe(self):
+        names = {'state.json', 'owner.json', 'database.env', 'backup.env',
+                 *('current/' + name for name in (*artifacts.FILES, 'selection.json', *artifacts.albums.FILES, *artifacts.albums.WORKER_FILES)),
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc',
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc.json'}
+        contents = {name: name.encode() for name in names}
+        contents['current/runtime.env'] = b'PLATFORM_APPS=health,journal,birthday,albums\n'
+        contents['current/albums.env'] = b'ALBUM_SHARING_ENABLED=false\n'
+        recipe = 'current/' + artifacts.albums.WORKER_COMPOSE
+        contents[recipe] = (Path(__file__).resolve().parents[2] / artifacts.albums.WORKER_COMPOSE).read_bytes()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, content in contents.items():
+                entry = tarfile.TarInfo('recovery/platform-test/' + name); entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+        data.seek(0)
+        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in contents.items()}
+        with tarfile.open(fileobj=data) as archive:
+            artifacts.verify_recovery(archive, hashes)
+            for name in ('current/album-worker.env', recipe):
+                with self.subTest(name=name), self.assertRaises(OperationError):
+                    artifacts.verify_recovery(archive, {k:v for k,v in hashes.items() if k != name})
+            with self.assertRaisesRegex(OperationError, 'unreviewed'):
+                artifacts.verify_recovery(archive, {**hashes, recipe: '0' * 64})
+
+    def test_sharing_recovery_requires_current_and_previous_dedicated_keys(self):
+        names = {'state.json', 'owner.json', 'database.env', 'backup.env',
+                 *('current/' + name for name in (*artifacts.FILES, 'selection.json', *artifacts.albums.FILES)),
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc',
+                 'checkpoint/mysql-20261016T000000Z-abcdef.sql.gz.enc.json',
+                 'secrets/album-app-store.p8', 'secrets/apple-app-store-roots.pem',
+                 'secrets/share-key.base64', 'secrets/share-previous-key.base64'}
+        contents = {name: name.encode() for name in names}
+        contents['current/albums.env'] = ('ALBUM_SUBSCRIPTIONS_ENABLED=true\nALBUM_SHARING_ENABLED=true\n'
+            'ALBUM_SHARE_SITE_ORIGIN=' + artifacts.albums.SHARE_SITE + '\n'
+            'ALBUM_SHARE_KEY_FILE=/album-secrets/share-key.base64\n'
+            'ALBUM_SHARE_PREVIOUS_KEY_FILE=/album-secrets/share-previous-key.base64\n').encode()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, content in contents.items():
+                entry = tarfile.TarInfo('recovery/platform-test/' + name); entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+        data.seek(0)
+        hashes = {name: hashlib.sha256(content).hexdigest() for name, content in contents.items()}
+        with tarfile.open(fileobj=data) as archive:
+            artifacts.verify_recovery(archive, hashes)
+            for name in ('secrets/share-key.base64', 'secrets/share-previous-key.base64'):
+                with self.subTest(name=name), self.assertRaisesRegex(OperationError, 'incomplete'):
+                    artifacts.verify_recovery(archive, {k:v for k,v in hashes.items() if k != name})
+            with self.assertRaisesRegex(OperationError, 'authenticated manifest'):
+                artifacts.verify_recovery(archive, {**hashes, 'secrets/share-key.base64': '0' * 64})
+
     def test_read_aloud_recovery_requires_its_selected_readonly_overlay(self):
         names = {'state.json', 'owner.json', 'database.env', 'backup.env',
                  *('current/' + name for name in (*artifacts.FILES, 'selection.json')),

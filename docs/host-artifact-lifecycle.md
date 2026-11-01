@@ -63,6 +63,14 @@ The production section preserves source-bound current and previous configuration
 
 Owner cleanup includes only retired production images and source-bound release directories after the existing 48-hour grace. It preserves current/previous selections and container references, and does not collect volumes, credentials, state or the development stack. The development deployment wrapper cannot activate this production owner. Production deployment, actual database grants, initial offsite backup/restore and scheduled-run acceptance remain pending; this code has not been installed on the host.
 
+## Albums test media activation
+
+After shared Albums admission, the same `platform_test_deploy.py --update-from <current>` producer can update the existing `tellyouwhat-albums-development-albumworker-1`. Select `compose.platform-album-worker.yaml` and `album-worker.env`, with `PLATFORM_ALBUM_WORKER_ENV_FILE` pointing to that private file. The worker recipe is hash-pinned, matches the selected source archive, and uses the shared release's immutable `tellyouwhat-platform-test-albumworker:<SHA>` image. It replaces only that worker, preserving its original MySQL/Redis, volumes, network and stopped API; do not invoke the old development producer to reactivate the retired API.
+
+The media environment is derived from existing Albums object credentials and byte limits, plus the approved test CI queue. Only photo/video processing is enabled; erasure, derived cleanup, simulated grants, Apple keys and other App credentials are excluded. Gateway media flags remain unchanged because the shared API already enqueues verified uploads. No extra API, queue, identity or storage bucket is created.
+
+Activation requires authenticated platform and full Albums backups, builds before stopping the old worker, and checks a clean bounded drain. Failed activation restores the previous worker recipe/image and shared API without reverting SQL. Initial recovery uses the original registered Albums worker only. Readiness checks the actual image, environment, network and startup completion after database/provider checks. The worker recipe and scoped environment are included in source selection, artifact registration and authenticated recovery verification. Startup alone does not establish a successful media job or a real Apple/Sandbox journey; those require separate evidence.
+
 ## Backups and deployment
 
 The release entry point holds the operations lock across backup authentication and migration and records backup filename/hash against the exact release and source run. A failed export, authentication, COS upload or readback blocks migration. The lightweight slot reconciler uses only the deployment lock, so it can continue during a scheduled backup. Backup, maintenance and restore jobs wait up to 10 minutes and retry bounded failures twice at two-minute intervals.
@@ -87,3 +95,7 @@ To bootstrap an empty recovery host, install the reviewed operations source and 
 - Native cloud snapshots are verified independently for schedule, retention and actual successful records. A successful local drill is not proof of a native cloud snapshot restore.
 
 Baseline evidence: system disk 85 percent used, 342 images, 98 Journal binaries, build-cache logical size 7.65 GB. After initial cleanup, disk usage was 36 percent with about 25 GB available, 47 images and about 2 GB build cache. Docker's virtual sizes overlap; physical `df` recovery is the capacity evidence.
+
+## Albums copy-association schema snapshots
+
+After `0074`, development snapshots include `album_system_copy_locators`. The shared test producer installs the matched checkpoint helpers and Albums backup implementation transactionally; production checkpoints continue using their independently registered source. Development recovery bundles include the exact snapshot/deletion-ledger implementations as authenticated files, alongside the encrypted SQL and ledger. Retained pre-0074 snapshots remain readable with their exact older inventory; unknown or partial inventories are rejected. Disposable MySQL tests restore both inventories, compare row bytes and counts including binary locator data, and retain quarantine. See [repair evidence](evidence/albums-system-copy-backup-2026-10-31.json). Remote post-update backup acceptance is recorded separately.

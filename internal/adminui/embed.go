@@ -10,8 +10,8 @@ import (
 //go:embed static/*
 var files embed.FS
 
-// Handle serves the embedded administration shell directly from Gin.
-func Handle(context *gin.Context, testEnvironment bool) {
+// Render serves the embedded administration shell directly from Gin.
+func Render(context *gin.Context, testEnvironment bool) {
 	name := strings.TrimPrefix(context.Request.URL.Path, "/")
 	if name == "" || name == "setup" || name == "enroll" {
 		name = "index.html"

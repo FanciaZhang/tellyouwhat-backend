@@ -137,7 +137,7 @@ func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operatio
 			writeFailure(context.Writer, status, "invalid_parameter", "请求参数无效")
 		},
 	})
-	router.NoRoute(func(context *gin.Context) { adminui.Handle(context, config.Environment == "development") })
+	router.NoRoute(func(context *gin.Context) { adminui.Render(context, config.Environment == "development") })
 	return server, nil
 }
 

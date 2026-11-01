@@ -86,7 +86,7 @@ func (r *MySQLUploads) eraseAccountRecords(ctx context.Context, owner, request s
 		return time.Time{}, ErrDerivedPending
 	}
 	// Refuse leftover rows, including tables whose FK would otherwise cascade.
-	for _, table := range []string{"album_uploads", "album_asset_versions", "album_asset_lifecycle", "album_library_changes", "album_asset_operations", "album_share_links", "album_retention_reminders"} {
+	for _, table := range []string{"album_system_copy_locators", "album_uploads", "album_asset_versions", "album_asset_lifecycle", "album_library_changes", "album_asset_operations", "album_share_links", "album_retention_reminders"} {
 		var count int
 		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table+` WHERE owner_id=?`, owner).Scan(&count); err != nil {
 			return time.Time{}, err

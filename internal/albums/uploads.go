@@ -139,6 +139,10 @@ func (s *UploadService) Create(ctx context.Context, owner, requestID string, man
 		return Upload{}, ErrQuota
 	}
 	budget := min(total, s.policy.MaxDerivedBytes)
+	if photoPreviewEligible(manifest, PhotoGridJPEG) && manifest.Kind == Video {
+		cover := videoCoverBudget(s.policy.MaxDerivedBytes)
+		budget = min(total, s.policy.MaxDerivedBytes-cover) + cover
+	}
 	return s.repository.Reserve(ctx, Upload{
 		ID: uuid.NewString(), OwnerID: owner, RequestID: requestID, Manifest: manifest, Digest: digest,
 		State: Uploading, OriginalBytes: total, DerivedBudget: budget,

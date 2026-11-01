@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
 var ErrPhotoCandidate = errors.New("album photo processing candidate unavailable")
@@ -70,6 +72,35 @@ func (s *COSObjects) RenderPhotoCandidate(ctx context.Context, source SealedObje
 	// CI.Get interpolates VersionId without escaping in SDK v0.7.75. Escape it
 	// here so opaque versions containing &, +, # or = cannot change the query.
 	response, err := s.client.CI.Get(ctx, source.Key, rule, nil, url.QueryEscape(source.VersionID))
+	return s.readStillCandidate(ctx, source, preset, response, err, limit)
+}
+
+// Only the small, rotated JPEG crosses the worker; the movie remains in COS.
+func (s *COSObjects) RenderVideoCover(ctx context.Context, source SealedObject) (PhotoCandidate, error) {
+	if err := ctx.Err(); err != nil {
+		return PhotoCandidate{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	profile, err := s.InspectVideoSource(ctx, source)
+	if err != nil {
+		return PhotoCandidate{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return PhotoCandidate{}, err
+	}
+	options := &cos.GetSnapshotOptions{Time: float32(min(1.0, float64(profile.DurationMilliseconds)/2000)), Format: "jpg", Rotate: "auto", Mode: "exactframe"}
+	if profile.Width >= profile.Height {
+		options.Width = min(512, profile.Width)
+	} else {
+		options.Height = min(512, profile.Height)
+	}
+	response, err := s.client.CI.GetSnapshot(ctx, source.Key, options, url.QueryEscape(source.VersionID))
+	_, _, _, limit := photoPresetRule(PhotoGridJPEG)
+	return s.readStillCandidate(ctx, source, PhotoGridJPEG, response, err, limit)
+}
+
+func (s *COSObjects) readStillCandidate(ctx context.Context, source SealedObject, preset PhotoPreset, response *cos.Response, err error, limit int64) (PhotoCandidate, error) {
 	if err != nil {
 		if response != nil && response.Body != nil {
 			response.Body.Close()

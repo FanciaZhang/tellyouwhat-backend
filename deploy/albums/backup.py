@@ -40,8 +40,10 @@ album_login_challenges album_multipart_completions album_multipart_intents album
 album_original_seals album_photo_jobs album_photo_writes album_push_registrations
 album_retention_deliveries album_retention_reminders album_recovery_state album_sessions album_share_claims
 album_share_links album_storage_accounts album_subscription_notifications album_uploads
-album_video_jobs""".split())
+album_system_copy_locators album_video_jobs""".split())
 TABLES = tuple(sorted(TABLES))
+# Retained pre-0074 snapshots remain authenticated and restorable.
+PRE_COPY_TABLES = tuple(t for t in TABLES if t != "album_system_copy_locators")
 QUARANTINE = """
 START TRANSACTION;
 UPDATE album_accounts SET state='disabled' WHERE state='active';
@@ -91,7 +93,8 @@ def verify(runtime, path):
         if not hmac.compare_digest(manifest_signature(backup_secret(runtime), m), envelope["hmac_sha256"]):
             raise OperationError("Albums backup authentication failed")
         if (m["scope"] != SCOPE or m["database"] != database or m["filename"] != path.name
-                or m["sha256"] != file_digest(path) or set(m["table_rows"]) != set(TABLES) or set(m["table_sha256"]) != set(TABLES)
+                or m["sha256"] != file_digest(path) or set(m["table_rows"]) not in (set(TABLES), set(PRE_COPY_TABLES))
+                or set(m["table_sha256"]) != set(m["table_rows"])
                 or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in m["table_sha256"].values())
                 or any(type(n) is not int or n < 0 for n in m["table_rows"].values())
                 or type(m["created_at"]) is not int or m["created_at"] <= 0 or m["created_at"] > time.time() + 300):
@@ -286,18 +289,18 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                 command = [str(binaries / "mysqldump"), "--no-defaults", "--protocol=socket", "--socket=" + str(sock), "--user=root",
                            "--single-transaction", "--quick", "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
                            "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4",
-                           "--no-create-info", "albums_restore_test", *TABLES]
+                           "--no-create-info", "albums_restore_test", *sorted(m["table_rows"])]
                 with restored_dump.open("xb") as output:
                     compared = subprocess.run(command, stdout=output, stderr=diagnostic, timeout=900)
                 if compared.returncode:
                     raise OperationError("Albums restored content export failed")
-                hashes = {table: hashlib.sha256() for table in TABLES}
+                hashes = {table: hashlib.sha256() for table in m["table_rows"]}
                 with restored_dump.open("rb") as source:
                     for line in source:
                         row = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
                         if row:
                             hashes[row[1].decode()].update(line)
-                if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in TABLES):
+                if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in m["table_rows"]):
                     raise OperationError("Albums restored content differs from snapshot")
                 runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
                 if entries is not None:
@@ -319,7 +322,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=10)
-    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(TABLES), quarantined=True, recovery_quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
+    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(m["table_rows"]), quarantined=True, recovery_quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
 
 
 def main():

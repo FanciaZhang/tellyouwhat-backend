@@ -35,6 +35,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         for path in Path(__file__).resolve().parent.glob('*.py'):
             if not path.name.endswith('_test.py'):
                 shutil.copy2(path, scripts / path.name)
+        (scripts.parent / 'albums').mkdir()
+        shutil.copy2(Path(__file__).resolve().parent.parent / 'albums/backup.py', scripts.parent / 'albums/backup.py')
         (self.runtime.state / 'blue-green.json').write_text('{"phase":"STABLE","current":{"path":"production"}}')
         for name in ('operations', 'deployment'):
             (self.runtime.state / (name + '.lock')).touch(mode=0o600)
@@ -161,6 +163,48 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             with dev.test_operations_transition(self.runtime, self.source):
                 self.fail('accepted changed operations')
         self.assertEqual(installed.read_bytes(), b'# unexpected drift\n')
+
+    def test_development_backup_helpers_are_source_bound_and_restored_after_failure(self):
+        names = ['tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'albums/backup.py']
+        for index, name in enumerate(names):
+            original = ('# registered snapshot implementation ' + str(index)).encode()
+            installed = self.root / 'deploy' / name
+            installed.write_bytes(original)
+            with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+                entry = tarfile.TarInfo('deploy/' + name); entry.size = len(original)
+                archive.addfile(entry, io.BytesIO(original))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                for name in names:
+                    self.assertEqual((self.root / 'deploy' / name).read_bytes(),
+                                     (Path(dev.__file__).resolve().parent.parent / name).read_bytes())
+                raise RuntimeError('activation failed')
+        for index, name in enumerate(names):
+            self.assertEqual((self.root / 'deploy' / name).read_bytes(),
+                             ('# registered snapshot implementation ' + str(index)).encode())
+        (self.root / 'deploy/albums/backup.py').write_bytes(b'# unexpected drift')
+        with self.assertRaisesRegex(OperationError, 'rollback source'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('accepted changed snapshot code')
+
+    def test_first_development_snapshot_install_is_removed_after_failure(self):
+        installed = self.root / 'deploy/albums/backup.py'
+        original = installed.read_bytes()
+        installed.unlink(); installed.parent.rmdir()
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo('deploy/albums/backup.py'); entry.size = len(original)
+            archive.addfile(entry, io.BytesIO(original))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertEqual(installed.read_bytes(), original)
+                raise RuntimeError('activation failed')
+        self.assertFalse(installed.parent.exists())
 
     def test_new_admin_helper_is_removed_when_first_activation_fails(self):
         installed = self.root / 'deploy/tencent/platform_test_admin.py'
@@ -996,6 +1040,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         for name in dev.albums.ALBUM_FILES:
             (approved / name).write_bytes(b'synthetic selected source')
             (approved / name).chmod(0o600)
+        with tarfile.open(approved / 'source.tar', 'w') as archive:
+            item = tarfile.TarInfo('migrations/0001_example.sql'); item.size = 1
+            archive.addfile(item, io.BytesIO(b'x'))
         (approved / 'runtime.env').write_bytes((self.folder / 'albums.env').read_bytes())
         (approved / 'compose.env').write_text('ALBUM_TEST_SECRET_DIRECTORY=/opt/tellyouwhat/albums-development/secrets\n'
             'ALBUM_TEST_MYSQL_USER=albums_development_test\nALBUM_TEST_NETWORK_CIDR=172.29.92.0/24\n'
@@ -1008,6 +1055,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             path.write_text(json.dumps(value)); path.chmod(0o600)
         execute = self.runtime.execute.side_effect or self.execute
         def with_albums(label, command, **kwargs):
+            if label == 'platform-test-album-schema':
+                return b'0001_example.sql\n'
             if label.startswith('platform-test-albums-'):
                 return json.dumps([{'State': {'Running': True},
                     'NetworkSettings': {'Networks': {dev.albums.NETWORK: {}}},
@@ -1024,8 +1073,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.enable_albums()
         dev.selection(self.runtime, self.source)
         dev.albums.require_resources(self.runtime, self.folder)
-        with self.assertRaisesRegex(OperationError, 'full authenticated development backup'):
-            self.update()
+        with patch.object(dev.albums, 'verify_gateway'):
+            with self.assertRaisesRegex(OperationError, 'full authenticated development backup'):
+                self.update()
         self.assertFalse(any(c.args[0].startswith('platform-test-build') for c in self.runtime.execute.call_args_list))
         self.compose['PLATFORM_ALBUM_MYSQL_PASSWORD'] = '6' * 64
         self.save()
@@ -1036,7 +1086,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with (self.folder / 'albums.env').open('a') as f:
             f.write('ALBUM_SHARING_ENABLED=true\n')
         self.save()
-        with self.assertRaisesRegex(OperationError, 'approved resources'):
+        with self.assertRaisesRegex(OperationError, 'test recipient site, Sandbox and dedicated mounted keys'):
             self.update()
 
     def test_albums_credentials_cannot_escape_gateway_or_use_production_identity(self):
@@ -1102,6 +1152,167 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         rollback = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-rollback')
         self.assertIn(str(self.old_folder / 'compose.env'), rollback)
         self.assertNotIn(str(self.folder / dev.albums.OVERLAY), rollback)
+
+    def prepare_album_product_migration(self):
+        name = '0073_album_development_subscription_products.sql'
+        self.enable_journal()
+        self.set_topology(mounted=True)
+        self.prepare_migration((name,))
+        self.enable_albums()
+        self.album_migrated = False
+        execute = self.runtime.execute.side_effect
+        def migrate(label, command, **kwargs):
+            if label == 'platform-test-update-album-migrate':
+                self.album_migrated = True
+            if label == 'platform-test-album-schema':
+                return ('0001_example.sql\n' + (name + '\n' if self.album_migrated else '')).encode()
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = migrate
+
+    def test_album_product_migration_is_backed_up_scoped_and_retained_on_rollback(self):
+        self.prepare_album_product_migration()
+        with patch.object(dev.albums, 'verify_gateway'):
+            with self.assertRaisesRegex(OperationError, 'not ready'):
+                self.update(albums_backup=True, ready_error=[OperationError('not ready'), None])
+        state = json.loads((self.runtime.state / 'platform-test.json').read_text())
+        self.assertEqual(state['source'], self.old_source)
+        self.assertEqual(state['album_migrations'], 2)
+        self.assertEqual(state['album_latest_migration'], '0073_album_development_subscription_products.sql')
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-migrate'), labels.index('platform-test-update-album-migrate'))
+        self.assertLess(labels.index('platform-test-update-album-migrate'), labels.index('platform-test-update-start'))
+        job = next(c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-update-album-migrate')
+        self.assertEqual(job[-4:], ['run', '--rm', '--no-deps', 'album-migrate'])
+        execute = self.runtime.execute.side_effect
+        def retry(label, command, **kwargs):
+            if label == 'platform-test-update-schema':
+                return b'2\t0073_album_development_subscription_products.sql\n'
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = retry
+        self.runtime.execute.reset_mock()
+        with patch.object(dev.albums, 'verify_gateway'):
+            self.update(albums_backup=True)
+        self.assertFalse(any(c.args[0] in ('platform-test-update-migrate', 'platform-test-update-album-migrate')
+                             for c in self.runtime.execute.call_args_list))
+
+    def enable_album_media(self):
+        self.prepare_update()
+        self.enable_albums()
+        with (self.folder / 'albums.env').open('a') as output:
+            values = {'ALBUM_COS_ARCHIVE_SECRET_ID': 'test-archive', 'ALBUM_COS_ARCHIVE_SECRET_KEY': 'test-archive-key',
+                      'ALBUM_COS_UPLOAD_SECRET_ID': 'test-upload', 'ALBUM_COS_UPLOAD_SECRET_KEY': 'test-upload-key',
+                      'ALBUM_MAX_ORIGINAL_BYTES': '1000000000', 'ALBUM_MAX_DERIVED_BYTES': '100000000',
+                      'ALBUM_CI_VIDEO_QUEUE_ID': dev.albums.WORKER_VALUES['ALBUM_CI_VIDEO_QUEUE_ID']}
+            output.write(''.join(k + '=' + v + '\n' for k,v in values.items()))
+        # Existing admission credentials are pinned by the original resource selection.
+        original = self.root / '.albums-development/releases' / ('c' * 40)
+        (original / 'runtime.env').write_bytes((self.folder / 'albums.env').read_bytes())
+        record = json.loads((original / 'selection.json').read_text())
+        record['files']['runtime.env'] = hashlib.sha256((original / 'runtime.env').read_bytes()).hexdigest()
+        (original / 'selection.json').write_text(json.dumps(record))
+        self.save()
+        for name in dev.selection_files(self.folder):
+            shutil.copy2(self.folder / name, self.old_folder / name)
+        old_compose = {**self.compose, 'PLATFORM_TEST_IMAGE_TAG': self.old_source,
+            'PLATFORM_TEST_ENV_FILE': str(self.old_folder / 'runtime.env'),
+            'PLATFORM_ALBUM_ENV_FILE': str(self.old_folder / 'albums.env')}
+        (self.old_folder / 'compose.env').write_text(''.join(k + '=' + v + '\n' for k,v in old_compose.items()))
+        (self.old_folder / 'selection.json').write_text(json.dumps({'source': self.old_source, 'files': {
+            name: hashlib.sha256((self.old_folder / name).read_bytes()).hexdigest() for name in dev.selection_files(self.old_folder)}}))
+        recipe = (Path(__file__).resolve().parents[2] / dev.albums.WORKER_COMPOSE).read_bytes()
+        (self.folder / dev.albums.WORKER_COMPOSE).write_bytes(recipe)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            item = tarfile.TarInfo(dev.albums.WORKER_COMPOSE); item.size = len(recipe)
+            archive.addfile(item, io.BytesIO(recipe))
+        settings = dev.albums.worker_values(dev.read_environment(self.folder / 'albums.env'))
+        (self.folder / 'album-worker.env').write_text(''.join(k + '=' + v + '\n' for k,v in settings.items()))
+        self.compose['PLATFORM_ALBUM_WORKER_ENV_FILE'] = str(self.folder / 'album-worker.env')
+        self.save()
+        execute = self.runtime.execute.side_effect
+        self.runtime.execute.side_effect = lambda label, command, **kw: (b'[{"State":{"Running":false,"ExitCode":0}}]'
+            if label == 'platform-test-album-worker-stopped' else execute(label, command, **kw))
+
+    def test_media_activation_requires_backup_and_registers_matched_image(self):
+        self.enable_album_media()
+        self.assertIn('albumworker', dev.image_services(self.folder))
+        with patch.object(dev.albums, 'verify_gateway'):
+            with self.assertRaisesRegex(OperationError, 'full authenticated development backup'):
+                self.update()
+        self.assertFalse(any(c.args[0] == 'platform-test-album-worker-stop' for c in self.runtime.execute.call_args_list))
+        with patch.object(dev.albums, 'verify_gateway'), patch.object(dev.albums, 'verify_worker'):
+            result = self.update(albums_backup=True)
+        self.assertEqual(result['source'], self.source)
+        self.assertIn('album-worker.env', result['files'])
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-build-albumworker'), labels.index('platform-test-album-worker-stop'))
+        self.assertLess(labels.index('platform-test-album-worker-start'), labels.index('platform-test-update-start'))
+
+    def test_media_startup_failure_restores_only_existing_worker_and_shared_api(self):
+        self.enable_album_media()
+        with patch.object(dev.albums, 'verify_gateway'), patch.object(dev.albums, 'verify_worker', side_effect=OperationError('media startup failed')):
+            with self.assertRaisesRegex(OperationError, 'media startup failed'):
+                self.update(albums_backup=True)
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list if c.args[0] == 'platform-test-album-worker-start']
+        self.assertEqual(len(commands), 2)
+        self.assertIn(str(self.folder / dev.albums.WORKER_COMPOSE), commands[0])
+        self.assertTrue(any('compose.albums-test.yaml' in value for value in commands[1]))
+        self.assertEqual(commands[1][-1], 'albumworker')
+        self.assertNotIn('albumgateway', commands[1])
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text())['source'], self.old_source)
+
+    def test_album_and_platform_receipts_recover_interruption_before_state_write(self):
+        self.prepare_album_product_migration()
+        self.migrated = self.album_migrated = True
+        execute = self.runtime.execute.side_effect
+        def committed(label, command, **kwargs):
+            if label == 'platform-test-update-schema':
+                return b'2\t0073_album_development_subscription_products.sql\n'
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = committed
+        with patch.object(dev.albums, 'verify_gateway'):
+            result = self.update(albums_backup=True)
+        self.assertEqual(result['migrations'], 2)
+        self.assertEqual(result['album_migrations'], 2)
+        self.assertFalse(any(c.args[0] in ('platform-test-update-migrate', 'platform-test-update-album-migrate')
+                             for c in self.runtime.execute.call_args_list))
+
+    def test_previous_album_overlay_remains_readable_but_cannot_run_new_job(self):
+        self.enable_albums()
+        body = (Path(__file__).parent / 'testdata/previous-platform-albums-test.yaml').read_bytes()
+        self.assertEqual(hashlib.sha256(body).hexdigest(), dev.albums.ROLLBACK_OVERLAY_SHA256)
+        (self.folder / dev.albums.OVERLAY).write_bytes(body)
+        with tarfile.open(self.folder / 'source.tar') as archive:
+            entries = [(m.name, archive.extractfile(m).read()) for m in archive.getmembers()]
+        with tarfile.open(self.folder / 'source.tar', 'w') as archive:
+            for name, data in entries:
+                if name == dev.albums.OVERLAY: data = body
+                entry = tarfile.TarInfo(name); entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        self.save()
+        dev.selection(self.runtime, self.source)
+
+    def test_album_product_migration_never_runs_without_both_recovery_selections(self):
+        self.prepare_album_product_migration()
+        with self.assertRaisesRegex(OperationError, 'full authenticated development backup'):
+            self.update()
+        self.assertFalse(any(c.args[0].startswith('platform-test-build') or 'migrate' in c.args[0]
+                             for c in self.runtime.execute.call_args_list))
+
+    def test_album_migration_failure_keeps_original_api_and_does_not_restore_data(self):
+        self.prepare_album_product_migration()
+        execute = self.runtime.execute.side_effect
+        def fail(label, command, **kwargs):
+            if label == 'platform-test-update-album-migrate':
+                raise OperationError('scoped migration failed')
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = fail
+        with self.assertRaisesRegex(OperationError, 'scoped migration failed'):
+            self.update(albums_backup=True)
+        state = json.loads((self.runtime.state / 'platform-test.json').read_text())
+        self.assertEqual(state['source'], self.old_source)
+        self.assertEqual(state['migrations'], 2)
+        self.assertFalse(any('up' in c.args[1] or 'down' in c.args[1] or '--volumes' in c.args[1]
+                             for c in self.runtime.execute.call_args_list))
 
     def test_admission_requires_matched_scheduled_backup_and_maintenance_before_any_mutation(self):
         self.enable_journal()

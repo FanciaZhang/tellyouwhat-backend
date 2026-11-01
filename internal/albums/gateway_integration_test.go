@@ -116,7 +116,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	var nonce string
 	var codeCalls, cosCalls atomic.Int32
 	receipt := newAlbumReceiptFixture(t, time.Now().UTC().Truncate(time.Millisecond))
-	config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: receipt.roots}
+	config.Subscriptions = &AlbumSubscriptionConfig{SandboxQuotaBytes: 1_000_000_000, BundleID: albumDevelopmentAudience, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: receipt.roots}
 	var currentSubscription atomic.Value
 	var subscriptionCalls atomic.Int32
 	clientSigningKey, err := jwt.ParseECPrivateKeyFromPEM(config.AppleCode.PrivateKeyPEM)
@@ -188,6 +188,20 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		t.Fatal("missing schema accepted or provider contacted before schema check")
 	}
 	if err := migrations.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	const developmentMigration = "0073_album_development_subscription_products.sql"
+	var appliedAt time.Time
+	if err := db.QueryRow(`SELECT applied_at FROM schema_migrations WHERE name=?`, developmentMigration).Scan(&appliedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE name=?`, developmentMigration); err != nil {
+		t.Fatal(err)
+	}
+	if gateway, err := NewGateway(ctx, config, transport); err == nil || gateway != nil || cosCalls.Load() != 0 {
+		t.Fatal("missing development SKU migration admitted or contacted provider", err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_migrations(name,applied_at) VALUES(?,?)`, developmentMigration, appliedAt); err != nil {
 		t.Fatal(err)
 	}
 	gateway, err := NewGateway(ctx, config, transport)
@@ -322,15 +336,15 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 		response, _ := json.Marshal(map[string]any{"environment": "Sandbox", "bundleId": albumDevelopmentAudience, "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": state, "signedTransactionInfo": receipt.sign(t, payload)}}}}})
 		currentSubscription.Store(string(response))
 	}
-	payload := receipt.payload(session.AccountID)
+	payload := receipt.developmentPayload(session.AccountID)
 	setSubscription(payload, 1)
-	wrong := receipt.payload(uuid.NewString())
+	wrong := receipt.developmentPayload(uuid.NewString())
 	signedBody, _ := json.Marshal(map[string]string{"signedTransaction": receipt.sign(t, wrong)})
 	if status, _, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 403 || subscriptionCalls.Load() != 0 {
 		t.Fatal("foreign signed appAccountToken was accepted", status)
 	}
 	signedBody, _ = json.Marshal(map[string]string{"signedTransaction": receipt.sign(t, payload)})
-	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"quotaBytes":50000000000`)) || subscriptionCalls.Load() != 1 {
+	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"quotaBytes":1000000000`)) || !bytes.Contains(data, []byte(`"quotaKind":"sandbox"`)) || subscriptionCalls.Load() != 1 {
 		t.Fatal("assembled subscription verification failed", status)
 	}
 	if status, _, _ := request("POST", "/v1/albums/uploads", uploadRequest, session.Token, config.APIHost, ""); status != 201 {
@@ -342,7 +356,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	payload["originalPurchaseDate"] = receipt.now.Add(-48 * time.Hour).UnixMilli()
 	payload["signedDate"] = receipt.now.Add(time.Second).UnixMilli()
 	setSubscription(payload, 2)
-	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"state":"expired"`)) || !bytes.Contains(data, []byte(`"quotaBytes":0`)) || !bytes.Contains(data, []byte(`"retentionDeadline":`)) {
+	if status, data, _ := request("POST", "/v1/albums/subscription/transactions", signedBody, session.Token, config.APIHost, ""); status != 200 || !bytes.Contains(data, []byte(`"state":"expired"`)) || !bytes.Contains(data, []byte(`"quotaBytes":0`)) || bytes.Contains(data, []byte(`"retentionDeadline":`)) {
 		t.Fatal("current expired Apple status was ignored", status)
 	}
 	manifest.SourceRevision = "new-revision-after-expiry"

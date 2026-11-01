@@ -49,6 +49,8 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	manifest.Resources[0].Descriptor = &ResourceDescriptor{PhotoKitType: 1, Filename: "原图.heic", UniformTypeIdentifier: "public.heic"}
 	captureTime := int64(-1)
 	manifest.Metadata = &AssetMetadata{CreationTimeMilliseconds: &captureTime, PixelWidth: 4000, PixelHeight: 3000, Favorite: true, Location: &AssetLocation{Latitude: 31.2, Longitude: 121.5}}
+	cloudIdentifier := "opaque-system-cloud-id"
+	manifest.SystemCloudIdentifier = &cloudIdentifier
 	defer func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_photo_jobs WHERE owner_id=?`, owner)
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM album_asset_versions WHERE owner_id=?`, owner)
@@ -109,6 +111,9 @@ func TestMySQLAlbumReservationAndVerificationTransactions(t *testing.T) {
 	}
 	if persisted.Manifest.Metadata == nil || *persisted.Manifest.Metadata.CreationTimeMilliseconds != captureTime || !persisted.Manifest.Metadata.Favorite || persisted.Manifest.Metadata.Location.Longitude != 121.5 {
 		t.Fatal("asset metadata lost in MySQL")
+	}
+	if persisted.Manifest.SystemCloudIdentifier == nil || *persisted.Manifest.SystemCloudIdentifier != cloudIdentifier {
+		t.Fatal("system cloud identifier lost in MySQL")
 	}
 	if digest, err := persisted.Manifest.Digest(); err != nil || digest != persisted.Digest {
 		t.Fatal("persisted descriptor digest mismatch")

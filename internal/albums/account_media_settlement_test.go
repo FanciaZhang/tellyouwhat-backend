@@ -32,7 +32,7 @@ func readyAccountMediaSettlement(t *testing.T, f sharingFixture, request string)
 func mediaSettlementCounts(t *testing.T, db *sql.DB, owner string) map[string]int {
 	t.Helper()
 	queries := map[string]string{}
-	for _, table := range []string{"album_share_links", "album_object_purges", "album_asset_operations", "album_library_changes", "album_live_pairs", "album_derived_cleanups", "album_derived_finalizations", "album_photo_jobs", "album_photo_writes", "album_video_jobs", "album_uploads", "album_asset_versions", "album_asset_lifecycle"} {
+	for _, table := range []string{"album_system_copy_locators", "album_share_links", "album_object_purges", "album_asset_operations", "album_library_changes", "album_live_pairs", "album_derived_cleanups", "album_derived_finalizations", "album_photo_jobs", "album_photo_writes", "album_video_jobs", "album_uploads", "album_asset_versions", "album_asset_lifecycle"} {
 		queries[table] = `SELECT COUNT(*) FROM ` + table + ` WHERE owner_id=?`
 	}
 	queries["album_share_claims"] = `SELECT COUNT(*) FROM album_share_claims c JOIN album_share_links s ON s.share_id=c.share_id WHERE s.owner_id=?`
@@ -117,6 +117,8 @@ func TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved(t *testin
 			}
 			s := readyAccountMediaSettlement(t, f, request)
 			foreign, _ := photoJournalUpload(t, f.db)
+			seedSystemCopyHints(t, f.db, f.login.AccountID)
+			seedSystemCopyHints(t, f.db, foreign.OwnerID)
 			before := mediaSettlementCounts(t, f.db, foreign.OwnerID)
 			foreignUsed, foreignReserved := photoJournalBalance(t, f.db, foreign.OwnerID)
 			own := mediaSettlementCounts(t, f.db, f.login.AccountID)

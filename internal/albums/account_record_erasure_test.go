@@ -196,7 +196,7 @@ func TestGatewayAccountRecordErasureRequiresExplicitEnablement(t *testing.T) {
 			if _, err = f.db.Exec(`INSERT INTO album_apple_identity_state(subject_sha256,revoked_before) VALUES (?,?)`, orphan, now.Add(-2*identityFenceRetention)); err != nil {
 				t.Fatal(err)
 			}
-			f.config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, RebindingEnabled: true, RecordErasureEnabled: enabled, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+			f.config.Subscriptions = &AlbumSubscriptionConfig{SandboxQuotaBytes: 1_000_000_000, BundleID: albumDevelopmentAudience, RebindingEnabled: true, RecordErasureEnabled: enabled, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 			g, err := NewGateway(context.Background(), f.config, f.transport(t, func(*http.Request) (*http.Response, error) { return appleResponse(""), nil }))
 			if err != nil {
 				t.Fatal(err)

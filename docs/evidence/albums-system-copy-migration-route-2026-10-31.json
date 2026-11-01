@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-31",
+  "scope": "Reviewed 0073/0074 updates for the existing independent Albums store and registered shared-test producer; no deployment",
+  "filesSHA256": {
+    "cmd/migrate/main.go": "0ab99212839133bb561bced1c1401de9b7cbf34d81c62e3448a4534a3a9b72ca",
+    "deploy/tencent/platform_test_albums.py": "c59c62aca96cdae9100744db24b4254b6458ae2ab2bb3ced6d5b9f8c46cab101",
+    "deploy/tencent/platform_test_albums_test.py": "f6ddde8a6a4337a3d68717c979c3390592c83c79a666fd45cc5693bb78e656b5",
+    "deploy/tencent/platform_test_schema.py": "b8a9b465e1a2377f20e388c1264733f9740753cc303e9a60c77a25afe03a9ad0",
+    "migrations/embed.go": "73311c53e572b4a7e5f664f1ad159d067b0b7c32316784dd4dc5633ba8d63ca7",
+    "migrations/album_development_products_test.go": "a70c3c013c7ae27dbb8ec3c78f8c02692a981f6d803059a6055eb7b81f9745cf",
+    "migrations/0074_album_system_copy_locators.sql": "d700b814fd9d1dcc8f3014f60db6677cc641cfa35faa6c7d2c3de4d149e16a0d"
+  },
+  "sql": {
+    "countsIncludingSubtests": {
+      "pass": 29
+    },
+    "passedTests": [
+      "TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL/legacy",
+      "TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL/DDL-before-receipt",
+      "TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL/scoped-legacy",
+      "TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL/scoped-DDL-before-receipt",
+      "TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL",
+      "TestMySQLAlbumScopedMigrationRequiresExistingBase",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/photo",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/video",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/live-pair",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/unpublished-multipart",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved",
+      "TestMySQLAccountRecordErasureReplayRecreationAndIsolation",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/access",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/media",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/ledger",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/wrong-request",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/remaining-grant",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/receipt-failure",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack",
+      "TestMySQLAccountRecordErasureRechecksStaleSubscriptionsAndRestoresPurchase",
+      "TestMySQLObjectPurgeSettlementAtomicRefundAndFinalFeed",
+      "TestSystemCopyKindsAndIdentifierBoundary",
+      "TestMySQLSystemCopiesRestartConcurrentCapacityAndIsolation",
+      "TestMySQLSystemCopiesHTTPTrustBoundary",
+      "TestMySQLSystemCopiesLifecycleAndRetention/trash",
+      "TestMySQLSystemCopiesLifecycleAndRetention/deleting",
+      "TestMySQLSystemCopiesLifecycleAndRetention/retention",
+      "TestMySQLSystemCopiesLifecycleAndRetention/quarantine",
+      "TestMySQLSystemCopiesLifecycleAndRetention"
+    ],
+    "failedTests": [],
+    "failureOutput": []
+  },
+  "producerTests": {
+    "passed": 74,
+    "failed": 0
+  },
+  "goVet": [
+    "./migrations",
+    "./internal/albums",
+    "./internal/albumhttpapi",
+    "./cmd/migrate"
+  ],
+  "validated": [
+    "scoped runner leaves other App migrations unapplied",
+    "original subscription rows and quotas preserved",
+    "successful 0074 DDL without a receipt resumes without losing locator rows",
+    "registered producer accepts each reviewed forward migration prefix",
+    "rollback retains forward-only extensions; altered SQL, missing prerequisite, regressed receipts rejected"
+  ],
+  "remoteMigrationApplied": false,
+  "remoteProcessesChanged": false,
+  "cloudPermissionsChanged": false,
+  "note": "Supersedes the pending scoped-0074-routing item in the previous locator-contract evidence. Actual migration/deployment and matching backup remain pending."
+}

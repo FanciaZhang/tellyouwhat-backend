@@ -289,12 +289,12 @@ func TestGatewaySubscriptionRebindingRunsWithExplicitEnable(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	fixture := newAlbumReceiptFixture(t, now)
 	repo := NewMySQLUploads(f.db).WithSubscriptionEnvironment("Sandbox")
-	a, err := repo.ApplySubscription(ctx, login.AccountID, 0, VerifiedAlbumSubscription{"1000000000000001", "1000000000000002", Cloud50GBAnnualProduct, "Sandbox", now.AddDate(1, 0, 0), now, true}, now)
+	a, err := repo.ApplySubscription(ctx, login.AccountID, 0, VerifiedAlbumSubscription{"1000000000000001", "1000000000000002", Cloud50GBAnnualProduct + ".dev", "Sandbox", now.AddDate(1, 0, 0), now, true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.delete(t, session)
-	f.config.Subscriptions = &AlbumSubscriptionConfig{BundleID: albumDevelopmentAudience, RebindingEnabled: true, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
+	f.config.Subscriptions = &AlbumSubscriptionConfig{SandboxQuotaBytes: 1_000_000_000, BundleID: albumDevelopmentAudience, RebindingEnabled: true, Environment: "Sandbox", IssuerID: uuid.NewString(), KeyID: "ALBUMSKEY1", SigningKey: albumTestECKey(t), Roots: fixture.roots}
 	var bound atomic.Bool
 	var puts atomic.Int32
 	base := f.transport(t, func(*http.Request) (*http.Response, error) { return appleResponse(`{}`), nil })
@@ -320,7 +320,7 @@ func TestGatewaySubscriptionRebindingRunsWithExplicitEnable(t *testing.T) {
 		if bound.Load() {
 			token = a.AppAccountToken
 		}
-		data, _ := json.Marshal(map[string]any{"bundleId": albumDevelopmentAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": 1, "signedTransactionInfo": fixture.sign(t, fixture.payload(token))}}}}})
+		data, _ := json.Marshal(map[string]any{"bundleId": albumDevelopmentAudience, "environment": "Sandbox", "data": []any{map[string]any{"lastTransactions": []any{map[string]any{"status": 1, "signedTransactionInfo": fixture.sign(t, fixture.developmentPayload(token))}}}}})
 		return appleResponse(string(data)), nil
 	})
 	g, err := NewGateway(ctx, f.config, transport)

@@ -9,7 +9,7 @@ COPY . .
 ARG PLATFORM_TEST_BUILD_SOURCE
 LABEL cn.tellyouwhat.platform-test-build-source="${PLATFORM_TEST_BUILD_SOURCE}"
 # Reuse the compiler cache across the isolated platform service images.
-RUN set -e; for service in gateway worker migrate maintenance servicecheck admin adminctl; do \
+RUN set -e; for service in gateway worker albumworker migrate maintenance servicecheck admin adminctl; do \
       CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/${service} ./cmd/${service}; \
     done
 
@@ -30,6 +30,13 @@ FROM runtime AS gateway
 COPY --from=build /out/gateway /service
 FROM runtime AS worker
 COPY --from=build /out/worker /service
+FROM scratch AS albumworker
+LABEL cn.tellyouwhat.operations-automation="1" cn.tellyouwhat.lifecycle="1"
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=build /out/albumworker /service
+USER 65532:65532
+ENTRYPOINT ["/service"]
 FROM runtime AS migrate
 COPY --from=build /out/migrate /service
 FROM runtime AS maintenance

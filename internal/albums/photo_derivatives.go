@@ -35,7 +35,7 @@ func (s *UploadService) GeneratePhotoDerivative(ctx context.Context, owner, vers
 	if err != nil {
 		return PhotoWriteRecord{}, err
 	}
-	if version.Manifest.Kind != Photo && version.Manifest.Kind != LivePhoto {
+	if !photoPreviewEligible(version.Manifest, preset) {
 		return PhotoWriteRecord{}, ErrPhotoCandidate
 	}
 	record, err := repository.PhotoWrite(ctx, owner, versionID, preset)

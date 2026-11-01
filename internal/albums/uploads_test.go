@@ -315,6 +315,8 @@ func TestUploadHTTPRejectsHostAppAndClientOwnerInjection(t *testing.T) {
 
 func TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim(t *testing.T) {
 	s, repo, _, owner, manifest := uploadFixture(t)
+	cloudIdentifier := "private-system-cloud-id"
+	manifest.SystemCloudIdentifier = &cloudIdentifier
 	router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", owner}}, s)
 	if err != nil {
 		t.Fatal(err)
@@ -353,6 +355,13 @@ func TestUploadHTTPRequiresExplicitEditStateAndQueuesWithoutBackupClaim(t *testi
 	var upload Upload
 	if err := json.Unmarshal(response.Body.Bytes(), &upload); err != nil {
 		t.Fatal(err)
+	}
+	if upload.Manifest.SystemCloudIdentifier == nil || *upload.Manifest.SystemCloudIdentifier != cloudIdentifier {
+		t.Fatal("owned manifest lost its system identifier at the HTTP boundary")
+	}
+	shared, err := json.Marshal(sharedResources(AssetVersion{Manifest: upload.Manifest}))
+	if err != nil || bytes.Contains(shared, []byte(cloudIdentifier)) || bytes.Contains(shared, []byte("systemCloudIdentifier")) {
+		t.Fatal("system identifier leaked into recipient metadata")
 	}
 	for _, suffix := range []string{"/submit", ""} {
 		method := http.MethodPost

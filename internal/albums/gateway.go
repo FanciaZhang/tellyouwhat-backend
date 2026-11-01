@@ -63,6 +63,12 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 	if err := g.checkSchema(ctx); err != nil {
 		return nil, errors.New("album database schema")
 	}
+	if config.Subscriptions != nil && config.Subscriptions.BundleID == albumDevelopmentAudience {
+		var applied int
+		if err = g.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name=?`, "0073_album_development_subscription_products.sql").Scan(&applied); err != nil || applied != 1 {
+			return nil, errors.New("album development subscription schema is required")
+		}
+	}
 	objects, err := newCOSObjects(config.Worker.COS, transportOrDefault(transport))
 	if err != nil {
 		return nil, errors.New("album object storage configuration")

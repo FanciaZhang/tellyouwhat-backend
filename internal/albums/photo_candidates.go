@@ -5,6 +5,17 @@ import (
 	"errors"
 )
 
+type VideoCoverRenderer interface {
+	RenderVideoCover(context.Context, SealedObject) (PhotoCandidate, error)
+}
+
+func photoPreviewEligible(m Manifest, preset PhotoPreset) bool {
+	if m.Kind == Video {
+		return preset == PhotoGridJPEG && m.Metadata != nil && m.Metadata.MediaSubtypes == 0
+	}
+	return m.Kind == Photo || m.Kind == LivePhoto
+}
+
 type PhotoCandidateRenderer interface {
 	RenderPhotoCandidate(context.Context, SealedObject, PhotoPreset) (PhotoCandidate, error)
 }
@@ -25,7 +36,7 @@ func (s *UploadService) PhotoCandidate(ctx context.Context, owner, versionID str
 	if err != nil {
 		return PhotoCandidate{}, err
 	}
-	if version.Manifest.Kind != Photo && version.Manifest.Kind != LivePhoto {
+	if !photoPreviewEligible(version.Manifest, preset) {
 		return PhotoCandidate{}, ErrPhotoCandidate
 	}
 	if budget, ok := s.repository.(interface {
@@ -38,6 +49,17 @@ func (s *UploadService) PhotoCandidate(ctx context.Context, owner, versionID str
 		if !errors.Is(err, ErrNotFound) {
 			return PhotoCandidate{}, err
 		}
+	}
+	if version.Manifest.Kind == Video {
+		source, err := videoSource(version)
+		if err != nil {
+			return PhotoCandidate{}, err
+		}
+		cover, ok := s.objects.(VideoCoverRenderer)
+		if !ok {
+			return PhotoCandidate{}, ErrPhotoCandidate
+		}
+		return cover.RenderVideoCover(ctx, source)
 	}
 	role := OriginalPhoto
 	if version.Manifest.Edited {

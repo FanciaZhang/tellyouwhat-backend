@@ -15,6 +15,15 @@ var migrationFiles embed.FS
 const migrationLockName = "tellyouwhat_platform_schema_migrations"
 
 func Run(ctx context.Context, database *sql.DB) error {
+	return run(ctx, database, false)
+}
+
+// RunAlbumDevelopmentProducts applies the reviewed subscription and copy-locator updates only.
+func RunAlbumDevelopmentProducts(ctx context.Context, database *sql.DB) error {
+	return run(ctx, database, true)
+}
+
+func run(ctx context.Context, database *sql.DB, albumProductsOnly bool) error {
 	connection, err := database.Conn(ctx)
 	if err != nil {
 		return err
@@ -30,6 +39,15 @@ func Run(ctx context.Context, database *sql.DB) error {
 	defer func() {
 		_, _ = connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, migrationLockName)
 	}()
+	if albumProductsOnly {
+		var base int
+		if err := connection.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name='0064_album_identity_retirement.sql'`).Scan(&base); err != nil {
+			return fmt.Errorf("inspect Albums development migration base: %w", err)
+		}
+		if base != 1 {
+			return fmt.Errorf("Albums development migration requires the existing identity-retirement schema")
+		}
+	}
 	var unscopedTables int
 	if err := connection.QueryRowContext(ctx, `
         SELECT COUNT(*) FROM information_schema.tables AS existing
@@ -62,6 +80,9 @@ func Run(ctx context.Context, database *sql.DB) error {
 			continue
 		}
 		name := entry.Name()
+		if albumProductsOnly && name != "0073_album_development_subscription_products.sql" && name != "0074_album_system_copy_locators.sql" {
+			continue
+		}
 		contents, err := migrationFiles.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)

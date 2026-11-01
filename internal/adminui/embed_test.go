@@ -52,13 +52,13 @@ func TestHandlerDoesNotServeUnknownOrTraversalPaths(t *testing.T) {
 
 func testRouter() *gin.Engine {
 	router := gin.New()
-	router.NoRoute(func(context *gin.Context) { Handle(context, false) })
+	router.NoRoute(func(context *gin.Context) { Render(context, false) })
 	return router
 }
 
 func TestTestEnvironmentIsVisibleBeforeLoginAndDoesNotChangeProduction(t *testing.T) {
 	router := gin.New()
-	router.NoRoute(func(c *gin.Context) { Handle(c, true) })
+	router.NoRoute(func(c *gin.Context) { Render(c, true) })
 	for _, path := range []string{"/", "/setup", "/enroll"} {
 		result := httptest.NewRecorder()
 		router.ServeHTTP(result, httptest.NewRequest("GET", path, nil))

@@ -29,6 +29,8 @@ func TestMySQLObjectPurgeSettlementAtomicRefundAndFinalFeed(t *testing.T) {
 	ctx := context.Background()
 	r := NewMySQLUploads(db)
 	other, _ := photoJournalUpload(t, db)
+	seedSystemCopyHints(t, db, u.OwnerID)
+	seedSystemCopyHints(t, db, other.OwnerID)
 	old, err := r.LibraryChanges(ctx, u.OwnerID, 0, 100)
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +61,13 @@ func TestMySQLObjectPurgeSettlementAtomicRefundAndFinalFeed(t *testing.T) {
 		if err != nil || len(page.Changes) != 1 || page.HasMore || page.Changes[0].State != "purged" || page.Changes[0].Version != nil || page.Changes[0].TrashedAt != nil || page.Changes[0].Revision != 3 {
 			t.Fatal("fresh or old cursor lost tombstone", page, err)
 		}
+	}
+	var ownHints, foreignHints int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM album_system_copy_locators WHERE owner_id=?`, u.OwnerID).Scan(&ownHints); err != nil || ownHints != 0 {
+		t.Fatal("purged hints retained", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM album_system_copy_locators WHERE owner_id=?`, other.OwnerID).Scan(&foreignHints); err != nil || foreignHints != 1 {
+		t.Fatal("foreign hints removed", err)
 	}
 	p, err := r.objectPurge(ctx, u.OwnerID, u.Manifest.AssetID)
 	if err != nil || p.State != "completed" || len(p.Targets) != 0 {

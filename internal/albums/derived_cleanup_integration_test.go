@@ -13,6 +13,10 @@ import (
 
 func derivedVideoIntent(t *testing.T, r *MySQLUploads, u Upload, target VideoJob, now time.Time, provider bool) VideoJob {
 	t.Helper()
+	// These scenarios isolate video cleanup after a cover-render failure.
+	if _, err := r.db.Exec(`UPDATE album_photo_jobs SET state='attention' WHERE owner_id=? AND version_id=? AND preset=?`, u.OwnerID, u.ID, PhotoGridJPEG); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	j, err := r.ClaimVideoJob(ctx, u.OwnerID, target.ID, uuid.NewString(), now)
 	if err != nil {

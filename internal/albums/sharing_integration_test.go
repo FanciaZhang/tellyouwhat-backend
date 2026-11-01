@@ -66,6 +66,16 @@ type sharingFixture struct {
 }
 
 func newSharingFixture(t *testing.T) sharingFixture {
+	return newSharingContentFixture(t, []byte("synthetic original bytes"))
+}
+
+func newSharingContentFixture(t *testing.T, content []byte) sharingFixture {
+	sum := sha256.Sum256(content)
+	manifest := Manifest{AssetID: uuid.NewString(), SourceRevision: "sharing-fixture-v1", Kind: Photo, Resources: []Resource{{ID: "photo", Role: OriginalPhoto, SizeBytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:]), Descriptor: &ResourceDescriptor{PhotoKitType: 1, Filename: "回忆.jpeg", UniformTypeIdentifier: "public.jpeg"}}}}
+	return newSharingManifestFixture(t, manifest)
+}
+
+func newSharingManifestFixture(t *testing.T, manifest Manifest) sharingFixture {
 	t.Helper()
 	db, dsn := gatewayTestDatabase(t)
 	ctx := context.Background()
@@ -103,11 +113,15 @@ func newSharingFixture(t *testing.T) sharingFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := []byte("synthetic original bytes")
-	sum := sha256.Sum256(content)
-	manifest := Manifest{AssetID: uuid.NewString(), SourceRevision: "sharing-fixture-v1", Kind: Photo, Resources: []Resource{{ID: "photo", Role: OriginalPhoto, SizeBytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:]), Descriptor: &ResourceDescriptor{PhotoKitType: 1, Filename: "回忆.jpeg", UniformTypeIdentifier: "public.jpeg"}}}}
-	digest, _ := manifest.Digest()
-	u := Upload{ID: uuid.NewString(), OwnerID: login.AccountID, Manifest: manifest, Digest: digest, OriginalBytes: int64(len(content))}
+	digest, err := manifest.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var size int64
+	for _, resource := range manifest.Resources {
+		size += resource.SizeBytes
+	}
+	u := Upload{ID: uuid.NewString(), OwnerID: login.AccountID, Manifest: manifest, Digest: digest, OriginalBytes: size}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -116,12 +130,15 @@ func newSharingFixture(t *testing.T) sharingFixture {
 		tx.Rollback()
 		t.Fatal(err)
 	}
-	sealed := []SealedObject{{ResourceID: "photo", Key: sealedKey(u, "photo"), VersionID: "immutable-share-v1", SizeBytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}}
+	var sealed []SealedObject
+	for _, resource := range manifest.Resources {
+		sealed = append(sealed, SealedObject{ResourceID: resource.ID, Key: sealedKey(u, resource.ID), VersionID: "immutable-share-v1", SizeBytes: resource.SizeBytes, SHA256: resource.SHA256})
+	}
 	if err = publishAssetVersion(ctx, tx, u, sealed, now); err != nil {
 		tx.Rollback()
 		t.Fatal(err)
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE album_storage_accounts SET used_bytes=? WHERE owner_id=?`, int64(len(content)), login.AccountID); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE album_storage_accounts SET used_bytes=? WHERE owner_id=?`, size, login.AccountID); err != nil {
 		tx.Rollback()
 		t.Fatal(err)
 	}
@@ -331,6 +348,8 @@ func TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState(t *testing.T)
 		t.Fatal(err)
 	}
 	ended := f.now.AddDate(0, -6, 0).Add(2 * time.Minute)
+	// Calendar-month subtraction is not invertible at month ends.
+	*f.now = albumRetentionDeadline(ended).Add(-2 * time.Minute)
 	_, err = f.repo.ApplySubscription(ctx, f.login.AccountID, a.Revision, VerifiedAlbumSubscription{original, transaction, Cloud50GBAnnualProduct, "Sandbox", ended, f.now.Add(time.Second), false}, *f.now)
 	if err != nil {
 		t.Fatal(err)

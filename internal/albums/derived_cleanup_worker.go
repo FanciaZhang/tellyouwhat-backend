@@ -70,7 +70,7 @@ func (w *DerivedCleanupWorker) advance(ctx context.Context, c DerivedCleanup) (s
 		if err != nil {
 			return "", err
 		}
-		if !cleanupPhotoMatches(c, p) || !p.RetiredAt.IsZero() || (v.Manifest.Kind != Photo && v.Manifest.Kind != LivePhoto) {
+		if !cleanupPhotoMatches(c, p) || !p.RetiredAt.IsZero() || !photoPreviewEligible(v.Manifest, p.Spec.Preset) {
 			return "", ErrConflict
 		}
 		if c.Plan != nil && c.KeepVersion == "" && p.RetirementStartedAt.IsZero() {

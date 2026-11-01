@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-26",
+  "appBase": "66a9055632eb79f401dfc329696ed971ec8c7dda",
+  "backendBase": "d7fed356476715d8bfc7462d99732c357355bf5a",
+  "sourceSHA256": {
+    "LegalSite/public/share/share-app.mjs": "6bd5c095833358aaf98a547b381fae8f1b9dd176290f4a41a5b3ddc7fb9b3734",
+    "LegalSite/public/share/share-client.mjs": "855619fa69e59cd03b2ca8ec3837aef47ac63539f699e91285761b18a5943ff2",
+    "LegalSite/scripts/test-share-live.mjs": "3edef4d10e535b2b547e9e6b7af1f112dd0e32b97eea6d6bad78929f12ed94a3",
+    "LegalSite/tests/share-browser.test.mjs": "1520ce37951db6bcc1d318465c18232792c8852f1349990f8aaf84dfb5609eb9",
+    "internal/albums/sharing_live_test.go": "8861ae855abee55e6473e4d2039dc50d6a44852269582639ae464e2a50cecee8",
+    "internal/albums/sharing_http.go": "ca6643f29859468f8e0133824bef33671b3b135d9f9a887ef631c89647d21a10",
+    "internal/albums/sharing.go": "259770cd4d54a7c18b94600519633b2289c354be32e475d31a08437f77105ac6"
+  },
+  "browser": {
+    "scope": "actual recipient page, loopback HTTP sharing handlers, real COS JPEG download; synthetic owner session",
+    "passed": true,
+    "savedBytes": 777,
+    "savedSHA256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a",
+    "wrongPasswordRejected": true,
+    "claimReplayIDReused": true,
+    "refreshDidNotClaim": true,
+    "secondClaimDenied": true,
+    "revocationRemovedDownloadActions": true,
+    "mediaFetchedOnlyAfterClick": true
+  },
+  "provider": {
+    "bytes": 777,
+    "exactVersionCleanup": true,
+    "existingGrantStillReadableAfterRevoke": true,
+    "fullBytesAndRangeVerified": true,
+    "passed": true,
+    "recipientBrowserPassed": true,
+    "revokedLinkDeniedNewGrants": true,
+    "scope": "isolated MySQL sharing service and real COS; synthetic JPEG; no Apple or deployed gateway",
+    "sha256": "0aa66afc7522a76fbd47b3c7dfdf5bcfca0a4440a4887138f15ed79337cff62a"
+  },
+  "cleanup": {
+    "exactVersionDeleted": true,
+    "fixedVersionReadStatus": 404
+  },
+  "goRaceTests": {
+    "exitCode": 0,
+    "tests": [
+      {
+        "test": "TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLastClaimConcurrencyAndPoolBoundedGrants",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLeaseExpiryCannotBeReplayedForFree",
+        "result": "pass"
+      },
+      {
+        "test": "TestMySQLAlbumSharingLiveBundleRejectsIncompleteEvidence",
+        "result": "pass"
+      },
+      {
+        "test": "TestLiveCOSSharingOriginalDownloadAndRevocation",
+        "result": "pass"
+      },
+      {
+        "test": "TestLiveCOSSharingCleanupRecovery",
+        "result": "pass"
+      }
+    ]
+  },
+  "siteTests": {
+    "command": "node --test tests/*.test.mjs",
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "browser": "installed headless Chrome; 390 x 844 CSS pixels"
+  },
+  "baseline": {
+    "passedServiceAndDownload": true,
+    "visualIssues": [
+      "claim form remained usable after claim limit error",
+      "revoked state retained previous authorization validity note"
+    ]
+  },
+  "screenshots": [
+    "share-browser-baseline-recipient-exhausted-2026-10-26.png",
+    "share-browser-baseline-recipient-revoked-2026-10-26.png",
+    "share-browser-final-recipient-download-ready-2026-10-26.png",
+    "share-browser-final-recipient-exhausted-2026-10-26.png",
+    "share-browser-final-recipient-revoked-2026-10-26.png"
+  ],
+  "cleanupScope": {
+    "syntheticCloudObjectsCreated": 2,
+    "syntheticCloudObjectsDeleted": 2,
+    "downloadedTemporaryFilesRemoved": true,
+    "sessionManifestRemoved": true,
+    "isolatedProcessesStopped": true,
+    "temporaryDatabasesRemoved": true
+  },
+  "limitations": [
+    "owner create/revoke use HTTP requests, not native App UI",
+    "loopback adapter substitutes site/API transport; public DNS/TLS and deployed shared gateway unverified",
+    "synthetic owner session and entitlement; no Apple login or purchase",
+    "test bucket only; production web storage allowlist still must be aligned before activation",
+    "no Safari/iPhone, video or Live Photo recipient download acceptance",
+    "no actual waiting for COS grant natural expiry"
+  ],
+  "userAccepted": false,
+  "deployed": false
+}

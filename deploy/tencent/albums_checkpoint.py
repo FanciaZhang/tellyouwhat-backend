@@ -65,13 +65,24 @@ def checkpoint(runtime, folder, environment='development'):
             raise OperationError('Albums backup client must target only the selected environment container')
     with tempfile.TemporaryDirectory(prefix='.albums-checkpoint-', dir=runtime.state) as temporary:
         modules = {}
+        implementations = {}
         with tarfile.open(folder / 'source.tar') as archive:
             for name in ('backup', 'deletion_ledger'):
                 member = archive.getmember('deploy/albums/' + name + '.py')
                 if not member.isfile() or not 0 < member.size < 65536:
                     raise OperationError('Albums snapshot implementation is unavailable')
                 path = Path(temporary) / (name + '.py')
-                path.write_bytes(archive.extractfile(member).read())
+                content = archive.extractfile(member).read()
+                if environment == 'development' and name == 'backup':
+                    # Test schema can advance independently of the original data-service recipe.
+                    implementation = Path(__file__).resolve().parent.parent / 'albums/backup.py'
+                    if (implementation.is_symlink() or not implementation.is_file()
+                            or implementation.stat().st_uid != os.getuid() or implementation.stat().st_mode & 0o022
+                            or not 0 < implementation.stat().st_size < 65536):
+                        raise OperationError('Albums development snapshot implementation is unsafe')
+                    content = implementation.read_bytes()
+                implementations['checkpoint/' + name + '.py'] = content
+                path.write_bytes(content)
                 spec = importlib.util.spec_from_file_location('albums_checkpoint_' + name, path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
@@ -93,6 +104,8 @@ def checkpoint(runtime, folder, environment='development'):
             modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
             names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
             result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
+            if environment == 'development':
+                result.update(implementations)
             for old in child.backups.glob('albums-deletions-*.json'):
                 if old.name == ledger['filename']:
                     continue

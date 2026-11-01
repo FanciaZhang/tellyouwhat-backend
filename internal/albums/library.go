@@ -164,6 +164,7 @@ func (r *MySQLUploads) CheckLibrarySchema(ctx context.Context) error {
 		`SELECT deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until,deletion_abort_id,deletion_aborted_at FROM album_multipart_intents LIMIT 0`,
 		`SELECT upload_id,resource_id,manifest_digest,consumed_at,object_version,legacy FROM album_original_seals LIMIT 0`,
 		`SELECT ` + versionColumns + ` FROM album_asset_versions LIMIT 0`,
+		`SELECT owner_id,version_id,locator_id,copy_kind,cloud_identifier FROM album_system_copy_locators LIMIT 0`,
 		`SELECT ` + lifecycleColumns + ` FROM album_asset_lifecycle LIMIT 0`,
 		`SELECT ` + changeColumns + ` FROM album_library_changes LIMIT 0`,
 		`SELECT owner_id,request_id,asset_id,expected_revision,action,result_json FROM album_asset_operations LIMIT 0`,

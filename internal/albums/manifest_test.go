@@ -17,6 +17,31 @@ func liveManifest() Manifest {
 	}}
 }
 
+func TestSystemCloudIdentifierIsValidatedAndDoesNotReplaceBackupProof(t *testing.T) {
+	m := liveManifest()
+	before, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier := "opaque-system-cloud-id"
+	m.SystemCloudIdentifier = &identifier
+	after, err := m.Digest()
+	if err != nil || before != after {
+		t.Fatal("discovery hint changed the original content proof", err)
+	}
+	data, err := json.Marshal(m)
+	var restored Manifest
+	if err != nil || json.Unmarshal(data, &restored) != nil || restored.SystemCloudIdentifier == nil || *restored.SystemCloudIdentifier != identifier {
+		t.Fatal("cloud identifier lost on persistence")
+	}
+	for _, invalid := range []string{"", "line\nbreak", strings.Repeat("x", 4097), strings.Repeat("图", 1366)} {
+		m.SystemCloudIdentifier = &invalid
+		if !errors.Is(m.Validate(), ErrInvalidManifest) {
+			t.Fatal("unsafe identifier accepted")
+		}
+	}
+}
+
 func TestMissingLiveResourceCannotConfirmBackup(t *testing.T) {
 	m := liveManifest()
 	_, err := VerifyBackup(m, []Observation{{ResourceID: "photo", SizeBytes: 100, ComputedSHA256: m.Resources[0].SHA256}})
@@ -207,5 +232,68 @@ func TestAssetMetadataIsDigestBoundAndValidatesDomain(t *testing.T) {
 	m.Metadata.PixelWidth = 0
 	if !errors.Is(m.Validate(), ErrInvalidManifest) {
 		t.Fatal("missing dimensions")
+	}
+}
+
+func nativeSlowMotionManifest() Manifest {
+	return Manifest{AssetID: "native-video", SourceRevision: "r1", Kind: Video, Edited: true,
+		VideoRecipe: "apple_slow_motion_1_1",
+		Metadata:    &AssetMetadata{PixelWidth: 320, PixelHeight: 240, DurationMilliseconds: 1000, MediaSubtypes: 131072},
+		Resources: []Resource{
+			{ID: "original", Role: OriginalVideo, SizeBytes: 1024, SHA256: strings.Repeat("a", 64), Descriptor: &ResourceDescriptor{2, "source.mov", "com.apple.quicktime-movie"}},
+			{ID: "adjustment", Role: Adjustment, SizeBytes: 200, SHA256: strings.Repeat("b", 64), Descriptor: &ResourceDescriptor{7, "adjustment.plist", "com.apple.property-list"}},
+		},
+	}
+}
+
+func TestNativeSlowMotionRequiresExactQualifiedResources(t *testing.T) {
+	m := nativeSlowMotionManifest()
+	digest, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations := []Observation{{"original", 1024, strings.Repeat("a", 64)}, {"adjustment", 200, strings.Repeat("b", 64)}}
+	if got, err := VerifyBackup(m, observations); err != nil || got != digest {
+		t.Fatal("qualified proof rejected", err)
+	}
+	if _, err := VerifyBackup(m, observations[:1]); !errors.Is(err, ErrIncompleteBackup) {
+		t.Fatal("missing recipe bytes accepted")
+	}
+	data, _ := json.Marshal(m)
+	var restored Manifest
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := restored.Digest(); err != nil || got != digest || restored.VideoRecipe != m.VideoRecipe {
+		t.Fatal("recipe lost on persistence", err)
+	}
+	for name, change := range map[string]func(*Manifest){
+		"absent": func(m *Manifest) { m.VideoRecipe = "" }, "unknown": func(m *Manifest) { m.VideoRecipe = "other" },
+		"plain": func(m *Manifest) { m.Edited = false }, "photo": func(m *Manifest) { m.Kind = Photo },
+		"metadata": func(m *Manifest) { m.Metadata = nil }, "subtype": func(m *Manifest) { m.Metadata.MediaSubtypes = 0 },
+		"descriptor": func(m *Manifest) { m.Resources[1].Descriptor = nil },
+		"render": func(m *Manifest) {
+			m.Resources = append(m.Resources, Resource{ID: "current", Role: CurrentVideo, SizeBytes: 100, SHA256: strings.Repeat("c", 64), Descriptor: &ResourceDescriptor{6, "current.mov", "com.apple.quicktime-movie"}})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := nativeSlowMotionManifest()
+			change(&bad)
+			if !errors.Is(bad.Validate(), ErrInvalidManifest) {
+				t.Fatal("invalid native recipe accepted")
+			}
+		})
+	}
+	// Digest must bind the recipe field itself, as well as its resource hashes.
+	canonical, _ := json.Marshal(m)
+	sum := sha256.Sum256(canonical)
+	if hex.EncodeToString(sum[:]) == digest {
+		t.Fatal("expected resource canonical ordering before digest")
+	}
+	m.Resources[0], m.Resources[1] = m.Resources[1], m.Resources[0]
+	canonical, _ = json.Marshal(m)
+	sum = sha256.Sum256(canonical)
+	if hex.EncodeToString(sum[:]) != digest {
+		t.Fatal("canonical proof omitted recipe")
 	}
 }

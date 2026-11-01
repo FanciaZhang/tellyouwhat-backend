@@ -61,6 +61,7 @@ def applications(folder):
 
 def selection_files(folder):
     return {**FILES, **(albums.FILES if albums.selected(folder) else {}),
+            **(albums.WORKER_FILES if albums.worker_selected(folder) else {}),
             **(journal.READ_ALOUD_FILES if journal.read_aloud_selected(folder) else {}),
             **(admin.FILES if admin.selected(folder) else {})}
 
@@ -70,7 +71,8 @@ def running_services(folder):
 
 
 def image_services(folder):
-    return (*running_services(folder), 'migrate', *(('maintenance',) if recording.available(folder) else ()))
+    return (*running_services(folder), 'migrate', *(('maintenance',) if recording.available(folder) else ()),
+            *(('albumworker',) if albums.worker_selected(folder) else ()))
 
 
 def private_file(runtime, path, limit):
@@ -130,6 +132,7 @@ def selection(runtime, source):
             raise OperationError('Albums overlay differs from selected source')
         journal.validate_read_aloud_overlay(folder, archive)
         admin.validate(folder, compose, archive)
+        albums.validate_worker(folder, compose, archive)
         config = archive.extractfile('internal/config/platform.go') if 'internal/config/platform.go' in names else None
         explicit_apps = config is not None and b'"PLATFORM_APPS"' in config.read()
         # Retained recovery selections must be validated using their own configuration contract.
@@ -267,6 +270,8 @@ def verify_running(runtime, folder, source, label):
                 if attempt == 29:
                     raise OperationError('platform test worker is not accepting work')
                 time.sleep(1)
+    if albums.worker_selected(folder):
+        albums.verify_worker(runtime, folder, source)
 
 
 def require_separate_health_resources(runtime, folder):
@@ -286,7 +291,8 @@ def require_installed_operations(runtime, folder):
     installed = runtime.root / 'deploy/tencent'
     for name in ('operations.py', 'ops_common.py', 'ops_backup.py', 'ops_offsite.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
-                 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_admin.py', 'platform_test_schema.py'):
+                 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_admin.py', 'platform_test_schema.py',
+                 'albums_checkpoint.py', 'albums_artifacts.py', '../albums/backup.py'):
         path = installed / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
                 or path.stat().st_mode & 0o022 or path.read_bytes() != (source / name).read_bytes()):
@@ -321,11 +327,16 @@ def update_configuration(runtime, source, previous_source, folder, record):
         compose_changes.add('PLATFORM_TEST_ADMIN_ENV_FILE')
     if 'albums' in after_apps:
         compose_changes.add('PLATFORM_ALBUM_ENV_FILE')
+        compose_changes.add('PLATFORM_ALBUM_WORKER_ENV_FILE')
         if 'albums' not in before_apps:
             permitted |= set(albums.REGISTRY)
             compose_changes |= albums.COMPOSE_KEYS
         else:
-            albums.require_subscription_transition(old, folder)
+            albums.require_transition(old, folder)
+        if albums.worker_selected(folder) and not albums.selected(old):
+            raise OperationError('admit and back up Albums before activating its media processing')
+        if albums.worker_selected(old) and not albums.worker_selected(folder):
+            raise OperationError('platform test update cannot silently disable Albums media processing')
     for filename, allowed in [('compose.env', compose_changes),
                               ('runtime.env', permitted)]:
         before, after = read_environment(old / filename), read_environment(folder / filename)
@@ -337,12 +348,13 @@ def update_configuration(runtime, source, previous_source, folder, record):
     rows = runtime.execute('platform-test-update-schema', ['docker', 'exec', PROJECT + '-mysql-1', 'sh', '-c',
         'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --database=platform_test --batch --skip-column-names '
         '-e "SELECT COUNT(*),MAX(name) FROM schema_migrations;"']).decode().strip()
-    if rows != str(previous['migrations']) + '\t' + previous['latest_migration']:
-        raise OperationError('platform test applied schema differs from the rollback selection')
     actual = applied(runtime, PROJECT)
-    if actual not in (old_names, new_names):
+    recorded = (previous['migrations'], previous['latest_migration'])
+    if (actual not in (old_names, new_names) or rows != str(len(actual)) + '\t' + actual[-1]
+            or recorded not in ((len(old_names), old_names[-1]), (len(new_names), new_names[-1]))):
         raise OperationError('platform test schema does not match either reviewed release')
     pending_migration = actual != new_names
+    album_schema = albums.schema_plan(runtime, folder, previous) if 'albums' in after_apps else None
     from ops_backup import create_backup, verify_backup
     snapshot = create_backup(runtime)
     manifest = verify_backup(runtime, runtime.backups / snapshot['filename'])
@@ -353,15 +365,30 @@ def update_configuration(runtime, source, previous_source, folder, record):
     recording.prepare(runtime, folder)
     journal.prepare_read_aloud(runtime, folder)
     runtime.execute('platform-test-compose', compose(folder, 'config', '--quiet'))
+    if albums.worker_selected(folder):
+        runtime.execute('platform-test-album-worker-compose', albums.worker_command(folder, 'config', '--quiet'))
     build_images(runtime, folder, record, source)
     if pending_migration:
         # The old service keeps serving; never undo an additive table or restore a partial data backup.
         runtime.execute('platform-test-update-migrate', compose(folder, 'run', '--rm', '--no-deps', 'migrate'), timeout=180)
         if applied(runtime, PROJECT) != new_names:
             raise OperationError('platform test migration result differs from its reviewed source')
+    if pending_migration or recorded != (len(new_names), new_names[-1]):
         previous = {**previous, 'migrations': len(new_names), 'latest_migration': new_names[-1], 'schema_source': source}
         atomic_json(state_path, previous)
+    if album_schema and album_schema[1]:
+        album_names, extension, pending = album_schema
+        if pending:
+            runtime.execute('platform-test-update-album-migrate', compose(folder, 'run', '--rm', '--no-deps', 'album-migrate'), timeout=180)
+            if albums.applied_schema(runtime) != album_names:
+                raise OperationError('Albums migration result differs from its reviewed source')
+        # Keep forward DDL in the recovery state even when candidate activation fails.
+        previous = {**previous, 'album_schema_extensions': extension,
+                    'album_migrations': len(album_names), 'album_latest_migration': album_names[-1]}
+        atomic_json(state_path, previous)
     try:
+        if albums.worker_selected(folder) or albums.worker_selected(old):
+            albums.start_worker(runtime, folder)
         runtime.execute('platform-test-update-start', compose(folder, 'up', '-d', '--no-build', '--no-deps', *running_services(folder)), timeout=120)
         ready(folder)
         verify_running(runtime, folder, source, 'platform-test-update-check')
@@ -373,6 +400,8 @@ def update_configuration(runtime, source, previous_source, folder, record):
         return result
     except Exception:
         try:
+            if albums.worker_selected(folder) or albums.worker_selected(old):
+                albums.start_worker(runtime, old, recovering=True)
             added = tuple(service for service in running_services(folder) if service not in running_services(old))
             if added:
                 runtime.execute('platform-test-update-stop-added', compose(folder, 'stop', '-t', '30', *added), timeout=90)
@@ -380,17 +409,20 @@ def update_configuration(runtime, source, previous_source, folder, record):
             runtime.execute('platform-test-update-rollback', compose(old, 'up', '-d', '--no-build', '--no-deps', *running_services(old)), timeout=120)
             ready(old)
             verify_running(runtime, old, previous_source, 'platform-test-rollback-check')
+            if albums.worker_selected(folder):
+                albums.require_resources(runtime, old)
         raise
 
 
 @contextlib.contextmanager
 def test_operations_transition(runtime, update_from):
     # Test validators travel with the release; the shared backup change is pinned below.
-    names = ('platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
-             'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py')
-    source, installed = Path(__file__).resolve().parent, runtime.root / 'deploy/tencent'
+    names = tuple('tencent/' + name for name in (
+        'platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
+        'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py')) + ('albums/backup.py',)
+    source, installed = Path(__file__).resolve().parent.parent, runtime.root / 'deploy'
     changed = {n: (source / n).read_bytes() for n in names if not (installed / n).exists() or (installed / n).read_bytes() != (source / n).read_bytes()}
-    backup = 'ops_backup.py'
+    backup = 'tencent/ops_backup.py'
     if (installed / backup).read_bytes() != (source / backup).read_bytes():
         reviewed = ('e367cbe4f1e5068664b3ad2ca9e152d9dbac73e2df46ae988d9d13ae8e50c577',
                     'c4f84df20f967623fbfe79c529ba04bf9a041bc52e323a4f6c8bfcbef8c98a59')
@@ -410,9 +442,15 @@ def test_operations_transition(runtime, update_from):
     with tarfile.open(previous / 'source.tar') as archive:
         for name in changed:
             path = installed / name
-            if name == 'platform_test_admin.py' and not path.exists() and not path.is_symlink():
+            if name == 'albums/backup.py' and not path.exists() and not path.is_symlink():
+                member = archive.getmember('deploy/' + name)
+                if not member.isfile() or not 0 < member.size < 65536:
+                    raise OperationError('registered Albums snapshot implementation is unavailable')
+                originals[name] = None
+                continue
+            if name == 'tencent/platform_test_admin.py' and not path.exists() and not path.is_symlink():
                 try:
-                    archive.getmember('deploy/tencent/' + name)
+                    archive.getmember('deploy/' + name)
                 except KeyError:
                     originals[name] = None
                     continue
@@ -420,18 +458,25 @@ def test_operations_transition(runtime, update_from):
             if path.is_symlink() or path.stat().st_uid != runtime.root.stat().st_uid or path.stat().st_mode & 0o022:
                 raise OperationError('test operations must be operator owned')
             originals[name] = path.read_bytes()
-            member = archive.getmember('deploy/tencent/' + name)
+            member = archive.getmember('deploy/' + name)
             if not member.isfile() or member.size > 131072 or archive.extractfile(member).read() != originals[name]:
                 raise OperationError('installed test operations differ from the registered rollback source')
+    created_directories = []
     def replace(files):
         # Install imported modules first; remove new modules last on rollback.
-        for name in sorted(files, key=lambda name: (files[name] is None, name != 'platform_test_admin.py')):
+        for name in sorted(files, key=lambda name: (files[name] is None, name != 'tencent/platform_test_admin.py')):
             data = files[name]
             target = installed / name
             if data is None:
                 target.unlink(missing_ok=True)
                 continue
-            temporary = installed / ('.' + name + '.transition')
+            if not target.parent.exists():
+                target.parent.mkdir(mode=0o755)
+                created_directories.append(target.parent)
+            if (target.parent.is_symlink() or target.parent.stat().st_uid != runtime.root.stat().st_uid
+                    or target.parent.stat().st_mode & 0o022):
+                raise OperationError('test operations directory must be operator owned')
+            temporary = target.parent / ('.' + target.name + '.transition')
             with temporary.open('xb') as output:
                 output.write(data)
             temporary.chmod(0o644)
@@ -441,6 +486,8 @@ def test_operations_transition(runtime, update_from):
         yield
     except BaseException:
         replace(originals)
+        for directory in reversed(created_directories):
+            directory.rmdir()
         raise
 
 

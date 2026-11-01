@@ -67,7 +67,7 @@ func TestDeliveryHTTPNamedWorkflowAndIsolation(t *testing.T) {
 	}
 	put()
 	apple := &deliveryOffers{active: true}
-	server := &Server{auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
+	server := &Server{auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Apps: []AdminApp{{ID: "health", DisplayName: "Health"}, {ID: "journal", DisplayName: "Journal"}}, Delivery: store, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
 	router := gin.New()
 	router.Use(limitAdminRequestBody())
 	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: server, Service: auth})

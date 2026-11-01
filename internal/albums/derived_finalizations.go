@@ -65,7 +65,7 @@ func (r *MySQLUploads) PendingDerivedFinalizations(ctx context.Context, limit in
 	rows, err := r.db.QueryContext(ctx, `SELECT u.owner_id,u.upload_id FROM album_uploads u
 		WHERE u.state='originals_verified' AND u.derived_budget_closed=FALSE AND NOT EXISTS (SELECT 1 FROM album_derived_finalizations f WHERE f.owner_id=u.owner_id AND f.version_id=u.upload_id)
 		AND (((SELECT COUNT(*) FROM album_photo_jobs p WHERE p.owner_id=u.owner_id AND p.version_id=u.upload_id)=2 AND (SELECT COUNT(*) FROM album_video_jobs v WHERE v.owner_id=u.owner_id AND v.version_id=u.upload_id)<=1)
-		OR ((SELECT COUNT(*) FROM album_video_jobs v WHERE v.owner_id=u.owner_id AND v.version_id=u.upload_id)=1 AND NOT EXISTS (SELECT 1 FROM album_photo_jobs p WHERE p.owner_id=u.owner_id AND p.version_id=u.upload_id)))
+		OR ((SELECT COUNT(*) FROM album_video_jobs v WHERE v.owner_id=u.owner_id AND v.version_id=u.upload_id)=1 AND (SELECT COUNT(*) FROM album_photo_jobs p WHERE p.owner_id=u.owner_id AND p.version_id=u.upload_id)<=1))
 		AND NOT EXISTS (SELECT 1 FROM album_photo_jobs p WHERE p.owner_id=u.owner_id AND p.version_id=u.upload_id AND p.state IN ('queued','running'))
 		AND NOT EXISTS (SELECT 1 FROM album_video_jobs v WHERE v.owner_id=u.owner_id AND v.version_id=u.upload_id AND v.state IN ('queued','running'))
 		ORDER BY u.updated_at,u.upload_id LIMIT ?`, limit)
@@ -275,10 +275,10 @@ func terminalDerivedInventory(ctx context.Context, tx *sql.Tx, u Upload) ([]Phot
 		return nil, nil, err
 	}
 	switch u.Manifest.Kind {
-	case Photo, LivePhoto:
+	case Photo, LivePhoto, Video:
 		expected := photoJobPresets(u.Manifest)
 		expectedVideos := 0
-		if livePhotoPreviewEligible(u.Manifest) {
+		if u.Manifest.Kind == Video || livePhotoPreviewEligible(u.Manifest) {
 			expectedVideos = 1
 		}
 		if len(jobs) != len(expected) || len(videos) != expectedVideos || (expectedVideos == 1 && videos[0].Preset != VideoDaily1080) {
@@ -305,10 +305,6 @@ func terminalDerivedInventory(ctx context.Context, tx *sql.Tx, u Upload) ([]Phot
 			if !matched {
 				return nil, nil, ErrDerivedPending
 			}
-		}
-	case Video:
-		if len(videos) != 1 || len(jobs) != 0 || len(photos) != 0 || videos[0].Preset != VideoDaily1080 {
-			return nil, nil, ErrDerivedPending
 		}
 	default:
 		return nil, nil, ErrConflict

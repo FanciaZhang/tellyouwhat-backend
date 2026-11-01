@@ -56,6 +56,24 @@ class AlbumsBackupSafetyTests(unittest.TestCase):
         self.assertEqual(len(TABLES), len(set(TABLES)))
         self.assertTrue(all(t.startswith("album_") for t in TABLES))
 
+    def test_pre_copy_snapshots_remain_verifiable_but_unknown_or_partial_coverage_is_rejected(self):
+        self.manifest['table_rows'].pop('album_system_copy_locators')
+        self.manifest['table_sha256'].pop('album_system_copy_locators')
+        self.sign()
+        self.assertEqual(verify(self.runtime, self.path), self.manifest)
+        for name in ['album_uploads', 'album_future_unknown']:
+            original = json.loads(json.dumps(self.manifest))
+            if name in self.manifest['table_rows']:
+                self.manifest['table_rows'].pop(name)
+                self.manifest['table_sha256'].pop(name)
+            else:
+                self.manifest['table_rows'][name] = 0
+                self.manifest['table_sha256'][name] = hashlib.sha256(b'').hexdigest()
+            self.sign()
+            with self.assertRaises(OperationError):
+                verify(self.runtime, self.path)
+            self.manifest = original
+
     def test_valid_scope_cannot_enter_control_plane_restore(self):
         self.assertEqual(verify(self.runtime, self.path), self.manifest)
         with self.assertRaisesRegex(OperationError, "scope"):

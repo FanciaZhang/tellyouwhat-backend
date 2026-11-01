@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -120,13 +121,15 @@ func (m AssetMetadata) validate() error {
 }
 
 type Manifest struct {
-	AssetID         string           `json:"assetID"`
-	SourceRevision  string           `json:"sourceRevision"`
-	Kind            AssetKind        `json:"kind"`
-	Edited          bool             `json:"edited"`
-	Resources       []Resource       `json:"resources"`
-	Metadata        *AssetMetadata   `json:"metadata,omitempty"`
-	LivePhotoTiming *LivePhotoTiming `json:"livePhotoTiming,omitempty"`
+	AssetID               string           `json:"assetID"`
+	SourceRevision        string           `json:"sourceRevision"`
+	Kind                  AssetKind        `json:"kind"`
+	Edited                bool             `json:"edited"`
+	Resources             []Resource       `json:"resources"`
+	Metadata              *AssetMetadata   `json:"metadata,omitempty"`
+	LivePhotoTiming       *LivePhotoTiming `json:"livePhotoTiming,omitempty"`
+	VideoRecipe           string           `json:"videoRecipe,omitempty"`
+	SystemCloudIdentifier *string          `json:"systemCloudIdentifier,omitempty"`
 }
 
 // Timing belongs to the current resource pair, not PHAsset.duration (which may
@@ -181,7 +184,17 @@ func (m Manifest) validateLivePhotoTiming() error {
 
 var resourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)
 
+func validSystemCloudIdentifier(value string) bool {
+	return len(value) > 0 && len(value) <= 4096 && utf8.ValidString(value) && strings.IndexFunc(value, unicode.IsControl) < 0
+}
+
 func (m Manifest) Validate() error {
+	// A discovery hint only, never a media identity or authorization claim.
+	if value := m.SystemCloudIdentifier; value != nil {
+		if !validSystemCloudIdentifier(*value) {
+			return ErrInvalidManifest
+		}
+	}
 	if m.Metadata != nil {
 		if err := m.Metadata.validate(); err != nil {
 			return err
@@ -228,13 +241,26 @@ func (m Manifest) Validate() error {
 			return fmt.Errorf("%w: ambiguous resource role", ErrInvalidManifest)
 		}
 	}
+	if m.VideoRecipe != "" {
+		if m.VideoRecipe != "apple_slow_motion_1_1" || m.Kind != Video || !m.Edited ||
+			m.Metadata == nil || m.Metadata.MediaSubtypes != 131072 || m.Metadata.DurationMilliseconds <= 0 || len(m.Resources) != 2 ||
+			roles[OriginalVideo] != 1 || roles[Adjustment] != 1 || described != 2 {
+			return ErrInvalidManifest
+		}
+		for _, resource := range m.Resources {
+			if (resource.Role == OriginalVideo && resource.Descriptor.PhotoKitType != 2) ||
+				(resource.Role == Adjustment && resource.Descriptor.PhotoKitType != 7) {
+				return ErrInvalidManifest
+			}
+		}
+	}
 	switch m.Kind {
 	case Photo:
 		if roles[OriginalPhoto] != 1 || roles[OriginalVideo] != 0 || roles[PairedVideo] != 0 || roles[CurrentVideo] != 0 || (m.Edited && roles[CurrentPhoto] != 1) {
 			return fmt.Errorf("%w: photo resources incomplete", ErrInvalidManifest)
 		}
 	case Video:
-		if roles[OriginalVideo] != 1 || roles[OriginalPhoto] != 0 || roles[PairedVideo] != 0 || roles[CurrentPhoto] != 0 || (m.Edited && roles[CurrentVideo] != 1) {
+		if roles[OriginalVideo] != 1 || roles[OriginalPhoto] != 0 || roles[PairedVideo] != 0 || roles[CurrentPhoto] != 0 || (m.Edited && roles[CurrentVideo] != 1 && m.VideoRecipe == "") {
 			return fmt.Errorf("%w: video resources incomplete", ErrInvalidManifest)
 		}
 	case LivePhoto:
@@ -253,6 +279,8 @@ func (m Manifest) Digest() (string, error) {
 	if err := m.Validate(); err != nil {
 		return "", err
 	}
+	// An unavailable or replaced PhotoKit locator must not invalidate the original backup proof.
+	m.SystemCloudIdentifier = nil
 	m.Resources = append([]Resource(nil), m.Resources...)
 	sort.Slice(m.Resources, func(i, j int) bool { return m.Resources[i].ID < m.Resources[j].ID })
 	for index := range m.Resources {

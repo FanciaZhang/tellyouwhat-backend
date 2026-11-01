@@ -1,5 +1,18 @@
 # Shared API admission only; Albums keeps its existing database, Redis and media worker.
 services:
+  album-migrate:
+    image: "tellyouwhat-platform-test-migrate:${PLATFORM_TEST_IMAGE_TAG:?Set the immutable source}"
+    command: ["-album-development-products"]
+    environment:
+      DATABASE_DSN: "albums_development_test:${PLATFORM_ALBUM_MYSQL_PASSWORD:?Set the existing Albums development password}@tcp(tellyouwhat-albums-development-mysql-1:3306)/albums_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+    networks: [albums-development]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 50
+    restart: "no"
   gateway:
     env_file:
       - "${PLATFORM_ALBUM_ENV_FILE:?Set the selected Albums test configuration}"

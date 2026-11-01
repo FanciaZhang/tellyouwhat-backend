@@ -94,7 +94,7 @@ func TestPersonalHTTPExistingInventoryAuthClaimAndRetry(t *testing.T) {
 	if err = store.SyncPool(ctx, "health", p); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{operations: &personalHTTPOperations{}, auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Delivery: store, WritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
+	server := &Server{operations: &personalHTTPOperations{}, auth: auth, now: func() time.Time { return now }, offers: map[string]OfferManager{"health": apple, "journal": apple}, config: Config{Apps: []AdminApp{{ID: "health", DisplayName: "Health"}, {ID: "journal", DisplayName: "Journal"}}, Delivery: store, WritesEnabled: true, PreviewSigningKey: bytes.Repeat([]byte{1}, 32)}}
 	router := gin.New()
 	router.Use(limitAdminRequestBody())
 	adminhttpapi.RegisterHandlers(router, &adminHTTPServer{Server: server, Service: auth})
