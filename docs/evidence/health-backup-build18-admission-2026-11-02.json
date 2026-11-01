@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "8d129fde73d1f543c3c1e643c7206d5fbb6ab80d",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "18"
+  },
+  "appSource": "88050c996e63614aef34c5fe9d6b994244346c7f",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Preserve imported Inbox files outside the iOS-protected Documents/Inbox directory"
+}
