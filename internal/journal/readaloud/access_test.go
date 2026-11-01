@@ -3,6 +3,7 @@ package readaloud
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,5 +102,21 @@ func TestReadAloudAccessDoesNotExposeRepositoryDetails(t *testing.T) {
 	a := Access{Entitlements: failedEntitlements{}}
 	if _, err := a.Subject(context.Background(), "key"); err != ErrAccessUnavailable {
 		t.Fatal("unsafe authorization error", err)
+	}
+}
+
+func TestDevelopmentAccessCannotEnterProductionReadAloud(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	store := entitlement.NewMemoryStore()
+	_ = store.Upsert(ctx, entitlement.Record{KeyID: "key", Environment: "development", StartedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour)})
+	access := Access{Entitlements: store, JournalCharacters: 1000, PreviewCharacters: 100, Now: func() time.Time { return now }}
+	if _, err := access.Grant(ctx, "key", "preview"); err != ErrSubscriptionRequired {
+		t.Fatal("production accepted development access", err)
+	}
+	access.Development = true
+	grant, err := access.Grant(ctx, "key", "preview")
+	if err != nil || !strings.HasPrefix(grant.Subject.ID, "development:") {
+		t.Fatal("explicit developer reader unavailable", err)
 	}
 }

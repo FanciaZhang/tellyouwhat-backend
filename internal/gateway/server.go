@@ -150,7 +150,7 @@ type Dependencies struct {
 	ExecutionPolicies          PolicyResolver
 	PromptConfig               *promptconfig.Cache
 	Voice                      *voice.Service
-	VoiceEntitlements          entitlement.Store
+	VoiceEntitlements          entitlement.Reader
 	App                        appregistry.App
 	Authenticator              Authenticator
 	Entitlements               EntitlementChecker
@@ -197,7 +197,7 @@ type Server struct {
 	executionPolicies          PolicyResolver
 	promptConfig               *promptconfig.Cache
 	voice                      *voice.Service
-	voiceEntitlements          entitlement.Store
+	voiceEntitlements          entitlement.Reader
 	app                        appregistry.App
 	authenticator              Authenticator
 	entitlements               EntitlementChecker

@@ -39,12 +39,15 @@ func (r PrivacyRepository) RecordConsents(ctx context.Context, records []privacy
 		return privacy.ErrInvalidConsent
 	}
 	record := records[0]
-	if record.Scope != privacy.JournalReadAloudScope || record.DocumentVersion != privacy.JournalReadAloudDocumentVersion || record.DeviceID != record.KeyID {
+	if record.DeviceID != record.KeyID {
 		return privacy.ErrInvalidConsent
 	}
 	credential, err := r.Simulator.Lookup(record.KeyID)
 	if err != nil {
 		return privacy.ErrConsentUnavailable
+	}
+	if !validSimulatorConsent(r.Simulator.AllowsVoice(record.KeyID), record.Scope, record.DocumentVersion) {
+		return privacy.ErrInvalidConsent
 	}
 	_, err = r.DB.ExecContext(ctx, `INSERT INTO journal_simulator_read_aloud_consents
 		(key_id,scope,document_version,granted,recorded_at,expires_at) VALUES (?,?,?,?,?,?)
@@ -61,18 +64,27 @@ func (r PrivacyRepository) HasGrantedConsents(ctx context.Context, key string, r
 		}
 		return reader.HasGrantedConsents(ctx, key, requirements)
 	}
-	if r.DB == nil || len(requirements) != 1 || requirements[0].Scope != privacy.JournalReadAloudScope || requirements[0].DocumentVersion != privacy.JournalReadAloudDocumentVersion {
+	if r.DB == nil || len(requirements) != 1 {
 		return false, privacy.ErrInvalidConsent
 	}
-	if _, err := r.Simulator.Lookup(key); err != nil {
+	_, err := r.Simulator.Lookup(key)
+	if err != nil {
 		return false, privacy.ErrConsentUnavailable
 	}
+	if !validSimulatorConsent(r.Simulator.AllowsVoice(key), requirements[0].Scope, requirements[0].DocumentVersion) {
+		return false, privacy.ErrInvalidConsent
+	}
 	var granted bool
-	err := r.DB.QueryRowContext(ctx, `SELECT granted FROM journal_simulator_read_aloud_consents
+	err = r.DB.QueryRowContext(ctx, `SELECT granted FROM journal_simulator_read_aloud_consents
 		WHERE key_id=? AND scope=? AND document_version=? AND expires_at>?`,
 		key, requirements[0].Scope, requirements[0].DocumentVersion, r.Simulator.now()).Scan(&granted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	return granted && err == nil, err
+}
+
+func validSimulatorConsent(voice bool, scope, version string) bool {
+	return scope == privacy.JournalReadAloudScope && version == privacy.JournalReadAloudDocumentVersion ||
+		voice && scope == privacy.ManagedAIScope && version == privacy.AIDocumentVersion
 }

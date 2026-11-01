@@ -25,9 +25,13 @@ type Record struct {
 	OfferSignedAt      time.Time
 }
 
-type Store interface {
-	Upsert(context.Context, Record) error
+type Reader interface {
 	Get(context.Context, string) (Record, bool, error)
+}
+
+type Store interface {
+	Reader
+	Upsert(context.Context, Record) error
 }
 
 type DevelopmentService struct {

@@ -66,7 +66,7 @@ func TestSimulatorAuthenticationDispatchNeverFallsBackAndBindsQuery(t *testing.T
 			case "wrong principal":
 				testAuth.app = "health"
 			case "forbidden path":
-				ctx.Request.URL.Path = "/v1/ai/quota"
+				ctx.Request.URL.Path = "/v1/privacy/data"
 				ctx.Request.URL.RawQuery = ""
 			case "unmarked simulator key":
 				ctx.Request.Header.Del("X-Tellyouwhat-Authentication")

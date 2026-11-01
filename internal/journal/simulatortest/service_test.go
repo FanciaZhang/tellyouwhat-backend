@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 )
 
@@ -360,7 +361,7 @@ func TestSimulatorPathAllowlist(t *testing.T) {
 	}{
 		{"POST", "/v1/privacy/consents", true}, {"POST", "/v1/journal/read-aloud/syntheses", true},
 		{"GET", "/v1/journal/read-aloud/allowance?purpose=preview", true}, {"GET", session, true}, {"DELETE", session, true}, {"GET", session + "/events?after=11520000", true},
-		{"GET", "/v1/ai/quota", false}, {"DELETE", "/v1/privacy/data", false}, {"POST", "/v1/development/entitlement", false},
+		{"GET", "/v1/ai/quota", true}, {"DELETE", "/v1/privacy/data", false}, {"POST", "/v1/development/entitlement", false},
 		{"GET", session + "/events?after=1", false}, {"GET", session + "/events?after=11520002", false}, {"GET", session + "/events?after=02", false},
 		{"GET", session + "/events?after=0&after=2", false}, {"GET", session + "/events?after=0&purpose=preview", false}, {"GET", session + "/events/extra", false},
 		{"GET", "/v1/journal/read-aloud/allowance?purpose=journal&purpose=preview", false}, {"POST", "/v1/privacy/consents?", false},
@@ -370,5 +371,60 @@ func TestSimulatorPathAllowlist(t *testing.T) {
 		if got := Allowed(tc.method, tc.path); got != tc.allowed {
 			t.Errorf("%s %s allowed=%v", tc.method, tc.path, got)
 		}
+	}
+}
+
+func TestVoiceIntegrationCapabilityIsExplicitAndCannotGrantPurchases(t *testing.T) {
+	f := newFixture(t)
+	for _, path := range []string{"/v1/ai/quota", "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organize"} {
+		method := "POST"
+		if path == "/v1/ai/quota" {
+			method = "GET"
+		}
+		if _, err := f.s.Authenticate(context.Background(), f.proof(t, method, path)); err == nil {
+			t.Fatal("read-aloud credential gained voice access")
+		}
+		raw, _ := json.Marshal([]entitlement.DevelopmentGrant{{KeyID: f.r.Credentials[0].KeyID, DeviceID: f.r.Credentials[0].KeyID, StartedAt: f.now, ExpiresAt: f.now.Add(time.Hour)}})
+		if err := os.WriteFile(filepath.Join(filepath.Dir(f.s.path), "development-grants.json"), raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		principal, err := f.s.Authenticate(context.Background(), f.proof(t, method, path))
+		if err != nil || principal.TransactionID != "" {
+			t.Fatal("explicit integration access failed or forged purchase", err)
+		}
+		if err := os.Remove(filepath.Join(filepath.Dir(f.s.path), "development-grants.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if validSimulatorConsent(false, "managed_subscription", "2026-08-17") {
+		t.Fatal("voice consent escaped capability scope")
+	}
+}
+
+func TestDevelopmentGrantFileStaysPrivateAndRevocable(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(filepath.Dir(f.s.path), "development-grants.json")
+	raw, _ := json.Marshal([]entitlement.DevelopmentGrant{{KeyID: "registered", DeviceID: "device", StartedAt: f.now, ExpiresAt: f.now.Add(time.Hour)}})
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if grants, err := f.s.DevelopmentGrants(); err != nil || len(grants) != 1 {
+		t.Fatal("valid policy", err)
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.DevelopmentGrants(); err == nil {
+		t.Fatal("public policy accepted")
+	}
+	_ = os.Chmod(path, 0600)
+	_ = os.Chmod(filepath.Dir(path), 0755)
+	if _, err := f.s.DevelopmentGrants(); err == nil {
+		t.Fatal("public parent accepted")
+	}
+	_ = os.Chmod(filepath.Dir(path), 0700)
+	_ = os.Remove(path)
+	if grants, err := f.s.DevelopmentGrants(); err != nil || len(grants) != 0 {
+		t.Fatal("removal failed to revoke all grants", err)
 	}
 }

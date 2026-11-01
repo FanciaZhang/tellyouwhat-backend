@@ -416,7 +416,8 @@ func buildAppHandler(
 	authenticator := attestation.NewService(
 		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
 	).RequireEnvironment(appConfig.AttestationEnvironment)
-	entitlementChecker := entitlement.NewChecker(storage.entitlements, time.Now)
+	var entitlementChecker gateway.EntitlementChecker = entitlement.NewChecker(storage.entitlements, time.Now)
+	var voiceEntitlements entitlement.Reader = storage.entitlements
 	activator, productionSync, notifications, err := commerceServices(platform.Environment, appConfig, storage.keys, storage.entitlements)
 	if err != nil {
 		return nil, err
@@ -461,6 +462,11 @@ func buildAppHandler(
 			return nil, err
 		}
 		storage.privacy = repository
+	}
+	if simulator != nil {
+		access := &entitlement.DevelopmentAccess{AppID: string(app.ID), Purchases: storage.entitlements,
+			Keys: simulatortest.GrantKeys{KeyStore: storage.keys, Simulator: simulator}, Grants: simulator.DevelopmentGrants, Now: time.Now}
+		entitlementChecker, voiceEntitlements, activator = access, access, access
 	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
@@ -543,7 +549,7 @@ func buildAppHandler(
 		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
 		dependencies.ReadAloudCatalog = storage.voiceCatalog
 		if speechConfig != nil {
-			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService, simulator)
+			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService, simulator, voiceEntitlements, simulator != nil)
 			if err != nil {
 				return nil, err
 			}
@@ -615,6 +621,10 @@ func buildAppHandler(
 				dependencies.JournalRecordings = recordingPrivacy.handler
 			}
 			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Logger: voiceLogger, Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+				// Explicit simulator calls use the real cost ledger without inventing an Apple key row.
+				if simulatortest.IsKey(identity.KeyID) {
+					return
+				}
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
 					logger.Error("voice usage record failed")
 				}
@@ -631,7 +641,7 @@ func buildAppHandler(
 					return r.Policy.Apps["journal"].VoicePeriodMinutes * 60000, nil
 				}
 			}
-			dependencies.VoiceEntitlements = storage.entitlements
+			dependencies.VoiceEntitlements = voiceEntitlements
 		}
 		dependencies.JournalOrganizer = organizer
 		dependencies.JournalAnalysisVersion = organizer.AnalysisVersion

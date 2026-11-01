@@ -42,7 +42,7 @@ func loadReadAloudConfig() (*readAloudConfig, error) {
 	}
 	return c, nil
 }
-func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appStorage, costs *costcontrol.Controller, consents *privacy.Service, simulator *simulatortest.Service) (*readaloud.SessionService, gateway.ReadAloudAccess, error) {
+func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appStorage, costs *costcontrol.Controller, consents *privacy.Service, simulator *simulatortest.Service, entitlements readaloud.EntitlementReader, development bool) (*readaloud.SessionService, gateway.ReadAloudAccess, error) {
 	if c == nil {
 		return nil, nil, nil
 	}
@@ -57,7 +57,7 @@ func configuredReadAloud(ctx context.Context, c *readAloudConfig, storage appSto
 	if err != nil {
 		return nil, nil, err
 	}
-	access := &readaloud.Access{Entitlements: storage.entitlements, Consents: consents, JournalCharacters: c.journal, PreviewCharacters: c.preview, Now: time.Now}
+	access := &readaloud.Access{Entitlements: entitlements, Development: development, Consents: consents, JournalCharacters: c.journal, PreviewCharacters: c.preview, Now: time.Now}
 	var gatewayAccess gateway.ReadAloudAccess = access
 	authorize := access.Authorize
 	if simulator != nil {

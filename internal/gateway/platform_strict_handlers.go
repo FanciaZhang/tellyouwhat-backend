@@ -268,7 +268,9 @@ func (server *Server) RecordPrivacyConsents(
 	}
 	consents := make([]privacy.Consent, 0, len(request.Body.Consents))
 	for _, consent := range request.Body.Consents {
-		if simulatortest.IsKey(principal.KeyID) && string(consent.Scope) != privacy.JournalReadAloudScope {
+		voiceAccess, _ := server.readAloudSimulatorAuthenticator.(interface{ AllowsVoice(string) bool })
+		voiceConsent := string(consent.Scope) == privacy.ManagedAIScope && voiceAccess != nil && voiceAccess.AllowsVoice(principal.KeyID)
+		if simulatortest.IsKey(principal.KeyID) && string(consent.Scope) != privacy.JournalReadAloudScope && !voiceConsent {
 			failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope is not available for this identity", requestID.String())
 			return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 		}

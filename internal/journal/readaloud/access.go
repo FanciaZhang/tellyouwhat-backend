@@ -22,6 +22,7 @@ type ConsentReader interface {
 	HasRequiredConsents(context.Context, attestation.Principal, []string) (bool, error)
 }
 type Access struct {
+	Development       bool
 	Entitlements      EntitlementReader
 	Consents          ConsentReader
 	JournalCharacters int
@@ -43,12 +44,16 @@ func (a Access) record(ctx context.Context, key string) (entitlement.Record, err
 	if err != nil {
 		return r, ErrAccessUnavailable
 	}
-	if !ok || r.TransactionID == "" || (r.Environment != "production" && r.Environment != "sandbox") {
+	if !ok || !(a.Development && r.Environment == "development") && (r.TransactionID == "" || (r.Environment != "production" && r.Environment != "sandbox")) {
 		return r, ErrSubscriptionRequired
 	}
 	return r, nil
 }
 func purchaseSubject(r entitlement.Record) Subject {
+	if r.Environment == "development" {
+		hash := sha256.Sum256([]byte(r.Environment + "\x00" + r.KeyID))
+		return Subject{AppID: "journal", ID: "development:" + hex.EncodeToString(hash[:])}
+	}
 	hash := sha256.Sum256([]byte(r.Environment + "\x00" + r.TransactionID))
 	return Subject{AppID: "journal", ID: "purchase:" + hex.EncodeToString(hash[:])}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -137,5 +138,36 @@ func TestLegacyDevelopmentGrantNeverAuthorizesVoice(t *testing.T) {
 		if response.Code != want {
 			t.Fatalf("expired=%v: %d %s", expired, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestControlledDevelopmentGrantOpensVoiceWithoutReplacingExpiredPurchase(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	store := entitlement.NewMemoryStore()
+	keys := attestation.NewMemoryKeyStore()
+	_ = keys.Register(ctx, attestation.RegisteredKey{AppID: "journal", KeyID: "key", DeviceID: "device-1"})
+	expired := entitlement.Record{KeyID: "key", Environment: "sandbox", TransactionID: "original", ExpiresAt: now.Add(-time.Hour)}
+	_ = store.Upsert(ctx, expired)
+	grants := []entitlement.DevelopmentGrant{{KeyID: "key", DeviceID: "device-1", StartedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour)}}
+	access := &entitlement.DevelopmentAccess{AppID: "journal", Purchases: store, Keys: keys, Grants: func() ([]entitlement.DevelopmentGrant, error) { return grants, nil }, Now: func() time.Time { return now }}
+	s := New(Dependencies{App: appregistry.App{ID: appregistry.Journal}, Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: access, Activator: access, Consent: fakeConsentGate{granted: true}, RequiredConsentScopes: []string{"managed_subscription"}, Voice: &voice.Service{Store: voice.NewMemoryStore(), Secret: make([]byte, 32)}, VoiceEntitlements: access, Now: func() time.Time { return now }})
+	for _, status := range []int{201, 403} {
+		raw, _ := json.Marshal(map[string]string{"sessionID": uuid.NewString(), "consentVersion": voice.Version})
+		request := httptest.NewRequest("POST", "/v1/journal/voice/sessions", strings.NewReader(string(raw)))
+		request.Header.Set("X-Tellyouwhat-Request-ID", "19be2f9e-bd92-4699-b561-e3816092114c")
+		for _, name := range []string{"Key-ID", "Assertion", "Nonce"} {
+			request.Header.Set("X-Tellyouwhat-"+name, map[string]string{"Key-ID": "key", "Assertion": "assertion", "Nonce": "nonce"}[name])
+		}
+		response := httptest.NewRecorder()
+		s.Router().ServeHTTP(response, request)
+		if response.Code != status {
+			t.Fatal("grant voice admission", response.Code, response.Body.String())
+		}
+		grants = nil
+	}
+	retained, _, _ := store.Get(ctx, "key")
+	if retained != expired {
+		t.Fatal("voice changed purchase")
 	}
 }

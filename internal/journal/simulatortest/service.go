@@ -1,5 +1,5 @@
 // Package simulatortest authenticates explicitly provisioned, short-lived Journal
-// read-aloud integration clients. It never registers an Apple attestation key.
+// integration clients. It never registers an Apple attestation key.
 package simulatortest
 
 import (
@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 )
@@ -67,6 +68,9 @@ func New(path, environment string, app appregistry.App, nonces attestation.Nonce
 	}
 	s := &Service{path: path, nonces: nonces, now: now}
 	if _, err := s.load(); err != nil {
+		return nil, err
+	}
+	if _, err := s.DevelopmentGrants(); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -158,6 +162,10 @@ func Allowed(method, uri string) bool {
 		return false
 	}
 	switch u.Path {
+	case "/v1/ai/quota":
+		return method == "GET" && u.RawQuery == ""
+	case "/v1/dev/entitlements/activate", "/v1/journal/voice/sessions", "/v1/journal/organize":
+		return method == "POST" && u.RawQuery == ""
 	case "/v1/privacy/consents":
 		return method == "POST" && u.RawQuery == ""
 	case "/v1/journal/read-aloud/syntheses":
@@ -210,6 +218,9 @@ func (s *Service) Authenticate(ctx context.Context, proof attestation.RequestPro
 	if err != nil {
 		return attestation.Principal{}, err
 	}
+	if !s.AllowsVoice(c.KeyID) && (proof.Path == "/v1/ai/quota" || proof.Path == "/v1/dev/entitlements/activate" || proof.Path == "/v1/journal/voice/sessions" || proof.Path == "/v1/journal/organize") {
+		return attestation.Principal{}, attestation.ErrAuthentication
+	}
 	pk, _ := base64.StdEncoding.DecodeString(c.PublicKey)
 	signature, err := base64.StdEncoding.DecodeString(proof.Assertion)
 	if err != nil || !ed25519.Verify(pk, Message(proof), signature) {
@@ -222,4 +233,62 @@ func (s *Service) Authenticate(ctx context.Context, proof attestation.RequestPro
 		return attestation.Principal{}, attestation.ErrUnavailable
 	}
 	return attestation.Principal{AppID: "journal", KeyID: c.KeyID, DeviceID: c.KeyID}, nil
+}
+
+func (s *Service) DevelopmentGrants() ([]entitlement.DevelopmentGrant, error) {
+	parent, err := os.Lstat(filepath.Dir(s.path))
+	if err != nil || !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
+		return nil, attestation.ErrUnavailable
+	}
+	path := filepath.Join(filepath.Dir(s.path), "development-grants.json")
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 8192 {
+		return nil, attestation.ErrUnavailable
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, attestation.ErrUnavailable
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		return nil, attestation.ErrUnavailable
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, 8193))
+	if err != nil {
+		return nil, attestation.ErrUnavailable
+	}
+	return entitlement.ParseDevelopmentGrants(string(raw))
+}
+
+type GrantKeys struct {
+	attestation.KeyStore
+	Simulator *Service
+}
+
+func (keys GrantKeys) Get(ctx context.Context, key string) (attestation.RegisteredKey, error) {
+	if !IsKey(key) {
+		return keys.KeyStore.Get(ctx, key)
+	}
+	c, err := keys.Simulator.Lookup(key)
+	if err != nil || !keys.Simulator.AllowsVoice(c.KeyID) {
+		return attestation.RegisteredKey{}, attestation.ErrAuthentication
+	}
+	return attestation.RegisteredKey{AppID: "journal", KeyID: key, DeviceID: key}, nil
+}
+
+func (s *Service) AllowsVoice(key string) bool {
+	grants, err := s.DevelopmentGrants()
+	if err != nil {
+		return false
+	}
+	for _, grant := range grants {
+		if grant.KeyID == key && grant.DeviceID == key && !s.now().Before(grant.StartedAt) && s.now().Before(grant.ExpiresAt) {
+			return true
+		}
+	}
+	return false
 }
