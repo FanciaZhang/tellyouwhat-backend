@@ -20,6 +20,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
 type fixture struct {
@@ -426,5 +427,26 @@ func TestDevelopmentGrantFileStaysPrivateAndRevocable(t *testing.T) {
 	_ = os.Remove(path)
 	if grants, err := f.s.DevelopmentGrants(); err != nil || len(grants) != 0 {
 		t.Fatal("removal failed to revoke all grants", err)
+	}
+}
+
+func TestSyntheticVoiceConsentUsesItsActualScopeWithoutAnAppleRow(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	key := f.r.Credentials[0].KeyID
+	record := privacy.Record{KeyID: key, DeviceID: key, Scope: privacy.ManagedAIScope, DocumentVersion: privacy.AIDocumentVersion, Granted: true}
+	if err := f.s.recordVoiceConsent(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := f.s.voiceConsents.HasGrantedConsents(ctx, key, []privacy.Consent{{Scope: privacy.ManagedAIScope, DocumentVersion: privacy.AIDocumentVersion}})
+	if err != nil || !allowed {
+		t.Fatal("actual synthetic consent was lost", err)
+	}
+	restarted, err := New(f.s.path, "development", f.app, f.nonces, func() time.Time { return f.now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed, _ := restarted.voiceConsents.HasGrantedConsents(ctx, key, []privacy.Consent{{Scope: privacy.ManagedAIScope, DocumentVersion: privacy.AIDocumentVersion}}); allowed {
+		t.Fatal("restart recreated synthetic consent")
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/journal/readaloud"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
 const (
@@ -53,9 +55,12 @@ type Registry struct {
 }
 
 type Service struct {
-	path   string
-	nonces attestation.NonceStore
-	now    func() time.Time
+	consentMu        sync.Mutex
+	voiceConsents    *privacy.MemoryRepository
+	voiceConsentKeys map[string]bool
+	path             string
+	nonces           attestation.NonceStore
+	now              func() time.Time
 }
 
 func New(path, environment string, app appregistry.App, nonces attestation.NonceStore, now func() time.Time) (*Service, error) {
@@ -66,7 +71,7 @@ func New(path, environment string, app appregistry.App, nonces attestation.Nonce
 	if now == nil {
 		now = time.Now
 	}
-	s := &Service{path: path, nonces: nonces, now: now}
+	s := &Service{path: path, nonces: nonces, now: now, voiceConsents: privacy.NewMemoryRepository(), voiceConsentKeys: map[string]bool{}}
 	if _, err := s.load(); err != nil {
 		return nil, err
 	}

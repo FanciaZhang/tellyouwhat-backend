@@ -23,7 +23,11 @@ Explicit simulator integration credentials use the existing signed, expiring
 registry and replay protection. Only a separately approved grant admits voice,
 organizing and managed-AI consent; ordinary read-aloud credentials retain their
 narrow scope. These requests use real providers, budgets and quotas, without
-creating an Apple attestation or purchase row. Simulator private keys are never
+creating an Apple attestation or purchase row. Synthetic voice consent uses the
+existing in-memory privacy repository, bounded to 16 live integration identities;
+restart requires a new explicit consent request. Ordinary device consent and the
+existing read-aloud consent table retain their persistent behavior. No test-only
+schema change or production operations deployment is needed. Simulator private keys are never
 compiled into device or Release builds. The test producer removes its credential
 and grant when verification ends; expiry and the registry's fixed size cap bound
 interrupted runs.

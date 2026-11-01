@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
@@ -49,6 +50,9 @@ func (r PrivacyRepository) RecordConsents(ctx context.Context, records []privacy
 	if !validSimulatorConsent(r.Simulator.AllowsVoice(record.KeyID), record.Scope, record.DocumentVersion) {
 		return privacy.ErrInvalidConsent
 	}
+	if record.Scope == privacy.ManagedAIScope {
+		return r.Simulator.recordVoiceConsent(ctx, record)
+	}
 	_, err = r.DB.ExecContext(ctx, `INSERT INTO journal_simulator_read_aloud_consents
 		(key_id,scope,document_version,granted,recorded_at,expires_at) VALUES (?,?,?,?,?,?)
 		ON DUPLICATE KEY UPDATE granted=VALUES(granted),recorded_at=VALUES(recorded_at),expires_at=VALUES(expires_at)`,
@@ -74,6 +78,9 @@ func (r PrivacyRepository) HasGrantedConsents(ctx context.Context, key string, r
 	if !validSimulatorConsent(r.Simulator.AllowsVoice(key), requirements[0].Scope, requirements[0].DocumentVersion) {
 		return false, privacy.ErrInvalidConsent
 	}
+	if requirements[0].Scope == privacy.ManagedAIScope {
+		return r.Simulator.voiceConsents.HasGrantedConsents(ctx, key, requirements)
+	}
 	var granted bool
 	err = r.DB.QueryRowContext(ctx, `SELECT granted FROM journal_simulator_read_aloud_consents
 		WHERE key_id=? AND scope=? AND document_version=? AND expires_at>?`,
@@ -87,4 +94,25 @@ func (r PrivacyRepository) HasGrantedConsents(ctx context.Context, key string, r
 func validSimulatorConsent(voice bool, scope, version string) bool {
 	return scope == privacy.JournalReadAloudScope && version == privacy.JournalReadAloudDocumentVersion ||
 		voice && scope == privacy.ManagedAIScope && version == privacy.AIDocumentVersion
+}
+
+// Synthetic voice consent lasts only for this bounded integration process;
+// real device consent remains in the existing persistent privacy repository.
+func (s *Service) recordVoiceConsent(ctx context.Context, record privacy.Record) error {
+	s.consentMu.Lock()
+	defer s.consentMu.Unlock()
+	for key := range s.voiceConsentKeys {
+		if _, err := s.Lookup(key); err != nil || !s.AllowsVoice(key) {
+			_ = s.voiceConsents.DeletePrincipal(ctx, attestation.Principal{KeyID: key})
+			delete(s.voiceConsentKeys, key)
+		}
+	}
+	if !s.voiceConsentKeys[record.KeyID] && len(s.voiceConsentKeys) >= 16 {
+		return privacy.ErrConsentUnavailable
+	}
+	if err := s.voiceConsents.RecordConsents(ctx, []privacy.Record{record}); err != nil {
+		return err
+	}
+	s.voiceConsentKeys[record.KeyID] = true
+	return nil
 }
