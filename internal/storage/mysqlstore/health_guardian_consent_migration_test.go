@@ -84,3 +84,62 @@ func TestMySQLHealthGuardianConsentUpgradePreservesCurrentBatch(t *testing.T) {
 		t.Fatal("unknown scopes must remain rejected")
 	}
 }
+
+func TestMySQLConsentMigrationsPreserveIndependentAppDecisions(t *testing.T) {
+
+	for _, migration := range []string{"0067_journal_illustration_consent_scope.sql", "0070_journal_read_aloud_consent.sql"} {
+		t.Run(migration, func(t *testing.T) {
+			db := testutil.MySQL(t)
+			ctx := context.Background()
+			now := time.Now().UTC().Truncate(time.Microsecond)
+			for _, app := range []struct {
+				id      string
+				scope   string
+				granted bool
+			}{{"health", privacy.GuardianConsentScope, false}, {"journal", privacy.JournalReadAloudScope, true}} {
+				owner := attestation.RegisteredKey{KeyID: uuid.NewString(), DeviceID: uuid.NewString(), PublicKey: []byte("synthetic"), Environment: "production", Receipt: []byte("synthetic")}
+				if err := mysqlstore.NewKeyRepository(db, app.id).Register(ctx, owner); err != nil {
+					t.Fatal(err)
+				}
+				record := privacy.Record{KeyID: owner.KeyID, DeviceID: owner.DeviceID, Scope: app.scope,
+					DocumentVersion: privacy.AIDocumentVersion, Granted: app.granted, RecordedAt: now}
+				if err := mysqlstore.NewPrivacyRepository(db, app.id).RecordConsents(ctx, []privacy.Record{record}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for range 2 {
+				if _, err := db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE name=?`, migration); err != nil {
+					t.Fatal(err)
+				}
+				if err := migrations.Run(ctx, db); err != nil {
+					t.Fatal("a Journal migration narrowed the shared consent constraint", err)
+				}
+				rows, err := db.QueryContext(ctx, `SELECT scope,granted,recorded_at FROM privacy_consents ORDER BY scope`)
+				if err != nil {
+					t.Fatal(err)
+				}
+				decisions := map[string]bool{}
+				for rows.Next() {
+					var scope string
+					var granted bool
+					var recordedAt time.Time
+					if err := rows.Scan(&scope, &granted, &recordedAt); err != nil {
+						t.Fatal(err)
+					}
+					if !recordedAt.Equal(now) {
+						t.Fatal("migration changed the decision timestamp")
+					}
+					decisions[scope] = granted
+				}
+				err = rows.Err()
+				rows.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(decisions) != 2 || decisions[privacy.GuardianConsentScope] || !decisions[privacy.JournalReadAloudScope] {
+					t.Fatalf("existing decisions changed: %v", decisions)
+				}
+			}
+		})
+	}
+}
