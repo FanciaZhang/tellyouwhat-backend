@@ -11,10 +11,10 @@ from ops_common import OperationError
 ADDITIONS = {'migrations/0065_journal_illustration_jobs.sql':
              '7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6',
              'migrations/0066_verified_entitlement_environments.sql': '04b74a306bb945b495a7b842207a95234ea84d9d2f0df3f9d6090653ebeb00e9',
-             'migrations/0067_journal_illustration_consent_scope.sql': '8e1ba4642191b15c8a5efe7891e6c445679ff38d9b49799bfce613baafff22cf',
+             'migrations/0067_journal_illustration_consent_scope.sql': '8e3c69abe8d8d93be346f10fb4b1baeec2c532a20f7e2aef467631553e4db7c1',
              'migrations/0068_journal_read_aloud_quota.sql': '0133b95c95ae8d7297e8bc507d4f8aad9eff31089e4c1a2529ce55379533f7e0',
              'migrations/0069_journal_voice_catalog.sql': '3cc56f88627e5f31f952891e9ecc4bc829fb208d57d8f2d031a406cd60459c60',
-             'migrations/0070_journal_read_aloud_consent.sql': '4b26bac5e6ef50e28c2284c888e077fb2fe7bff3ccef358daef4fd3a4e2e0a95',
+             'migrations/0070_journal_read_aloud_consent.sql': '6b99f5815d58d2817d663789f7157e2a52a86004c81141d7ccd34e2c0c19ab53',
              'migrations/0071_journal_simulator_read_aloud_consents.sql': '968c1b49952a41965312e9c47c88c08dc9c95affe5ea5d9a90dafb7b6f2b4631',
              'migrations/0072_health_guardian_consent_scope.sql': '987e13cd0bb2c6e06f3c9ef34349ff277dd58738d14cbe61724cc38982943574',
              'migrations/0073_album_development_subscription_products.sql': 'b2b984c582cb774881f06166716d600852da07b7b646e77c888744c01990e5f7',
