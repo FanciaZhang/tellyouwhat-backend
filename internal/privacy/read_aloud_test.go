@@ -2,53 +2,71 @@ package privacy
 
 import (
 	"context"
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"testing"
 	"time"
-
-	"github.com/tellyouwhat/backend/internal/attestation"
 )
 
-func TestReadAloudConsentIsIndependentAppScopedVersionedAndRevocable(t *testing.T) {
-	s := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
+func TestJournalCloudConsentIsUnifiedVersionedAppScopedAndRevocable(t *testing.T) {
 	ctx := context.Background()
+	repository := NewMemoryRepository()
+	s := NewService(repository, noopObjectCleaner{}, nil, time.Now)
 	p := attestation.Principal{AppID: "journal", KeyID: "journal-key", DeviceID: "device"}
-	if _, err := s.RecordConsents(ctx, p, []Consent{{ManagedAIScope, AIDocumentVersion, true}, {JournalIllustrationScope, JournalIllustrationDocumentVersion, true}}); err != nil {
-		t.Fatal(err)
-	}
 	check := func(want bool) {
 		t.Helper()
-		got, err := s.HasRequiredConsents(ctx, p, []string{JournalReadAloudScope})
-		if err != nil || got != want {
-			t.Fatal("wrong independent TTS decision", got, err)
+		for _, scope := range []string{ManagedAIScope, JournalIllustrationScope, JournalReadAloudScope} {
+			got, err := s.HasRequiredConsents(ctx, p, []string{scope})
+			if err != nil || got != want {
+				t.Fatalf("%s consent=%v, want %v: %v", scope, got, want, err)
+			}
 		}
 	}
-	check(false)
-	grant := Consent{JournalReadAloudScope, JournalReadAloudDocumentVersion, true}
+	// Neither historical partial choices nor a partially written current decision grants any feature.
+	for _, version := range []string{AIDocumentVersion, JournalCloudAIDocumentVersion} {
+		if err := repository.RecordConsents(ctx, []Record{{KeyID: p.KeyID, DeviceID: p.DeviceID, Scope: ManagedAIScope, DocumentVersion: version, Granted: true, RecordedAt: time.Now()}}); err != nil {
+			t.Fatal(err)
+		}
+		check(false)
+	}
+	for _, bad := range []struct {
+		name   string
+		values []Consent
+	}{
+		{"partial", JournalCloudAIConsents(true)[:1]},
+		{"missing", JournalCloudAIConsents(true)[:2]},
+		{"mixed", []Consent{{ManagedAIScope, JournalCloudAIDocumentVersion, true}, {JournalIllustrationScope, JournalCloudAIDocumentVersion, false}, {JournalReadAloudScope, JournalCloudAIDocumentVersion, true}}},
+		{"duplicate", []Consent{{ManagedAIScope, JournalCloudAIDocumentVersion, true}, {ManagedAIScope, JournalCloudAIDocumentVersion, true}, {JournalReadAloudScope, JournalCloudAIDocumentVersion, true}}},
+		{"old", []Consent{{ManagedAIScope, AIDocumentVersion, true}, {JournalIllustrationScope, "2026-09-27", true}, {JournalReadAloudScope, "2026-10-20", true}}},
+	} {
+		t.Run(bad.name, func(t *testing.T) {
+			if _, err := s.RecordConsents(ctx, p, bad.values); err != ErrInvalidConsent {
+				t.Fatal("invalid decision accepted", err)
+			}
+			check(false)
+		})
+	}
 	for _, app := range []string{"health", "birthday", "albums"} {
 		other := p
 		other.AppID = app
-		if _, err := s.RecordConsents(ctx, other, []Consent{grant}); err != ErrInvalidConsent {
-			t.Fatal("cross-app grant accepted", app, err)
-		}
-		if _, err := s.HasRequiredConsents(ctx, other, []string{JournalReadAloudScope}); err != ErrInvalidConsent {
-			t.Fatal("cross-app read accepted", app, err)
+		if _, err := s.RecordConsents(ctx, other, JournalCloudAIConsents(true)); err != ErrInvalidConsent {
+			t.Fatal("cross-app decision accepted", app, err)
 		}
 	}
-	invalid := grant
-	invalid.DocumentVersion = AIDocumentVersion
-	if _, err := s.RecordConsents(ctx, p, []Consent{invalid}); err != ErrInvalidConsent {
-		t.Fatal("wrong document accepted", err)
-	}
-	if _, err := s.RecordConsents(ctx, p, []Consent{grant}); err != nil {
+	values := JournalCloudAIConsents(true)
+	values[0], values[2] = values[2], values[0]
+	if _, err := s.RecordConsents(ctx, p, values); err != nil {
 		t.Fatal(err)
 	}
 	check(true)
-	grant.Granted = false
-	if _, err := s.RecordConsents(ctx, p, []Consent{grant}); err != nil {
+	if _, err := s.RecordConsents(ctx, p, JournalCloudAIConsents(false)); err != nil {
 		t.Fatal(err)
 	}
 	check(false)
-	if got, err := s.HasRequiredConsents(ctx, p, []string{ManagedAIScope, JournalIllustrationScope}); err != nil || !got {
-		t.Fatal("TTS withdrawal removed unrelated consents", got, err)
+	health := attestation.Principal{AppID: "health", KeyID: "health-key", DeviceID: "health-device"}
+	if _, err := s.RecordConsents(ctx, health, []Consent{{ManagedAIScope, AIDocumentVersion, true}}); err != nil {
+		t.Fatal("published Health consent changed", err)
+	}
+	if ok, err := s.HasRequiredConsents(ctx, health, []string{ManagedAIScope}); err != nil || !ok {
+		t.Fatal("Health grant lost", ok, err)
 	}
 }

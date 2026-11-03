@@ -26,19 +26,35 @@ func TestSimulatorConsentsStaySeparateFromAppleKeysAndRevokeDurably(t *testing.T
 	if ok, err := service.HasRequiredConsents(ctx, p, []string{consent.Scope}); err != nil || ok {
 		t.Fatal("new identity inherited consent", ok, err)
 	}
-	if _, err := service.RecordConsents(ctx, p, []privacy.Consent{consent}); err != nil {
+	if _, err := service.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(consent.Granted)); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := service.HasRequiredConsents(ctx, p, []string{consent.Scope}); err != nil || !ok {
 		t.Fatal("real consent missing", ok, err)
 	}
+	for _, value := range privacy.JournalCloudAIConsents(true) {
+		if ok, err := service.HasRequiredConsents(ctx, p, []string{value.Scope}); err != nil || !ok {
+			t.Fatal("unified decision missing", value.Scope, ok, err)
+		}
+	}
+	if f.s.AllowsVoice(p.KeyID) {
+		t.Fatal("consent fabricated a voice grant")
+	}
+	var rows int
+	if err := db.QueryRow("SELECT COUNT(*) FROM journal_simulator_read_aloud_consents WHERE key_id=?", p.KeyID).Scan(&rows); err != nil || rows != 1 {
+		t.Fatal("unified decision was not a single isolated row", rows, err)
+	}
 	// Rebuilding the service must read the durable database rather than a fixture flag.
-	service = privacy.NewService(PrivacyRepository{Repository: normal, DB: db, Simulator: f.s}, nil, nil, func() time.Time { return f.now })
+	restarted, err := New(f.s.path, "development", f.app, f.nonces, func() time.Time { return f.now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service = privacy.NewService(PrivacyRepository{Repository: normal, DB: db, Simulator: restarted}, nil, nil, func() time.Time { return f.now })
 	if ok, err := service.HasRequiredConsents(ctx, p, []string{consent.Scope}); err != nil || !ok {
 		t.Fatal("consent lost after restart", ok, err)
 	}
 	consent.Granted = false
-	if _, err := service.RecordConsents(ctx, p, []privacy.Consent{consent}); err != nil {
+	if _, err := service.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(consent.Granted)); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := service.HasRequiredConsents(ctx, p, []string{consent.Scope}); err != nil || ok {
@@ -50,20 +66,16 @@ func TestSimulatorConsentsStaySeparateFromAppleKeysAndRevokeDurably(t *testing.T
 			t.Fatal("test identity contaminated Apple records", table, count, err)
 		}
 	}
-	consent.Scope = privacy.ManagedAIScope
-	consent.DocumentVersion = privacy.AIDocumentVersion
 	if _, err := service.RecordConsents(ctx, p, []privacy.Consent{consent}); err != privacy.ErrInvalidConsent {
-		t.Fatal("test identity authorized another service", err)
+		t.Fatal("partial simulator decision accepted", err)
 	}
 	if _, err := db.Exec(`INSERT INTO journal_simulator_read_aloud_consents VALUES (?,'managed_subscription','2026-08-24',true,?,?)`, p.KeyID, f.now, f.now.Add(time.Hour)); err == nil {
 		t.Fatal("database allowed another scope")
 	}
-	consent.Scope = privacy.JournalReadAloudScope
-	consent.DocumentVersion = privacy.JournalReadAloudDocumentVersion
 	consent.Granted = true
 	p.KeyID = "normal-key"
 	p.DeviceID = "normal-device"
-	if _, err := service.RecordConsents(ctx, p, []privacy.Consent{consent}); err != nil {
+	if _, err := service.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(consent.Granted)); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := normal.HasGrantedConsents(ctx, p.KeyID, []privacy.Consent{consent}); err != nil || !ok {

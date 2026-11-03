@@ -120,17 +120,32 @@ func TestSignedSimulatorIdentityUsesRealHTTPConsentAdmission(t *testing.T) {
 	normal := &simulatorProofRecorder{app: "journal"}
 	consents := privacy.NewService(privacy.NewMemoryRepository(), nil, nil, func() time.Time { return now })
 	server := New(Dependencies{App: app, Authenticator: normal, ReadAloudSimulatorAuthenticator: auth, Privacy: consents, ReadAloudSessions: &readaloud.SessionService{}, ReadAloudAccess: deniedSpeechAccess{}})
+	full := privacy.JournalCloudAIConsents(true)
+	mixed := privacy.JournalCloudAIConsents(true)
+	mixed[1].Granted = false
+	old := privacy.JournalCloudAIConsents(true)
+	old[0].DocumentVersion = privacy.AIDocumentVersion
+	duplicate := privacy.JournalCloudAIConsents(true)
+	duplicate[1] = duplicate[0]
 	for _, tc := range []struct {
-		scope, version string
-		status         int
+		name   string
+		values []privacy.Consent
+		status int
 	}{
-		{privacy.JournalReadAloudScope, privacy.JournalReadAloudDocumentVersion, 200},
-		{privacy.ManagedAIScope, privacy.AIDocumentVersion, 422},
-		{privacy.JournalIllustrationScope, privacy.JournalIllustrationDocumentVersion, 422},
-		{privacy.JournalReadAloudScope, "old-version", 422},
+		{"grant", full, 200},
+		{"withdraw", privacy.JournalCloudAIConsents(false), 200},
+		{"grant-again", full, 200},
+		{"partial", full[:1], 422},
+		{"mixed", mixed, 422},
+		{"old", old, 422},
+		{"duplicate", duplicate, 422},
 	} {
 		id := uuid.NewString()
-		content := `{"consents":[{"scope":"` + tc.scope + `","documentVersion":"` + tc.version + `","granted":true}]}`
+		body, err := json.Marshal(map[string]any{"consents": tc.values})
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(body)
 		request := httptest.NewRequest("POST", "https://"+simulatortest.Host+"/v1/privacy/consents", strings.NewReader(content))
 		nonce, err := nonces.Issue(ctx, key, 5*time.Minute, now)
 		if err != nil {
@@ -147,7 +162,7 @@ func TestSignedSimulatorIdentityUsesRealHTTPConsentAdmission(t *testing.T) {
 		w := httptest.NewRecorder()
 		server.Router().ServeHTTP(w, request)
 		if w.Code != tc.status {
-			t.Fatal("wrong signed consent admission", tc.scope, w.Code, w.Body.String())
+			t.Fatal("wrong signed consent admission", tc.name, w.Code, w.Body.String())
 		}
 		if tc.status == 200 {
 			repeated := httptest.NewRequest("POST", "https://"+simulatortest.Host+"/v1/privacy/consents", strings.NewReader(content))
@@ -158,6 +173,9 @@ func TestSignedSimulatorIdentityUsesRealHTTPConsentAdmission(t *testing.T) {
 				t.Fatal("signed HTTP replay accepted", replay.Code, replay.Body.String())
 			}
 		}
+	}
+	if auth.AllowsVoice(key) {
+		t.Fatal("consent created a voice development grant")
 	}
 	if normal.calls != 0 {
 		t.Fatal("signed simulator requests used normal App Attest")

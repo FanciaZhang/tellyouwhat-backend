@@ -171,7 +171,7 @@ func New(c Config) (http.Handler, error) {
 		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
 		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
 		Privacy: consent, Consent: consent,
-		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
+		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope},
 		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: provider.OrganizationAnalysisVersion},
 		JournalAnalysisVersion: provider.OrganizationAnalysisVersion,
 		PromptConfig:           c.Prompts,

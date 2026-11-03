@@ -118,7 +118,7 @@ func TestJournalIllustrationConsentRemainsAppScopedAfterHealthIntegration(t *tes
 	if _, err := service.RecordConsents(context.Background(), health, []Consent{consent}); err != ErrInvalidConsent {
 		t.Fatalf("Health accepted Journal illustration consent: %v", err)
 	}
-	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+	if _, err := service.RecordConsents(context.Background(), journal, JournalCloudAIConsents(true)); err != nil {
 		t.Fatal(err)
 	}
 	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || !granted {
@@ -128,7 +128,7 @@ func TestJournalIllustrationConsentRemainsAppScopedAfterHealthIntegration(t *tes
 		t.Fatalf("Health checked Journal illustration authorization: %v", err)
 	}
 	consent.Granted = false
-	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+	if _, err := service.RecordConsents(context.Background(), journal, JournalCloudAIConsents(false)); err != nil {
 		t.Fatal(err)
 	}
 	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || granted {

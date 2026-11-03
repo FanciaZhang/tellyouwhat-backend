@@ -41,7 +41,7 @@ func TestSimulatorAccessUsesSeparateSubjectAndRealDeviceScopedConsent(t *testing
 	}
 	p := attestation.Principal{AppID: "journal", KeyID: key, DeviceID: key}
 	consent := privacy.Consent{Scope: privacy.JournalReadAloudScope, DocumentVersion: privacy.JournalReadAloudDocumentVersion, Granted: true}
-	if _, err := consents.RecordConsents(ctx, p, []privacy.Consent{consent}); err != nil {
+	if _, err := consents.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(consent.Granted)); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Authorize(ctx, readaloud.Subject{AppID: "journal", ID: key}, "journal"); err != nil {
@@ -51,7 +51,7 @@ func TestSimulatorAccessUsesSeparateSubjectAndRealDeviceScopedConsent(t *testing
 		t.Fatal("consent leaked across test devices", err)
 	}
 	consent.Granted = false
-	if _, err := consents.RecordConsents(ctx, p, []privacy.Consent{consent}); err != nil {
+	if _, err := consents.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(consent.Granted)); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Consent(ctx, key, "journal"); err != readaloud.ErrConsentRequired {

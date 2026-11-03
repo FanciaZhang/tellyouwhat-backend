@@ -22,9 +22,10 @@ const (
 	FreeRecognitionScope               = "free_managed_recognition"
 	SensitiveHealthScope               = "sensitive_health_ai"
 	JournalIllustrationScope           = "journal_illustration"
-	JournalIllustrationDocumentVersion = "2026-09-27"
+	JournalCloudAIDocumentVersion      = "2026-11-03"
+	JournalIllustrationDocumentVersion = JournalCloudAIDocumentVersion
 	JournalReadAloudScope              = "journal_read_aloud"
-	JournalReadAloudDocumentVersion    = "2026-10-20"
+	JournalReadAloudDocumentVersion    = JournalCloudAIDocumentVersion
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -91,6 +92,14 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 8 {
 		return time.Time{}, ErrInvalidConsent
 	}
+	if principal.AppID == "journal" {
+		for _, value := range values {
+			if IsJournalCloudAIScope(value.Scope) && !ValidJournalCloudAIConsents(values) {
+				return time.Time{}, ErrInvalidConsent
+			}
+		}
+	}
+
 	recordedAt := service.now().UTC().Truncate(time.Microsecond)
 	records := make([]Record, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
@@ -98,7 +107,7 @@ func (service *Service) RecordConsents(ctx context.Context, principal attestatio
 		if (value.Scope == Age14PlusScope || value.Scope == GuardianConsentScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion != GeneralDocumentVersion)) && principal.AppID != "health" {
 			return time.Time{}, ErrInvalidConsent
 		}
-		if !validConsent(value) || ((value.Scope == JournalIllustrationScope || value.Scope == JournalReadAloudScope) && principal.AppID != "journal") {
+		if !validConsent(value, principal.AppID) || ((value.Scope == JournalIllustrationScope || value.Scope == JournalReadAloudScope) && principal.AppID != "journal") {
 			return time.Time{}, ErrInvalidConsent
 		}
 		key := value.Scope + "\x00" + value.DocumentVersion
@@ -129,6 +138,16 @@ func (service *Service) HasRequiredConsents(
 	if !ok {
 		return false, ErrConsentUnavailable
 	}
+	if principal.AppID == "journal" {
+		for _, scope := range scopes {
+			if IsJournalCloudAIScope(scope) {
+				// The consent is a single decision even when a feature asks for one scope.
+				scopes = append(append([]string{}, scopes...), ManagedAIScope, JournalIllustrationScope, JournalReadAloudScope)
+				break
+			}
+		}
+	}
+
 	requirements := make([]Consent, 0, len(scopes))
 	healthEligibility := false
 	seen := make(map[string]struct{}, len(scopes))
@@ -158,7 +177,12 @@ func (service *Service) HasRequiredConsents(
 			requirement.DocumentVersion = JournalIllustrationDocumentVersion
 		case AdultScope, PrivacyTermsScope:
 			requirement.DocumentVersion = GeneralDocumentVersion
-		case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
+		case ManagedAIScope:
+			requirement.DocumentVersion = AIDocumentVersion
+			if principal.AppID == "journal" {
+				requirement.DocumentVersion = JournalCloudAIDocumentVersion
+			}
+		case LifetimeBYOKScope, FreeRecognitionScope, SensitiveHealthScope:
 			requirement.DocumentVersion = AIDocumentVersion
 		default:
 			return false, ErrInvalidConsent
@@ -231,7 +255,37 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 	return service.repository.DeletePrincipal(ctx, principal)
 }
 
-func validConsent(value Consent) bool {
+func IsJournalCloudAIScope(scope string) bool {
+	return scope == ManagedAIScope || scope == JournalIllustrationScope || scope == JournalReadAloudScope
+}
+
+func JournalCloudAIConsents(granted bool) []Consent {
+	return []Consent{
+		{ManagedAIScope, JournalCloudAIDocumentVersion, granted},
+		{JournalIllustrationScope, JournalCloudAIDocumentVersion, granted},
+		{JournalReadAloudScope, JournalCloudAIDocumentVersion, granted},
+	}
+}
+
+func ValidJournalCloudAIConsents(values []Consent) bool {
+	if len(values) != 3 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, value := range values {
+		if !IsJournalCloudAIScope(value.Scope) || seen[value.Scope] ||
+			value.DocumentVersion != JournalCloudAIDocumentVersion || value.Granted != values[0].Granted {
+			return false
+		}
+		seen[value.Scope] = true
+	}
+	return true
+}
+
+func validConsent(value Consent, appID string) bool {
+	if appID == "journal" && IsJournalCloudAIScope(value.Scope) {
+		return value.DocumentVersion == JournalCloudAIDocumentVersion
+	}
 	switch value.Scope {
 	case JournalReadAloudScope:
 		return value.DocumentVersion == JournalReadAloudDocumentVersion

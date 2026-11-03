@@ -107,7 +107,7 @@ func (f *recordingFixture) request(method, path, contentType string, body io.Rea
 }
 func (f *recordingFixture) grant() {
 	f.t.Helper()
-	w := f.request("POST", "/v1/privacy/consents", "application/json", strings.NewReader(`{"consents":[{"scope":"managed_subscription","documentVersion":"2026-08-24","granted":true}]}`))
+	w := f.request("POST", "/v1/privacy/consents", "application/json", strings.NewReader(`{"consents":[{"scope":"managed_subscription","documentVersion":"2026-11-03","granted":true},{"scope":"journal_illustration","documentVersion":"2026-11-03","granted":true},{"scope":"journal_read_aloud","documentVersion":"2026-11-03","granted":true}]}`))
 	if w.Code != 200 {
 		f.t.Fatal(w.Code, w.Body.String())
 	}

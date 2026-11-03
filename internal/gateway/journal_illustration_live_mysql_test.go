@@ -65,7 +65,7 @@ func TestLiveJournalIllustrationConsentGenerationAndResultWithMySQL(t *testing.T
 		}}
 	server := New(Dependencies{App: appregistry.App{ID: appregistry.Journal},
 		Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true},
-		Privacy: consents, Consent: consents, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
+		Privacy: consents, Consent: consents, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope},
 		JournalIllustrations: service})
 	router := server.Router()
 	call := func(method, path, body string) *httptest.ResponseRecorder {
@@ -77,9 +77,9 @@ func TestLiveJournalIllustrationConsentGenerationAndResultWithMySQL(t *testing.T
 		}
 		return w
 	}
-	call("POST", "/v1/privacy/consents", `{"consents":[{"scope":"managed_subscription","documentVersion":"2026-08-24","granted":true},{"scope":"journal_illustration","documentVersion":"2026-09-27","granted":true}]}`)
+	call("POST", "/v1/privacy/consents", `{"consents":[{"scope":"managed_subscription","documentVersion":"2026-11-03","granted":true},{"scope":"journal_illustration","documentVersion":"2026-11-03","granted":true},{"scope":"journal_read_aloud","documentVersion":"2026-11-03","granted":true}]}`)
 	const id = "19be2f9e-bd92-4699-b561-e3816092114c"
-	const body = `{"requestID":"` + id + `","versionID":"` + id + `","brief":{"title":"河岸边的小狗","details":[{"kind":"subject","text":"一只小狗在傍晚的河岸散步，柔和水彩插画，不绘制文字。"}]},"consentRevision":"2026-09-27"}`
+	const body = `{"requestID":"` + id + `","versionID":"` + id + `","brief":{"title":"河岸边的小狗","details":[{"kind":"subject","text":"一只小狗在傍晚的河岸散步，柔和水彩插画，不绘制文字。"}]},"consentRevision":"2026-11-03"}`
 	call("POST", "/v1/journal/illustrations", body)
 	done := make(chan struct{})
 	go func() { defer close(done); service.Run(ctx) }()

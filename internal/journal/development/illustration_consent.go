@@ -11,8 +11,8 @@ import (
 	"github.com/tellyouwhat/backend/internal/privacy"
 )
 
-// Preserve approved image access across developer-service restarts. Text/voice
-// consent retains its existing lifecycle. Image withdrawal persists immediately.
+// Persist the unified cloud decision atomically across private-service restarts.
+// Historical partial records never satisfy the current three-scope requirement.
 type imageConsentRepository struct {
 	*privacy.MemoryRepository
 	mu      sync.Mutex
@@ -34,7 +34,7 @@ func newImageConsentRepository(runtime *IllustrationRuntime) (privacy.Repository
 	}
 	var records []privacy.Record
 	for _, record := range repo.records {
-		if record.Scope != privacy.JournalIllustrationScope {
+		if !privacy.IsJournalCloudAIScope(record.Scope) {
 			return nil, privacy.ErrInvalidConsent
 		}
 		records = append(records, record)
@@ -53,8 +53,8 @@ func (r *imageConsentRepository) RecordConsents(ctx context.Context, records []p
 	}
 	changed := false
 	for _, record := range records {
-		if record.Scope == privacy.JournalIllustrationScope {
-			next[record.KeyID] = record
+		if privacy.IsJournalCloudAIScope(record.Scope) {
+			next[record.KeyID+"\x00"+record.Scope+"\x00"+record.DocumentVersion] = record
 			changed = true
 		}
 	}

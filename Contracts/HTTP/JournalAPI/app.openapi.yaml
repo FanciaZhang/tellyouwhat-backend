@@ -5,6 +5,11 @@ info:
   description: >-
     Canonical App-specific operations for the 告你手记 managed-AI gateway.
     The generated public contract also includes the shared PlatformAPI.
+    Journal cloud AI uses one consent decision: POST /v1/privacy/consents must contain
+    managed_subscription, journal_illustration and journal_read_aloud exactly once,
+    with the same granted value and documentVersion 2026-11-03. Partial, mixed,
+    duplicate or outdated decisions are rejected atomically. Consent does not grant
+    a subscription or expand a constrained integration identity's capabilities.
 servers:
 - url: https://api.journal.tellyouwhat.cn
   description: Production

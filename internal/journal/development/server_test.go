@@ -60,7 +60,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 403 {
 		t.Fatalf("missing consent: %d %s", w.Code, w.Body)
 	}
-	consent := `{"consents":[{"scope":"managed_subscription","documentVersion":"2026-08-24","granted":true}]}`
+	consent := `{"consents":[{"scope":"managed_subscription","documentVersion":"2026-11-03","granted":true},{"scope":"journal_illustration","documentVersion":"2026-11-03","granted":true},{"scope":"journal_read_aloud","documentVersion":"2026-11-03","granted":true}]}`
 	if w := request("POST", "/v1/privacy/consents", token, consent); w.Code != 200 {
 		t.Fatalf("consent: %d %s", w.Code, w.Body)
 	}

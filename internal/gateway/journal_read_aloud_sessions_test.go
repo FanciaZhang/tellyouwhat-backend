@@ -65,9 +65,9 @@ func TestReadAloudHTTPAdmissionChecksActualRouterBodyAuthAndConsent(t *testing.T
 		code      string
 	}{
 		{strings.Repeat("x", 8193), "", 413, "payload_too_large"},
-		{`{"requestID":"` + id + `","purpose":"journal","consentVersion":"2026-10-20"}`, "", 401, "authentication_failed"},
+		{`{"requestID":"` + id + `","purpose":"journal","consentVersion":"2026-11-03"}`, "", 401, "authentication_failed"},
 		{`{"requestID":"` + id + `","purpose":"journal","consentVersion":""}`, "key", 403, "read_aloud_consent_required"},
-		{`{"requestID":"` + id + `","purpose":"journal","consentVersion":"2026-10-20"}`, "key", 403, "managed_subscription_required"},
+		{`{"requestID":"` + id + `","purpose":"journal","consentVersion":"2026-11-03"}`, "key", 403, "managed_subscription_required"},
 	} {
 		req := httptest.NewRequest("POST", "/v1/journal/read-aloud/syntheses", strings.NewReader(test.body))
 		req.Header.Set("Content-Type", "application/json")
@@ -347,7 +347,7 @@ func runReadAloudHTTPAccounting(t *testing.T, simulatorIdentity bool) {
 	call("POST", base+"/syntheses", "", request, 401)
 	call("POST", base+"/syntheses", "valid-key", request, 403)
 	grantConsent := func(key string, value bool) {
-		call("POST", "/v1/privacy/consents", key, map[string]any{"consents": []map[string]any{{"scope": privacy.JournalReadAloudScope, "documentVersion": privacy.JournalReadAloudDocumentVersion, "granted": value}}}, 200)
+		call("POST", "/v1/privacy/consents", key, map[string]any{"consents": privacy.JournalCloudAIConsents(value)}, 200)
 	}
 	grantConsent("valid-key", true)
 	call("POST", base+"/syntheses", "valid-key", request, 200)

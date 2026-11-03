@@ -54,7 +54,7 @@ func TestIllustrationProviderFailureReportsUnavailableWithoutRedispatch(t *testi
 			}
 			runtime.authorize = func(context.Context, string) bool { return true }
 			id := uuid.NewString()
-			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}, nil)
+			_, err = runtime.create("owner", illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-11-03"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,11 +114,11 @@ func TestIllustrationHTTPConsentDurabilityIsolationAndExpiry(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
-	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","brief":{"title":"Synthetic dog by the river","details":[{"kind":"other","text":"Synthetic dog by the river"}]},"consentRevision":"2026-09-27"}`
+	body := `{"requestID":"` + requestID + `","versionID":"` + requestID + `","brief":{"title":"Synthetic dog by the river","details":[{"kind":"other","text":"Synthetic dog by the river"}]},"consentRevision":"2026-11-03"}`
 	if w := request("POST", illustrationPrefix, body); w.Code != 403 {
 		t.Fatalf("missing consent: %d %s", w.Code, w.Body)
 	}
-	grant := `{"consents":[{"scope":"journal_illustration","documentVersion":"2026-09-27","granted":true}]}`
+	grant := `{"consents":[{"scope":"managed_subscription","documentVersion":"2026-11-03","granted":true},{"scope":"journal_illustration","documentVersion":"2026-11-03","granted":true},{"scope":"journal_read_aloud","documentVersion":"2026-11-03","granted":true}]}`
 	if w := request("POST", "/v1/privacy/consents", grant); w.Code != 200 {
 		t.Fatalf("grant: %d %s", w.Code, w.Body)
 	}
@@ -223,12 +223,23 @@ func TestIllustrationConsentWithdrawalSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := privacy.Record{KeyID: "owner", DeviceID: "device", Scope: privacy.JournalIllustrationScope, DocumentVersion: privacy.JournalIllustrationDocumentVersion, Granted: true, RecordedAt: now}
-	if err = repository.RecordConsents(context.Background(), []privacy.Record{record}); err != nil {
+	p := attestation.Principal{AppID: "journal", KeyID: "owner", DeviceID: "device"}
+	consents := privacy.NewService(repository, nil, nil, func() time.Time { return now })
+	if _, err = consents.RecordConsents(context.Background(), p, privacy.JournalCloudAIConsents(true)); err != nil {
 		t.Fatal(err)
 	}
-	record.Granted = false
-	if err = repository.RecordConsents(context.Background(), []privacy.Record{record}); err != nil {
+	// Both grant and withdrawal must survive restart, without promoting old partial grants.
+	grantedReader, err := newImageConsentRepository(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range privacy.JournalCloudAIConsents(true) {
+		ok, err := privacy.NewService(grantedReader, nil, nil, time.Now).HasRequiredConsents(context.Background(), p, []string{value.Scope})
+		if err != nil || !ok {
+			t.Fatal("unified consent lost after restart", value.Scope, ok, err)
+		}
+	}
+	if _, err = consents.RecordConsents(context.Background(), p, privacy.JournalCloudAIConsents(false)); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := NewIllustrationRuntime(root, token+"rotated", &imageFixture{}, func() time.Time { return now })
@@ -257,7 +268,7 @@ func TestIllustrationRunningRestartAndCancellationFence(t *testing.T) {
 	runtime.authorize = func(context.Context, string) bool { return true }
 	owner := uuid.NewString()
 	id := uuid.NewString()
-	c := illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-09-27"}
+	c := illustration.Confirmation{RequestID: id, VersionID: id, Brief: illustration.Brief{Title: "Synthetic tree", Details: []illustration.Detail{{Kind: "other", Text: "Synthetic tree"}}}, ConsentRevision: "2026-11-03"}
 	_, err = runtime.create(owner, c, nil)
 	if err != nil {
 		t.Fatal(err)
