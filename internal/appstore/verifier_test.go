@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -253,12 +255,49 @@ func TestSubscriptionResolverConfirmsCurrentActiveStatusWithAppleAPI(t *testing.
 	if err != nil {
 		t.Fatalf("resolve subscription: %v", err)
 	}
-	if statusClient.transactionID != "transaction-2" {
+	if statusClient.transactionID != "original-transaction-1" {
 		t.Fatalf("status lookup used unexpected transaction: %q", statusClient.transactionID)
 	}
 	if state.OriginalTransactionID != "original-transaction-1" ||
 		!state.ExpiresAt.Equal(now.Add(30*24*time.Hour)) {
 		t.Fatalf("unexpected subscription state: %+v", state)
+	}
+}
+
+func TestSubscriptionResolverUsesOriginalIDWhenRenewalLookupFails(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	fixture := newSignedTransactionFixture(t, now, transactionPayload{
+		OriginalTransactionID: "subscription-chain", TransactionID: "renewal-transaction",
+		BundleID: "cn.tellyouwhat.journalapp.dev", ProductID: "journal.ai.subscription.annual.dev",
+		Environment: "Sandbox", ExpiresDate: now.Add(time.Hour).UnixMilli(), SignedDate: now.UnixMilli(),
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/inApps/v1/subscriptions/subscription-chain" {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"errorCode":5000001}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"environment": "Sandbox", "bundleId": "cn.tellyouwhat.journalapp.dev",
+			"data": []any{map[string]any{"lastTransactions": []any{map[string]any{
+				"status": 1, "signedTransactionInfo": fixture.signed,
+			}}}},
+		})
+	}))
+	defer server.Close()
+	api := NewAPIClient(APIClientConfig{
+		BaseURL: server.URL, KeyID: "fixture-key", IssuerID: "fixture-issuer",
+		BundleID: "cn.tellyouwhat.journalapp.dev", Environment: "Sandbox",
+		SigningKey: newTestECKey(t), HTTPClient: server.Client(), Now: func() time.Time { return now },
+	})
+	verifier := NewTransactionVerifier(VerifierConfig{
+		Roots: fixture.roots, BundleID: "cn.tellyouwhat.journalapp.dev", Environment: "Sandbox",
+		ProductID: "journal.ai.subscription.annual.dev", Now: func() time.Time { return now },
+	})
+	state, err := NewSubscriptionResolver(verifier, api, func() time.Time { return now }).Resolve(context.Background(), fixture.signed)
+	if err != nil || state.TransactionID != "renewal-transaction" || state.OriginalTransactionID != "subscription-chain" {
+		t.Fatalf("renewal could not resolve through its subscription chain: %+v, %v", state, err)
 	}
 }
 
@@ -640,4 +679,22 @@ func parseTestCertificate(t *testing.T, der []byte) *x509.Certificate {
 		t.Fatalf("parse certificate: %v", err)
 	}
 	return certificate
+}
+
+func TestVerifiedTransactionPreservesOptionalPaymentEvidence(t *testing.T) {
+	price := int64(6000)
+	payload := transactionPayload{TransactionID: "payment", OriginalTransactionID: "subscription", Price: &price, Currency: "CNY", PurchaseDate: 1700000000000, OriginalPurchaseDate: 1690000000000, SignedDate: 1700000001000}
+	value := normalizedTransaction(payload)
+	if !value.Payment.HasPrice() || *value.Payment.PriceMilli != 6000 || value.Payment.OriginalID != "subscription" || value.Payment.PurchasedAt.UnixMilli() != payload.PurchaseDate {
+		t.Fatal("signed payment metadata lost")
+	}
+	payload.Price = nil
+	if normalizedTransaction(payload).Payment.HasPrice() {
+		t.Fatal("missing price converted to zero")
+	}
+	payload.Price = &price
+	payload.OwnershipType = "FAMILY_SHARED"
+	if normalizedTransaction(payload).Payment.HasPrice() {
+		t.Fatal("family shared subscription counted as device purchase")
+	}
 }

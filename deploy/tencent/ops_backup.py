@@ -8,16 +8,20 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
 
 from ops_common import OperationError, atomic_json
+import ops_offsite
 
 
 # App data is local-first. Disaster recovery retains only the backend control
 # plane, opaque deletion-completion receipts, and the identity-free project
-# cost ledger. Every current or future table outside this allowlist is restored
+# cost ledger, and operator-maintained encrypted Offer distribution records.
+# Apple transaction-to-recipient associations are excluded with App purchase data.
+# Every current or future table outside this allowlist is restored
 # with its schema and no rows, so an older backup cannot recreate an App Attest
 # identity, consent, entitlement, quota, media record, AI request, or
 # purchase-derived user state.
@@ -37,8 +41,54 @@ RECOVERY_DATA_TABLES = (
     "admin_invitation_apps",
     "admin_audit_events",
     "admin_operations",
+    "operations_collection",
+    "prompt_eval_budget_holds",
+    "prompt_config_revisions",
+    "prompt_config_current",
+    "prompt_config_mutations",
+    "journal_voice_catalog_revisions",
+    "journal_voice_catalog_current",
+    "journal_voice_verifications",
+    "journal_voice_catalog_mutations",
+    "platform_ops_revisions",
+    "platform_ops_current",
+    "platform_ops_mutations",
+    "platform_ops_patrol",
+    "platform_ops_circuits",
+    "platform_ops_incidents",
+    "platform_ops_events",
+    "health_ai_config_revisions",
+    "health_ai_config_current",
+    "health_ai_rollout_commands",
+    "health_ai_endpoint_prices",
+    "health_ai_model_attempts",
+    "offer_delivery_pools",
+    "offer_delivery_codes",
+    "offer_delivery_requests",
+    "offer_delivery_events",
+    "offer_personal_deliveries",
+    "offer_redemption_report_days",
+    "offer_redemption_report_rows",
+    "offer_redemption_report_sync",
 )
 BACKUP_RETENTION_SECONDS = 14 * 86400
+BACKUP_BUDGET_BYTES = 6 * 1024**3
+
+
+def require_backup_capacity(runtime):
+    disk = shutil.disk_usage(runtime.backups)
+    budget = min(BACKUP_BUDGET_BYTES, disk.total // 6)
+    used = sum(path.stat().st_size for path in runtime.backups.rglob('*') if path.is_file() and not path.is_symlink())
+    if used >= budget or disk.free < 2 * 1024**3:
+        raise OperationError('backup storage budget exceeded; retain valid snapshots and review producer growth')
+    return min(budget - used, disk.free - 2 * 1024**3)
+
+
+def prune_backup_temporaries(runtime):
+    for path in runtime.backups.iterdir():
+        if (re.fullmatch(r'\.(backup|recovery)-[A-Za-z0-9_-]{6,}', path.name) and path.is_dir()
+                and not path.is_symlink() and path.stat().st_mtime < time.time() - 48 * 3600):
+            shutil.rmtree(path)
 
 
 def backup_secret(runtime):
@@ -72,13 +122,27 @@ def crypt(runtime, source, destination, *, decrypt=False):
     os.chmod(destination, 0o600)
 
 
-def create_backup(runtime):
+def create_backup(runtime, *, scope='host'):
+    if scope not in ('host', 'production'):
+        raise OperationError('unsupported backup recovery scope')
+    operation = 'backup' if scope == 'host' else 'production_backup'
+    try:
+        result = export_backup(runtime, scope=scope)
+    except (OperationError, OSError, subprocess.TimeoutExpired):
+        runtime.record(operation + '-failure', passed=False)
+        raise
+    (runtime.state / (operation + '-failure.json')).unlink(missing_ok=True)
+    return result
+
+
+def export_backup(runtime, *, scope='host'):
     backup_secret(runtime)
     database = runtime.config.get("MYSQL_DATABASE", "")
     if not re.fullmatch(r"[A-Za-z0-9_]+", database) or database in ("mysql", "sys", "information_schema", "performance_schema"):
         raise OperationError("a dedicated application database is required")
     runtime.backups.mkdir(parents=True, exist_ok=True, mode=0o700)
     prune_backups(runtime)
+    available_bytes = require_backup_capacity(runtime)
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     destination = runtime.backups / ("mysql-" + timestamp + "-" + secrets.token_hex(3) + ".sql.gz.enc")
     image = runtime.config.get("MYSQL_BACKUP_IMAGE", "mysql:8.4")
@@ -87,7 +151,7 @@ def create_backup(runtime):
                   "--user=" + runtime.config["MYSQL_USER"]]
     child_env = {"MYSQL_PWD": runtime.config["MYSQL_PASSWORD"]}
     table_output = runtime.execute("backup-table-inventory", [
-        "docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
+        "docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysql", *connection,
         "--database=" + database, "--batch", "--skip-column-names",
         "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
     ], env=child_env, timeout=300)
@@ -103,7 +167,7 @@ def create_backup(runtime):
         raise OperationError("database does not contain the required application schema; no backup published")
     included_data_tables = [table for table in RECOVERY_DATA_TABLES if table in database_tables]
     excluded_data_tables = sorted(set(database_tables) - set(included_data_tables))
-    command = ["docker", "run", "--rm", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
+    command = ["docker", "run", "--rm", "--log-driver=none", "--network", "host", "--env", "MYSQL_PWD", image, "mysqldump",
                *connection, "--single-transaction", "--quick", "--hex-blob",
                "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0", "--skip-extended-insert",
                "--skip-comments"]
@@ -135,6 +199,9 @@ def create_backup(runtime):
                                     raise OperationError("database export included excluded application data; no backup published")
                                 counts[table] = counts.get(table, 0) + 1
                             archive.write(line)
+                            # Reserve room for encryption and recovery assembly before writing more SQL.
+                            if output.tell() > available_bytes // 4:
+                                raise OperationError('SQL export exceeds its temporary storage budget')
                         returncode = process.wait(timeout=900)
                     finally:
                         process.stdout.close()
@@ -151,18 +218,29 @@ def create_backup(runtime):
             raise OperationError("database export included excluded application data; no backup published")
         encrypted = temporary / "snapshot.enc"
         crypt(runtime, compressed, encrypted)
-        manifest = {"version": 1, "created_at": int(time.time()), "database": database,
-                    "filename": destination.name, "image": image, "table_rows": counts,
-                    "included_data_tables": included_data_tables,
-                    "excluded_data_tables": excluded_data_tables,
-                    "sha256": file_digest(encrypted)}
-        signature = manifest_signature(backup_secret(runtime), manifest)
-        os.replace(encrypted, destination)
-        atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
-    return runtime.record("backup", filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
+        try:
+            recovery = ops_offsite.create_recovery_bundle(runtime, destination.name, scope=scope) if ops_offsite.enabled(runtime) else {}
+            require_backup_capacity(runtime)
+            manifest = {"version": 1, "created_at": int(time.time()), "database": database, 'recovery_scope': scope,
+                        "filename": destination.name, "image": image, "table_rows": counts,
+                        "included_data_tables": included_data_tables,
+                        "excluded_data_tables": excluded_data_tables,
+                        "sha256": file_digest(encrypted), **recovery}
+            signature = manifest_signature(backup_secret(runtime), manifest)
+            os.replace(encrypted, destination)
+            atomic_json(str(destination) + ".json", {"manifest": manifest, "hmac_sha256": signature})
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            Path(str(destination) + '.json').unlink(missing_ok=True)
+            (destination.parent / ('recovery-' + destination.name.replace('.sql.gz.enc', '.tar.gz.enc'))).unlink(missing_ok=True)
+            raise
+    if ops_offsite.enabled(runtime):
+        ops_offsite.publish(runtime, destination, manifest)
+    return runtime.record('backup' if scope == 'host' else 'production_backup', filename=destination.name, sha256=manifest["sha256"], tables=len(counts))
 
 
 def prune_backups(runtime):
+    prune_backup_temporaries(runtime)
     cutoff = time.time() - BACKUP_RETENTION_SECONDS
     removed = 0
     failed = 0
@@ -172,6 +250,8 @@ def prune_backups(runtime):
             if manifest["created_at"] <= cutoff:
                 path.unlink()
                 Path(str(path) + ".json").unlink()
+                if manifest.get("recovery_filename"):
+                    (path.parent / manifest["recovery_filename"]).unlink()
                 removed += 1
         except (OperationError, OSError):
             failed += 1
@@ -187,11 +267,20 @@ def verify_backup(runtime, path):
             raise OperationError("backup symlinks are not permitted")
         envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
+        if manifest.get('recovery_scope', 'host') not in ('host', 'production'):
+            raise OperationError('invalid backup recovery scope')
+        if manifest.get("scope") not in (None, "control-plane"):
+            raise OperationError("backup belongs to a different recovery scope")
         expected = manifest_signature(backup_secret(runtime), manifest)
         if not hmac.compare_digest(expected, envelope["hmac_sha256"]):
             raise OperationError("backup manifest authentication failed")
         if manifest["filename"] != path.name or manifest["sha256"] != file_digest(path):
             raise OperationError("backup content verification failed")
+        if manifest.get("recovery_filename"):
+            name = manifest["recovery_filename"]
+            if (name != "recovery-" + path.name.replace(".sql.gz.enc", ".tar.gz.enc")
+                    or (path.parent / name).is_symlink() or file_digest(path.parent / name) != manifest["recovery_sha256"]):
+                raise OperationError("configuration recovery content verification failed")
         if manifest["database"] != runtime.config["MYSQL_DATABASE"]:
             raise OperationError("backup belongs to another application database")
         if type(manifest["created_at"]) is not int or manifest["created_at"] <= 0:
@@ -214,17 +303,25 @@ def verify_backup(runtime, path):
         raise OperationError("backup manifest is missing or invalid") from error
 
 
-def restore_drill(runtime, filename=None):
+def restore_drill(runtime, filename=None, *, source_directory=None):
+    if source_directory is None and ops_offsite.enabled(runtime):
+        filename = filename or json.loads((runtime.state / "backup.json").read_text())["filename"]
+        with tempfile.TemporaryDirectory(prefix="cos-restore-", dir=runtime.state) as directory:
+            ops_offsite.download(runtime, filename, directory)
+            result = restore_drill(runtime, filename, source_directory=Path(directory))
+        return runtime.record("restore", **{k: v for k, v in result.items() if k not in ("operation", "completed_at")}, source="cos")
     if filename:
         if Path(filename).name != filename:
             raise OperationError("restore drill accepts only a backup filename")
-        source = runtime.backups / filename
+        source = (source_directory or runtime.backups) / filename
     else:
         try:
             source = runtime.backups / json.loads((runtime.state / "backup.json").read_text())["filename"]
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
+    if manifest.get("recovery_filename"):
+        ops_offsite.verify_recovery_bundle(runtime, source, manifest)
     if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
         raise OperationError("backup is outside the retention period")
     container = "tellyouwhat-restore-" + secrets.token_hex(8)

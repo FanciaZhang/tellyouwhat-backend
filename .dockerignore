@@ -9,3 +9,6 @@ coverage.out
 gateway
 worker
 migrate
+
+.ark-management/
+ark-management.json

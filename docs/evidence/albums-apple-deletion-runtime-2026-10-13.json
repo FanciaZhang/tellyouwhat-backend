@@ -1,0 +1,60 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Gateway schedules persistent Apple grant revocation after accepted album account deletion",
+  "regression": {
+    "race": true,
+    "top_level_passed": 67,
+    "passed_events": 193,
+    "failed": 0,
+    "skipped": 0,
+    "new_runtime_tests": 4,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "68f61c78a532a8bda4a51edcdc275662d98b69ec4e7a658d6d7bec7c2f92ceb6",
+    "result_sha256": "ca686c92bf7aea94b1e996699270247f5b1888afa0b87f110b84f4090adc1dfc"
+  },
+  "coverage": [
+    "real gateway construction starts deletion queue using existing login signing key and credential cipher",
+    "controlled Apple transport verifies ES256 client secret, fixed audience and refresh token form",
+    "every grant of accepted account revoked; unrelated account session and credential retained",
+    "credential wipe and provider acknowledgement remain atomic in existing transaction",
+    "failed provider preserves credential and backoff across gateway restart",
+    "gateway drain cancels and waits for transport before closing database",
+    "cancelled unknown outcome retains credential and recoverable lease",
+    "missing deletion queue schema rejects gateway startup",
+    "revocation does not declare account/media erasure complete"
+  ],
+  "corrected_attempts": [
+    {
+      "phase": "compile",
+      "cause": "New test supplied a token to request-based Authenticate; corrected test request construction"
+    },
+    {
+      "phase": "first integration run",
+      "cause": "New retry assertion compared stored UTC DATETIME to database local NOW(); corrected assertion and simulated deadline to explicit UTC parameters",
+      "passed_events": 192,
+      "failed_tests": 1,
+      "log_sha256": "43cdeb253d30d88c1eb0bb96226d4b88419b4bb8913b498532df6209c76b16f4",
+      "product_retry_policy_weakened": false
+    }
+  ],
+  "boundaries": {
+    "runtime_wired": true,
+    "new_keys_created": false,
+    "private_keys_copied_to_media_worker": false,
+    "new_schema_migration_required": false,
+    "deployed": false,
+    "provider_transport_controlled": true,
+    "real_apple_revocation": false,
+    "user_media_modified": false,
+    "account_erasure_complete": false,
+    "account_deletion_http_ui_complete": false
+  },
+  "source_sha256": {
+    "internal/albums/gateway.go": "874887431cb44f1b03c91b2fe32cef8ebceff2ed87791c770fc8cc2a558dc7d9",
+    "internal/albums/account_deletion_apple_worker.go": "58893d92063e505f7f0a20a75495cf4eb979a590fb335acd147203e4041945e2",
+    "internal/albums/account_deletion_apple_worker_test.go": "fa236d7d9fbbde50e4a77d4d97fe26fb9e8912b6e1c689744b217d37b668bee0"
+  }
+}

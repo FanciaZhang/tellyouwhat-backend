@@ -83,6 +83,9 @@ func TestAuthenticateRejectsStaleTimestampBeforeAssertionVerification(t *testing
 	if !errors.Is(err, ErrAuthentication) {
 		t.Fatalf("expected authentication error, got %v", err)
 	}
+	if FailureStage(err) != "timestamp" {
+		t.Fatalf("expected timestamp diagnostic, got %s", FailureStage(err))
+	}
 	if verifier.calls != 0 {
 		t.Fatalf("stale proof should not reach verifier")
 	}
@@ -102,6 +105,9 @@ func TestAuthenticateRejectsNonMonotonicAssertionCounter(t *testing.T) {
 	if !errors.Is(err, ErrReplay) {
 		t.Fatalf("expected replay error, got %v", err)
 	}
+	if FailureStage(err) != "counter" {
+		t.Fatalf("expected counter diagnostic, got %s", FailureStage(err))
+	}
 }
 
 func TestAuthenticatePreservesKeyStoreInfrastructureFailure(t *testing.T) {
@@ -112,6 +118,9 @@ func TestAuthenticatePreservesKeyStoreInfrastructureFailure(t *testing.T) {
 	_, err := service.Authenticate(context.Background(), validProof(now, "nonce"))
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("expected retryable infrastructure error, got %v", err)
+	}
+	if FailureStage(err) != "key_lookup" {
+		t.Fatalf("expected key lookup diagnostic, got %s", FailureStage(err))
 	}
 }
 

@@ -1,0 +1,94 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Isolated MySQL 8.4/Redis, synthetic account/media fixtures, offline encrypted restore drill. No live provider operations or deployment.",
+  "migration": "0061_album_recovery_quarantine.sql",
+  "verification": {
+    "startedAt": "2026-10-13T14:40:30.823152+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/race.log",
+        "testCounts": {
+          "pass": 60
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/build.log"
+      },
+      {
+        "name": "backup-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/backup-unit.log"
+      },
+      {
+        "name": "deletion-ledger-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/deletion-ledger-unit.log"
+      },
+      {
+        "name": "control-backup-regression",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-quarantine-mnvi6am5/control-backup-regression.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T14:42:05.682382+00:00"
+  },
+  "go_top_level_tests": 26,
+  "go_passed_test_events": 60,
+  "python_tests": {
+    "backup_safety": 10,
+    "deletion_ledger": 5,
+    "control_backup_regression": 16
+  },
+  "failed_tests": 0,
+  "skipped_tests": 0,
+  "covered": [
+    "Fresh database admits startup; quarantined, missing singleton row or missing table rejects API before Redis/provider construction and worker before provider construction",
+    "Current shared locking reads reject quarantine even with a pre-existing repeatable-read snapshot in storage and media guards",
+    "Shared admission locks permit concurrent transactions",
+    "Encrypted snapshot covers 36 tables; real restored row counts and hashes match before durable recovery quarantine is applied",
+    "Restored deletion ledger reconciliation retains quarantine and access revocation; source remains active and unquarantined",
+    "Existing account deletion and gateway login/session regressions pass; all temporary servers stopped and databases removed"
+  ],
+  "source_sha256": {
+    "migrations/0061_album_recovery_quarantine.sql": "667d1e1d4e585f1438f267f65e517f705148a1e525e65556a00540a5c62643ca",
+    "migrations/embed_test.go": "b62adadbe6dab832445188f803e428bb32538bb9bb0b1e700160c9eef4827d9a",
+    "internal/albums/recovery_state.go": "370fd7291dd39e1b91df6f7b6c0b84d279d620413704be5f46953a7b4203ded8",
+    "internal/albums/recovery_state_test.go": "e27bc485e6c57196eb067aad8d2930622b693defe56d2df94106a5d930c5027e",
+    "internal/albums/gateway.go": "0ac114f512b26064637865707b13982f9958b8587c8e9c992d43bc32a458aa29",
+    "internal/albums/mysql_uploads.go": "4708f1bef2f7fe62954d45c20495571f2307a81d9758e921c98a2e623cb03fa8",
+    "internal/albums/media_account.go": "2bf78859ca54c0d33abc99128a2d5ae2172a511ad576c6de9ed0dfbc0a2fc084",
+    "internal/albums/recovery_backup_test.go": "f552360c02acdad6f0360eef8f3b5d0745117fa0798989180182fd18cf6e9f7e",
+    "cmd/albumworker/main.go": "f143b130d630d60b233016a80bdd8fa7e00aafe2d8107b2e96e7c187b2e2cc79",
+    "cmd/albumworker/recovery_test.go": "64f696c1d343dddb44fd1e371adc1b5f2681c25536636627eeaf12b4c954d66d",
+    "deploy/albums/backup.py": "4a1a5d5fd488da83a633410341edfc8329eb846457c1a2926482cd0594bc6b63"
+  },
+  "log_sha256": {
+    "race.log": "fc98dddfb6608a0f716ca834033fcb63405040a802a74a9fe440b608bf8e14d0",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backup-unit.log": "0c314a0751e1721c46f143c81199712befc47791b3f4e18979cc63fad035eced",
+    "deletion-ledger-unit.log": "4c979c0d06f0e9e2109df48cae7f69ac5d403754045b4cfe404fe744e7390b47",
+    "control-backup-regression.log": "1481c771db04ff214931bdf4396fc38c793e82f43ebc32a79776c48ce1f68d97"
+  },
+  "not_completed": [
+    "Offsite publication acknowledgement and authoritative latest deletion checkpoint",
+    "Reconciliation of provider writes issued after snapshot; key escrow and live recovery cutover",
+    "Per-account historical backup removal, final identity/billing erasure and account deletion HTTP/UI",
+    "No release-quarantine endpoint or runtime emergency stop; already-issued provider requests cannot be recalled by this marker",
+    "No deployment, real Sandbox purchase/rebind/renewal or iOS/device acceptance in this change"
+  ]
+}

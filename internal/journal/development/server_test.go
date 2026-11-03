@@ -53,7 +53,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 			t.Fatalf("unexpected exposed route %s: %d", path, w.Code)
 		}
 	}
-	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 200 || w.Header().Get("X-Journal-Development-Protocol") != ProtocolVersion {
+	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 403 || w.Header().Get("X-Journal-Development-Protocol") != ProtocolVersion || w.Header().Get("X-Journal-Voice-Protocol") != voice.Version {
 		t.Fatalf("quota: %d %s", w.Code, w.Body)
 	}
 	body := `{"sessionID":"19be2f9e-bd92-4699-b561-e3816092114c","consentVersion":"` + voice.Version + `"}`
@@ -64,7 +64,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 	if w := request("POST", "/v1/privacy/consents", token, consent); w.Code != 200 {
 		t.Fatalf("consent: %d %s", w.Code, w.Body)
 	}
-	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 201 {
+	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 403 {
 		t.Fatalf("voice ticket: %d %s", w.Code, w.Body)
 	}
 	// A developer token must never replace a one-time voice ticket.
@@ -72,8 +72,8 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 		t.Fatalf("invalid stream ticket: %d %s", w.Code, w.Body)
 	}
 	now = now.Add(90 * 24 * time.Hour)
-	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 200 {
-		t.Fatalf("forced simulation incorrectly expired: %d", w.Code)
+	if w := request("GET", "/v1/ai/quota", token, ""); w.Code != 403 {
+		t.Fatalf("legacy forced simulation granted access: %d", w.Code)
 	}
 	mode = "monthly"
 	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 403 || !strings.Contains(w.Body.String(), "managed_subscription_required") {
@@ -87,7 +87,7 @@ func TestPrivateDevelopmentBoundary(t *testing.T) {
 	if w := request("POST", "/v1/privacy/consents", token, consent); w.Code != 200 {
 		t.Fatal(w.Body)
 	}
-	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 201 {
+	if w := request("POST", "/v1/journal/voice/sessions", token, body); w.Code != 403 {
 		t.Fatal(w.Body)
 	}
 	if m.calls != 0 {

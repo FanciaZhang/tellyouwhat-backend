@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "service_source": "833b81de4b8a370c99ff3b1d0c409d5083b4e6af",
+  "checkpoint_source": "0444c8a713bc9ae688ff29fb5fc7b8e0164f48e1",
+  "backup_filename": "mysql-20261015T224140Z-c8edd0.sql.gz.enc",
+  "recovery_sha256": "217e71a0fbcde9652c19143fceaae1b98dc376d1d2b4f6c687c3aad8f2255fea",
+  "platform_recovery_files": 11,
+  "albums_recovery_files": 15,
+  "ota_recovery_files": 20,
+  "cos_readback_objects": 3,
+  "independent_read_account": true,
+  "writes_and_system_database_denied": true,
+  "sql_key_not_in_outer_bundle": true,
+  "scheduled_execution": false,
+  "isolated_restore_verified": false
+}

@@ -1,0 +1,62 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Durable account media write-quiescence checks wired into account convergence worker",
+  "regression": {
+    "race": true,
+    "top_level_passed": 63,
+    "passed_events": 175,
+    "failed": 0,
+    "skipped": 0,
+    "new_top_level_tests": 9,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "55159bdfc3ba4ab39ac5bd2f6a90348c7fff10935d49c60c40c4eb422b596a68",
+    "result_sha256": "1bd0df18804941ab8fc7ffce7c2c568f3186fbdc0a2e8d0260745c0695d9c17a"
+  },
+  "coverage": [
+    "account-wide scope includes unpublished originals and media attempts",
+    "direct PUT history remains pending even after URL expiry",
+    "legacy COPY or missing and mismatched receipts remain pending",
+    "multipart requires bound assembly or abort; ambiguous initialization/completion remains pending",
+    "both consumed Live Photo COPY receipts and all sessions must close",
+    "photo PUT requires a positive version or bound terminal retirement plan containing a committed version",
+    "missing transcode observation row or wrong provider receipt cannot masquerade as an empty queue",
+    "account/storage locks and current reads reject stale database snapshots",
+    "concurrent workers acknowledge once; persistent backoff and restart preserve readiness",
+    "other accounts stay accessible; credentials, media records and quota are not erased",
+    "missing migration fails schema readiness and processing"
+  ],
+  "corrected_attempts": [
+    {
+      "phase": "first integration run",
+      "cause": "Missing-column test attempted to rename a column referenced by CHECK; changed fault injection to media_check_after",
+      "passed_events": 172,
+      "failed_tests": 1,
+      "race_log_sha256": "5bc25affe5740e5d1ef049036e44c39ffdabf7a7976efb380b71720453ce8299",
+      "product_guard_weakened": false
+    }
+  ],
+  "boundaries": {
+    "runtime_wired": true,
+    "required_migration": "0053_album_deletion_media_quiescence.sql",
+    "deployed": false,
+    "real_provider_calls": false,
+    "user_media_modified": false,
+    "media_quiescence_is_erasure": false,
+    "account_wide_object_deletion_wired": false,
+    "account_deletion_http_ui_complete": false,
+    "cloud_and_sales_gates_changed": false
+  },
+  "source_sha256": {
+    "internal/albums/account_deletion_quiescence.go": "48c3bc3697f7fd3036badda3a49d34a5d4d511410d1df43af11e79a967d48b1d",
+    "internal/albums/account_deletion_quiescence_test.go": "611f5fc432eaf0f538455a731344107b01f4555ececb7c0bfa91dad9becdd9e4",
+    "internal/albums/account_media_observation_worker.go": "64281ba1f051f5a090af3333e3173cefb3b6e7fd7d7e1f141b7e561adb35ce73",
+    "internal/albums/account_media_observation_worker_test.go": "354793598e8ee598489bb149a41e623386904ce2c81cca43e9d0cd830d54932c",
+    "internal/albums/library.go": "d634d28ce576ec1429658e0e57976d0325b4ca854ae1fc31cf37e0871b826de7",
+    "cmd/albumworker/main.go": "41c6c4bde6254433bd95168b21c23e3f65b3e602a49c33d06e19a05ef41c3f24",
+    "migrations/0053_album_deletion_media_quiescence.sql": "4fdf8afd967e828026ad04b113e0a7051347319a2222a8816ffd4314311b09df",
+    "migrations/embed_test.go": "ee7e3a9e53bfb3ca4083339c8acc55ef473074fb2716f86521172cd6141312ce"
+  }
+}

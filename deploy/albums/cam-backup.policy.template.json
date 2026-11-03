@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["cos:GetBucketVersioning"],
+      "resource": ["qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:PutObject", "cos:GetObject"],
+      "resource": ["qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/albums/recovery/*"]
+    }
+  ]
+}

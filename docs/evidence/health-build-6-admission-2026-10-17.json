@@ -1,0 +1,57 @@
+{
+  "admissionSource": "02d6456ee621ae9a171efd56cceb0df3839f11a6",
+  "laterObservedSource": "c67f7a3301f89ef3810f0a4e9f9df135c804f496",
+  "allowedHealthBuilds": [
+    "4",
+    "5",
+    "6"
+  ],
+  "laterSourceChange": "Birthday build 7 admission; Health allowed builds retained",
+  "postAdmissionBackup": {
+    "filename": "mysql-20261017T011506Z-ed3dad.sql.gz.enc",
+    "authenticated": true,
+    "decryptedConfigurationVerified": true,
+    "testRecoveryIncluded": true,
+    "albumsRecoveryIncluded": true,
+    "databaseRestorePerformed": false
+  },
+  "apiChecks": {
+    "checkedAt": "2026-10-17T01:26:20.084403+00:00",
+    "checks": [
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "path": "/readyz",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "path": "/v1/dev/entitlements/activate",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "host": "api.health.tellyouwhat.cn",
+        "path": "/readyz",
+        "method": "GET",
+        "status": 200
+      }
+    ],
+    "probeCorrection": "Final activation probe includes required request ID and no request body. Initial malformed probes were rejected."
+  },
+  "healthAppSource": "7cdc67bc8341956c7aad1bcffd5daee198d84272",
+  "build": "6",
+  "version": "1.4.0",
+  "cleanup": {
+    "apple_delivery": null,
+    "completed_at": 1792199671,
+    "errors": [],
+    "free_bytes_after": 15374876672,
+    "free_bytes_before": 15374880768,
+    "operation": "artifacts-platform-test",
+    "passed": true,
+    "reclaimed_bytes": -4096,
+    "removed_files": [],
+    "removed_images": []
+  }
+}

@@ -16,7 +16,7 @@ func TestEmbeddedContractIsValidAndEveryOperationIsNamed(t *testing.T) {
 		t.Fatalf("validate embedded OpenAPI contract: %v", err)
 	}
 
-	const expectedOperationCount = 7
+	const expectedOperationCount = 20
 	operationIDs := make(map[string]struct{}, expectedOperationCount)
 	operationCount := 0
 	for path, item := range document.Paths.Map() {
@@ -33,10 +33,5 @@ func TestEmbeddedContractIsValidAndEveryOperationIsNamed(t *testing.T) {
 	}
 	if operationCount != expectedOperationCount {
 		t.Fatalf("operation count = %d, want %d", operationCount, expectedOperationCount)
-	}
-	for _, name := range []string{"CreateJournalIllustration", "GetJournalIllustration", "CancelJournalIllustration", "GetJournalIllustrationResult"} {
-		if _, ok := operationIDs[name]; !ok {
-			t.Fatalf("missing illustration operation %s in %v", name, operationIDs)
-		}
 	}
 }

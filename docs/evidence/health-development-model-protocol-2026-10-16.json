@@ -1,0 +1,33 @@
+{
+  "observedAt": "2026-10-16T03:21:06.442549+00:00",
+  "source": "5c97caac3eab5f57e76010332ac41ba745f3d493",
+  "scope": "synthetic production Responses serializer, streaming parser, schema validation and image/audio input; not photo quality acceptance",
+  "checks": [
+    {
+      "operation": "diet_analysis",
+      "endpoint": "ep-20261016104637-869cv",
+      "passed": true,
+      "output": "=== RUN   TestLiveSelectedModelProtocol\n--- PASS: TestLiveSelectedModelProtocol (1.03s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/provider/ark\t1.416s\n"
+    },
+    {
+      "operation": "voice_transcription",
+      "endpoint": "ep-20261016104637-869cv",
+      "passed": true,
+      "output": "=== RUN   TestLiveSelectedModelProtocol\n--- PASS: TestLiveSelectedModelProtocol (1.78s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/provider/ark\t1.951s\n"
+    },
+    {
+      "operation": "meal_text_capture",
+      "endpoint": "ep-20261016105050-bcl4b",
+      "passed": true,
+      "output": "=== RUN   TestLiveSelectedModelProtocol\n--- PASS: TestLiveSelectedModelProtocol (3.85s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/provider/ark\t4.011s\n"
+    },
+    {
+      "operation": "meal_photo_capture",
+      "endpoint": "ep-20261016105205-wt9gw",
+      "passed": true,
+      "output": "=== RUN   TestLiveSelectedModelProtocol\n--- PASS: TestLiveSelectedModelProtocol (4.38s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/provider/ark\t4.537s\n"
+    }
+  ],
+  "reasoningEffort": "minimal",
+  "correctedProbeInput": "First attempt used disabled, rejected by local policy before request; actual contract minimal disables thinking."
+}

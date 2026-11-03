@@ -127,13 +127,27 @@ type TokenReconciler interface {
 	Reconcile(context.Context, string, string, int, int, time.Time) error
 }
 
-func (limiter *MemoryLimiter) Acquire(
+// PrepareJob checks admission and stores a binding without spending tokens.
+func (limiter *MemoryLimiter) PrepareJob(ctx context.Context, identity Identity, operation contracts.Operation, tokens int, id string, now time.Time) error {
+	if id == "" {
+		return ErrInvalidReservation
+	}
+	_, err := limiter.acquire(ctx, identity, operation, tokens, id, now, true)
+	return err
+}
+
+func (limiter *MemoryLimiter) Acquire(ctx context.Context, identity Identity, operation contracts.Operation, tokens int, id string, now time.Time) (Releaser, error) {
+	return limiter.acquire(ctx, identity, operation, tokens, id, now, false)
+}
+
+func (limiter *MemoryLimiter) acquire(
 	_ context.Context,
 	identity Identity,
 	operation contracts.Operation,
 	estimatedTokens int,
 	reservationID string,
 	now time.Time,
+	prepare bool,
 ) (Releaser, error) {
 	if limiter == nil || identity.DeviceID == "" || identity.TransactionID == "" || identity.IP == "" || estimatedTokens < 0 {
 		return nil, ErrInvalidIdentity
@@ -157,7 +171,7 @@ func (limiter *MemoryLimiter) Acquire(
 	defer limiter.mu.Unlock()
 	if reservationID != "" {
 		if reservation, exists := limiter.reservations[reservationID]; exists && now.Before(reservation.expiresAt) {
-			if !reservation.Matches(identity.TransactionID, estimatedTokens) || reservation.DeviceID != identity.DeviceID {
+			if !reservation.Matches(identity.TransactionID, estimatedTokens) || reservation.DeviceID != identity.DeviceID || (!prepare && reservation.Version == 2) {
 				return nil, ErrInvalidReservation
 			}
 			return &Lease{}, nil
@@ -180,6 +194,13 @@ func (limiter *MemoryLimiter) Acquire(
 	}
 	for _, dimension := range requestDimensions {
 		limiter.requests[dimension.key] = counter{window: minuteWindow, value: counterValue(limiter.requests[dimension.key], minuteWindow) + 1}
+	}
+	if prepare {
+		limiter.reservations[reservationID] = memoryReservation{
+			TokenReservation: TokenReservation{Version: 2, TransactionID: identity.TransactionID, DeviceID: identity.DeviceID, DailyWindow: dailyWindow, MonthlyWindow: monthlyWindow, ReservedTokens: estimatedTokens},
+			expiresAt:        now.Add(25 * time.Hour),
+		}
+		return &Lease{}, nil
 	}
 	limiter.tokens[dailyKey] = counter{window: dailyWindow, value: counterValue(limiter.tokens[dailyKey], dailyWindow) + estimatedTokens}
 	limiter.tokens[monthlyKey] = counter{window: monthlyWindow, value: counterValue(limiter.tokens[monthlyKey], monthlyWindow) + estimatedTokens}
@@ -243,6 +264,9 @@ func (limiter *MemoryLimiter) Reconcile(
 	defer limiter.mu.Unlock()
 	reservation, exists := limiter.reservations[reservationID]
 	if reservationID == "" || !exists || !now.Before(reservation.expiresAt) || !reservation.Matches(transactionID, reserved) {
+		return ErrInvalidReservation
+	}
+	if reservation.Version == 2 && !reservation.Charged {
 		return ErrInvalidReservation
 	}
 	if reservation.Reconciled {

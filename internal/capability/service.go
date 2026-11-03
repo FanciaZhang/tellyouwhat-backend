@@ -32,9 +32,10 @@ type Binding struct {
 }
 
 type Issued struct {
-	JobID     string    `json:"jobID"`
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	ResultToken string    `json:"resultToken,omitempty"`
+	JobID       string    `json:"jobID"`
+	Token       string    `json:"token"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type UseStore interface {
@@ -49,6 +50,7 @@ type Service struct {
 }
 
 type claims struct {
+	Purpose      string                 `json:"purpose,omitempty"`
 	Principal    attestation.Principal  `json:"principal"`
 	Binding      Binding                `json:"binding"`
 	Nonce        string                 `json:"nonce"`
@@ -110,10 +112,17 @@ func (service *Service) IssueWithOutputBudgetAt(principal attestation.Principal,
 		return Issued{}, ErrInvalid
 	}
 	signature := service.sign(payload)
+	resultClaims := value
+	resultClaims.Purpose = "result"
+	resultPayload, err := json.Marshal(resultClaims)
+	if err != nil {
+		return Issued{}, ErrInvalid
+	}
 	return Issued{
-		JobID:     binding.JobID,
-		Token:     base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature),
-		ExpiresAt: value.ExpiresAt,
+		ResultToken: base64.RawURLEncoding.EncodeToString(resultPayload) + "." + base64.RawURLEncoding.EncodeToString(service.sign(resultPayload)),
+		JobID:       binding.JobID,
+		Token:       base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature),
+		ExpiresAt:   value.ExpiresAt,
 	}, nil
 }
 
@@ -168,7 +177,7 @@ func (service *Service) validate(token string, expected Binding) (claims, time.T
 	var value claims
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil || !validClaims(value) || value.Binding != expected {
+	if err := decoder.Decode(&value); err != nil || !validClaims(value) || value.Purpose != "" || value.Binding != expected {
 		return claims{}, time.Time{}, ErrInvalid
 	}
 	now := service.now()
@@ -242,4 +251,26 @@ func (service *Service) derivedIdentifier(label string, principal attestation.Pr
 		hex[index*2+1] = alphabet[item&0x0f]
 	}
 	return string(hex[0:8]) + "-" + string(hex[8:12]) + "-" + string(hex[12:16]) + "-" + string(hex[16:20]) + "-" + string(hex[20:32]), nil
+}
+
+// ValidateResult permits repeated reads of exactly one job; it never authorizes execution.
+func (service *Service) ValidateResult(token, jobID string) (attestation.Principal, string, error) {
+	if service == nil || len(service.secret) < 32 || !contracts.ValidRequestID(jobID) {
+		return attestation.Principal{}, "", ErrInvalid
+	}
+	payload, signature, ok := splitToken(token)
+	if !ok || subtle.ConstantTimeCompare(signature, service.sign(payload)) != 1 {
+		return attestation.Principal{}, "", ErrInvalid
+	}
+	var value claims
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil || !validClaims(value) || value.Purpose != "result" || value.Binding.JobID != jobID {
+		return attestation.Principal{}, "", ErrInvalid
+	}
+	now := service.now()
+	if !now.Before(value.ExpiresAt) || value.ExpiresAt.After(now.Add(maximumLifetime)) {
+		return attestation.Principal{}, "", ErrExpired
+	}
+	return value.Principal, value.Binding.RequestID, nil
 }

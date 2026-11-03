@@ -1,0 +1,53 @@
+{
+  "checked_at": "2026-10-16T12:41:31.295063+00:00",
+  "user": "birthdayapp-production-backend",
+  "user_id": "97283029",
+  "policy": "BirthdayProductionInferenceOnly",
+  "checks": [
+    {
+      "name": "birthday_production",
+      "endpoint": "ep-20261016124914-tttsd",
+      "status": 200,
+      "expected": 200,
+      "passed": true,
+      "response_status": "completed",
+      "usage": {
+        "input_tokens": 49,
+        "output_tokens": 1,
+        "total_tokens": 50,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "name": "health_development_denied",
+      "endpoint": "ep-20261016104637-869cv",
+      "status": 403,
+      "expected": 403,
+      "passed": true,
+      "response_status": null,
+      "usage": null
+    }
+  ],
+  "console_login": false,
+  "access_keys": 0,
+  "api_keys": 1,
+  "credential_saved_local": true,
+  "credential_saved_server": true,
+  "credential_modes_verified": true,
+  "production_api_activated": false,
+  "live_contract": {
+    "command": "go test ./internal/birthday -run ^TestLiveBirthdayAssistant$/(simple_call|revision)$ -count=1 -v -timeout=4m",
+    "source": "b24cd75964a71595280404d2ec28da73553dffda",
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "synthetic_inputs": true,
+    "real_model": true,
+    "phone_journey_verified": false
+  }
+}

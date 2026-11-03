@@ -72,3 +72,33 @@ func TestOutputBudgetRejectsUnknownVersionAndUnsafeLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemPromptIsPrivateFrozenAndBudgeted(t *testing.T) {
+	request := Request{Prompt: "original", OutputBudget: DefaultOutputBudget()}
+	before := ReservationTokens(request)
+	request.SystemPrompt = &SystemPrompt{Version: "frozen-version", Text: "附加指令"}
+	if ReservationTokens(request) != before+len(request.SystemPrompt.Text) {
+		t.Fatal("system prompt missing from reservation")
+	}
+	raw, err := MarshalJobRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := UnmarshalJobRequest(raw)
+	if err != nil || restored.SystemPrompt == nil || *restored.SystemPrompt != *request.SystemPrompt {
+		t.Fatal("job lost frozen prompt", err)
+	}
+	public, _ := json.Marshal(request)
+	if strings.Contains(string(public), "frozen-version") || strings.Contains(string(public), "附加指令") {
+		t.Fatal("private prompt leaked")
+	}
+	for _, field := range []string{"systemPrompt", "_serverSystemPrompt", "instructions"} {
+		var value map[string]any
+		_ = json.Unmarshal([]byte(validRequestJSON("meal-decision-v10-fresh-exploration")), &value)
+		value[field] = "injected"
+		raw, _ := json.Marshal(value)
+		if _, err := DecodeAndValidate(strings.NewReader(string(raw)), DefaultBodyLimit); err == nil {
+			t.Fatal("client supplied trusted instructions")
+		}
+	}
+}

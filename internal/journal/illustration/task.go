@@ -7,7 +7,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -19,7 +18,7 @@ var ErrTaskConflict = errors.New("illustration task changed")
 type Confirmation struct {
 	RequestID       string `json:"requestID"`
 	VersionID       string `json:"versionID"`
-	Prompt          string `json:"prompt"`
+	Brief           Brief  `json:"brief"`
 	ReferenceSHA256 string `json:"referenceSHA256,omitempty"`
 	ConsentRevision string `json:"consentRevision"`
 }
@@ -28,7 +27,7 @@ func (c Confirmation) Validate(reference []byte) error {
 	r, er := uuid.Parse(c.RequestID)
 	v, ev := uuid.Parse(c.VersionID)
 	if er != nil || ev != nil || r == uuid.Nil || v == uuid.Nil || c.RequestID != r.String() || c.VersionID != v.String() ||
-		!utf8.ValidString(c.Prompt) || strings.TrimSpace(c.Prompt) == "" || len([]rune(c.Prompt)) > 20_000 ||
+		c.Brief.Validate() != nil ||
 		strings.TrimSpace(c.ConsentRevision) == "" || len(c.ConsentRevision) > 128 {
 		return ErrInput
 	}
@@ -167,7 +166,7 @@ func (t *Task) RecordOutcome(expected uint64, result *Result, failure error, now
 		// HTTP rejection is a user-visible failure, not authoritative billing
 		// evidence. Settlement remains pending until provider reconciliation.
 		var rejected Rejected
-		if errors.As(failure, &rejected) && (rejected.Status == 400 || rejected.Status == 401 || rejected.Status == 403 || rejected.Status == 413 || rejected.Status == 422 || rejected.Status == 429) {
+		if errors.As(failure, &rejected) && (rejected.Status == 400 || rejected.Status == 401 || rejected.Status == 403 || rejected.Status == 404 || rejected.Status == 413 || rejected.Status == 422 || rejected.Status == 429) {
 			if !cancelled {
 				t.State = TaskRejected
 			}

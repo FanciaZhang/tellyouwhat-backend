@@ -1,0 +1,132 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Observe unresolved photo PUTs and connect read-only original/photo/video/Live Photo deletion observations to albumworker",
+  "migration": "0048_album_deletion_photo_checks.sql",
+  "regression_before_worker_integration": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 54,
+    "passed_events": 138,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "e16c14e186591121b96bb93726066d26b81a802040da624130f7655dd8a4cc46"
+  },
+  "final_worker_and_photo_regression": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 9,
+    "passed_events": 28,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "50c6d668ee47e0e77c4d55a2d34e5263214dfc6801c29625ce4856ed1ea5bb77"
+  },
+  "regressions_overlap": true,
+  "live_read_only": {
+    "database_receipts_written": false,
+    "media_content_downloaded": false,
+    "method": "HEAD",
+    "mutations_allowed": false,
+    "passed": true,
+    "requests": 1,
+    "version_matches_saved_receipt": true
+  },
+  "implementation": {
+    "photo_observation_separate_from_verified_object_version": true,
+    "no_photo_decode_or_media_download": true,
+    "committed_invalid_preview_remains_unverified": true,
+    "only_deleting_accounts_with_unresolved_issued_attempts_queried": true,
+    "existing_verified_and_retirement_evidence_not_replaced": true,
+    "late_verified_receipt_must_match_observation": true,
+    "lease_seconds": 120,
+    "query_timeout_seconds": 30,
+    "retry_initial_seconds": 60,
+    "retry_max_seconds": 21600,
+    "maximum_jobs_per_queue_per_pass": 100,
+    "media_observation_runtime_wired": true,
+    "startup_schema_check": true
+  },
+  "coverage": [
+    "photo observation cannot produce a readable preview or settle quota",
+    "late byte-verified receipt same version settles once; different version rejected",
+    "absent, malformed, errored and cancelled observations remain unknown",
+    "backoff, lease expiry and reopening repository",
+    "active, verified and retiring attempts excluded",
+    "account, deletion request, attempt, source and spec binding",
+    "migration preserves unresolved existing attempt",
+    "one worker pass observes four queues with only four object HEADs and one CI status GET",
+    "no object PUT, DELETE, transcode submission or media GET from observation pass",
+    "completed records not queried again",
+    "worker cancellation and database-unavailable reporting",
+    "missing observation migration fails startup check"
+  ],
+  "boundaries": {
+    "database_tests_use_mock_provider": true,
+    "live_probe_uses_one_existing_synthetic_photo_preview": true,
+    "live_head_not_full_byte_or_quality_verification": true,
+    "deployed": false,
+    "media_deleted": false,
+    "account_erasure_complete": false,
+    "ios_changed": false,
+    "apple_revocation_runtime_connected": false,
+    "client_upload_quiescence_complete": false
+  },
+  "source_sha256": {
+    "cmd/albumworker/main.go": "f05b1537825671ae23f03c3b6c8c661d2077857c45513c16ffaee15f31e3486f",
+    "internal/albums/account_deletion_photos.go": "837f9a6a31f54022b3a34bcf3286c75ba5bb67407b27ce0f2810e8c25df34dbe",
+    "internal/albums/account_deletion_photos_test.go": "5fd73589ebf53d1179d0008b8c6393e8862a3509bf3a2d5ab153c15715b33cce",
+    "internal/albums/account_media_observation_worker.go": "b3a8029dbfe7ca5807e74e7c00de06868cd87d21e56cae1073f38be7d7c61557",
+    "internal/albums/account_media_observation_worker_test.go": "b6d9a67b8d2dde076ebd701a87791efc99a65602d532d0a5d5ce74b767e942ff",
+    "internal/albums/cos_deletion_photos_live_test.go": "bc185294730e3d5bba3a9d5925acfe681cd966a60e5b036bf157b65a72faf855",
+    "internal/albums/cos_photo_storage.go": "f5fde192ca67ef0462ee396a13da8a97b3ec76338075e1055fb02130cebba829",
+    "internal/albums/mysql_photo_writes.go": "ec9fc6f8c6644935145edf23e58196924f70c94fe8300107b48bf9a30cd8c258",
+    "internal/albums/photo_jobs.go": "94e16565d2eb9f1554ae7512549a27919f6860b0cc2c755f9481f16a1fed249d",
+    "migrations/0048_album_deletion_photo_checks.sql": "8735c0b403f1ca74ac21c63fa083ef20d9cb66f98e35c32c7d883e4c91bf3ec7",
+    "migrations/embed_test.go": "74c272e0383a16519e1135d6fd603bb90e2331cd5839b602e9996d9d3052f9c0"
+  }
+}

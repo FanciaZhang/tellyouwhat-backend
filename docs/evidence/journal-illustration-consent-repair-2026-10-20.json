@@ -1,0 +1,92 @@
+{
+  "source_commit": "f01d74b5616143cbf1c69986e88e74d7ad759531",
+  "fix": "Add journal_illustration to the database consent constraint; preserve previous scopes and rows",
+  "database_upgrade_test": {
+    "passed": true,
+    "seconds": 8.92,
+    "checks": [
+      "deployed schema reproduces rejection",
+      "forward migration accepts image consent",
+      "previous managed consent preserved",
+      "committed DDL replay succeeds",
+      "withdrawal persisted",
+      "unknown scope still rejected"
+    ],
+    "isolated_database": true
+  },
+  "real_model_flow": {
+    "passed": true,
+    "seconds": 21.35,
+    "configured_test_image_model": true,
+    "http_consent_and_task_handlers": true,
+    "encrypted_mysql_original_reopened": true,
+    "duplicate_task_admission_preserved": true,
+    "image_mime": "image/jpeg",
+    "width": 2816,
+    "height": 1584,
+    "bytes": 699080,
+    "sha256": "f714433f7a4a78e570a905f4af4e240f9507a5f399f797dc5b81516a9474da82",
+    "synthetic_material_only": true,
+    "test_authentication_and_entitlement_fixtures": true,
+    "real_apple_app_attest_verified": false
+  },
+  "deployment_configuration_tests_passed": 43,
+  "local_race_test_packages": [
+    "migrations",
+    "internal/privacy",
+    "internal/journal/illustration",
+    "internal/gateway"
+  ],
+  "app_binary_changed": false,
+  "production_deployed": false,
+  "user_device_acceptance_pending": true,
+  "recovery_configuration_tests_passed": 6,
+  "sample_visually_inspected": true,
+  "integration_test_binary_sha256": {
+    "mysql-consent.test": "c72e41e9f7b0de96586a3425abba3928e92d2f9391933e2ebf66e1b4e6422c28",
+    "image-flow.test": "f98f9cc47aa94742a10f492712b5a9607ba4e516e4d21205878cf82e83ec5726"
+  },
+  "recorded_at_utc": "2026-10-20T11:48:06.739591+00:00",
+  "state": "test-service-deployed-and-verified",
+  "deployed_source": "f01d74b5616143cbf1c69986e88e74d7ad759531",
+  "database_constraint_readback_verified": true,
+  "migration_checkpoint_count": 1,
+  "pre_deployment_backup_verified": true,
+  "post_deployment_backup_authenticated_and_decrypted": true,
+  "producer_cleanup_passed": true,
+  "public_route_checks": {
+    "checked_at_utc": "2026-10-20T11:47:11.612167+00:00",
+    "tls_verified": true,
+    "checks": [
+      {
+        "host": "api-test.journal.tellyouwhat.cn",
+        "ready_status": 200
+      },
+      {
+        "host": "api-test.health.tellyouwhat.cn",
+        "ready_status": 200
+      },
+      {
+        "host": "api-test.birthday.tellyouwhat.cn",
+        "ready_status": 200
+      },
+      {
+        "host": "api-test.albums.tellyouwhat.cn",
+        "ready_status": 200
+      },
+      {
+        "host": "api.journal.tellyouwhat.cn",
+        "ready_status": 200
+      },
+      {
+        "route": "POST /v1/journal/illustrations",
+        "unauthenticated_status": 401,
+        "error_code": "authentication_failed"
+      }
+    ],
+    "no_image_request_admitted": true
+  },
+  "first_deployment_attempt": "Rejected before migration because the staged operations directory was incomplete; corrected staging without changing source or gates.",
+  "device_journey_verified": false,
+  "app_reinstallation_required": false
+}

@@ -1,0 +1,59 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Runtime Live Photo multipart reconciliation and deletion-accepted session abort scheduling",
+  "migration": "0051_album_live_multipart_reconciliation.sql",
+  "regression": {
+    "race": true,
+    "top_level_passed": 51,
+    "passed_events": 147,
+    "failed": 0,
+    "skipped": 0,
+    "worker_top_level_tests": 7,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "c18c532d79cacbf23e09b82de6e58a5daddb6eabfb87db30fae1d5611971ee93",
+    "result_sha256": "2e381c1d7463fe67dd6e39847a0864955daee08fc4000794abf8ebe17d1fe68d"
+  },
+  "coverage": [
+    "lost initialization and completion responses recovered without repeated writes",
+    "retry deadline and attempts survive worker recreation",
+    "only matching accepted account deletion and storage fence permit automatic abort",
+    "active account, mismatched fence and direct PUT history excluded from abort scheduling",
+    "in-flight Complete observed instead of aborted",
+    "unknown initialization discovered before attempting a bound idempotent abort",
+    "lease exclusion and crash expiry",
+    "stale lease, wrong intent and cross-owner updates rejected",
+    "shutdown waits for provider; late successful receipt retained and lease released",
+    "missing migration prevents schema check and queue execution"
+  ],
+  "operation_limits": {
+    "batch_maximum": 100,
+    "lease_minutes": 20,
+    "provider_timeout_minutes": 15,
+    "retry_first_seconds": 60,
+    "retry_max_seconds": 21600,
+    "automatic_init_or_complete_writes": false,
+    "object_version_deletion": false
+  },
+  "boundaries": {
+    "runtime_wired": true,
+    "deployed": false,
+    "provider_responses_controlled": true,
+    "real_cloud_calls": false,
+    "real_live_photo_roundtrip_verified": false,
+    "permanent_cleanup_enabled": false,
+    "account_erasure_complete": false,
+    "original_upload_abort_scheduling_implemented_by_this_change": false
+  },
+  "source_sha256": {
+    "cmd/albumworker/main.go": "e43134eb7bdf8d2f117fcdc56f398a45328f6c296edeb149242d13af0f3b28ae",
+    "internal/albums/live_pair_multipart_worker.go": "0aecf780fa48a959928c0afe3067d57792fe0f19adf7f0c5a5864431f2d23574",
+    "internal/albums/live_pair_multipart_worker_test.go": "01832ab0b439407c2007aa8d25733c2290e3a0850c5ac0f34599c1fbadb36f6a",
+    "internal/albums/live_pair_multipart_test.go": "454191d1cf932edb47032f6183f331752b5eba28f37cdaf55f7e6aba4f215219",
+    "internal/albums/mysql_live_pairs.go": "44fd60c2fcb92a73dd181ea60263adfca99595b4bdb25ceb29cd45cd76ac757c",
+    "migrations/0051_album_live_multipart_reconciliation.sql": "bfdf77b1899b5d5d1f3c4bc7283160d838b2e78167f3c15de8f2f63e9feb68bd",
+    "migrations/embed_test.go": "6576f26ef08d69b4eb49656ac5c71b919298477dee823dce61fe28c8ee3e49d7"
+  }
+}

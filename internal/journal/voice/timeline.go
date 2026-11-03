@@ -152,6 +152,9 @@ func validateTimelineCreations(commands []TimelineCreation, r Revision, s Snapsh
 		}
 	}
 	linked := func(source TableSource, block, role string) bool {
+		if role == "content" && !slices.Contains(r.ConsumedSourceIDs, source.SourceID) {
+			return structuredSourceAuthorized(source, role, block, r, s, s.TimelineSourceContext)
+		}
 		text, exists := sources[source.SourceID]
 		if !exists {
 			return false

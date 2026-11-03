@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "mode": "verified-pr-merge",
+  "testedCommit": "da8c2bf6d6efad3c7d1a6bdfaf0df68c9cf255b0",
+  "deliveryCommit": "db8f52b0f4168da7c0c3c6e68c643fb6eaa7bfb8",
+  "baseCommit": "a81e838356af9c53ce04e898aaad06ab03f653a7",
+  "pullRequest": 173,
+  "tree": "d88a0c124c4f757d1426061429a61aebf554ca7b",
+  "toolchain": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "sdks": "DriverKit SDKs:\n\tDriverKit 27.0                \t-sdk driverkit27.0\n\niOS SDKs:\n\tiOS 27.1                      \t-sdk iphoneos27.1\n\niOS Simulator SDKs:\n\tSimulator - iOS 27.1          \t-sdk iphonesimulator27.1\n\nmacOS SDKs:\n\tmacOS 27.0                    \t-sdk macosx27.0\n\tmacOS 27.0                    \t-sdk macosx27.0\n\ntvOS SDKs:\n\ttvOS 27.0                     \t-sdk appletvos27.0\n\ntvOS Simulator SDKs:\n\tSimulator - tvOS 27.0         \t-sdk appletvsimulator27.0\n\nvisionOS SDKs:\n\tvisionOS 27.0                 \t-sdk xros27.0\n\nvisionOS Simulator SDKs:\n\tSimulator - visionOS 27.0     \t-sdk xrsimulator27.0\n\nwatchOS SDKs:\n\twatchOS 27.0                  \t-sdk watchos27.0\n\nwatchOS Simulator SDKs:\n\tSimulator - watchOS 27.0      \t-sdk watchsimulator27.0"
+  }
+}

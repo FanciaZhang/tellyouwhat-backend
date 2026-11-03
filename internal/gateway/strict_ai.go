@@ -3,12 +3,14 @@ package gateway
 import (
 	"context"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"io"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -22,8 +24,14 @@ func (server *Server) CompleteAIRequest(
 	if failure != nil {
 		return healthhttpapi.CompleteAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, managed)
 	response, err := server.provider.Complete(ctx, artifact)
 	if err != nil {
+		if errors.Is(err, costcontrol.ErrProtectionActive) {
+			lease.Release(0)
+			failure = newAPIFailure(http.StatusServiceUnavailable, "ai_paused", "automatic service protection is active", artifact.RequestID)
+			return healthhttpapi.CompleteAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+		}
 		lease.Release(contracts.ReservationTokens(artifact))
 		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", artifact.RequestID)
 		return healthhttpapi.CompleteAIRequest502JSONResponse{BadGatewayJSONResponse: healthhttpapi.BadGatewayJSONResponse(healthErrorResponse(failure))}, nil
@@ -54,6 +62,16 @@ func (server *Server) apiAuthorizeAIRequest(
 	if failure != nil {
 		return contracts.Request{}, Principal{}, false, nil, failure
 	}
+	if server.executionPolicies != nil {
+		resolved, err := server.executionPolicies.Resolve(ctx, artifact)
+		if err != nil {
+			return contracts.Request{}, Principal{}, false, nil, newAPIFailure(503, "ai_config_unavailable", "AI configuration unavailable", artifact.RequestID)
+		}
+		if err := server.contracts.Validate(resolved); err != nil {
+			return contracts.Request{}, Principal{}, false, nil, newAPIFailure(422, "ai_policy_incompatible", "published AI policy is incompatible with this request contract", artifact.RequestID)
+		}
+		artifact = resolved
+	}
 	lease, failure := server.apiAcquireQuota(ctx, principal, artifact, "", managed)
 	if failure != nil {
 		return contracts.Request{}, Principal{}, false, nil, failure
@@ -74,10 +92,13 @@ func (server *Server) StreamAIRequest(
 		return healthhttpapi.StreamAIRequestdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	ginContext := strictGinContext(ctx)
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, managed)
 	ginContext.Header("Cache-Control", "no-cache, no-transform")
 	ginContext.Header("X-Accel-Buffering", "no")
 	reader, writer := io.Pipe()
+	complete := lifecycle.Track(ginContext.Request.Context())
 	go func() {
+		defer complete()
 		defer writer.Close()
 		actualTokens := contracts.ReservationTokens(artifact)
 		err := server.provider.Stream(ctx, artifact, func(event StreamEvent) error {
@@ -104,8 +125,12 @@ func (server *Server) StreamAIRequest(
 		if err == nil {
 			cleanupManagedMedia(ctx, server.provider, artifact.Media)
 		} else {
+			code := "upstream_error"
+			if errors.Is(err, costcontrol.ErrProtectionActive) {
+				actualTokens, code = 0, "ai_paused"
+			}
 			_ = writeSSE(writer, "error", map[string]string{
-				"code": "upstream_error", "requestID": artifact.RequestID,
+				"code": code, "requestID": artifact.RequestID,
 			})
 		}
 		lease.Release(actualTokens)
@@ -127,17 +152,15 @@ func (server *Server) IssueAIJobCapability(
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	bodyDigest := contracts.BodySHA256(rawBody)
-	lease, failure := server.apiAcquireQuota(ctx, principal, artifact, capabilityQuotaReservationID(principal, artifact.RequestID, bodyDigest), managed)
+	_, failure = server.apiQuota(ctx, principal, artifact, capabilityQuotaReservationID(principal, artifact.RequestID, bodyDigest), managed, true)
 	if failure != nil {
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	attempt, _, err := server.media.Admit(ctx, principal, artifact, bodyDigest)
 	if err != nil {
-		lease.Release(contracts.ReservationTokens(artifact))
 		failure = server.apiAdmissionFailure(err, artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapabilitydefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
-	lease.Release(contracts.ReservationTokens(artifact))
 	mediaDigest, err := contracts.MediaDigest(artifact.Media)
 	if err != nil {
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request violates the business contract", artifact.RequestID)
@@ -156,8 +179,12 @@ func (server *Server) IssueAIJobCapability(
 		failure = newAPIFailure(http.StatusServiceUnavailable, "jobs_unavailable", "job service unavailable", artifact.RequestID)
 		return healthhttpapi.IssueAIJobCapability503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
 	}
+	var resultToken *string
+	if request.Params.XHealthJobResultDelivery != nil && *request.Params.XHealthJobResultDelivery == "download-v1" && issued.ResultToken != "" {
+		resultToken = &issued.ResultToken
+	}
 	return healthhttpapi.IssueAIJobCapability201JSONResponse{
-		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt,
+		JobID: jobID, Token: issued.Token, ExpiresAt: issued.ExpiresAt, ResultToken: resultToken,
 	}, nil
 }
 
@@ -196,6 +223,21 @@ func (server *Server) EnqueueAIJob(
 	artifact.OutputBudget = budget
 	managed, failure := server.apiAuthorizeAIEntitlement(ctx, principal, artifact, artifact.RequestID)
 	if failure != nil {
+		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	if server.executionPolicies != nil {
+		resolved, err := server.executionPolicies.Resolve(ctx, artifact)
+		if err != nil {
+			failure = newAPIFailure(503, "ai_config_unavailable", "AI configuration unavailable", artifact.RequestID)
+			return healthhttpapi.EnqueueAIJob503JSONResponse{ServiceUnavailableJSONResponse: healthhttpapi.ServiceUnavailableJSONResponse(healthErrorResponse(failure))}, nil
+		}
+		if err := server.contracts.Validate(resolved); err != nil {
+			failure = newAPIFailure(422, "ai_policy_incompatible", "published AI policy is incompatible with this request contract", artifact.RequestID)
+			return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
+		}
+		artifact = resolved
+	}
+	if failure := server.freezeHealthPrompt(&artifact); failure != nil {
 		return healthhttpapi.EnqueueAIJobdefaultJSONResponse{Body: healthErrorResponse(failure), StatusCode: failure.status}, nil
 	}
 	job, err := server.jobs.EnqueueWithID(ctx, principalForQuota(principal, managed), binding.JobID, artifact, binding.BodyDigest)

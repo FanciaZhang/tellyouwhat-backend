@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T07:09:21.954479+00:00",
+  "baselineCommit": "25c5a53365778dabc9a0cf19dc913cd754dd67f4",
+  "scope": "Logical cloud trash, restore, immutable change feed and late-upload fencing; physical purge disabled and not implemented",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "34acce1cbdf81d5f5f885c600b4059a5023fbe22d61d47dcfc7111d42afd9735",
+    "internal/albumhttpapi/generated.go": "0bd06aed198023c663ac44fda941960de6cb2a22c7d6a3b0f612ec9eb89c3eb2",
+    "internal/albums/asset_lifecycle.go": "67e12786ec49bcf4d7e19f5fe51d0c288a77354e86bfa3d369a0cb612557d9c8",
+    "internal/albums/asset_lifecycle_http.go": "b6fa8a84d0a15b276d0033324e0e2500ec48e6d243b0c66f2b3bf4e1ce0235ac",
+    "internal/albums/asset_lifecycle_http_test.go": "36eccfeacfd517568756941674d8f6665850876ad1e9a1e2c96dd6682e8fa9e1",
+    "internal/albums/asset_lifecycle_integration_test.go": "1c1e3fd95355182bbf0b632697ba1e41e6a1cfea4a3a3854a99332040848dc4d",
+    "internal/albums/gateway.go": "a06af9dde992ec5201052054ccaf13a3c4f0be66f0d6ce0ad73467667b904921",
+    "internal/albums/gateway_config.go": "6d121a9b1cca41322d34c0e8d67f86447c2ead659e3d99f70dcdace096034eb7",
+    "internal/albums/library.go": "58f3160185e8a7b420ca4368214a610e169e071704d0b6c8be6fef20aa22911b",
+    "internal/albums/library_changes.go": "ce5d7e0c16a1ee7a685f56c8587749bfa7c2514f56aec08853f79887986a2a19",
+    "internal/albums/library_http.go": "d03b22d8156bcbabee37016cfedccb5fecbf2de6ce7c1acf0142eb14e984ef19",
+    "internal/albums/library_integration_test.go": "14846c4d08e754d36efc96c02383d78afa4134e043983dc894bd6daa95cc47a1",
+    "internal/albums/login_http.go": "f102c41e84bb8be4585ea35d7d730dc566f0aff8cb46f0f90f786bba522581fa",
+    "internal/albums/mysql_sharing.go": "36b710e484be11060708722474f7ef14503b7c38694aeccea0ce3c0e1f0dace8",
+    "internal/albums/mysql_uploads.go": "5f3c1c24ceec298ba5d313868bd3f471da07cf6423c2ac2947b95ddc113edea2",
+    "internal/albums/read_grants.go": "857398a33f5f3aa4aad33f576a3d5b3920481611a52fa31b08a8a5df147416a7",
+    "internal/albums/read_retention.go": "5921aa552c80afd8656dbb91e2c4cea7477c5b9ab976fd49729ff0ca13343428",
+    "internal/albums/uploads.go": "d18a5859eee5d2e03fcc20f4fece878e0aa9366354c127c1ce56d6529283d36b",
+    "migrations/0034_album_asset_lifecycle.sql": "3f7830f88b7c1c9c90e1b8a917c599795674243b6b63bdb7f9aa5f4bb2f48529",
+    "migrations/embed_test.go": "3c1c9d1549276d56e96b1f06b2dc834b903ae0e94c097635a890cc417b3c044b"
+  },
+  "validation": {
+    "counts": {
+      "pass": 577,
+      "fail": 0,
+      "skip": 0
+    },
+    "command": "go test -race -json ./internal/albums ./migrations ./cmd/albumgateway ./cmd/albumworker -count=1",
+    "exitCode": 0,
+    "logsSHA256": {
+      "race-complete.jsonl": "a3836c564003161f1ed34a00c3c2e7804eb3fa56c2c806b31641e5a748a23a38",
+      "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "focusedTests": [
+      {
+        "Test": "TestMySQLCloudLifecycleHTTPContractsAndBoundaries",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestGatewayTrashRequiresExplicitValidFlag",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRestoresEveryVersionAndRevokesSharing",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashFencesLateUploadEvenAfterRestore",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashConflictsScopeAndConcurrentRequests",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRestoreDeadlineIsNotExtendedByRenewal",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRollsBackStateEventsAndSharesTogether",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashDifferentRequestsHaveSingleWinner",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudLifecycleMigrationBackfillsPublishedVersions",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRechecksClockAfterAccountLock/account",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRechecksClockAfterAccountLock/trash",
+        "Action": "pass"
+      },
+      {
+        "Test": "TestMySQLCloudTrashRechecksClockAfterAccountLock",
+        "Action": "pass"
+      }
+    ]
+  },
+  "environment": "Isolated localhost MySQL 8.4 and Redis; restricted per-test schemas/users; synthetic media and controlled provider proof; no real COS calls",
+  "verified": [
+    "Logical deletion/restoration covers all published historical versions and preserves used/reserved quota",
+    "Share revocation, state, tombstones and operation receipt commit atomically; injected late failure rolls everything back",
+    "Replayed request returns the original result; competing revisions have one winner",
+    "Cloud restore bounded by original 30-day window and current account retention, including clock crossing after acquiring lock",
+    "Old unpublished uploads cannot publish after trash or restoration; new intent can retry the same manifest in the new lifecycle epoch",
+    "Visible metadata, upload receipts and signing reject trash; raw worker evidence is retained",
+    "Legacy versions backfill logical state and events; byte-limited pages and a one-connection pool retain all events",
+    "HTTP contract, scoped authentication, strict input validation, limiter and default-off mutation gate verified"
+  ],
+  "limits": [
+    "ALBUM_TRASH_ENABLED remains false; no production deployment or migration",
+    "Physical COS purge, account deletion and index backup/restore drill are not implemented by this change",
+    "Already signed media URLs remain usable until their existing expiry",
+    "Historical active events require immutable version metadata to remain available; future physical purge must preserve or compact this feed safely",
+    "Native consumer validation is recorded separately in the App repository"
+  ]
+}

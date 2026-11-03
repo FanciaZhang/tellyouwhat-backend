@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-31",
+  "scope": "Recoverable independent Albums schema advancement within shared-test deployment",
+  "rootCause": "0074 advanced albums_test while checkpoint loaded the legacy data-service source backup table inventory. Post-update backup correctly refused incomplete coverage.",
+  "observedDeployedSource": "d0f56d9a35a3da8d98fa08be2994d4b4d5f5f5e2",
+  "implementation": [
+    "Current snapshot includes album_system_copy_locators; only exact pre-0074 and current inventories authenticate retained snapshots",
+    "Development snapshots load the source-matched installed implementation; production still loads its own registered data-service source",
+    "Development recovery includes authenticated snapshot and deletion-ledger implementations",
+    "Test deployment installs and restores matching checkpoint helpers, rejects modified originals, handles first snapshot implementation installation",
+    "Restore compares only the tables authenticated in each snapshot, retaining byte/row verification and quarantine"
+  ],
+  "unitTests": {
+    "passed": 118,
+    "failed": 0,
+    "skipped": 0
+  },
+  "isolatedMySQLRoundTrip": {
+    "passed": 1,
+    "sourceDatabase": "disposable socket-only MySQL 8.4",
+    "previousSnapshotRestored": true,
+    "currentSnapshotRestored": true,
+    "nonemptyBinaryLocatorReadback": true,
+    "rowCountsAndContentDigestsChecked": true,
+    "restoresQuarantined": true,
+    "temporaryDatabasesRemoved": true,
+    "firstFailure": "Final cleanup assertion matched the persisted albums-restore-drill.json receipt; changed it to check directories only. Both prior actual restore operations had completed; final test rerun passed."
+  },
+  "sourceFilesSHA256": {
+    "deploy/albums/backup.py": "e8659e4882e3f7b814485f263f46e3c33203f5d3ce58f1ac7e942227336c6e16",
+    "deploy/albums/backup_test.py": "e33ceb376bdb451c7c9fcc3b91b32ba7ef3bcd6ae07292b8f563fd9b92e13356",
+    "deploy/albums/backup_integration_test.py": "aebb06850181e94c1891fe6f39f056c17ceb6f98e00e600b7b849d158719e5ff",
+    "deploy/tencent/albums_checkpoint.py": "435609349e8fe2698bbad9bb1f6887e9ef094e7e9e28b0316ed3468f20c7bf4e",
+    "deploy/tencent/albums_checkpoint_test.py": "93568ee76ab3d250697d60f42c1213e5c879c5b507ab101980cb6feff26f499f",
+    "deploy/tencent/albums_artifacts.py": "e9098810dcd2bf63fa3410df7a18d7f05166ee57dead171ded5ad6a0a1585b8e",
+    "deploy/tencent/albums_artifacts_test.py": "095412784170608e03ffb72a58e39c5e63f18ced45711c04642e193ad90abe48",
+    "deploy/tencent/platform_test_deploy.py": "ed5ac498a46b4691060990286bafed1806157b2686f2e5f4594dec37af00bb06",
+    "deploy/tencent/platform_test_deploy_test.py": "6b5dc7cf06333fc2e1a9fa2326265da6dde8daf544b204049006735d53e4aff6"
+  },
+  "remoteRepairDeployed": false,
+  "productionDeploymentChanged": false,
+  "newPermissions": false
+}

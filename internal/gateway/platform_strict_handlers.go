@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
+	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -43,6 +45,10 @@ func (server *Server) GetReadiness(
 }
 
 func (server *Server) dependenciesAvailable() bool {
+	if server.app.ID == appregistry.Birthday {
+		return server.birthdayAssistant != nil && server.authenticator != nil && server.quota != nil &&
+			server.enrollment != nil && server.usage != nil && server.readiness != nil
+	}
 	common := server.authenticator != nil && server.entitlements != nil && server.quota != nil && server.quotaReader != nil &&
 		server.enrollment != nil && server.usage != nil && server.readiness != nil && server.privacy != nil && server.consent != nil && server.media != nil
 	if !common {
@@ -60,10 +66,20 @@ func (server *Server) dependenciesAvailable() bool {
 }
 
 func (server *Server) GetManagedAIProduct(
-	context.Context,
-	platformhttpapi.GetManagedAIProductRequestObject,
+	ctx context.Context,
+	_ platformhttpapi.GetManagedAIProductRequestObject,
 ) (platformhttpapi.GetManagedAIProductResponseObject, error) {
 	product := server.managedProduct
+	if server.operations != nil {
+		r, err := server.operations.Current(ctx)
+		if err != nil {
+			failure := newAPIFailure(503, "operations_unavailable", "cloud configuration is unavailable", "")
+			return platformhttpapi.GetManagedAIProductdefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
+		}
+		a := r.Policy.Apps[string(server.app.ID)]
+		product.DailyTokenLimit = a.DailyTokens
+		product.MonthlyTokenLimit = a.MonthlyTokens
+	}
 	return platformhttpapi.GetManagedAIProduct200JSONResponse{
 		ProductID: product.ProductID, BillingPeriod: product.BillingPeriod,
 		DailyTokenLimit: product.DailyTokenLimit, MonthlyTokenLimit: product.MonthlyTokenLimit,
@@ -79,6 +95,7 @@ func (server *Server) IssueAttestationChallenge(
 	request platformhttpapi.IssueAttestationChallengeRequestObject,
 ) (platformhttpapi.IssueAttestationChallengeResponseObject, error) {
 	if server.enrollment == nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.IssueAttestationChallenge503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -88,6 +105,7 @@ func (server *Server) IssueAttestationChallenge(
 	}
 	challenge, err := server.enrollment.IssueChallenge(ctx, request.Body.KeyID)
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 		if errors.Is(err, attestation.ErrUnavailable) {
 			failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 			return platformhttpapi.IssueAttestationChallenge503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
@@ -105,6 +123,7 @@ func (server *Server) RegisterAttestationKey(
 	request platformhttpapi.RegisterAttestationKeyRequestObject,
 ) (platformhttpapi.RegisterAttestationKeyResponseObject, error) {
 	if server.enrollment == nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.RegisterAttestationKey503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -118,6 +137,7 @@ func (server *Server) RegisterAttestationKey(
 		Build:       request.Body.Build, ActivationSecret: request.Body.ActivationSecret,
 	})
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 		switch {
 		case errors.Is(err, attestation.ErrUnavailable):
 			failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
@@ -128,6 +148,11 @@ func (server *Server) RegisterAttestationKey(
 		case errors.Is(err, attestation.ErrKeyAlreadyRegistered):
 			failure := newAPIFailure(http.StatusConflict, "key_already_registered", "App Attest key is already registered", "")
 			return platformhttpapi.RegisterAttestationKey409JSONResponse{ConflictJSONResponse: platformhttpapi.ConflictJSONResponse(failure.platformResponse())}, nil
+		case errors.Is(err, attestation.ErrAuthentication):
+			// Shipped clients replace a pending one-time attestation only for this
+			// code. An expired challenge cannot be completed by resending it.
+			failure := newAPIFailure(http.StatusUnauthorized, "authentication_failed", "registration challenge is invalid or expired", "")
+			return platformhttpapi.RegisterAttestationKey401JSONResponse{UnauthorizedJSONResponse: platformhttpapi.UnauthorizedJSONResponse(failure.platformResponse())}, nil
 		default:
 			failure := newAPIFailure(http.StatusUnauthorized, "enrollment_denied", "device enrollment denied", "")
 			return platformhttpapi.RegisterAttestationKey401JSONResponse{UnauthorizedJSONResponse: platformhttpapi.UnauthorizedJSONResponse(failure.platformResponse())}, nil
@@ -135,6 +160,7 @@ func (server *Server) RegisterAttestationKey(
 	}
 	deviceID, err := uuid.Parse(principal.DeviceID)
 	if err != nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "registration_identity")
 		failure := newAPIFailure(http.StatusServiceUnavailable, "attestation_unavailable", "attestation service unavailable", "")
 		return platformhttpapi.RegisterAttestationKey503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -186,6 +212,8 @@ func (server *Server) SynchronizeSubscriptionTransaction(
 	expiresAt, err := server.productionEntitlement.Sync(ctx, principal, request.Body.SignedTransaction)
 	if err != nil {
 		switch {
+		case errors.Is(err, entitlement.ErrSubscriptionBindingConflict):
+			failure = newAPIFailure(http.StatusForbidden, "subscription_binding_conflict", "subscription device binding could not be updated", requestID.String())
 		case errors.Is(err, entitlement.ErrProductionSyncDenied):
 			failure = newAPIFailure(http.StatusForbidden, "transaction_verification_failed", "subscription transaction verification failed", requestID.String())
 		case errors.Is(err, entitlement.ErrSubscriptionInactive):
@@ -240,6 +268,12 @@ func (server *Server) RecordPrivacyConsents(
 	}
 	consents := make([]privacy.Consent, 0, len(request.Body.Consents))
 	for _, consent := range request.Body.Consents {
+		voiceAccess, _ := server.readAloudSimulatorAuthenticator.(interface{ AllowsVoice(string) bool })
+		voiceConsent := string(consent.Scope) == privacy.ManagedAIScope && voiceAccess != nil && voiceAccess.AllowsVoice(principal.KeyID)
+		if simulatortest.IsKey(principal.KeyID) && string(consent.Scope) != privacy.JournalReadAloudScope && !voiceConsent {
+			failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope is not available for this identity", requestID.String())
+			return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
+		}
 		if _, allowed := server.allowedConsentScopes[string(consent.Scope)]; !allowed {
 			failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope is not available for this application", requestID.String())
 			return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
@@ -254,8 +288,16 @@ func (server *Server) RecordPrivacyConsents(
 		return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 	}
 	if err != nil {
+		observability.RecordStorageFailure(strictGinContext(ctx), err)
 		failure = newAPIFailure(http.StatusServiceUnavailable, "privacy_unavailable", "privacy service unavailable", requestID.String())
 		return platformhttpapi.RecordPrivacyConsents503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
+	}
+	if server.readAloudSessions != nil {
+		for _, consent := range consents {
+			if consent.Scope == privacy.JournalReadAloudScope && !consent.Granted {
+				server.readAloudSessions.CancelAccessKey(principal.KeyID)
+			}
+		}
 	}
 	return platformhttpapi.RecordPrivacyConsents200JSONResponse{RecordedAt: recordedAt, Count: len(consents)}, nil
 }

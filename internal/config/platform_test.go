@@ -60,9 +60,10 @@ func TestFreeRecognitionConfigurationCoversBoundedOutputReservations(t *testing.
 	}
 	app := AppConfig{
 		Registry: appregistry.App{ID: appregistry.Health, DisplayName: "告你健康", Hosts: []string{"api.health.test"},
-			TeamID: "TEAM", BundleID: "health.bundle", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
-		AttestationEnvironment: attestation.EnvironmentDevelopment, DevelopmentSecret: "fixture-development-secret",
-		AllowedBuilds: map[string]struct{}{"100": {}}, ManagedAIProductIDs: []string{"health.ai.monthly"},
+			TeamID: "TEAM", BundleID: "health.bundle.dev", ManagedAIProductID: "health.ai.monthly", AllowedOperationPrefix: "health."},
+		AppStore:               validProductionAppStoreConfig("Sandbox"),
+		AttestationEnvironment: attestation.EnvironmentDevelopment,
+		AllowedBuilds:          map[string]struct{}{"100": {}}, ManagedAIProductIDs: []string{"health.ai.monthly"},
 		SchemaManifestPath: "fixture-manifest", Ark: ark.Config{BaseURL: "https://ark.test", APIKey: "fixture", Routes: routes},
 		FreeRecognitionQuota: limits,
 	}
@@ -87,7 +88,7 @@ func TestJournalDefaultPlansRemainSeparateFromHealth(t *testing.T) {
 			continue
 		}
 		if !slices.Equal(app.ManagedAIProductIDs, []string{
-			"journal.ai.subscription.monthly", "journal.ai.subscription.annual",
+			"journal.ai.subscription.monthly.dev", "journal.ai.subscription.annual.dev",
 		}) {
 			t.Fatalf("unexpected Journal subscription allowlist: %v", app.ManagedAIProductIDs)
 		}
@@ -110,32 +111,8 @@ func TestJournalAIConfigRetainsConfiguredTimeout(t *testing.T) {
 	if app.JournalAI.TimeoutSeconds != 135 {
 		t.Fatalf("journal timeout = %d, want 135", app.JournalAI.TimeoutSeconds)
 	}
-}
-
-func TestJournalImageConfigurationIsExplicit(t *testing.T) {
-	defaults := appDefaults{ID: appregistry.Journal, DisplayName: "Journal", Host: "api.journal.test", BundleID: "journal.bundle", ProductID: "journal.ai.monthly", OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.test"}
-	t.Setenv("JOURNAL_IMAGE_ENABLED", "false")
-	app, err := loadPlatformApp("JOURNAL", defaults, "development", "TEAM")
-	if err != nil || app.Illustration.Enabled {
-		t.Fatal("image generation enabled by default")
-	}
-	t.Setenv("JOURNAL_IMAGE_ENABLED", "true")
-	t.Setenv("JOURNAL_IMAGE_BASE_URL", "https://images.test/api/v3")
-	t.Setenv("JOURNAL_IMAGE_API_KEY", "synthetic")
-	t.Setenv("JOURNAL_IMAGE_MODEL_ID", "image-model")
-	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "7")
-	t.Setenv("JOURNAL_IMAGE_MAX_CNY_PER_IMAGE", "0.25")
-	app, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM")
-	if err != nil || !app.Illustration.Enabled || app.Illustration.MonthlyImages != 7 || app.Illustration.Model != "image-model" || app.Illustration.MaxCostNanos != 250_000_000 {
-		t.Fatalf("image config lost: %v", err)
-	}
-	t.Setenv("JOURNAL_IMAGE_MONTHLY_LIMIT", "invalid")
-	if _, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM"); err == nil {
-		t.Fatal("invalid allowance accepted")
-	}
-	t.Setenv("JOURNAL_IMAGE_ENABLED", "typo")
-	if _, err = loadPlatformApp("JOURNAL", defaults, "development", "TEAM"); err == nil {
-		t.Fatal("invalid toggle silently ignored")
+	if !app.VoiceASR.StreamInsights {
+		t.Fatal("Journal production voice config did not request utterance emotion evidence")
 	}
 }
 
@@ -143,11 +120,11 @@ func TestJournalAIConfigRejectsTimeoutBeyondSynchronousBudget(t *testing.T) {
 	app := AppConfig{
 		Registry: appregistry.App{
 			ID: appregistry.Journal, DisplayName: "告你手记", Hosts: []string{"api.journal.test"},
-			TeamID: "TEAM", BundleID: "journal.bundle", ManagedAIProductID: "journal.ai.monthly",
+			TeamID: "TEAM", BundleID: "journal.bundle.dev", ManagedAIProductID: "journal.ai.monthly",
 			AllowedOperationPrefix: "journal.",
 		},
+		AppStore:               validProductionAppStoreConfig("Sandbox"),
 		AttestationEnvironment: attestation.EnvironmentDevelopment,
-		DevelopmentSecret:      "development-secret",
 		AllowedBuilds:          map[string]struct{}{"100": {}},
 		ManagedAIProductIDs:    []string{"journal.ai.monthly"},
 		JournalAI: JournalAIConfig{

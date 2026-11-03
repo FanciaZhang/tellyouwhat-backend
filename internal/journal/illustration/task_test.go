@@ -15,7 +15,7 @@ import (
 func confirmedTask(t *testing.T) Task {
 	t.Helper()
 	task, err := NewTask("journal", "owner", "image-model", Confirmation{
-		RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "private scene", ConsentRevision: "illustration-v1",
+		RequestID: uuid.NewString(), VersionID: uuid.NewString(), Brief: Brief{Title: "private scene", Details: []Detail{{Kind: "other", Text: "private scene"}}}, ConsentRevision: "illustration-v1",
 	}, nil, time.Unix(1000, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func confirmedTask(t *testing.T) Task {
 func TestConfirmationBindsMaterialsAndConsent(t *testing.T) {
 	image := testPNG(t)
 	digest := sha256.Sum256(image)
-	c := Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Prompt: "private scene", ConsentRevision: "v1", ReferenceSHA256: hex.EncodeToString(digest[:])}
+	c := Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Brief: Brief{Title: "private scene", Details: []Detail{{Kind: "other", Text: "private scene"}}}, ConsentRevision: "v1", ReferenceSHA256: hex.EncodeToString(digest[:])}
 	a, err := NewTask("journal", "owner", "model", c, image, time.Unix(1000, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestConfirmationBindsMaterialsAndConsent(t *testing.T) {
 	if !a.SameRequest(b) {
 		t.Fatal("retry must recover original frozen model")
 	}
-	c.Prompt = "changed scene"
+	c.Brief.Title = "changed scene"
 	b, _ = NewTask("journal", "owner", "model", c, image, time.Unix(1000, 0))
 	if a.SameRequest(b) {
 		t.Fatal("changed prompt reused identity")

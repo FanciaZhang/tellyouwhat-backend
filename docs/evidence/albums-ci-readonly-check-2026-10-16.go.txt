@@ -1,0 +1,114 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	cos "github.com/tencentyun/cos-go-sdk-v5"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+func main() {
+	if len(os.Args) != 2 {
+		os.Exit(2)
+	}
+	if e := run(os.Args[1]); e != nil {
+		fmt.Println(`{"passed":false}`)
+		os.Exit(1)
+	}
+}
+func run(root string) error {
+	home, _ := os.UserHomeDir()
+	buckets := map[string]string{"test": "tellyouwhat-albums-1251995834", "production": "tellyouwhat-albums-production-1251995834"}
+	files := map[string]string{"test": "albums-test/backend-cos.json", "production": "albums-production/backend-credentials.json"}
+	clients := map[string]*cos.Client{}
+	rows := map[string][]map[string]any{}
+	for env, bucket := range buckets {
+		raw, e := os.ReadFile(filepath.Join(home, ".config/tellyouwhat", files[env]))
+		if e != nil {
+			return e
+		}
+		var secret struct{ SecretId, SecretKey string }
+		if json.Unmarshal(raw, &secret) != nil || secret.SecretId == "" || secret.SecretKey == "" {
+			return errors.New("config")
+		}
+		u, _ := url.Parse("https://" + bucket + ".cos.ap-guangzhou.myqcloud.com")
+		clients[env] = cos.NewClient(&cos.BaseURL{BucketURL: u}, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &cos.AuthorizationTransport{SecretID: secret.SecretId, SecretKey: secret.SecretKey}})
+		f, e := os.Open(filepath.Join(root, env, "result.jsonl"))
+		if e != nil {
+			return e
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			var row map[string]any
+			if e = json.Unmarshal(scanner.Bytes(), &row); e != nil {
+				return e
+			}
+			rows[env] = append(rows[env], row)
+		}
+		f.Close()
+		if scanner.Err() != nil {
+			return scanner.Err()
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	passed := true
+	for env, entries := range rows {
+		for _, row := range entries {
+			check, _ := row["check"].(string)
+			if row["phase"] != "submit" || !strings.HasPrefix(check, "deny_") {
+				continue
+			}
+			target := "test"
+			if row["outputBucket"] == buckets["production"] {
+				target = "production"
+			}
+			key := row["outputKey"].(string)
+			r, e := clients[target].Object.Head(ctx, key, nil)
+			status := 0
+			if r != nil {
+				status = r.StatusCode
+				if r.Body != nil {
+					r.Body.Close()
+				}
+			}
+			ok := e != nil && status == 404
+			json.NewEncoder(os.Stdout).Encode(map[string]any{"env": env, "check": check + "_no_output", "status": status, "passed": ok})
+			passed = passed && ok
+		}
+		other := "test"
+		if env == "test" {
+			other = "production"
+		}
+		key := rows[other][0]["fixture"].(string)
+		c := clients[env]
+		old := c.BaseURL.BucketURL
+		c.BaseURL.BucketURL = clients[other].BaseURL.BucketURL
+		r, e := c.Object.Get(ctx, key, nil)
+		c.BaseURL.BucketURL = old
+		status := 0
+		if r != nil {
+			status = r.StatusCode
+			if r.Body != nil {
+				r.Body.Close()
+			}
+		}
+		var p *cos.ErrorResponse
+		ok := status == 403 && errors.As(e, &p) && p.Code == "AccessDenied"
+		json.NewEncoder(os.Stdout).Encode(map[string]any{"env": env, "check": "direct_cross_environment_read_denied", "status": status, "passed": ok})
+		passed = passed && ok
+	}
+	if !passed {
+		return errors.New("verification")
+	}
+	fmt.Println(`{"passed":true}`)
+	return nil
+}

@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "36719c8",
+  "scope": "Shared test recording mount and existing host maintenance integration",
+  "source_sha256": {
+    "compose.platform-test.yaml": "5c25c9b1d9826ff0584fedc1045db93d0770cc7cf472c45dd7467ca5fb37389e",
+    "deploy/tencent/platform-test.Dockerfile": "74545f87d5c7ea40240cd77ffb0d3a43bfd1dca01c1b2866458339df84c8bd22",
+    "deploy/tencent/operations.py": "cff6bbeb98fb1f866cbdce4b53ac8580addf7c175522e0c91d9c771b4d598dac",
+    "deploy/tencent/operations_test.py": "627e85b70ca77065b536c9a06310bf814b2881e8b27f33aaec7e192ca4457026",
+    "deploy/tencent/platform_test_deploy.py": "3f4badc5bae4b1536f0660b514ce3ea9dea530ba892ff0374565d360851965e6",
+    "deploy/tencent/platform_test_deploy_test.py": "1b05019c73c14a7f366fe63c2f56c3131d516e97ec65a2a282c183c0381a1b87",
+    "deploy/tencent/platform_test_journal.py": "07b2690ff655e42e2fc0cfd9349870c3794930aab77db60d714092d567dcd35d",
+    "deploy/tencent/platform_test_storage.py": "0b80f098e308b956a0e833a0c6dc0ea6bb1b8d37783bddd30cdc0646ee2232ad",
+    "deploy/tencent/platform_test_maintenance.py": "9286bd4aa6f125054f612262a935d4481b5614e3408f3177147b9f44906c4e7e",
+    "deploy/tencent/platform_test_maintenance_test.py": "447cf1f83989666505d1acbd1886f17eb2cbcfb1302f6c9f1a39ceb78bdf1f57",
+    "deploy/tencent/testdata/platform-test-before-recording.yaml": "3dbbc4d83c3222dd5d5d63d039a82f4e5a7de63d2ab1f517b26f63332515773b"
+  },
+  "validation": {
+    "python_operations": {
+      "run": 230,
+      "skipped": 1,
+      "skip_reason": "native Caddy unavailable on Mac",
+      "passed": true
+    },
+    "compose": {
+      "passed": true,
+      "checks": [
+        "database Redis network and existing worker unchanged",
+        "gateway changed only by test recording mount and root",
+        "maintenance has same test root and test database",
+        "no maintenance public port",
+        "private UID and read-only root filesystem",
+        "bind will not auto-create missing host path"
+      ]
+    },
+    "linux_maintenance": {
+      "passed": true,
+      "target": "linux/amd64",
+      "command": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath ./cmd/maintenance",
+      "sha256": "47945d1f555e91cc9293a37b12e141842be3c7b158c318494bc44a47773880ad",
+      "image_built": false
+    }
+  },
+  "limits": [
+    "No remote deployment, directory provisioning or route cutover",
+    "Docker Compose checks parsed synthetic settings only; no container started",
+    "Maintenance binary compiled but Docker image not built",
+    "Actual scheduled test cleanup and mounted-volume acceptance pending",
+    "Albums shared test admission, native client migration and real phone journeys pending",
+    "No Git push or Apple release"
+  ]
+}

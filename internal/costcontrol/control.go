@@ -14,6 +14,8 @@ import (
 const NanosPerCNY int64 = 1_000_000_000
 
 var (
+	ErrProtectionActive      = errors.New("automatic service protection is active")
+	ErrPaused                = errors.New("service is paused")
 	ErrBudgetExceeded        = errors.New("project AI monthly budget exceeded")
 	ErrConcurrencyExceeded   = errors.New("project AI concurrency exceeded")
 	ErrConfigurationConflict = errors.New("project AI budget configuration conflicts with the active month")
@@ -50,6 +52,25 @@ type Store interface {
 	Settle(context.Context, string, int64, bool, time.Time) error
 }
 
+type Outcome struct {
+	Cancelled                 bool
+	UsageKnown                bool
+	Success                   bool
+	InputTokens, OutputTokens int
+	Model                     string
+}
+
+func IsCancellation(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
+}
+
+type OutcomeRecorder interface {
+	RecordOutcome(context.Context, string, Outcome, time.Time) error
+}
+type RejectionRecorder interface {
+	RecordRejection(context.Context, string, string, string, time.Time) error
+}
+
 type Controller struct {
 	store  Store
 	limits Limits
@@ -80,9 +101,34 @@ func (controller *Controller) Reserve(ctx context.Context, appID, operation, met
 		return nil, ErrInvalidAttempt
 	}
 	if err := controller.store.Reserve(ctx, attempt, controller.limits); err != nil {
+		if recorder, ok := controller.store.(RejectionRecorder); ok {
+			reason := ""
+			if errors.Is(err, ErrBudgetExceeded) {
+				reason = "budget"
+			} else if errors.Is(err, ErrPaused) {
+				reason = "paused"
+			} else if errors.Is(err, ErrConcurrencyExceeded) {
+				reason = "concurrency"
+			} else if errors.Is(err, ErrProtectionActive) {
+				reason = "automatic_protection"
+			}
+			if reason != "" {
+				_ = recorder.RecordRejection(ctx, appID, operation, reason, now)
+			}
+		}
 		return nil, err
 	}
 	return &Lease{store: controller.store, attemptID: attempt.ID, now: controller.now}, nil
+}
+
+func (lease *Lease) Finish(ctx context.Context, actual int64, known bool, outcome Outcome) error {
+	err := lease.Settle(ctx, actual, known)
+	if lease != nil {
+		if recorder, ok := lease.store.(OutcomeRecorder); ok {
+			err = errors.Join(err, recorder.RecordOutcome(ctx, lease.attemptID, outcome, lease.now().UTC()))
+		}
+	}
+	return err
 }
 
 type Lease struct {

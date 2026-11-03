@@ -1,0 +1,94 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Recover missing consumed Live Photo component COPY versions after account deletion acceptance",
+  "migration": "0047_album_deletion_live_pair_checks.sql",
+  "checks": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 35,
+    "passed_events": 93,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "14f3e0ae7fb74cc9f7c14969d07e50d42e952d4a4275e093f6a5f38187ed1a68"
+  },
+  "live_read_only": {
+    "all_versions_and_sizes_match_saved_receipts": true,
+    "database_receipts_written": false,
+    "media_content_downloaded": false,
+    "method": "HEAD",
+    "mutations_allowed": false,
+    "passed": true,
+    "requests": 2
+  },
+  "implementation": {
+    "uses_existing_live_pair_journal": true,
+    "maximum_pairs_per_batch": 100,
+    "per_component_query_timeout_seconds": 30,
+    "lease_seconds": 120,
+    "retry_initial_seconds": 60,
+    "retry_max_seconds": 21600,
+    "already_known_components_not_queried": true,
+    "unissued_components_not_queried": true,
+    "partial_positive_receipts_persisted": true,
+    "absence_or_error_never_proves_completion": true,
+    "binding_rechecked_under_account_storage_pair_locks": true,
+    "receipt_and_lease_updates_atomic": true
+  },
+  "coverage": [
+    "partial pair recovery and repository reopen",
+    "backoff and no repeated known component reads",
+    "active accounts, unissued components and complete receipts excluded",
+    "empty, null, oversize and errored observations deferred",
+    "cancelled query cannot acknowledge",
+    "expired and replaced leases roll back both component receipts",
+    "conflicting late version rolls back all new writes",
+    "late positive receipt survives failed observation",
+    "account, request, pair, source, descriptor, digest and consumed flags bind observations",
+    "storage deletion fence rechecked",
+    "old consumed intent remains recoverable after migration",
+    "provider adapter permits archive HEAD only for issued components",
+    "no publication, verification lease replacement or quota settlement"
+  ],
+  "boundaries": {
+    "database_tests_use_mock_provider": true,
+    "live_probe_uses_existing_synthetic_pair_only": true,
+    "live_metadata_match_not_byte_or_media_quality_verification": true,
+    "runtime_scheduler_connected": false,
+    "deployed": false,
+    "account_erasure_complete": false,
+    "ios_changed": false,
+    "physical_media_deleted": false
+  },
+  "source_sha256": {
+    "internal/albums/account_deletion_live_pairs.go": "91e2970f50e956e47364ca33ccf66e08a803e37704b8c84953eab31727087ba6",
+    "internal/albums/account_deletion_live_pairs_test.go": "09a86cbd6a203fdd2aac6b54c6aa1b9b3989cbab141bd6d8d8e7078d2659a88e",
+    "internal/albums/cos_deletion_live_pairs_live_test.go": "42054bb244acbfead679b3d781df9f4b66157913b6e51169f02023dfd149c11a",
+    "internal/albums/cos_live_pairs.go": "3897bc06a193e4a5a1e10ba85ebf5d6401d9eda4135298650ec4744d480273e6",
+    "internal/albums/live_pair_copy_receipts.go": "bffb43663dd69ec7e4ecd01154e96d33ea91dc071449651d514dfce611b5b24c",
+    "migrations/0047_album_deletion_live_pair_checks.sql": "7ebff1c9ddecc12ba9208be9f3606bfbbbc5043ab4f5bb0f472deb13faae687f",
+    "migrations/embed_test.go": "fc18e497fa28ddd6be7be4439016b622e6fc41191cc40409e92f48201f235868"
+  }
+}

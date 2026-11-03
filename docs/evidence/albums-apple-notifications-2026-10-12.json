@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-12",
+  "baseline_commit": "6f6ec9565135fe3489f77b262046df6180e11b4c",
+  "scope": "Apple server-to-server account notifications; controlled provider and isolated database verification",
+  "endpoint": "POST /v1/albums/auth/apple/notifications",
+  "migration": "0040_album_apple_revocation.sql",
+  "official_reference": "https://developer.apple.com/documentation/signinwithapple/processing-changes-for-sign-in-with-apple-accounts",
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "6e0e7d071b6cd114a4ffac65a6699f7038918739fff78d1a654c6f93368c29d8",
+    "internal/albumhttpapi/generated.go": "142d4ba29c84566e64111926b436e1ff0b043b0347b865e15a6e8617153ca8d9",
+    "internal/albums/accounts.go": "28e6cea91ed8f77adaf184ad5ec1d12bea19a6c0d827c3c786c28ffd485f2750",
+    "internal/albums/apple_identity.go": "f2597c82b5ae1df14cdfd688aa1353e10c38a30eb02a4901f3eddcb82f5918d2",
+    "internal/albums/apple_identity_test.go": "4f80fcc120bbec8a114bcabc78b9f8b6bf3df4bd94bc4f199a823507c2a9c4af",
+    "internal/albums/gateway.go": "e843a04ead178f3a65ebbe4c712bef7a4a207a6baf3f6c5d1ddd8f8df65f53cd",
+    "internal/albums/http.go": "812312b1903b0bb4c224baba4b1e8d80ab7f0eb8117f49627c16c2e85ffdec30",
+    "internal/albums/login_http.go": "712f4f2c9ecd8dc70fc18434c1a5544c8a91938d68de897005231e5ede41f634",
+    "internal/albums/login_limit.go": "d137a0c7680c7856d7973e43a97beecc5b6c8ee22d38ec418a643e30d6a4eca9",
+    "migrations/embed_test.go": "44129fe235905835c4f403910a7c7225c22ec31918da29eb6c05e447e80cc4d6",
+    "internal/albums/apple_notification_http.go": "68f5ab4d72153a15a87705318b83fecd48990e51bbe2f20b531bf3ffd4518931",
+    "internal/albums/apple_notifications.go": "167f8c3da319a3ac0a24d6368f50605ea2a456c514f67a750716c085fda4b865",
+    "internal/albums/apple_notifications_test.go": "e1a34bd031fb2fba75890aedcca52996f477aa113033074d8d111b84b0eb8246",
+    "migrations/0040_album_apple_revocation.sql": "545ec36846303cfdadf0655a61606ad3bec8ee0ab47c965a992846b31f704d61"
+  },
+  "verification": {
+    "startedAt": "2026-10-12T10:11:47.703866+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-apple-events-fotud5zv",
+    "phases": [
+      {
+        "name": "targeted-after-fix",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-apple-events-fotud5zv/targeted-after-fix.log",
+        "testCounts": {
+          "pass": 32
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "related-race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-apple-events-fotud5zv/related-race.log",
+        "testCounts": {
+          "pass": 697
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-apple-events-fotud5zv/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-apple-events-fotud5zv/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-12T10:13:39.268314+00:00"
+  },
+  "swift_contracts": {
+    "run_directory": "/tmp/albums-apple-contracts.Wxd5Iu",
+    "exit_code": 0,
+    "suite_pass_counts": [
+      2,
+      6,
+      16
+    ],
+    "total_passed": 24,
+    "log_sha256": "2f6062534ff544fa3e367d216f373145934ec68bc325ae15a3eb32dd8cb7f91c"
+  },
+  "earlier_attempts": [
+    {
+      "directory": "albums-apple-events-pg014c9m",
+      "result": "fault-injection trigger required SUPER; replaced with test-table rename without raising privileges"
+    },
+    {
+      "directory": "albums-apple-events-bjvz1nhr",
+      "targeted_passed": 32,
+      "related_passed": 692,
+      "related_failed": 2,
+      "result": "updated strict migration list and private key-helper retryable-error expectations; final full related run passed"
+    }
+  ],
+  "boundaries": {
+    "real_apple_event_received": false,
+    "notification_url_registered": false,
+    "deployed": false,
+    "server_remains_commit": "6f6ec9565135fe3489f77b262046df6180e11b4c",
+    "server_migrations_applied": 39,
+    "existing_urls_or_inflight_push_revoked": false,
+    "physical_account_or_media_deletion": false,
+    "event_time_unit": "integer Unix seconds; milliseconds rejected",
+    "legacy_grant_issued_at": "NULL is conservatively included in revocations",
+    "already_revoked_refresh_grant": "never reactivated; a new consent uses a distinct verified grant",
+    "test_groups_overlap": true
+  }
+}

@@ -68,8 +68,16 @@ Pull Request 与 `main` push 会执行：
 2. gateway、worker、admin、adminctl、migrate、maintenance 六个容器镜像构建；
 3. 非 PR 构建发布提交 SHA 和 `main` 标签到 GHCR；
 4. 仅当 production gate 开启或手动选择部署阶段时，将 Compose、Caddyfile、部署脚本、生产环境与四个 Apple 私钥上传到独立候选目录；
-5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证两个 App、Worker 和管理后台；
-6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 验证三个域名的真实 DNS、可信 TLS、HTTP 200 和 `status: ready` 响应。
+5. 创建加密数据库备份，拉取绑定提交 SHA 的镜像集并运行迁移，保存旧配置后再切换 gateway、worker、admin，验证本次启用的 App、Worker 和管理后台；
+6. 完整公网发布再启动 Caddy，由独立的 `verify-public` job 从受保护部署配置生成检查目标，验证所有启用 App 及管理后台的真实 DNS、可信 TLS、HTTP 200 和各自就绪响应（相册为 `code: ok`，其他入口为 `status: ready`）。
+
+构建缓存按服务名隔离。GitHub Actions 缓存导出最多等待两分钟，使用 BuildKit 的 `ignore-error=true` 将缓存写入失败降为非阻断结果；后续构建可以重新生成缓存。此设置仅作用于缓存导出，编译、测试、镜像导出和 GHCR 上传失败仍会阻止部署，不对整个构建任务设置 `continue-on-error`。参数语义见 [Docker 缓存文档](https://docs.docker.com/build/cache/backends/gha/)。
+
+未初始化蓝绿状态的单机部署使用 `docker compose up -d` 替换每个服务的唯一容器，存在停止旧进程到新进程就绪的不可用窗口。Gateway 最多等待约 20 秒完成正在处理的请求，随后还需要新进程启动；长连接可能中断。就绪检查和失败回滚用于确认、恢复服务，不提供零停机保证。备份和拉取镜像在切换容器前执行，其耗时不等于接口中断时长。
+
+初始化后默认使用蓝绿发布；CPU 或内存不足时只提供人工中断入口，不自动停止现有服务。`Backend Disruptive Deployment` 要求核对失败运行、完整版本及本次中断确认，复用已验证镜像。正常发布与人工中断共用部署工作流、生产环境、备份和主机锁。资源预算、首次启用和恢复步骤见 [单机双实例运行手册](../../docs/single-host-blue-green-runbook.md)。
+
+每次部署保留迁移前的加密数据库备份。备份使用 `mysqldump --single-transaction --quick` 在线读取，不主动停止应用；仍会消耗数据库读资源。备份只保留恢复策略允许的后台控制数据，其余表仅保存结构。数据库迁移可能改变结构或数据，回退镜像不能代替数据恢复。纯代码发布并非一定需要新的备份，但当前统一备份策略保留发布前恢复基线；如改为按需备份，应根据目标数据库实际待执行的迁移与最近有效备份判定，不能仅根据 Git diff 跳过。
 
 手动运行仅允许 `main` 分支，`deployment` 输入有三个值：
 
@@ -77,7 +85,7 @@ Pull Request 与 `main` push 会执行：
 | --- | --- | --- |
 | `none` | 测试、构建和发布镜像 | 镜像可交付 |
 | `internal` | 额外部署并验证内部服务 | 内部服务就绪，公网验收待完成 |
-| `public` | 部署内部服务、启动公网代理并验证三个 HTTPS 入口 | 公网入口验收通过 |
+| `public` | 部署内部服务、启动公网代理并验证本次启用的所有 HTTPS 入口 | 公网入口验收通过 |
 
 ```sh
 gh workflow run backend.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f deployment=internal
@@ -117,9 +125,11 @@ curl -fsS http://127.0.0.1:18081/healthz
 curl -fsS -H 'Host: admin.tellyouwhat.cn' http://127.0.0.1:18082/readyz
 ```
 
-`PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过三个公网 HTTPS 入口的验收。
+`PUBLIC_PROXY_MODE=docker` 由 Compose 中的 Caddy 管理公网 80/443。服务器已有原生 Caddy 或其他代理时，设置 `PUBLIC_PROXY_MODE=external`，发布流程保留现有代理，只更新和验证内部服务；独立的 `verify-public` job 仍须通过本次启用的所有 App 及管理后台 HTTPS 入口的验收。
 
-原生 Caddy 可在现有配置中导入 [`Caddyfile.external`](../single-server/Caddyfile.external)，保留原有站点。该文件将两个 App 的域名转发到 `127.0.0.1:18080`，管理后台转发到 `127.0.0.1:18082`，并屏蔽 App 入口的 `/internal/*`。将 `HEALTH_API_DOMAIN`、`JOURNAL_API_DOMAIN`、`ADMIN_DOMAIN` 和 `ACME_EMAIL` 渲染为实际值，或仅将这四个非密钥变量提供给 Caddy 服务。不要让 Caddy 加载完整生产环境文件。先用 `caddy validate` 验证包含原站点的完整配置，再通过 `systemctl reload caddy` 加载；核对原站点仍正常响应。
+首次接入原生 Caddy 的健康/手记基础模板为 [`Caddyfile.external`](../single-server/Caddyfile.external)。蓝绿发布从候选配置生成全部启用 App 的站点，共享所选网关端口；管理后台使用对应槽位的独立端口。代理不读取完整环境文件，只渲染域名和证书联系方式。切换前验证包含其他站点的完整配置，切换后检查每个 App 域名实际只指向所选网关；测试与 OTA 入口不随正式槽位改变。
+
+首次共享相册接入会停用 `/etc/caddy/albums-test.caddy` 的导入，原文件保留；只有确认该片段仅含旧相册站点时才允许迁移。原网关片段与相册片段随版本保存到发布状态和加密备份，失败恢复旧配置，后续回滚恢复该版本的路由。正式域名下的旧开发/TestFlight 路径不再转发。该迁移与启用相册的真实资源就绪检查一起执行，不能提前手工切域名。
 
 DNS、备案接入和证书签发条件满足后，执行完整公网发布：
 
@@ -130,7 +140,13 @@ gh workflow run backend.yml --repo FanciaZhang/tellyouwhat-backend --ref main -f
 公网验证也可独立执行：
 
 ```sh
-bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
+targets=$(PYTHONPATH=deploy/tencent python3 -c '
+import json
+from pathlib import Path
+from ops_common import read_environment
+from release import public_targets
+print(json.dumps(public_targets(read_environment(Path("/opt/tellyouwhat/backend/.env.production")))))')
+bash deploy/tencent/verify-public.sh "$targets"
 docker compose --env-file /opt/tellyouwhat/backend/.env.production \
   -f /opt/tellyouwhat/backend/compose.production.yaml ps
 ```
@@ -179,3 +195,13 @@ gh workflow run operations.yml --repo FanciaZhang/tellyouwhat-backend --ref main
 托管 MySQL 与 Redis 不属于 Compose 项目，更新或清理应用容器不会删除数据库。服务器重启后 Docker 自动启动三个应用容器，systemd 恢复定时任务。依赖故障应由就绪检查报错并保留失败任务的重试状态；不要用删除数据库或清空队列处理依赖故障。
 
 首次管理员创建与应急恢复命令见 [`../single-server/README.md`](../single-server/README.md)。
+
+### 方舟 AI 管理服务凭证
+
+在 GitHub `production` 环境中配置 `ARK_MANAGEMENT_CREDENTIALS_JSON`，格式与
+[方舟管理服务](../../docs/modules/ark-management.md)一致。管理功能和模型灰度分别
+由 `PRODUCTION_ENV_FILE` 中的 `AI_CONFIG_WRITES_ENABLED`、
+`AI_ENDPOINT_WRITES_ENABLED` 控制，默认关闭。发布流水线自动安装 UID 65532、
+0600 的独立版本凭证并加载 admin 专属 Compose 挂载；共享 `.env.production`
+只记录路径。回滚恢复原挂载路径和写入开关。不要手工把 AK/SK 放进环境文件
+或现有的共享 `secrets/` 目录。

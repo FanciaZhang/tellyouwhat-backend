@@ -1,0 +1,109 @@
+{
+  "verified_at": "2026-10-16T00:33:16.888387+00:00",
+  "health_source": "e5f0e9ee598c25e726eb4e6b6241675c91c6db8e",
+  "backend_source": "7c0e6d265a41d98e484c1e84305b1b92dd4760b1",
+  "toolchain": "Xcode 27.1",
+  "simulator": "iPhone 17 / iOS 26.5",
+  "debug_tests": {
+    "result": "Passed",
+    "passedTests": 69,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 69
+  },
+  "release_build_passed": true,
+  "binary_boundary": {
+    "Debug": {
+      "bundle_id": "cn.tellyouwhat.healthapp.dev",
+      "api_base_url": "https://api-test.health.tellyouwhat.cn",
+      "activation_secret_configuration_absent": true,
+      "development_activation_transport_present": true,
+      "public_activation_marker_present": true,
+      "main_executable_sha256": "574aa58f816025960bfcd1892acc70baa92c7291edaa2d397638eb7746ebc562",
+      "binaries_sha256": {
+        "TellYouHealth": "574aa58f816025960bfcd1892acc70baa92c7291edaa2d397638eb7746ebc562",
+        "__preview.dylib": "dcbc583d199850828a3bcd98a5b5c2fcd60aaddd5bf2a2537b3eda55835dba79",
+        "TellYouHealth.debug.dylib": "a4ba538978f69245b2327e739354b8ec878c44dd743d3382fd42cec573c92802"
+      }
+    },
+    "Release": {
+      "bundle_id": "cn.tellyouwhat.healthapp",
+      "api_base_url": "https://api.health.tellyouwhat.cn",
+      "activation_secret_configuration_absent": true,
+      "development_activation_transport_present": false,
+      "public_activation_marker_present": false,
+      "main_executable_sha256": "81d259ecdb99af2f91a835c94870535385f751325d80e32cd09ca4ad3171c021",
+      "binaries_sha256": {
+        "TellYouHealth": "81d259ecdb99af2f91a835c94870535385f751325d80e32cd09ca4ad3171c021"
+      }
+    }
+  },
+  "health_changed_source_sha256": {
+    "Config/Info.plist": "adf898158429f40294d71c8be0c5a8b868986e1ea343d81cf85d364b7e85e718",
+    "Config/ManagedAI.Debug.xcconfig": "06e66d59a628fe52b19cacc16c09a6a6c6bf613b3a6fd39da0dd212ad124fa8c",
+    "Config/ManagedAI.Release.xcconfig": "e4acd9923af676d4e0308cd19654756e09568effd0d90980586020592d293a1b",
+    "Config/ManagedAI.local.xcconfig.example": "1fc8b73cad7b84eeb4b58b5fcc61f3f1f56526bf41944c0a5b43766685435e37",
+    "HealthApp/Shared/AI/ManagedAIAppAttest.swift": "e6d27c5b98aa872da47dffe78dd14d7257049048046b4c182d8c37b5cd4bdf3a",
+    "HealthApp/Shared/AI/ManagedGatewayTransport.swift": "773c2cd858f21b418052f82dfe95dd8d56451bce75466ffcb9436c6a9c70d895",
+    "healthTests/AppEnvironmentTests.swift": "c054bdd3bcecc64ba52dafedbe62f85bbecbc191a1faf3e67577332b08922c19",
+    "healthTests/ManagedAIAppAttestBindingTests.swift": "17e2c326c5766a712113d5679ab64b87466973a52c0327c8c94e070c06704152",
+    "healthTests/ManagedAIDeletionReceiptTests.swift": "6f98410aef3d26c9cdc0ee9ccc75c27659957dda49fb6e8051b2cb3eef2ec2a4",
+    "healthTests/ManagedAIPendingRegistrationDeletionTests.swift": "745328b5ba1dc890e27c74157739963e738008974bd743cd8c0bfca5bceaae8d",
+    "healthTests/ManagedAIRegistrationPrivacyTests.swift": "feb5def1e34518a78f793981379879e39646ffa05fde9bc86f8f0190eb4ac276"
+  },
+  "backend_go_test_all_passed": true,
+  "operations_python_tests": {
+    "run": 178,
+    "failed": 0,
+    "skipped": 1
+  },
+  "platform_test_deploy_tests": {
+    "run": 19,
+    "failed": 0
+  },
+  "real_mysql_integration": {
+    "mysql_real_integration_passed": true,
+    "tests_passed": [
+      "TestMySQLDeveloperAccessKeepsDevicesSeparateWithoutCreatingPurchases",
+      "TestMySQLVerifiedEntitlementPromotionIsAtomic",
+      "TestMySQLConcurrentVerifiedPromotionsChooseOnePurchase"
+    ],
+    "container_removed": true,
+    "owned_volumes_removed": true,
+    "no_production_database_used": true,
+    "developer_records_are_not_purchases": true
+  },
+  "cloud_media_policy_prepared": true,
+  "cloud_media_policy_applied": false,
+  "test_health_backend_deployed": false,
+  "new_adhoc_package_exported": false,
+  "real_phone_installation_verified": false,
+  "real_apple_app_attest_verified": false,
+  "production_runtime_readback": {
+    "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:ac7e9d601ba9215f5409a769dfb53cd12e4e54d4fd17354a8889d16699199427",
+    "started_at": "2026-10-13T06:51:32.051220621Z",
+    "running": true,
+    "restart_count": 0,
+    "bundle_id": "cn.tellyouwhat.healthapp",
+    "media_bucket": "health-ai"
+  },
+  "current_test_runtime": {
+    "source": "fb5cd0bace6cd6046384e8d8ab9a4b8376568613",
+    "apps": [
+      "birthday"
+    ],
+    "port": 18790
+  },
+  "prior_failed_attempts": [
+    {
+      "phase": "debug-focused-authentication",
+      "reason": "nested require macro expansion failed before test execution",
+      "exit_code": 65
+    }
+  ],
+  "runtime_choice": "iOS 27.1 does not support the iPhone 17 simulator type; iOS 26.5 does",
+  "validation_scope": "Targeted local authentication and privacy checks; not full release CI or signed distribution acceptance",
+  "owned_simulator_removed": true,
+  "managed_xcode_run_finished": true,
+  "owned_frozen_source_removed": true
+}

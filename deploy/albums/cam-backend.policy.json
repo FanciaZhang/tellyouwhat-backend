@@ -1,0 +1,47 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["cos:GetBucketVersioning", "cos:ListMultipartUploads"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:GetBucketObjectVersions"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/*"],
+      "condition": {
+        "string_like": {
+          "cos:prefix": [
+            "albums/staging/*",
+            "albums/originals/*",
+            "albums/derivatives/*",
+            "albums/video-previews/*",
+            "albums/live-pairs/*"
+          ]
+        }
+      }
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:GetObject", "cos:HeadObject", "cos:PutObject", "cos:InitiateMultipartUpload", "cos:CompleteMultipartUpload", "cos:ListParts", "cos:AbortMultipartUpload"],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/staging/*",
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/originals/*",
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/derivatives/*",
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*",
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/live-pairs/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:UploadPart"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["ci:GenerateMediaInfo", "ci:CreateMediaJobs", "ci:DescribeMediaJob", "ci:DescribeMediaJobs"],
+      "resource": ["qcs::ci:ap-guangzhou:uid/1251995834:bucket/tellyouwhat-albums-1251995834/*"]
+    }
+  ]
+}

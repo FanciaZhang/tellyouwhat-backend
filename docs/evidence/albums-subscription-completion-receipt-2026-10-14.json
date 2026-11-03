@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-14",
+  "backendBase": "fc2072a5512df49817c21cb617969a5691ded073",
+  "scope": "Persist full known-purchase-chain verification at a specific subscription revision, invalidate it atomically with later revision changes. Not an account-erasure receipt.",
+  "migration": "0062_album_subscription_completion_receipt.sql",
+  "report": {
+    "startedAt": "2026-10-13T16:44:37.547631+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-receipt-l1q1gs_3",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-receipt-l1q1gs_3/race.log",
+        "testCounts": {
+          "pass": 98
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-receipt-l1q1gs_3/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-receipt-l1q1gs_3/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T16:45:36.629869+00:00"
+  },
+  "topLevelTests": 38,
+  "passedEvents": 98,
+  "failed": 0,
+  "skipped": 0,
+  "covered": [
+    "Full known-chain receipt commits with last per-chain acknowledgement",
+    "Late verified notification clears receipt in the same row update as subscription revision",
+    "Invalidation failure rolls back subscription revision, notification consumption and queued job changes",
+    "Receipt write failure rolls back final per-chain acknowledgement",
+    "Partial/concurrent/stale/changed-chain verification cannot persist a full-set receipt",
+    "Upgrade requeues old individual acknowledgements and replay is idempotent",
+    "Gateway and subscription schema checks reject missing fields",
+    "Authenticated encrypted snapshot and quarantined MySQL restore with the new schema"
+  ],
+  "sourceSHA256": {
+    "migrations/0062_album_subscription_completion_receipt.sql": "826ec9b47d32333c33508b300eb8092dfe3852330e015e8d89d4526dbf26c01b",
+    "migrations/embed_test.go": "8f68112ef55a6825ab3929a7a26a5a4f7f8c6e6c4c31c97fcf96d14a94a8cb7c",
+    "internal/albums/subscription_rebinding.go": "d0b1fc9008ed9683292b76a054446a67f3369a581ab62d7c63ca0f1a38b74a05",
+    "internal/albums/mysql_subscriptions.go": "560f2ff681a5da9e1184ad2e671f48c06b9acb0f02299b55c6eed4538af842f4",
+    "internal/albums/gateway.go": "9cc7bc3312557623f76da391a623d62a49245c722c5049bad8f5ef97fbff023e",
+    "internal/albums/subscription_completion_receipt_test.go": "1b7866ff060fea761a9809a9391729912d8d5b63ff9645d80c8c71d9964c20f6",
+    "internal/albums/subscription_binding_completion_test.go": "58595f56e0271523a7ff62d1fab24f0f045fecb79537ea0ac622f773406aa13b"
+  },
+  "logSHA256": {
+    "mysql-init.log": "9abf184bf314ebabe4c0c4ea1c78528219eb526fb4c6a6dc4756dde929af8a43",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mysql.log": "65c204746acc527ec34141a8aaf8a94ac1aaf4ba2cdf4c39cafa543ba2579567",
+    "redis.log": "d60fe4eec2fcb2078fd8b11b9a58c3abaca00740e9756aa2e8fca2e6ed6c0759",
+    "race.log": "5b17cca592503fccbb3d8df9bd9b5329e29a9d8bcac101a423c8655bd74b3553",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "initialFailure": "Migration uses database current time; controlled worker clock initially stayed before the requeue time. Advanced fixture clock before retry; implementation was not changed for this test failure.",
+  "designReview": "Moved the receipt onto album_storage_accounts beside subscription_revision; invalidation now occurs within the same UPDATE and a CHECK constraint requires equality. Avoids an extra cross-table write lock.",
+  "notCompleted": [
+    "Actual Apple API purchase-chain rebind",
+    "Discovery of all never-synchronized historical purchases",
+    "Final identity/billing/backup erasure transaction and its fresh-evidence consumption",
+    "Real deployment or enabling deletion"
+  ]
+}

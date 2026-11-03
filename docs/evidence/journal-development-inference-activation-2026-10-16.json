@@ -1,0 +1,98 @@
+{
+  "checked_at": "2026-10-16T04:46:39.857667+00:00",
+  "runtime": {
+    "checked_at": "2026-10-16T04:43:20.405812+00:00",
+    "checks": {
+      "running": true,
+      "runtime_matches": true,
+      "inference_key_active": true,
+      "speech_unchanged": true,
+      "developer_connection_unchanged": true,
+      "production_state_unchanged": true,
+      "previous_container_retained_stopped": true,
+      "matching_previous_configuration_retained": true,
+      "prompt_models_match": true
+    },
+    "source": "ae02ac4416d857a5e74e92826b7f4399e171abfb",
+    "prompt_revision": "journal-development-inference-20261016",
+    "started_at": "2026-10-16T04:42:57.234249823Z",
+    "models": {
+      "JOURNAL_ARK_LITE_MODEL": "ep-20261016114832-xrl4h",
+      "JOURNAL_ARK_PRO_MODEL": "ep-20261016114934-6nzjt",
+      "JOURNAL_VOICE_MODEL": "ep-20261016114934-6nzjt",
+      "JOURNAL_IMAGE_MODEL_ID": "ep-20261016115027-2rx24"
+    }
+  },
+  "provider_iam_identity": "journalapp-development-backend",
+  "provider_iam_identity_id": "97256858",
+  "artifact_cleanup_passed": true,
+  "api_checks": {
+    "checked_at": "2026-10-16T04:43:47.264897+00:00",
+    "synthetic_only": true,
+    "native_app_journey_verified": false,
+    "checks": [
+      {
+        "check": "authenticated-test-quota",
+        "passed": true
+      },
+      {
+        "check": "organization",
+        "passed": true,
+        "tag_count": 4,
+        "analysis_version": "journal-development-inference-20261016"
+      },
+      {
+        "check": "illustration",
+        "passed": true,
+        "task_id": "50bcc318-4bba-46c9-b6a7-a9a3489cedc4",
+        "width": 2496,
+        "height": 1664,
+        "bytes": 702426,
+        "sha256": "8734eb38e6c8fbd39c6cf60741a8a989719bee9ba5436f49d28a918a1c32bf5f"
+      }
+    ]
+  },
+  "production_endpoint_denial": {
+    "checked_at": "2026-10-16T04:45:23.014331+00:00",
+    "production_endpoint_denied": true,
+    "http_status": 403
+  },
+  "live_voice_styles": {
+    "passed": true,
+    "count": 5,
+    "test": "TestLiveWritingStylesOnDevelopmentService",
+    "protocol": "journal-voice-v36",
+    "elapsed_seconds": 20.86,
+    "scope": "synthetic narrative requests over deployed HTTPS/WebSocket; no microphone or native UI acceptance"
+  },
+  "prior_failed_attempt": {
+    "test": "TestLiveWritingStylesOnDevelopmentService/natural",
+    "result": "no content revision",
+    "cause": "stale live fixture sent transcript text without a pending utterance or narrative request; current server correctly had no work",
+    "resolution": "reuse existing current narrative fixture and service adapter, preserve fact/order/context checks",
+    "application_or_server_logic_changed": false
+  },
+  "predeployment_backup": {
+    "filename": "mysql-20261016T043928Z-d377e2.sql.gz.enc",
+    "cos_three_objects_readback": true,
+    "authenticated_decryption": true,
+    "isolated_journal_recovery": true
+  },
+  "postdeployment_backup": {
+    "filename": "mysql-20261016T044525Z-3fc25b.sql.gz.enc",
+    "cos_three_objects_readback": true,
+    "authenticated_decryption": true,
+    "isolated_journal_recovery": true
+  },
+  "native_app_journey_verified": false,
+  "cloudkit_device_sync_verified": false,
+  "scheduled_backup_new_cycle_verified": false,
+  "app_build_inputs_changed": false,
+  "full_suite_or_release_gate_run": false,
+  "test_source_commit": "9c5ec37",
+  "evidence_log_sha256": {
+    "inference-runtime-voice-20261016.log": "ce84713b1cddbc5333015fe5437d8a5e4a6725b1dbb34a086dbf9d8a478c0c7f",
+    "inference-runtime-voice-current-protocol-20261016.log": "bd553e0d7b822e98dadc1c48ebf180baefc8b4f237a69dfa06041ebc8805136d",
+    "inference-organization-20261016.log": "1de065fbc57dd5a082fb3df007c0c005a08e1d40d53a40495194b9569f3a521e"
+  }
+}

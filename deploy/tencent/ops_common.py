@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -13,6 +14,25 @@ import time
 
 class OperationError(RuntimeError):
     pass
+
+
+def install_operations(source, root):
+    source, root = Path(source), Path(root)
+    if source.resolve() == root.resolve():
+        return
+    target = root / 'deploy/tencent'
+    target.mkdir(mode=0o750, parents=True, exist_ok=True)
+    registered_test = (root / '.operations/platform-test.json').exists()
+    for script in (source / 'deploy/tencent').iterdir():
+        if script.suffix not in ('.py', '.sh') or script.name.endswith('_test.py'):
+            continue
+        destination = target / script.name
+        # Registered test producers own their validators independently of production releases.
+        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):
+            continue
+        if script.is_symlink() or destination.is_symlink() or not script.is_file():
+            raise OperationError('operations scripts must be regular files')
+        shutil.copy2(script, destination)
 
 
 def read_environment(path):
@@ -32,44 +52,100 @@ def read_environment(path):
     return values
 
 
-def atomic_json(path, value):
+def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary = tempfile.mkstemp(prefix=".pending-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w") as output:
-            json.dump(value, output, sort_keys=True)
-            output.write("\n")
+            output.write(text)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, sort_keys=True) + "\n")
+
+
+def compose_command(root, environment_file):
+    root, environment_file = Path(root), Path(environment_file)
+    config = read_environment(environment_file)
+    command = ["docker", "compose", "--project-directory", str(root),
+               "--env-file", str(environment_file), "-f", str(root / "compose.production.yaml")]
+    credential = config.get("ARK_MANAGEMENT_CREDENTIAL_HOST_FILE", "")
+    container_path = config.get("ARK_MANAGEMENT_CREDENTIAL_FILE", "")
+    if credential:
+        path = Path(credential)
+        overlay = root / "compose.ark-management.yaml"
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise OperationError("Ark service credential must be an existing absolute regular file")
+        info = path.stat()
+        if info.st_uid != 65532 or info.st_mode & 0o077 or not 0 < info.st_size <= 8192:
+            raise OperationError("Ark service credential must belong to UID 65532 with private permissions")
+        if not overlay.is_file() or container_path != "/run/ark-management/credentials.json":
+            raise OperationError("Ark service credential mount configuration is incomplete")
+        command += ["-f", str(overlay)]
+    elif container_path or config.get("AI_ENDPOINT_WRITES_ENABLED", "false").lower() == "true":
+        raise OperationError("Ark endpoint writes require the isolated service credential mount")
+    from ops_recording import compose_overlay
+    command += compose_overlay(root, config)
+    from ops_albums import compose_overlay as albums_overlay
+    command += albums_overlay(root, config)
+    return command
 
 
 class Runtime:
     def __init__(self, backend_dir, backup_dir=None, environment_file=None):
         self.root = Path(backend_dir).resolve()
-        self.environment_file = Path(environment_file or self.root / ".env.production").resolve()
-        self.config = read_environment(self.environment_file)
+        self.base_environment_file = Path(environment_file or self.root / ".env.production").resolve()
         self.state = self.root / ".operations"
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.backups = Path(backup_dir or "/var/backups/tellyouwhat")
+        self.refresh()
+
+    def refresh(self):
+        self.environment_file = self.base_environment_file
+        self.compose_root = self.root
+        state_path = self.state / "blue-green.json"
+        if state_path.exists():
+            current = json.loads(state_path.read_text())["current"]
+            path = (self.root / current["path"]).resolve()
+            if path != self.root and not path.is_relative_to(self.root / ".slots"):
+                raise OperationError("invalid active slot path")
+            self.compose_root = path
+            self.environment_file = path / ".env.production"
+        self.config = read_environment(self.environment_file)
 
     @contextlib.contextmanager
-    def lock(self, name="operations"):
+    def lock(self, name="operations", *, wait_seconds=0):
         descriptor = os.open(self.state / (name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
         with os.fdopen(descriptor, "w") as handle:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise OperationError(f"another {name} operation is running") from error
+            deadline = time.monotonic() + wait_seconds
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as error:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise OperationError(f"another {name} operation is running") from error
+                    time.sleep(min(0.25, remaining))
             yield
 
     def execute(self, label, command, *, env=None, input=None, timeout=300):
         child_env = os.environ.copy()
         child_env.update(env or {})
         child_env["TELLYOUWHAT_ENV_FILE"] = str(self.environment_file)
+        if "--env-file" in command:
+            child_env["TELLYOUWHAT_ENV_FILE"] = command[command.index("--env-file") + 1]
         result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout)
         if result.returncode:
             # Tool errors can include SQL or credentials. Diagnostics stay on the server.
@@ -81,9 +157,7 @@ class Runtime:
         return result.stdout
 
     def compose(self, *arguments):
-        return ["docker", "compose", "--project-directory", str(self.root),
-                "--env-file", str(self.environment_file), "-f", str(self.root / "compose.production.yaml"),
-                *arguments]
+        return [*compose_command(self.compose_root, self.environment_file), *arguments]
 
     def record(self, name, **details):
         result = {"operation": name, "completed_at": int(time.time()), **details}

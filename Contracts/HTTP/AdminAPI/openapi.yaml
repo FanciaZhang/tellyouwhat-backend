@@ -15,6 +15,273 @@ tags:
 security:
   - AdminSession: []
 paths:
+  /api/v1/journal/read-aloud/catalog: {"get": {"operationId": "getVoiceCatalog", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/history: {"get": {"operationId": "listVoiceCatalogHistory", "tags": ["Administration"], "parameters": [{"name": "cursor", "in": "query", "schema": {"type": "string", "maxLength": 36}}], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/revisions/{revision}: {"get": {"operationId": "getVoiceCatalogRevision", "tags": ["Administration"], "parameters": [{"name": "revision", "in": "path", "required": true, "schema": {"type": "string", "minLength": 36, "maxLength": 36}}], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/drafts: {"post": {"operationId": "createVoiceCatalogDraft", "tags": ["Administration"], "parameters": [{"$ref": "#/components/parameters/CSRFToken"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VoiceCatalogDraft"}}}}, "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/publish: {"post": {"operationId": "publishVoiceCatalog", "tags": ["Administration"], "parameters": [{"$ref": "#/components/parameters/CSRFToken"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VoiceCatalogPublication"}}}}, "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/probe: {"post": {"operationId": "probeVoiceCatalogVoice", "tags": ["Administration"], "parameters": [{"$ref": "#/components/parameters/CSRFToken"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/VoiceConfiguration"}}}}, "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/journal/read-aloud/catalog/sync: {"post": {"operationId": "syncVoiceCatalog", "tags": ["Administration"], "parameters": [{"$ref": "#/components/parameters/CSRFToken"}], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /api/v1/offer-claim:
+    post:
+      operationId: publicOfferClaim
+      security: []
+      tags: [Offers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, token]
+              properties:
+                action: { type: string, enum: [status, claim, feedback] }
+                token: { type: string, maxLength: 200 }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/evaluations/samples: {"get": {"operationId": "listEvaluationSamples", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}, "post": {"operationId": "saveEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"$ref": "#/components/parameters/CSRFToken"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EvaluationSample"}}}}}}
+  /api/v1/ai/evaluations/samples/{sample}: {"get": {"operationId": "getEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "sample", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}]}, "delete": {"operationId": "deleteEvaluationSample", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "sample", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"$ref": "#/components/parameters/CSRFToken"}]}}
+  /api/v1/ai/evaluations/preview: {"post": {"operationId": "previewEvaluation", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"$ref": "#/components/parameters/CSRFToken"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EvaluationInput"}}}}}}
+  /api/v1/ai/evaluations/runs: {"get": {"operationId": "listEvaluationRuns", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}}, "post": {"operationId": "startEvaluation", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"$ref": "#/components/parameters/CSRFToken"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EvaluationStart"}}}}}}
+  /api/v1/ai/evaluations/runs/{run}: {"get": {"operationId": "getEvaluationRun", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "run", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}]}}
+  /api/v1/ai/evaluations/runs/{run}/items/{item}: {"get": {"operationId": "getEvaluationItem", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "run", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"name": "item", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 0, "maximum": 19}}]}}
+  /api/v1/ai/evaluations/runs/{run}/cancel: {"post": {"operationId": "cancelEvaluation", "tags": ["Administration"], "responses": {"200": {"$ref": "#/components/responses/OK"}, "default": {"$ref": "#/components/responses/Error"}}, "parameters": [{"name": "run", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"$ref": "#/components/parameters/CSRFToken"}]}}
+  /api/v1/ai/prompts:
+    get:
+      operationId: getPromptConfig
+      tags: [Administration]
+      parameters:
+        - { name: scope, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/history:
+    get:
+      operationId: listPromptHistory
+      tags: [Administration]
+      parameters:
+        - { name: scope, in: query, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/revisions/{revision}:
+    get:
+      operationId: getPromptRevision
+      tags: [Administration]
+      parameters:
+        - { name: revision, in: path, required: true, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/drafts:
+    post:
+      operationId: createPromptDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromptDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/prompts/publish:
+    post:
+      operationId: publishPromptConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromptPublication" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config:
+    get:
+      operationId: getOperationsConfig
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/metrics:
+    get:
+      operationId: getOperationsMetrics
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/history:
+    get:
+      operationId: listOperationsHistory
+      tags: [Administration]
+      parameters:
+        - { name: cursor, in: query, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/revisions/{revision}:
+    get:
+      operationId: getOperationsRevision
+      tags: [Administration]
+      parameters:
+        - { name: revision, in: path, required: true, schema: { type: string, minLength: 36, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/drafts:
+    post:
+      operationId: createOperationsDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/platform/config/publish:
+    post:
+      operationId: publishOperationsConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsPublication" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/rolling/preview:
+    post:
+      operationId: createAIRollingPreview
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIRollingInput" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/rolling/commands:
+    post:
+      operationId: submitAIRollingCommand
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIRollingSubmission" }
+      responses:
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health:
+    get:
+      operationId: getHealthAIConfig
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/models:
+    get:
+      operationId: listAIModels
+      tags: [Administration]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/drafts:
+    post:
+      operationId: createHealthAIDraft
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthAIDraftRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/publish:
+    post:
+      operationId: publishHealthAIConfig
+      tags: [Administration]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthAIPublishRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "202": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/history:
+    get:
+      operationId: getHealthAIHistory
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/health/{operation}/revisions/{revision}:
+    get:
+      operationId: getHealthAIRevision
+      tags: [Administration]
+      parameters:
+        - { name: operation, in: path, required: true, schema: { type: string } }
+        - { name: revision, in: path, required: true, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/models/{model}/versions:
+    get:
+      operationId: listAIModelVersions
+      tags: [Administration]
+      parameters:
+        - { name: model, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/ai/endpoints/{endpoint}:
+    get:
+      operationId: getAIEndpoint
+      tags: [Administration]
+      parameters:
+        - { name: endpoint, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /healthz:
     get:
       operationId: getAdminHealth
@@ -345,6 +612,42 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/personal-deliveries:
+    get:
+      operationId: listPersonalDeliveries
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 40 } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createPersonalDelivery
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/AppID" }
+        - { $ref: "#/components/parameters/OfferID" }
+        - { $ref: "#/components/parameters/Origin" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, requestKey]
+              properties:
+                action: { type: string, enum: [create, resume] }
+                requestKey: { type: string, format: uuid }
+                name: { type: string, maxLength: 240 }
+                poolID: { type: string, minLength: 1, maxLength: 128 }
+                confirmUnissued: { type: boolean, description: Confirms that remaining unassigned codes in this batch have not been distributed elsewhere. }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/apps/{appID}/offers/{offerID}/custom-codes:
     post:
       operationId: createCustomCode
@@ -407,6 +710,30 @@ paths:
             text/csv:
               schema:
                 type: string
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/apps/{appID}/offers/{offerID}/code-pools/{poolID}/delivery:
+    parameters:
+      - { $ref: "#/components/parameters/AppID" }
+      - { $ref: "#/components/parameters/OfferID" }
+      - { name: poolID, in: path, required: true, schema: { type: string, maxLength: 128 } }
+    get:
+      operationId: getOfferDelivery
+      tags: [Offers]
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: commandOfferDelivery
+      tags: [Offers]
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfferDeliveryCommand" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
         default: { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
@@ -480,6 +807,143 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
   schemas:
+    VoiceConfiguration: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "languages", "styles", "dialects", "supportsPitch", "previewURL", "billingClass", "enabled", "rank", "probeText"], "properties": {"id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"}, "name": {"type": "string", "minLength": 1, "maxLength": 80}, "description": {"type": "string", "maxLength": 500}, "languages": {"type": "array", "minItems": 1, "maxItems": 40, "uniqueItems": true, "items": {"type": "string", "maxLength": 16}}, "styles": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"type": "string", "enum": ["natural", "calm", "storytelling"]}}, "dialects": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "maxLength": 16}}, "supportsPitch": {"type": "boolean"}, "previewURL": {"type": "string", "maxLength": 2048}, "billingClass": {"type": "string", "enum": ["unreviewed", "standard", "premium", "voice-slot", "unavailable"]}, "enabled": {"type": "boolean"}, "rank": {"type": "integer", "minimum": 0, "maximum": 10000}, "probeText": {"type": "string", "minLength": 1, "maxLength": 180, "description": "Public synthetic sample; at most 180 UTF-8 bytes."}}}
+    VoiceCatalogDraft: {"type": "object", "additionalProperties": false, "required": ["baseVersion", "defaultVoiceID", "voices"], "properties": {"baseVersion": {"type": "string", "maxLength": 36}, "defaultVoiceID": {"type": "string", "maxLength": 128}, "voices": {"type": "array", "maxItems": 5000, "items": {"$ref": "#/components/schemas/VoiceConfiguration"}}}}
+    VoiceCatalogPublication: {"type": "object", "additionalProperties": false, "required": ["baseVersion", "revision"], "properties": {"baseVersion": {"type": "string", "maxLength": 36}, "revision": {"type": "string", "format": "uuid"}}}
+    OfferDeliveryCommand:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        code: { type: string, maxLength: 64 }
+        deliveredAt: { type: string, format: date-time }
+        query: { type: string, maxLength: 500 }
+        status: { type: string, maxLength: 24 }
+        cursor: { type: string, maxLength: 40 }
+        action: { type: string, enum: [sync, import, confirm_inventory, request, assign, deliver, cancel, reject, report_redeemed, link_verified, reveal, record_external, share_claim, revoke_claim, search] }
+        requestID: { type: string, maxLength: 40 }
+        version: { type: integer, minimum: 1 }
+        requestKey: { type: string, maxLength: 128 }
+        expectedCount: { type: integer, minimum: 1, maximum: 25000 }
+        reference: { type: string, maxLength: 64 }
+        recipient:
+          type: object
+          additionalProperties: false
+          required: [name]
+          properties:
+            name: { type: string, minLength: 1, maxLength: 240 }
+            contact: { type: string, maxLength: 500 }
+            reference: { type: string, maxLength: 240 }
+            channel: { type: string, maxLength: 240 }
+            note: { type: string, maxLength: 3000 }
+    EvaluationStart: {"type": "object", "additionalProperties": false, "required": ["sampleIDs", "candidates", "previewToken"], "properties": {"sampleIDs": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string"}}, "candidates": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["revision", "label"], "properties": {"revision": {"type": "string"}, "label": {"type": "string"}, "modelOverride": {"$ref": "#/components/schemas/PromptParameters"}}}}, "previewToken": {"type": "string"}}}
+    EvaluationInput: {"type": "object", "additionalProperties": false, "required": ["sampleIDs", "candidates"], "properties": {"sampleIDs": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string"}}, "candidates": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["revision", "label"], "properties": {"revision": {"type": "string"}, "label": {"type": "string"}, "modelOverride": {"$ref": "#/components/schemas/PromptParameters"}}}}}}
+    EvaluationSample: {"type": "object", "additionalProperties": false, "required": ["id", "name", "kind", "expected"], "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "kind": {"type": "string", "enum": ["organize_lite", "organize_pro", "voice", "illustration_scene", "illustration_image"]}, "illustration": {"type":"object","additionalProperties":false,"required":["title","details"],"properties":{"title":{"type":"string"},"details":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["kind","text"],"properties":{"kind":{"type":"string","enum":["subject","setting","composition","style","other"]},"text":{"type":"string"}}}}}}, "organize": {"type": "object", "additionalProperties": false, "required": ["requestID", "contractVersion", "contentHash", "title", "body", "existingTags", "rejectedTagNames", "books"], "properties": {"requestID": {"type": "string", "format": "uuid"}, "contractVersion": {"type": "string", "enum": ["journal-organize-v1"]}, "contentHash": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "existingTags": {"type": "array", "items": {"type": "string"}}, "rejectedTagNames": {"type": "array", "items": {"type": "string"}}, "books": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "containsEntry"], "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": "string"}, "containsEntry": {"type": "boolean"}}}}}}, "voice": {"type": "object", "additionalProperties": false, "required": ["writingStyle", "revision", "blocks", "transcript", "editedBlockIDs", "mediaOnlyBlockIDs", "manualEdits", "words"], "properties": {"writingStyle": {"type": "string"}, "revision": {"type": "integer"}, "blocks": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "text"], "properties": {"id": {"type": "string"}, "text": {"type": "string"}}}}, "transcript": {"type": "string"}, "editedBlockIDs": {"type": "array", "items": {"type": "string"}}, "mediaOnlyBlockIDs": {"type": "array", "items": {"type": "string"}}, "manualEdits": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["blockID", "before", "after", "contextBefore", "contextAfter", "transcriptOffset", "pendingEarlierSpeech"], "properties": {"blockID": {"type": "string"}, "before": {"type": "string"}, "after": {"type": "string"}, "contextBefore": {"type": "string"}, "contextAfter": {"type": "string"}, "transcriptOffset": {"type": "integer"}, "pendingEarlierSpeech": {"type": "boolean"}}}}, "words": {"type": "array", "items": {"type": "string"}}}}, "audio": {"type": "string", "format": "byte"}, "expected": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["kind", "blockID", "text"], "properties": {"kind": {"type": "string", "enum": ["contains", "excludes", "unchanged", "tag_limit", "new_book_count", "existing_book_count"]}, "blockID": {"type": "string"}, "text": {"type": "string"}}}}}}
+    PromptParameters: {"type": "object", "additionalProperties": false, "required": ["model", "reasoningEffort", "temperature", "maxOutputTokens", "timeoutSeconds"], "properties": {"model": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"}, "reasoningEffort": {"type": "string", "enum": ["disabled", "minimal", "low", "medium", "high"]}, "temperature": {"type": ["number", "null"], "minimum": 0, "maximum": 2}, "maxOutputTokens": {"type": "integer", "minimum": 256, "maximum": 65536}, "timeoutSeconds": {"type": "integer", "minimum": 5, "maximum": 840}, "foundationModel": {"type": "string"}, "modelVersion": {"type": "string"}, "price": {"type": "object", "additionalProperties": false, "required": ["InputNanosPerMillionTokens", "OutputNanosPerMillionTokens"], "properties": {"InputNanosPerMillionTokens": {"type": "integer", "format": "int64", "minimum": 1}, "OutputNanosPerMillionTokens": {"type": "integer", "format": "int64", "minimum": 1}}}}}
+    PromptStyle: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "example", "order", "enabled", "prompt"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "example": {"type": "string"}, "order": {"type": "integer"}, "enabled": {"type": "boolean"}, "prompt": {"type": "string"}}}
+    PromptOrganize: {"type": "object", "additionalProperties": false, "required": ["prompt", "lite", "pro", "liteMaxCharacters", "liteMaxBooks", "liteMaxTags"], "properties": {"prompt": {"type": "string"}, "lite": {"$ref": "#/components/schemas/PromptParameters"}, "pro": {"$ref": "#/components/schemas/PromptParameters"}, "liteMaxCharacters": {"type": "integer"}, "liteMaxBooks": {"type": "integer"}, "liteMaxTags": {"type": "integer"}}}
+    PromptVoice: {"type": "object", "additionalProperties": false, "required": ["prompt", "removeRepetition", "parameters", "automaticPunctuation", "normalizeNumbers"], "properties": {"prompt": {"type": "string"}, "removeRepetition": {"type": "boolean"}, "parameters": {"$ref": "#/components/schemas/PromptParameters"}, "automaticPunctuation": {"type": "boolean"}, "normalizeNumbers": {"type": "boolean"}}}
+    PromptJournal: {"type": "object", "additionalProperties": false, "required": ["organize", "voice", "styles", "defaultStyle", "illustrationSuggestionPrompt", "illustrationGenerationPrompt"], "properties": {"illustrationSuggestionPrompt": {"type": "string", "maxLength": 16000}, "illustrationGenerationPrompt": {"type": "string", "maxLength": 4000}, "organize": {"$ref": "#/components/schemas/PromptOrganize"}, "voice": {"$ref": "#/components/schemas/PromptVoice"}, "styles": {"type": "array", "items": {"$ref": "#/components/schemas/PromptStyle"}}, "defaultStyle": {"type": "string"}}}
+    PromptPolicy: {"type": "object", "additionalProperties": false, "required": ["systemPrompt"], "properties": {"systemPrompt": {"type": "string"}, "journal": {"$ref": "#/components/schemas/PromptJournal"}}}
+    PromptDraft: {"type": "object", "additionalProperties": false, "required": ["scope", "baseVersion", "policy"], "properties": {"scope": {"type": "string"}, "baseVersion": {"type": "string"}, "policy": {"$ref": "#/components/schemas/PromptPolicy"}}}
+    PromptPublication: {"type": "object", "additionalProperties": false, "required": ["scope", "revision", "baseVersion", "previewToken"], "properties": {"scope": {"type": "string"}, "revision": {"type": "string"}, "baseVersion": {"type": "string"}, "previewToken": {"type": "string"}}}
+    OperationsAppPolicy:
+      type: object
+      additionalProperties: false
+      required: [monthlyBudgetNanos, dailyTokens, monthlyTokens, freeDailyTokens, freeMonthlyTokens, freeDailySessions, voicePeriodMinutes, paused, pausedOperations]
+      properties:
+        monthlyBudgetNanos: { type: integer, format: int64, minimum: 0, maximum: 1000000000000000 }
+        dailyTokens: { type: integer, minimum: 1, maximum: 1000000000000 }
+        monthlyTokens: { type: integer, minimum: 1, maximum: 1000000000000 }
+        freeDailyTokens: { type: integer, minimum: 0, maximum: 1000000000000 }
+        freeMonthlyTokens: { type: integer, minimum: 0, maximum: 1000000000000 }
+        freeDailySessions: { type: integer, minimum: 0, maximum: 100 }
+        voicePeriodMinutes: { type: integer, minimum: 0, maximum: 10000 }
+        paused: { type: boolean }
+        pausedOperations: { type: array, maxItems: 8, uniqueItems: true, items: { type: string, maxLength: 128 } }
+    OperationsPolicy:
+      type: object
+      additionalProperties: false
+      required: [monthlyBudgetNanos, maxConcurrent, budgetWarningPercent, errorWarningPercent, slowWarningMilliseconds, minimumSamples, apps]
+      properties:
+        monthlyBudgetNanos: { type: integer, format: int64, minimum: 1, maximum: 1000000000000000 }
+        maxConcurrent: { type: integer, minimum: 1, maximum: 100 }
+        budgetWarningPercent: { type: integer, minimum: 1, maximum: 100 }
+        errorWarningPercent: { type: integer, minimum: 1, maximum: 100 }
+        slowWarningMilliseconds: { type: integer, minimum: 100, maximum: 840000 }
+        minimumSamples: { type: integer, minimum: 10, maximum: 10000 }
+        apps:
+          type: object
+          additionalProperties: false
+          required: [health, journal]
+          properties:
+            health: { $ref: "#/components/schemas/OperationsAppPolicy" }
+            journal: { $ref: "#/components/schemas/OperationsAppPolicy" }
+    OperationsDraft:
+      type: object
+      additionalProperties: false
+      required: [baseVersion, policy]
+      properties:
+        baseVersion: { type: string, minLength: 36, maxLength: 36 }
+        policy: { $ref: "#/components/schemas/OperationsPolicy" }
+    OperationsPublication:
+      type: object
+      additionalProperties: false
+      required: [revision, baseVersion, previewToken]
+      properties:
+        revision: { type: string, minLength: 36, maxLength: 36 }
+        baseVersion: { type: string, minLength: 36, maxLength: 36 }
+        previewToken: { type: string, minLength: 1, maxLength: 2048 }
+    AIRollingModel:
+      type: object
+      additionalProperties: false
+      required: [Name, ModelVersion]
+      properties:
+        Name: { type: string, maxLength: 128 }
+        ModelVersion: { type: string, maxLength: 128 }
+    AIRollingInput:
+      type: object
+      additionalProperties: false
+      required: [endpoint, action, target]
+      properties:
+        endpoint: { type: string, minLength: 1, maxLength: 128 }
+        action:
+          type: string
+          enum: [start, cancel, step_back, reconcile, accept_current]
+        target: { $ref: "#/components/schemas/AIRollingModel" }
+    AIRollingSubmission:
+      type: object
+      additionalProperties: false
+      required: [input, previewToken]
+      properties:
+        input: { $ref: "#/components/schemas/AIRollingInput" }
+        previewToken: { type: string, minLength: 1, maxLength: 8192 }
+    HealthAIDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, baseVersion, policy]
+      properties:
+        operation: { type: string, enum: [voice_transcription, meal_photo_capture, hydration_cup_estimate, meal_text_capture, meal_decision, diet_analysis, health_nutrition_analysis, health_behavior_analysis] }
+        baseVersion: { type: string, maxLength: 36 }
+        policy:
+          type: object
+          additionalProperties: false
+          required: [endpoint, reasoningEffort, webSearchEnabled, timeoutSeconds]
+          properties:
+            version: { type: string, maxLength: 36 }
+            endpoint: { type: string, pattern: '^ep-[A-Za-z0-9-]+$', maxLength: 128 }
+            reasoningEffort: { type: string, enum: ["", minimal, low, medium, high, max] }
+            webSearchEnabled: { type: boolean }
+            timeoutSeconds: { type: integer, minimum: 1, maximum: 840 }
+    HealthAIPublishRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, revision, baseVersion, previewToken]
+      properties:
+        operation: { type: string, enum: [voice_transcription, meal_photo_capture, hydration_cup_estimate, meal_text_capture, meal_decision, diet_analysis, health_nutrition_analysis, health_behavior_analysis] }
+        revision: { type: string, format: uuid }
+        previewToken: { type: string, minLength: 1, maxLength: 2048 }
+        baseVersion: { type: string, maxLength: 36 }
     JSONDocument:
       type: object
       additionalProperties: true
@@ -560,14 +1024,18 @@ components:
       required: [code, numberOfCodes]
       properties:
         code: { type: string, pattern: "^[A-Za-z0-9]{4,64}$" }
-        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        numberOfCodes: { type: integer, minimum: 500, maximum: 25000, multipleOf: 500 }
         expirationDate: { type: string, format: date }
     OneTimeCodeBatchRequest:
       type: object
       additionalProperties: false
       required: [numberOfCodes, expirationDate, environment]
       properties:
-        numberOfCodes: { type: integer, minimum: 1, maximum: 25000 }
+        numberOfCodes:
+          type: integer
+          minimum: 10
+          maximum: 25000
+          description: Production requires multiples of 500 from 500 to 25000. Sandbox accepts 10, 100, 500, or 1000.
         expirationDate: { type: string, format: date }
         environment: { type: string, enum: [PRODUCTION, SANDBOX] }
     ErrorResponse:

@@ -3,14 +3,20 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
+
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -51,14 +57,17 @@ func (config AICostConfig) Valid() bool {
 }
 
 type AppConfig struct {
+	ReadAloudSimulatorCredentialsFile string
+
+	JournalRecording       *JournalRecordingConfig
+	JournalImage           *JournalImageConfig
 	Registry               appregistry.App
 	AttestationEnvironment attestation.Environment
-	DevelopmentSecret      string
 	AllowedBuilds          map[string]struct{}
 	SchemaManifestPath     string
 	Ark                    ark.Config
 	JournalAI              JournalAIConfig
-	Illustration           IllustrationConfig
+	BirthdayPrice          costcontrol.TokenPrice
 	VoiceEnabled           bool
 	VoiceASR               voice.ASRConfig
 	VoiceModel             string
@@ -69,19 +78,17 @@ type AppConfig struct {
 	Product                ProductConfig
 }
 
+type JournalImageConfig struct {
+	BaseURL, APIKey, Model string
+	MaxCostNanos           int64
+}
+
 type JournalAIConfig struct {
 	BaseURL        string
 	APIKey         string
 	LiteModel      string
 	ProModel       string
 	TimeoutSeconds int
-}
-
-type IllustrationConfig struct {
-	Enabled                bool
-	BaseURL, APIKey, Model string
-	MonthlyImages          int
-	MaxCostNanos           int64
 }
 
 type ProductConfig struct {
@@ -97,6 +104,14 @@ func LoadPlatform() (PlatformConfig, error) {
 	if err != nil {
 		return PlatformConfig{}, err
 	}
+	for i := range result.Apps {
+		if result.Apps[i].Registry.ID == appregistry.Journal {
+			result.Apps[i].JournalRecording, err = LoadJournalRecording(result.Environment)
+			if err != nil {
+				return PlatformConfig{}, err
+			}
+		}
+	}
 	if err := result.Validate(); err != nil {
 		return PlatformConfig{}, err
 	}
@@ -104,8 +119,12 @@ func LoadPlatform() (PlatformConfig, error) {
 }
 
 func LoadWorkerPlatform() (PlatformConfig, error) {
-	result, err := LoadPlatform()
+	// Recording storage belongs to the gateway and maintenance, not the AI worker.
+	result, err := loadPlatformUnchecked()
 	if err != nil {
+		return PlatformConfig{}, err
+	}
+	if err := result.Validate(); err != nil {
 		return PlatformConfig{}, err
 	}
 	if result.StorageMode != "mysql" {
@@ -143,25 +162,40 @@ func loadPlatformUnchecked() (PlatformConfig, error) {
 		},
 	}
 
-	health, err := loadPlatformApp("HEALTH", appDefaults{
-		ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
-		BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
-		ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
-		AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
-	}, environment, commonTeamID)
-	if err != nil {
-		return PlatformConfig{}, err
+	definitions := map[appregistry.AppID]appDefaults{
+		appregistry.Albums: {ID: appregistry.Albums, DisplayName: "告你相册", Host: "api.albums.tellyouwhat.cn", BundleID: "cn.tellyouwhat.albums"},
+		appregistry.Health: {
+			ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
+			ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
+			AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
+		},
+		appregistry.Journal: {
+			ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
+			ProductIDs:      []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"},
+			OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.tellyouwhat.cn",
+		},
+		appregistry.Birthday: {
+			ID: appregistry.Birthday, DisplayName: "告你生日", Host: "api.birthday.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.birthday", ProductID: "birthday.assistant", ProductIDs: []string{"birthday.assistant"},
+			AllowedOperations: []string{"birthday.propose", "birthday.revise"}, PrivacyBaseURL: "https://birthday.tellyouwhat.cn",
+		},
 	}
-	journal, err := loadPlatformApp("JOURNAL", appDefaults{
-		ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
-		BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
-		ProductIDs: []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"}, OperationPrefix: "journal.",
-		PrivacyBaseURL: "https://journal.tellyouwhat.cn",
-	}, environment, commonTeamID)
-	if err != nil {
-		return PlatformConfig{}, err
+	seen := map[appregistry.AppID]bool{}
+	for _, name := range strings.Split(value("PLATFORM_APPS", "health,journal"), ",") {
+		id := appregistry.AppID(strings.TrimSpace(name))
+		defaults, known := definitions[id]
+		if !known || seen[id] {
+			return PlatformConfig{}, errors.New("PLATFORM_APPS must select unique known applications")
+		}
+		seen[id] = true
+		app, err := loadPlatformApp(strings.ToUpper(string(id)), defaults, environment, commonTeamID)
+		if err != nil {
+			return PlatformConfig{}, err
+		}
+		result.Apps = append(result.Apps, app)
 	}
-	result.Apps = []AppConfig{health, journal}
 	return result, nil
 }
 
@@ -178,8 +212,30 @@ type appDefaults struct {
 }
 
 func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
-	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", environment))
-	timeout, err := prefixedInt(prefix, "ARK_TIMEOUT_SECONDS", 90)
+	if environment == "development" {
+		defaults.BundleID += ".dev"
+		if defaults.ID != appregistry.Birthday {
+			defaults.ProductID += ".dev"
+			for i := range defaults.ProductIDs {
+				defaults.ProductIDs[i] += ".dev"
+			}
+		}
+		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
+	}
+	if defaults.ID == appregistry.Albums {
+		return AppConfig{Registry: appregistry.App{
+			ID: defaults.ID, DisplayName: defaults.DisplayName,
+			Hosts:    []string{prefixedValue("ALBUM", "API_HOST", defaults.Host)},
+			TeamID:   prefixedValue("ALBUM", "APPLE_TEAM_ID", commonTeamID),
+			BundleID: prefixedValue("ALBUM", "APPLE_BUNDLE_ID", defaults.BundleID),
+		}}, nil
+	}
+	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", string(attestation.EnvironmentProduction)))
+	defaultTimeout := 90
+	if defaults.ID == appregistry.Birthday {
+		defaultTimeout = 70
+	}
+	timeout, err := prefixedInt(prefix, "ARK_TIMEOUT_SECONDS", defaultTimeout)
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -198,6 +254,7 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		managedProductIDs = append([]string{managedProductID}, managedProductIDs...)
 	}
 	config := AppConfig{
+		ReadAloudSimulatorCredentialsFile: prefixedValue(prefix, "READ_ALOUD_SIMULATOR_CREDENTIALS_FILE", ""),
 		Registry: appregistry.App{
 			ID:                     defaults.ID,
 			DisplayName:            prefixedValue(prefix, "DISPLAY_NAME", defaults.DisplayName),
@@ -210,7 +267,6 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 			AllowedOperations:      append([]string(nil), defaults.AllowedOperations...),
 		},
 		AttestationEnvironment: attestationEnvironment,
-		DevelopmentSecret:      prefixedValue(prefix, "DEV_ACTIVATION_SECRET", ""),
 		AllowedBuilds:          splitSet(prefixedValue(prefix, "ALLOWED_APP_BUILDS", "")),
 		SchemaManifestPath:     prefixedValue(prefix, "SCHEMA_MANIFEST_PATH", ""),
 		Quota:                  quotaLimits,
@@ -248,21 +304,19 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		if enabled != "true" && enabled != "false" {
 			return AppConfig{}, errors.New("JOURNAL_IMAGE_ENABLED must be true or false")
 		}
-		config.Illustration.Enabled = enabled == "true"
-		if config.Illustration.Enabled {
-			limit, err := prefixedInt(prefix, "IMAGE_MONTHLY_LIMIT", 0)
-			if err != nil {
-				return AppConfig{}, err
+		if enabled == "true" {
+			price, err := prefixedInt64Optional(prefix, "IMAGE_MAX_COST_NANOS")
+			image := JournalImageConfig{BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MaxCostNanos: price}
+			if err != nil || price <= 0 || price > costcontrol.NanosPerCNY {
+				return AppConfig{}, errors.New("invalid Journal image price ceiling")
 			}
-			config.Illustration = IllustrationConfig{Enabled: true, BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MonthlyImages: limit}
-			price, err := parseOptionalCNYNanos("JOURNAL_IMAGE_MAX_CNY_PER_IMAGE", prefixedValue(prefix, "IMAGE_MAX_CNY_PER_IMAGE", ""))
-			if err != nil {
-				return AppConfig{}, err
+			if _, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil); err != nil {
+				return AppConfig{}, errors.New("invalid Journal image provider configuration")
 			}
-			config.Illustration.MaxCostNanos = price
+			config.JournalImage = &image
 		}
 		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
-		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration"}
+		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
 		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
 		config.JournalAI = JournalAIConfig{
 			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
@@ -271,6 +325,18 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 			ProModel:       prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""),
 			TimeoutSeconds: timeout,
 		}
+	}
+	if defaults.ID == appregistry.Birthday {
+		config.JournalAI = JournalAIConfig{BaseURL: prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"), APIKey: prefixedValue(prefix, "ARK_API_KEY", ""), LiteModel: prefixedValue(prefix, "ARK_MODEL_ID", ""), TimeoutSeconds: timeout}
+		input, err := parseOptionalCNYNanos("BIRTHDAY_ARK_INPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_INPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		output, err := parseOptionalCNYNanos("BIRTHDAY_ARK_OUTPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_OUTPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		config.BirthdayPrice = costcontrol.TokenPrice{InputNanosPerMillionTokens: input, OutputNanosPerMillionTokens: output}
 	}
 	return config, nil
 }
@@ -291,6 +357,11 @@ func (config PlatformConfig) Validate() error {
 	if config.StorageMode == "mysql" && (config.DatabaseDSN == "" || config.RedisURL == "" || config.PayloadEncryptionKey == "") {
 		return errors.New("DATABASE_DSN, REDIS_URL, and PAYLOAD_ENCRYPTION_KEY are required")
 	}
+	if config.StorageMode == "mysql" {
+		if err := validateDatabaseEnvironment(config.DatabaseDSN, config.Environment); err != nil {
+			return err
+		}
+	}
 	if config.AppAttestRootPEMPath == "" {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH is required")
 	}
@@ -303,11 +374,23 @@ func (config PlatformConfig) Validate() error {
 	if len(config.JobCapabilitySecret) < 32 {
 		return errors.New("JOB_CAPABILITY_SECRET must be at least 32 bytes")
 	}
-	if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
-		return errors.New("TOS bucket credentials are required")
+	if len(config.Apps) != 1 || config.Apps[0].Registry.ID != appregistry.Birthday {
+		if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
+			return errors.New("TOS bucket credentials are required")
+		}
+		testBucket := strings.HasSuffix(config.TOS.Bucket, "-test") || strings.HasSuffix(config.TOS.Bucket, "-development")
+		if (config.Environment == "development") != testBucket {
+			return errors.New("TOS_BUCKET must end in -test or -development only in development")
+		}
 	}
 	registryEntries := make([]appregistry.App, 0, len(config.Apps))
 	for _, app := range config.Apps {
+		if app.JournalRecording != nil && app.JournalRecording.Enabled && (!app.VoiceEnabled || config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal recordings require voice configuration, persistent storage and project cost controls")
+		}
+		if app.JournalImage != nil && (config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal images require persistent storage and project cost controls")
+		}
 		if err := app.Validate(config.Environment); err != nil {
 			return fmt.Errorf("app %s: %w", app.Registry.ID, err)
 		}
@@ -318,8 +401,22 @@ func (config PlatformConfig) Validate() error {
 }
 
 func (config AppConfig) Validate(environment string) error {
+	if path := config.ReadAloudSimulatorCredentialsFile; path != "" {
+		if environment != "development" || config.Registry.ID != appregistry.Journal ||
+			config.Registry.BundleID != simulatortest.BundleID || len(config.Registry.Hosts) != 1 ||
+			config.Registry.Hosts[0] != simulatortest.Host || !filepath.IsAbs(path) {
+			return errors.New("READ_ALOUD_SIMULATOR_CREDENTIALS_FILE requires the isolated Journal development gateway and an absolute path")
+		}
+	}
 	if err := config.Registry.Validate(); err != nil {
 		return err
+	}
+	if err := config.validateEnvironmentIdentity(environment); err != nil {
+		return err
+	}
+	if config.Registry.ID == appregistry.Albums {
+		// Album authentication and storage plans are validated by its API, not the AI worker.
+		return nil
 	}
 	if len(config.ManagedAIProductIDs) == 0 {
 		return errors.New("MANAGED_AI_PRODUCT_IDS must contain the primary product")
@@ -346,15 +443,28 @@ func (config AppConfig) Validate(environment string) error {
 	if environment == "production" && config.AttestationEnvironment != attestation.EnvironmentProduction {
 		return errors.New("production requires production App Attest")
 	}
-	if environment == "development" && (config.DevelopmentSecret == "" || len(config.AllowedBuilds) == 0) {
-		return errors.New("DEV_ACTIVATION_SECRET and ALLOWED_APP_BUILDS are required in development")
+	if environment == "development" && len(config.AllowedBuilds) == 0 {
+		return errors.New("ALLOWED_APP_BUILDS is required in development")
 	}
-	if environment == "production" {
+	if config.Registry.ID != appregistry.Birthday {
 		if err := config.AppStore.validate(); err != nil {
 			return err
 		}
+		if environment == "development" && config.AppStore.Environment != "Sandbox" {
+			return errors.New("development APP_STORE_ENV must be Sandbox")
+		}
 	}
 	switch config.Registry.ID {
+	case appregistry.Birthday:
+		if config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.TimeoutSeconds <= 0 || config.JournalAI.TimeoutSeconds > 75 {
+			return errors.New("birthday requires an explicit Ark key/model and a timeout between 1 and 75 seconds")
+		}
+		if !strings.HasPrefix(config.JournalAI.BaseURL, "https://") {
+			return errors.New("birthday Ark endpoint must use HTTPS")
+		}
+		if !config.BirthdayPrice.Valid() {
+			return errors.New("birthday requires provider token prices")
+		}
 	case appregistry.Health:
 		if config.SchemaManifestPath == "" {
 			return errors.New("SCHEMA_MANIFEST_PATH is required")
@@ -370,9 +480,6 @@ func (config AppConfig) Validate(environment string) error {
 			return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
 		}
 	case appregistry.Journal:
-		if config.Illustration.Enabled && (config.Illustration.BaseURL == "" || config.Illustration.APIKey == "" || config.Illustration.Model == "" || config.Illustration.MonthlyImages < 1 || config.Illustration.MaxCostNanos <= 0) {
-			return errors.New("Journal image generation requires endpoint, credentials, model and positive monthly image limit")
-		}
 		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {
 			return errors.New("journal Ark Responses API configuration is incomplete")
 		}
@@ -381,6 +488,46 @@ func (config AppConfig) Validate(environment string) error {
 		}
 	default:
 		return errors.New("unsupported app")
+	}
+	return nil
+}
+
+// Naming catches copied production configuration before opening a connection;
+// deployment must also verify the database user's grants and isolated resources.
+func validateDatabaseEnvironment(dsn, environment string) error {
+	database, err := mysql.ParseDSN(dsn)
+	if err != nil || database.DBName == "" || database.User == "" || strings.EqualFold(database.User, "root") {
+		return errors.New("DATABASE_DSN requires a named database and a non-root account")
+	}
+	testDatabase := strings.HasSuffix(strings.ToLower(database.DBName), "_test")
+	testUser := strings.HasSuffix(strings.ToLower(database.User), "_test")
+	if (environment == "development" && (!testDatabase || !testUser)) ||
+		(environment == "production" && (testDatabase || testUser)) {
+		return errors.New("DATABASE_DSN database and account must end in _test only in development")
+	}
+	return nil
+}
+
+// App Attest and StoreKit environments are independent of the API environment.
+func (config AppConfig) validateEnvironmentIdentity(environment string) error {
+	if environment != "development" && environment != "production" {
+		return errors.New("APP_ENV must be development or production")
+	}
+	development := environment == "development"
+	if strings.HasSuffix(config.Registry.BundleID, ".dev") != development {
+		return errors.New("APPLE_BUNDLE_ID must end in .dev only in development")
+	}
+	for _, rawHost := range config.Registry.Hosts {
+		host := strings.ToLower(strings.TrimSpace(rawHost))
+		if name, _, err := net.SplitHostPort(host); err == nil {
+			host = name
+		}
+		host = strings.TrimSuffix(host, ".")
+		if strings.HasSuffix(host, ".tellyouwhat.cn") &&
+			((development && strings.HasPrefix(host, "api.")) ||
+				(!development && strings.HasPrefix(host, "api-test."))) {
+			return errors.New("API_HOSTS belongs to the opposite application environment")
+		}
 	}
 	return nil
 }

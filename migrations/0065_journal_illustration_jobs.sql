@@ -1,0 +1,20 @@
+CREATE TABLE journal_illustration_jobs (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'journal',
+ owner_key_id VARCHAR(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ revision BIGINT UNSIGNED NOT NULL,
+ state VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ created_at DATETIME(6) NOT NULL,
+ expires_at DATETIME(6) NOT NULL,
+ lease_until DATETIME(6) NULL,
+ has_payload BOOLEAN NOT NULL,
+ ciphertext LONGBLOB NOT NULL,
+ nonce VARBINARY(12) NOT NULL,
+ PRIMARY KEY (owner_key_id, request_id),
+ KEY illustration_queue (state, lease_until),
+ KEY illustration_expiry (has_payload, expires_at),
+ CONSTRAINT illustration_owner_fk FOREIGN KEY (app_id,owner_key_id) REFERENCES app_attest_keys(app_id,key_id) ON DELETE CASCADE,
+ CHECK (app_id='journal'),
+ CHECK (revision>0),
+ CHECK (state IN ('queued','running','succeeded','rejected','uncertain','cancelled'))
+) ENGINE=InnoDB;

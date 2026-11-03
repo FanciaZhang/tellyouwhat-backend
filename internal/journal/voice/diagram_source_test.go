@@ -69,16 +69,16 @@ func TestDiagramSourceAuthorization(t *testing.T) {
 		{instruction, "content", false}, {content, "instruction", false},
 		{"散步。整理", "content", false}, {"整理成", "instruction", false},
 	} {
-		if got := diagramSourceAuthorized(TableSource{SourceID: id, Anchor: TextAnchor{Quote: c.quote}}, c.role, block, r, s, nil); got != c.want {
+		if got := structuredSourceAuthorized(TableSource{SourceID: id, Anchor: TextAnchor{Quote: c.quote}}, c.role, block, r, s, nil); got != c.want {
 			t.Errorf("%s/%s got %v", c.quote, c.role, got)
 		}
 	}
 	source := TableSource{SourceID: id, Anchor: TextAnchor{Quote: content}}
-	if diagramSourceAuthorized(source, "content", uuid.NewString(), r, s, nil) {
+	if structuredSourceAuthorized(source, "content", uuid.NewString(), r, s, nil) {
 		t.Fatal("wrong target accepted")
 	}
 	r.SourcePartitions = append(r.SourcePartitions, r.SourcePartitions[0])
-	if diagramSourceAuthorized(source, "content", block, r, s, nil) {
+	if structuredSourceAuthorized(source, "content", block, r, s, nil) {
 		t.Fatal("duplicate partition accepted")
 	}
 }
@@ -88,20 +88,20 @@ func TestDiagramHistoricalSourceNeverAuthorizesInstruction(t *testing.T) {
 	source := TableSource{SourceID: id, Anchor: TextAnchor{Quote: "周末去散步。"}}
 	s := Snapshot{KnownSourceIDs: []string{id}}
 	history := []TableSource{source}
-	if !diagramSourceAuthorized(source, "content", block, Revision{}, s, history) {
+	if !structuredSourceAuthorized(source, "content", block, Revision{}, s, history) {
 		t.Fatal("historical content rejected")
 	}
-	if diagramSourceAuthorized(source, "instruction", block, Revision{}, s, history) {
+	if structuredSourceAuthorized(source, "instruction", block, Revision{}, s, history) {
 		t.Fatal("historical instruction authorized")
 	}
-	if diagramSourceAuthorized(source, "content", block, Revision{ConsumedSourceIDs: []string{id}}, s, history) {
+	if structuredSourceAuthorized(source, "content", block, Revision{ConsumedSourceIDs: []string{id}}, s, history) {
 		t.Fatal("old source consumed again")
 	}
-	if diagramSourceAuthorized(source, "content", block, Revision{}, Snapshot{}, history) {
+	if structuredSourceAuthorized(source, "content", block, Revision{}, Snapshot{}, history) {
 		t.Fatal("unknown historical source accepted")
 	}
 	s.PendingUtterances = []SourceUtterance{{ID: id, Text: source.Anchor.Quote}}
-	if diagramSourceAuthorized(source, "content", block, Revision{}, s, history) {
+	if structuredSourceAuthorized(source, "content", block, Revision{}, s, history) {
 		t.Fatal("pending source disguised as history")
 	}
 }

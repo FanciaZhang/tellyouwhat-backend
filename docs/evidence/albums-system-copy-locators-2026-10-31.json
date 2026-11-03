@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-31",
+  "scope": "Owner-scoped system-copy discovery API; no media access or deletion authority",
+  "sourceFilesSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "2c28fd0a3450ab9f77d20f08f4e0fc341cce91a7bfb89afe6068a1489ddd1949",
+    "internal/albumhttpapi/generated.go": "4cdb26c2621c34bc3ea5149df484357bee7f86d5da1f45e7cd4a81c7a586294d",
+    "internal/albums/system_copies.go": "9d08b77ce1937eb650c17f249ac34cb51e6f2d1b4d9055ba245e290cc28e73d9",
+    "internal/albums/system_copies_http.go": "95581f636a230b87d96327c8c3ea5b78d7ae52f44d5e14527bbb3fadf71279ea",
+    "internal/albums/system_copies_test.go": "0444e135aed027194aed2de25be02e24857db40f171ace1feffa9fa03875bdce",
+    "internal/albums/manifest.go": "3d686763600332fb6680120a6bdb4a588579561687a124f7d7f46b704c391ea6",
+    "internal/albums/library.go": "0cd52d2cd73aeb99e4e1c045ec7ec433682ee89f3c6d5fa97aa55c88ca72ae96",
+    "internal/albums/account_record_erasure.go": "d5da5034ecf437061efccf2a903fa8cc636daba1d5f5c29dd8c99eb5852045ea",
+    "internal/albums/account_media_settlement_test.go": "01b7e5e97d01eba42b75359f823d47ec253fd2c1b65ba60b4decfae8090631dd",
+    "internal/albums/object_purge_settlement_integration_test.go": "5b976ef225ff574fc396e851af87117e0a4b86a3b5054946e33ed164ee3008e0",
+    "migrations/0074_album_system_copy_locators.sql": "d700b814fd9d1dcc8f3014f60db6677cc641cfa35faa6c7d2c3de4d149e16a0d"
+  },
+  "validation": {
+    "countsIncludingSubtests": {
+      "pass": 23
+    },
+    "passedTests": [
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/photo",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/video",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/live-pair",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved/unpublished-multipart",
+      "TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved",
+      "TestMySQLAccountRecordErasureReplayRecreationAndIsolation",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/access",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/media",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/ledger",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/wrong-request",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/remaining-grant",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack/receipt-failure",
+      "TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack",
+      "TestMySQLAccountRecordErasureRechecksStaleSubscriptionsAndRestoresPurchase",
+      "TestMySQLObjectPurgeSettlementAtomicRefundAndFinalFeed",
+      "TestSystemCopyKindsAndIdentifierBoundary",
+      "TestMySQLSystemCopiesRestartConcurrentCapacityAndIsolation",
+      "TestMySQLSystemCopiesHTTPTrustBoundary",
+      "TestMySQLSystemCopiesLifecycleAndRetention/trash",
+      "TestMySQLSystemCopiesLifecycleAndRetention/deleting",
+      "TestMySQLSystemCopiesLifecycleAndRetention/retention",
+      "TestMySQLSystemCopiesLifecycleAndRetention/quarantine",
+      "TestMySQLSystemCopiesLifecycleAndRetention"
+    ],
+    "failedTests": [],
+    "failureOutput": []
+  },
+  "storage": {
+    "exitCode": 0,
+    "isolatedMySQL": true,
+    "isolatedRedis": true,
+    "syntheticOnly": true,
+    "paidCloudOptIn": false,
+    "scope": "system-copy locator and directly affected purge/account-erasure integration tests with isolated MySQL/Redis",
+    "ephemeralSQLDurability": "flush-at-commit=2, sync-binlog=0; tests do not cover machine power loss"
+  },
+  "checks": [
+    "gofmt",
+    "go vet ./internal/albums ./internal/albumhttpapi",
+    "generated Go regenerated with pinned oapi-codegen",
+    "migration receipt replay after successful DDL preserves saved hints",
+    "permanent version purge cascades only its owner/version hints",
+    "account media settlement removes own hints and preserves foreign account"
+  ],
+  "notDone": [
+    "No deployment or migration on shared host",
+    "Scoped independent Albums migration runner still admits only 0073; extend and verify before deploying 0074",
+    "Native journal synchronization, mapped-copy reuse and automatic gallery association not connected",
+    "No real iCloud account or cross-device validation",
+    "No paid cloud requests; isolated fixtures only"
+  ]
+}

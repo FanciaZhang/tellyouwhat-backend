@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-16",
+  "implementation_commit": "248c8ce",
+  "scope": "private Apple development installation transport and scheduled artifact cleanup integration",
+  "checks": {
+    "go_race": {
+      "command": "go test -race ./internal/appledelivery ./cmd/appledelivery",
+      "packages_passed": 2,
+      "tests_passed": 10,
+      "covers": ["bounded metadata", "allowlisted development identities", "package hash and byte count", "private receipt without overwrite", "process and goroutine concurrency", "read-only store reopen", "HEAD and Range", "corrupt package rejection", "request expiry", "shared leases and fail-closed cleanup", "symlink rejection"]
+    },
+    "operations": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*test.py'",
+      "tests_passed": 109,
+      "tests_skipped": 1,
+      "skip_reason": "Mac does not have native Caddy; the same proxy test passed separately on the target server",
+      "delivery_cleanup_tests_passed": 5
+    },
+    "native_proxy": {
+      "version": "2.11.4",
+      "tests_passed": 1,
+      "fixture": "synthetic capability; isolated temporary loopback process, not the active proxy",
+      "negative_control_exposes_synthetic_installation_url": true,
+      "protected_installation_error_omits_url": true,
+      "other_site_errors_preserved": true,
+      "active_configuration_modified": false
+    },
+    "compose": {
+      "parser": "target server Docker Compose",
+      "passed": true,
+      "http_host_binding": "127.0.0.1:18791",
+      "server_data_read_only": true,
+      "server_network_internal": true,
+      "cleanup_network": "none",
+      "capabilities_dropped": "ALL"
+    },
+    "linux_cross_compile": {"passed": true, "target": "linux/amd64", "static": true},
+    "native_linux_tests": {
+      "tests_passed": 8,
+      "race_detector": false,
+      "scope": "same internal/appledelivery source cross-compiled on Mac and executed on the target Linux host",
+      "isolated_temporary_directory_removed": true,
+      "active_services_modified": false
+    }
+  },
+  "boundaries": {
+    "signing_validated_by_this_service": false,
+    "release_gates_validated_by_this_service": false,
+    "test_ipa_is_signed": false,
+    "service_deployed": false,
+    "dns_or_tls_changed": false,
+    "ipa_published": false,
+    "scheduled_cleanup_observed": false,
+    "phone_installation_verified": false,
+    "overall_environment_migration_complete": false
+  },
+  "pending": ["project-specific native publication preflight", "registered deployment and matching rollback config", "encrypted offsite configuration backup", "active proxy validation", "DNS/TLS", "real signed IPA HTTPS readback", "runtime expiry and scheduled cleanup evidence", "Journal private connection file delivery", "external iPhone installation and isolation"]
+}

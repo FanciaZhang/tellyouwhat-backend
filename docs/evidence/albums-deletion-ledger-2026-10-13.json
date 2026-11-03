@@ -1,0 +1,98 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Isolated MySQL/Redis; synthetic deletion credentials and media fixture; native MySQL encrypted backup/restore with explicitly pinned local signed deletion checkpoint. No real user data, cloud publication or deployment.",
+  "migration": "0060_album_deletion_ledger.sql",
+  "verification": {
+    "startedAt": "2026-10-13T14:28:03.054649+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/race.log",
+        "testCounts": {
+          "pass": 42
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/build.log"
+      },
+      {
+        "name": "backup-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/backup-unit.log"
+      },
+      {
+        "name": "deletion-ledger-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/deletion-ledger-unit.log"
+      },
+      {
+        "name": "control-backup-regression",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-ledger-tqj7uiee/control-backup-regression.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T14:28:51.515723+00:00"
+  },
+  "go_top_level_tests": 16,
+  "go_passed_test_events": 42,
+  "python_tests": {
+    "backup_safety": 10,
+    "deletion_ledger": 5,
+    "control_backup_regression": 16
+  },
+  "failed_tests": 0,
+  "skipped_tests": 0,
+  "covered": [
+    "Deletion intent and access cutover commit together; ledger write failure leaves session active and no partial receipt",
+    "Exact request replay does not duplicate ledger; migration backfills existing receipts and is replayable; journal has no account foreign key",
+    "Gateway rejects missing ledger schema",
+    "Independent full checkpoint export authenticates scope/database/records and rejects missing or inconsistent live deletion receipts",
+    "Digest pins the exact same bytes whose signature is verified; private file, size, count, UUID/hex/time and uniqueness checked",
+    "Snapshot taken before a later account deletion restores that deletion intent, account state, storage fence and pending jobs from checkpoint",
+    "Older checkpoint re-signed with current time is still rejected if it omits a deletion already present in snapshot",
+    "Real restored table counts, row content hashes and post-reconciliation intent/fence checks pass; no API or worker starts",
+    "Source stays unchanged by drill, all restored active access remains quarantined, temporary servers and data removed"
+  ],
+  "development_failures": [
+    "Initial recovery guard referenced one MySQL temporary table twice in a statement, failing with ERROR 1137. Split the two guard queries within the same transaction; final real MySQL recovery and omission rejection passed."
+  ],
+  "source_sha256": {
+    "migrations/0060_album_deletion_ledger.sql": "24c8728956b9e269ecd999cee05824272406627543b2c9a17b3160bc6ec26362",
+    "migrations/embed_test.go": "e9aacc22beb92a9a9139a02a91bd0e06d628ebc79d11802f8f58f67cdadc7e6d",
+    "internal/albums/account_deletion.go": "4547e0a9cff6504f37800f1a59d67faaf71089e8e9da5f2eaa2bc082aed0a1dd",
+    "internal/albums/gateway.go": "bb95ef0284d2e69bf1f8a7bcee31c1683a6ce6c90db426b724de932b66aa6a3b",
+    "internal/albums/deletion_ledger_test.go": "440db98d2d3a8b20619d0f981a975caa7a6431ddf4c686ff7d8ab28b49795967",
+    "internal/albums/recovery_backup_test.go": "5301e2580a2a750e7af7c94b43ef78d6c27860303e45c96bb06c927ae336d633",
+    "deploy/albums/backup.py": "157881d4e10b1ee13af78bcc794bd30bf7c072cbdf7c68497c7a56097a66c025",
+    "deploy/albums/deletion_ledger.py": "84ce4a19b2de77bbd52f5d2b2d362cd7d2605b3e8e181fc4c5242a55c6e394f5",
+    "deploy/albums/deletion_ledger_test.py": "3fc7872cc15c942c2a53de3a189d0407e03d3e85e723d28767c2fbad322c5b97"
+  },
+  "log_sha256": {
+    "race.log": "df483fca86054472c82f2263eee856e4f4d06c7b7a35921737a3925883b75239",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backup-unit.log": "58a520a024f15707222afe6575db8a3a9dbe7469c2c156ae0f9979903d48645a",
+    "deletion-ledger-unit.log": "533131dad8973c589ae697ab1dd346cc55caa134cd1e536cedf26f1b057c0f1f",
+    "control-backup-regression.log": "e0cc8ba356faac7a826e58403ab1836e0088d43103d0ac7eaf49e193dde5aed4"
+  },
+  "not_completed": [
+    "Offsite publication acknowledgement and authoritative latest-checkpoint selection during failover",
+    "Physical per-account snapshot erasure and deletion ledger retention/cleanup policy",
+    "Reconciliation of provider writes issued after snapshot and actual restored object/provider credential acceptance",
+    "Final identity/billing/backup erasure and account deletion HTTP/UI",
+    "Live cutover, deployment or automated schedule; bare drill is quarantined and explicitly unreconciled"
+  ]
+}

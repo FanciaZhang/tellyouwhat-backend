@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"image"
 	"image/color"
 	"image/png"
@@ -40,7 +41,23 @@ type checkResult struct {
 
 func main() {
 	models := flag.Bool("models", false, "also call Health and Journal models with synthetic input")
+	action := flag.String("lifecycle", "", "local deployment control action")
+	role := flag.String("role", "", "gateway, worker or admin")
+	bootID := flag.String("boot-id", "", "expected running process ID")
 	flag.Parse()
+	if *action != "" {
+		if *models {
+			fmt.Fprintln(os.Stderr, "lifecycle and models cannot be combined")
+			os.Exit(1)
+		}
+		result, err := lifecycle.Request(*role, *action, *bootID)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(result)
+		return
+	}
 	cfg, err := config.LoadPlatform()
 	if err != nil {
 		_ = json.NewEncoder(os.Stdout).Encode(checkResult{Check: "configuration", Detail: err.Error()})

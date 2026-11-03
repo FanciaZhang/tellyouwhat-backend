@@ -1,0 +1,162 @@
+{
+  "runtime": {
+    "cap_drop_all": true,
+    "completed_at": 1792089970,
+    "image_id": "sha256:53d6ab03be96411daf4ddf1feb21bd78cacc120c533bc083120f2abd8c067775",
+    "journal_entries_examined": 1,
+    "log_cursor_verified": true,
+    "loopback_leaf_sha256": "93e94a11ba887b9eba66c544271af0fb963e04ebfb2d251b982d579460ab539a",
+    "loopback_only": true,
+    "no_new_privileges": true,
+    "operation": "apple-delivery-https-acceptance",
+    "operator_owned_nonroot": true,
+    "passed": true,
+    "production_routes_verified": true,
+    "read_only_root_and_data": true,
+    "registered_empty_service_recovered": true,
+    "signed_ipa_published": false,
+    "source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+    "synthetic_capability_logged": false,
+    "synthetic_request_hosts": {
+      "INSTALL.TELLYOUWHAT.CN": 502,
+      "install.tellyouwhat.cn": 502,
+      "install.tellyouwhat.cn:443": 502
+    },
+    "valid_tls": true
+  },
+  "backup": {
+    "apple_recovery_files": [
+      "Caddyfile",
+      "current/.env",
+      "current/Dockerfile",
+      "current/apple-delivery-logging.caddy",
+      "current/apple-delivery.caddy",
+      "current/compose.apple-delivery.yaml",
+      "current/selection.json",
+      "current/service",
+      "delivery.caddy",
+      "logging.caddy",
+      "owner.json",
+      "previous/.env",
+      "previous/Dockerfile",
+      "previous/apple-delivery-logging.caddy",
+      "previous/apple-delivery.caddy",
+      "previous/compose.apple-delivery.yaml",
+      "previous/selection.json",
+      "previous/service",
+      "routing.json",
+      "state.json"
+    ],
+    "binary_sha256": "d3dd389cdb6ba3a28a4840ef5521d4ac730ee174a784ceb4587a721cd2ae9e99",
+    "completed_at": 1792090247,
+    "cos_objects_read_back": 3,
+    "decrypted_configuration_verified": true,
+    "encrypted_manifest_authenticated": true,
+    "filename": "mysql-20261015T184950Z-04a223.sql.gz.enc",
+    "full_previous_delivery_rollback_verified": false,
+    "operation": "apple-delivery-https-backup-acceptance",
+    "passed": true,
+    "public_proxy_config_included": true,
+    "recovery_filename": "recovery-mysql-20261015T184950Z-04a223.tar.gz.enc",
+    "recovery_sha256": "fbe55d6d6ac5b9eda6646bcc04f33ab21f52efca15b23aa17dcac4c5165ed393",
+    "retained_previous_source": "0e9ce2a46d0c44f853c200672204a36cafd71477",
+    "scheduled_run": false,
+    "source": "96a4d06b871628f9d6d316ae5aa10be206039f75",
+    "sql_restored": false
+  },
+  "routing": {
+    "delivery.caddy": "f294880b4ae2ced8731edac80dcb34abb42b70d81f15a41d1ba2f28442e60669",
+    "installer_sha256": "5301ef10cae8a8ea1b79510c13dc18b1f060643c9c64e51a187865b21fc6f2aa",
+    "logging.caddy": "d35358f70d405b8962a0072268e4697d70461d6b709b2b93d1cb5d4777f442ba",
+    "source": "96a4d06b871628f9d6d316ae5aa10be206039f75"
+  },
+  "public_client": {
+    "passed": true,
+    "tls": "TLSv1.3",
+    "leaf_sha256": "93e94a11ba887b9eba66c544271af0fb963e04ebfb2d251b982d579460ab539a",
+    "certificate_not_after": "Jan 13 17:27:26 2027 GMT",
+    "dns_names": [
+      "install.tellyouwhat.cn"
+    ],
+    "responses": {
+      "/": {
+        "status": 404,
+        "private_headers": true
+      },
+      "/readyz": {
+        "status": 404,
+        "private_headers": true
+      },
+      "/d/sssssssssssssssssssssssssssssssssssssssssss/manifest.plist": {
+        "status": 404,
+        "private_headers": true
+      }
+    },
+    "client": "Mac using its existing network route"
+  },
+  "dns": {
+    "passed": true,
+    "changed": true,
+    "record": {
+      "id": "6ad1187ccd1e18a9e3e4c001",
+      "hostname": "install.tellyouwhat.cn",
+      "type": "A",
+      "value": "106.55.105.177",
+      "ttl": 300
+    }
+  },
+  "date": "2026-10-16",
+  "scope": "public HTTPS installation transport; no IPA published",
+  "implementation_commits": [
+    "f08bb37",
+    "73a0757",
+    "622985c",
+    "96a4d06"
+  ],
+  "tests": {
+    "python_passed": 134,
+    "python_skipped": 1,
+    "skip": "native Caddy unavailable on Mac",
+    "native_caddy_host_variants_and_other_site_control_passed": true,
+    "go_race_packages_passed": 2,
+    "full_go_suite_passed": true
+  },
+  "resolved_findings": [
+    {
+      "issue": "staged Caddyfile path was automatically added to file_server.hide, making strict active comparison fail",
+      "verification": "active Root restored byte-for-byte after rejection; only automatic input-file hide path is mapped to installed Root, other fields remain strictly compared"
+    },
+    {
+      "issue": "mixed-case Host bypassed hostname logger mapping and logged a synthetic capability",
+      "fix": "site-level log_name runs before all handlers; guard requires the unconditional binding",
+      "real_credential_or_ipa_present_during_probe": false,
+      "after_fix": "ordinary, uppercase and explicit :443 upstream failures verified without synthetic URL in journal"
+    }
+  ],
+  "skill": {
+    "reference": "/Users/harborzeng/.codex/skills/apple-app-environments/references/acceptance.md",
+    "sha256": "0e30a3d348fa149404720bcb936f5a7981c68dbc6982b0c42dc990c8c0791ad3",
+    "updated_ota_log_acceptance": true,
+    "validator_passed": true,
+    "validation_environment": "isolated uv with PyYAML; no app dependency added"
+  },
+  "bounds": {
+    "signed_ipa_published": false,
+    "actual_manifest_or_ipa_https_verified": false,
+    "real_time_link_expiry_verified": false,
+    "phone_installation_verified": false,
+    "scheduled_cleanup_observed": false,
+    "scheduled_backup_observed_for_new_delivery_config": false,
+    "sql_restored": false,
+    "full_previous_delivery_rollback_verified": false,
+    "all_app_api_and_cloudkit_migration_complete": false,
+    "overall_goal_complete": false
+  },
+  "pending": [
+    "native publication preflight and required source-bound project tests",
+    "signed IPA upload, HTTPS hash, actual expiry and scheduled cleanup",
+    "private Journal connection-file delivery",
+    "external iPhone installation and data isolation",
+    "remaining app API, auth, storage, CloudKit and candidate workflows"
+  ]
+}

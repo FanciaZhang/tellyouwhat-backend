@@ -1,0 +1,161 @@
+{
+  "checkedAt": "2026-10-13T02:46:38.192212+00:00",
+  "baseURL": "https://api.albums.tellyouwhat.cn",
+  "verifiedTLS": true,
+  "checks": [
+    {
+      "method": "GET",
+      "path": "/livez",
+      "status": 200,
+      "expected": 200,
+      "cacheControl": "no-store",
+      "requestContentType": null,
+      "code": "ok"
+    },
+    {
+      "method": "GET",
+      "path": "/readyz",
+      "status": 200,
+      "expected": 200,
+      "cacheControl": "no-store",
+      "requestContentType": null,
+      "code": "ok"
+    },
+    {
+      "method": "GET",
+      "path": "/internal/health",
+      "status": 404,
+      "expected": 404,
+      "cacheControl": null,
+      "requestContentType": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/albums/uploads",
+      "status": 401,
+      "expected": 401,
+      "cacheControl": "no-store",
+      "requestContentType": null,
+      "code": "account_authentication_required"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/albums/auth/challenges",
+      "status": 201,
+      "expected": 201,
+      "cacheControl": "no-store",
+      "requestContentType": null,
+      "challengeShapeValid": true,
+      "challengeValuesRecorded": false
+    },
+    {
+      "method": "POST",
+      "path": "/v1/albums/auth/apple",
+      "status": 415,
+      "expected": 415,
+      "cacheControl": "no-store",
+      "requestContentType": null,
+      "code": "json_required"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/albums/auth/apple",
+      "status": 401,
+      "expected": 401,
+      "cacheControl": "no-store",
+      "requestContentType": "application/json",
+      "code": "apple_login_failed"
+    }
+  ],
+  "earlierProbeCorrections": [
+    "Missing Content-Type correctly returns 415 json_required, not initial probe expectation 400.",
+    "Empty JSON correctly returns 401 apple_login_failed, not initial probe expectation 400."
+  ],
+  "schema": "40\t0040_album_apple_revocation.sql\n1",
+  "databaseBackupSHA256": "35259358e9a8f7ca83bdf5e2174cfc36a984deebde3d7cb0074a6de87b0221de",
+  "otherAPIReadyBefore": [
+    "api.health.tellyouwhat.cn 200",
+    "api.journal.tellyouwhat.cn 200"
+  ],
+  "otherAPIReadyAfter": [
+    "api.health.tellyouwhat.cn 200",
+    "api.journal.tellyouwhat.cn 200"
+  ],
+  "otherContainersUnchanged": [
+    {
+      "name": "journal-private-development",
+      "before": "journal-private-development fcf8bdc6e810 5281d7de4cc1",
+      "after": "fcf8bdc6e81072cc95b00efedb463df2eee63be3c91a4f01c47de6e80a30d3a6 ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:5281d7de4cc1614a060d389a99a00b90a63955f047437067be66459143e62dae true"
+    },
+    {
+      "name": "tellyouwhat-green-admin-1",
+      "before": "tellyouwhat-green-admin-1 bc4aa03df54c a6d556cba137",
+      "after": "bc4aa03df54cf95a23a6e6ec6e546c2d7654108d68b5154c23b4d4e0c927c14f ghcr.io/fanciazhang/tellyouwhat-ai-admin@sha256:a6d556cba137041dfa925a60c7f960d7a6e8e106693a565c219e9e7dc7fa36e5 true"
+    },
+    {
+      "name": "tellyouwhat-green-gateway-1",
+      "before": "tellyouwhat-green-gateway-1 8a44d9f47d8b 5281d7de4cc1",
+      "after": "8a44d9f47d8b7114c9228797bfb5ab85aa361f5eb418922aa8712f53ddcbd9dd ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:5281d7de4cc1614a060d389a99a00b90a63955f047437067be66459143e62dae true"
+    },
+    {
+      "name": "tellyouwhat-green-worker-1",
+      "before": "tellyouwhat-green-worker-1 650fcfd514cd aa6eddde19dd",
+      "after": "650fcfd514cde63574b84424791aa0c48fac97150dff89900508d728b0e6161f ghcr.io/fanciazhang/tellyouwhat-ai-worker@sha256:aa6eddde19ddd5e459e07dab149787d913bc968e90d9b4d443857bb016da9434 true"
+    },
+    {
+      "name": "birthday-private-development",
+      "before": "birthday-private-development 3bee7d2ea8ae 75f84ed805e1",
+      "after": "3bee7d2ea8aeb0a44ca9e2e8b15ea9df5fd0f44e2f5f0fbfa5b49811a469891d sha256:75f84ed805e1dc919b7f61d53756e0b4931897e28c1ecbe4de9144c7f571c1c2 true"
+    }
+  ],
+  "sourceCommit": "c8760dc190ea6e00071842ed7682c385986ebfdc",
+  "sourceArchiveSHA256": "32bf49cfbee8ae747eb39e4ed1fa9340b0bc3ec4741e952742181418a6d37ec4",
+  "deploymentEnvironment": "test",
+  "localHTTPSReady": {
+    "code": "ok",
+    "TLSVerified": true
+  },
+  "images": {
+    "albumgateway": "sha256:4d27fb62efcf9597535273ae142ebb289a204fdafa62f74d711b947ee65fe044",
+    "albumworker": "sha256:2987d9fbb407739eed08c7bd017597b2dd3eff0305a697f71e11c978f78d21b0"
+  },
+  "runtime": {
+    "api": "healthy",
+    "worker": "running; startup confirmed",
+    "restartCounts": 0,
+    "apiListen": "127.0.0.1:18090",
+    "accounts": 0,
+    "uploads": 0,
+    "livePairs": 0,
+    "videoJobs": 0,
+    "photoProcessing": false,
+    "videoProcessing": false,
+    "derivedCleanup": false
+  },
+  "appleKey": {
+    "keyID": "8VMUTQNJ5J",
+    "localMode": "0600",
+    "serverOwner": "root:65532",
+    "serverMode": "0440",
+    "formatValidated": "EC P-256",
+    "actualAppleExchangeVerified": false
+  },
+  "databaseBackup": {
+    "privateServerDirectory": "/opt/tellyouwhat/albums-test/deploy-c8760dc",
+    "dumpCompleted": true,
+    "restoreDrillPerformed": false
+  },
+  "caddy": {
+    "newImport": "/etc/caddy/albums-test.caddy",
+    "configurationValidated": true,
+    "reloadSucceeded": true,
+    "existingBackendFileHashUnchanged": true
+  },
+  "limitations": [
+    "No actual Apple authorization exchange or revocation tested.",
+    "Empty queues do not prove worker database workflow completion.",
+    "No subscription validation, account upload, original release or device acceptance.",
+    "No Xcode build or test in this server-only deployment."
+  ],
+  "deploymentNote": "First SSH heredoc stopped after compose run consumed stdin. Inspected state and reran idempotent migration with -T and stdin redirected from /dev/null; schema and startup then verified."
+}

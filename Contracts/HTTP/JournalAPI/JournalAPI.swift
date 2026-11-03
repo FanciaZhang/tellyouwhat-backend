@@ -5,6 +5,42 @@ import OpenAPIRuntime
 /// Namespace marker for the generated Journal managed-AI API client.
 public enum JournalAPIContract {}
 
+/// Large JSON bodies require an image or published voice-catalog operation and
+/// its exact route, never merely a caller-supplied operation name.
+public enum JournalAPIBodyLimits {
+    public static let imageJSON = 34_000_000
+    public static let ordinaryResponse = 1_048_576
+    public static let voiceCatalog = 32 * 1024 * 1024
+
+    public static func isReadAloudStream(method: String, path: String, operationID: String) -> Bool {
+        let route = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0]
+        let parts = route.split(separator: "/", omittingEmptySubsequences: false)
+        guard method == "GET" && operationID == Operations.StreamJournalReadAloudSynthesis.id
+            && parts.count == 7 && parts[0].isEmpty && parts[1] == "v1" && parts[2] == "journal"
+            && parts[3] == "read-aloud" && parts[4] == "syntheses" && parts[6] == "events",
+              let id = UUID(uuidString: String(parts[5])) else { return false }
+        return id.uuidString.lowercased() == parts[5]
+    }
+
+    public static func request(method: String, path: String, operationID: String, fallback: Int) -> Int {
+        method == "POST" && path == "/v1/journal/illustrations"
+            && operationID == Operations.CreateJournalIllustration.id ? imageJSON : fallback
+    }
+
+    public static func response(method: String, path: String, operationID: String, status: Int) -> Int {
+        if status == 200 && method == "GET" && path == "/v1/journal/read-aloud/voices"
+            && operationID == Operations.GetJournalReadAloudVoices.id { return voiceCatalog }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard status == 200, method == "GET", operationID == Operations.GetJournalIllustrationResult.id,
+              parts.count == 6, parts[0].isEmpty, parts[1] == "v1", parts[2] == "journal",
+              parts[3] == "illustrations", parts[5] == "result",
+              let id = UUID(uuidString: String(parts[4])), id.uuidString.lowercased() == parts[4] else {
+            return ordinaryResponse
+        }
+        return imageJSON
+    }
+}
+
 /// A serialized request produced by the generated client.
 public struct JournalAPIHTTPRequest: Sendable, Equatable {
     public struct Header: Sendable, Equatable {
@@ -50,6 +86,7 @@ public struct JournalAPIHTTPResponse: Sendable {
     public enum Body: Sendable {
         case data(Data)
         case stream(AsyncThrowingStream<Data, any Error>)
+        case httpBody(HTTPBody)
     }
 
     public let statusCode: Int
@@ -70,6 +107,7 @@ public struct JournalAPIHTTPResponse: Sendable {
 public enum JournalAPITransportError: Error, Sendable, Equatable {
     case missingRequestPath
     case invalidResponseHeaderName(String)
+    case invalidRequestHeaderValue(String)
 }
 
 /// Bridges the generated OpenAPI client to a platform-owned HTTP sender.
@@ -101,15 +139,30 @@ public struct JournalAPITransport: ClientTransport {
         }
         let requestBody: Data
         if let body {
-            requestBody = try await Data(collecting: body, upTo: maximumRequestBodyBytes)
+            requestBody = try await Data(collecting: body, upTo: JournalAPIBodyLimits.request(
+                method: request.method.rawValue, path: path, operationID: operationID, fallback: maximumRequestBodyBytes))
         } else {
             requestBody = Data()
         }
         let serializedRequest = JournalAPIHTTPRequest(
             method: request.method.rawValue,
             path: path,
-            headers: request.headerFields.map {
-                .init(name: $0.name.canonicalName, value: $0.value)
+            headers: try request.headerFields.map { field in
+                var value = field.value
+                if request.method == .get, path == "/v1/journal/read-aloud/voices",
+                   operationID == Operations.GetJournalReadAloudVoices.id, field.name == .ifNoneMatch {
+                    // The runtime URI-escapes header strings; HTTP entity tags retain their quotes.
+                    guard let decoded = value.removingPercentEncoding else {
+                        throw JournalAPITransportError.invalidRequestHeaderValue("If-None-Match")
+                    }
+                    let tag = decoded.hasPrefix("W/") ? String(decoded.dropFirst(2)) : decoded
+                    guard decoded.utf8.count <= 512, tag.hasPrefix("\""), tag.hasSuffix("\""), tag.utf8.count >= 2,
+                          tag.utf8.dropFirst().dropLast().allSatisfy({ $0 == 33 || (35...126).contains($0) }) else {
+                        throw JournalAPITransportError.invalidRequestHeaderValue("If-None-Match")
+                    }
+                    value = decoded
+                }
+                return .init(name: field.name.canonicalName, value: value)
             },
             body: requestBody,
             baseURL: baseURL,
@@ -128,6 +181,8 @@ public struct JournalAPITransport: ClientTransport {
             headerFields: responseHeaders
         )
         switch serializedResponse.body {
+        case .httpBody(let body):
+            return (response, body)
         case .data(let data):
             return (response, HTTPBody(data))
         case .stream(let stream):

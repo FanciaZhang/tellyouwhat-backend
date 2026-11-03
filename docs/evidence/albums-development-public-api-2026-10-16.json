@@ -1,0 +1,21 @@
+{
+  "checked_at_utc": "2026-10-15T21:49:28.320973+00:00",
+  "api_origin": "https://api-test.albums.tellyouwhat.cn",
+  "verified_tls": true,
+  "redirects_rejected": true,
+  "responses": {
+    "readyz": 200,
+    "/v1/albums/account": 401,
+    "/v1/albums/subscription": 401,
+    "/internal/health": 404,
+    "login_challenge": 201
+  },
+  "native_login_challenge_shape_verified": true,
+  "raw_challenge_values_omitted": true,
+  "real_apple_login_verified": false,
+  "real_cloud_grant_verified": false,
+  "app_source": "2164291d26f84d3956951f75530a332a95356513",
+  "service_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "backend_loopback_foreign_host_status": 421,
+  "earlier_probe_correction": "Public Host selects a different Caddy site; backend identity rejection was verified directly on loopback instead of misclassifying the legacy site response."
+}

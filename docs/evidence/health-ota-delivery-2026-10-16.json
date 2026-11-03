@@ -1,0 +1,154 @@
+{
+  "source_commit": "75c96ac4d13b93d7ae6ca501ef919b974343035c",
+  "source_tree": "f8abe36ba503ffcd29fcb5cb738d5abcd19594c7",
+  "verification": "repository unit lane and development export, locally executed",
+  "unit_tests": {
+    "passed": 1623,
+    "failed": 0,
+    "skipped": 0,
+    "destination": {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+    }
+  },
+  "release_builds": [
+    "iOS",
+    "watchOS"
+  ],
+  "toolchain": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "sdks": "DriverKit SDKs:\n\tDriverKit 27.0                \t-sdk driverkit27.0\n\niOS SDKs:\n\tiOS 27.1                      \t-sdk iphoneos27.1\n\niOS Simulator SDKs:\n\tSimulator - iOS 27.1          \t-sdk iphonesimulator27.1\n\nmacOS SDKs:\n\tmacOS 27.0                    \t-sdk macosx27.0\n\tmacOS 27.0                    \t-sdk macosx27.0\n\ntvOS SDKs:\n\ttvOS 27.0                     \t-sdk appletvos27.0\n\ntvOS Simulator SDKs:\n\tSimulator - tvOS 27.0         \t-sdk appletvsimulator27.0\n\nvisionOS SDKs:\n\tvisionOS 27.0                 \t-sdk xros27.0\n\nvisionOS Simulator SDKs:\n\tSimulator - visionOS 27.0     \t-sdk xrsimulator27.0\n\nwatchOS SDKs:\n\twatchOS 27.0                  \t-sdk watchos27.0\n\nwatchOS Simulator SDKs:\n\tSimulator - watchOS 27.0      \t-sdk watchsimulator27.0"
+  },
+  "configuration": "Debug",
+  "distribution": "Ad Hoc",
+  "version": "1.0.2",
+  "build": "3",
+  "ipa_sha256": "b7ac19370b68f87e7b4f90eeffc0786679f093788c6140cf2d4c10475457b047",
+  "ipa_bytes": 148975431,
+  "native_verification": {
+    "schemaVersion": 1,
+    "packageSHA256": "b7ac19370b68f87e7b4f90eeffc0786679f093788c6140cf2d4c10475457b047",
+    "packageName": "TellYouHealth.ipa",
+    "bundleIdentifier": "cn.tellyouwhat.healthapp.dev",
+    "teamID": "T6DD96HY2B",
+    "bundles": [
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": "Production",
+        "attestationEnvironment": "production",
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev",
+        "localizedDisplayNames": {
+          "zh-Hans": "告你健康·开发"
+        }
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepDeviceActivityMonitor",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepDeviceActivityMonitor",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepShieldAction",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepShieldAction",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.SleepShieldConfiguration",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.SleepShieldConfiguration",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.HealthWidget",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.HealthWidget",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.watchkitapp",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.watchkitapp",
+        "localizedDisplayNames": {}
+      },
+      {
+        "bundleIdentifier": "cn.tellyouwhat.healthapp.dev.watchkitapp.widget",
+        "registeredDeviceCount": 3,
+        "profileExpiresAt": "2027-08-24T05:02:39+00:00",
+        "cloudEnvironment": null,
+        "attestationEnvironment": null,
+        "defaultKeychainGroup": "T6DD96HY2B.cn.tellyouwhat.healthapp.dev.watchkitapp.widget",
+        "localizedDisplayNames": {}
+      }
+    ],
+    "state": "verified-export",
+    "deviceInstallationVerified": false
+  },
+  "archive_and_export_succeeded": true,
+  "remote_workflow_verified": false,
+  "formal_release_gate_verified": false,
+  "device_installation_verified": false,
+  "cloud_sync_verified": false,
+  "real_test_api_verified": false,
+  "download": {
+    "checked_at_utc": "2026-10-15T19:57:02.141437+00:00",
+    "active_link_download_verified": true,
+    "ipa_sha256": "b7ac19370b68f87e7b4f90eeffc0786679f093788c6140cf2d4c10475457b047",
+    "ipa_bytes": 148975431,
+    "page_manifest_and_ipa_status": 200,
+    "head_verified": true,
+    "range_verified": true,
+    "equivalent_host_variants": {
+      "INSTALL.TELLYOUWHAT.CN": 200,
+      "install.tellyouwhat.cn:443": 200
+    },
+    "privacy_headers_verified": true,
+    "tls_trust_verified": true,
+    "expires_at": "2026-10-16T19:49:33.401136326Z",
+    "source_commit": "75c96ac4d13b93d7ae6ca501ef919b974343035c",
+    "device_installation_verified": false
+  },
+  "producer_cleanup": {
+    "apple_delivery": {
+      "configured": true,
+      "grants_removed": 0,
+      "packages_removed": 0
+    },
+    "completed_at": 1792093776,
+    "errors": [],
+    "free_bytes_after": 25592545280,
+    "free_bytes_before": 25592549376,
+    "operation": "artifacts-apple-development",
+    "passed": true,
+    "reclaimed_bytes": -4096,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "cleanup_trigger": "manual owned publication wrapper; not a scheduled run",
+  "expiry_behavior": "same deployed service was tested with an actual one-minute Birthday lease; this Health lease remains active for user installation",
+  "expiry_service_evidence": {
+    "repository": "FanciaZhang/tellyouwhat-backend",
+    "path": "docs/evidence/birthday-ota-delivery-2026-10-16.json",
+    "service_source": "96a4d06b871628f9d6d316ae5aa10be206039f75"
+  },
+  "private_receipt_saved": true,
+  "raw_link_and_device_identifiers_omitted": true,
+  "ota_published": true
+}

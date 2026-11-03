@@ -1,0 +1,66 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Atomic account media metadata and quota settlement after freshly verified cloud object removal",
+  "final_regression": {
+    "race": true,
+    "top_level_passed": 21,
+    "passed_events": 67,
+    "failed": 0,
+    "skipped": 0,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "7ebbf22e2b4811b5e277ed292fb69637713b6f6c7e5858bb19839dad29df7d3e",
+    "result_sha256": "4b92a108e716334b63d4571d0eb0a060182863b3745532fe917a34afae44c833"
+  },
+  "earlier_related_regression": {
+    "race": true,
+    "top_level_passed": 69,
+    "passed_events": 191,
+    "failed": 0,
+    "skipped": 0,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "28899093a267b4170e4c1ace1cf5515e885f3f67004acecdbbeb46419dfbbe72",
+    "result_sha256": "aa337a6221d84362ddb49d59c40bf7b93427bf9dbc9687642c1bb8cc0d85d374"
+  },
+  "regression_groups_overlap": true,
+  "new_top_level_tests": 5,
+  "coverage": [
+    "photo, video, Live Photo and unpublished original multipart metadata erased in real MySQL transactions",
+    "all media manifests, share links and claims, versions, lifecycle changes, operation results, processing journals and media cleanup plans removed",
+    "foreign account media rows and used/reserved bytes preserved",
+    "current account storage fence, accepted deletion request, immutable removal receipt and media quiescence checked under locks",
+    "all six cloud areas freshly listed before metadata erasure; nonempty area requeued with metadata and quota intact",
+    "network calls outside SQL transaction; provider failure, cancellation and changed fence prevent erasure",
+    "injected final receipt constraint failure rolls back all metadata deletion and quota changes",
+    "concurrent and restarted settlement returns the same timestamp without double decrement",
+    "late photo publication cannot recreate deleted media records",
+    "nanosecond wall clock normalized to avoid MySQL DATETIME(6) rounding past the settlement check",
+    "account remains deleting; Apple revocation work, grants, sessions and subscription records retained for their own erasure stages",
+    "missing migration blocks schema readiness and settlement before provider inventory"
+  ],
+  "boundaries": {
+    "required_migration": "0055_album_account_media_settlement.sql",
+    "deployed": false,
+    "runtime_scheduled": false,
+    "provider_inventory_controlled": true,
+    "real_provider_calls": false,
+    "user_media_modified": false,
+    "full_account_erasure_complete": false,
+    "identity_billing_and_backup_erasure_complete": false,
+    "account_deletion_http_ui_complete": false,
+    "cloud_and_sales_gates_changed": false
+  },
+  "source_sha256": {
+    "internal/albums/account_media_settlement.go": "9f515a784d009b7e927d589753bed5928ea7b73d2feb18b3eead242864e03d70",
+    "internal/albums/account_media_settlement_test.go": "2899b20170a09ef3f001d723f1b3995936d8a6a3e15ab3ac7125cec49830ceca",
+    "internal/albums/account_object_purge.go": "19f0534ceaa03cb99b6c4eeadf24a987300ca7a0e02531472958275cc1887b68",
+    "internal/albums/library.go": "fb9434cb46ea84689f30a2cb378b15f5836f6efcc4d3359ca57a46e6cdf2f97f",
+    "migrations/0055_album_account_media_settlement.sql": "c11e842cf8f8684598763e9d5a4656ff6d4ae6239ea40e4543581a5425692870",
+    "migrations/embed_test.go": "9d63bc28d10094454bfb2877ca7b10d632f114445ce7070eb5f2fa0f57af0ddf"
+  }
+}

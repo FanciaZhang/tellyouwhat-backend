@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-16",
+  "scope": "Production shared App routes bound to release and recovery selection",
+  "base_commit": "8aced7377819d0fd4dbe8019eeb2317d7db1e39a",
+  "source_sha256": {
+    "deploy/tencent/blue_green.py": "c7a35a805a65882628e293e09f9b065cfc29ba359c22550e3861b41210b9e53d",
+    "deploy/tencent/blue_green_test.py": "fca5035aae0619afeb46c96f9c50ccea127df4dd850ab65e0ab282763f252389",
+    "deploy/tencent/blue_green_proxy_test.py": "5ee95dfe90328ddf999be6a137be930159152d6034f4410442be17956a000678",
+    "deploy/tencent/disruptive_release.py": "dac36eb48dca9858c2919ed074dba007296cab9fffb24c51c8aa738e82f6b4e7",
+    "deploy/tencent/ops_offsite.py": "bc5f70b080b71299db7ac3354472880ca98a17910f8a5e12adefde9d0f1df552",
+    "deploy/single-server/Caddyfile.external": "f5c845edc20a334c56f5a7bd04a9f1eede5b201adf616c5f7bb502cf02155426"
+  },
+  "checks": {
+    "operations_regression": {
+      "command": "python3 -m unittest discover -s deploy/tencent -p '*_test.py'",
+      "total": 264,
+      "passed": 262,
+      "skipped": 2,
+      "skip_reason": "Local Caddy and Docker binaries unavailable"
+    },
+    "new_proxy_cases": [
+      "Normal four-App shared switch and version-bound rollback",
+      "Root and backend fragment restored after reload failure",
+      "Validation failure leaves active files untouched",
+      "Unknown sites in legacy Albums fragment block retirement",
+      "Changed legacy fragment blocks recovery",
+      "Selected hosts only and old development/TestFlight paths blocked",
+      "Runtime host verification rejects missing or split routes",
+      "First-migration recovery bundle includes original backend and legacy Albums proxy"
+    ],
+    "native_caddy": {
+      "host": "106.55.105.177",
+      "command": "caddy adapt --adapter caddyfile",
+      "passed": true,
+      "inputs": "Temporary complete roots based on the current server Caddyfile, with generated blue and green production fragments",
+      "blue_api_port": 18080,
+      "green_api_port": 18180,
+      "checked_apps": [
+        "health",
+        "journal",
+        "birthday",
+        "albums"
+      ],
+      "admin_separate_port_checked": true,
+      "existing_test_and_ota_upstreams_preserved": true,
+      "temporary_files_removed": true
+    },
+    "diff_check": true
+  },
+  "remote_configuration_modified": false,
+  "remote_services_reloaded": false,
+  "deployed": false,
+  "git_pushed": false,
+  "remaining": [
+    "Production resource bootstrap and cloud IAM/CI readiness",
+    "Managed deployment and real public DNS/TLS acceptance",
+    "Real Apple device and end-to-end App business acceptance"
+  ],
+  "limitations": [
+    "Proxy switches and failure recovery are filesystem/operation fixtures; the server check parses configuration without activating it",
+    "Backup routing assertion uses synthetic fixture encryption; no new remote recovery drill completed"
+  ]
+}

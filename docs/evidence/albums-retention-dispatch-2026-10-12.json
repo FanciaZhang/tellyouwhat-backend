@@ -1,0 +1,768 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-12T06:34:25.827988+00:00",
+  "baselineCommit": "1fcfc25d454fe348710a45e521a260f4aa2895c9",
+  "scope": "all-chain Apple preflight; durable per-registration APNs acceptance/retry ledger; bounded Gateway dispatcher, off by default",
+  "environment": "isolated localhost MySQL 8.4 and Redis; per-test restricted database users; synthetic accounts/media usage; real AES-GCM and receipt certificate/ES256 verification; controlled Apple responses. Existing real local HTTP/2+TLS APNs tests included. No live provider calls.",
+  "sourceSHA256": {
+    "cmd/albumgateway/main.go": "1246164508cc1aab6ddcd0e7c2ade4135d1e8f8d1cc538d414fe368608df167c",
+    "cmd/albumgateway/main_test.go": "094f6a51874d14f0ef5dedc4c5fcde711c763102497f8cd28c8a78aae056884f",
+    "cmd/albumworker/main.go": "008ba03897990a0c3b282f7061cce1abc9dba2ef5b5008e3e79d5b6dfa3787c2",
+    "cmd/albumworker/main_test.go": "f055c6bf7c46f4a84c52e7354f4273a4b49235b73af739dfa342d6820564a892",
+    "deploy/albums/runtime.env.example": "e5b63cfca825602bf90a80ee18e47b6e5f8f83e5ea3eda2e1beb5f50f475d0c0",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b",
+    "internal/albums/accounts.go": "5dd7b119f44b214812c77748b61714b385e65bef80ad184f399d4dd66d783733",
+    "internal/albums/accounts_test.go": "637868608de5c23a861ff1d5f833804420f4147da8fa21d581c4bf6143f08cf1",
+    "internal/albums/apple_code.go": "b17f22a9dd3b7e37c98112a680092d4a88d059a712458386aac867c16ce608a7",
+    "internal/albums/apple_code_test.go": "4a4d37c34cc0c533aee37d6038e96d99d17f40ffad4b1dab6f46f1f2df953103",
+    "internal/albums/apple_identity.go": "27aa735ac178e7a1c4a630d7a3f3a3b4d7c81a7b6fe1509a76d0713484e6b765",
+    "internal/albums/apple_identity_test.go": "1740f4a9152dc9519b36b6f9cd00d0bfbfc55997e7d483e0de5ad76a3bca0969",
+    "internal/albums/contract_test.go": "c4b65cbe6a20e2cf690e747ce113fe298fe9c83b9a6633bc9ad9cd8f0d6c4d1d",
+    "internal/albums/cos_copy.go": "5f9ec9b3163022c6663c6a7bb2846090135c74f06482b732ec971cd47a38ad8e",
+    "internal/albums/cos_derived_cleanup.go": "991ef8482a8e77640b1c1b4d4fb3ddc8c8ed76136b8cde9da245a2a1ba4aea8d",
+    "internal/albums/cos_derived_cleanup_test.go": "5cf6ffefb9731d98dbb5fbbe3fb58508fa46429125d64bb90f75275fef644b4e",
+    "internal/albums/cos_find_multipart.go": "5bff1cc037c90ecbed4c9f0fb10490d33e897f534b7123616a6b7e0a4949c0f1",
+    "internal/albums/cos_find_multipart_test.go": "093da673b3af92c2a6eff2f148ab1766071f49f042941981c02263412f252676",
+    "internal/albums/cos_live_pairs.go": "eb60b8a9d8e9d2b581d2b692c268ba982103d4692d6f86975e44628c5d5152b5",
+    "internal/albums/cos_multipart.go": "50176028b9906a825aafb23d1c7dc83e2702b9fce472ef7919a2b23b03a42c64",
+    "internal/albums/cos_multipart_test.go": "6e8318c018114c75c7587e283a41533860944e9042c6426745177caee9532271",
+    "internal/albums/cos_objects.go": "41ebc4d541702214f5e752ae5cc933fbb42edfde50f7a885496cac8d0c8c1450",
+    "internal/albums/cos_objects_test.go": "06e299cce21532f7764634a1c9792ca202894df90202c5654fef540d5aed7253",
+    "internal/albums/cos_photo_candidates.go": "19727be722032454deb9deb6a21b8dcc0fe4a0cd9c63208ddd77e0ca9697b187",
+    "internal/albums/cos_photo_candidates_test.go": "a8b888a3e7f32905f1497c210a21567e5a73164cfe3393277cce320473dda247",
+    "internal/albums/cos_photo_storage.go": "424484e0085b4ff5b8609b11c35d098cb4871137dde2fb622b6a4047d1ba6939",
+    "internal/albums/cos_photo_storage_test.go": "ba5c5d78311bd00409155414bbb96c494c150bf9c4fb5571b6b2cd89e8f23d46",
+    "internal/albums/cos_reconcile.go": "c58decaef34be675337f5c78855acb5e370dc9165b68f852f60f3d7283b95641",
+    "internal/albums/cos_reconcile_test.go": "42ce53b2fcf51f2c960239d8b2db466b7a9c0578493b322072ae55a98b46782a",
+    "internal/albums/cos_video_derivatives.go": "0a70b90fe85fa813355b6ee8371df3bdde8a35708f9cc05c14cadc77e3980072",
+    "internal/albums/cos_video_derivatives_test.go": "53b80235bc8a45fcdb9a28a8e79c32dc4b7f9ad4fd1667ebb049792fdf54f013",
+    "internal/albums/deployment_test.go": "a5eb52a73e8782c411d37a003722b0dc417ec7bd5f2fb952bf60770ffa753113",
+    "internal/albums/derived_cleanup_integration_test.go": "fa08475507afaae939162ec727d5735e86ac1b07aba9ef4a29c24fbb41ce1d06",
+    "internal/albums/derived_cleanup_mutations.go": "7e8937b6bfbd73883a01ec3a813ac48cbe3322b846ea021d94eb1ada0e6492a5",
+    "internal/albums/derived_cleanup_queue.go": "af7699f93e6b939a12388bc34e9b622b962d4772ef69ac27eb495c8452f60f0b",
+    "internal/albums/derived_cleanup_worker.go": "6a1bbd7996dca7711342fcc4c848e62210db3f229a050606649420a07221880b",
+    "internal/albums/derived_finalization_worker.go": "3ca7fb1c81c36534f19d18828cd69ef7a966f73f56f9c19d50d0078b7ec745f0",
+    "internal/albums/derived_finalizations.go": "ee8fff30499b13580944f65b1211587c82e30e0e46aed3c7544b20fff7f04771",
+    "internal/albums/gateway.go": "2305af62e575710f63e5f331497e66d40822b392bf9bca2d77b1d57fa08c8f65",
+    "internal/albums/gateway_config.go": "bb21ab0534fb72837868044705f212e9d3eab3b7624a732cda97ee3deb0884af",
+    "internal/albums/gateway_config_test.go": "622f90aff34cc6de40236267e44d30334dd4224527d7fc9beeb7b4c4f99b8243",
+    "internal/albums/gateway_integration_test.go": "96f463f69e69364c7e65b5b4994a9b77f31d2b47284da24c215a1c39ecfddda6",
+    "internal/albums/http.go": "14600e4f10c1a66ad12aba31309efe628a1ece549ff43d8bfc9eec035aefcf57",
+    "internal/albums/library.go": "b20db49cd8156496d20582dd1a8163160348f748f9f0434490d5b1cd0d54fe43",
+    "internal/albums/library_http.go": "c94904f02e750870810a11ac635912e319bca8ecbd3608942f5012b6c765f37f",
+    "internal/albums/library_integration_test.go": "24d58ff1119da28d4f5b83bef769ae106aabfe186e116a0959a671a9e81bf890",
+    "internal/albums/live_pair_http.go": "48cef598fbdd2ab9c9593e49a99acd2bc498a9feedeac07e8c52987cb03add82",
+    "internal/albums/live_pair_worker.go": "81b318e28d999a2e369921b2d2155cb2be564fb85b947f511d3065709908c446",
+    "internal/albums/live_pairs.go": "6de06ae3da6a87ea2217ab2d798e2b2d8416f616f2dd1acbda061b2683783292",
+    "internal/albums/live_pairs_test.go": "7f40fc9435ed9ee9a973ffc09a0ebb97b257db9f79faa6c49118e982842782d5",
+    "internal/albums/live_photo_previews_test.go": "b97ee8f088307be8255f3f3d28232b29ab24aa686843a06136294c80f9a5060a",
+    "internal/albums/live_photo_read_grants.go": "97998b2fd14573a501ddfab07458722c58e064df0e582da8091427dad0093dfb",
+    "internal/albums/login.go": "967ee5448902deb53e173eeb823fd529bb5aa394469453ed0150a3b8c1dd3479",
+    "internal/albums/login_challenge.go": "169fb6ad595ef9e14622ca9235d4b1018e7a12b42c29576556c84e0925399e15",
+    "internal/albums/login_challenge_integration_test.go": "da0f278a9ecc24cc78dd47d4b4d69319d6bcd236a6db6605de4afe46ec7c3eaf",
+    "internal/albums/login_challenge_test.go": "1ca5a285a862a0584d6eae0ffc6ae2873865b4eda5cda736bac4a54e120507de",
+    "internal/albums/login_http.go": "5317bcf2dc58f3b9c1897fb72dbf4dccebefd5ce7117f3a02c4c8e378bc4dcbb",
+    "internal/albums/login_http_test.go": "97a1155b714e54effe8874da4a2bfaeb29d7b28aa3ff134a0a7877b0ab600217",
+    "internal/albums/login_limit.go": "22f21fbb50b6eab74be2e9886792bb93e307c1e0d6706b015e38f813a5c89ebf",
+    "internal/albums/login_limit_test.go": "9b4f20f08a8dfc330622635464363295df1aaeff8b4114c6a28c0acabf42132d",
+    "internal/albums/login_test.go": "73b1bfdb653ae2986b720d1c5d699bb80230ae9aad8fb4bd8da6a3c275aca947",
+    "internal/albums/manifest.go": "e906658fefbb4e8ccd61a1ef1405c241c820a6fe3a660fe43bf7b207026b5c04",
+    "internal/albums/manifest_test.go": "c55d9563b15845685f0478a074844622cfd7d11bc4187b6d3c95c790af08211d",
+    "internal/albums/multipart_completion_service.go": "90c6fbbe40cfa13ca3075fb4d979145f7ec00e8443d526993b420780eb32c5fe",
+    "internal/albums/multipart_completion_service_test.go": "55f1111d833fbf76a977f8ba35c63e4511f4704835d06c6dca87bb4fce0ee2b2",
+    "internal/albums/multipart_http.go": "a8c2038e4c24f3251d259cd6d8319ff6e07796d567e8af27df5b9a5d61af820c",
+    "internal/albums/multipart_http_test.go": "1c01a816216d88c7c793ac0a7c048dfc7e57ca21817a39513f18afd117777e88",
+    "internal/albums/multipart_initialization_reconcile.go": "fe8a76821b6cabf2917ac48487c3cfa5a8b102ae4e9f33b4342c00e41caebed0",
+    "internal/albums/multipart_initialization_reconcile_test.go": "8d30f4392df661f1affad030ed317cb2766338fa9ebcb8e1c421169ba0174422",
+    "internal/albums/multipart_reconcile.go": "8a7fd75bd69ff04fb41c30db5902f4341d4b0c2c267fe870e3ee7e018065f939",
+    "internal/albums/multipart_reconcile_test.go": "2b4fae44156fe002627e3f65f6cffad71b8566e1c1180cc893183c232a9d1485",
+    "internal/albums/multipart_service.go": "837781ece1fce6c5018cea36c7c7716c5fae54b5737681cb0ea1c12da2ad84d8",
+    "internal/albums/multipart_service_test.go": "d9aa8ed70853b9e949bb3a52f377afc016abd762db4e22bcac9d9d0ec25f92ff",
+    "internal/albums/multipart_status.go": "1c7f3cb8c5a1bdad374e2ae06b46e77225db259b98486b0a811644fecff59bba",
+    "internal/albums/mysql_live_pairs.go": "7ea97285877adde8fb761614775f03f82ff1bd230a87c9666d40fc7359dd5fd2",
+    "internal/albums/mysql_live_pairs_integration_test.go": "780ce8fcce9b766e1765da2e6e6fb9a8432280653c9abcaceff73a5d00d960b9",
+    "internal/albums/mysql_multipart.go": "e5c8ff8f9ec4640d9c222a44137fb51aa66eeb9cd33c5bedc7698e6303af9554",
+    "internal/albums/mysql_multipart_completion.go": "775855cda6eb6c8871bfee6a2cad0c4a788108f32da25f974220e90bd3b7cd94",
+    "internal/albums/mysql_multipart_completion_integration_test.go": "975872e433e5fee65c1b1131e30c37b937fa86fb821a073328e60b4120c59602",
+    "internal/albums/mysql_multipart_integration_test.go": "41e3ecfee51c522ee24954668d25a00ceeff543cdf11eea7ad0e0838c9224c4d",
+    "internal/albums/mysql_photo_writes.go": "7b28c33d105d90a4155678f84bce015298b0c9d721800266d510966a3ad966f3",
+    "internal/albums/mysql_photo_writes_integration_test.go": "d1fe47dd5f482ffd0a52c47cb488759e5b11df9c0950e3696c23977bb1078fe5",
+    "internal/albums/mysql_retention_reminders.go": "55923533c344ef44aaf5b07cc10620c5774b5d020f16556a72a904bfaeddd6c2",
+    "internal/albums/mysql_sharing.go": "d3e5a9ec6a9ffefd7daf0159f3eb89d626ba3e9629f23ca032ce4e23a681c40f",
+    "internal/albums/mysql_subscription_notifications.go": "87a922929f4ee83a07388c13fdc62f390df9c5d337c6fefc1f00318e628d1519",
+    "internal/albums/mysql_subscription_refresh.go": "666ae6bb44d724bb6f617a038a24a8f17a268a6ee800f89c7409a6e112d1764e",
+    "internal/albums/mysql_subscriptions.go": "7708afb6a0bc77733be92afbd8c9d35e479acb61cb0b555015c539eed649d21d",
+    "internal/albums/mysql_subscriptions_integration_test.go": "36b1a659466845833bdac4f05aed070482ed95bea7bb861a7ccdf26f5cadfc16",
+    "internal/albums/mysql_uploads.go": "20f83b781ce2675edbdeac7c155d755b5a2fd295e43a67e6a020a7067d44ed7b",
+    "internal/albums/mysql_uploads_integration_test.go": "6b96c27a627f08c9a4af039ce7c4db35cf9b2f99b60738429cea036e0323b8c6",
+    "internal/albums/photo_candidates.go": "a21136b0e784401a2497bfc9abb44f5a64c3226a89c40bf56cb5f5bd60e0fe96",
+    "internal/albums/photo_candidates_test.go": "29b97d62bea08011225333c17a1df5113c3f79f6464fef7edbd90a1c7e09585f",
+    "internal/albums/photo_derivatives.go": "a02b826d0337c0a2092af1b7a8c150f6b520f11939d223e8be33adc0b8ae2b42",
+    "internal/albums/photo_jobs.go": "421f3ac535a9605afe221ab28a3424af70bd40eba00af4acf28c0275d8c15331",
+    "internal/albums/photo_jobs_integration_test.go": "6e41bdde30a9bbc4a2b5f02be297a817859206cb59d3f2508f051caf96b6ba0f",
+    "internal/albums/photo_read_grants.go": "bc3349dfadbc6d57e03be7f3160144b753cae101c3c1dc28b7b1d6147533bad1",
+    "internal/albums/photo_read_grants_test.go": "7730a2be9ca294ea9af262444b872cdabf0b70cf8222b5207324de9089f229eb",
+    "internal/albums/photo_worker.go": "f72f3ca2e44baaf2d82f1e926b4212fe160967b9d3af8f8e6a48c9e14b086f70",
+    "internal/albums/push_http.go": "f358c51a3f6351310a5870d6b454ef938314f0a83502ec32c423a9d6ef2a911f",
+    "internal/albums/push_http_integration_test.go": "557afc36388d2cb3babacde55d84b076b5cd521f88eb9234eca3347eeaec8388",
+    "internal/albums/push_registrations.go": "e4c00d9f3848442c73ddf1210bf03565305071c2c564d749e8800d32a668adfe",
+    "internal/albums/push_registrations_integration_test.go": "d74676621a751342412fd56eb17b011bf4e09f480c9e901b0c7d0e3a22330ebb",
+    "internal/albums/read_grants.go": "ff619fc206c454478c8e4577d68564749c0dcdc706c0802f54300b803425f268",
+    "internal/albums/read_grants_test.go": "a8db06d68a6cdd1e4ee3dbe891adf8f1982f2b6ee3084df6332a9d1fdc0c84f2",
+    "internal/albums/reconciliation_queue.go": "00a34ad14f9be44a608490c982983334e43f38d2b4a0a06d0311d2d046a9f342",
+    "internal/albums/reconciliation_queue_integration_test.go": "ccd4b2634cddc6e32b9d5f11f7a88c5dc56dec9ef5b0234bb78d59fb7bbcccba",
+    "internal/albums/reconciliation_worker.go": "db23e2d126262b978b62337c4570d4523adf0ac22c62113fcb81b8be6b567334",
+    "internal/albums/reconciliation_worker_test.go": "18d3cf83cdb865fac256063eee6a01fbe4dab720fd3eb359b34522259404e277",
+    "internal/albums/retention_apns.go": "4357cf1c764ccd393ce196d3a8a926977f0e24d83eef8069b275ba2580bd6f16",
+    "internal/albums/retention_apns_test.go": "0cf9a3e688c1f9ae7b234392ab0ea8ff293bf30747e61a793c70c6d0ac6fa1a7",
+    "internal/albums/retention_config.go": "28f36c7c75ed245187bc8548f3f66a6bf5ad2b0e70546414ae30dda4f8814f4a",
+    "internal/albums/retention_config_test.go": "fdb2e8eaca2b5886e884f424e58b57ca6263fdb3ad6dc49031caca5849ded3b9",
+    "internal/albums/retention_deliveries.go": "8fae020e60eb1258b15f7872ffb8dc00fcff9f05f965ed259ed855b5251fdad1",
+    "internal/albums/retention_dispatch.go": "94c66e9a14dc50fb6dfcf0d6065dbae5d30045800866e309c69801a0125ab023",
+    "internal/albums/retention_dispatch_integration_test.go": "5ce605c61404f7e31299fec3f5926c750338fd4dca1d7b107815e1e436cad921",
+    "internal/albums/retention_reminders_integration_test.go": "12cab404fcf9e51e6f6e290c149f5724d54fd89427447e1a773d266665d78fbb",
+    "internal/albums/retention_verification.go": "88ac1481e36ac83c0f42b03eeb7649963926b9e08fcd95e7c5dfa93316592f30",
+    "internal/albums/retention_verification_integration_test.go": "c6922c77f2aa11eed913ccf1015fc02ff3ebe0241877e429c0a87027d18127c0",
+    "internal/albums/sessions.go": "eeb0295f72e082e6f9d084da4afc0adb6771a1b37d2d4060e994e3f2c8a9e50e",
+    "internal/albums/sessions_test.go": "3b8941a107a2c5ebfb29a382d9944b16af2dc04b6354276e10f83a7f06d70a42",
+    "internal/albums/sharing.go": "259770cd4d54a7c18b94600519633b2289c354be32e475d31a08437f77105ac6",
+    "internal/albums/sharing_config.go": "75ca6d17aecc0b6cd2374de1e61d3c26a662235e7afe968604fbd3e21c8e672a",
+    "internal/albums/sharing_config_test.go": "9c19171bb7ca2f18ebab34c08e1a9459f38e2139d4a5ecef48f5aaa1daeb7b08",
+    "internal/albums/sharing_cos.go": "b410954e044f9c3d2735df236c5c54d9a6d09c098d550143b460030c729fc767",
+    "internal/albums/sharing_filename_test.go": "6a5d9370fe2e8db3790e8d4cfcfafe9d8e25ddac1c5d99f1e59d9f33838998e1",
+    "internal/albums/sharing_http.go": "ca6643f29859468f8e0133824bef33671b3b135d9f9a887ef631c89647d21a10",
+    "internal/albums/sharing_http_integration_test.go": "5ee8b39cd4b9f3667336fe3a8f5abd1aa33d9dcd5099533f25d15407d77900d2",
+    "internal/albums/sharing_integration_test.go": "07fe34b150618cd334ef1913f467991401065c41c3e0caa2c680c85af23b2415",
+    "internal/albums/subscription_config.go": "d0b193c6765373013a2e955a8b4df45bbff42859788249d9a9e17a28426471d4",
+    "internal/albums/subscription_config_test.go": "a77b56253ff7294d464ce6827e6ec4ed6e17bf639b2b1651771fd4f659b07d41",
+    "internal/albums/subscription_fixture_test.go": "03beab6df60098c2e7f276d8ea690047ca4f4bae131f13996acbaaabac269651",
+    "internal/albums/subscription_grants_test.go": "7fd83294949401876cf05eb9d0d40f197ec0ba1dd85583cf7d8e9a6debd8631a",
+    "internal/albums/subscription_http.go": "57e9828d071a49f9f329b419e2a1712c68579372e3e5aa69e2f120820be1b267",
+    "internal/albums/subscription_notification_http.go": "e4c39ac5a4caa01878595459ad46469a2e0108e3dcfa3e540046659a3c2039fa",
+    "internal/albums/subscription_notifications.go": "8997328fb85d9bd781f694e101767232b883c85a6ae071fcf881b9b94dadda40",
+    "internal/albums/subscription_reconciliation_integration_test.go": "b4d7894a944504d9ec35251a3fc26136e084ee28c4e4b3e28533ecdde082fd82",
+    "internal/albums/subscription_refresh.go": "81c3e1df485f61ff50a15252bc9a77b1c61539d3c881ee2c8082c78e3a9fef2c",
+    "internal/albums/subscriptions.go": "80b207d5cde277b9317b168ab1f5d8587f5425da996b3bb8a802222b7a60a390",
+    "internal/albums/subscriptions_test.go": "ae2d7ca10cf84f463f9ae1ad52cf4d831c565df7c541f34bd194689dce3af5e7",
+    "internal/albums/uploads.go": "371d06929fa5ba522a9057aadb2be715234c381264d038dd0bbad7cb24b1a578",
+    "internal/albums/uploads_test.go": "2b5c63f20ec4f17be46f13010bebd42da05c22040b42bf20d19f1aa96133e6c5",
+    "internal/albums/video_derivatives.go": "9ef5f8e089e02b11ca2e2767b6168397f9d0055450eb590ca976ca39df17fa0e",
+    "internal/albums/video_jobs.go": "fc0975d42e8c4bf364fe88e4d2d9d42ac475a21c2f12048bd2c74cd35f2a2d7c",
+    "internal/albums/video_jobs_integration_test.go": "fb2549bd85a944737531055f048f1d8d78fdf12b9f4d159b9b2b3884cdeb03d9",
+    "internal/albums/video_read_grants.go": "51aeea755ae582b1184d9a67bbf0919c72bbff5dfdf3cfe85ffdf890e3942fd8",
+    "internal/albums/video_read_grants_test.go": "51df5a1de27c195e3ff1ec3ba8afc366cb05c8aff4458577d86119f838eb0868",
+    "internal/albums/video_worker.go": "ed7f642dcd04e95cfde461c22ecafc6102d399031069a8135b0417415513e0c6",
+    "internal/albums/worker.go": "4acc7fc9260b2bfbc6d89c76300a0a39d5a918551211414f4031b4efddf1647b",
+    "internal/albums/worker_config.go": "22383ca1a179cd858c4f83232a7d3e4bc5381bd608b58358ef59a5d1941c206d",
+    "internal/albums/worker_config_test.go": "4898d3a850d0b2e02e74f2fe629f7ee703f8fb9fd35abc996fad4a1d5fdf712e",
+    "internal/albums/worker_test.go": "62467c40d25fa56cb68ca48a9f061821d39b6fd217eec59e88d67fb4332ae64f",
+    "internal/appstore/album_claims_test.go": "ac49baab6e7323f31290aff116b0f72ac1a09baafe2821151756c25c44950165",
+    "internal/appstore/client.go": "c99a249bfd33b111827da20b47b187580364e92dddebedbb99b49824d6f15452",
+    "internal/appstore/client_test.go": "bf14a23f15f872451478bd17ae428e5d2bb9a039a7894af8837166cdfd123d49",
+    "internal/appstore/multi_environment.go": "7798bde72c826c3ebaf7fd0c47fd12e95f9da88fb633fdfe89d79651cbcccd65",
+    "internal/appstore/multi_environment_test.go": "84c2ed80658aef4c5d35c147a162ccf68ca2bafd25d47bbda218dcfe152fc06f",
+    "internal/appstore/notification.go": "916d1ddbe0c2245ab155689d350e2a535e7dedd296a905a4905f2a5010454542",
+    "internal/appstore/resolver.go": "e0a80462c719840266df36250f7386a989fb16b60b1a4dd3398d66c6f968e084",
+    "internal/appstore/verifier.go": "9f42fe3d00434631e3b1689563049097b8051aa2cd9e71f169b35edd0d55a90f",
+    "internal/appstore/verifier_test.go": "311969941eb79f19c4557b9ef2233d8dbc9a97b9697bd47e102a53df08d6377f",
+    "internal/storage/mysqlstore/attestation.go": "9c36a09de8cf38ba2fa77a0783d839f49713401776d16c75522b0abe8b11b8eb",
+    "internal/storage/mysqlstore/cipher.go": "d9b85419a13ec9708ae3b09da125c75fb380e6e983541552859e1e353d2699d9",
+    "internal/storage/mysqlstore/cipher_test.go": "1543ea2e36fdff9a001b8093012ad6652931d8743375dbfcee21dae90df1f2a9",
+    "internal/storage/mysqlstore/cost_control.go": "95193e3c53741e36cced2fe05e830b036fd4e267f0f561d6d81750562c440980",
+    "internal/storage/mysqlstore/cost_metrics.go": "f73b448eb1979b1fb692f8d973a631747f9316dc627d21ccf735e0b3db86e524",
+    "internal/storage/mysqlstore/enrollment_recovery_test.go": "14792f0f478f861d2c789c9efb38a1e535e7541f43cad1a899e81c53d839d785",
+    "internal/storage/mysqlstore/entitlement.go": "0bbc49c6caf12798f6750668dcc25534f3216e549aecc890a028aa09e32e9edd",
+    "internal/storage/mysqlstore/health_consent_migration_test.go": "eb3d3a754be0ec16b09a8dd8bde551f5a8064a14ae5adc0e43128a5cfd3d037b",
+    "internal/storage/mysqlstore/integration_test.go": "1c869203b3cbd1e27052aa7f3f636495e4f8de1936d01a4d7cb47df23e4452f9",
+    "internal/storage/mysqlstore/jobs.go": "d33b7fbed31246507c88ad5bb0738ad1b4528714b5210ba5f83a4efaa6514222",
+    "internal/storage/mysqlstore/maintenance.go": "f1998f45762749041169ba552d68260f50adc78cbfff694f7cd4fbb993f4775d",
+    "internal/storage/mysqlstore/maintenance_integration_test.go": "0e3f030b0ed84143070502c7a7311be415d622ddf0e6fccd54034593fc257a04",
+    "internal/storage/mysqlstore/maintenance_test.go": "f42e39c68d185cbcf59a1e72927d0acd8f4f3e9b026dc715de9cf11fcfb68e7d",
+    "internal/storage/mysqlstore/media.go": "2f9906c9fcc5b7046b1123a6746fb623632fdb16332f58501d1825344a2b2c21",
+    "internal/storage/mysqlstore/operations_observations.go": "ed3ecd69362ee5c6fc1f6b758beef09412cd5fef2c84aa50c04917ccc734f7c8",
+    "internal/storage/mysqlstore/operations_outbox_test.go": "2bdc763ddf8007f4f2e0f968468526b9c339bd34559418f48cbbf14414ca1339",
+    "internal/storage/mysqlstore/outbox.go": "fff2fe09b17fb95b027ec63d822b38372d83a6b7780082cc2448ee178244bbcf",
+    "internal/storage/mysqlstore/pool.go": "e8e5100c8263f2e8aa151ee1a656b67dc2144482e85547044ca12abf561e9838",
+    "internal/storage/mysqlstore/privacy.go": "b9012e15eafdd3718b9b2e02099bad986fe6a75be000bb3f6722c35a561674e2",
+    "internal/storage/mysqlstore/privacy_receipt_integration_test.go": "dc1eb12acc24300a21c8027ae99c512569f4aabb5027d841b29e5f51c41afa5e",
+    "internal/storage/mysqlstore/usage.go": "b49972ed692d14bdac8266bd32bd4e514c0dabbbc4ace7e4a4615148de4aa21b",
+    "internal/storage/mysqlstore/verified_entitlement_test.go": "1959405c9e6e531fd062be794538b4d1e345fc127959f11075071fdaee198f7f",
+    "migrations/0001_initial.sql": "42d64135bd6a6abe318f604b37c759fb834d92e6448514267c5df5d4675e4179",
+    "migrations/0002_voice_subscription_anchor.sql": "e5ce4984df25b08bfa87dc81c9928ebf88f881dabdceedd866f37d9e8b533632",
+    "migrations/0003_privacy_deletion_receipts.sql": "1d7d8ff4dfd1474863716b8fd8cd1d9112104c63df944914fb708636f848d08d",
+    "migrations/0004_ai_cost_control.sql": "189e830d5fa9099918856179cf080a2413b4e4c873cb8708544d90dfe6dbcdef",
+    "migrations/0005_health_ai_config.sql": "c70221a467b681a0e883f72689d731ab6902e76b4f673f6f23fcfc5ce0eec188",
+    "migrations/0006_health_ai_rollout.sql": "b6f0494ca0a9add6b60b795d8a99a4b4b0c0138fe1c7ea211ac63f53a4b2cca6",
+    "migrations/0007_platform_operations.sql": "70a08fa354cd9841a5f9e72cd00e9469055abf5a32cc072b7a18150220741348",
+    "migrations/0008_operations_insights.sql": "23c12ea77bcbbe015c2603cecb482b398a6567061d188f51759ffe7d42c85788",
+    "migrations/0009_operations_automation.sql": "4871232b5368393d66dfeb054e7e534df14aebc1014600fd5f6a320a67b4d20b",
+    "migrations/0010_prompt_configuration.sql": "b23d6908816a7a1ef3e76fb3c07e1228b71ce935231b9c13bedc8d79880de4f1",
+    "migrations/0011_prompt_evaluations.sql": "02b93b50f00262938534005bf47b0fb9493cf9c8266abc842234764e0dfe353f",
+    "migrations/0012_offer_delivery.sql": "41be231c29e94a353da59f8dd9915cdcdd7a88da4cb30d199a1e3994385f67de",
+    "migrations/0013_subscription_environment_bindings.sql": "d370d625d94dbbff5b091cb2bc82818679ca95eaf483b62d224e899917eedf73",
+    "migrations/0014_health_age_consent_scope.sql": "2395c92c4aa5cc2b7c9307306af903f19b10601b56e40dd1d74fe6650e1b9a88",
+    "migrations/0015_album_uploads.sql": "39e5ef6935743ebaf0117543a5b08c26d515fc77c0f8a2b534249d76dd25e89c",
+    "migrations/0016_album_login_challenges.sql": "82e84ed5e8e1949be0a97a91f9f4ce936fd52b4adf552d1b929acb6c7e5eb63b",
+    "migrations/0017_album_accounts.sql": "f6781e3e0b27a2ff7c49df4298f81257ce9293c86ca9c81581048ddfa0b25cc1",
+    "migrations/0018_album_sessions.sql": "528f7dad939dd89877de963db5c362d1ca24610ce338bd4a6ab1eba2877600d6",
+    "migrations/0019_album_multipart_intents.sql": "d1780d08a6b3d775c41726a03e58460fd1c84611e12ed7d8c9ac641d6438ad44",
+    "migrations/0020_album_multipart_completions.sql": "698b34ed6dc2a1f111b7ac876ec0f05a550d330c24eeb0fa22011c6fa2027800",
+    "migrations/0021_album_reconciliation_queue.sql": "b50e7bd90a8bb60c1ec098a95782fc140f3763caa62b6181ab8a0e249f8c5d7b",
+    "migrations/0022_album_asset_versions.sql": "08a7f93b7a8d2827c53f43a81275cba03daf027c30b173044a9634abeedd0abb",
+    "migrations/0023_album_photo_writes.sql": "b4c00ba39141463c63e0945bc8bf5534886e7cb068d311353947ef1558669070",
+    "migrations/0024_album_photo_jobs.sql": "a58927ada4e076d1115e6257c3405b255655c3dd0747102c1996e0e1fb24001a",
+    "migrations/0025_album_video_jobs.sql": "73528c8eb3a3be8b5f897f1808008881ce2ddb4898a60ac6c00a85a225b2700f",
+    "migrations/0026_album_derived_finalizations.sql": "b5873c83e86de83525b14f700bb51d7217b596375840478102df4a7607cd053a",
+    "migrations/0027_album_live_pairs.sql": "9369261e5c9211f9dcf5ac30f15121e11185c2c7a5380f3b6db36ccdfd085d3e",
+    "migrations/0028_album_cloud_subscriptions.sql": "91a1bc255a2844d5b0aee4a7f1b28d1e819a3557d99de125ed8da91a7fb33a43",
+    "migrations/0029_album_subscription_reconciliation.sql": "78ac443b1b2bf8de1a7ca5f5a374d1bc37512ac235e11f59401e486aac515d94",
+    "migrations/0030_album_share_links.sql": "9cbe2e8e4b38e24e8a8e326d84c6949511ab35a9dfbc6aaaa3e7aea14ee9475c",
+    "migrations/0031_album_retention_reminders.sql": "586291fdc8a83c91acd3e70b6b53a27b4c8ee0a37700c0d210a9adf9968078b3",
+    "migrations/0032_album_push_registrations.sql": "39af75221d19c803112fae08f269a579866102d670a1f41191d106c522f6d24e",
+    "migrations/0033_album_retention_deliveries.sql": "90f81b93167e481966936aa83a997f590674b90433fea7373e4712f0e704c516",
+    "migrations/albums_upgrade_test.go": "45c1b33484009dd899554c2df95b83a89c90343265ff41b29f07c8b1ea7b8c39",
+    "migrations/embed.go": "b177555b1e496d397f7c34676d112332aac8a33d519501e6b251e8fb1a88cd3c",
+    "migrations/embed_test.go": "ed1b24ac430205ac3e3dd480cc0e7cbd9cd0fd4eb46f20ba53cc9e913093ea9d"
+  },
+  "validation": [
+    {
+      "log": "preflight-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "7dba5b023fe704f812b6231179c14067487230d7c7d63f5fd2eebde12baa03bb",
+      "counts": {
+        "pass": 21,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": []
+    },
+    {
+      "log": "preflight-protocol-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "9262e0ce0971c9c7d96581f47c21b256b1e034f85e422cc478ae19911c1eb016",
+      "counts": {
+        "pass": 42,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": []
+    },
+    {
+      "log": "dispatch-tests.jsonl",
+      "exitCode": 1,
+      "sha256": "32c3ea1ecf45ae15692a7376d6339a429392ba29dd052299214ec9069c07904d",
+      "counts": {
+        "pass": 13,
+        "fail": 3,
+        "skip": 0
+      },
+      "failures": [
+        "TestMySQLRetentionDispatchAmbiguousAndRejected/late-unregistered-after-rotation",
+        "TestMySQLRetentionDispatchAmbiguousAndRejected",
+        "TestMySQLRetentionDispatchStopsBetweenDevicesOnRenewal"
+      ]
+    },
+    {
+      "log": "retention-targeted-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "595c708010a1586407697d0d87cf4a2ab957fe9f972627f93899343543bd1e5a",
+      "counts": {
+        "pass": 78,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": []
+    },
+    {
+      "log": "regression-tests.jsonl",
+      "exitCode": 1,
+      "sha256": "1a3a3368e608c4856a310b88f2dec2356db1d8b4b5569de35985f17dddda34d7",
+      "counts": {
+        "pass": 537,
+        "fail": 1,
+        "skip": 0
+      },
+      "failures": [
+        "TestEmbeddedMigrationsStartFromCleanMultiAppSchema"
+      ]
+    },
+    {
+      "log": "final-regression-tests.jsonl",
+      "exitCode": 0,
+      "sha256": "8d058b326962da173340b9979533622d9457975a2a3222f4e37fb2c37a315fb1",
+      "counts": {
+        "pass": 539,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": [],
+      "packages": [
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumgateway",
+          "Action": "pass",
+          "Elapsed": 1.6989999999999998
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/cmd/albumworker",
+          "Action": "pass",
+          "Elapsed": 1.7389999999999999
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/migrations",
+          "Action": "pass",
+          "Elapsed": 2.706
+        },
+        {
+          "Package": "github.com/tellyouwhat/backend/internal/albums",
+          "Action": "pass",
+          "Elapsed": 26.115
+        }
+      ],
+      "retentionTests": [
+        {
+          "Test": "TestMySQLAlbumSubscriptionsAdmissionDowngradeAndRetention",
+          "Action": "pass",
+          "Elapsed": 0.38
+        },
+        {
+          "Test": "TestAlbumAPNSRejectsMissingDeliveryIdentity",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSRealHTTP2RequestAndSignature",
+          "Action": "pass",
+          "Elapsed": 0.01
+        },
+        {
+          "Test": "TestAlbumAPNSTokenCacheConcurrentRotationAndClockRollback",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/accepted",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/unregistered",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/expired-token",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/no-invalidation-time",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/future-invalidation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/bad-device",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/wrong-topic",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/expired-provider",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/provider-rotation",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/throttled",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/server-error",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/unavailable",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/malformed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/oversize",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/body-on-success",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition/redirect",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSResponseDisposition",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSValidationAndUnknownOutcomes",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumAPNSStageWindowAndRequestCancellation",
+          "Action": "pass",
+          "Elapsed": 0.02
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/valid",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/missing-subscriptions",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/missing-registration",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/invalid-flag",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/reuse-login-key",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/reuse-store-key",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/missing-file",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/public-file",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/invalid-key",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed/invalid-environment",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestAlbumRetentionPushConfigFailClosed",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestGatewayRetentionDispatcherAssemblyAndDrain",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchPartialRetryAndRestart",
+          "Action": "pass",
+          "Elapsed": 0.32
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/logout",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/permission-off",
+          "Action": "pass",
+          "Elapsed": 0.4
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/account-disabled",
+          "Action": "pass",
+          "Elapsed": 0.56
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/grant-revoked",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/renewal",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/provider-failure",
+          "Action": "pass",
+          "Elapsed": 0.31
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges/wrong-push-environment",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchFencesChanges",
+          "Action": "pass",
+          "Elapsed": 2.47
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchAmbiguousAndRejected/ambiguous",
+          "Action": "pass",
+          "Elapsed": 0.43
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchAmbiguousAndRejected/rejected",
+          "Action": "pass",
+          "Elapsed": 0.41
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchAmbiguousAndRejected/unregistered",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchAmbiguousAndRejected/late-unregistered-after-rotation",
+          "Action": "pass",
+          "Elapsed": 0.32
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchAmbiguousAndRejected",
+          "Action": "pass",
+          "Elapsed": 1.47
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchConcurrentWorkersAndLateReceipt",
+          "Action": "pass",
+          "Elapsed": 0.65
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchStopsBetweenDevicesOnRenewal",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchRuntimeUsesAPNSAdapter",
+          "Action": "pass",
+          "Elapsed": 0.34
+        },
+        {
+          "Test": "TestMySQLRetentionDispatchShutdownPreservesKnownAcceptance",
+          "Action": "pass",
+          "Elapsed": 0.31
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderWindowsRetryAndRestart",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderRenewalInvalidatesClaim",
+          "Action": "pass",
+          "Elapsed": 0.31
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderDowntimeAndConcurrentClaim",
+          "Action": "pass",
+          "Elapsed": 0.29
+        },
+        {
+          "Test": "TestMySQLAlbumRetentionReminderSchedulingRollsBackSubscription",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationAllChainsAndRenewal/false",
+          "Action": "pass",
+          "Elapsed": 0.4
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationAllChainsAndRenewal/true",
+          "Action": "pass",
+          "Elapsed": 0.32
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationAllChainsAndRenewal",
+          "Action": "pass",
+          "Elapsed": 0.72
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/provider",
+          "Action": "pass",
+          "Elapsed": 0.35
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/empty",
+          "Action": "pass",
+          "Elapsed": 0.42
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/bad-signature",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/missing-chain",
+          "Action": "pass",
+          "Elapsed": 0.29
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/unknown-owned-chain",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/wrong-owner",
+          "Action": "pass",
+          "Elapsed": 0.29
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/foreign-unrelated-chain",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/cancelled-context",
+          "Action": "pass",
+          "Elapsed": 0.32
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/expired-lease",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/revision-changed",
+          "Action": "pass",
+          "Elapsed": 0.3
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot/renewed-concurrently",
+          "Action": "pass",
+          "Elapsed": 0.42
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationFailureKeepsSnapshot",
+          "Action": "pass",
+          "Elapsed": 3.57
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing/token",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing/owner",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing/environment",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing/deadline",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing/stage",
+          "Action": "pass",
+          "Elapsed": 0
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationRollbackAndFencing",
+          "Action": "pass",
+          "Elapsed": 0.51
+        },
+        {
+          "Test": "TestMySQLRetentionVerificationNeverTruncatesChains",
+          "Action": "pass",
+          "Elapsed": 0.31
+        },
+        {
+          "Test": "TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState",
+          "Action": "pass",
+          "Elapsed": 0.31
+        },
+        {
+          "Test": "TestAlbumRetentionUsesSixClampedCalendarMonths",
+          "Action": "pass",
+          "Elapsed": 0
+        }
+      ]
+    },
+    {
+      "log": "final-vet.log",
+      "exitCode": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": []
+    },
+    {
+      "log": "final-build.log",
+      "exitCode": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0
+      },
+      "failures": []
+    }
+  ],
+  "initialFailures": "First dispatcher tests incorrectly repeated a token rotation and used an equal timestamp for a later renewal; fixtures corrected. First broad regression omitted the new SQL file from the explicit migration-order fixture; list updated. Final regression and vet/build pass.",
+  "guaranteesChecked": [
+    "Every known purchase chain is independently queried and signed evidence verified; no partial commit on provider failure; unknown owned chain or more than 128 chains defers",
+    "Lease, deadline and account revision fence concurrent refresh or renewal before each target; logged-out, disabled, revoked or wrong-environment targets excluded",
+    "Durable per-device stable request identity; partial successes survive restart; Retry-After and 15-minute ambiguous retry floor preserved",
+    "Eight concurrent dispatchers send one attempt; stale attempts cannot overwrite new receipts; late 410 cannot invalidate a rotated registration",
+    "Known acceptance persists during graceful shutdown, worker drains and restart does not resend acknowledged target",
+    "Gateway default disabled and opt-in assembly uses separate APNs key; migration replay; media usage unchanged"
+  ],
+  "notVerified": [
+    "Actual Apple production/Sandbox subscription statuses, revocation ingestion and APNs credentials/device delivery",
+    "Exactly once delivery; accepted requests cannot be recalled; network-ambiguous retries or registration/session replacement can still duplicate",
+    "Cloud deployment/TLS, production migration, actual media processing/quality/cost and six-month permanent deletion",
+    "Any new iOS build: this change does not change the generated API or native production sources"
+  ]
+}

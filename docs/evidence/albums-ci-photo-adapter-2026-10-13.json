@@ -1,0 +1,635 @@
+{
+  "date": "2026-10-13",
+  "scope": "real COS/CI with generated images, production render/store/reconcile; no database or app account",
+  "cases": {
+    "jpeg": {
+      "passed": true,
+      "pendingSpec": {
+        "ownerID": "3915728e-2f00-4207-827e-96709837ff05",
+        "attemptID": "ab542472-7fb5-458e-bbaf-1692493cfe24",
+        "preset": "daily_jpeg_v1",
+        "sizeBytes": 27721,
+        "sha256": "3754c93332d8f675175e18c787234d21a1b9f8a76970560af4131e9a312783fe",
+        "width": 2560,
+        "height": 1707
+      },
+      "results": [
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "grid_jpeg_v1",
+            "key": "albums/derivatives/3915728e-2f00-4207-827e-96709837ff05/d7cfe188-19f9-4f6c-a6b8-5feb28aa0226/grid_jpeg_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODg0MDc0NzA",
+            "sizeBytes": 1534,
+            "sha256": "fa22ebd6d656710f63586dc8dee852386e0021cf7c74e728851500683eb57b72"
+          },
+          "spec": {
+            "ownerID": "3915728e-2f00-4207-827e-96709837ff05",
+            "attemptID": "d7cfe188-19f9-4f6c-a6b8-5feb28aa0226",
+            "preset": "grid_jpeg_v1",
+            "sizeBytes": 1534,
+            "sha256": "fa22ebd6d656710f63586dc8dee852386e0021cf7c74e728851500683eb57b72",
+            "width": 512,
+            "height": 341
+          }
+        },
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "daily_jpeg_v1",
+            "key": "albums/derivatives/3915728e-2f00-4207-827e-96709837ff05/ab542472-7fb5-458e-bbaf-1692493cfe24/daily_jpeg_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODY5NTkzMzg",
+            "sizeBytes": 27721,
+            "sha256": "3754c93332d8f675175e18c787234d21a1b9f8a76970560af4131e9a312783fe"
+          },
+          "spec": {
+            "ownerID": "3915728e-2f00-4207-827e-96709837ff05",
+            "attemptID": "ab542472-7fb5-458e-bbaf-1692493cfe24",
+            "preset": "daily_jpeg_v1",
+            "sizeBytes": 27721,
+            "sha256": "3754c93332d8f675175e18c787234d21a1b9f8a76970560af4131e9a312783fe",
+            "width": 2560,
+            "height": 1707
+          }
+        }
+      ],
+      "scope": "synthetic images; production render, store and reconcile adapters; no account, DB or deletion",
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/3915728e-2f00-4207-827e-96709837ff05/720e92a1-4bb0-46ef-b0b6-4a9f8701314f/photo",
+        "versionID": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM",
+        "sizeBytes": 102810,
+        "sha256": "4d22c36aa2472bb4222f30ec963905a06e77ce6653fa0cb9d87101f440aa55ef"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "trace": [
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODg0MDc0NzA"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODg0MDc0NzA"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODg0MDc0NzA"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODg0MDc0NzA"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODY5NTkzMzg"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODY5NTkzMzg"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODY5NTkzMzg"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODY5NTkzMzg"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODkyMjU3NjM"
+        }
+      ]
+    },
+    "oriented-jpeg": {
+      "passed": true,
+      "pendingSpec": {
+        "ownerID": "1dee6f78-6c1d-49db-ab89-4650181219e3",
+        "attemptID": "e142dbd9-d5d8-4459-bdbd-639ea850cb50",
+        "preset": "daily_jpeg_v1",
+        "sizeBytes": 26914,
+        "sha256": "cbf96c92e51ef941c0b0c38b4bbde9898257151f5483abea8a42050770857faa",
+        "width": 1707,
+        "height": 2560
+      },
+      "results": [
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "grid_jpeg_v1",
+            "key": "albums/derivatives/1dee6f78-6c1d-49db-ab89-4650181219e3/6b140d96-6076-4131-a0ff-c862bfd09e71/grid_jpeg_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODQ5NTY1MjU",
+            "sizeBytes": 1375,
+            "sha256": "f6484c1204131e6bcc25f747409dc8af544d81b51848e220a72f81bb9506adbb"
+          },
+          "spec": {
+            "ownerID": "1dee6f78-6c1d-49db-ab89-4650181219e3",
+            "attemptID": "6b140d96-6076-4131-a0ff-c862bfd09e71",
+            "preset": "grid_jpeg_v1",
+            "sizeBytes": 1375,
+            "sha256": "f6484c1204131e6bcc25f747409dc8af544d81b51848e220a72f81bb9506adbb",
+            "width": 341,
+            "height": 512
+          }
+        },
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "daily_jpeg_v1",
+            "key": "albums/derivatives/1dee6f78-6c1d-49db-ab89-4650181219e3/e142dbd9-d5d8-4459-bdbd-639ea850cb50/daily_jpeg_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODM2NjExMzM",
+            "sizeBytes": 26914,
+            "sha256": "cbf96c92e51ef941c0b0c38b4bbde9898257151f5483abea8a42050770857faa"
+          },
+          "spec": {
+            "ownerID": "1dee6f78-6c1d-49db-ab89-4650181219e3",
+            "attemptID": "e142dbd9-d5d8-4459-bdbd-639ea850cb50",
+            "preset": "daily_jpeg_v1",
+            "sizeBytes": 26914,
+            "sha256": "cbf96c92e51ef941c0b0c38b4bbde9898257151f5483abea8a42050770857faa",
+            "width": 1707,
+            "height": 2560
+          }
+        }
+      ],
+      "scope": "synthetic images; production render, store and reconcile adapters; no account, DB or deletion",
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/1dee6f78-6c1d-49db-ab89-4650181219e3/e5bb6b3b-0e52-4b4c-b1be-bcbcbcf493ad/photo",
+        "versionID": "MTg0NDQ5NTIyMTY2ODU2ODAzODU",
+        "sizeBytes": 102846,
+        "sha256": "282befa533c8557eed34f839dd6967a4d2899e8d4d8e6477689443301d8fcbda"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "trace": [
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODQ5NTY1MjU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODQ5NTY1MjU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODQ5NTY1MjU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODQ5NTY1MjU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODM2NjExMzM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODM2NjExMzM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODM2NjExMzM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODM2NjExMzM"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODU2ODAzODU"
+        }
+      ]
+    },
+    "transparent-png": {
+      "passed": true,
+      "pendingSpec": {
+        "ownerID": "fe3cecdb-4ced-403f-b376-ab5a3b20f180",
+        "attemptID": "7b9b3b24-81d6-4bfd-b06b-5f61b46968da",
+        "preset": "daily_png_v1",
+        "sizeBytes": 6388,
+        "sha256": "55f9ecc0bfa7e2f65fd7aa90a2890f00007a80f798b8239e3dc8267392c6cddd",
+        "width": 2560,
+        "height": 1707
+      },
+      "results": [
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "grid_png_v1",
+            "key": "albums/derivatives/fe3cecdb-4ced-403f-b376-ab5a3b20f180/f65deaea-8cd3-4922-a804-c976eedc090d/grid_png_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODE4Njc0OTc",
+            "sizeBytes": 446,
+            "sha256": "a47403bce05fd1dc5455cdeee25a89dc56a4b0cce498a41628727da4e0889e68"
+          },
+          "spec": {
+            "ownerID": "fe3cecdb-4ced-403f-b376-ab5a3b20f180",
+            "attemptID": "f65deaea-8cd3-4922-a804-c976eedc090d",
+            "preset": "grid_png_v1",
+            "sizeBytes": 446,
+            "sha256": "a47403bce05fd1dc5455cdeee25a89dc56a4b0cce498a41628727da4e0889e68",
+            "width": 512,
+            "height": 341
+          }
+        },
+        {
+          "anonymousStatus": 403,
+          "receipt": {
+            "resourceID": "daily_png_v1",
+            "key": "albums/derivatives/fe3cecdb-4ced-403f-b376-ab5a3b20f180/7b9b3b24-81d6-4bfd-b06b-5f61b46968da/daily_png_v1",
+            "versionID": "MTg0NDQ5NTIyMTY2ODAxNzQwNTY",
+            "sizeBytes": 6388,
+            "sha256": "55f9ecc0bfa7e2f65fd7aa90a2890f00007a80f798b8239e3dc8267392c6cddd"
+          },
+          "spec": {
+            "ownerID": "fe3cecdb-4ced-403f-b376-ab5a3b20f180",
+            "attemptID": "7b9b3b24-81d6-4bfd-b06b-5f61b46968da",
+            "preset": "daily_png_v1",
+            "sizeBytes": 6388,
+            "sha256": "55f9ecc0bfa7e2f65fd7aa90a2890f00007a80f798b8239e3dc8267392c6cddd",
+            "width": 2560,
+            "height": 1707
+          }
+        }
+      ],
+      "scope": "synthetic images; production render, store and reconcile adapters; no account, DB or deletion",
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/fe3cecdb-4ced-403f-b376-ab5a3b20f180/2ff5e7e7-200b-45bd-8b20-097103ccb5da/photo",
+        "versionID": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY",
+        "sizeBytes": 28277,
+        "sha256": "23e49ccf4bb6a5fcca17303125fef8635512bb3c52e9745b0708326cb0404527"
+      },
+      "sourceLatestAndBytesUnchanged": true,
+      "trace": [
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODE4Njc0OTc"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODE4Njc0OTc"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODE4Njc0OTc"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODE4Njc0OTc"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": ""
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "private",
+          "hasQuery": false,
+          "method": "PUT",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODAxNzQwNTY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODAxNzQwNTY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODAxNzQwNTY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODAxNzQwNTY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": false,
+          "method": "HEAD",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        },
+        {
+          "aclHeader": "",
+          "hasQuery": true,
+          "method": "GET",
+          "status": 200,
+          "version": "MTg0NDQ5NTIyMTY2ODI1NzU2MDY"
+        }
+      ]
+    }
+  },
+  "initialFailure": {
+    "passed": false,
+    "scope": "synthetic images; production render, store and reconcile adapters; no account, DB or deletion",
+    "source": {
+      "resourceID": "photo",
+      "key": "albums/originals/884b6fbe-66c1-42ea-b478-5522965b3d78/368cb2b1-1af7-477c-9b6c-db955a0c1532/photo",
+      "versionID": "MTg0NDQ5NTIyMTY4MjQ4NTIwNjI",
+      "sizeBytes": 102810,
+      "sha256": "4d22c36aa2472bb4222f30ec963905a06e77ce6653fa0cb9d87101f440aa55ef"
+    },
+    "stage": "render:grid_jpeg_v1",
+    "trace": [
+      {
+        "aclHeader": "",
+        "method": "GET",
+        "processing": true,
+        "status": 200,
+        "version": ""
+      },
+      {
+        "aclHeader": "",
+        "method": "PUT",
+        "processing": false,
+        "status": 200,
+        "version": "MTg0NDQ5NTIyMTY4MjQ4NTIwNjI"
+      },
+      {
+        "aclHeader": "",
+        "method": "GET",
+        "processing": true,
+        "status": 200,
+        "version": ""
+      }
+    ]
+  },
+  "history": [
+    "Initial build failed on undefined abs before any network request; corrected to math.Abs.",
+    "Initial live selector also matched oriented-jpeg; both failed at render because successful transformed response omitted version header. JPEG failure evidence retained.",
+    "After fixed-version query plus before/after source HEAD checks, JPEG passed alone, then all three cases passed in the final run."
+  ],
+  "finalLiveTestLog": "=== RUN   TestLiveCOSPhotoAdapter\n=== RUN   TestLiveCOSPhotoAdapter/jpeg\n=== RUN   TestLiveCOSPhotoAdapter/oriented-jpeg\n=== RUN   TestLiveCOSPhotoAdapter/transparent-png\n--- PASS: TestLiveCOSPhotoAdapter (10.65s)\n    --- PASS: TestLiveCOSPhotoAdapter/jpeg (3.95s)\n    --- PASS: TestLiveCOSPhotoAdapter/oriented-jpeg (3.23s)\n    --- PASS: TestLiveCOSPhotoAdapter/transparent-png (3.48s)\nPASS\nok  \tgithub.com/tellyouwhat/backend/internal/albums\t11.451s\n",
+  "regression": {
+    "command": "go test -race ./internal/albums -run '^TestCOSPhoto|^TestPhotoWrite' -count=1 -json",
+    "topLevelPassed": 10,
+    "passEventsIncludingSubtests": 43,
+    "failed": 0,
+    "skipped": 0,
+    "vet": "go vet ./internal/albums passed",
+    "build": "go build ./cmd/albumgateway ./cmd/albumworker passed"
+  },
+  "sourceSHA256": {
+    "internal/albums/cos_photo_candidates.go": "e31685e5cfbad7455408d011abbb471d6a8f9277229bf418ea988f809abbfd86",
+    "internal/albums/cos_photo_candidates_test.go": "d0ff4e3005fd298790c1ac80a796d97581d57c286fc837d0201da0bb7ab04da3",
+    "internal/albums/cos_photo_live_test.go": "a689723495a384c81ef5b094e12202fea9eadd0cde20551a224e0cf93d6dc678"
+  },
+  "limitations": [
+    "Synthetic solid-color images only; no natural image, HDR, HEIC or color-profile quality claims.",
+    "No user media, no delete requests, no new cloud permissions.",
+    "No end-to-end upload/account/worker DB/published-backup verification.",
+    "No app release or server deployment; automatic media processing remains disabled.",
+    "Six final preview objects and their three synthetic sources retained; initial probe objects also retained."
+  ]
+}

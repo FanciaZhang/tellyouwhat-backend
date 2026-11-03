@@ -1,0 +1,84 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Internal account-deletion acceptance transaction and Apple revoke transport; not a complete or exposed account erasure feature",
+  "migration": "0041_album_account_deletions.sql",
+  "official_reference": "https://developer.apple.com/documentation/signinwithapplerestapi/revoke-tokens",
+  "changes": [
+    "Credential-derived account ownership; exact request/token idempotency after initial acceptance",
+    "Atomic receipt, deleting account state, session/grant revocation, share revocation, push-token removal and pending reminder cancellation",
+    "Refresh credentials remain encrypted for later provider revocation; media records preserved",
+    "Apple revoke transport fixes native client_id and endpoint, rejects redirects, requires empty 200 and sanitizes failures"
+  ],
+  "verification": [
+    {
+      "name": "mysql-related-race",
+      "test_event_counts": {
+        "pass": 18,
+        "fail": 0,
+        "skip": 0
+      },
+      "top_level_passed": [
+        "TestEmbeddedMigrationsStartFromCleanMultiAppSchema",
+        "TestMySQLAccountDeletionRecordedAccessRevocationAndExactReplay",
+        "TestMySQLAccountDeletionFailureRollsBackAndRetrySucceeds",
+        "TestMySQLAccountDeletionRejectsInvalidExpiredOrRevokedCredentials",
+        "TestMySQLAccountDeletionConcurrentExactRetriesConverge",
+        "TestMySQLAccountDeletionRacingLoginCannotLeaveUsableSession",
+        "TestMySQLAppleEventRevokesOldDevicesAndPushButPreservesNewLogin",
+        "TestMySQLAppleEventBeforeFirstLoginAndRollback",
+        "TestMySQLAlbumPushEncryptionReplayExpiryAndLogout",
+        "TestMySQLAlbumPushAccountSwitchFencesOldSession",
+        "TestMySQLAlbumPushRotationPermissionAndLateInvalidation",
+        "TestMySQLAlbumPushConcurrentCASAndEnvironmentIsolation",
+        "TestMySQLAlbumPushTransferFailureRollsBackOldBinding"
+      ],
+      "log_sha256": "e28545cf077c9934011fc055d5214c28c20a03da6c1bd81a2934bfeb8bd64bb8",
+      "race_enabled": true,
+      "process_exit": 0
+    },
+    {
+      "name": "apple-transport-race",
+      "test_event_counts": {
+        "pass": 21,
+        "fail": 0,
+        "skip": 0
+      },
+      "top_level_passed": [
+        "TestAppleCodeExchangeBindsCodeToBothSignedAssertions",
+        "TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement"
+      ],
+      "log_sha256": "28b9485f85bc9c0459ba30e914a8fa564ba21e7f2b121b579e7f9baac05eca74",
+      "race_enabled": true,
+      "process_exit": 0
+    }
+  ],
+  "source_sha256": {
+    "internal/albums/account_deletion.go": "9cf749b1387f1af164de81c2ac5c0a4eb81685938e61630209a2aeb24c9d43ed",
+    "internal/albums/account_deletion_test.go": "9e9d8d47e6e4766e7116872f2992a64a4232c3a364e613f4b1f0cb1f391d4f11",
+    "internal/albums/apple_code.go": "cf2fd9495ca4d34043b09937a5cf58ddd288c3f023f140a62c9b7c2d3ca2a047",
+    "internal/albums/apple_revoke_test.go": "07ed95aadd492181f4db474eb8ff4a63377e54065847d5ad3e00aaf056d4ece1",
+    "migrations/0041_album_account_deletions.sql": "d25a61d4ad0593133e21a669e78c63bc4779a80701b67ecfc2397c452b6e83b8",
+    "migrations/embed_test.go": "32d3d43d6f38cd177ffe6ae23550fb5d90a7b5e03791f3355e138ee7c9b8b2a8"
+  },
+  "deployment": false,
+  "public_route_added": false,
+  "ui_added": false,
+  "physical_device": "Harbor iPhone 17 reported unavailable by fresh devicectl list",
+  "remaining": [
+    "Close already-authenticated mutation and in-flight grant/worker races before provider cleanup",
+    "Persist/retry Apple revoke acknowledgements in a deletion worker; transport only is implemented",
+    "Erase all COS versions, staging/multipart/derivatives and catalogue with verified recovery",
+    "Propagate deletion into backups and define permitted transaction/audit retention",
+    "Expose authenticated deletion/status contract and native confirmation only after the complete processing chain is wired",
+    "Actual Apple token, live account, physical device and complete deletion acceptance"
+  ],
+  "not_claimed": [
+    "Receipt is not proof of erasure",
+    "Local grant revocation is not an Apple revoke acknowledgement",
+    "Existing signed URLs or already-started work are not instantly recalled"
+  ],
+  "isolated_services_stopped": true,
+  "isolated_databases_removed": true,
+  "vet": "passed",
+  "gateway_and_worker_build": "passed"
+}

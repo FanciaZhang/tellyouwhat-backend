@@ -1,0 +1,18 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["cos:GetObject", "cos:HeadObject"],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/originals/*",
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": ["cos:PutObject", "cos:InitiateMultipartUpload", "cos:UploadPart", "cos:CompleteMultipartUpload", "cos:ListParts", "cos:AbortMultipartUpload"],
+      "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]
+    }
+  ]
+}

@@ -7,7 +7,7 @@ Journal host; there is no client-side provider key or credential forwarding.
 
 `POST /v1/journal/voice/sessions` uses the existing App Attest headers and
 `X-Tellyouwhat-Request-ID`. JSON: `{sessionID: UUID, consentVersion:
-"journal-voice-v1"}`. An active Journal subscription, verified original purchase
+"journal-voice-v31"}`. An active Journal subscription, verified original purchase
 anchor, and managed-AI consent are required. An older transaction without its
 original purchase date must be restored/synchronized, never guessed.
 
@@ -18,19 +18,165 @@ reconnect, retaining the same session and segment UUIDs. Tokens are never in URL
 
 WebSocket messages are JSON. Client messages:
 
-- `snapshot`: `{snapshot:{revision,blocks:[{id,text}],transcript,editedBlockIDs,words}}`.
+- `snapshot`: `{snapshot:{revision,blocks:[{id,text}],transcript,editedBlockIDs,mediaOnlyBlockIDs,manualEdits,words,writingStyle}}`.
   Blocks are stable UUIDs. Client archives and recovery text are not model inputs.
 - `audio`: `{segmentID,pcm:base64 PCM16 little-endian mono 16000Hz,final:bool}`.
   Frames are at most 6400 bytes (200ms); segments at most 480000 bytes (15s).
-- `finish`: flush the final rewrite. Send the last audio frame with final=true first.
+- `capture_closed`: the microphone has stopped and local audio is saved. Continue accepting audio and ASR; keep the current model call, but coalesce new ordinary rewrite work until transcription is complete.
+- `finish`: audio receipts are complete; flush the remaining final rewrite. Send the last audio frame with final=true first.
 - `ping`: application heartbeat, receives `pong`.
 
 Server messages: `ready`, `transcript` (segmentID/text/stable), `receipt`
 (segmentID/sha256/text/milliseconds and remainingMilliseconds), `revision`
-(baseRevision/transcriptRevision/patches/questions), `finished`, and `error`.
+(baseRevision/transcriptRevision/patches/questions), `processing` (stage `organizing`, `structuring`, or `idle`), `finished`, and `error`.
+Processing events are informational and carry no document changes or receipts.
+A paused ordinary `snapshot.polish` cancels only its in-flight model request;
+ASR and audio receipts continue. A canceled result does not count as a rewrite
+failure. Explicit structural commands keep their separate processing budget.
+
+In v31, `snapshot.identity` resolves people before ordinary prose. It carries a
+SHA-256 fingerprint, bounded original turns, known speaker/person names and
+explicit-claim flags, and the current narrator. The model returns `identity`
+with grounded assignments, narrator operations, and exact removable command
+spans. A client snapshot acknowledging that fingerprint advances to prose.
+`identity_error` returns the failed request separately from rewrite errors;
+the client may proceed with prose and retry identity on new evidence. Identity
+failure must not stop ASR or discard audio. Names retain the complete original
+appellation. Quoted introductions, mentions, or matching names alone do not
+establish identity. A command assignment or narrator change requires a valid
+original command span in the cited evidence. Source turns retain that evidence
+while `excludedText` removes only the exact spans from prose-model input.
+
+In v30, both ordinary polish and structural snapshots carry an optional
+`narrator:{personID:UUID,name}` and confirmed `personID` on source turns. Provider
+speaker labels are scoped to the segment/connection; they are not a persistent
+person identity. The client defaults the first substantive speaker as the author
+and retains that viewpoint; explicit user/spoken corrections take precedence. The model
+uses that author's first-person perspective while keeping other people's
+experiences attributed to them, and must not infer gender from a name. Ordinary
+multi-speaker polish continues with numbered unknown people; identity inference
+does not force the user to fill in names before writing.
+The server echoes the trusted narrator and target baselines on polish results.
+An acknowledgement that changes the author or identity-rewrite flags releases
+the old result so the corrected snapshot can run.
+
+Polish targets carry `identityCorrection` and `completeSource`. When both are
+true, the model input is rebuilt from original turns and confirmed identities,
+excluding old generated attribution. A bounded source window keeps retained
+facts when `completeSource` is false. Wire targets remain unchanged so the App
+can fence current text, current source identities, and author before applying
+the result. Identity edits do not reset the consumed transcript prefix.
+
+Raw ASR utterances/turns now have separate temporary body blocks. Their input
+boundaries are reading aids; the model merges related targets or splits topics
+into natural paragraphs. The last organized voice paragraph can absorb related
+new speech, while older paragraphs stay read-only context. App projection keeps
+unconsumed speech in separate raw blocks during in-flight revisions.
+
+The v31 foundation has local real-model identity evidence for six synthetic
+contexts and real two-voice App evidence for automatic appellations, author
+attribution and persistence. Whole App live-paragraph acceptance still fails
+when the provider emits no completed turns before capture ends. A separate real
+continuous-connection probe with natural phrase pauses succeeds before final
+input. This does not prove long App capture: audio checkpoints and recognition
+connections are still coupled to the 15-second segment lifecycle. They must be
+decoupled and verified with long capture/reconnect cases before claiming the
+complete natural-transcription product goal. This protocol has not been deployed.
+
+### Continuous recognition foundation (2026-10-10)
+
+The provider adapter can now keep one acoustic connection across rolling
+15-second budget reservations, settling each completed window before reserving
+the next. The shared two-attempt limit still permits one simultaneous rewrite;
+budget or settlement rejection stops audio before uncovered bytes reach the
+provider. This does not yet change the WebSocket segment lifecycle above.
+
+Utterance timing is bounded to the 30-minute capture limit, independently of
+audio checkpoint size. Canonical metadata can retain up to 8,192 turns within
+the existing 60,000-character bound. Overflow is an explicit error retaining
+previous confirmed evidence, rather than a silent conversion to unlabelled
+text. A later empty or omitted window cannot erase an earlier definite turn;
+nonempty overlapping corrections are accepted. Provisional text is never
+promoted to rescue an empty completion. Original provider full text remains
+available separately when confirmed evidence repairs an omitted window.
+
+Full-text/utterance whitespace differences are aligned at matching content
+boundaries without losing speaker, word or time metadata. Empty provider
+placeholders do not flatten the other valid turns. ASR disfluency cleanup is
+disabled so raw speech is not edited before the separate reversible rewrite.
+This follows the provider's description of `enable_ddc`:
+<https://docs.volcengine.com/docs/DoubaoVoice/LargemodelstreamingautomaticspeechrecognitionAPI?lang=zh>.
+
+Explicit real-provider checks use 138.306 seconds of synthetic Reed/Tingting
+dialogue. The first run exposed whitespace flattening and an empty second-pass
+turn; that run failed before the model request. A subsequent complete real ASR
+and configured AI request retained 20 turns and automatically assigned the exact
+reciprocal appellations with the first speaker still the author. The empty-turn
+observation alone does not establish that disfluency cleanup caused it.
+The final fifth complete real request passed on the current implementation;
+the fourth had failed solely on an unchanged-author echo, now normalized to no
+operation unless an actual author instruction provides command evidence. The
+latest voice/development/journaldevserver race suites and vet also passed.
+Failures and repeats are retained at
+`/Users/harborzeng/Documents/JournalAppAcceptance/20261010-continuous-asr`.
+
+These are provider/budget/canonical-source checks, not whole App acceptance.
+The paired protocol and App must still separate durable audio receipts from
+recognition completion, persist independent recognition scopes and offsets,
+drain captured audio before closing recognition, and verify live App editing,
+reconnect, undo and reopen. Production and TestFlight remain unchanged.
+
+For complete confirmed first-person sources, the polish decoder also normalizes
+sentence-initial reporting clauses such as `小林说，他…` to `小林…` when the
+original turns provide no third-person pronoun. It preserves quoted statements,
+source-supported third-person references, and incompletely sourced retained
+prose. A name alone is not evidence for a gendered pronoun.
+
+Local real-provider acceptance on 2026-10-09 used a 10.10-second synthetic
+two-voice recording, including an author who spoke second. The App persisted
+correct author/other-person attribution and the original PCM, then corrected
+the other person's name through a second real AI request. Race tests and vet
+passed for voice, development, and journaldevserver. This implementation has
+not been deployed by that acceptance; new App and backend must ship together.
+Ordinary polish uses a server-side omission guard: every substantive input turn
+must share a small lexical window with an output paragraph or the stable,
+read-only request context. Historical turns can span a stabilized paragraph
+and the active paragraph; they must not force the model to repeat that context.
+The guard ignores case,
+punctuation, and whitespace, and permits repeated speech to share an anchor.
+Long turns require three content characters; short turns require up to two.
+This coarse check does not prove all facts survived and does not replace real
+semantic acceptance. The model does not copy source UUIDs or validation quotes.
+An output body paragraph identical to stable body context (ignoring case,
+spacing, and punctuation) is rejected, rather than duplicating that paragraph.
+Rejection diagnostics expose only a fixed reason code, never journal content.
+Explicit requests to turn an enumeration into a list use a paragraph reflow
+proposal. A list-style command cannot satisfy a request to split multiple
+enumerated items into separate entries; a single existing item may still use
+a style command.
 Patches contain id/text/afterID. Empty afterID replaces an existing text block;
 otherwise insert a new UUID immediately after an existing block. Blocks and media
-are not deleted or reordered. User-edited blocks cannot be replaced.
+are not deleted or reordered. Only `mediaOnlyBlockIDs` are excluded from text
+replacement. `editedBlockIDs` is advisory history, not an immutable paragraph lock.
+
+`manualEdits` contains at most 24 recent local changes, capped at 4096 Unicode
+scalars across their before/after/context fields. Each entry carries `blockID`,
+`before`, `after`, `contextBefore`, `contextAfter`, and `transcriptOffset` (a Unicode
+scalar offset in this recording's cumulative transcript when the edit occurred).
+The client resets inherited offsets to zero for a new recording. Before calling
+the model, the backend splits the transcript at those boundaries, preserving each
+character once; the model does not have to count offsets itself. Earlier speech,
+including an earlier explicit correction, should not undo a later manual edit.
+New explicit corrections may revise the same words in place. User-expressed
+uncertainty may remain uncertainty in the body; it must not become invented
+certainty. These are editorial instructions, not a deterministic semantic guarantee.
+
+The current body remains authoritative context when no exact hint is available.
+Formatting-only changes do not generate text hints. Large replacements are not
+truncated into misleading exact edits. Hints no longer matching the current body
+are omitted. Raw audio and transcript archives remain local and recoverable; only
+the bounded hints join the already consented rewriting request. No content is
+added to service logs or usage metrics.
 
 Persist an entire validated revision atomically, then acknowledge with a snapshot
 at baseRevision+1, including when patches is empty. No-op acknowledgements do not
@@ -38,6 +184,40 @@ trigger another model request. Persist receipts before acknowledging the final
 revision. Stale results must not overwrite user edits. A failed model request
 keeps the audio and transcript recoverable and must not imply successful final
 organization.
+
+## Privacy-safe diagnostics
+
+Every voice stream receives a random `voice_trace_id`. Rewrite attempts use an
+incrementing `rewrite_attempt`, so the stream, model call and result can be
+correlated without logging an account, device, session, segment, journal or
+recording identifier. The production gateway and private development service
+emit the same structured fields.
+
+Rewrite logs include the finalization state, document/transcript revision,
+generation, counts of blocks, characters, edits, media and vocabulary, provider
+call duration, HTTP status, response size/content type, allow-listed provider
+request/error identifiers, provider completion status, selected model, prompt
+configuration version, token counts and the exact validation stage. A successful
+result also records patch/question/emotion counts. Storage, ASR, protocol and
+lease failures record a stable processing stage and Go error class.
+
+These logs must never include journal or transcript text, prompts, vocabulary
+values, audio bytes, provider response text/error messages, owner/device/session
+identifiers, request bodies, authorization values, API keys or WebSocket tickets.
+Provider response metadata is allow-listed rather than logging a raw error body.
+Tests exercise both the useful fields and these negative privacy guarantees.
+
+For a reported time window, locate the active Compose gateway and filter by the
+component and trace ID. The private development service can be queried in the
+same way:
+
+```sh
+gateway_container="$(docker ps --filter label=com.docker.compose.service=gateway --format '{{.Names}}' | head -n 1)"
+docker logs --since 2026-09-13T14:35:00Z --until 2026-09-13T14:50:00Z "$gateway_container" 2>&1 \
+  | jq -c 'select(.component == "journal_voice")'
+docker logs --since 2026-09-13T14:35:00Z --until 2026-09-13T14:50:00Z journal-private-development 2>&1 \
+  | jq -c 'select(.component == "journal_voice")'
+```
 
 ## Durability, limits, and privacy
 
@@ -124,3 +304,61 @@ only after physical-device background/offline acceptance and the cost gate.
   unsigned voice admission requests return 401. Real paid-device recording,
   background behavior and recovery remain a separate acceptance requiring an
   active synchronized subscription. No user audio or diary was used in this check.
+
+## Preset writing styles
+
+A snapshot accepts `writingStyle`: `natural` (the default), `lively`,
+`documentary`, `daybook`, or `essay`. Unknown identifiers are rejected before
+calling a provider. An omitted preference uses the product default. ASR and
+personal vocabulary are unchanged: the style applies only to body rewriting.
+
+The app resolves the per-entry override before its synced Settings default and
+sends only the resolved identifier. Each preset is mapped to trusted instructions
+on the server, underneath common fidelity, chronology, manual-edit protection,
+and strict patch validation rules. Freeform instructions are not accepted.
+Source text remains untrusted even when it contains commands. This reduces the
+instruction surface; it does not guarantee that generated prose is factually
+correct. The model has no tools and cannot access other journals or credentials.
+
+Changing a preference does not start processing a saved entry. While capture or
+rewriting is active, the next snapshot carries the new style and document
+revision. A style change invalidates prior in-flight results, and a newer client
+revision supersedes an older outstanding acknowledgement. Audio capture and
+receipts continue on the same connection. Body recovery retains the current
+style preference, original transcript, and recording resources.
+
+
+## 2026-09-08 manual-edit acceptance
+
+Source commit `09fdb0d` was built as `journaldevserver-e496dd00bf1e2a5f` and deployed
+only to `journal-private-development`. Five synthetic cases passed through the
+actual development HTTPS consent/ticket flow, WebSocket revision and client
+acknowledgement: long-paragraph punctuation plus name correction, a later explicit
+correction to hand-edited words, old recognition preserving a manual name edit,
+an old explicit correction preserving a later manual amount edit, and expressed
+uncertainty staying uncertain. Race tests and vet passed for `internal/journal/voice`
+and `cmd/journaldevserver`. These are concrete samples, not universal model guarantees.
+
+Production gateway, worker and admin container IDs/start times were unchanged.
+Because the repository's `PRODUCTION_DEPLOY_ENABLED` variable is currently true,
+this source push intentionally uses a `[skip ci]` documentation commit so it does
+not redeploy the shared production stack. This uses GitHub's documented
+[per-push workflow skip](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs);
+it does not change any workflow or deployment variable. A later ordinary
+production release can include this Journal-only source change.
+
+## 2026-09-08 late-recognition review repair
+
+Manual edits now include `pendingEarlierSpeech`. While audio captured before an
+edit is awaiting its final receipt, the editorial adapter treats all in-flight
+recognition as earlier speech. Once the receipt arrives, the client supplies the
+boundary derived from recorded segment identities; later audio can explicitly
+correct the edit. The adapter clones hints before deriving boundaries, so model
+input cannot mutate session state.
+
+Race tests and vet passed for voice and journaldevserver. Six synthetic scenarios
+passed through the deployed private development HTTPS/WebSocket service, including
+pending earlier audio containing an explicit correction. Gateway, worker and admin
+container IDs were unchanged across deployment. Only `journal-private-development`
+was replaced. This commit uses `[skip ci]` to avoid triggering a shared production
+deployment; no workflow, production entitlement or Health configuration changed.

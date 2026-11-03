@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/platformops"
 )
 
 type CostControlStore struct{ database *sql.DB }
@@ -25,8 +27,52 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		return err
 	}
 	defer tx.Rollback()
+	if err = ReserveCostAttempt(ctx, tx, attempt, limits); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReserveCostAttempt shares the project budget lock with durable administrative job admission.
+func ReserveCostAttempt(ctx context.Context, tx *sql.Tx, attempt costcontrol.Attempt, limits costcontrol.Limits) error {
+	if !attempt.Valid() || !limits.Valid() {
+		return costcontrol.ErrInvalidAttempt
+	}
+	var err error
 	if err = lockCostControl(ctx, tx); err != nil {
 		return err
+	}
+	current, policyErr := platformops.CurrentFrom(ctx, tx)
+	if policyErr != nil && !errors.Is(policyErr, platformops.ErrNotFound) {
+		return policyErr
+	}
+	if policyErr == nil {
+		if err = platformops.ReserveAutomation(ctx, tx, current.Policy, attempt); err != nil {
+			return err
+		}
+		limits.MonthlyBudgetNanos = current.Policy.MonthlyBudgetNanos
+		limits.MaxConcurrent = current.Policy.MaxConcurrent
+	}
+	app, ok := costAppPolicy(current.Policy, attempt)
+	if !ok && (policyErr == nil || attempt.AppID == "birthday") {
+		return costcontrol.ErrInvalidAttempt
+	}
+	if app.MonthlyBudgetNanos > 0 {
+		var used int64
+		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN actual_nanos ELSE reserved_nanos END),0) FROM ai_cost_attempts WHERE app_id=? AND month_start=?`, attempt.AppID, attempt.MonthStart.UTC().Format("2006-01-02")).Scan(&used); err != nil {
+			return err
+		}
+		var held int64
+		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(remaining_nanos),0) FROM prompt_eval_budget_holds WHERE app_id=? AND month_start=?`, attempt.AppID, attempt.MonthStart.UTC().Format("2006-01-02")).Scan(&held); err != nil {
+			return err
+		}
+		if held > math.MaxInt64-used {
+			return costcontrol.ErrInvalidAttempt
+		}
+		used += held
+		if used > app.MonthlyBudgetNanos || attempt.ReservedNanos > app.MonthlyBudgetNanos-used {
+			return costcontrol.ErrBudgetExceeded
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE ai_cost_attempts
@@ -47,7 +93,12 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 		return err
 	}
 	if budget != limits.MonthlyBudgetNanos {
-		return costcontrol.ErrConfigurationConflict
+		if policyErr != nil {
+			return costcontrol.ErrConfigurationConflict
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE ai_cost_months SET budget_nanos=? WHERE month_start=?`, limits.MonthlyBudgetNanos, month); err != nil {
+			return err
+		}
 	}
 	if charged < 0 || charged > limits.MonthlyBudgetNanos || attempt.ReservedNanos > limits.MonthlyBudgetNanos-charged {
 		return costcontrol.ErrBudgetExceeded
@@ -56,22 +107,41 @@ func (store *CostControlStore) Reserve(ctx context.Context, attempt costcontrol.
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM ai_cost_attempts WHERE status = 'pending'`).Scan(&concurrent); err != nil {
 		return err
 	}
-	if concurrent >= limits.MaxConcurrent {
+	if concurrent >= limits.MaxConcurrent && attempt.Operation != "journal.evaluation.reserve" {
 		return costcontrol.ErrConcurrencyExceeded
+	}
+	audience, environment, err := costAudience(ctx, tx, attempt.AppID, attempt.CreatedAt)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(attempt.Operation, "journal.evaluation.") {
+		audience, environment = "admin_evaluation", "management"
 	}
 	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO ai_cost_attempts
-			(id, month_start, app_id, operation, meter, reserved_nanos, status, created_at, lease_expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+			(id, month_start, app_id, operation, meter, reserved_nanos, status, created_at, lease_expires_at, audience, environment)
+		VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
 		attempt.ID, month, attempt.AppID, attempt.Operation, attempt.Meter,
-		attempt.ReservedNanos, attempt.CreatedAt, attempt.LeaseExpiresAt); err != nil {
+		attempt.ReservedNanos, attempt.CreatedAt, attempt.LeaseExpiresAt, audience, environment); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE ai_cost_months SET charged_nanos = ?, updated_at = ? WHERE month_start = ?`,
 		charged+attempt.ReservedNanos, attempt.CreatedAt, month); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
+}
+
+func costAppPolicy(policy platformops.Policy, attempt costcontrol.Attempt) (platformops.AppPolicy, bool) {
+	if app, ok := policy.Apps[attempt.AppID]; ok {
+		return app, true
+	}
+	if attempt.AppID == "birthday" && attempt.Meter == "ark" &&
+		(attempt.Operation == "birthday.propose" || attempt.Operation == "birthday.revise") {
+		// shortcut: Fixed Birthday cap until every deployed policy reader supports a third app.
+		return platformops.AppPolicy{MonthlyBudgetNanos: 10 * costcontrol.NanosPerCNY}, true
+	}
+	return platformops.AppPolicy{}, false
 }
 
 func (store *CostControlStore) Settle(ctx context.Context, attemptID string, actualNanos int64, known bool, now time.Time) error {

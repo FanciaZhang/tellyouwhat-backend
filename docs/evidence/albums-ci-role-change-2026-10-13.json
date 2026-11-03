@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-13",
+  "roleID": "4611686018427619549",
+  "roleARN": "qcs::cam::uin/757772438:roleName/CI_QCSRole",
+  "before": [
+    {
+      "id": 62545629,
+      "name": "QcloudPartAccessForCIRole"
+    },
+    {
+      "id": 28530565,
+      "name": "QcloudAccessForCIRole"
+    },
+    {
+      "id": 5294998,
+      "name": "QcloudCOSDataFullControl"
+    }
+  ],
+  "servicePolicyID": 289600252,
+  "status": "applied_after_bounded_retry; automatic processing remains disabled",
+  "servicePolicyVersion": 2,
+  "passRolePolicyID": 289601206,
+  "passRoleUsers": [
+    "albums-test-backend"
+  ],
+  "backendPolicyID": 289454608,
+  "backendPolicyVersion": 2,
+  "finalRolePolicies": [
+    {
+      "id": 289600252,
+      "name": "AlbumsTestCIMediaService"
+    }
+  ],
+  "firstAttempt": [
+    {
+      "fixture": "albums/originals/ci-role-probe-7b917abf-cfc2-48eb-8253-bb31f93a1d2a/source.mp4",
+      "queue": "p543daa336f7a4d4b896654b933f8881b",
+      "sha256": "0ae471d06129a109ec21d9a945e6b5fb5b1ca0600a7f92cba2a665f833c15ac9",
+      "sizeBytes": 89230,
+      "version": "MTg0NDQ5NTIyMTkxMTgzMTkxNzg"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "jobID": "ja7cd4a32c6a411f1969f0594b5141c75"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "ResourceAccessDenied",
+      "jobID": "ja7cd4a32c6a411f1969f0594b5141c75",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "result": "failed",
+      "stage": "positive_job_failed"
+    }
+  ],
+  "firstAttemptDiagnosis": [
+    {
+      "code": "ResourceAccessDenied",
+      "jobID": "ja7cd4a32c6a411f1969f0594b5141c75",
+      "message": "write cos error: cos authorized error",
+      "state": "Failed"
+    },
+    {
+      "readOK": true,
+      "sha256": "0ae471d06129a109ec21d9a945e6b5fb5b1ca0600a7f92cba2a665f833c15ac9",
+      "size": 89230,
+      "sourceLatestVersionMatches": true
+    },
+    {
+      "outputHeadCode": "",
+      "outputHeadStatus": 404
+    }
+  ],
+  "rollback": {
+    "passRoleRevokedFirst": true,
+    "oldThreeRolePoliciesRestored": true,
+    "servicePolicyDetached": true
+  },
+  "retryChange": "Add cos:UploadPart only to albums/video-previews/* in service and backend policies; no other new action or prefix",
+  "secondAttempt": [
+    {
+      "fixture": "albums/originals/ci-role-probe-72cb7e75-5048-44b3-9d67-122ea398d523/source.mp4",
+      "queue": "p543daa336f7a4d4b896654b933f8881b",
+      "sha256": "0ae471d06129a109ec21d9a945e6b5fb5b1ca0600a7f92cba2a665f833c15ac9",
+      "sizeBytes": 89230,
+      "version": "MTg0NDQ5NTIyMTgzNDYwMzIwODI"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "jobID": "j741445d6c6a611f1856d7d9bfdc2c9b6"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "code": "Success",
+      "jobID": "j741445d6c6a611f1856d7d9bfdc2c9b6",
+      "phase": "terminal",
+      "state": "Success"
+    },
+    {
+      "check": "allowed_original_to_preview",
+      "output": "albums/video-previews/ci-role-probe-72cb7e75-5048-44b3-9d67-122ea398d523/allowed.mp4",
+      "sha256": "c86d512166996faeba2df378de9a6a0ab3a8af885bca598bcb6663a43f47b4cb",
+      "sizeBytes": 93014,
+      "version": "MTg0NDQ5NTIyMTgzNDUwMjE3MzQ"
+    },
+    {
+      "check": "deny_staging_read",
+      "code": "",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_staging_read",
+      "jobID": "j76217164c6a611f19ff90b6aa2ba6b0e"
+    },
+    {
+      "check": "deny_staging_read",
+      "code": "ResourceAccessDenied",
+      "jobID": "j76217164c6a611f19ff90b6aa2ba6b0e",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "check": "deny_original_write",
+      "code": "",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_original_write",
+      "jobID": "j7801509ec6a611f1a443cb0f0f4daac4"
+    },
+    {
+      "check": "deny_original_write",
+      "code": "ResourceAccessDenied",
+      "jobID": "j7801509ec6a611f1a443cb0f0f4daac4",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "code": "",
+      "phase": "submit",
+      "status": 200
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "jobID": "j79e53786c6a611f188748f045a502fd4"
+    },
+    {
+      "check": "deny_other_output_prefix",
+      "code": "ResourceAccessDenied",
+      "jobID": "j79e53786c6a611f188748f045a502fd4",
+      "phase": "terminal",
+      "state": "Failed"
+    },
+    {
+      "automaticProcessingEnabled": false,
+      "crossBucket": "not_tested",
+      "result": "passed",
+      "sourceLatestAndBytesUnchanged": true
+    }
+  ],
+  "outputInspection": {
+    "video": "h264",
+    "width": 320,
+    "height": 240,
+    "audio": "aac",
+    "durationSeconds": 2.02,
+    "sizeBytes": 93014,
+    "ffmpegFullDecodeExit": 0
+  },
+  "limits": [
+    "synthetic 2-second SDR sample only",
+    "output larger than input; not compression efficacy proof",
+    "no cross-bucket probe",
+    "no real Live Photo or App-to-server end-to-end test",
+    "no user media or object deletion",
+    "automatic processing remains off",
+    "shared role tightening can affect pre-existing CI consumers"
+  ],
+  "sourceSHA256": {
+    "deploy/albums/cam-ci-service.policy.json": "09c49cdda3df805a254545c4d444eaf37e31f2853d0c6c3ded104447ec53fd95",
+    "deploy/albums/cam-backend.policy.json": "67b003d71b4bf7ad46fd98b6a125aa8410871c3eeee33381e9ab38041e119f97",
+    "deploy/albums/cam-media-role.policy.json": "c69947a85a26f0c873af011776109ec34ee7e2e36520daf8e468f57a4305aec5",
+    "deploy/albums/ci_role_probe.go": "a940570730257b70bbef067170917ee5455e9e495dc8273a988fc5e55cd47e97"
+  }
+}

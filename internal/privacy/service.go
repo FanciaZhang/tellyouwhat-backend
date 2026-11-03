@@ -10,6 +10,12 @@ import (
 
 const (
 	AdultScope                         = "adult"
+	Age14PlusScope                     = "age_14_plus"
+	HealthEligibilityScope             = "health_eligibility"
+	HealthGeneralDocumentVersion       = "2026-10-01"
+	HealthICloudDocumentVersion        = "2026-10-10"
+	HealthCurrentDocumentVersion       = "2026-10-17"
+	GuardianConsentScope               = "guardian_consent"
 	PrivacyTermsScope                  = "privacy_and_terms"
 	LifetimeBYOKScope                  = "lifetime_byok"
 	ManagedAIScope                     = "managed_subscription"
@@ -17,6 +23,8 @@ const (
 	SensitiveHealthScope               = "sensitive_health_ai"
 	JournalIllustrationScope           = "journal_illustration"
 	JournalIllustrationDocumentVersion = "2026-09-27"
+	JournalReadAloudScope              = "journal_read_aloud"
+	JournalReadAloudDocumentVersion    = "2026-10-20"
 
 	GeneralDocumentVersion = "2026-08-24"
 	AIDocumentVersion      = "2026-08-24"
@@ -80,17 +88,17 @@ func NewService(repository Repository, objects ObjectCleaner, cache CacheCleaner
 }
 
 func (service *Service) RecordConsents(ctx context.Context, principal attestation.Principal, values []Consent) (time.Time, error) {
-	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 6 {
+	if service == nil || service.repository == nil || principal.KeyID == "" || principal.DeviceID == "" || len(values) == 0 || len(values) > 8 {
 		return time.Time{}, ErrInvalidConsent
 	}
 	recordedAt := service.now().UTC().Truncate(time.Microsecond)
 	records := make([]Record, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if value.Scope == JournalIllustrationScope && principal.AppID != "journal" {
+		if (value.Scope == Age14PlusScope || value.Scope == GuardianConsentScope || (value.Scope == PrivacyTermsScope && value.DocumentVersion != GeneralDocumentVersion)) && principal.AppID != "health" {
 			return time.Time{}, ErrInvalidConsent
 		}
-		if !validConsent(value) {
+		if !validConsent(value) || ((value.Scope == JournalIllustrationScope || value.Scope == JournalReadAloudScope) && principal.AppID != "journal") {
 			return time.Time{}, ErrInvalidConsent
 		}
 		key := value.Scope + "\x00" + value.DocumentVersion
@@ -122,14 +130,27 @@ func (service *Service) HasRequiredConsents(
 		return false, ErrConsentUnavailable
 	}
 	requirements := make([]Consent, 0, len(scopes))
+	healthEligibility := false
 	seen := make(map[string]struct{}, len(scopes))
 	for _, scope := range scopes {
 		if _, exists := seen[scope]; exists {
 			continue
 		}
 		seen[scope] = struct{}{}
+		if scope == HealthEligibilityScope {
+			if principal.AppID != "health" {
+				return false, ErrInvalidConsent
+			}
+			healthEligibility = true
+			continue
+		}
 		requirement := Consent{Scope: scope, Granted: true}
 		switch scope {
+		case JournalReadAloudScope:
+			if principal.AppID != "journal" {
+				return false, ErrInvalidConsent
+			}
+			requirement.DocumentVersion = JournalReadAloudDocumentVersion
 		case JournalIllustrationScope:
 			if principal.AppID != "journal" {
 				return false, ErrInvalidConsent
@@ -143,6 +164,39 @@ func (service *Service) HasRequiredConsents(
 			return false, ErrInvalidConsent
 		}
 		requirements = append(requirements, requirement)
+	}
+	if healthEligibility {
+		current, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+			{Scope: PrivacyTermsScope, DocumentVersion: HealthCurrentDocumentVersion, Granted: true},
+		})
+		if err != nil {
+			return false, err
+		}
+		// Published clients retain their original age declarations and document versions.
+		for _, version := range []string{HealthICloudDocumentVersion, HealthGeneralDocumentVersion} {
+			if current {
+				break
+			}
+			current, err = reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+				{Scope: Age14PlusScope, DocumentVersion: HealthGeneralDocumentVersion, Granted: true},
+				{Scope: PrivacyTermsScope, DocumentVersion: version, Granted: true},
+			})
+			if err != nil {
+				return false, err
+			}
+		}
+		if !current {
+			legacy, err := reader.HasGrantedConsents(ctx, principal.KeyID, []Consent{
+				{Scope: AdultScope, DocumentVersion: GeneralDocumentVersion, Granted: true},
+				{Scope: PrivacyTermsScope, DocumentVersion: GeneralDocumentVersion, Granted: true},
+			})
+			if err != nil || !legacy {
+				return false, err
+			}
+		}
+	}
+	if len(requirements) == 0 {
+		return healthEligibility, nil
 	}
 	return reader.HasGrantedConsents(ctx, principal.KeyID, requirements)
 }
@@ -179,9 +233,17 @@ func (service *Service) deletePrincipal(ctx context.Context, principal attestati
 
 func validConsent(value Consent) bool {
 	switch value.Scope {
+	case JournalReadAloudScope:
+		return value.DocumentVersion == JournalReadAloudDocumentVersion
 	case JournalIllustrationScope:
 		return value.DocumentVersion == JournalIllustrationDocumentVersion
-	case AdultScope, PrivacyTermsScope:
+	case Age14PlusScope:
+		return value.DocumentVersion == HealthGeneralDocumentVersion
+	case GuardianConsentScope:
+		return value.DocumentVersion == HealthCurrentDocumentVersion
+	case PrivacyTermsScope:
+		return value.DocumentVersion == GeneralDocumentVersion || value.DocumentVersion == HealthGeneralDocumentVersion || value.DocumentVersion == HealthICloudDocumentVersion || value.DocumentVersion == HealthCurrentDocumentVersion
+	case AdultScope:
 		return value.DocumentVersion == GeneralDocumentVersion
 	case LifetimeBYOKScope, ManagedAIScope, FreeRecognitionScope, SensitiveHealthScope:
 		return value.DocumentVersion == AIDocumentVersion

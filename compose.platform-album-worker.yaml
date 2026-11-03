@@ -1,0 +1,25 @@
+# Replace only the existing Albums worker; the shared API owns its release.
+services:
+  albumworker:
+    image: "tellyouwhat-platform-test-albumworker:${PLATFORM_TEST_IMAGE_TAG:?Set the immutable source}"
+    init: true
+    restart: unless-stopped
+    env_file: ["${PLATFORM_ALBUM_WORKER_ENV_FILE:?Set the selected media configuration}"]
+    environment:
+      ALBUM_DEPLOYMENT_ENVIRONMENT: test
+      ALBUM_DATABASE_DSN: "albums_development_test:${PLATFORM_ALBUM_MYSQL_PASSWORD:?Set the existing Albums development password}@tcp(tellyouwhat-albums-development-mysql-1:3306)/albums_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+      GOMAXPROCS: "1"
+      GOMEMLIMIT: "256MiB"
+    networks: [albums-development]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    pids_limit: 100
+    stop_grace_period: 40s
+
+networks:
+  albums-development:
+    external: true
+    name: tellyouwhat-albums-development_albums-test

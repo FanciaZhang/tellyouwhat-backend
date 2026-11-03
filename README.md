@@ -33,7 +33,7 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 - `cmd/gateway`：公开 API；先按 Host 选 App，再组合 Platform 与对应 App 的生成路由。
 - `cmd/worker`：Health 加密异步 AI 任务；内部请求绑定 App ID 与 Job ID，并由 Worker OpenAPI IDL 生成 strict Gin 路由。
-- `cmd/admin`：Passkey 登录、管理员/运营角色、人员与 App Store Connect Offer 管理；全部 API 路由由 Admin OpenAPI IDL 生成。
+- `cmd/admin`：Passkey 登录、管理员/运营角色、人员、App Store Connect Offer、AI 配置及[费用与运行管理](docs/modules/platform-operations.md)；全部 API 路由由 Admin OpenAPI IDL 生成。
 - `cmd/adminctl`：创建首位管理员和服务器侧应急恢复链接。
 - `cmd/migrate`：MySQL 8.4 基线 schema，包含 Health 与 Journal 注册项。
 - `cmd/maintenance`：按保留期清理临时媒体、任务、幂等和用量数据。
@@ -50,6 +50,10 @@ Journal 只公开固定的 `journal.organize` AI 操作。它接收标题、正�
 
 Health 方舟推理请求在普通与流式路径均显式发送 `store: false` 和 `caching.type: disabled`，关闭可供后续请求使用的响应保存和上下文缓存。这些请求参数不证明供应商整体零留存，也不代替其服务政策或本后端数据库、媒体及备份的保留期核验。
 
+## 环境隔离
+
+正式域名对应 `APP_ENV=production`。开发服务使用 `APP_ENV=development`，默认 Bundle ID 为正式 ID 加 `.dev`，域名为 `api-test.<app>.tellyouwhat.cn`。配置了相反环境的身份或域名时，gateway/worker 在启动前拒绝运行。详细迁移与验收边界见[统一环境与交付](docs/unified-app-environments.md)。
+
 ## 本地运行
 
 ```sh
@@ -60,7 +64,7 @@ go run ./cmd/migrate
 go run ./cmd/gateway
 ```
 
-本地请求仍需 Development App Attest。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
+本地默认使用 Development App Attest；Ad Hoc 导出若使用 production App Attest，须显式配置对应 App 的 `APP_ATTEST_ENV`，并核对签名产物。直连 localhost 时必须显式携带目标 Host，不存在跳过认证的调试后门。若旧开发数据库运行过早期 schema，应明确重建开发数据库；迁移器不会静默删除旧数据。
 
 ## 生产部署
 
@@ -80,4 +84,8 @@ swift test --package-path Contracts/HTTP
 
 测试覆盖 Host/操作隔离、App Attest、防重放、权益、隐私同意、订阅与免费配额、Health/Journal 严格 HTTP 合约、Journal 结构化输出、异步任务、数据分区和管理权限。真实 App Attest、StoreKit Sandbox、TOS、方舟模型、HTTPS 与托管 MySQL/Redis 仍需在生产预备环境和真机完成验收。
 
-CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机未提供这两个变量时，对应测试会跳过；MySQL 集成测试会重置测试表，数据库名必须以 `_test` 结尾，禁止使用业务数据库。
+CI 为每次运行启动独立的 MySQL 8.4 与 Redis 8 服务，并通过 `MYSQL_TEST_DSN`、`MYSQL_TEST_ADMIN_DSN` 和 `REDIS_TEST_URL` 执行真实存储集成测试。本机缺少所需变量时，对应测试会跳过。管理 DSN 用于创建、删除独立测试库；包含整表重置和旧结构模拟的持久化测试不再修改跨包共用库。所有 DSN 的数据库名必须以 `_test` 结尾，禁止使用业务数据库。
+
+CI 先核对已有验证证据。PR 检查准确 head，且须包含该事件的 base；合并后源码树、测试输入与 runner 镜像版本一致时复用成功结果。证据必须来自本仓库祖先提交的成功 `verify` 作业；不同源码树的分组件证据只接受 main 来源。缺失、不匹配或有更新的对应测试失败时重新执行。收据保留 14 天。Albums 恢复测试会执行运维代码，这些依赖也计入指纹；Swift 契约按独立输入核对。同一 main SHA 的八个镜像构建已成功时，后续发布复用原 source run 的不可变镜像。
+
+Albums 真实存储测试通过 `python3 scripts/run_album_tests.py` 编译一次并分为四个进程。每个进程有独立父数据库，每个隔离夹具保留独立数据库和清理；普通夹具不重复验证迁移重放，旧库升级、重放和失败恢复由迁移专项测试覆盖。测试清单必须非空、无重复且全部有执行结果。编译缓存用于加速，真实数据库测试仍强制执行。

@@ -83,6 +83,13 @@ func TestProviderRejectsTrailingStructuredOutput(t *testing.T) {
 	if !errors.Is(err, ErrInvalidResult) {
 		t.Fatalf("expected invalid structured result, got %v", err)
 	}
+	if !strings.HasSuffix(result.OutputText, " {}") {
+		t.Fatal("invalid model output was lost")
+	}
+	raw, _ := json.Marshal(result)
+	if strings.Contains(string(raw), "OutputText") {
+		t.Fatal("diagnostic text leaked into serialized production result")
+	}
 	if result.InputTokens != 11 || result.OutputTokens != 22 {
 		t.Fatalf("metering was discarded with invalid output: %+v", result)
 	}

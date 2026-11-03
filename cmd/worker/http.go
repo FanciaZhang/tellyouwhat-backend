@@ -133,6 +133,9 @@ func (server *workerHTTPServer) ProcessJob(
 		}, nil
 	}
 	if err := worker.Process(ctx, request.Body.JobID); err != nil {
+		if errors.Is(err, jobs.ErrAdmissionDeferred) {
+			return workerhttpapi.ProcessJob503JSONResponse{ErrorJSONResponse: workerhttpapi.ErrorJSONResponse(workerFailure(jobs.DispatchDeferred, "job is waiting for admission"))}, nil
+		}
 		failure := workerFailure("job_failed", "job could not be processed")
 		return workerhttpapi.ProcessJob502JSONResponse{
 			BadGatewayJSONResponse: workerhttpapi.BadGatewayJSONResponse(failure),

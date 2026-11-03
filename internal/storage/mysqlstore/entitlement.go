@@ -50,17 +50,28 @@ func (repository *EntitlementRepository) ApplyNotification(
 	}
 	if _, err := transaction.ExecContext(ctx, `
         UPDATE managed_entitlements
-        SET environment = ?, expires_at = ?, updated_at = UTC_TIMESTAMP(6)
-		WHERE app_id = ? AND original_transaction_id = ?`,
+        SET environment = ?, expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
+		WHERE app_id = ? AND original_transaction_id = ? AND environment = ?`,
 		state.Environment,
 		state.ExpiresAt,
+		purchasePrice(state.CurrentPayment),
 		repository.appID,
 		state.OriginalTransactionID,
+		state.Environment,
 	); err != nil {
 		return false, err
 	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE managed_entitlement_environments
+        SET expires_at = ?, price_milli = ?, updated_at = UTC_TIMESTAMP(6)
+        WHERE app_id = ? AND original_transaction_id = ? AND environment = ?`,
+		state.ExpiresAt, purchasePrice(state.CurrentPayment), repository.appID, state.OriginalTransactionID, state.Environment); err != nil {
+		return false, err
+	}
+	if err := observePurchase(ctx, transaction, repository.appID, "", state.Environment, state.Payment); err != nil {
+		return false, err
+	}
 	if err := insertOfferRedemption(ctx, transaction, repository.appID, state.Environment, state.TransactionID,
-		state.OriginalTransactionID, state.OfferIdentifier, state.OfferType, state.SignedAt, state.ExpiresAt); err != nil {
+		state.OriginalTransactionID, state.OfferIdentifier, state.ProductID, state.OfferType, state.SignedAt, state.ExpiresAt); err != nil {
 		return false, err
 	}
 	if err := transaction.Commit(); err != nil {
@@ -75,15 +86,75 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		return err
 	}
 	defer func() { _ = transaction.Rollback() }()
-	if _, err = transaction.ExecContext(ctx, `
+	if record.Environment == "development" {
+		// Share the purchase promotion lock so a stale development request cannot replace a verified purchase.
+		var boundID string
+		if err := transaction.QueryRowContext(ctx, `SELECT transaction_id FROM app_attest_keys
+			WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID); err != nil {
+			return err
+		}
+		var environment string
+		err := transaction.QueryRowContext(ctx, `SELECT environment FROM managed_entitlements
+			WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&environment)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if boundID != "" || (err == nil && environment != "development") {
+			return entitlement.ErrActivationDenied
+		}
+	}
+	if err := repository.upsert(ctx, transaction, record); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
+func (repository *EntitlementRepository) UpsertVerified(ctx context.Context, record entitlement.Record) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+	var boundID string
+	var bindings entitlement.VerifiedTransactionBindings
+	if err := transaction.QueryRowContext(ctx, `SELECT transaction_id, production_transaction_id, sandbox_transaction_id FROM app_attest_keys
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&boundID, &bindings.ProductionID, &bindings.SandboxID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return entitlement.ErrSubscriptionBindingConflict
+		}
+		return err
+	}
+	var existing entitlement.Record
+	err = transaction.QueryRowContext(ctx, `SELECT original_transaction_id, environment, expires_at FROM managed_entitlements
+		WHERE app_id = ? AND key_id = ? FOR UPDATE`, repository.appID, record.KeyID).Scan(&existing.TransactionID, &existing.Environment, &existing.ExpiresAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	bindings, allowed := entitlement.BindVerifiedTransaction(boundID, existing, record, bindings, time.Now())
+	if !allowed {
+		return entitlement.ErrSubscriptionBindingConflict
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE app_attest_keys SET transaction_id = ?, production_transaction_id = ?, sandbox_transaction_id = ?, updated_at = UTC_TIMESTAMP(6)
+		WHERE app_id = ? AND key_id = ?`, record.TransactionID, bindings.ProductionID, bindings.SandboxID, repository.appID, record.KeyID); err != nil {
+		return err
+	}
+	if err := repository.upsert(ctx, transaction, record); err != nil {
+		return err
+	}
+	return transaction.Commit()
+}
+
+func (repository *EntitlementRepository) upsert(ctx context.Context, transaction *sql.Tx, record entitlement.Record) error {
+	if _, err := transaction.ExecContext(ctx, `
         INSERT INTO managed_entitlements
-			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
+			(app_id, key_id, original_transaction_id, environment, expires_at, started_at, price_milli, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))
         ON DUPLICATE KEY UPDATE
             original_transaction_id = VALUES(original_transaction_id),
             environment = VALUES(environment),
             expires_at = VALUES(expires_at),
             started_at = COALESCE(VALUES(started_at), started_at),
+ price_milli = VALUES(price_milli),
             updated_at = UTC_TIMESTAMP(6)`,
 		repository.appID,
 		record.KeyID,
@@ -91,18 +162,35 @@ func (repository *EntitlementRepository) Upsert(ctx context.Context, record enti
 		record.Environment,
 		record.ExpiresAt,
 		nullableVoiceDate(record.StartedAt),
+		purchasePrice(record.Payment),
 	); err != nil {
 		return err
 	}
-	if err := insertOfferRedemption(ctx, transaction, repository.appID, record.Environment, record.OfferTransactionID,
-		record.TransactionID, record.OfferIdentifier, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
+	// Switching the active TestFlight/App Store subscription must retain both verified states.
+	if record.Environment == "production" || record.Environment == "sandbox" {
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO managed_entitlement_environments
+            (app_id, key_id, original_transaction_id, environment, expires_at, started_at, price_milli)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE original_transaction_id=VALUES(original_transaction_id),
+            expires_at=VALUES(expires_at), started_at=COALESCE(VALUES(started_at), started_at),
+            price_milli=VALUES(price_milli), updated_at=UTC_TIMESTAMP(6)`,
+			repository.appID, record.KeyID, record.TransactionID, record.Environment, record.ExpiresAt,
+			nullableVoiceDate(record.StartedAt), purchasePrice(record.Payment)); err != nil {
+			return err
+		}
+	}
+	if err := observePurchase(ctx, transaction, repository.appID, record.KeyID, record.Environment, record.Payment); err != nil {
 		return err
 	}
-	return transaction.Commit()
+	if err := insertOfferRedemption(ctx, transaction, repository.appID, record.Environment, record.OfferTransactionID,
+		record.TransactionID, record.OfferIdentifier, record.ProductID, record.OfferType, record.OfferSignedAt, record.ExpiresAt); err != nil {
+		return err
+	}
+	return nil
 }
 
 func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, environment, transactionID,
-	originalTransactionID, offerIdentifier string, offerType int32, signedAt, expiresAt time.Time) error {
+	originalTransactionID, offerIdentifier, productID string, offerType int32, signedAt, expiresAt time.Time) error {
 	if transactionID == "" || originalTransactionID == "" || offerIdentifier == "" || offerType <= 0 || signedAt.IsZero() {
 		return nil
 	}
@@ -110,10 +198,10 @@ func insertOfferRedemption(ctx context.Context, transaction *sql.Tx, appID, envi
 	originalHash := sha256.Sum256([]byte(originalTransactionID))
 	_, err := transaction.ExecContext(ctx, `
 		INSERT INTO app_store_offer_redemptions
-			(app_id, environment, transaction_hash, original_transaction_hash, offer_identifier, offer_type, redeemed_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE expires_at = GREATEST(expires_at, VALUES(expires_at))`,
-		appID, environment, transactionHash[:], originalHash[:], offerIdentifier, offerType, signedAt.UTC(), expiresAt.UTC())
+			(app_id, environment, transaction_hash, original_transaction_hash, offer_identifier, product_id, offer_type, redeemed_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE product_id = IF(product_id='', VALUES(product_id), product_id), expires_at = GREATEST(expires_at, VALUES(expires_at))`,
+		appID, environment, transactionHash[:], originalHash[:], offerIdentifier, productID, offerType, signedAt.UTC(), expiresAt.UTC())
 	return err
 }
 

@@ -1,0 +1,170 @@
+{
+  "observedAt": "2026-10-16T03:12:25.490053+00:00",
+  "source": "42165fed8a08049ffa1250345901beef1b61c11a",
+  "previousSource": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "negativeProbes": [
+    {
+      "role": "albumgateway",
+      "environment": "production",
+      "dsnUser": "albums_test_user",
+      "database": "albums_test",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    },
+    {
+      "role": "albumgateway",
+      "environment": "test",
+      "dsnUser": "albums_user",
+      "database": "albums",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    },
+    {
+      "role": "albumgateway",
+      "environment": "test",
+      "dsnUser": "root",
+      "database": "albums_test",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    },
+    {
+      "role": "albumworker",
+      "environment": "production",
+      "dsnUser": "albums_test_user",
+      "database": "albums_test",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    },
+    {
+      "role": "albumworker",
+      "environment": "test",
+      "dsnUser": "albums_user",
+      "database": "albums",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    },
+    {
+      "role": "albumworker",
+      "environment": "test",
+      "dsnUser": "root",
+      "database": "albums_test",
+      "rejected": true,
+      "environmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT"
+    }
+  ],
+  "readiness": {
+    "status": 200,
+    "body": {
+      "code": "ok"
+    }
+  },
+  "containers": [
+    {
+      "name": "/tellyouwhat-albums-development-albumgateway-1",
+      "id": "6bc027870fe91babc8261202eb793c6352138cf7216d46067c0a11d46229ac16",
+      "image": "tellyouwhat-albums-test-development-albumgateway:42165fed8a08049ffa1250345901beef1b61c11a",
+      "started": "2026-10-16T03:04:20.647959668Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-development-albumworker-1",
+      "id": "1b87ecd643d20267a1663e401e02d419b8035c2cd3bd51733bbe9ee21e0a5c48",
+      "image": "tellyouwhat-albums-test-development-albumworker:42165fed8a08049ffa1250345901beef1b61c11a",
+      "started": "2026-10-16T03:04:20.646578134Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-development-redis-1",
+      "id": "c566513372842d5798417bf72d341cbc3a380778b81d13a593481209eb1c30c0",
+      "image": "redis:8-alpine",
+      "started": "2026-10-15T21:31:46.985214976Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-development-mysql-1",
+      "id": "ae685b31c593052c1bae71dc0f06451ae3a78d0cbbcc62351329371872788b6d",
+      "image": "mysql:8.4",
+      "started": "2026-10-15T21:31:46.986582233Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-next-albumgateway-1",
+      "id": "29441b4c4053bbdb3f9bb272169b404854aa42ea9c57bad42c58159098b88c88",
+      "image": "tellyouwhat-albums-test-albumgateway:fb2cf960651c58bf84d7697b8dc57e2001a8be17",
+      "started": "2026-10-13T18:02:01.88924744Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-next-albumworker-1",
+      "id": "a091a562492d522cc39d4e7eaf8701bbc1f4fc73ff93265d33cb9f545c2ca8f1",
+      "image": "tellyouwhat-albums-test-albumworker:fb2cf960651c58bf84d7697b8dc57e2001a8be17",
+      "started": "2026-10-13T18:02:01.890697413Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-next-redis-1",
+      "id": "39d1ea421633e5660b12ca2e7c2ed134ced22bda5c158af7c36461ecb3939b9c",
+      "image": "redis:8-alpine",
+      "started": "2026-10-13T18:01:45.508278428Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-next-mysql-1",
+      "id": "1910dc64e160595fe307dc7a5fbbc27efff179bc000e7a5b149603eba39a0948",
+      "image": "mysql:8.4",
+      "started": "2026-10-13T18:01:45.506606499Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-green-gateway-1",
+      "id": "d2b2fe57f582c8b8f1b760300cfe9aee514d996ba58f5fda71c047b6dc9f2d55",
+      "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:ac7e9d601ba9215f5409a769dfb53cd12e4e54d4fd17354a8889d16699199427",
+      "started": "2026-10-13T06:51:32.051220621Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-redis-1",
+      "id": "bb8355b1d438b9f75363c4da8ff828ae374b1cd48a5c8761e90bd7e67aa6fcc6",
+      "image": "redis:8-alpine",
+      "started": "2026-10-12T09:33:47.945819147Z",
+      "running": true,
+      "restarts": 0
+    },
+    {
+      "name": "/tellyouwhat-albums-test-mysql-1",
+      "id": "2e2ebcaab739df4f5bed15db92432976f98f33bebdd7ec874265246e976255b0",
+      "image": "mysql:8.4",
+      "started": "2026-10-12T09:33:47.946839574Z",
+      "running": true,
+      "restarts": 0
+    }
+  ],
+  "preUpdateBackup": "mysql-20261016T025942Z-d025ed.sql.gz.enc",
+  "migrationCount": 66,
+  "latestMigration": "0064_album_identity_retirement.sql",
+  "tests": {
+    "deployment": 13,
+    "recovery": 7,
+    "deployedNegativeProbes": 6
+  },
+  "cleanup": {
+    "passed": true,
+    "reclaimedBytes": 88133632,
+    "activeAndPreviousRetained": true
+  },
+  "databaseRestarted": false,
+  "redisRestarted": false,
+  "healthProductionRestarted": false,
+  "deviceAndMediaJourneyAccepted": false,
+  "negativeProbeEnvironmentKey": "ALBUM_DEPLOYMENT_ENVIRONMENT",
+  "probeCorrection": "Initial command used ALBUM_ENVIRONMENT, testing missing environment rather than the intended mismatches. All six deployed-binary cases were rerun with the correct key and passed."
+}

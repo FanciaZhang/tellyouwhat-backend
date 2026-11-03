@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -23,6 +24,33 @@ import (
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for IllustrationDetailKind.
+const (
+	IllustrationDetailKindComposition IllustrationDetailKind = "composition"
+	IllustrationDetailKindOther       IllustrationDetailKind = "other"
+	IllustrationDetailKindSetting     IllustrationDetailKind = "setting"
+	IllustrationDetailKindStyle       IllustrationDetailKind = "style"
+	IllustrationDetailKindSubject     IllustrationDetailKind = "subject"
+)
+
+// Valid indicates whether the value is a known member of the IllustrationDetailKind enum.
+func (e IllustrationDetailKind) Valid() bool {
+	switch e {
+	case IllustrationDetailKindComposition:
+		return true
+	case IllustrationDetailKindOther:
+		return true
+	case IllustrationDetailKindSetting:
+		return true
+	case IllustrationDetailKindStyle:
+		return true
+	case IllustrationDetailKindSubject:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for IllustrationResultMime.
 const (
@@ -42,30 +70,57 @@ func (e IllustrationResultMime) Valid() bool {
 	}
 }
 
+// Defines values for IllustrationTaskProblem.
+const (
+	IllustrationTaskProblemInvalidImage IllustrationTaskProblem = "invalidImage"
+	IllustrationTaskProblemNetwork      IllustrationTaskProblem = "network"
+	IllustrationTaskProblemQuota        IllustrationTaskProblem = "quota"
+	IllustrationTaskProblemRejected     IllustrationTaskProblem = "rejected"
+	IllustrationTaskProblemUnavailable  IllustrationTaskProblem = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the IllustrationTaskProblem enum.
+func (e IllustrationTaskProblem) Valid() bool {
+	switch e {
+	case IllustrationTaskProblemInvalidImage:
+		return true
+	case IllustrationTaskProblemNetwork:
+		return true
+	case IllustrationTaskProblemQuota:
+		return true
+	case IllustrationTaskProblemRejected:
+		return true
+	case IllustrationTaskProblemUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IllustrationTaskState.
 const (
-	Cancelled IllustrationTaskState = "cancelled"
-	Queued    IllustrationTaskState = "queued"
-	Rejected  IllustrationTaskState = "rejected"
-	Running   IllustrationTaskState = "running"
-	Succeeded IllustrationTaskState = "succeeded"
-	Uncertain IllustrationTaskState = "uncertain"
+	IllustrationTaskStateCancelled IllustrationTaskState = "cancelled"
+	IllustrationTaskStateQueued    IllustrationTaskState = "queued"
+	IllustrationTaskStateRejected  IllustrationTaskState = "rejected"
+	IllustrationTaskStateRunning   IllustrationTaskState = "running"
+	IllustrationTaskStateSucceeded IllustrationTaskState = "succeeded"
+	IllustrationTaskStateUncertain IllustrationTaskState = "uncertain"
 )
 
 // Valid indicates whether the value is a known member of the IllustrationTaskState enum.
 func (e IllustrationTaskState) Valid() bool {
 	switch e {
-	case Cancelled:
+	case IllustrationTaskStateCancelled:
 		return true
-	case Queued:
+	case IllustrationTaskStateQueued:
 		return true
-	case Rejected:
+	case IllustrationTaskStateRejected:
 		return true
-	case Running:
+	case IllustrationTaskStateRunning:
 		return true
-	case Succeeded:
+	case IllustrationTaskStateSucceeded:
 		return true
-	case Uncertain:
+	case IllustrationTaskStateUncertain:
 		return true
 	default:
 		return false
@@ -87,33 +142,267 @@ func (e OrganizeRequestContractVersion) Valid() bool {
 	}
 }
 
+// Defines values for ReadAloudAllowancePurpose.
+const (
+	ReadAloudAllowancePurposeJournal ReadAloudAllowancePurpose = "journal"
+	ReadAloudAllowancePurposePreview ReadAloudAllowancePurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudAllowancePurpose enum.
+func (e ReadAloudAllowancePurpose) Valid() bool {
+	switch e {
+	case ReadAloudAllowancePurposeJournal:
+		return true
+	case ReadAloudAllowancePurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudEventKind.
+const (
+	Audio     ReadAloudEventKind = "audio"
+	Heartbeat ReadAloudEventKind = "heartbeat"
+	State     ReadAloudEventKind = "state"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudEventKind enum.
+func (e ReadAloudEventKind) Valid() bool {
+	switch e {
+	case Audio:
+		return true
+	case Heartbeat:
+		return true
+	case State:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionChannels.
+const (
+	N1 ReadAloudSessionChannels = 1
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionChannels enum.
+func (e ReadAloudSessionChannels) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionEncoding.
+const (
+	PcmS16le ReadAloudSessionEncoding = "pcm_s16le"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionEncoding enum.
+func (e ReadAloudSessionEncoding) Valid() bool {
+	switch e {
+	case PcmS16le:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionPurpose.
+const (
+	ReadAloudSessionPurposeJournal ReadAloudSessionPurpose = "journal"
+	ReadAloudSessionPurposePreview ReadAloudSessionPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionPurpose enum.
+func (e ReadAloudSessionPurpose) Valid() bool {
+	switch e {
+	case ReadAloudSessionPurposeJournal:
+		return true
+	case ReadAloudSessionPurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionSampleRate.
+const (
+	N24000 ReadAloudSessionSampleRate = 24000
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionSampleRate enum.
+func (e ReadAloudSessionSampleRate) Valid() bool {
+	switch e {
+	case N24000:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSessionState.
+const (
+	ReadAloudSessionStateCancelled ReadAloudSessionState = "cancelled"
+	ReadAloudSessionStateFailed    ReadAloudSessionState = "failed"
+	ReadAloudSessionStatePreparing ReadAloudSessionState = "preparing"
+	ReadAloudSessionStateReserved  ReadAloudSessionState = "reserved"
+	ReadAloudSessionStateRunning   ReadAloudSessionState = "running"
+	ReadAloudSessionStateSucceeded ReadAloudSessionState = "succeeded"
+	ReadAloudSessionStateUnknown   ReadAloudSessionState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSessionState enum.
+func (e ReadAloudSessionState) Valid() bool {
+	switch e {
+	case ReadAloudSessionStateCancelled:
+		return true
+	case ReadAloudSessionStateFailed:
+		return true
+	case ReadAloudSessionStatePreparing:
+		return true
+	case ReadAloudSessionStateReserved:
+		return true
+	case ReadAloudSessionStateRunning:
+		return true
+	case ReadAloudSessionStateSucceeded:
+		return true
+	case ReadAloudSessionStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSynthesisRequestPurpose.
+const (
+	ReadAloudSynthesisRequestPurposeJournal ReadAloudSynthesisRequestPurpose = "journal"
+	ReadAloudSynthesisRequestPurposePreview ReadAloudSynthesisRequestPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSynthesisRequestPurpose enum.
+func (e ReadAloudSynthesisRequestPurpose) Valid() bool {
+	switch e {
+	case ReadAloudSynthesisRequestPurposeJournal:
+		return true
+	case ReadAloudSynthesisRequestPurposePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadAloudSynthesisRequestStyle.
+const (
+	Calm         ReadAloudSynthesisRequestStyle = "calm"
+	Natural      ReadAloudSynthesisRequestStyle = "natural"
+	Storytelling ReadAloudSynthesisRequestStyle = "storytelling"
+)
+
+// Valid indicates whether the value is a known member of the ReadAloudSynthesisRequestStyle enum.
+func (e ReadAloudSynthesisRequestStyle) Valid() bool {
+	switch e {
+	case Calm:
+		return true
+	case Natural:
+		return true
+	case Storytelling:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordingAnalysisVersion.
+const (
+	JournalRecordingV1 RecordingAnalysisVersion = "journal-recording-v1"
+)
+
+// Valid indicates whether the value is a known member of the RecordingAnalysisVersion enum.
+func (e RecordingAnalysisVersion) Valid() bool {
+	switch e {
+	case JournalRecordingV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordingTaskState.
+const (
+	RecordingTaskStateCompleted  RecordingTaskState = "completed"
+	RecordingTaskStateFailed     RecordingTaskState = "failed"
+	RecordingTaskStateProcessing RecordingTaskState = "processing"
+	RecordingTaskStateSubmitting RecordingTaskState = "submitting"
+	RecordingTaskStateUploaded   RecordingTaskState = "uploaded"
+)
+
+// Valid indicates whether the value is a known member of the RecordingTaskState enum.
+func (e RecordingTaskState) Valid() bool {
+	switch e {
+	case RecordingTaskStateCompleted:
+		return true
+	case RecordingTaskStateFailed:
+		return true
+	case RecordingTaskStateProcessing:
+		return true
+	case RecordingTaskStateSubmitting:
+		return true
+	case RecordingTaskStateUploaded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TagType.
 const (
-	Event        TagType = "event"
-	Mood         TagType = "mood"
-	Organization TagType = "organization"
-	Other        TagType = "other"
-	Person       TagType = "person"
-	Place        TagType = "place"
-	Topic        TagType = "topic"
+	TagTypeEvent        TagType = "event"
+	TagTypeMood         TagType = "mood"
+	TagTypeOrganization TagType = "organization"
+	TagTypeOther        TagType = "other"
+	TagTypePerson       TagType = "person"
+	TagTypePlace        TagType = "place"
+	TagTypeTopic        TagType = "topic"
 )
 
 // Valid indicates whether the value is a known member of the TagType enum.
 func (e TagType) Valid() bool {
 	switch e {
-	case Event:
+	case TagTypeEvent:
 		return true
-	case Mood:
+	case TagTypeMood:
 		return true
-	case Organization:
+	case TagTypeOrganization:
 		return true
-	case Other:
+	case TagTypeOther:
 		return true
-	case Person:
+	case TagTypePerson:
 		return true
-	case Place:
+	case TagTypePlace:
 		return true
-	case Topic:
+	case TagTypeTopic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetJournalReadAloudAllowanceParamsPurpose.
+const (
+	GetJournalReadAloudAllowanceParamsPurposeJournal GetJournalReadAloudAllowanceParamsPurpose = "journal"
+	GetJournalReadAloudAllowanceParamsPurposePreview GetJournalReadAloudAllowanceParamsPurpose = "preview"
+)
+
+// Valid indicates whether the value is a known member of the GetJournalReadAloudAllowanceParamsPurpose enum.
+func (e GetJournalReadAloudAllowanceParamsPurpose) Valid() bool {
+	switch e {
+	case GetJournalReadAloudAllowanceParamsPurposeJournal:
+		return true
+	case GetJournalReadAloudAllowanceParamsPurposePreview:
 		return true
 	default:
 		return false
@@ -146,15 +435,30 @@ type ExistingBookRecommendation struct {
 	Reason string             `json:"reason"`
 }
 
+// IllustrationBrief defines model for IllustrationBrief.
+type IllustrationBrief struct {
+	Details []IllustrationDetail `json:"details"`
+	Title   string               `json:"title"`
+}
+
 // IllustrationCancellation defines model for IllustrationCancellation.
 type IllustrationCancellation struct {
 	Revision int64 `json:"revision"`
 }
 
+// IllustrationDetail defines model for IllustrationDetail.
+type IllustrationDetail struct {
+	Kind IllustrationDetailKind `json:"kind"`
+	Text string                 `json:"text"`
+}
+
+// IllustrationDetailKind defines model for IllustrationDetail.Kind.
+type IllustrationDetailKind string
+
 // IllustrationRequest defines model for IllustrationRequest.
 type IllustrationRequest struct {
+	Brief           IllustrationBrief  `json:"brief"`
 	ConsentRevision string             `json:"consentRevision"`
-	Prompt          string             `json:"prompt"`
 	Reference       *[]byte            `json:"reference,omitempty"`
 	ReferenceSHA256 *string            `json:"referenceSHA256,omitempty"`
 	RequestID       openapi_types.UUID `json:"requestID"`
@@ -172,14 +476,46 @@ type IllustrationResult struct {
 // IllustrationResultMime defines model for IllustrationResult.Mime.
 type IllustrationResultMime string
 
+// IllustrationSuggestion defines model for IllustrationSuggestion.
+type IllustrationSuggestion struct {
+	Composition  string   `json:"composition"`
+	Reason       string   `json:"reason"`
+	Setting      string   `json:"setting"`
+	SourceQuotes []string `json:"sourceQuotes"`
+	Style        string   `json:"style"`
+	Subject      string   `json:"subject"`
+	Summary      string   `json:"summary"`
+}
+
+// IllustrationSuggestionRequest defines model for IllustrationSuggestionRequest.
+type IllustrationSuggestionRequest struct {
+	Body        string             `json:"body"`
+	ContentHash string             `json:"contentHash"`
+	RequestID   openapi_types.UUID `json:"requestID"`
+	Title       string             `json:"title"`
+}
+
+// IllustrationSuggestionResponse defines model for IllustrationSuggestionResponse.
+type IllustrationSuggestionResponse struct {
+	AnalysisVersion string                  `json:"analysisVersion"`
+	ContentHash     string                  `json:"contentHash"`
+	Quota           OrganizeQuota           `json:"quota"`
+	RequestID       openapi_types.UUID      `json:"requestID"`
+	Suggestion      *IllustrationSuggestion `json:"suggestion,omitempty"`
+}
+
 // IllustrationTask defines model for IllustrationTask.
 type IllustrationTask struct {
-	ExpiresAt time.Time             `json:"expiresAt"`
-	Id        openapi_types.UUID    `json:"id"`
-	Revision  int64                 `json:"revision"`
-	State     IllustrationTaskState `json:"state"`
-	VersionID openapi_types.UUID    `json:"versionID"`
+	ExpiresAt time.Time                `json:"expiresAt"`
+	Id        openapi_types.UUID       `json:"id"`
+	Problem   *IllustrationTaskProblem `json:"problem,omitempty"`
+	Revision  int64                    `json:"revision"`
+	State     IllustrationTaskState    `json:"state"`
+	VersionID openapi_types.UUID       `json:"versionID"`
 }
+
+// IllustrationTaskProblem defines model for IllustrationTask.Problem.
+type IllustrationTaskProblem string
 
 // IllustrationTaskState defines model for IllustrationTask.State.
 type IllustrationTaskState string
@@ -225,6 +561,153 @@ type OrganizeResponse struct {
 	Tags                        []Tag                        `json:"tags"`
 }
 
+// ReadAloudAllowance defines model for ReadAloudAllowance.
+type ReadAloudAllowance struct {
+	Limit     int                       `json:"limit"`
+	PeriodEnd time.Time                 `json:"periodEnd"`
+	Purpose   ReadAloudAllowancePurpose `json:"purpose"`
+	Remaining int                       `json:"remaining"`
+	Reserved  int                       `json:"reserved"`
+	Used      int                       `json:"used"`
+}
+
+// ReadAloudAllowancePurpose defines model for ReadAloudAllowance.Purpose.
+type ReadAloudAllowancePurpose string
+
+// ReadAloudCatalog defines model for ReadAloudCatalog.
+type ReadAloudCatalog struct {
+	DefaultVoiceID string           `json:"defaultVoiceID"`
+	MaxAgeSeconds  int              `json:"maxAgeSeconds"`
+	Version        string           `json:"version"`
+	Voices         []ReadAloudVoice `json:"voices"`
+}
+
+// ReadAloudEvent defines model for ReadAloudEvent.
+type ReadAloudEvent struct {
+	Kind   ReadAloudEventKind `json:"kind"`
+	Offset *int               `json:"offset,omitempty"`
+	Pcm    *[]byte            `json:"pcm,omitempty"`
+
+	// Sequence Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries.
+	Sequence  int                `json:"sequence"`
+	Session   *ReadAloudSession  `json:"session,omitempty"`
+	SessionID openapi_types.UUID `json:"sessionID"`
+}
+
+// ReadAloudEventKind defines model for ReadAloudEvent.Kind.
+type ReadAloudEventKind string
+
+// ReadAloudSession defines model for ReadAloudSession.
+type ReadAloudSession struct {
+	AudioBytes      int                      `json:"audioBytes"`
+	BufferAvailable bool                     `json:"bufferAvailable"`
+	Channels        ReadAloudSessionChannels `json:"channels"`
+	Encoding        ReadAloudSessionEncoding `json:"encoding"`
+	ExpiresAt       time.Time                `json:"expiresAt"`
+	Id              openapi_types.UUID       `json:"id"`
+
+	// LastSequence Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries.
+	LastSequence int                        `json:"lastSequence"`
+	Problem      *string                    `json:"problem,omitempty"`
+	Purpose      ReadAloudSessionPurpose    `json:"purpose"`
+	SampleRate   ReadAloudSessionSampleRate `json:"sampleRate"`
+	State        ReadAloudSessionState      `json:"state"`
+}
+
+// ReadAloudSessionChannels defines model for ReadAloudSession.Channels.
+type ReadAloudSessionChannels int
+
+// ReadAloudSessionEncoding defines model for ReadAloudSession.Encoding.
+type ReadAloudSessionEncoding string
+
+// ReadAloudSessionPurpose defines model for ReadAloudSession.Purpose.
+type ReadAloudSessionPurpose string
+
+// ReadAloudSessionSampleRate defines model for ReadAloudSession.SampleRate.
+type ReadAloudSessionSampleRate int
+
+// ReadAloudSessionState defines model for ReadAloudSession.State.
+type ReadAloudSessionState string
+
+// ReadAloudSynthesisRequest defines model for ReadAloudSynthesisRequest.
+type ReadAloudSynthesisRequest struct {
+	ConsentVersion string                           `json:"consentVersion"`
+	Dialect        string                           `json:"dialect"`
+	Language       string                           `json:"language"`
+	Pitch          int                              `json:"pitch"`
+	Purpose        ReadAloudSynthesisRequestPurpose `json:"purpose"`
+	RequestID      openapi_types.UUID               `json:"requestID"`
+	Style          ReadAloudSynthesisRequestStyle   `json:"style"`
+
+	// Text At most 900 UTF-8 bytes. Must be empty for preview; the server selects its public sample.
+	Text          string `json:"text"`
+	VoiceID       string `json:"voiceID"`
+	VoiceRevision string `json:"voiceRevision"`
+}
+
+// ReadAloudSynthesisRequestPurpose defines model for ReadAloudSynthesisRequest.Purpose.
+type ReadAloudSynthesisRequestPurpose string
+
+// ReadAloudSynthesisRequestStyle defines model for ReadAloudSynthesisRequest.Style.
+type ReadAloudSynthesisRequestStyle string
+
+// ReadAloudVoice defines model for ReadAloudVoice.
+type ReadAloudVoice struct {
+	Description   string   `json:"description"`
+	Dialects      []string `json:"dialects"`
+	Id            string   `json:"id"`
+	Languages     []string `json:"languages"`
+	Name          string   `json:"name"`
+	PreviewURL    *string  `json:"previewURL,omitempty"`
+	Revision      string   `json:"revision"`
+	Styles        []string `json:"styles"`
+	SupportsPitch bool     `json:"supportsPitch"`
+}
+
+// RecordingAnalysis defines model for RecordingAnalysis.
+type RecordingAnalysis struct {
+	Milliseconds int                `json:"milliseconds"`
+	TaskID       openapi_types.UUID `json:"taskID"`
+	Text         string             `json:"text"`
+	Utterances   []struct {
+		AcousticEmotion   *string `json:"acousticEmotion,omitempty"`
+		EndMilliseconds   int     `json:"endMilliseconds"`
+		Id                string  `json:"id"`
+		Speaker           string  `json:"speaker"`
+		StartMilliseconds int     `json:"startMilliseconds"`
+		Text              string  `json:"text"`
+	} `json:"utterances"`
+	Version RecordingAnalysisVersion `json:"version"`
+}
+
+// RecordingAnalysisVersion defines model for RecordingAnalysis.Version.
+type RecordingAnalysisVersion string
+
+// RecordingPreviewResponse defines model for RecordingPreviewResponse.
+type RecordingPreviewResponse struct {
+	RequestID      openapi_types.UUID `json:"requestID"`
+	ReviewRevision int                `json:"reviewRevision"`
+
+	// Revision Validated Journal voice revision; see the voice protocol document.
+	Revision map[string]interface{} `json:"revision"`
+}
+
+// RecordingTask defines model for RecordingTask.
+type RecordingTask struct {
+	AudioHash      string             `json:"audioHash"`
+	ErrorCode      *string            `json:"errorCode,omitempty"`
+	Id             openapi_types.UUID `json:"id"`
+	Milliseconds   int                `json:"milliseconds"`
+	ProviderTaskID openapi_types.UUID `json:"providerTaskID"`
+	Result         *RecordingAnalysis `json:"result,omitempty"`
+	Revision       int                `json:"revision"`
+	State          RecordingTaskState `json:"state"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// RecordingTaskState defines model for RecordingTask.State.
+type RecordingTaskState string
+
 // Tag defines model for Tag.
 type Tag struct {
 	Name string  `json:"name"`
@@ -247,6 +730,23 @@ type VoiceSessionTicket struct {
 	ResetsAt              time.Time          `json:"resetsAt"`
 	SessionID             openapi_types.UUID `json:"sessionID"`
 	Token                 string             `json:"token"`
+}
+
+// WritingStyleCatalog defines model for WritingStyleCatalog.
+type WritingStyleCatalog struct {
+	DefaultStyle string                 `json:"defaultStyle"`
+	Styles       []WritingStyleMetadata `json:"styles"`
+	Version      string                 `json:"version"`
+}
+
+// WritingStyleMetadata defines model for WritingStyleMetadata.
+type WritingStyleMetadata struct {
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Example     string `json:"example"`
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Order       int    `json:"order"`
 }
 
 // RequestIDHeader defines model for RequestIDHeader.
@@ -279,8 +779,8 @@ type Unauthorized = ErrorResponse
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = ErrorResponse
 
-// OrganizeJournalParams defines parameters for OrganizeJournal.
-type OrganizeJournalParams struct {
+// SuggestJournalIllustrationParams defines parameters for SuggestJournalIllustration.
+type SuggestJournalIllustrationParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
@@ -304,13 +804,93 @@ type GetJournalIllustrationResultParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
+// OrganizeJournalParams defines parameters for OrganizeJournal.
+type OrganizeJournalParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudAllowanceParams defines parameters for GetJournalReadAloudAllowance.
+type GetJournalReadAloudAllowanceParams struct {
+	Purpose               *GetJournalReadAloudAllowanceParamsPurpose `form:"purpose,omitempty" json:"purpose,omitempty"`
+	XTellyouwhatRequestID RequestIDHeader                            `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudAllowanceParamsPurpose defines parameters for GetJournalReadAloudAllowance.
+type GetJournalReadAloudAllowanceParamsPurpose string
+
+// CreateJournalReadAloudSynthesisParams defines parameters for CreateJournalReadAloudSynthesis.
+type CreateJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// CancelJournalReadAloudSynthesisParams defines parameters for CancelJournalReadAloudSynthesis.
+type CancelJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudSynthesisParams defines parameters for GetJournalReadAloudSynthesis.
+type GetJournalReadAloudSynthesisParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// StreamJournalReadAloudSynthesisParams defines parameters for StreamJournalReadAloudSynthesis.
+type StreamJournalReadAloudSynthesisParams struct {
+	// After Resume at an even, exclusive PCM byte cursor from the last accepted event sequence.
+	After                 *int            `form:"after,omitempty" json:"after,omitempty"`
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalReadAloudVoicesParams defines parameters for GetJournalReadAloudVoices.
+type GetJournalReadAloudVoicesParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
+// GetJournalRecordingParams defines parameters for GetJournalRecording.
+type GetJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// UploadJournalRecordingParams defines parameters for UploadJournalRecording.
+type UploadJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+
+	// XTellyouwhatContentSHA256 SHA-256 of WAV bytes; also used as the App Attest canonical body digest and verified while streaming.
+	XTellyouwhatContentSHA256 string `json:"X-Tellyouwhat-Content-SHA256"`
+}
+
+// PreviewJournalRecordingJSONBody defines parameters for PreviewJournalRecording.
+type PreviewJournalRecordingJSONBody map[string]interface{}
+
+// PreviewJournalRecordingParams defines parameters for PreviewJournalRecording.
+type PreviewJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// ProcessJournalRecordingParams defines parameters for ProcessJournalRecording.
+type ProcessJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// RetryJournalRecordingJSONBody defines parameters for RetryJournalRecording.
+type RetryJournalRecordingJSONBody map[string]interface{}
+
+// RetryJournalRecordingParams defines parameters for RetryJournalRecording.
+type RetryJournalRecordingParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
 // CreateJournalVoiceSessionParams defines parameters for CreateJournalVoiceSession.
 type CreateJournalVoiceSessionParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
 }
 
-// OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
-type OrganizeJournalJSONRequestBody = OrganizeRequest
+// GetJournalWritingStylesParams defines parameters for GetJournalWritingStyles.
+type GetJournalWritingStylesParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
+// SuggestJournalIllustrationJSONRequestBody defines body for SuggestJournalIllustration for application/json ContentType.
+type SuggestJournalIllustrationJSONRequestBody = IllustrationSuggestionRequest
 
 // CreateJournalIllustrationJSONRequestBody defines body for CreateJournalIllustration for application/json ContentType.
 type CreateJournalIllustrationJSONRequestBody = IllustrationRequest
@@ -318,14 +898,26 @@ type CreateJournalIllustrationJSONRequestBody = IllustrationRequest
 // CancelJournalIllustrationJSONRequestBody defines body for CancelJournalIllustration for application/json ContentType.
 type CancelJournalIllustrationJSONRequestBody = IllustrationCancellation
 
+// OrganizeJournalJSONRequestBody defines body for OrganizeJournal for application/json ContentType.
+type OrganizeJournalJSONRequestBody = OrganizeRequest
+
+// CreateJournalReadAloudSynthesisJSONRequestBody defines body for CreateJournalReadAloudSynthesis for application/json ContentType.
+type CreateJournalReadAloudSynthesisJSONRequestBody = ReadAloudSynthesisRequest
+
+// PreviewJournalRecordingJSONRequestBody defines body for PreviewJournalRecording for application/json ContentType.
+type PreviewJournalRecordingJSONRequestBody PreviewJournalRecordingJSONBody
+
+// RetryJournalRecordingJSONRequestBody defines body for RetryJournalRecording for application/json ContentType.
+type RetryJournalRecordingJSONRequestBody RetryJournalRecordingJSONBody
+
 // CreateJournalVoiceSessionJSONRequestBody defines body for CreateJournalVoiceSession for application/json ContentType.
 type CreateJournalVoiceSessionJSONRequestBody = VoiceSessionRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
-	// (POST /v1/ai/operations/journal.organize/responses)
-	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
+	// (POST /v1/journal/illustration-suggestions)
+	SuggestJournalIllustration(c *gin.Context, params SuggestJournalIllustrationParams)
 
 	// (POST /v1/journal/illustrations)
 	CreateJournalIllustration(c *gin.Context, params CreateJournalIllustrationParams)
@@ -338,12 +930,51 @@ type ServerInterface interface {
 
 	// (GET /v1/journal/illustrations/{taskID}/result)
 	GetJournalIllustrationResult(c *gin.Context, taskID openapi_types.UUID, params GetJournalIllustrationResultParams)
+
+	// (POST /v1/journal/organization)
+	OrganizeJournal(c *gin.Context, params OrganizeJournalParams)
+
+	// (GET /v1/journal/read-aloud/allowance)
+	GetJournalReadAloudAllowance(c *gin.Context, params GetJournalReadAloudAllowanceParams)
+
+	// (POST /v1/journal/read-aloud/syntheses)
+	CreateJournalReadAloudSynthesis(c *gin.Context, params CreateJournalReadAloudSynthesisParams)
+
+	// (DELETE /v1/journal/read-aloud/syntheses/{synthesisID})
+	CancelJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params CancelJournalReadAloudSynthesisParams)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID})
+	GetJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params GetJournalReadAloudSynthesisParams)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID}/events)
+	StreamJournalReadAloudSynthesis(c *gin.Context, synthesisID openapi_types.UUID, params StreamJournalReadAloudSynthesisParams)
+	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
+	// (GET /v1/journal/read-aloud/voices)
+	GetJournalReadAloudVoices(c *gin.Context, params GetJournalReadAloudVoicesParams)
+	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (GET /v1/journal/voice/recordings/{recordingID})
+	GetJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams)
+	// UploadJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (PUT /v1/journal/voice/recordings/{recordingID})
+	UploadJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params UploadJournalRecordingParams)
+	// PreviewJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/preview)
+	PreviewJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params PreviewJournalRecordingParams)
+	// ProcessJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/process)
+	ProcessJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params ProcessJournalRecordingParams)
+	// RetryJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/retry)
+	RetryJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params RetryJournalRecordingParams)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(c *gin.Context, params CreateJournalVoiceSessionParams)
 	// StreamJournalVoiceSession Upgrade to the voice protocol with a single-use bearer ticket.
 	// (GET /v1/journal/voice/sessions/{sessionID}/stream)
 	StreamJournalVoiceSession(c *gin.Context, sessionID openapi_types.UUID)
+	// GetJournalWritingStyles Public writing style metadata. No prompts or provider settings.
+	// (GET /v1/journal/writing-styles)
+	GetJournalWritingStyles(c *gin.Context, params GetJournalWritingStylesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -355,14 +986,14 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(c *gin.Context)
 
-// OrganizeJournal operation middleware
-func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
+// SuggestJournalIllustration operation middleware
+func (siw *ServerInterfaceWrapper) SuggestJournalIllustration(c *gin.Context) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params OrganizeJournalParams
+	var params SuggestJournalIllustrationParams
 
 	headers := c.Request.Header
 
@@ -395,7 +1026,7 @@ func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.OrganizeJournal(c, params)
+	siw.Handler.SuggestJournalIllustration(c, params)
 }
 
 // CreateJournalIllustration operation middleware
@@ -597,6 +1228,629 @@ func (siw *ServerInterfaceWrapper) GetJournalIllustrationResult(c *gin.Context) 
 	siw.Handler.GetJournalIllustrationResult(c, taskID, params)
 }
 
+// OrganizeJournal operation middleware
+func (siw *ServerInterfaceWrapper) OrganizeJournal(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params OrganizeJournalParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.OrganizeJournal(c, params)
+}
+
+// GetJournalReadAloudAllowance operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalReadAloudAllowance(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalReadAloudAllowanceParams
+
+	// ------------- Optional query parameter "purpose" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "purpose", c.Request.URL.Query(), &params.Purpose, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter purpose: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalReadAloudAllowance(c, params)
+}
+
+// CreateJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) CreateJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateJournalReadAloudSynthesis(c, params)
+}
+
+// CancelJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) CancelJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelJournalReadAloudSynthesis(c, synthesisID, params)
+}
+
+// GetJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalReadAloudSynthesisParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalReadAloudSynthesis(c, synthesisID, params)
+}
+
+// StreamJournalReadAloudSynthesis operation middleware
+func (siw *ServerInterfaceWrapper) StreamJournalReadAloudSynthesis(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "synthesisID" -------------
+	var synthesisID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "synthesisID", c.Param("synthesisID"), &synthesisID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter synthesisID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StreamJournalReadAloudSynthesisParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", c.Request.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter after: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StreamJournalReadAloudSynthesis(c, synthesisID, params)
+}
+
+// GetJournalReadAloudVoices operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalReadAloudVoices(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalReadAloudVoicesParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalReadAloudVoices(c, params)
+}
+
+// GetJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalRecording(c, recordingID, params)
+}
+
+// UploadJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) UploadJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UploadJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required header parameter "X-Tellyouwhat-Content-SHA256" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Content-SHA256")]; found {
+		var XTellyouwhatContentSHA256 string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Content-SHA256, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Content-SHA256", valueList[0], &XTellyouwhatContentSHA256, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Content-SHA256: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatContentSHA256 = XTellyouwhatContentSHA256
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Content-SHA256 is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UploadJournalRecording(c, recordingID, params)
+}
+
+// PreviewJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) PreviewJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PreviewJournalRecording(c, recordingID, params)
+}
+
+// ProcessJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) ProcessJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ProcessJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ProcessJournalRecording(c, recordingID, params)
+}
+
+// RetryJournalRecording operation middleware
+func (siw *ServerInterfaceWrapper) RetryJournalRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "recordingID" -------------
+	var recordingID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "recordingID", c.Param("recordingID"), &recordingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter recordingID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryJournalRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryJournalRecording(c, recordingID, params)
+}
+
 // CreateJournalVoiceSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateJournalVoiceSession(c *gin.Context) {
 
@@ -665,6 +1919,46 @@ func (siw *ServerInterfaceWrapper) StreamJournalVoiceSession(c *gin.Context) {
 	siw.Handler.StreamJournalVoiceSession(c, sessionID)
 }
 
+// GetJournalWritingStyles operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalWritingStyles(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalWritingStylesParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalWritingStyles(c, params)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -692,13 +1986,26 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/v1/journal/read-aloud/syntheses", wrapper.CreateJournalReadAloudSynthesis)
+	router.DELETE(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.CancelJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.GetJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID/events", wrapper.StreamJournalReadAloudSynthesis)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/allowance", wrapper.GetJournalReadAloudAllowance)
+	router.GET(options.BaseURL+"/v1/journal/read-aloud/voices", wrapper.GetJournalReadAloudVoices)
+	router.GET(options.BaseURL+"/v1/journal/writing-styles", wrapper.GetJournalWritingStyles)
+	router.GET(options.BaseURL+"/v1/journal/voice/recordings/:recordingID", wrapper.GetJournalRecording)
+	router.PUT(options.BaseURL+"/v1/journal/voice/recordings/:recordingID", wrapper.UploadJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/process", wrapper.ProcessJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/retry", wrapper.RetryJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/recordings/:recordingID/preview", wrapper.PreviewJournalRecording)
+	router.POST(options.BaseURL+"/v1/journal/voice/sessions", wrapper.CreateJournalVoiceSession)
+	router.GET(options.BaseURL+"/v1/journal/voice/sessions/:sessionID/stream", wrapper.StreamJournalVoiceSession)
+	router.POST(options.BaseURL+"/v1/journal/organization", wrapper.OrganizeJournal)
+	router.POST(options.BaseURL+"/v1/journal/illustration-suggestions", wrapper.SuggestJournalIllustration)
 	router.POST(options.BaseURL+"/v1/journal/illustrations", wrapper.CreateJournalIllustration)
 	router.GET(options.BaseURL+"/v1/journal/illustrations/:taskID", wrapper.GetJournalIllustration)
 	router.POST(options.BaseURL+"/v1/journal/illustrations/:taskID/cancel", wrapper.CancelJournalIllustration)
 	router.GET(options.BaseURL+"/v1/journal/illustrations/:taskID/result", wrapper.GetJournalIllustrationResult)
-	router.POST(options.BaseURL+"/v1/journal/voice/sessions", wrapper.CreateJournalVoiceSession)
-	router.GET(options.BaseURL+"/v1/journal/voice/sessions/:sessionID/stream", wrapper.StreamJournalVoiceSession)
-	router.POST(options.BaseURL+"/v1/ai/operations/journal.organize/responses", wrapper.OrganizeJournal)
 }
 
 type BadGatewayJSONResponse ErrorResponse
@@ -719,18 +2026,18 @@ type UnauthorizedJSONResponse ErrorResponse
 
 type UnprocessableEntityJSONResponse ErrorResponse
 
-type OrganizeJournalRequestObject struct {
-	Params OrganizeJournalParams
-	Body   *OrganizeJournalJSONRequestBody
+type SuggestJournalIllustrationRequestObject struct {
+	Params SuggestJournalIllustrationParams
+	Body   *SuggestJournalIllustrationJSONRequestBody
 }
 
-type OrganizeJournalResponseObject interface {
-	VisitOrganizeJournalResponse(w http.ResponseWriter) error
+type SuggestJournalIllustrationResponseObject interface {
+	VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error
 }
 
-type OrganizeJournal200JSONResponse OrganizeResponse
+type SuggestJournalIllustration200JSONResponse IllustrationSuggestionResponse
 
-func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+func (response SuggestJournalIllustration200JSONResponse) VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -742,126 +2049,12 @@ func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w ht
 	return err
 }
 
-type OrganizeJournal401JSONResponse struct{ UnauthorizedJSONResponse }
-
-func (response OrganizeJournal401JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal403JSONResponse struct{ ForbiddenJSONResponse }
-
-func (response OrganizeJournal403JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal409JSONResponse struct{ ConflictJSONResponse }
-
-func (response OrganizeJournal409JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal413JSONResponse struct{ PayloadTooLargeJSONResponse }
-
-func (response OrganizeJournal413JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal422JSONResponse struct {
-	UnprocessableEntityJSONResponse
-}
-
-func (response OrganizeJournal422JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal429JSONResponse struct{ TooManyRequestsJSONResponse }
-
-func (response OrganizeJournal429JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(429)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal502JSONResponse struct{ BadGatewayJSONResponse }
-
-func (response OrganizeJournal502JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournal503JSONResponse struct{ ServiceUnavailableJSONResponse }
-
-func (response OrganizeJournal503JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type OrganizeJournaldefaultJSONResponse struct {
+type SuggestJournalIllustrationdefaultJSONResponse struct {
 	Body       ErrorResponse
 	StatusCode int
 }
 
-func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+func (response SuggestJournalIllustrationdefaultJSONResponse) VisitSuggestJournalIllustrationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -1034,6 +2227,712 @@ func (response GetJournalIllustrationResultdefaultJSONResponse) VisitGetJournalI
 	return err
 }
 
+type OrganizeJournalRequestObject struct {
+	Params OrganizeJournalParams
+	Body   *OrganizeJournalJSONRequestBody
+}
+
+type OrganizeJournalResponseObject interface {
+	VisitOrganizeJournalResponse(w http.ResponseWriter) error
+}
+
+type OrganizeJournal200JSONResponse OrganizeResponse
+
+func (response OrganizeJournal200JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response OrganizeJournal401JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response OrganizeJournal403JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal409JSONResponse struct{ ConflictJSONResponse }
+
+func (response OrganizeJournal409JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal413JSONResponse struct{ PayloadTooLargeJSONResponse }
+
+func (response OrganizeJournal413JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal422JSONResponse struct {
+	UnprocessableEntityJSONResponse
+}
+
+func (response OrganizeJournal422JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal429JSONResponse struct{ TooManyRequestsJSONResponse }
+
+func (response OrganizeJournal429JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal502JSONResponse struct{ BadGatewayJSONResponse }
+
+func (response OrganizeJournal502JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournal503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response OrganizeJournal503JSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganizeJournaldefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response OrganizeJournaldefaultJSONResponse) VisitOrganizeJournalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudAllowanceRequestObject struct {
+	Params GetJournalReadAloudAllowanceParams
+}
+
+type GetJournalReadAloudAllowanceResponseObject interface {
+	VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error
+}
+
+type GetJournalReadAloudAllowance200JSONResponse ReadAloudAllowance
+
+func (response GetJournalReadAloudAllowance200JSONResponse) VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudAllowancedefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalReadAloudAllowancedefaultJSONResponse) VisitGetJournalReadAloudAllowanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateJournalReadAloudSynthesisRequestObject struct {
+	Params CreateJournalReadAloudSynthesisParams
+	Body   *CreateJournalReadAloudSynthesisJSONRequestBody
+}
+
+type CreateJournalReadAloudSynthesisResponseObject interface {
+	VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type CreateJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response CreateJournalReadAloudSynthesis200JSONResponse) VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateJournalReadAloudSynthesisdefaultJSONResponse) VisitCreateJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      CancelJournalReadAloudSynthesisParams
+}
+
+type CancelJournalReadAloudSynthesisResponseObject interface {
+	VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type CancelJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response CancelJournalReadAloudSynthesis200JSONResponse) VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CancelJournalReadAloudSynthesisdefaultJSONResponse) VisitCancelJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      GetJournalReadAloudSynthesisParams
+}
+
+type GetJournalReadAloudSynthesisResponseObject interface {
+	VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type GetJournalReadAloudSynthesis200JSONResponse ReadAloudSession
+
+func (response GetJournalReadAloudSynthesis200JSONResponse) VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalReadAloudSynthesisdefaultJSONResponse) VisitGetJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StreamJournalReadAloudSynthesisRequestObject struct {
+	SynthesisID openapi_types.UUID `json:"synthesisID"`
+	Params      StreamJournalReadAloudSynthesisParams
+}
+
+type StreamJournalReadAloudSynthesisResponseObject interface {
+	VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error
+}
+
+type StreamJournalReadAloudSynthesis200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamJournalReadAloudSynthesis200TexteventStreamResponse) VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type StreamJournalReadAloudSynthesisdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response StreamJournalReadAloudSynthesisdefaultJSONResponse) VisitStreamJournalReadAloudSynthesisResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudVoicesRequestObject struct {
+	Params GetJournalReadAloudVoicesParams
+}
+
+type GetJournalReadAloudVoicesResponseObject interface {
+	VisitGetJournalReadAloudVoicesResponse(w http.ResponseWriter) error
+}
+
+type GetJournalReadAloudVoices200ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalReadAloudVoices200JSONResponse struct {
+	Body    ReadAloudCatalog
+	Headers GetJournalReadAloudVoices200ResponseHeaders
+}
+
+func (response GetJournalReadAloudVoices200JSONResponse) VisitGetJournalReadAloudVoicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalReadAloudVoices304ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalReadAloudVoices304Response struct {
+	Headers GetJournalReadAloudVoices304ResponseHeaders
+}
+
+func (response GetJournalReadAloudVoices304Response) VisitGetJournalReadAloudVoicesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetJournalReadAloudVoicesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalReadAloudVoicesdefaultJSONResponse) VisitGetJournalReadAloudVoicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      GetJournalRecordingParams
+}
+
+type GetJournalRecordingResponseObject interface {
+	VisitGetJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type GetJournalRecording200JSONResponse RecordingTask
+
+func (response GetJournalRecording200JSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalRecording202JSONResponse RecordingTask
+
+func (response GetJournalRecording202JSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalRecordingdefaultJSONResponse) VisitGetJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      UploadJournalRecordingParams
+	Body        io.Reader
+}
+
+type UploadJournalRecordingResponseObject interface {
+	VisitUploadJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type UploadJournalRecording200JSONResponse RecordingTask
+
+func (response UploadJournalRecording200JSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecording202JSONResponse RecordingTask
+
+func (response UploadJournalRecording202JSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response UploadJournalRecordingdefaultJSONResponse) VisitUploadJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      PreviewJournalRecordingParams
+	Body        *PreviewJournalRecordingJSONRequestBody
+}
+
+type PreviewJournalRecordingResponseObject interface {
+	VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type PreviewJournalRecording200JSONResponse RecordingPreviewResponse
+
+func (response PreviewJournalRecording200JSONResponse) VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response PreviewJournalRecordingdefaultJSONResponse) VisitPreviewJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      ProcessJournalRecordingParams
+}
+
+type ProcessJournalRecordingResponseObject interface {
+	VisitProcessJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type ProcessJournalRecording200JSONResponse RecordingTask
+
+func (response ProcessJournalRecording200JSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecording202JSONResponse RecordingTask
+
+func (response ProcessJournalRecording202JSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProcessJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ProcessJournalRecordingdefaultJSONResponse) VisitProcessJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecordingRequestObject struct {
+	RecordingID openapi_types.UUID `json:"recordingID"`
+	Params      RetryJournalRecordingParams
+	Body        *RetryJournalRecordingJSONRequestBody
+}
+
+type RetryJournalRecordingResponseObject interface {
+	VisitRetryJournalRecordingResponse(w http.ResponseWriter) error
+}
+
+type RetryJournalRecording200JSONResponse RecordingTask
+
+func (response RetryJournalRecording200JSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecording202JSONResponse RecordingTask
+
+func (response RetryJournalRecording202JSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response RetryJournalRecordingdefaultJSONResponse) VisitRetryJournalRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateJournalVoiceSessionRequestObject struct {
 	Params CreateJournalVoiceSessionParams
 	Body   *CreateJournalVoiceSessionJSONRequestBody
@@ -1107,11 +3006,76 @@ func (response StreamJournalVoiceSessiondefaultJSONResponse) VisitStreamJournalV
 	return err
 }
 
+type GetJournalWritingStylesRequestObject struct {
+	Params GetJournalWritingStylesParams
+}
+
+type GetJournalWritingStylesResponseObject interface {
+	VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error
+}
+
+type GetJournalWritingStyles200ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalWritingStyles200JSONResponse struct {
+	Body    WritingStyleCatalog
+	Headers GetJournalWritingStyles200ResponseHeaders
+}
+
+func (response GetJournalWritingStyles200JSONResponse) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalWritingStyles304ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
+type GetJournalWritingStyles304Response struct {
+	Headers GetJournalWritingStyles304ResponseHeaders
+}
+
+func (response GetJournalWritingStyles304Response) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetJournalWritingStylesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalWritingStylesdefaultJSONResponse) VisitGetJournalWritingStylesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
-	// (POST /v1/ai/operations/journal.organize/responses)
-	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
+	// (POST /v1/journal/illustration-suggestions)
+	SuggestJournalIllustration(ctx context.Context, request SuggestJournalIllustrationRequestObject) (SuggestJournalIllustrationResponseObject, error)
 
 	// (POST /v1/journal/illustrations)
 	CreateJournalIllustration(ctx context.Context, request CreateJournalIllustrationRequestObject) (CreateJournalIllustrationResponseObject, error)
@@ -1124,12 +3088,51 @@ type StrictServerInterface interface {
 
 	// (GET /v1/journal/illustrations/{taskID}/result)
 	GetJournalIllustrationResult(ctx context.Context, request GetJournalIllustrationResultRequestObject) (GetJournalIllustrationResultResponseObject, error)
+
+	// (POST /v1/journal/organization)
+	OrganizeJournal(ctx context.Context, request OrganizeJournalRequestObject) (OrganizeJournalResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/allowance)
+	GetJournalReadAloudAllowance(ctx context.Context, request GetJournalReadAloudAllowanceRequestObject) (GetJournalReadAloudAllowanceResponseObject, error)
+
+	// (POST /v1/journal/read-aloud/syntheses)
+	CreateJournalReadAloudSynthesis(ctx context.Context, request CreateJournalReadAloudSynthesisRequestObject) (CreateJournalReadAloudSynthesisResponseObject, error)
+
+	// (DELETE /v1/journal/read-aloud/syntheses/{synthesisID})
+	CancelJournalReadAloudSynthesis(ctx context.Context, request CancelJournalReadAloudSynthesisRequestObject) (CancelJournalReadAloudSynthesisResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID})
+	GetJournalReadAloudSynthesis(ctx context.Context, request GetJournalReadAloudSynthesisRequestObject) (GetJournalReadAloudSynthesisResponseObject, error)
+
+	// (GET /v1/journal/read-aloud/syntheses/{synthesisID}/events)
+	StreamJournalReadAloudSynthesis(ctx context.Context, request StreamJournalReadAloudSynthesisRequestObject) (StreamJournalReadAloudSynthesisResponseObject, error)
+	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
+	// (GET /v1/journal/read-aloud/voices)
+	GetJournalReadAloudVoices(ctx context.Context, request GetJournalReadAloudVoicesRequestObject) (GetJournalReadAloudVoicesResponseObject, error)
+	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (GET /v1/journal/voice/recordings/{recordingID})
+	GetJournalRecording(ctx context.Context, request GetJournalRecordingRequestObject) (GetJournalRecordingResponseObject, error)
+	// UploadJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (PUT /v1/journal/voice/recordings/{recordingID})
+	UploadJournalRecording(ctx context.Context, request UploadJournalRecordingRequestObject) (UploadJournalRecordingResponseObject, error)
+	// PreviewJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/preview)
+	PreviewJournalRecording(ctx context.Context, request PreviewJournalRecordingRequestObject) (PreviewJournalRecordingResponseObject, error)
+	// ProcessJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/process)
+	ProcessJournalRecording(ctx context.Context, request ProcessJournalRecordingRequestObject) (ProcessJournalRecordingResponseObject, error)
+	// RetryJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+	// (POST /v1/journal/voice/recordings/{recordingID}/retry)
+	RetryJournalRecording(ctx context.Context, request RetryJournalRecordingRequestObject) (RetryJournalRecordingResponseObject, error)
 	// CreateJournalVoiceSession Admit an authenticated subscriber to a resumable voice session.
 	// (POST /v1/journal/voice/sessions)
 	CreateJournalVoiceSession(ctx context.Context, request CreateJournalVoiceSessionRequestObject) (CreateJournalVoiceSessionResponseObject, error)
 	// StreamJournalVoiceSession Upgrade to the voice protocol with a single-use bearer ticket.
 	// (GET /v1/journal/voice/sessions/{sessionID}/stream)
 	StreamJournalVoiceSession(ctx context.Context, request StreamJournalVoiceSessionRequestObject) (StreamJournalVoiceSessionResponseObject, error)
+	// GetJournalWritingStyles Public writing style metadata. No prompts or provider settings.
+	// (GET /v1/journal/writing-styles)
+	GetJournalWritingStyles(ctx context.Context, request GetJournalWritingStylesRequestObject) (GetJournalWritingStylesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx *gin.Context, request any) (any, error)
@@ -1189,13 +3192,13 @@ type strictHandler struct {
 	options     StrictGinServerOptions
 }
 
-// OrganizeJournal operation middleware
-func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJournalParams) {
-	var request OrganizeJournalRequestObject
+// SuggestJournalIllustration operation middleware
+func (sh *strictHandler) SuggestJournalIllustration(ctx *gin.Context, params SuggestJournalIllustrationParams) {
+	var request SuggestJournalIllustrationRequestObject
 
 	request.Params = params
 
-	var body OrganizeJournalJSONRequestBody
+	var body SuggestJournalIllustrationJSONRequestBody
 	if err := ctx.ShouldBindJSON(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(ctx, err)
 		return
@@ -1203,18 +3206,18 @@ func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJourna
 	request.Body = &body
 
 	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.OrganizeJournal(ctx, request.(OrganizeJournalRequestObject))
+		return sh.ssi.SuggestJournalIllustration(ctx, request.(SuggestJournalIllustrationRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "OrganizeJournal")
+		handler = middleware(handler, "SuggestJournalIllustration")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		sh.options.HandlerErrorFunc(ctx, err)
-	} else if validResponse, ok := response.(OrganizeJournalResponseObject); ok {
-		if err := validResponse.VisitOrganizeJournalResponse(ctx.Writer); err != nil {
+	} else if validResponse, ok := response.(SuggestJournalIllustrationResponseObject); ok {
+		if err := validResponse.VisitSuggestJournalIllustrationResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -1343,6 +3346,356 @@ func (sh *strictHandler) GetJournalIllustrationResult(ctx *gin.Context, taskID o
 	}
 }
 
+// OrganizeJournal operation middleware
+func (sh *strictHandler) OrganizeJournal(ctx *gin.Context, params OrganizeJournalParams) {
+	var request OrganizeJournalRequestObject
+
+	request.Params = params
+
+	var body OrganizeJournalJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.OrganizeJournal(ctx, request.(OrganizeJournalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OrganizeJournal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(OrganizeJournalResponseObject); ok {
+		if err := validResponse.VisitOrganizeJournalResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalReadAloudAllowance operation middleware
+func (sh *strictHandler) GetJournalReadAloudAllowance(ctx *gin.Context, params GetJournalReadAloudAllowanceParams) {
+	var request GetJournalReadAloudAllowanceRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalReadAloudAllowance(ctx, request.(GetJournalReadAloudAllowanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalReadAloudAllowance")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalReadAloudAllowanceResponseObject); ok {
+		if err := validResponse.VisitGetJournalReadAloudAllowanceResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) CreateJournalReadAloudSynthesis(ctx *gin.Context, params CreateJournalReadAloudSynthesisParams) {
+	var request CreateJournalReadAloudSynthesisRequestObject
+
+	request.Params = params
+
+	var body CreateJournalReadAloudSynthesisJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateJournalReadAloudSynthesis(ctx, request.(CreateJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitCreateJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) CancelJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params CancelJournalReadAloudSynthesisParams) {
+	var request CancelJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelJournalReadAloudSynthesis(ctx, request.(CancelJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitCancelJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) GetJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params GetJournalReadAloudSynthesisParams) {
+	var request GetJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalReadAloudSynthesis(ctx, request.(GetJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitGetJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamJournalReadAloudSynthesis operation middleware
+func (sh *strictHandler) StreamJournalReadAloudSynthesis(ctx *gin.Context, synthesisID openapi_types.UUID, params StreamJournalReadAloudSynthesisParams) {
+	var request StreamJournalReadAloudSynthesisRequestObject
+
+	request.SynthesisID = synthesisID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamJournalReadAloudSynthesis(ctx, request.(StreamJournalReadAloudSynthesisRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamJournalReadAloudSynthesis")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(StreamJournalReadAloudSynthesisResponseObject); ok {
+		if err := validResponse.VisitStreamJournalReadAloudSynthesisResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalReadAloudVoices operation middleware
+func (sh *strictHandler) GetJournalReadAloudVoices(ctx *gin.Context, params GetJournalReadAloudVoicesParams) {
+	var request GetJournalReadAloudVoicesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalReadAloudVoices(ctx, request.(GetJournalReadAloudVoicesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalReadAloudVoices")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalReadAloudVoicesResponseObject); ok {
+		if err := validResponse.VisitGetJournalReadAloudVoicesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalRecording operation middleware
+func (sh *strictHandler) GetJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams) {
+	var request GetJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalRecording(ctx, request.(GetJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitGetJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadJournalRecording operation middleware
+func (sh *strictHandler) UploadJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params UploadJournalRecordingParams) {
+	var request UploadJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	request.Body = ctx.Request.Body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadJournalRecording(ctx, request.(UploadJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(UploadJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitUploadJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewJournalRecording operation middleware
+func (sh *strictHandler) PreviewJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params PreviewJournalRecordingParams) {
+	var request PreviewJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	var body PreviewJournalRecordingJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewJournalRecording(ctx, request.(PreviewJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(PreviewJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitPreviewJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessJournalRecording operation middleware
+func (sh *strictHandler) ProcessJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params ProcessJournalRecordingParams) {
+	var request ProcessJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessJournalRecording(ctx, request.(ProcessJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ProcessJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitProcessJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryJournalRecording operation middleware
+func (sh *strictHandler) RetryJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params RetryJournalRecordingParams) {
+	var request RetryJournalRecordingRequestObject
+
+	request.RecordingID = recordingID
+	request.Params = params
+
+	var body RetryJournalRecordingJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryJournalRecording(ctx, request.(RetryJournalRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryJournalRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryJournalRecordingResponseObject); ok {
+		if err := validResponse.VisitRetryJournalRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateJournalVoiceSession operation middleware
 func (sh *strictHandler) CreateJournalVoiceSession(ctx *gin.Context, params CreateJournalVoiceSessionParams) {
 	var request CreateJournalVoiceSessionRequestObject
@@ -1402,56 +3755,119 @@ func (sh *strictHandler) StreamJournalVoiceSession(ctx *gin.Context, sessionID o
 	}
 }
 
+// GetJournalWritingStyles operation middleware
+func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJournalWritingStylesParams) {
+	var request GetJournalWritingStylesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalWritingStyles(ctx, request.(GetJournalWritingStylesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalWritingStyles")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalWritingStylesResponseObject); ok {
+		if err := validResponse.VisitGetJournalWritingStylesResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"7F3dchu5cn4V1ORc8leWFVl7Rcs+Z5W1dx1J3k3FpZwCZ5okVjPAGMBQ5rr0AEmu8gZ5glReIG+TpPIY",
+	"KfzNYIbgcEj9rHWOfGWRM0Cj++sfNLrBr1HMspxRoFJEJ1+jHHOcgQSu/zqHzwUIefbme8AJcPURodFJ",
+	"tDB/9iKKM4hOon/oX0Karlhxs8Cyb9/qn72JehGHzwXhkEQnkhfQi0S8gAyrkWaMZ1hGJ1FRkCTqRXKV",
+	"q7GE5ITOo9vbW/WyyBkVoIl5jZM/YQk3eKX+ihmVQKX6L87zlMRYEkaHvwpG1WfVNH/gMItOor8ZVgsd",
+	"mm/F8C3njJ/bScyUCYiYk1wNFp1EHzhbkgQ4mmGSQoIYRxxkwSkkCFNE6BKnJEEcRJHKQXTbi04ZnaUk",
+	"lo9H4wRxyFO86iGSQJYzCTRe9RSpQmIJKLYUIRbHBeeQaDr1sI9IJEWgnkFOpJqIPzI+JUkC9PEIuVwA",
+	"inGaAkdEIFzIBVCp5oIETQuJUhxfCyQXgBxykXpAppABNSL+gFcpw8klY+8wn8Pj0s6NciH4EgMkQqGQ",
+	"5cD1fH2RQ0xmJEaC/AYoJRkxFF8AX5IYPlK8xCTF0xQeF56WkcKQgRLIgSYKpkoGRUWVJvaSsfeYrqwV",
+	"EY9H6d8XTGKlNzGjWlMUgZqJiAOOF1ZzPlKFGsbJb8qqPRobK6QSRhWVjEJfkkzBOcdTkhK5QtocmSeM",
+	"xbIU55zFIITi8VuF5tXvA9olYSmWYPQrwxTPtdYJQkEIxXbJcawge+schbH8jF2fKmK/GGKThKjBcfqB",
+	"K+xLohzEDKcCelHufWSWiAkVb6nkes3WyUwZSwHTqEnt1yjDX94BnctFdHI0Gq15pV5Ekg7Oy3nG2njj",
+	"g1Evyggt/173eb6//BTpkfVAdTJ7jXVdlQOx6a8Qy9K+vwGJSbozzxLwWFUtKVMImoe/4y5SCHzbWJUe",
+	"vxrNf3fjQkqA7bYUcE5uK4Itp5q0mgGCZH0hQhI6V9g8h5hlGVCjeTvSOGXs2rBtK6Y4YLGG0oPDHVFl",
+	"JyyHC63uLE0LIY1Xec2JYt5Oi0o0O/V/iYRMbJOBP58TRU+t8sy8fXSo12j/qpaIOccr9aj20A3OvBjt",
+	"yBkzSK+kfhtnTjGNIU33kTqHJRH2tVLuhMqjw0jTTLIi8ykmVMIc+BrJ5TjbaN3LFFwTqq0dUEXNp0gU",
+	"ZuxeJEAq9GtTlOVMEGuYhFxpFjK5AF9xKhA7K+4J6ni0q6Q0YXasbSu3gcSuaulQ3xW2Rk1utW0WQOW5",
+	"J+GaEzjeslS10hmo6ANq6JiupLabHsDNv6O2IS6+nxy8PDJbOymBK5f8T59wfzbqv7r6enR4+4ewpfHM",
+	"+Va7tASuVtrp6TX8uon8YXqW/evM3C5stRPbUdYLIPOFA6XVvCOHyY2a2ItIZt3hfjLKiAkRnHbp4Ya5",
+	"1irz/19zmAeV6IYkavDdCG5GF5lxv5oMN2TPMWMboy+K+RzEHpbPtxd11XgZjLf2dHqVieoyiWAFj0Ft",
+	"AKDutJrh4JY5K4/1os1h9aKCks8F2K8lL+DW2c5AzLhOrrXDgaVtY0qRZdiEwneJTN0wvR1cQo3HnaOP",
+	"Cmd72nGWrNYF2YFTdnf0PRaLh7WeodAlJPYWy+nT2ivDGL30Xfi7V4yNKU5XgoifjfXew93dgdOf1ZZ9",
+	"m5f+ic8xJb9p6OHd5SNqlq5rOODZx+6Sa/LSLXCbEC+xuN51a/QlJxzERNZ4kGBpkgrR/jvfnLNpCpnv",
+	"2SjIG8avtd2rUlBudYo7alWghrMp1TPtnK6CyrVn5KwsEZY1j/u5gELPygtKje0SRRwDJObTiqyCxsDV",
+	"llvJzIT9kATpu0MwpB/xoyBDsLfmnie3ECh+hBu1Id3bOe+aDNkry3EHn84hxRKSSzzf6KYPd/HSxx0c",
+	"c0NIwXyMXVCdwJCA6rZoR0vrJ28DiSxM0tUluwYqziHDhLrgx+nEKKQTGaNysfN7DZ4Ep944ds9bSRuP",
+	"7tvhr+Fgyth19xyFn4WsgUj7uGZC4g5OzeVBPY+qtkHKjPzKCk5x2meWRf3lODQC2OTUvenJy/FBpxDW",
+	"WcxLPP8RZ/DYk/8OYZcvqNZArCGVAK8cINt14ukFabAxVdpd+VrSrc1tV1MTadMndp913Z3WJjtYn+wx",
+	"AlLZ1Oq2uS7xFpd3l+hUGiS3CTjI/7a49hxwMklZkUzSlN1gmwXbAev6xG6748uBE5a8pUn3ADgveM5E",
+	"LYK0BjlSRMCSwM2GmLWzP+YggC/NyWL7k4XY/lRDtm4BPcskO4g3q0+rz6NWSZ1iiVM23znWnOEilT8z",
+	"EoNBftMkhXzCZA4XEDOaiFr66/josJb+OgqybBk0f8Hk3FKR1V3NSl7o5TT8l0s3bDq+aEhpWepXg0VN",
+	"BpRUtkrn7dId8u6f+MdFQpi3IVkA5nIKWAbhzmYzAY186vjlwaieoQxrZZyFEqqB5N7nwmXI6+fNb7/E",
+	"aSHIEtCH0/dIvY/iggvGewinZE4hQZIhjMZH/SmRSOAsT+E7RKirSpCIzVCRC8kBZ2jGcQZoygqaYE5A",
+	"DIwUdluVACE65A9KkV3Y56tX99lO2kOSagSPba2IuajI3SXGUBh5vbIZ1J15NC1mM+CT9j1OvMCUgjlY",
+	"tNgcX4VGAxqzxBpcB+I8zv4sxkdpOK/wcAmRFAt58aTw6qVw/G3U4X36RLOQ83pG5uBwNBpddcrd5Bxy",
+	"zI2f8t1XMJNjimFquRu1h7im7IYGqAvlZSrf6YygB/iGkNfR7OOrtnYP0x5q29VzReUCBBH7bZDtkVp4",
+	"K/DiICCqhOB0/bhhfBTEOp0X9lRs27M5kXHjEOvAQ2bf2/b52Nw/CNsp6+sOY8ocJpYF15PEOM00DBhf",
+	"SUjTusDWT7obhVwSZUxI9Go0Qh8v/9g/1jovBuh9ISSaAoIslys0YxzZ1Xyny6U0wjkSoEQhEJEC5cU0",
+	"JbE1CYP6ueOrYMZjWQVb/g5u0v9H3P9t1H/15/7V13FvfHAc3snp1/2DbX+QUf8V7s82bQNbdhmVZi3L",
+	"QKc+k+Wlg0x1puSQ6QGv1wR4qy6ZcO2+kqThw0VLZD2YXEdLYydpnMvWkNite8fRA4nb41Ewma8h+PH8",
+	"XTNbOzo83pKd7w4OK9Ad1yCKPGdcig/OjjTjhc7ldBUTS0o8sTVn6rVX3agdMFdWfGL3y5oXNQRlJE2J",
+	"CGxjxsejUYfCA4lF15oxZ4TWviiUcJQ3rHO9EdPFrBCSxG8z5uC+HjjR5H1zPa3RhUH2OgRywNemySAA",
+	"D8zlbrNsWHgIE27m0Dzr62spO6JFaoNX0+zQRKy3/2z4rj53qOkvx9sjEguAnrdXzAI01qTcitUPRs/9",
+	"9GKzYG0X7+lG80qgtmQ9qifDltgwtO5KfzbVzpCgvzNcRNptIDfad0gAaOdpPs85kyxmKUpYXJhy/jWe",
+	"tPipxqK6mgF3OBvYLYWyqdsspS5JPd1Uo9txS3JXA5TbvpjL7oaIl5VZ7VvgpvFsoGPHE94iTxk2ewBR",
+	"TDPiSlRsQXxVr5KC9HcKoXiuyDXYuu8Qg9uIOud6HhDWdDhw/FvREMLcJd41CReIAzqczZgPvL0YcHP8",
+	"madYb3/s+RS2/hV0CqoXSZaTWB8MsqSlSDR84qofCq1ax3A2Z3FfW6JAwmnvPIyfgOkQm/rLuSTxNey6",
+	"GqvMTXcZsro21dvlUQFyp+TILgxTyLgGut1d+6w0r2xaRS/IBm8hIdb/womyDxcqBLxTUvvC7R67BLpt",
+	"9tCn6D1InGBzYtQSWbRzcC25fOHK8wxh29hSEnGnPVMgiFRxUxLO+sEXvcNtcXgbC1PWc9M8qcWYG6tj",
+	"N24WHDVurIr4q1A0ISAuOJGrCyVRw4xJnk+kBCEnQigWGZ7UY5vXWMDRYV9nhCBBkzxH5h2E3Us6RyB1",
+	"PyNllMQ4LRutpoQqJzrQBVVbG3YrMipg5eQH0Mgqif0BVkaZ64Sew5wICbxO5DWsEEmASjIjwDvS8QOs",
+	"TNPwZiJ+ZMEk6k9lL9wCpynQOaAlTgvoOLEZtW3ecz/8rc/9jt0Aj7EA9PHj2RuTekWESqZlU0qrIym1",
+	"5unN9FySDITEWR4QyB9P0YsXL155QJHu6Y5EVKMHaHgDS0hZruLnSSzJsmx/6TDwG1j2vZcCo4e9nzaH",
+	"2ioA5np4++JCytx0HRI6Y+vMOC1VY5LnVX9s2TIrSiX6n3/7l//+r3//33/+1//7j/90vYn9yRmam57z",
+	"AbpcAJoDVS9C4nJvrgQE4VQwRGicFontbxQLrJTiQ4qlcn+TD2eDsibkJHI7lve2C3JyhiYfzrwd3Uk0",
+	"HowGI22zcqA4J9FJ9GIwHoxUnIXlQpuS4QJwKhe/RSdfb3vRkANOVu6P5XiIydBVJLhPFBsk4zCkTCln",
+	"XBZiuAc0voalIq1/dQ0r78MElkOvQ1oMsZEvVI/UvpYcU6Geqc1qt8FD4lW19kW9ZCNnJrArhXeWRCeR",
+	"rSuw/PSrYjWfqusMPoU9bfXIsHndwe1VmTV+bavK7qVntr2+/bbuisriJu8qhIPR6MGJ2dzR+1NunD4S",
+	"MVBAc64sHiibZ3BfKFogQVamSMIX04ZuI45NFJVLNC2ZNe+pxRfym5+u1l1U7TPrMWqfeda89rlnVT9d",
+	"KembUptPTlujXjQ5i65uW0DbgtRTDljCUwXqNwBPnUlp741XMPTeqAy9f0fH08dhOwSHX01+8FatcA4B",
+	"KP4JHsZg9mwUoPxTFQOU2cr9L4O5eobYtwmxoTlRb7F6+vsniLaHNae13vFnm/qEAF8lsncwrbYv+dnA",
+	"WkY8Iy6EuFrafKNFdeXjVVD6bUaPzT6eR7Zyay0TwcupluUZogBdSaeEhDBN0JSxa+RtQTXoDkfj7YCr",
+	"3RClX3qx/aXqLjT9xqvtb5RXzakXxh2maF5cpt47OOiynvX7o/S7HYhs3uZ124tejjrM6d32p1/psLzA",
+	"LWd/wZtODjjp45QVyRD7nRJbnFKgveLenNLnAvSdANYreRWTpcKW0vCK9nYp43tQPxXgTcBmnHmVt/EC",
+	"cxxL4KiUwV+qb/LwJkwBKnTNdaxXrn6zPmtzke0je6/1XoB1JL62iTddQoDs2aj2XUnBlf1Dwq0CsULG",
+	"LPurQufwa7l8mwtJIAVTH9KyR30ItIbDdo+8bzZ2f8ZhOw57nR3uM5ye4XT/Zm2oa6vExsjvQrcFPVks",
+	"9tbLDUSRAcISYYrU2nsINnVQoRlnmT6TSrGQCMcx5Gqnp1mGXC9ceSbeCF/xTJqa4PXgdbRzT1UHpZLw",
+	"RRpp9k0v1x5aZXo9Azp1cfHW6pNuEBNoxlTACgmarhCurmiWwDOiz/YkljBAjt2KFwFOOhW1nETfX15+",
+	"QAkRMaMUYoko6J4VibkUCCNThlWp71+B2lZ9xF39xM/mjTXFDJZXnM36PzIK/ffYNsaUePHbUsYHv5OV",
+	"d0V0oav1i2lKxAISW5wdm0cHprs4sb9AcIrjBfRPGZWcpa4OPWxK1uve3tp62O7vqLdejA7X60jMtfGx",
+	"ItcSiohA5pZw+fvTfDcduvLuBTRyidESOJmRUjqZLfuz1jYhdI5iDrrCC6cmYeZKm/UvDpB5YWA+iDoo",
+	"jJ5kWPZAiOHX8v/djjHLuvGHcmgePd9wcOW3HAR0rnwASSyuEeNe+tPmXLRJPjAZuscmyhXrI9376Ar0",
+	"n6iTqDSqfrBxs2ApVO0+3kJNu0rCYuE5EtcV5C5f6VdX/A+yJKxcvSgvAtryUbP3qSnMWgR48f2kf/Dy",
+	"CLEZ+mXys+me/c7U3xVCxSSm/M4rRq3qY6csWaGEzHUdLU0qK3ezIGpfoeOu7oWzp0ZB+vaS5bZl7tAp",
+	"257aUhHX8AYv6xpYXZhBqLmYNfhzOo+XvXq2RM+WaEc3P3Rp/41ZZdul+CR9/n656rZmyGavwe+j4c3O",
+	"0Tso+7NqPaBqaQLaVEs/8BxOPzuxZ027i6ZxsD81Fdazc/X1swP7hhzYs3Y/a3dTu+2hU9cCB79p7Zst",
+	"bQi1yXfSufGDkGCb+4JFeWLBuOynZAkJUsJOoV8IQL/A9IKpt5DULz99sCcZ0QdZ9d8hFcVU8WMK3Fz9",
+	"x0EUmT74NMlYi8498Dz8WnbQ3w6rUyabXG3W4yaE6SyJu3/CnR1hDsg8OzVtX74a9vWMSt10x6SRFCLC",
+	"ngWVR0eEIow+nr9Tq2g5smxXrdDJo3dFwP3FlWOjBXUOVXgs8jnHCZSruxdkhlphmwj6aCe23caNe25u",
+	"iFwg7KuQ6Z8t9acDgG5M83+/urhgSyrevy3g7sdYjxnwh65/2PQTwubkB1nuIM2d5zOsb+sMqy4cd4Q1",
+	"QD8ypSJZLoUNnsyxlf0BK9GqFjknSxyvhvYiF6+F2X1jb8coP2VJEUsxdC3lmKgvNfF86ZRi7VfH1Tv2",
+	"xh+e2j53cTIc4pwMrGYOZJWJHsQ0Ws+Uv2MxTlFS9evXhjsZDscHfzsYDUaD8cnx6HgUeWfb7magyLWv",
+	"6+HtZ7bQ2v/Ikiz8z4z7c5f0lx+/9brB60No/tVGyPO0No0Th//MWXR7dfv/AQAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

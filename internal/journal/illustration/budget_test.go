@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -44,19 +45,28 @@ func TestImageBudgetPreservesCostForSuccessAndUnknown(t *testing.T) {
 	}
 }
 
-func TestImageBudgetDenialReleasesUserReservationWithoutProvider(t *testing.T) {
-	store := &workerStore{task: confirmedTask(t)}
+func TestImageBudgetDenialDoesNotInvokeProvider(t *testing.T) {
 	next := &workerGenerator{run: func(context.Context, Input) (Result, error) {
 		t.Fatal("unbudgeted provider invocation")
 		return Result{}, nil
 	}}
 	g := &BudgetedGenerator{Next: next, Controller: imageBudgetController(t, costcontrol.NewMemoryStore(), 5), MaxCostNanos: 10}
-	worker := Worker{Store: store, Guard: guardFunc(func(context.Context, Task) error { return nil }), Generator: g, Now: func() time.Time { return time.Unix(1000, 0) }}
-	task, err := worker.Process(context.Background(), store.task.OwnerID, store.task.ID)
+	_, err := g.Generate(context.Background(), Input{Prompt: "scene"})
 	var undispatched NotDispatched
-	if !errors.As(err, &undispatched) || !errors.Is(err, costcontrol.ErrBudgetExceeded) || task.State != TaskCancelled || task.Charge != ChargeRelease || next.calls.Load() != 0 {
-		t.Fatalf("unsafe denial: %+v %v", task, err)
+	if !errors.As(err, &undispatched) || !errors.Is(err, costcontrol.ErrBudgetExceeded) || next.calls.Load() != 0 {
+		t.Fatalf("unsafe denial: %v", err)
 	}
+}
+
+type workerGenerator struct {
+	calls atomic.Int32
+	run   func(context.Context, Input) (Result, error)
+}
+
+func (g *workerGenerator) Model() string { return "image-model" }
+func (g *workerGenerator) Generate(ctx context.Context, input Input) (Result, error) {
+	g.calls.Add(1)
+	return g.run(ctx, input)
 }
 
 type failingSettlementStore struct{ costcontrol.Store }
@@ -75,5 +85,26 @@ func TestImageBudgetSettlementFailureKeepsSuccessfulImage(t *testing.T) {
 	}
 	if _, err := c.Reserve(context.Background(), "journal", "image", "ark_image", 1); err == nil {
 		t.Fatal("failed settlement released reservation")
+	}
+}
+
+type imageOutcomeStore struct {
+	costcontrol.Store
+	outcomes []costcontrol.Outcome
+}
+
+func (s *imageOutcomeStore) RecordOutcome(_ context.Context, _ string, outcome costcontrol.Outcome, _ time.Time) error {
+	s.outcomes = append(s.outcomes, outcome)
+	return nil
+}
+func TestImageBudgetRecordsObservedOutcomeWithoutInventingTokenUsage(t *testing.T) {
+	store := &imageOutcomeStore{Store: costcontrol.NewMemoryStore()}
+	next := &workerGenerator{run: func(context.Context, Input) (Result, error) { return Result{Image: []byte("image")}, nil }}
+	generator := &BudgetedGenerator{Next: next, Controller: imageBudgetController(t, store, 15), MaxCostNanos: 10}
+	if _, err := generator.Generate(context.Background(), Input{Prompt: "scene"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.outcomes) != 1 || !store.outcomes[0].Success || store.outcomes[0].Model != next.Model() || store.outcomes[0].UsageKnown || store.outcomes[0].InputTokens != 0 || store.outcomes[0].OutputTokens != 0 {
+		t.Fatal("image observation absent or fabricated", store.outcomes)
 	}
 }

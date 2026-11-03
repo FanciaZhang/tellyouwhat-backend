@@ -1,0 +1,148 @@
+{
+  "date": "2026-10-13",
+  "bucket": "tellyouwhat-albums-1251995834",
+  "region": "ap-guangzhou",
+  "source_base_commit": "9b76cd7",
+  "scope": "synthetic fixtures; fixed-version IA download and CI processing; no user media or deletion",
+  "lifecycle": {
+    "id": "albums-originals-ia-30d",
+    "status": "Enabled",
+    "prefix": "albums/originals/",
+    "current_version_days": 30,
+    "noncurrent_version_days": 30,
+    "storage_class": "MAZ_STANDARD_IA",
+    "expiration_enabled": false,
+    "verified_at": "2026-10-13",
+    "verification": "saved_console_rule",
+    "transition_execution_verified": false
+  },
+  "tests": {
+    "jpeg": {
+      "passed": true,
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/a9f96467-d9bc-4c63-a8a6-5c8b1681de97/df6348d3-afcd-4de3-98b7-e12270c7ff72/photo",
+        "versionID": "MTg0NDQ5NTIyMTAwMDE0MjQyNjA",
+        "sizeBytes": 102810,
+        "sha256": "4d22c36aa2472bb4222f30ec963905a06e77ce6653fa0cb9d87101f440aa55ef"
+      },
+      "sourceStorageClass": "MAZ_STANDARD_IA",
+      "sourceLatestAndBytesUnchanged": true,
+      "outputs": [
+        {
+          "resourceID": "grid_jpeg_v1",
+          "key": "albums/derivatives/a9f96467-d9bc-4c63-a8a6-5c8b1681de97/0c303719-4790-4334-ac88-4ec9da9e841a/grid_jpeg_v1",
+          "versionID": "MTg0NDQ5NTIyMTAwMDAyMTY4NzY",
+          "sizeBytes": 1534,
+          "sha256": "fa22ebd6d656710f63586dc8dee852386e0021cf7c74e728851500683eb57b72"
+        },
+        {
+          "resourceID": "daily_jpeg_v1",
+          "key": "albums/derivatives/a9f96467-d9bc-4c63-a8a6-5c8b1681de97/824ab92a-817d-4734-9277-1aaee30f7978/daily_jpeg_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5OTYwMjM1ODU",
+          "sizeBytes": 27721,
+          "sha256": "3754c93332d8f675175e18c787234d21a1b9f8a76970560af4131e9a312783fe"
+        }
+      ]
+    },
+    "oriented-jpeg": {
+      "passed": true,
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/7cbdfd0e-6d2c-4ab8-867e-60a12775573e/67732bcd-427b-4a6b-91b9-a5245d10d2c9/photo",
+        "versionID": "MTg0NDQ5NTIyMDk5OTM3NDQ4MDI",
+        "sizeBytes": 102846,
+        "sha256": "282befa533c8557eed34f839dd6967a4d2899e8d4d8e6477689443301d8fcbda"
+      },
+      "sourceStorageClass": "MAZ_STANDARD_IA",
+      "sourceLatestAndBytesUnchanged": true,
+      "outputs": [
+        {
+          "resourceID": "grid_jpeg_v1",
+          "key": "albums/derivatives/7cbdfd0e-6d2c-4ab8-867e-60a12775573e/472f146f-c76e-4446-b157-c97505692a78/grid_jpeg_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5OTI2OTIzNzE",
+          "sizeBytes": 1375,
+          "sha256": "f6484c1204131e6bcc25f747409dc8af544d81b51848e220a72f81bb9506adbb"
+        },
+        {
+          "resourceID": "daily_jpeg_v1",
+          "key": "albums/derivatives/7cbdfd0e-6d2c-4ab8-867e-60a12775573e/f4f17f33-3278-4315-9efe-98b3a3206e1e/daily_jpeg_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5OTExMjYzMDQ",
+          "sizeBytes": 26914,
+          "sha256": "cbf96c92e51ef941c0b0c38b4bbde9898257151f5483abea8a42050770857faa"
+        }
+      ]
+    },
+    "transparent-png": {
+      "passed": true,
+      "source": {
+        "resourceID": "photo",
+        "key": "albums/originals/edcd7daf-ed8c-496f-9e91-dc319be5b1b0/1fca383c-181b-48a1-8e5a-28b8b0dd0387/photo",
+        "versionID": "MTg0NDQ5NTIyMDk5ODg4MzgxNTQ",
+        "sizeBytes": 28277,
+        "sha256": "23e49ccf4bb6a5fcca17303125fef8635512bb3c52e9745b0708326cb0404527"
+      },
+      "sourceStorageClass": "MAZ_STANDARD_IA",
+      "sourceLatestAndBytesUnchanged": true,
+      "outputs": [
+        {
+          "resourceID": "grid_png_v1",
+          "key": "albums/derivatives/edcd7daf-ed8c-496f-9e91-dc319be5b1b0/57720481-50e4-4493-aafd-82736ae9dfa6/grid_png_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5ODc2MjM2NTA",
+          "sizeBytes": 446,
+          "sha256": "a47403bce05fd1dc5455cdeee25a89dc56a4b0cce498a41628727da4e0889e68"
+        },
+        {
+          "resourceID": "daily_png_v1",
+          "key": "albums/derivatives/edcd7daf-ed8c-496f-9e91-dc319be5b1b0/f6ef0cdb-a03f-41b9-8da5-63c86c6c70b2/daily_png_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5ODU1OTc4Mzg",
+          "sizeBytes": 6388,
+          "sha256": "55f9ecc0bfa7e2f65fd7aa90a2890f00007a80f798b8239e3dc8267392c6cddd"
+        }
+      ]
+    },
+    "video": {
+      "passed": true,
+      "source": {
+        "resourceID": "movie",
+        "key": "albums/originals/51407af5-1ab9-4497-892c-501bc6d7fa3c/a88af538-8002-4e8a-93fb-a838bff68a42/movie",
+        "versionID": "MTg0NDQ5NTIyMDk5NTUxNzIyOTM",
+        "sizeBytes": 1206440,
+        "sha256": "479e1e0104eaeffd075637ab255546fefc5c0d00405bb9b083842b0b51aafab0"
+      },
+      "sourceStorageClass": "MAZ_STANDARD_IA",
+      "sourceLatestAndBytesUnchanged": true,
+      "result": {
+        "object": {
+          "resourceID": "daily_mp4_1080_v1",
+          "key": "albums/video-previews/51407af5-1ab9-4497-892c-501bc6d7fa3c/2791aafa-202b-4ee0-97da-cd8cd28b22fc/daily_mp4_1080_v1",
+          "versionID": "MTg0NDQ5NTIyMDk5NTIxMTQyNjg",
+          "sizeBytes": 936588,
+          "sha256": "327cc3e9488fbfd9a0327bc131cbd30bf7ab641e3b6fb80f8ca655c352136252"
+        },
+        "profile": {
+          "width": 1280,
+          "height": 720,
+          "durationMilliseconds": 2005,
+          "frameRate": 30,
+          "audioChannels": 1
+        }
+      },
+      "jobID": "jfe5b36e2c6b911f1b3ba85967770f5c4"
+    }
+  },
+  "test_source_sha256": {
+    "cos_storage_class_live_test.go": "3b9263ef211432ca32bdeb611a15f002d686b94e44eb793be8fbfb48706fd583",
+    "cos_photo_live_test.go": "40bec106bb09288e9fc71b0f9b1a11b42bfe98ea49c30aecaae3a96265980735",
+    "cos_video_live_test.go": "5b51dcca22cc6c44886651f93edf5c9875affdf53374b2e7f031755f1159a418"
+  },
+  "boundaries": [
+    "30-day lifecycle execution not yet observed",
+    "Full iOS Live Photo restoration from IA not tested",
+    "Actual retrieval/processing invoice not reconciled",
+    "No runtime flags or retail prices changed"
+  ],
+  "all_fixtures_fixed_version_and_signed_download_bytes_verified": true,
+  "all_outputs_storage_class_verified": "MAZ_STANDARD",
+  "video_full_ffmpeg_decode_passed": true
+}

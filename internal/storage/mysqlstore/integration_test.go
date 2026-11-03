@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/adminauth"
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -26,24 +28,40 @@ import (
 )
 
 func TestMySQLPersistencePaths(t *testing.T) {
-	dsn := strings.TrimSpace(os.Getenv("MYSQL_TEST_DSN"))
+	dsn := strings.TrimSpace(os.Getenv("MYSQL_TEST_ADMIN_DSN"))
 	if dsn == "" {
-		t.Skip("set MYSQL_TEST_DSN to run MySQL integration tests")
+		t.Skip("set MYSQL_TEST_ADMIN_DSN to run isolated MySQL persistence tests")
+	}
+	config, err := mysql.ParseDSN(dsn)
+	if err != nil || !strings.HasSuffix(config.DBName, "_test") {
+		t.Fatal("refusing non-test database")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	database, err := mysqlstore.Open(ctx, dsn)
+	admin, err := mysqlstore.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Schema reset and legacy-table renames must not affect concurrently running packages.
+	name := "persistence_" + strings.ReplaceAll(uuid.NewString(), "-", "") + "_test"
+	if _, err := admin.ExecContext(ctx, "CREATE DATABASE `"+name+"` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"); err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if _, err := admin.ExecContext(cleanupCtx, "DROP DATABASE `"+name+"`"); err != nil {
+			t.Error("isolated persistence schema cleanup failed", err)
+		}
+		admin.Close()
+	})
+	config.DBName = name
+	database, err := mysqlstore.Open(ctx, config.FormatDSN())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	var databaseName string
-	if err := database.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&databaseName); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(databaseName, "_test") {
-		t.Fatalf("refusing to reset non-test database %q", databaseName)
-	}
 	if err := migrations.Run(ctx, database); err != nil {
 		t.Fatal(err)
 	}
@@ -482,6 +500,8 @@ func resetMySQLTables(t *testing.T, ctx context.Context, database *sql.DB) {
 		TRUNCATE TABLE privacy_deletion_receipts;
         TRUNCATE TABLE job_dispatch_outbox;
         TRUNCATE TABLE usage_ledger;
+ TRUNCATE TABLE operations_free_cohorts;
+ TRUNCATE TABLE operations_purchase_observations;
         TRUNCATE TABLE media_objects;
         TRUNCATE TABLE idempotency_records;
         TRUNCATE TABLE ai_jobs;

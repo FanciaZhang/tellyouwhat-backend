@@ -27,12 +27,37 @@ env:
   IMAGE_PREFIX: ghcr.io/fanciazhang/tellyouwhat-ai
 
 jobs:
-  verify:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      full: ${{ steps.evidence.outputs.full }}
+      albums: ${{ steps.evidence.outputs.albums }}
+      swift: ${{ steps.evidence.outputs.swift }}
+      images: ${{ steps.evidence.outputs.images }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: evidence
+        run: python3 scripts/ci_evidence.py plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  verify:
+    needs: plan
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       mysql:
-        image: mysql:8.4
+        image: mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
         env:
           MYSQL_DATABASE: tellyouwhat_test
           MYSQL_USER: tellyouwhat_test
@@ -41,12 +66,13 @@ jobs:
         ports:
           - 3306/tcp
         options: >-
+          --tmpfs /var/lib/mysql:rw,size=2g
           --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
       redis:
-        image: redis:8-alpine
+        image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
         ports:
           - 6379/tcp
         options: >-
@@ -56,27 +82,33 @@ jobs:
           --health-retries=20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: evidence
+        run: python3 scripts/ci_evidence.py plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        if: steps.evidence.outputs.full == ''
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Test with MySQL and Redis
-        run: |
-          test -n "$MYSQL_TEST_DSN"
-          test -n "$REDIS_TEST_URL"
-          go test -count=1 -v ./...
-        env:
-          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
-          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
-      - run: go vet ./...
-      - run: go build ./cmd/...
-      - run: make verify-generated
-      - run: swift test --package-path Contracts/HTTP
+          cache: true
+      - name: Validate workflow syntax and reusable deployment inputs
+        if: steps.evidence.outputs.full == ''
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
       - run: bash deploy/tencent/deploy-production_test.sh
+        if: steps.evidence.outputs.full == ''
       - run: bash deploy/tencent/verify-public_test.sh
+        if: steps.evidence.outputs.full == ''
       - name: Test operations and rollback protections
-        run: python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
+        if: steps.evidence.outputs.full == ''
+        run: |
+          python3 -m unittest discover -s deploy/tencent -p '*_test.py' -v
+          python3 -m unittest discover -s scripts -p '*_test.py' -v
       - name: Verify privacy-safe encrypted backup restoration
+        if: steps.evidence.outputs.full == ''
         run: python3 deploy/tencent/backup_mysql_integration.py
         env:
           BACKUP_TEST_MYSQL_HOST: 127.0.0.1
@@ -84,9 +116,12 @@ jobs:
           BACKUP_TEST_MYSQL_USER: root
           BACKUP_TEST_MYSQL_PASSWORD: ci-test-root-password
       - name: Validate deployment files
+        if: steps.evidence.outputs.full == ''
         run: |
           touch .env.production
           docker compose -f compose.production.yaml config --quiet
+          ARK_MANAGEMENT_CREDENTIAL_HOST_FILE=/tmp/ark-test-credentials.json docker compose -f compose.production.yaml -f compose.ark-management.yaml config --quiet
+          JOURNAL_RECORDING_ROOT=/opt/tellyouwhat/journal-recordings/production docker compose --profile operations -f compose.production.yaml -f compose.journal-recording.yaml config --quiet
         env:
           HEALTH_API_DOMAIN: api.health.example
           JOURNAL_API_DOMAIN: api.journal.example
@@ -96,7 +131,19 @@ jobs:
           MYSQL_PASSWORD: placeholder
           MYSQL_DATABASE: app
           REDIS_PASSWORD: placeholder
+      - name: Validate isolated album test stack
+        if: steps.evidence.outputs.full == ''
+        run: |
+          cp deploy/albums/runtime.env.example "$RUNNER_TEMP/albums-test.env"
+          docker compose --env-file deploy/albums/test.env.example -f compose.albums-test.yaml config --quiet
+        env:
+          ALBUM_TEST_ENV_FILE: ${{ runner.temp }}/albums-test.env
+          ALBUM_TEST_IMAGE_TAG: ${{ github.sha }}
+          ALBUM_TEST_MYSQL_PASSWORD: ci-placeholder
+          ALBUM_TEST_MYSQL_ROOT_PASSWORD: ci-root-placeholder
+          ALBUM_TEST_REDIS_PASSWORD: ci-placeholder
       - name: Validate Caddy configuration
+        if: steps.evidence.outputs.full == ''
         run: |
           for config in Caddyfile Caddyfile.external; do
             docker run --rm --entrypoint caddy \
@@ -105,136 +152,133 @@ jobs:
               -e ADMIN_DOMAIN=admin.example \
               -e ACME_EMAIL=ops@example.com \
               -v "${{ github.workspace }}/deploy/single-server/$config:/etc/caddy/Caddyfile:ro" \
-              caddy:2-alpine validate --config /etc/caddy/Caddyfile
+              caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f validate --config /etc/caddy/Caddyfile
           done
+          docker run --rm --entrypoint caddy \
+            -e ALBUM_API_DOMAIN=api.albums.example \
+            -e ALBUM_TEST_API_PORT=18090 \
+            -v "${{ github.workspace }}/deploy/albums/Caddyfile.external:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f validate --config /etc/caddy/Caddyfile
+
+      - name: Test with MySQL and Redis
+        if: steps.evidence.outputs.full == ''
+        run: |
+          set -euo pipefail
+          test -n "$MYSQL_TEST_DSN"
+          test -n "$MYSQL_TEST_ADMIN_DSN"
+          test -n "$REDIS_TEST_URL"
+          packages=$(go list ./... | awk '!/\/internal\/albums$/')
+          test -n "$packages"
+          mapfile -t package_list <<< "$packages"
+          go test -timeout=30m -count=1 -v "${package_list[@]}"
+        env:
+          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
+      - name: Test Albums with real storage
+        if: steps.evidence.outputs.full == '' && steps.evidence.outputs.albums == ''
+        run: python3 scripts/run_album_tests.py
+        env:
+          MYSQL_TEST_DSN: tellyouwhat_test:ci-test-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          MYSQL_TEST_ADMIN_DSN: root:ci-test-root-password@tcp(127.0.0.1:${{ job.services.mysql.ports['3306'] }})/tellyouwhat_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci
+          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}/0
+      - name: Verify real Caddy switching and long connections
+        if: steps.evidence.outputs.full == ''
+        run: |
+          container=$(docker create caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          chmod +x "$RUNNER_TEMP/caddy"
+          CADDY_TEST_BIN="$RUNNER_TEMP/caddy" go test -race -count=1 -v ./internal/lifecycle
+      - run: go vet ./...
+        if: steps.evidence.outputs.full == ''
+      - run: go build ./cmd/...
+        if: steps.evidence.outputs.full == ''
+      - run: make verify-generated
+        if: steps.evidence.outputs.full == ''
+      - run: swift test --package-path Contracts/HTTP
+        if: steps.evidence.outputs.full == '' && steps.evidence.outputs.swift == ''
+      - name: Record verified source and test inputs
+        run: python3 scripts/ci_evidence.py record "$RUNNER_TEMP/verification.json"
+        env:
+          CI_REUSED_FULL: ${{ steps.evidence.outputs.full }}
+          CI_REUSED_ALBUMS: ${{ steps.evidence.outputs.albums }}
+          CI_REUSED_SWIFT: ${{ steps.evidence.outputs.swift }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-verification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification.json
+          retention-days: 14
+          overwrite: true
 
   container:
-    needs: verify
+    needs: [plan, verify]
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      needs.verify.result == 'success' &&
+      needs.plan.outputs.images == ''
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        service: [gateway, worker, admin, adminctl, migrate, maintenance]
+        service: [gateway, worker, admin, adminctl, migrate, maintenance, albumgateway, albumworker]
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+      - name: Bind image provenance to the selected source
+        id: source
+        run: |
+          set -euo pipefail
+          source_commit=$(git rev-parse HEAD)
+          archive_sha256=$(git archive "$source_commit" | sha256sum | cut -d ' ' -f 1)
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+      - name: Build service image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        env:
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 1
         with:
           context: .
           file: Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:main
           build-args: SERVICE=${{ matrix.service }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
+            cn.tellyouwhat.source-tar-sha256=${{ steps.source.outputs.archive_sha256 }}
+            cn.tellyouwhat.source-run=${{ github.run_id }}
 
   deploy:
-    needs: container
+    needs: [plan, verify, container]
     if: >-
-      github.ref == 'refs/heads/main' &&
+      always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' &&
+      needs.verify.result == 'success' &&
+      (needs.container.result == 'success' || (needs.container.result == 'skipped' && needs.plan.outputs.images != '')) &&
       ((github.event_name == 'push' && vars.PRODUCTION_DEPLOY_ENABLED == 'true') ||
        (github.event_name == 'workflow_dispatch' && inputs.deployment != 'none'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: production
-    concurrency:
-      group: backend-production
-      cancel-in-progress: false
     permissions:
       contents: read
       packages: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - name: Materialize protected deployment inputs
-        env:
-          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
-          HEALTH_SUBSCRIPTION_KEY: ${{ secrets.HEALTH_APP_STORE_PRIVATE_KEY }}
-          JOURNAL_SUBSCRIPTION_KEY: ${{ secrets.JOURNAL_APP_STORE_PRIVATE_KEY }}
-          HEALTH_MARKETING_KEY: ${{ secrets.HEALTH_APP_STORE_CONNECT_PRIVATE_KEY }}
-          JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
-        run: |
-          install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
-          printf '%s\n' "$PRODUCTION_ENV_FILE" > "$RUNNER_TEMP/.env.production"
-          printf '%s\n' "$HEALTH_SUBSCRIPTION_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/health-subscription.p8"
-          printf '%s\n' "$JOURNAL_SUBSCRIPTION_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/journal-subscription.p8"
-          printf '%s\n' "$HEALTH_MARKETING_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/health-marketing.p8"
-          printf '%s\n' "$JOURNAL_MARKETING_KEY" > "$RUNNER_TEMP/tellyouwhat-secrets/journal-marketing.p8"
-          chmod 600 "$RUNNER_TEMP/.env.production" "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8
-          grep -q '^HEALTH_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
-          grep -q '^JOURNAL_API_DOMAIN=' "$RUNNER_TEMP/.env.production"
-          grep -q '^ADMIN_DOMAIN=' "$RUNNER_TEMP/.env.production"
-          for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
-      - name: Configure SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/tellyouwhat-production
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/tellyouwhat-production
-      - name: Upload deployment files
-        env:
-          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
-          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
-        run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 700 '$remote_stage/secrets' '$remote_stage/deploy/single-server' '$remote_stage/deploy/tencent'"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes compose.production.yaml "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/compose.production.yaml"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/single-server/Caddyfile deploy/single-server/Caddyfile.external "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/single-server/"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes deploy/tencent/deploy-production.sh deploy/tencent/readiness.sh deploy/tencent/install-operations.sh deploy/tencent/release.py deploy/tencent/operations.py deploy/tencent/ops_*.py "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/deploy/tencent/"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/.env.production" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/.env.production"
-          scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8 "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/secrets/"
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$remote_stage" <<'REMOTE'
-          set -euo pipefail
-          stage="$1"
-          backend_dir=/opt/tellyouwhat/backend
-          install -d -m 750 "$backend_dir/secrets"
-          chmod 600 "$stage/.env.production"
-          chmod 750 "$stage/secrets"
-          chmod 640 "$stage/secrets/"*.p8
-          chmod 755 "$stage/deploy/tencent/"*.sh
-          sudo -n chgrp 65532 "$backend_dir/secrets" "$stage/secrets" "$stage/secrets/"*.p8
-          sudo -n chmod 2750 "$backend_dir/secrets"
-          REMOTE
-      - name: Back up database before migration
-        env:
-          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
-          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
-        run: |
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" python3 "/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}/deploy/tencent/operations.py" backup
-      - name: Deploy and verify internal services
-        env:
-          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
-          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEPLOYMENT_MODE: ${{ github.event_name == 'push' && (vars.PRODUCTION_ACCEPTANCE_STAGE || 'internal') || inputs.deployment }}
-        run: |
-          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
-          remote_stage="/opt/tellyouwhat/backend/.incoming-${GITHUB_SHA}"
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "$remote_stage/deploy/tencent/deploy-production.sh" "${GITHUB_SHA}" "${IMAGE_PREFIX}" "$DEPLOYMENT_MODE" "$remote_stage"
-          printf 'Internal services verified for `%s`. Requested stage: `%s`.\n' "$GITHUB_SHA" "$DEPLOYMENT_MODE" >> "$GITHUB_STEP_SUMMARY"
-      - name: Enable scheduled operations
-        env:
-          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
-          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
-        run: |
-          ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash /opt/tellyouwhat/backend/deploy/tencent/install-operations.sh
+    uses: ./.github/workflows/deploy.yml
+    with:
+      acceptance: ${{ github.event_name == 'push' && (vars.PRODUCTION_ACCEPTANCE_STAGE || 'internal') || inputs.deployment }}
+      source_run: ${{ needs.plan.outputs.images || format('{0}', github.run_id) }}
+    secrets: inherit
 
   verify-public:
     needs: deploy
@@ -246,6 +290,8 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Verify all public runtimes
+        env:
+          PUBLIC_TARGETS: ${{ needs.deploy.outputs.public_targets }}
         run: |
-          bash deploy/tencent/verify-public.sh api.health.tellyouwhat.cn api.journal.tellyouwhat.cn admin.tellyouwhat.cn
-          printf 'Public HTTPS verified for `%s` across Health, Journal, and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          bash deploy/tencent/verify-public.sh "$PUBLIC_TARGETS"
+          printf 'Public HTTPS verified for %s across all selected Apps and admin.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

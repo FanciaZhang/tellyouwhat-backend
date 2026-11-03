@@ -7,6 +7,10 @@ test "$deploy_user" != root
 id "$deploy_user" >/dev/null
 test -f "$backend_dir/.env.production"
 test -f "$backend_dir/deploy/tencent/operations.py"
+if test -f "$backend_dir/.operations/offsite-required" || test -f "$(dirname "$backend_dir")/backup/cos.env"; then
+  python3 -m venv "$backend_dir/.operations/backup-venv"
+  "$backend_dir/.operations/backup-venv/bin/python" -m pip install --no-cache-dir 'cos-python-sdk-v5==1.9.44' > "$backend_dir/.operations/backup-sdk-install.log" 2>&1
+fi
 unit_dir=$(mktemp -d)
 trap 'rm -rf "$unit_dir"' EXIT
 
@@ -25,7 +29,7 @@ LoadCredential=production-env:$backend_dir/.env.production
 Environment=TELLYOUWHAT_ENV_FILE=%d/production-env
 PrivateMounts=true
 ExecStart=/usr/bin/python3 $backend_dir/deploy/tencent/operations.py %i
-TimeoutStartSec=20min
+TimeoutStartSec=40min
 UMask=0077
 Nice=10
 IOSchedulingClass=best-effort
@@ -51,8 +55,63 @@ EOF
 make_timer backup '*-*-* 03:05:00 Asia/Shanghai'
 make_timer maintenance '*-*-* 03:25:00 Asia/Shanghai'
 make_timer restore 'Sun *-*-* 04:05:00 Asia/Shanghai'
+cat > "$unit_dir/tellyouwhat-health.timer" <<EOF
+[Unit]
+Description=Continuous TellYouWhat health monitoring
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=tellyouwhat-operation@health.service
+
+[Install]
+WantedBy=timers.target
+EOF
+cat > "$unit_dir/tellyouwhat-deployment.service" <<EOF
+[Unit]
+Description=TellYouWhat active slot recovery and draining
+Requires=docker.service
+After=docker.service network-online.target caddy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$deploy_user
+WorkingDirectory=$backend_dir
+ExecStart=/usr/bin/python3 $backend_dir/deploy/tencent/release.py maintain
+TimeoutStartSec=150s
+UMask=0077
+EOF
+cat > "$unit_dir/tellyouwhat-deployment.timer" <<EOF
+[Unit]
+Description=Reconcile TellYouWhat release slots
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=tellyouwhat-deployment.service
+
+[Install]
+WantedBy=timers.target
+EOF
 sudo -n systemd-analyze verify "$unit_dir"/*.service "$unit_dir"/*.timer
 sudo -n install -m 644 "$unit_dir"/*.service "$unit_dir"/*.timer /etc/systemd/system/
+for operation in backup maintenance restore; do
+  dropin="/etc/systemd/system/tellyouwhat-operation@$operation.service.d"
+  sudo -n install -d -m 755 "$dropin"
+  cat > "$unit_dir/retry.conf" <<EOF
+[Unit]
+StartLimitIntervalSec=1h
+StartLimitBurst=3
+
+[Service]
+Restart=on-failure
+RestartSec=2min
+EOF
+  sudo -n install -m 644 "$unit_dir/retry.conf" "$dropin/retry.conf"
+done
 sudo -n systemctl daemon-reload
-sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer
+sudo -n systemctl enable --now tellyouwhat-backup.timer tellyouwhat-maintenance.timer tellyouwhat-restore.timer tellyouwhat-health.timer tellyouwhat-deployment.timer
 systemctl list-timers 'tellyouwhat-*' --no-pager

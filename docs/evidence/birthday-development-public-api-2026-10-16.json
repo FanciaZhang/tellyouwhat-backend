@@ -1,0 +1,14 @@
+{
+  "verified_at_utc": "2026-10-15T22:45:23.934380+00:00",
+  "origin": "https://api-test.birthday.tellyouwhat.cn",
+  "tls_verified_with_system_trust": true,
+  "redirects_disallowed": true,
+  "ready": 200,
+  "quota_without_proof": 401,
+  "assist_without_proof": 401,
+  "internal_route": 404,
+  "registration_challenge": 201,
+  "challenge_value_omitted": true,
+  "real_app_attest_verified": false,
+  "real_model_inference_verified": false
+}

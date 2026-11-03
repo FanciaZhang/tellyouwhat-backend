@@ -53,6 +53,36 @@ timestamp, and raw body SHA-256. Gin captures and restores those bytes before
 the generated strict handler decodes them. The business layer receives generated
 request objects while authentication always hashes the actual transmitted body.
 
+Assertion validation accepts the legacy 37-byte authenticator header and the
+signed extension dictionary used by App Store assertions, including flags
+`0xc0`. The complete authenticator bytes remain in the signature digest. One
+strict CBOR decoder rejects duplicate fields in registration objects, assertion
+envelopes and extension dictionaries; assertion decoding is bounded to 17 KiB
+and authenticator data to 16 KiB. Optional metadata names
+`apple_validation_category_01` / `validationCategory` use four-byte little-endian
+categories 2–5; `apple_bundle_version_01` / `bundleVersion` use a nonempty string
+up to 128 bytes. If both names occur, their values must agree. Unknown signed
+extensions are retained in the signature and do not block compatible clients.
+
+An unregistered key still needs a live, unused enrollment challenge. A previously
+registered key may recover a lost registration response after challenge expiry
+only by revalidating its original challenge-bound attestation and matching the
+stored public key, App and environment. Recovery preserves the device ID,
+purchase binding and assertion counter. An expired pending proof that cannot
+be revalidated retains the shipped client's bounded fresh-enrollment fallback.
+Authentication and registration failures log only a server-defined stage;
+proofs, key IDs, nonces and error causes are excluded from that diagnostic.
+
+`TestAppStoreAttestationSubscriptionSyncAndQuotaHTTP` exercises registration,
+expired-response recovery, subscription synchronization and quota reads with
+test certificates and ECDSA signatures. Its App Store fixture preserves the
+102-byte / `0xc0` wire shape and reproduces the Swift request binding separately
+from the server digest helper. StoreKit resolution is synthetic in this test;
+Apple's live certificate service and real purchases still require device
+acceptance. Persistence recovery also runs against MySQL and Redis in CI.
+An immutable OpenSSL signature vector independently checks the request digest,
+ECDSA verification and counter commit without invoking the Go test signer.
+
 OpenAPI 3.1 identifies the AI stream as `text/event-stream`, but does not express
 the three named event payloads as a portable discriminated stream. The generated
 client owns the request and response body type; the small `delta`, `completed`,

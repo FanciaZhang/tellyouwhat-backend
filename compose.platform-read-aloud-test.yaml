@@ -1,0 +1,16 @@
+# Journal development only. Mutable simulator revocations remain visible through a directory mount.
+services:
+  gateway:
+    volumes:
+      - type: bind
+        source: /opt/tellyouwhat/journal-read-aloud/development
+        target: /journal-read-aloud
+        read_only: true
+        bind: {create_host_path: false}
+  worker:
+    environment:
+      JOURNAL_TTS_ENABLED: "false"
+      JOURNAL_TTS_API_KEY_FILE: ""
+      JOURNAL_TTS_MONTHLY_CHARACTERS: ""
+      JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS: ""
+      JOURNAL_READ_ALOUD_SIMULATOR_CREDENTIALS_FILE: ""

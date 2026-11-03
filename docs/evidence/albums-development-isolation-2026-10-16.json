@@ -1,0 +1,25 @@
+{
+  "service_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "api_origin": "https://api-test.albums.tellyouwhat.cn",
+  "bundle_id": "cn.tellyouwhat.albums.dev",
+  "apple_sign_in_key_id": "9H4R3FJ9D8",
+  "separate_database_password": true,
+  "separate_root_database_password": true,
+  "separate_database_volume": true,
+  "separate_redis_password": true,
+  "separate_network": true,
+  "separate_session_encryption_and_login_hmac_keys": [
+    "ALBUM_CREDENTIAL_KEY_FILE",
+    "ALBUM_LOGIN_LIMIT_KEY_FILE"
+  ],
+  "api_nonroot_read_only_root": true,
+  "database_and_redis_not_published": true,
+  "root_database_secret_absent_from_api": true,
+  "legacy_test_stack_preserved": true,
+  "shared_legacy_test_cos_bucket": true,
+  "subscriptions_enabled": "false",
+  "photo_processing_enabled": "false",
+  "video_processing_enabled": "false",
+  "real_apple_login_verified": false,
+  "cloud_grants_configured": false
+}

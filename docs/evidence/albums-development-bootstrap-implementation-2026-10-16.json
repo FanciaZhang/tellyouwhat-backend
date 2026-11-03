@@ -1,0 +1,57 @@
+{
+  "checked_at_utc": "2026-10-15T21:17:16.444284+00:00",
+  "base_source": "a9a9176e05d7463348605279131b1c9148da0c8c",
+  "working_tree_sha256": {
+    "deploy/albums/development.py": "e1e19cba70c717b2ca48baf4ed30053e9e0f61e4306fac6fbd8d3b78973103e7",
+    "deploy/albums/development_test.py": "21514eb1a10623825fcd737dc84fd583c7f4c1b78cde3f0f88e4e103d94df137",
+    "deploy/tencent/ops_artifacts.py": "f50f1b6a1c8e3857b94921b3260ee7899a4cff196617175660e2f513b5200b0d",
+    "deploy/tencent/artifacts_test.py": "bddce0bf9cf5fb7fe98d8865df3842542169d50743f007d05290d9dd30b340f7",
+    "deploy/tencent/ops_offsite.py": "4e6ce20e91253bd133f6caf69b8064d2b59a2f8f75815a608f5a84e6d87822b1",
+    "deploy/tencent/albums_development_artifacts.py": "18c0b87c2464225f6a8aa36a9cca2a432ea3257961fdc77d8fc6c41f0793aa15",
+    "deploy/tencent/albums_development_artifacts_test.py": "f8de3ba91cc1e90adcae03024b6bf6242221f2d175907789b91a4bac753a92b0",
+    "deploy/albums/development.Dockerfile": "0b3395488a5b9d99fbc5291e2f9f118aad3049782ec3906e69ac5db1105d0cfb",
+    "deploy/tencent/albums_development_checkpoint.py": "19c96902dbc5d527ef1325f3953898061534cf8066891ebf6602b454628929ac",
+    "deploy/tencent/albums_development_checkpoint_test.py": "f144e201ab1f77cf8db411d23f29b4c7895702b169a4265cb3f27db7994e2c26"
+  },
+  "python_operations_tests": {
+    "total": 144,
+    "failed": 0,
+    "skipped": 1,
+    "skip_reason": "Mac has no standalone Caddy binary; existing real host proxy proof is separate"
+  },
+  "python_bootstrap_tests": {
+    "total": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "go_race_packages_passed": [
+    "internal/albums",
+    "cmd/albumgateway",
+    "cmd/albumworker"
+  ],
+  "go_build_only_package": "cmd/migrate",
+  "go_live_external_conditions_not_claimed": true,
+  "new_deployment_verified": true,
+  "database_sql_restore_verified": false,
+  "real_apple_login_verified": false,
+  "initial_live_build": {
+    "source": "5ae55e4102971c8dc51b512273379306c916a4d0",
+    "result": "failed before starting services",
+    "kernel_evidence": "Memory cgroup killed a Go compile process inside the 1 GiB build container",
+    "host_services_not_used_for_build": "separate Docker build cgroup",
+    "correction": "dedicated development Dockerfile sets GOMAXPROCS=1, GOFLAGS=-p=1 and GOMEMLIMIT=512MiB; shared build stage compiles three servers once"
+  },
+  "deployed_application_source": "b6bb8ba57e88a9dec5332f2f2e8fa013b1182d93",
+  "checkpoint_test_fixture_corrections": [
+    "mocked backup engine connection must return argument list",
+    "synthetic snapshot files must preserve actual private file modes"
+  ],
+  "backup_runtime_verified": true,
+  "public_https_verified": true,
+  "checkpoint_operations_source": "2937f8145e2799adf7f21900ece3ad80ac312916",
+  "live_setup_corrections": [
+    "Read-only localhost role uses a Unix socket inside its container, not the TCP 127.0.0.1 identity; credentials and grant scope preserved.",
+    "Frozen snapshot code imports deletion_ledger by its original name; a scoped module alias preserves that sibling import and restores any earlier module.",
+    "Public Host selects the appropriate Caddy site; direct backend host rejection is the identity check."
+  ]
+}

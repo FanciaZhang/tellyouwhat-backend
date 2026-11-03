@@ -1,0 +1,19 @@
+{
+  "source_commit": "44dea1024a25ab5940a72af637345baf3010b5bf",
+  "version": "1.0",
+  "build": "3",
+  "ipa_sha256": "07364f71006774cb9332aef51548f04840f26a069914c6700abd769dce658aad",
+  "ipa_bytes": 3610682,
+  "service_source": "6f95f6c15c7fee78cab8c46d0ce2f103bdba5675",
+  "owner_wrapper_completed": true,
+  "publisher_staging_removed": true,
+  "page_and_manifest": 200,
+  "full_https_download_sha256_verified": true,
+  "head": 200,
+  "range": 206,
+  "expires_at": "2026-10-16T22:50:41.078119988Z",
+  "raw_installation_url_omitted": true,
+  "activation_credential_separately_restricted": true,
+  "real_phone_installation_verified": false,
+  "real_app_attest_verified": false
+}

@@ -9,8 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"time"
-
-	"github.com/fxamacker/cbor/v2"
 )
 
 var appleAttestationNonceOID = asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 8, 2}
@@ -64,7 +62,7 @@ func (verifier *AppleAttestationVerifier) Verify(
 			Receipt []byte   `cbor:"receipt"`
 		} `cbor:"attStmt"`
 	}
-	if err := cbor.Unmarshal(attestationObject, &object); err != nil || object.Format != "apple-appattest" {
+	if err := proofCBOR.Unmarshal(attestationObject, &object); err != nil || object.Format != "apple-appattest" {
 		return VerifiedAttestation{}, ErrAuthentication
 	}
 	if len(object.AttStmt.X5C) < 2 || len(object.AttStmt.Receipt) == 0 {

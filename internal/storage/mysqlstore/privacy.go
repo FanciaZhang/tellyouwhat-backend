@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -17,6 +19,29 @@ type PrivacyRepository struct {
 
 func NewPrivacyRepository(database *sql.DB, appID string) *PrivacyRepository {
 	return &PrivacyRepository{database: database, appID: appID}
+}
+
+// CheckConsentScopes detects a missing migration without writing a user's consent.
+func (repository *PrivacyRepository) CheckConsentScopes(ctx context.Context, scopes []string) error {
+	var clause string
+	err := repository.database.QueryRowContext(ctx, `SELECT checks.CHECK_CLAUSE
+		FROM information_schema.CHECK_CONSTRAINTS AS checks
+		JOIN information_schema.TABLE_CONSTRAINTS AS constraints_in_table
+		ON checks.CONSTRAINT_SCHEMA = constraints_in_table.CONSTRAINT_SCHEMA
+		AND checks.CONSTRAINT_NAME = constraints_in_table.CONSTRAINT_NAME
+		WHERE checks.CONSTRAINT_SCHEMA = DATABASE() AND constraints_in_table.TABLE_NAME = 'privacy_consents'
+		AND checks.CONSTRAINT_NAME = 'privacy_consents_scope_chk' AND constraints_in_table.ENFORCED = 'YES'`).Scan(&clause)
+	if err != nil {
+		return fmt.Errorf("inspect consent scope constraint: %w", err)
+	}
+	// MySQL exposes backslash-escaped literals in CHECK_CLAUSE.
+	clause = strings.ReplaceAll(clause, "\\", "")
+	for _, scope := range scopes {
+		if !strings.Contains(clause, "'"+scope+"'") {
+			return fmt.Errorf("consent scope %q requires a database migration", scope)
+		}
+	}
+	return nil
 }
 
 func (repository *PrivacyRepository) RecordConsents(ctx context.Context, records []privacy.Record) error {
@@ -67,7 +92,7 @@ func (repository *PrivacyRepository) HasGrantedConsents(
 
 func (repository *PrivacyRepository) PlanDeletion(ctx context.Context, principal attestation.Principal) (privacy.DeletionPlan, error) {
 	keyRows, err := repository.database.QueryContext(ctx, `
-        SELECT key_id, device_id, transaction_id
+        SELECT key_id, device_id, transaction_id, production_transaction_id, sandbox_transaction_id
         FROM app_attest_keys
 		WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?))`,
 		repository.appID, principal.KeyID, principal.TransactionID, principal.TransactionID)
@@ -78,12 +103,20 @@ func (repository *PrivacyRepository) PlanDeletion(ctx context.Context, principal
 	var keyIDs []string
 	for keyRows.Next() {
 		var value attestation.Principal
+		var productionID, sandboxID string
 		value.AppID = repository.appID
-		if err := keyRows.Scan(&value.KeyID, &value.DeviceID, &value.TransactionID); err != nil {
+		if err := keyRows.Scan(&value.KeyID, &value.DeviceID, &value.TransactionID, &productionID, &sandboxID); err != nil {
 			keyRows.Close()
 			return privacy.DeletionPlan{}, err
 		}
 		plan.Principals = append(plan.Principals, value)
+		for _, id := range distinctTransactionIDs(productionID, sandboxID) {
+			if id != value.TransactionID {
+				alias := value
+				alias.TransactionID = id
+				plan.Principals = append(plan.Principals, alias)
+			}
+		}
 		keyIDs = append(keyIDs, value.KeyID)
 	}
 	if err := keyRows.Close(); err != nil {
@@ -143,28 +176,40 @@ func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, princi
 	}
 	defer func() { _ = transaction.Rollback() }()
 	transactionID := principal.TransactionID
-	if repository.appID == "journal" {
-		// Remove image accounting for the same deletion scope before cascading
-		// key deletion removes the encrypted tasks. Health's existing path stays unchanged.
-		_, err := transaction.ExecContext(ctx, `DELETE FROM journal_image_budgets
-			WHERE app_id=? AND (account_id IN (
-				SELECT transaction_id FROM app_attest_keys WHERE app_id=? AND
-				(key_id=? OR (?<>'' AND transaction_id=?)) AND transaction_id<>''
-			) OR (?<>'' AND account_id=?))`, repository.appID, repository.appID, principal.KeyID, transactionID, transactionID, transactionID, transactionID)
-		if err != nil {
+	rows, err := transaction.QueryContext(ctx, `SELECT transaction_id, production_transaction_id, sandbox_transaction_id
+		FROM app_attest_keys WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?)) FOR UPDATE`,
+		repository.appID, principal.KeyID, transactionID, transactionID)
+	if err != nil {
+		return err
+	}
+	ids := []string{transactionID}
+	for rows.Next() {
+		var active, production, sandbox string
+		if err := rows.Scan(&active, &production, &sandbox); err != nil {
+			rows.Close()
 			return err
 		}
+		ids = append(ids, active, production, sandbox)
 	}
-	if transactionID != "" {
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range distinctTransactionIDs(ids...) {
 		if _, err := transaction.ExecContext(ctx,
-			`DELETE FROM app_store_notifications WHERE app_id = ? AND original_transaction_id = ?`, repository.appID, transactionID,
+			`DELETE FROM app_store_notifications WHERE app_id = ? AND original_transaction_id = ?`, repository.appID, id,
 		); err != nil {
 			return err
 		}
-		originalHash := sha256.Sum256([]byte(transactionID))
+		originalHash := sha256.Sum256([]byte(id))
 		if _, err := transaction.ExecContext(ctx,
 			`DELETE FROM app_store_offer_redemptions WHERE app_id = ? AND original_transaction_hash = ?`, repository.appID, originalHash[:],
 		); err != nil {
+			return err
+		}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM offer_delivery_verified_links WHERE app_id=? AND original_hash=?`, repository.appID, originalHash[:]); err != nil {
 			return err
 		}
 	}
@@ -185,3 +230,15 @@ func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, princi
 }
 
 var _ privacy.Repository = (*PrivacyRepository)(nil)
+
+func distinctTransactionIDs(values ...string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}

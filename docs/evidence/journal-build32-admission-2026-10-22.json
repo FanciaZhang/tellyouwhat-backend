@@ -1,0 +1,33 @@
+{
+  "source": "7d30909290d884f258d66e40f267478acd5fb5b7",
+  "previousSource": "ea1c005b08b0049913a1c645ba54f14538e474fb",
+  "allowedJournalDevelopmentBuilds": "21,22,23,24,25,26,27,28,29,30,31,32",
+  "runtimeOnlyAddsBuild32": true,
+  "appReadiness": [
+    {
+      "app": "health",
+      "status": 200
+    },
+    {
+      "app": "journal",
+      "status": 200
+    },
+    {
+      "app": "birthday",
+      "status": 200
+    },
+    {
+      "app": "albums",
+      "status": 200
+    }
+  ],
+  "voiceCount": 466,
+  "catalogUnchanged": true,
+  "productionSelectionUnchanged": true,
+  "caddyUnchanged": true,
+  "ownerRegistered": true,
+  "cleanupCompleted": true,
+  "authenticatedBackupAndConfigurationRecovery": true,
+  "offsiteObjectsReadBack": 3,
+  "physicalReadAloudAcceptanceBuild32": false
+}

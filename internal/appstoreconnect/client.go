@@ -27,9 +27,11 @@ const (
 )
 
 var (
-	ErrUnavailable = errors.New("app store connect unavailable")
-	ErrForbidden   = errors.New("app store connect operation forbidden")
-	ErrInvalid     = errors.New("invalid app store connect response")
+	ErrUnavailable      = errors.New("app store connect unavailable")
+	ErrForbidden        = errors.New("app store connect operation forbidden")
+	ErrInvalid          = errors.New("invalid app store connect response")
+	ErrRejected         = errors.New("app store connect rejected request parameters")
+	ErrMethodNotAllowed = errors.New("app store connect request method not allowed")
 )
 
 type Config struct {
@@ -37,6 +39,8 @@ type Config struct {
 	IssuerID       string
 	KeyID          string
 	SubscriptionID string
+	AppAppleID     string
+	VendorNumber   string
 	SigningKey     *ecdsa.PrivateKey
 	HTTPClient     *http.Client
 	Now            func() time.Time
@@ -44,7 +48,35 @@ type Config struct {
 
 type Client struct{ config Config }
 
+// RequestRejection exposes only a recognized field, never Apple's raw error body.
+type RequestRejection struct{ Field string }
+
+func (rejection *RequestRejection) Error() string { return ErrRejected.Error() }
+func (rejection *RequestRejection) Unwrap() error { return ErrRejected }
+
+func requestRejection(reader io.Reader) error {
+	var response struct {
+		Errors []struct {
+			Source struct {
+				Pointer string `json:"pointer"`
+			} `json:"source"`
+		} `json:"errors"`
+	}
+	if err := json.NewDecoder(io.LimitReader(reader, maximumResponseBytes)).Decode(&response); err == nil {
+		for _, failure := range response.Errors {
+			switch failure.Source.Pointer {
+			case "/data/attributes/numberOfCodes", "/data/attributes/expirationDate", "/data/attributes/customCode":
+				return &RequestRejection{Field: strings.TrimPrefix(failure.Source.Pointer, "/data/attributes/")}
+			}
+		}
+	}
+	return ErrRejected
+}
+
 type Offer struct {
+	SubscriptionID         string   `json:"subscriptionID"`
+	ProductID              string   `json:"productID"`
+	SubscriptionName       string   `json:"subscriptionName"`
 	ID                     string   `json:"id"`
 	Name                   string   `json:"name"`
 	CustomerEligibilities  []string `json:"customerEligibilities"`
@@ -123,57 +155,107 @@ func NewClient(config Config) (*Client, error) {
 	return &Client{config: config}, nil
 }
 
+// ListOffers enumerates every subscription of the configured App. A missing App
+// identity explicitly limits inventory to the configured creation subscription.
 func (client *Client) ListOffers(ctx context.Context) ([]Offer, error) {
-	path := "/v1/subscriptions/" + url.PathEscape(client.config.SubscriptionID) + "/offerCodes"
-	next := strings.TrimRight(client.config.BaseURL, "/") + path + "?limit=200"
-	var offers []Offer
-	for page := 0; page < maximumPaginationPages && next != ""; page++ {
-		var payload listResponse[offerAttributes]
-		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+	subscriptions, err := client.listSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	offers := []Offer{}
+	seen := map[string]bool{}
+	for _, subscription := range subscriptions {
+		path := "/v1/subscriptions/" + url.PathEscape(subscription.ID) + "/offerCodes"
+		resources, err := listPoolResources[offerAttributes](ctx, client, path)
+		if err != nil {
 			return nil, err
 		}
-		for _, resource := range payload.Data {
-			if resource.ID == "" || resource.Type != "subscriptionOfferCodes" || resource.Attributes.Name == "" {
+		for _, resource := range resources {
+			offer, err := mapOffer(resource)
+			if err != nil || seen[offer.ID] {
 				return nil, ErrInvalid
 			}
-			attributes := resource.Attributes
-			offers = append(offers, Offer{
-				ID: resource.ID, Name: attributes.Name,
-				CustomerEligibilities: attributes.CustomerEligibilities,
-				OfferEligibility:      attributes.OfferEligibility, Duration: attributes.Duration,
-				OfferMode: attributes.OfferMode, NumberOfPeriods: attributes.NumberOfPeriods,
-				TotalNumberOfCodes:  attributes.TotalNumberOfCodes,
-				ProductionCodeCount: attributes.ProductionCodeCount,
-				SandboxCodeCount:    attributes.SandboxCodeCount, Active: attributes.Active,
-				AutoRenewEnabled:       attributes.AutoRenewEnabled,
-				TargetSubscriptionPlan: attributes.TargetSubscriptionPlanType,
-			})
+			seen[offer.ID] = true
+			offer.SubscriptionID, offer.ProductID, offer.SubscriptionName = subscription.ID, subscription.Attributes.ProductID, subscription.Attributes.Name
+			offers = append(offers, offer)
 		}
-		next = payload.Links.Next
-		if next != "" && !client.allowedNextURL(next) {
-			return nil, ErrInvalid
-		}
-	}
-	if next != "" {
-		return nil, ErrInvalid
 	}
 	return offers, nil
 }
 
+type subscriptionAttributes struct {
+	Name      string `json:"name"`
+	ProductID string `json:"productId"`
+}
+
+func (client *Client) listSubscriptions(ctx context.Context) ([]jsonAPIResource[subscriptionAttributes], error) {
+	if client.config.AppAppleID == "" {
+		return []jsonAPIResource[subscriptionAttributes]{{ID: client.config.SubscriptionID, Type: "subscriptions"}}, nil
+	}
+	groups, err := listPoolResources[struct{}](ctx, client, "/v1/apps/"+url.PathEscape(client.config.AppAppleID)+"/subscriptionGroups")
+	if err != nil {
+		return nil, err
+	}
+	subscriptions := []jsonAPIResource[subscriptionAttributes]{}
+	seen := map[string]bool{}
+	for _, group := range groups {
+		if group.ID == "" || group.Type != "subscriptionGroups" {
+			return nil, ErrInvalid
+		}
+		rows, err := listPoolResources[subscriptionAttributes](ctx, client, "/v1/subscriptionGroups/"+url.PathEscape(group.ID)+"/subscriptions")
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.ID == "" || row.Type != "subscriptions" || row.Attributes.ProductID == "" || seen[row.ID] {
+				return nil, ErrInvalid
+			}
+			seen[row.ID] = true
+			subscriptions = append(subscriptions, row)
+		}
+	}
+	// The default creation product must belong to this App; never silently fall
+	// back to an unrelated configured product after a partial inventory read.
+	if !seen[client.config.SubscriptionID] {
+		return nil, ErrInvalid
+	}
+	return subscriptions, nil
+}
+
+func (client *Client) OfferScope() (appAppleID, creationSubscriptionID string) {
+	return client.config.AppAppleID, client.config.SubscriptionID
+}
+
 func (client *Client) CreateFreeOffer(ctx context.Context, draft OfferDraft) (Offer, error) {
+	territories, err := client.offerTerritories(ctx)
+	if err != nil {
+		return Offer{}, err
+	}
+	prices := make([]any, 0, len(territories))
+	linkages := make([]any, 0, len(territories))
+	for index, territory := range territories {
+		id := fmt.Sprintf("${price-%d}", index)
+		linkages = append(linkages, map[string]string{"type": "subscriptionOfferCodePrices", "id": id})
+		prices = append(prices, map[string]any{
+			"type": "subscriptionOfferCodePrices", "id": id,
+			"relationships": map[string]any{"territory": map[string]any{
+				"data": map[string]string{"type": "territories", "id": territory},
+			}},
+		})
+	}
 	body := map[string]any{"data": map[string]any{
 		"type": "subscriptionOfferCodes",
 		"attributes": map[string]any{
 			"name": draft.Name, "customerEligibilities": draft.CustomerEligibilities,
 			"offerEligibility": "REPLACE_INTRO_OFFERS", "duration": draft.Duration,
 			"offerMode": "FREE_TRIAL", "numberOfPeriods": 1, "autoRenewEnabled": draft.AutoRenewEnabled,
-			"targetSubscriptionPlanType": "MONTHLY",
+			"targetSubscriptionPlanType": "UPFRONT",
 		},
 		"relationships": map[string]any{
 			"subscription": map[string]any{"data": map[string]string{"type": "subscriptions", "id": client.config.SubscriptionID}},
-			"prices":       map[string]any{"data": []any{}},
+			"prices":       map[string]any{"data": linkages},
 		},
-	}}
+	}, "included": prices}
 	var response struct {
 		Data jsonAPIResource[offerAttributes] `json:"data"`
 	}
@@ -181,6 +263,59 @@ func (client *Client) CreateFreeOffer(ctx context.Context, draft OfferDraft) (Of
 		return Offer{}, err
 	}
 	return mapOffer(response.Data)
+}
+
+// Standard subscriptions use UPFRONT; MONTHLY is a twelve-month commitment plan.
+func (client *Client) offerTerritories(ctx context.Context) ([]string, error) {
+	base := strings.TrimRight(client.config.BaseURL, "/")
+	path := "/v1/subscriptions/" + url.PathEscape(client.config.SubscriptionID) + "/planAvailabilities"
+	var plans listResponse[struct {
+		PlanType string `json:"planType"`
+	}]
+	if err := client.get(ctx, base+path+"?limit=200", "GET "+path, &plans); err != nil {
+		return nil, err
+	}
+	planID := ""
+	for _, plan := range plans.Data {
+		if plan.Attributes.PlanType == "UPFRONT" {
+			if planID != "" || plan.ID == "" || plan.Type != "subscriptionPlanAvailabilities" {
+				return nil, ErrInvalid
+			}
+			planID = plan.ID
+		}
+	}
+	if planID == "" || plans.Links.Next != "" {
+		return nil, ErrInvalid
+	}
+	path = "/v1/subscriptionPlanAvailabilities/" + url.PathEscape(planID) + "/availableTerritories"
+	next := base + path + "?limit=200"
+	var territories []string
+	seen := map[string]bool{}
+	for page := 0; page < maximumPaginationPages && next != ""; page++ {
+		var payload listResponse[struct{}]
+		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+			return nil, err
+		}
+		for _, territory := range payload.Data {
+			if territory.Type != "territories" || territory.ID == "" || seen[territory.ID] {
+				return nil, ErrInvalid
+			}
+			seen[territory.ID] = true
+			territories = append(territories, territory.ID)
+		}
+		next = payload.Links.Next
+		if next != "" {
+			expected, _ := url.Parse(base + path)
+			actual, err := url.Parse(next)
+			if err != nil || actual.Scheme != expected.Scheme || actual.Host != expected.Host || actual.Path != expected.Path || actual.User != nil {
+				return nil, ErrInvalid
+			}
+		}
+	}
+	if next != "" || len(territories) == 0 {
+		return nil, ErrInvalid
+	}
+	return territories, nil
 }
 
 func (client *Client) DeactivateOffer(ctx context.Context, id string) (Offer, error) {
@@ -198,6 +333,9 @@ func (client *Client) DeactivateOffer(ctx context.Context, id string) (Offer, er
 }
 
 func (client *Client) CreateCustomCode(ctx context.Context, offerID, code string, count int, expirationDate string) (CodePool, error) {
+	if count < 500 || count > 25000 {
+		return CodePool{}, ErrInvalid
+	}
 	attributes := map[string]any{"customCode": code, "numberOfCodes": count}
 	if expirationDate != "" {
 		attributes["expirationDate"] = expirationDate
@@ -253,17 +391,17 @@ func (client *Client) ListCodePools(ctx context.Context, offerID string) ([]Code
 }
 
 func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		CustomCode     string `json:"customCode"`
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeCustomCodes" {
 			return nil, ErrInvalid
 		}
@@ -274,17 +412,17 @@ func (client *Client) listCustomCodePools(ctx context.Context, path string) ([]C
 }
 
 func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]CodePool, error) {
-	var response listResponse[struct {
+	resources, err := listPoolResources[struct {
 		NumberOfCodes  int    `json:"numberOfCodes"`
 		ExpirationDate string `json:"expirationDate"`
 		Environment    string `json:"environment"`
 		Active         bool   `json:"active"`
-	}]
-	if err := client.get(ctx, strings.TrimRight(client.config.BaseURL, "/")+path+"?limit=200", "GET "+path, &response); err != nil {
+	}](ctx, client, path)
+	if err != nil {
 		return nil, err
 	}
-	pools := make([]CodePool, 0, len(response.Data))
-	for _, resource := range response.Data {
+	pools := make([]CodePool, 0, len(resources))
+	for _, resource := range resources {
 		if resource.ID == "" || resource.Type != "subscriptionOfferCodeOneTimeUseCodes" {
 			return nil, ErrInvalid
 		}
@@ -292,6 +430,43 @@ func (client *Client) listOneTimeCodePools(ctx context.Context, path string) ([]
 			ExpirationDate: resource.Attributes.ExpirationDate, Environment: resource.Attributes.Environment, Active: resource.Attributes.Active})
 	}
 	return pools, nil
+}
+
+// listPoolResources requires complete pagination and rejects cross-resource continuation links.
+func listPoolResources[T any](ctx context.Context, client *Client, path string) ([]jsonAPIResource[T], error) {
+	next := strings.TrimRight(client.config.BaseURL, "/") + path + "?limit=200"
+	base, _ := url.Parse(client.config.BaseURL)
+	out := []jsonAPIResource[T]{}
+	seenPages := map[string]bool{}
+	seenIDs := map[string]bool{}
+	for page := 0; next != "" && page < maximumPaginationPages; page++ {
+		if seenPages[next] {
+			return nil, ErrInvalid
+		}
+		seenPages[next] = true
+		var payload listResponse[T]
+		if err := client.get(ctx, next, "GET "+path, &payload); err != nil {
+			return nil, err
+		}
+		for _, resource := range payload.Data {
+			if seenIDs[resource.ID] {
+				return nil, ErrInvalid
+			}
+			seenIDs[resource.ID] = true
+			out = append(out, resource)
+		}
+		next = payload.Links.Next
+		if next != "" {
+			u, err := url.Parse(next)
+			if err != nil || u.Scheme != base.Scheme || u.Host != base.Host || u.Path != path || u.User != nil || u.Fragment != "" {
+				return nil, ErrInvalid
+			}
+		}
+	}
+	if next != "" {
+		return nil, ErrInvalid
+	}
+	return out, nil
 }
 
 func (client *Client) DownloadOneTimeCodes(ctx context.Context, batchID string) ([]byte, error) {
@@ -384,7 +559,9 @@ func (client *Client) send(ctx context.Context, method, path string, body any, e
 	if err != nil {
 		return ErrInvalid
 	}
-	token, err := client.bearerToken([]string{method + " " + path})
+	// Apple accepts scope entries only for GET requests. Writes use the existing
+	// API key role and a short-lived token without a scope claim.
+	token, err := client.bearerToken(nil)
 	if err != nil {
 		return ErrUnavailable
 	}
@@ -405,6 +582,12 @@ func (client *Client) send(ctx context.Context, method, path string, body any, e
 		return ErrForbidden
 	}
 	if response.StatusCode != expectedStatus {
+		switch response.StatusCode {
+		case http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity:
+			return requestRejection(response.Body)
+		case http.StatusMethodNotAllowed:
+			return ErrMethodNotAllowed
+		}
 		return fmt.Errorf("%w: status %d", ErrUnavailable, response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBytes+1))
@@ -424,10 +607,14 @@ func (client *Client) bearerToken(scope []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	payload, err := encodeJSONSegment(map[string]any{
+	claims := map[string]any{
 		"iss": client.config.IssuerID, "iat": now.Unix(), "exp": now.Add(tokenLifetime).Unix(),
-		"aud": "appstoreconnect-v1", "scope": scope,
-	})
+		"aud": "appstoreconnect-v1",
+	}
+	if len(scope) > 0 {
+		claims["scope"] = scope
+	}
+	payload, err := encodeJSONSegment(claims)
 	if err != nil {
 		return "", err
 	}
@@ -439,13 +626,6 @@ func (client *Client) bearerToken(scope []string) (string, error) {
 	}
 	signature := append(fixedWidth(r, 32), fixedWidth(s, 32)...)
 	return input + "." + base64.RawURLEncoding.EncodeToString(signature), nil
-}
-
-func (client *Client) allowedNextURL(value string) bool {
-	base, baseErr := url.Parse(client.config.BaseURL)
-	next, nextErr := url.Parse(value)
-	return baseErr == nil && nextErr == nil && next.Scheme == base.Scheme && next.Host == base.Host &&
-		strings.HasPrefix(next.Path, "/v1/subscriptions/"+url.PathEscape(client.config.SubscriptionID)+"/offerCodes")
 }
 
 func encodeJSONSegment(value any) (string, error) {

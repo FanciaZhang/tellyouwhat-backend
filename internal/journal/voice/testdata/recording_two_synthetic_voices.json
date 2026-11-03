@@ -1,0 +1,49 @@
+{
+  "audio_info": {
+    "duration": 22649
+  },
+  "result": {
+    "additions": {
+      "duration": "22649"
+    },
+    "text": "上周去爬山的时候，我走在最前面，我觉得那段山路很漂亮。我走到吊桥的时候，其实非常害怕，腿都有一点发抖。后来我在桥的另一头等你，我们一起看了日落。是的，现在回忆起来我很开心，但是当时真的很害怕。",
+    "utterances": [
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 5960,
+        "start_time": 80,
+        "text": "上周去爬山的时候，我走在最前面，我觉得那段山路很漂亮。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "2"
+        },
+        "end_time": 11680,
+        "start_time": 6480,
+        "text": "我走到吊桥的时候，其实非常害怕，腿都有一点发抖。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "1"
+        },
+        "end_time": 16470,
+        "start_time": 12350,
+        "text": "后来我在桥的另一头等你，我们一起看了日落。"
+      },
+      {
+        "additions": {
+          "emotion": "neutral",
+          "speaker": "2"
+        },
+        "end_time": 22030,
+        "start_time": 16990,
+        "text": "是的，现在回忆起来我很开心，但是当时真的很害怕。"
+      }
+    ]
+  }
+}

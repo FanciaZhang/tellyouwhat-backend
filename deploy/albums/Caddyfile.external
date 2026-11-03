@@ -1,0 +1,11 @@
+# Render only these public values; import into the existing host Caddyfile.
+# Do not replace Health/Journal/blog routes or give Caddy the private env file.
+{$ALBUM_API_DOMAIN} {
+    @album path /v1/albums/* /livez /readyz
+    handle @album {
+        reverse_proxy 127.0.0.1:{$ALBUM_TEST_API_PORT:18090}
+    }
+    handle {
+        respond 404
+    }
+}

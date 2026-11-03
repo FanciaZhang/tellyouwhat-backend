@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-21",
+  "problem": "Apple Sandbox status lookup returns 5000001 for a renewal transaction, but succeeds for its original subscription transaction",
+  "real_apple_readonly_checks": {
+    "transaction_info_http_status": 200,
+    "latest_transaction_status_http_status": 500,
+    "latest_transaction_error_code": 5000001,
+    "original_transaction_status_http_status": 200,
+    "returned_subscription_status": 1,
+    "sandbox_bundle": "cn.tellyouwhat.journalapp.dev"
+  },
+  "fix": "For Sandbox only, when status API returns exactly 5000001, fetch the current signed transaction from the Apple Get Transaction Info API. Verify its certificate chain and JWS, exact submitted transaction/original chain/product, app/environment, expiry, revocation and upgrade before returning access. Production keeps the status API path.",
+  "focused_go_packages_passed": [
+    "internal/appstore",
+    "internal/entitlement",
+    "internal/gateway"
+  ],
+  "deployment_verified": true,
+  "raw_transaction_identifiers_omitted": true,
+  "original_id_only_change_was_insufficient": true,
+  "original_id_later_also_returned_5000001": true,
+  "first_test_deployment_source": "326d2a710352804d527e1687163943b76469f42b",
+  "first_real_notification_replay_http_status": 503,
+  "sandbox_fresh_transaction_security_cases_passed": 15,
+  "deployed_source": "c2245f513cd1f71919a29ef0675800e6d9028c17",
+  "previous_source": "326d2a710352804d527e1687163943b76469f42b",
+  "runtime_configuration_unchanged": true,
+  "production_unchanged": true,
+  "all_four_test_apps_healthy": true,
+  "real_apple_signed_notification_reprocessed": true,
+  "real_notification_http_status": 200,
+  "real_bound_sandbox_entitlement_active": true,
+  "no_manual_entitlement_or_database_write": true,
+  "authenticated_recovery_backup_passed": true,
+  "offsite_readback_verified_objects": 3,
+  "device_subscription_ui_confirmation_pending": true
+}

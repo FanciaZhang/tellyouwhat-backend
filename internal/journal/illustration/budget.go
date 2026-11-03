@@ -36,20 +36,20 @@ func (g *BudgetedGenerator) Generate(ctx context.Context, input Input) (Result, 
 	if err != nil {
 		return Result{}, NotDispatched{err}
 	}
-	settle := func(known bool) {
+	settle := func(known bool, outcome costcontrol.Outcome) {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		if err := lease.Settle(cleanup, 0, known); err != nil && g.SettlementFailed != nil {
+		if err := lease.Finish(cleanup, 0, known, outcome); err != nil && g.SettlementFailed != nil {
 			g.SettlementFailed()
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		settle(true)
+		settle(true, costcontrol.Outcome{Cancelled: true})
 		return Result{}, NotDispatched{err}
 	}
 	result, failure := g.Next.Generate(ctx, input)
 	// No authoritative invoice amount is returned. Retain the configured upper
 	// bound on success and failure, releasing concurrency but never assuming free.
-	settle(false)
+	settle(false, costcontrol.Outcome{Model: g.Model(), Cancelled: costcontrol.IsCancellation(ctx, failure), Success: failure == nil})
 	return result, failure
 }

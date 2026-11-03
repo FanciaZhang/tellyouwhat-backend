@@ -20,6 +20,8 @@ const actionLabels = {
   "admin.passkey.recover": "完成通行密钥恢复", "admin.passkey.recovery_invite": "签发恢复邀请",
   "admin.invitation.create": "创建人员邀请", "admin.invitation.revoke": "撤销邀请",
   "admin.user.update": "更新后台人员", "offer.create": "创建 Offer",
+  "operations.draft": "保存服务配置草稿", "operations.publish": "发布服务配置",
+  "ai.draft.create": "保存 AI 配置草稿", "ai.config.publish": "发布 AI 配置",
   "offer.deactivate": "停用 Offer", "offer_codes.custom_create": "创建自定义码池",
   "offer_codes.batch_create": "创建一次性码池", "offer_codes.download": "下载一次性码"
 };
@@ -40,11 +42,11 @@ function escapeHTML(value) {
 }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { dateStyle: "medium", timeStyle: "short" }) : "—"; }
 
-async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false } = {}) {
+async function api(path, { method = "GET", body, csrfRequired = false, idempotent = false, idempotencyKey } = {}) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (csrfRequired) headers["X-Admin-CSRF"] = state.csrf;
-  if (idempotent) headers["Idempotency-Key"] = uuid();
+  if (idempotencyKey || idempotent) headers["Idempotency-Key"] = idempotencyKey || uuid();
   const response = await fetch(path, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin"
   });
@@ -153,6 +155,8 @@ async function loadSession() {
     $("#account-name").textContent = state.user.displayName;
     $("#account-role").textContent = roleLabels[state.user.role] || state.user.role;
     $("#people-tab").classList.toggle("hidden", state.user.role !== "admin");
+    $("#ai-tab").classList.toggle("hidden", state.user.role !== "admin");
+    $("#platform-tab").classList.toggle("hidden", state.user.role !== "admin");
     await loadApps();
     await loadOffers();
     return true;
@@ -176,6 +180,7 @@ async function loadApps() {
   picker.innerHTML = state.apps.map(app => `<option value="${escapeHTML(app.id)}">${escapeHTML(app.displayName)}</option>`).join("");
   picker.value = state.currentApp;
   picker.onchange = async () => {
+    if (typeof closeOfferDelivery === "function") closeOfferDelivery();
     state.currentApp = picker.value;
     localStorage.setItem("admin-app", state.currentApp);
     await run(loadOffers);
@@ -184,38 +189,61 @@ async function loadApps() {
 }
 
 async function loadOffers() {
-  if (!state.currentApp) {
-    state.offerCreationAllowed = false;
-    syncPersistentControls();
-    $("#offers").innerHTML = '<article class="card empty">当前账号没有可管理的 App。</article>';
-    return;
+  const app=state.currentApp,generation=(state.offerLoadGeneration||0)+1;
+  state.offerLoadGeneration=generation;
+  if (!app) {
+    state.offerCreationAllowed=false;syncPersistentControls();
+    $('#offers').innerHTML='<article class="card empty">当前账号没有可管理的 App。</article>';return;
   }
-  const [data, metricData] = await Promise.all([
-    api(appPath("/offers")), api(appPath("/metrics/offers")).catch(() => ({ metrics: [] }))
+  const [data,metricData]=await Promise.all([
+    api(`/api/v1/apps/${encodeURIComponent(app)}/offers`).catch(error=>{
+      if(error.status===503&&error.code==='offer_service_unavailable')return {serviceUnavailable:true};
+      throw error;
+    }),
+    api(`/api/v1/apps/${encodeURIComponent(app)}/metrics/offers`).catch(()=>null)
   ]);
-  const offers = Array.isArray(data.offers) ? data.offers : [];
-  const production = (Array.isArray(metricData.metrics) ? metricData.metrics : [])
-    .filter(metric => metric.environment === "production");
-  const metrics = new Map(production.map(metric => [metric.offerIdentifier, metric]));
-  $("#redemption-count").textContent = production.reduce((sum, metric) => sum + metric.redemptions, 0);
-  $("#active-count").textContent = data.activeCount;
-  $("#active-limit").textContent = data.activeLimit;
-  $("#synced-at").textContent = formatTime(data.syncedAt);
-  state.offerCreationAllowed = !!data.writesEnabled && data.activeCount < data.activeLimit;
-  syncPersistentControls();
-  $("#offers").innerHTML = offers.length
-    ? offers.map(offer => offerCard(offer, metrics.get(offer.id), data.writesEnabled)).join("")
-    : '<article class="card empty">还没有 Offer。创建后再为它生成邀请码池。</article>';
-  $$('[data-codes]').forEach(button => button.onclick = () => openCodes(button.dataset.codes));
-  $$('[data-deactivate]').forEach(button => button.onclick = () => deactivate(button.dataset.deactivate, button.dataset.name));
+  if(generation!==state.offerLoadGeneration||app!==state.currentApp)return;
+  state.offerData=data;state.offerMetrics=metricData;
+  renderOffers();
 }
 
-function offerCard(offer, metric, writesEnabled) {
-  const chips = [durationLabels[offer.duration] || offer.duration, offer.autoRenewEnabled ? "到期自动续订" : "到期自动结束",
-    ...(offer.customerEligibilities || []).map(value => eligibilityLabels[value] || value), offer.active ? "启用中" : "已停用"];
-  const actions = offer.active && writesEnabled
-    ? `<button class="secondary" data-codes="${escapeHTML(offer.id)}">创建码池</button><button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>` : "";
-  return `<article class="card offer"><div><h3>${escapeHTML(offer.name)}</h3><div class="chips">${chips.map((value, index) => `<span class="chip ${!offer.active && index === chips.length - 1 ? "inactive" : ""}">${escapeHTML(value)}</span>`).join("")}</div><p class="muted"><small>正式码 ${offer.productionCodeCount || 0} · 沙盒码 ${offer.sandboxCodeCount || 0} · 已兑换 ${metric?.redemptions || 0} 次</small></p></div><div class="offer-actions">${actions}</div></article>`;
+function renderOffers(){
+  const data=state.offerData,metricData=state.offerMetrics;
+  if(!data)return;
+  $('#offer-service').classList.toggle('hidden',!!data.serviceUnavailable);
+  if(data.serviceUnavailable){
+    state.offerCreationAllowed=false;syncPersistentControls();
+    $('#offers').innerHTML='<article class="card empty" role="status">此环境的 Offer 服务尚未启用。可以使用其他管理功能。</article>';return;
+  }
+  const environment=$('#offer-environment').value;
+  const offers=Array.isArray(data.offers)?data.offers:[];
+  const rows=metricData?.metrics||[];
+  const selected=rows.filter(m=>m.environment.toLowerCase()===environment);
+  const metrics=new Map(selected.map(m=>[JSON.stringify([m.offerIdentifier,m.productID||'']),m]));
+  const summaries=new Map((data.deliverySummary||[]).filter(v=>v.environment===environment).map(v=>[v.offerID,v]));
+  $('#redemption-count').textContent=metricData?selected.reduce((sum,m)=>sum+m.redemptions,0):'暂不可用';
+  $('#offer-observation-note').textContent=metricData?'来自后端收到并验证的 Apple 交易，可能不含全部历史兑换。':'兑换统计读取失败，请刷新重试；不能据此判断没有兑换。';
+  $('#generated-count').textContent=offers.reduce((sum,o)=>sum+(environment==='production'?o.productionCodeCount:o.sandboxCodeCount),0);
+  $('#active-count').textContent=data.activeCount;$('#active-limit').textContent=data.activeLimit;
+  $('#synced-at').textContent=formatTime(data.syncedAt);
+  state.offerCreationAllowed=!!data.writesEnabled&&(data.creationActiveCount??data.activeCount)<data.activeLimit;syncPersistentControls();
+  const creation=offers.find(o=>o.subscriptionID===data.creationSubscriptionID);
+  $('#offer-scope-note').textContent=(data.inventoryScope==='app'?'已列出此 App 全部订阅产品的 Offer。':'当前仅列出配置的订阅产品；配置 App Apple ID 后可查看完整清单。')+(data.creationSubscriptionID?` 新建 Offer 的产品：${creation?.productID||data.creationSubscriptionID}。`:'');
+  $('#offers').innerHTML=offers.length?offers.map(o=>offerCard(o,metrics.get(JSON.stringify([o.name,o.productID||''])),data.writesEnabled,metricData!==null,environment,summaries.get(o.id),data.deliveryAvailable,o.productID?metrics.get(JSON.stringify([o.name,''])):null)).join(''):'<article class="card empty">还没有 Offer。创建后再为它生成邀请码池。</article>';
+  $$('[data-codes]').forEach(b=>b.onclick=()=>openOfferInventory(b.dataset.codes));
+  $$('[data-personal]').forEach(b=>b.onclick=()=>openPersonalDelivery(b.dataset.personal));
+  $$('[data-deactivate]').forEach(b=>b.onclick=()=>deactivate(b.dataset.deactivate,b.dataset.name));
+}
+$('#offer-environment').onchange=renderOffers;
+$('#offer-refresh').onclick=()=>run(loadOffers);
+
+function offerCard(offer,metric,writesEnabled,metricsAvailable,environment,summary,deliveryAvailable,legacyMetric){
+  const chips=[durationLabels[offer.duration]||offer.duration,offer.autoRenewEnabled?'到期自动续订':'到期自动结束',...(offer.customerEligibilities||[]).map(v=>eligibilityLabels[v]||v),offer.active?'启用中':'已停用'];
+  const actions=(environment==='production'&&deliveryAvailable?`<button class="primary" data-personal="${escapeHTML(offer.id)}">熟人发放</button>`:'')+`<button class="secondary" data-codes="${escapeHTML(offer.id)}">查看码池</button>`+(offer.active&&writesEnabled?`<button class="quiet" data-deactivate="${escapeHTML(offer.id)}" data-name="${escapeHTML(offer.name)}">停用</button>`:'');
+  const observed=!metricsAvailable?'统计暂不可用':metric?`已验证核销订阅 ${metric.redemptions} 个`:'尚未观测到核销';
+  const tracked=!deliveryAvailable?'发放统计暂不可用':summary?`登记申请 ${summary.applications} · 已发放 ${summary.delivered} · 待处理 ${summary.pending}（已纳入台账 ${summary.pools} 个码池）`:'尚未纳入发放台账';
+  const legacy=legacyMetric?`<p class="muted"><small>另有同参考名称的历史核销 ${legacyMetric.redemptions} 个，未记录产品，不能归入此产品。</small></p>`:'';
+  return `<article class="card offer"><div><h3>${escapeHTML(offer.name)}</h3>${offer.productID?`<p class="muted">${escapeHTML(offer.subscriptionName||offer.productID)}<br><small>${escapeHTML(offer.productID)}</small></p>`:''}<div class="chips">${chips.map((v,i)=>`<span class="chip ${!offer.active&&i===chips.length-1?'inactive':''}">${escapeHTML(v)}</span>`).join('')}</div><p class="muted"><small>${environment==='production'?'正式':'沙盒'}已生成 ${environment==='production'?offer.productionCodeCount:offer.sandboxCodeCount} 次兑换额度 · ${observed}</small></p>${legacy}<p class="muted"><small>${tracked}</small></p>${metric?`<small class="muted">最近收到核销记录：${formatTime(metric.lastRedeemedAt)}</small>`:''}</div><div class="offer-actions">${actions}</div></article>`;
 }
 
 async function reauthenticate() {
@@ -234,19 +262,19 @@ async function deactivate(id, name) {
 
 async function openCodes(id) {
   const form = $("#codes-form");
-  form.reset();
-  form.offerID.value = id;
-  form.expirationDate.value = new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10);
+  if (form.offerID.value !== id) {
+    form.reset();
+    form.offerID.value = id;
+    form.numberOfCodes.value = "500";
+    form.expirationDate.value = new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10);
+  }
+  const today = new Date();
+  const lastDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 7, 0)).getUTCDate();
+  form.expirationDate.min = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  form.expirationDate.max = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, Math.min(today.getUTCDate(), lastDay))).toISOString().slice(0, 10);
   toggleCodeKind();
   $("#codes-dialog").showModal();
-  const target = $("#code-pools");
-  target.textContent = "正在读取现有码池…";
-  try {
-    const data = await api(appPath(`/offers/${encodeURIComponent(id)}/code-pools`));
-    const pools = Array.isArray(data.codePools) ? data.codePools : [];
-    target.innerHTML = pools.length ? pools.map(poolRow).join("") : "还没有码池";
-    $$('[data-download-batch]').forEach(button => button.onclick = () => run(() => downloadBatch(button.dataset.downloadBatch)));
-  } catch (error) { target.textContent = error.message; }
+  $("#code-pools").classList.add("hidden");
 }
 
 function poolRow(pool) {
@@ -274,10 +302,18 @@ async function downloadBatch(id, shouldReauthenticate = true) {
 }
 
 function toggleCodeKind() {
-  const oneTime = $("#codes-form").kind.value === "oneTime";
+  const form = $("#codes-form");
+  const oneTime = form.kind.value === "oneTime";
+  const sandbox = oneTime && form.environment.value === "SANDBOX";
   $("#custom-code-label").classList.toggle("hidden", oneTime);
   $("#environment-label").classList.toggle("hidden", !oneTime);
-  $("#codes-form").code.required = !oneTime;
+  form.code.required = !oneTime;
+  form.code.disabled = oneTime;
+  const previous = Number(form.numberOfCodes.value);
+  const counts = sandbox ? [10, 100, 500, 1000] : Array.from({ length: 50 }, (_, index) => (index + 1) * 500);
+  form.numberOfCodes.innerHTML = '<option value="">请选择兑换次数</option>' + counts.map(count => `<option value="${count}">${count.toLocaleString("zh-CN")}</option>`).join("");
+  form.numberOfCodes.value = counts.includes(previous) ? String(previous) : "";
+  $("#code-count-help").textContent = sandbox ? "沙盒码仅供测试，可选 10、100、500 或 1,000 个。" : "正式邀请码以 500 为一批，最多 25,000 次。";
 }
 
 async function loadPasskeys() {
@@ -398,6 +434,15 @@ async function loadAudit() {
 }
 
 async function showSection(name) {
+  if(name!=="ai" && typeof ai!=="undefined" && ai.dirty){
+    if(!confirm("放弃尚未发布的参数修改？"))return;
+    ai.dirty=false;
+  }
+  if (typeof platform !== "undefined" && platform.busy) return;
+  if (name !== "platform" && typeof platform !== "undefined" && platform.dirty) {
+    if (!confirm("放弃尚未发布的服务配置？")) return;
+    platform.dirty = false;
+  }
   $$('.workspace-section').forEach(section => section.classList.add("hidden"));
   $$('.tab').forEach(tab => {
     const active = tab.dataset.section === name;
@@ -406,6 +451,10 @@ async function showSection(name) {
     tab.tabIndex = active ? 0 : -1;
   });
   $(`#${name}-section`).classList.remove("hidden");
+  if (name === "ai") await loadAI();
+  else if (typeof stopAI === "function") stopAI();
+  if (name === "platform") await loadPlatform();
+  else if (typeof stopPlatform === "function") stopPlatform();
   if (name === "security") await loadPasskeys();
   if (name === "people") await loadPeople();
   if (name === "audit") await loadAudit();
@@ -534,6 +583,7 @@ $("#confirm-create").onclick = () => run(async () => {
 });
 
 $("#codes-form").kind.onchange = toggleCodeKind;
+$("#codes-form").environment.onchange = toggleCodeKind;
 $("#codes-form").onsubmit = event => {
   event.preventDefault();
   run(async () => {
@@ -549,8 +599,9 @@ $("#codes-form").onsubmit = event => {
       method: "POST", body, csrfRequired: true, idempotent: true
     });
     $("#codes-dialog").close();
-    if (kind === "oneTime") await downloadBatch(data.codePool.id, false);
-    else notice(`自定义码 ${data.codePool.code} 已创建`);
+    $("#codes-form").offerID.value = "";
+    notice("码池已创建，可在发放管理中登记领取人");
+    if (typeof openOfferInventory === "function") await openOfferInventory(id);
     await loadOffers();
   });
 };

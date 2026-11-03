@@ -1,0 +1,72 @@
+{
+  "scope": "Shared gateway recording runtime, environment-bound storage, privacy deletion and lifecycle retention; local verification only",
+  "base": "83735064a91e5c24f049683cd8206298d181e803",
+  "production_modified": false,
+  "remote_deployed": false,
+  "existing_user_data_modified": false,
+  "validation": {
+    "go_all": {
+      "passed_packages": 60,
+      "packages_without_tests": 13,
+      "passed_test_events_including_subtests": 2335,
+      "skipped_test_events_including_subtests": 651,
+      "failures": 0
+    },
+    "race_packages": [
+      "cmd/gateway",
+      "internal/config",
+      "internal/journal/voice",
+      "internal/journal/recordinghttp",
+      "internal/journal/development"
+    ],
+    "vet": "gateway, maintenance, config, recordinghttp and voice passed",
+    "linux_amd64_build": "gateway and maintenance passed",
+    "privacy_cases": [
+      "Durable owner fence blocks late upload and provider settlement after deletion",
+      "Active upload files unlinked while upload is still in flight",
+      "Late preview is neither delivered nor cached",
+      "Other owner retained; repeated deletion survives downstream cache-cleanup failure",
+      "Fence survives reopening store"
+    ],
+    "environment_cases": [
+      "Root must be private and end in the exact environment",
+      "Wrong volume marker rejected before cleanup",
+      "Unmarked nonempty private-service directory not silently adopted",
+      "Disabled generation retains configured root for deletion and retention",
+      "Enabled processing requires voice configuration, MySQL and shared budget"
+    ],
+    "provider": "synthetic responses only",
+    "diff_check": "passed"
+  },
+  "corrections": [
+    "Fixed test database account name to the existing required _test suffix; no production configuration changed",
+    "Shared store opening does not run cleanup before lifecycle activation",
+    "Associated upload staging names with owners so deletion unlinks in-flight staging files"
+  ],
+  "not_verified": [
+    "Persistent volume mount and UID/permission provisioning on server",
+    "Backup and restore binding including deletion-fence preservation",
+    "Remote runtime activation and scheduled maintenance acceptance",
+    "Old private-service state transition and retirement",
+    "Native client authentication, real cloud calls and device journeys"
+  ],
+  "sha256": {
+    "cmd/gateway/journal_recording.go": "f2d3d76ff02291cf6551ba45c15b3e807b2c6003c105daf87b399e48dc9ec4f8",
+    "cmd/gateway/journal_recording_test.go": "86358e3c29760cdf73e4bf8e786c646de271ae33318fa42e9a374861417a2151",
+    "cmd/gateway/main.go": "c6272a6ae728e2ae55759f3565ecbdbfb86cf7c4e481f837e2e5fa6544318dd4",
+    "cmd/maintenance/main.go": "a26c6976b8e9157982eddddd6c51d0f5d9db07b72141c6b0b8387755ffe37a4e",
+    "deploy/single-server/production.env.example": "c52cd93b01ddb86e21aabc046d92ed78bb08467d5b28b052b12dbc3232a08c87",
+    "docs/journal/recording-analysis-validation.md": "055df9c9b7276ef9348090e93d3e5690d7a09c692c262812081ded605005bae2",
+    "docs/unified-app-environments.md": "0b6ddb62608b893d691f25fc13c0ac2daf659282cedc22ac9d0048c0ecef8848",
+    "internal/config/journal_recording.go": "bdb482b4ef946c454f2423dbbb1f4824c5189d844fc3a761d37043f560a0e121",
+    "internal/config/journal_recording_test.go": "14e0d2e180d3dca9a433076fb8b9be5a6b5172d473e7d9b4b992213c6c05b6db",
+    "internal/config/platform.go": "6df7f77c4fcd6d560397fc9237c5e9e0ab1b4bc1cacfc7aee9eaa3565b637565",
+    "internal/journal/recordinghttp/handler.go": "b572356ea1bbcc029dd43840477036d9b2ea5c77561d461b36529b6198a3ceb0",
+    "internal/journal/recordinghttp/preview.go": "2690391e940d67afa3b952153ae584fbcdfcfd9749e8a11d1fc2c0ce8f7d0d54",
+    "internal/journal/recordinghttp/privacy_test.go": "ca16e41e6408adf7d4022dbe1e6751c75982155686195cfd6cc99c84f17d6de1",
+    "internal/journal/voice/recording_environment.go": "bdb86b0fdbcbb73d01693666c18925ecbeab6ae48a6d0ea481355af7ba6adada",
+    "internal/journal/voice/recording_jobs.go": "d5162fb37983385f463dc68c806366ca3691a0494a0217ae3bfadacd4b3f10a8",
+    "internal/journal/voice/recording_privacy.go": "61d8d12f528d4d4f3820fed6ef53b0d9a2152817d50c13ddf958afa0a2676630",
+    "internal/journal/voice/recording_privacy_test.go": "0320258a17b50ad4a1d650959208320e1425f2653d2715a6aa590e53a5bc4eec"
+  }
+}

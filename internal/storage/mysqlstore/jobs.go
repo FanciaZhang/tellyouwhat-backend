@@ -43,8 +43,8 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 	count, err := affectedRows(transaction.ExecContext(ctx, `
         INSERT INTO ai_jobs
 			(app_id, id, request_id, body_digest, owner_key_id, owner_device_id, owner_transaction_id,
-             request_ciphertext, request_nonce, status, created_at, updated_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             request_ciphertext, request_nonce, status, created_at, updated_at, expires_at, operation)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE request_id = VALUES(request_id)`,
 		repository.appID,
 		job.ID,
@@ -59,6 +59,7 @@ func (repository *JobRepository) CreateOrGet(ctx context.Context, job jobs.Job) 
 		job.CreatedAt,
 		job.UpdatedAt,
 		job.ExpiresAt,
+		string(job.Request.Operation),
 	))
 	if err != nil {
 		return jobs.Job{}, err
@@ -175,6 +176,10 @@ func (repository *JobRepository) Succeed(
 	); err != nil {
 		return err
 	}
+	if err := observeFree(ctx, transaction, repository.appID, usageRecord); err != nil {
+		return err
+	}
+
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM job_dispatch_outbox WHERE app_id = ? AND job_id = ?`, repository.appID, jobID); err != nil {
 		return err
 	}
@@ -201,6 +206,29 @@ func (repository *JobRepository) Fail(ctx context.Context, jobID string, attempt
 		return err
 	}
 	return transaction.Commit()
+}
+
+func (repository *JobRepository) DeferAdmission(ctx context.Context, jobID string, attempt int, now time.Time) error {
+	if attempt < 1 {
+		return jobs.ErrJobNotClaimable
+	}
+	tx, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	n, err := affectedRows(tx.ExecContext(ctx, `UPDATE ai_jobs SET status='queued',attempt_count=attempt_count-1,claim_expires_at=NULL,updated_at=? WHERE app_id=? AND id=? AND status='running' AND attempt_count=? AND expires_at>? AND claim_expires_at>?`, now, repository.appID, jobID, attempt, now, now))
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return jobs.ErrJobNotClaimable
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO job_dispatch_outbox(app_id,job_id,available_at) VALUES(?,?,?) ON DUPLICATE KEY UPDATE available_at=VALUES(available_at),claimed_until=NULL`, repository.appID, jobID, now.Add(time.Minute))
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (repository *JobRepository) RetryOrFail(ctx context.Context, jobID string, attempt int, category string, now time.Time) (bool, error) {

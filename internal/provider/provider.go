@@ -8,6 +8,7 @@ import (
 )
 
 type Response struct {
+	ActualModel  string `json:"-"`
 	Content      string `json:"content"`
 	InputTokens  int    `json:"inputTokens"`
 	OutputTokens int    `json:"outputTokens"`

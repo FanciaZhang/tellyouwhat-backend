@@ -602,6 +602,12 @@ paths:
           AppAttestRequestID: []
       parameters:
         - "$ref": "#/components/parameters/RequestIDHeader"
+        - in: header
+          name: X-Health-Job-Result-Delivery
+          required: false
+          description: Send download-v1 to request a resultToken. Without opt-in the response retains the legacy closed schema.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -738,6 +744,33 @@ paths:
           "$ref": "#/components/responses/ServiceUnavailable"
         default:
           "$ref": "#/components/responses/Error"
+  "/v1/ai/jobs/{id}/result":
+    get:
+      operationId: downloadAIJobResult
+      tags: [Health, Jobs]
+      summary: Wait up to four minutes for a job result for a system background download
+      description: Reusable read-only capability bound to one job and owner. A nonterminal response can be downloaded again without resubmitting inference. Responses must not be cached.
+      security:
+        - JobResultAuthentication: []
+      parameters:
+        - "$ref": "#/components/parameters/JobIDPath"
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - "$ref": "#/components/parameters/JobResultCapabilityHeader"
+      responses:
+        '200':
+          description: Terminal job state, or current state after the bounded wait.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AIJob"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
 components:
   securitySchemes:
     AppAttestKeyID:
@@ -769,6 +802,11 @@ components:
       type: apiKey
       in: header
       name: X-Tellyouwhat-Dev-Activation
+    JobResultAuthentication:
+      type: apiKey
+      in: header
+      name: X-Health-Job-Result-Capability
+      description: Expiring reusable read-only capability for one job.
     JobCapabilityAuthentication:
       type: apiKey
       in: header
@@ -794,6 +832,13 @@ components:
       schema:
         type: string
         format: uuid
+    JobResultCapabilityHeader:
+      in: header
+      name: X-Health-Job-Result-Capability
+      required: true
+      schema:
+        type: string
+        minLength: 1
     JobIDHeader:
       in: header
       name: X-Health-Job-ID
@@ -1062,12 +1107,15 @@ components:
           type: string
           enum:
             - adult
+            - age_14_plus
+            - guardian_consent
             - privacy_and_terms
             - lifetime_byok
             - managed_subscription
             - free_managed_recognition
             - sensitive_health_ai
             - journal_illustration
+            - journal_read_aloud
         documentVersion:
           type: string
           minLength: 1
@@ -1083,7 +1131,7 @@ components:
         consents:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 8
           items:
             "$ref": "#/components/schemas/PrivacyConsent"
     PrivacyConsentResponse:
@@ -1099,7 +1147,7 @@ components:
         count:
           type: integer
           minimum: 1
-          maximum: 6
+          maximum: 7
     QuotaSnapshot:
       type: object
       additionalProperties: false
@@ -1415,6 +1463,10 @@ components:
         - token
         - expiresAt
       properties:
+        resultToken:
+          type: string
+          minLength: 1
+          description: Read-only result capability with the same expiresAt; returned only for download-v1 opt-in.
         jobID:
           type: string
           format: uuid

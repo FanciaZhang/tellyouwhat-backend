@@ -2,12 +2,15 @@ package gateway
 
 import (
 	"context"
+	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/entitlement"
@@ -15,6 +18,8 @@ import (
 	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -26,12 +31,6 @@ import (
 )
 
 type Principal = attestation.Principal
-type JournalIllustrations interface {
-	Create(context.Context, Principal, illustration.Confirmation, []byte) (illustration.Task, error)
-	Status(context.Context, Principal, string) (illustration.Task, error)
-	Cancel(context.Context, Principal, string, uint64) (illustration.Task, error)
-	Result(context.Context, Principal, string) (illustration.Result, error)
-}
 type RequestProof = attestation.RequestProof
 
 type Authenticator interface {
@@ -43,6 +42,7 @@ type EntitlementChecker interface {
 }
 
 type Quota interface {
+	PrepareJob(context.Context, quota.Identity, contracts.Operation, int, string, time.Time) error
 	Acquire(context.Context, quota.Identity, contracts.Operation, int, string, time.Time) (quota.Releaser, error)
 }
 
@@ -94,6 +94,7 @@ type JobService interface {
 }
 
 type JobCapabilityService interface {
+	ValidateResult(string, string) (Principal, string, error)
 	IssueWithOutputBudgetAt(Principal, capability.Binding, time.Time, contracts.OutputBudget) (capability.Issued, error)
 	ValidateWithOutputBudget(string, capability.Binding) (Principal, contracts.OutputBudget, error)
 	Consume(context.Context, string, capability.Binding) (Principal, error)
@@ -132,9 +133,24 @@ type ManagedProduct struct {
 	SupportURL        string `json:"supportURL"`
 }
 
+type PolicyResolver interface {
+	Resolve(context.Context, contracts.Request) (contracts.Request, error)
+}
+
 type Dependencies struct {
+	ReadAloudSimulatorAuthenticator Authenticator
+
+	ReadAloudSessions          *readaloud.SessionService
+	ReadAloudAccess            ReadAloudAccess
+	ReadAloudCatalog           ReadAloudCatalogReader
+	JournalRecordings          *recordinghttp.Handler
+	JournalIllustrations       *illustration.Service
+	BirthdayAssistant          birthday.Assistant
+	Operations                 platformops.Reader
+	ExecutionPolicies          PolicyResolver
+	PromptConfig               *promptconfig.Cache
 	Voice                      *voice.Service
-	VoiceEntitlements          entitlement.Store
+	VoiceEntitlements          entitlement.Reader
 	App                        appregistry.App
 	Authenticator              Authenticator
 	Entitlements               EntitlementChecker
@@ -162,15 +178,26 @@ type Dependencies struct {
 	RequiredConsentScopes      []string
 	AllowedConsentScopes       []string
 	JournalOrganizer           JournalOrganizer
-	JournalIllustrations       JournalIllustrations
 	JournalAnalysisVersion     string
 	ManagedProduct             ManagedProduct
 	HTTPMiddleware             []gin.HandlerFunc
 }
 
 type Server struct {
+	readAloudSimulatorAuthenticator Authenticator
+
+	readAloudSessions          *readaloud.SessionService
+	readAloudAccess            ReadAloudAccess
+	readAloudStreams           chan struct{}
+	readAloudCatalog           ReadAloudCatalogReader
+	journalRecordings          *recordinghttp.Handler
+	journalIllustrations       *illustration.Service
+	birthdayAssistant          birthday.Assistant
+	operations                 platformops.Reader
+	executionPolicies          PolicyResolver
+	promptConfig               *promptconfig.Cache
 	voice                      *voice.Service
-	voiceEntitlements          entitlement.Store
+	voiceEntitlements          entitlement.Reader
 	app                        appregistry.App
 	authenticator              Authenticator
 	entitlements               EntitlementChecker
@@ -198,7 +225,6 @@ type Server struct {
 	requiredConsentScopes      []string
 	allowedConsentScopes       map[string]struct{}
 	journalOrganizer           JournalOrganizer
-	journalIllustrations       JournalIllustrations
 	journalAnalysisVersion     string
 	managedProduct             ManagedProduct
 	httpMiddleware             []gin.HandlerFunc
@@ -219,10 +245,10 @@ func New(dependencies Dependencies) *Server {
 	}
 	if len(dependencies.AllowedConsentScopes) == 0 {
 		if dependencies.App.ID == appregistry.Journal {
-			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
+			dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
 		} else {
 			dependencies.AllowedConsentScopes = []string{
-				privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+				privacy.AdultScope, privacy.Age14PlusScope, privacy.GuardianConsentScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
 				privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
 			}
 		}
@@ -232,7 +258,19 @@ func New(dependencies Dependencies) *Server {
 		allowedConsentScopes[scope] = struct{}{}
 	}
 	server := &Server{
-		voice: dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
+		readAloudSimulatorAuthenticator: dependencies.ReadAloudSimulatorAuthenticator,
+
+		readAloudSessions:    dependencies.ReadAloudSessions,
+		readAloudAccess:      dependencies.ReadAloudAccess,
+		readAloudStreams:     make(chan struct{}, 64),
+		readAloudCatalog:     dependencies.ReadAloudCatalog,
+		journalIllustrations: dependencies.JournalIllustrations,
+		journalRecordings:    dependencies.JournalRecordings,
+		birthdayAssistant:    dependencies.BirthdayAssistant,
+		operations:           dependencies.Operations,
+		executionPolicies:    dependencies.ExecutionPolicies,
+		promptConfig:         dependencies.PromptConfig,
+		voice:                dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,
@@ -260,7 +298,6 @@ func New(dependencies Dependencies) *Server {
 		requiredConsentScopes:      append([]string(nil), dependencies.RequiredConsentScopes...),
 		allowedConsentScopes:       allowedConsentScopes,
 		journalOrganizer:           dependencies.JournalOrganizer,
-		journalIllustrations:       dependencies.JournalIllustrations,
 		journalAnalysisVersion:     dependencies.JournalAnalysisVersion,
 		managedProduct:             dependencies.ManagedProduct,
 		httpMiddleware:             append([]gin.HandlerFunc(nil), dependencies.HTTPMiddleware...),

@@ -1,0 +1,8 @@
+{
+  "app": "Journal development",
+  "build": "35",
+  "app_repair_source": "08fb5cd75e28baae5dd32f7ddb2be28c3ec2dbd8",
+  "scope": "Append Journal build 35 and retain bounded development access; preserve purchases and all other App configuration",
+  "production_changed": false,
+  "app_candidate_source": "3401d7e212b97cd51d29b86e9027069291ab3b25"
+}

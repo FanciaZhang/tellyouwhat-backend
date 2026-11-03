@@ -9,19 +9,23 @@ import (
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 var (
-	ErrProductionSyncDenied    = errors.New("production entitlement sync denied")
-	ErrSubscriptionInactive    = errors.New("managed subscription is inactive")
-	ErrSubscriptionUnavailable = errors.New("managed subscription verification unavailable")
+	ErrProductionSyncDenied        = errors.New("production entitlement sync denied")
+	ErrSubscriptionInactive        = errors.New("managed subscription is inactive")
+	ErrSubscriptionUnavailable     = errors.New("managed subscription verification unavailable")
+	ErrSubscriptionBindingConflict = errors.New("managed subscription binding conflict")
 )
 
 type SubscriptionState struct {
+	Payment               purchase.Evidence
 	OriginalTransactionID string
 	TransactionID         string
 	Environment           string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	ExpiresAt             time.Time
 	StartedAt             time.Time
@@ -52,6 +56,59 @@ type TransactionBinder interface {
 	BindTransaction(context.Context, string, string) error
 }
 
+// VerifiedTransactionStore commits the verified entitlement and device binding
+// together while retaining a separate purchase binding for each StoreKit environment.
+type VerifiedTransactionStore interface {
+	UpsertVerified(context.Context, Record) error
+}
+
+// VerifiedTransactionBindings keeps environment switches from replacing an already
+// bound purchase in the other environment.
+type VerifiedTransactionBindings struct {
+	ProductionID string
+	SandboxID    string
+}
+
+func BindVerifiedTransaction(boundID string, existing Record, incoming Record, bindings VerifiedTransactionBindings, now time.Time) (VerifiedTransactionBindings, bool) {
+	if existing.TransactionID != boundID {
+		return bindings, false
+	}
+	bind := func(id, environment string) bool {
+		if id == "" {
+			return false
+		}
+		var anchor *string
+		switch environment {
+		case "production":
+			anchor = &bindings.ProductionID
+		case "sandbox":
+			anchor = &bindings.SandboxID
+		default:
+			return false
+		}
+		if *anchor != "" && *anchor != id {
+			return false
+		}
+		*anchor = id
+		return true
+	}
+	// Existing verified records seed bindings for devices enrolled before the
+	// environment-specific anchors were introduced.
+	if boundID != "" && !bind(boundID, existing.Environment) {
+		return bindings, false
+	}
+	// Old Sandbox accounts keep renewing after sign-out; verified client sync selects the current account.
+	if existing.Environment == "sandbox" && incoming.Environment == "sandbox" &&
+		existing.TransactionID != incoming.TransactionID && !existing.ExpiresAt.IsZero() &&
+		incoming.ExpiresAt.After(now) {
+		bindings.SandboxID = ""
+	}
+	if !bind(incoming.TransactionID, incoming.Environment) {
+		return bindings, false
+	}
+	return bindings, true
+}
+
 func NewProductionService(store Store, resolver SubscriptionResolver, now func() time.Time) *ProductionService {
 	if now == nil {
 		now = time.Now
@@ -69,8 +126,12 @@ func (service *ProductionService) Sync(
 	principal attestation.Principal,
 	signedTransaction string,
 ) (time.Time, error) {
-	if service == nil || service.store == nil || service.resolver == nil || service.binder == nil || principal.KeyID == "" ||
+	if service == nil || service.store == nil || service.resolver == nil || principal.KeyID == "" ||
 		strings.TrimSpace(signedTransaction) == "" {
+		return time.Time{}, ErrProductionSyncDenied
+	}
+	verifiedStore, atomicBinding := service.store.(VerifiedTransactionStore)
+	if !atomicBinding && service.binder == nil {
 		return time.Time{}, ErrProductionSyncDenied
 	}
 	state, err := service.resolver.Resolve(ctx, signedTransaction)
@@ -85,6 +146,7 @@ func (service *ProductionService) Sync(
 		return time.Time{}, ErrSubscriptionInactive
 	}
 	record := Record{
+		Payment:            state.Payment,
 		KeyID:              principal.KeyID,
 		TransactionID:      state.OriginalTransactionID,
 		ExpiresAt:          state.ExpiresAt,
@@ -92,8 +154,15 @@ func (service *ProductionService) Sync(
 		Environment:        environment,
 		OfferTransactionID: state.TransactionID,
 		OfferIdentifier:    state.OfferIdentifier,
+		ProductID:          state.ProductID,
 		OfferType:          state.OfferType,
 		OfferSignedAt:      state.SignedAt,
+	}
+	if atomicBinding {
+		if err := verifiedStore.UpsertVerified(ctx, record); err != nil {
+			return time.Time{}, err
+		}
+		return state.ExpiresAt, nil
 	}
 	if err := service.binder.BindTransaction(ctx, principal.KeyID, state.OriginalTransactionID); err != nil {
 		if errors.Is(err, attestation.ErrTransactionBindingConflict) {

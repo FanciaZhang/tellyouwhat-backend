@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 const (
@@ -17,6 +19,7 @@ const (
 var (
 	ErrSubscriptionInactive = errors.New("app store subscription is inactive")
 	ErrStatusUnavailable    = errors.New("app store subscription status is unavailable")
+	errRetryableStatus      = fmt.Errorf("%w: Apple retryable internal error", ErrStatusUnavailable)
 )
 
 type SubscriptionStatus struct {
@@ -30,10 +33,12 @@ type StatusClient interface {
 }
 
 type SubscriptionState struct {
+	Payment               purchase.Evidence
 	OriginalTransactionID string
 	TransactionID         string
 	Environment           string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	ExpiresAt             time.Time
 	StartedAt             time.Time
@@ -68,8 +73,12 @@ func (resolver *SubscriptionResolver) Resolve(
 	if err != nil {
 		return SubscriptionState{}, err
 	}
-	statuses, err := resolver.client.CurrentTransactions(ctx, submitted.TransactionID)
+	// Query the stable subscription chain; Sandbox can reject a renewal ID.
+	statuses, err := resolver.client.CurrentTransactions(ctx, submitted.OriginalTransactionID)
 	if err != nil {
+		if errors.Is(err, errRetryableStatus) && resolver.verifier.config.Environment == "Sandbox" {
+			return resolver.resolveSandboxTransaction(ctx, submitted)
+		}
 		if errors.Is(err, ErrTransactionNotFound) {
 			return SubscriptionState{}, ErrTransactionNotFound
 		}
@@ -110,13 +119,45 @@ func (resolver *SubscriptionResolver) Resolve(
 		return SubscriptionState{}, ErrSubscriptionInactive
 	}
 	return SubscriptionState{
+		Payment:               active.Payment,
 		OriginalTransactionID: active.OriginalTransactionID,
 		TransactionID:         active.TransactionID,
 		Environment:           active.Environment,
 		OfferIdentifier:       active.OfferIdentifier,
+		ProductID:             active.ProductID,
 		OfferType:             active.OfferType,
 		ExpiresAt:             active.ExpiresAt,
 		StartedAt:             active.StartedAt,
 		SignedAt:              active.SignedAt,
+	}, nil
+}
+
+// A fresh Apple transaction still requires full JWS and current validity checks.
+func (resolver *SubscriptionResolver) resolveSandboxTransaction(ctx context.Context, submitted Transaction) (SubscriptionState, error) {
+	client, ok := resolver.client.(interface {
+		SignedTransaction(context.Context, string) (string, error)
+	})
+	if !ok {
+		return SubscriptionState{}, ErrStatusUnavailable
+	}
+	signed, err := client.SignedTransaction(ctx, submitted.TransactionID)
+	if err != nil {
+		return SubscriptionState{}, fmt.Errorf("%w: refresh transaction: %v", ErrStatusUnavailable, err)
+	}
+	current, err := resolver.verifier.VerifyTransaction(signed)
+	if err != nil {
+		return SubscriptionState{}, err
+	}
+	if current.TransactionID != submitted.TransactionID || current.OriginalTransactionID != submitted.OriginalTransactionID || current.ProductID != submitted.ProductID {
+		return SubscriptionState{}, ErrInvalidSignedData
+	}
+	if current.RevokedAt != nil || current.IsUpgraded || !resolver.now().Before(current.ExpiresAt) {
+		return SubscriptionState{}, ErrSubscriptionInactive
+	}
+	return SubscriptionState{
+		Payment: current.Payment, OriginalTransactionID: current.OriginalTransactionID,
+		TransactionID: current.TransactionID, Environment: current.Environment,
+		OfferIdentifier: current.OfferIdentifier, ProductID: current.ProductID, OfferType: current.OfferType,
+		ExpiresAt: current.ExpiresAt, StartedAt: current.StartedAt, SignedAt: current.SignedAt,
 	}, nil
 }

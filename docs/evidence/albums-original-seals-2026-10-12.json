@@ -1,0 +1,115 @@
+{
+  "startedAt": "2026-10-12T08:40:41.858759+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-original-seals-93vb0ydm",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-original-seals-93vb0ydm/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 48
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "59c052c8ac37e434d4b74849f3d9d30329144163c98aa6c7de6f0ef5de723935"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-original-seals-93vb0ydm/related-race.log",
+      "testCounts": {
+        "pass": 662
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "ce77145d43416fcbc653c1591376c7db987892717f14d4c7b4d45f384fb2d565"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-original-seals-93vb0ydm/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-original-seals-93vb0ydm/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T08:42:09.255124+00:00",
+  "migrationSupplement": {
+    "startedAt": "2026-10-12T08:42:51.200004+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-seal-migration-0_9vaabu",
+    "phases": [
+      {
+        "name": "targeted-after-fix",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-seal-migration-0_9vaabu/targeted-after-fix.log",
+        "testCounts": {
+          "pass": 1
+        },
+        "failures": [],
+        "skips": [],
+        "logSHA256": "2ce3c3edce78fbc2018e3a5ed3d2a70c01ced9b9a6e882080e24bd7e975b7abc"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-12T08:42:57.945040+00:00"
+  },
+  "baselineCommit": "4895b8b23bf1b9bf5c821b7acfa0ae6bd2ab33a2",
+  "scope": "Durable per-resource original archive intent, source preflight before authorization, exact-version recovery without a second COPY, legacy migration, and purge admission requiring non-legacy matching receipts.",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "2144e8a344b54373ae08f079ed1cc521d24e8021fa8228b4ba5ee205ed9be545",
+    "deploy/albums/README.md": "94d8d511a0ea9fa258a3d2ad69758450bb2f0093290d7c23560d4ce8e213251a",
+    "go.mod": "07e29eb08d5f3eb17ff2384f52ac698cc8dc62751f24872a23c669d1c53181e4",
+    "go.sum": "482208831ce6ee224373892552f80b460ceb8099f2c47f5a43a47b892929bb9b",
+    "internal/albums/cos_objects.go": "3fee2a331d26cc529e52af79de3d08757c9bb807a2171d93028f31ab8b77b101",
+    "internal/albums/cos_objects_test.go": "fa22184bed77352d84f0d2eb0943f0c3f048d7d49e9ce4531ccc4a357f73bce3",
+    "internal/albums/library.go": "b55f01b20df8efea0a76f8aacbd9db3bcd55ff458bb518c6b1e401db52741411",
+    "internal/albums/live_photo_previews_test.go": "44fd53fb7aef1e79899624579303ad79b30eac6f204989cde77e02241260e471",
+    "internal/albums/mysql_photo_writes_integration_test.go": "cd48293c52c88c19b6bd0c0882f41ce25d54c1fd050893759b90422617abe62e",
+    "internal/albums/object_purge_admission.go": "62ccc75d8aedcb3fcdeb1a6a94944a6b8960cdfe93a84868d6b70a476db6e33a",
+    "internal/albums/original_seals.go": "6bb449f002cf79510bf4b60dfe9d69348cc8ab38d44ac26a5284865714fba1fb",
+    "internal/albums/original_seals_integration_test.go": "a1a155641cac6510ca4c284af44f0057cac3d8b0b6b10a1c52f1479a7481f3ed",
+    "internal/albums/original_seals_test.go": "c3827079f7dbecf6b4709bc5d2c1286eec855af32bf01d0c559889ddeaaffc0b",
+    "internal/albums/uploads.go": "559057cae64d6158072eee76cbaef191739f76fca82d9fd7eeeb5244ad5016ea",
+    "internal/albums/uploads_test.go": "0a206886e43e17453db509053b90fbcd655c1705b6c882afcd30f10386bd0c52",
+    "internal/albums/worker_test.go": "87535d2148c4f767c4b347eef1ce0490f88bbb1c230152b1e150745dac949675",
+    "migrations/0038_album_original_seals.sql": "b905fbf5fabe0ed949207f9cf5443d3ad6d9d64538bc244e28013340c163654c",
+    "migrations/embed_test.go": "6d8af5e738ba02c8f73c5895979a25f02658acbf24175cc63aaaf533a64c377d"
+  },
+  "validationBinding": "Production code was unchanged after the 662-case related race run. The final integration-test file additionally covers an unjournaled pre-migration verifying upload; the supplemental isolated migration test passed. Deployment instructions were added after testing.",
+  "priorFailure": "Initial unit smoke test failed because the cleanup-failure fixture had no staging bytes for the newly required preflight. Seeded those synthetic bytes; the targeted and related suites then passed.",
+  "verified": [
+    "One winner among eight concurrent per-resource grants",
+    "Lease replacement and process reconstruction never repeat a consumed COPY",
+    "Lost COPY response recovers an exact archive version without staging; quota charged once",
+    "Read failure reuses the stored archive version; preflight failure does not consume an intent",
+    "Missing or denied archive observations never issue another write or complete backup",
+    "Late positive receipt survives lease expiry and logical trash, but cannot overwrite a different version",
+    "Foreign owner/resource, expiry, trash and database write failures do not create a grant",
+    "Migration marks both published and in-flight legacy resources, keeps existing backups readable, prevents duplicate COPY and refuses to invent quiescence",
+    "Purge admission requires each original resource to have a matching non-legacy receipt"
+  ],
+  "notVerified": [
+    "Real COS COPY and multipart-copy failure/recovery",
+    "Outcome of writes with no positive provider receipt; these remain pending with reservation retained",
+    "Late client staging writes, abandoned upload retirement, full account deletion and independent backup restoration deletion propagation",
+    "Production migration or scheduling; old workers must be drained before migration and cannot run beside new workers",
+    "iOS device/build behavior in this backend-only change; HTTP contract and Swift sources unchanged"
+  ],
+  "research": [
+    {
+      "url": "https://cloud.tencent.com/document/product/436/7740",
+      "finding": "AbortMultipartUpload cancels the specified upload ID and makes concurrent UploadPart fail. It does not establish a terminal outcome for an unrelated COPY."
+    },
+    {
+      "url": "https://cloud.tencent.com/document/product/436/68284",
+      "finding": "The presigned-URL guide describes expiry interrupting requests. This is documentation evidence, not a live COS quiescence test."
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "observedAt": "2026-10-21T04:19:03.982037+00:00",
+  "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+  "rollbackSource": "cfddf0fbfeeefee68c4c17965848e7c51ae887c3",
+  "containers": [
+    {
+      "service": "gateway",
+      "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+      "image": "tellyouwhat-platform-test-gateway:78bdb99e3b00450fc48768fef314d660f42766b9",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    },
+    {
+      "service": "worker",
+      "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+      "image": "tellyouwhat-platform-test-worker:78bdb99e3b00450fc48768fef314d660f42766b9",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    },
+    {
+      "service": "admin",
+      "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+      "image": "tellyouwhat-platform-test-admin:78bdb99e3b00450fc48768fef314d660f42766b9",
+      "running": true,
+      "restarts": 0,
+      "uid": "65532:65532",
+      "oom": false
+    }
+  ],
+  "ready": true,
+  "privateConfigurationVerified": true,
+  "installedOperationsVerified": true,
+  "productionStateSHA256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+  "rootCaddySHA256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+  "cleanup": {
+    "apple_delivery": null,
+    "completed_at": 1792555434,
+    "errors": [],
+    "free_bytes_after": 13863841792,
+    "free_bytes_before": 13863845888,
+    "operation": "artifacts-platform-test",
+    "passed": true,
+    "reclaimed_bytes": -4096,
+    "removed_files": [],
+    "removed_images": []
+  },
+  "backup": {
+    "adminConfigurationBound": true,
+    "configurationRecoveryVerified": true,
+    "exitCode": 0,
+    "filename": "mysql-20261021T040830Z-95a2af.sql.gz.enc",
+    "finishedAt": 1792555737.525355,
+    "manifestAuthenticated": true,
+    "newTestSourceBound": true,
+    "newTestStateBound": true,
+    "offsiteReadbackVerifiedObjects": 3,
+    "pid": 1851695,
+    "readAloudOverlayBound": true,
+    "recoveryFilename": "recovery-mysql-20261021T040830Z-95a2af.tar.gz.enc",
+    "selectedFilesBound": 9,
+    "sha256": "6d9211bd62a0a95d0d3c010d954f81508f6ddd0ffd9cd3f2988b91ee44648033",
+    "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+    "startedAt": 1792555698.4557505,
+    "testAdminRoutingBound": true
+  },
+  "testAuthentication": {
+    "checks": [
+      {
+        "case": "validTestIdentity",
+        "status": 200,
+        "allowance": {
+          "limit": 20000,
+          "periodEnd": "2026-11-21T01:14:48Z",
+          "purpose": "journal",
+          "remaining": 20000,
+          "reserved": 0,
+          "used": 0
+        }
+      },
+      {
+        "case": "sameNonceReplay",
+        "status": 409,
+        "error": "replay_detected"
+      },
+      {
+        "case": "wrongApp",
+        "status": 401,
+        "error": "authentication_failed"
+      },
+      {
+        "case": "wrongHostSignature",
+        "status": 401,
+        "error": "authentication_failed"
+      },
+      {
+        "case": "expiredProof",
+        "status": 401,
+        "error": "authentication_failed"
+      }
+    ],
+    "paidSynthesisCalls": 0
+  },
+  "testRevocation": {
+    "checks": [
+      {
+        "case": "revoked",
+        "status": 401,
+        "error": "authentication_failed",
+        "registry": {
+          "phase": "revoked",
+          "sha256": "5cbb9b3b205aae1313f76773beb46ed68a52443a095bbd9bc49a1238d8c3fcab"
+        }
+      },
+      {
+        "case": "expired",
+        "status": 401,
+        "error": "authentication_failed",
+        "registry": {
+          "phase": "expired",
+          "sha256": "2eb5b1af35e44b6556f2d2b67dcd06673f53e4724e553f26b80f3baa71f95b78"
+        }
+      },
+      {
+        "case": "restored",
+        "status": 200,
+        "used": 0
+      }
+    ],
+    "paidSynthesisCalls": 0,
+    "restoredOriginalRegistry": true
+  },
+  "catalog": {
+    "publicStatus": 503,
+    "candidatesImportedInBrowserDraft": 466,
+    "enabledVoices": 0,
+    "paidVerificationStarted": false,
+    "pending": "Existing administrator passkey reauthentication"
+  },
+  "userAcceptance": false
+}

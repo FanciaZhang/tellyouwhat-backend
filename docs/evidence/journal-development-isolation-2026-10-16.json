@@ -1,0 +1,52 @@
+{
+  "active_source": "29b832c7eb5d7654842df5637953c1706ccec892",
+  "completed_at": 1792107803,
+  "connection_credentials_absent": true,
+  "container_removed": true,
+  "cos_download_authenticated": true,
+  "cos_download_objects": 3,
+  "cost_events": 8905,
+  "filename": "mysql-20261015T234228Z-4e7bda.sql.gz.enc",
+  "network_disabled": true,
+  "operation": "journal-development-restore",
+  "original_ledger_prefix_retained": true,
+  "passed": true,
+  "prompt_revision": "79a3c757-7c5f-49c6-b9b9-ea7340ab1503",
+  "recovery_sha256": "80f526893f56a0b1ee700cb0590cf9cf9e3037b9005cf99f5d219ffe0745283c",
+  "scheduled_execution_verified": false,
+  "source": "29b832c7eb5d7654842df5637953c1706ccec892",
+  "user_content_and_consents_excluded": true,
+  "mac_independent_key_escrow_verified": true,
+  "wrong_key_rejected_before_decryption": true,
+  "content_file_names": [
+    "cost-events.json",
+    "journaldevserver",
+    "prompt.json",
+    "runtime.env",
+    "selection.json"
+  ],
+  "cost_events_retained": 8905,
+  "program_sha256": "37addf877597be1f3ec9765aca991f4c1923b7e274e750a3bf3395570c04721e",
+  "temporary_mac_checkpoint_removed": true,
+  "real_app_voice_and_persistence_verified": false,
+  "provider_identity_isolation_verified": false,
+  "real_synthetic_organization_verified": true,
+  "request_and_content_binding_verified": true,
+  "synthetic_consent_withdrawn": true,
+  "old_production_reader_credential_retired": true,
+  "active_or_stopped_reader_consumers": 0,
+  "obsolete_reader_configuration_removed": true,
+  "same_policy_sha256": "7f741bd3b8d41766de28c4e234769dc3d66f2c7494fede14d65516c658336e30",
+  "go_cmd_prompt_and_development_tests_passed": true,
+  "operations_tests": {
+    "total": 168,
+    "failed": 0,
+    "skipped": 1
+  },
+  "journal_delivery_script_tests": {
+    "total": 18,
+    "failed": 0
+  },
+  "temporary_recovery_containers_and_directories_remaining": 0,
+  "native_app_build_changed": false
+}

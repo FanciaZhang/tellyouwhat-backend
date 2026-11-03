@@ -1,0 +1,77 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "isolated MySQL/Redis; locally signed test-authority Apple evidence and controlled status transport; no real purchase, deletion or deployment",
+  "migration": "0058_album_storekit_account_token.sql",
+  "identity": "UUIDv5 URL namespace over cn.tellyouwhat.albums/storekit/v1: plus existing verified Apple subject SHA-256; independent random media account UUID",
+  "verification": {
+    "startedAt": "2026-10-13T12:59:01.756374+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-storekit-identity-f59zb2tv",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-storekit-identity-f59zb2tv/race.log",
+        "testCounts": {
+          "pass": 161
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-storekit-identity-f59zb2tv/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-storekit-identity-f59zb2tv/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T12:59:51.597358+00:00"
+  },
+  "top_level_tests": 52,
+  "passed_test_events": 161,
+  "failed_test_events": 0,
+  "skipped_test_events": 0,
+  "swift_contract_tests": {
+    "passed": 17,
+    "failed": 0,
+    "log_sha256": "fdaf583367ff4640d178b557b8824835126634d22e92b86b2abbcec74563e94d"
+  },
+  "covered": [
+    "server-generated token matches independent Go UUIDv5 computation",
+    "same verified Apple identity recomputes token after synthetic old account removal; media account UUID changes",
+    "current signed purchase restores capacity only to same identity, not to a different account",
+    "notification routing and refresh map stable token to current media owner",
+    "retention verification detects unknown stable-token purchase chains",
+    "legacy owner-token transactions still work only for original owner; deleting account cannot be revived",
+    "upgrade existing rows and replay migration without changing account ID or login credential",
+    "missing migration fails subscription schema check",
+    "generated Swift transport preserves independent binding and accepts older responses without the optional field"
+  ],
+  "development_failures": [
+    "UUIDv5 migration first combined binary namespace with an ASCII identity column, causing MySQL charset conversion errors. Corrected binary construction via HEX/UNHEX before SHA1; clean and existing-row migration tests rerun successfully."
+  ],
+  "source_sha256": {
+    "migrations/0058_album_storekit_account_token.sql": "ceda1907fd70ab6895a8afe1f3e7102c44ca9690ac7506e16c824f1e60889cbd",
+    "migrations/embed_test.go": "d60703bcf9389ca209d76b1e15cc8f8c3f3449b935d0a9decc461304ab332bf1",
+    "internal/albums/storekit_identity_test.go": "248ddbb8278d314012374949f813930d1128c94d98d7d716358bc9297320063d",
+    "internal/albums/mysql_subscriptions.go": "4b95358189603c41bb18d543198a23cc334aceadd7899c422e7f47f575a4e3a7",
+    "internal/albums/subscriptions.go": "ebcdeecd175531dcb5ce2769133ceee831edde39cca25a566ea0cb5158971fdd",
+    "internal/albums/subscription_notifications.go": "8f0484d263ac3418bea7d239f9bf2021e8fd934076f4f8091c0c8601a9decc5a",
+    "internal/albums/subscription_refresh.go": "c3c820f688e4c2931f0c3db5c3ed41c8453b632a109c92a1f4f8157e81780c7d",
+    "internal/albums/retention_verification.go": "d989cbafb81c4b9cecd69d41a730283540a45a8b5e8b55334d192c4d66933924",
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "6ee2fe0445321acb90cc5dd44629d366f0d660a15ad834d2a787173cc71352ef",
+    "internal/albumhttpapi/generated.go": "7512ec9adb4a603634a5bfa3f7e24731ce869cf74dba419ff930478056ff60ce",
+    "Contracts/HTTP/Tests/AlbumAPITests/AlbumAPITransportTests.swift": "baac91156f8ddb7868fbb3cb4aed04a7779be592db249b0c5d31cfbd2df33f38"
+  },
+  "not_completed": [
+    "old owner-ID transaction rebinding through Apple Set App Account Token",
+    "final identity, subscription record and backup erasure and HTTP/UI deletion workflow",
+    "real Sandbox purchase, renewal, refund and account-deletion/restore acceptance",
+    "no deployment, new deletion permissions or sales activation"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "state": "planned-test-build-admission",
+  "application": "Journal",
+  "bundle_id": "cn.tellyouwhat.journalapp.dev",
+  "build": "24",
+  "app_source": "022f451fb78b0ac2a2c76a4a31935b2010045016",
+  "scope": "Append build 24 to Journal test enrollment, preserving existing builds, other apps, data, credentials and all business code.",
+  "business_code_changes": false,
+  "production_deployment_requested": false
+}

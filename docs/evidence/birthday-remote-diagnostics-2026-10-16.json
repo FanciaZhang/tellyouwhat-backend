@@ -1,0 +1,131 @@
+{
+  "verified_at": "2026-10-16T01:04:20.176815+00:00",
+  "source_commit": "398b2ff75de5f3ed8f68cc87418ae65e2ec23c59",
+  "source_files_sha256": {
+    "App/Features/SettingsView.swift": "cbf599df93ee1db9414b0faa7f65bab168207283687c0307d2c0d40ae27ef6a6",
+    "App/Services/BirthdayAIService.swift": "daf701ad7f292a582b8f65dd0f00c4eb5c1312d2a2af99f1eeabacbb7b95b0e2",
+    "App/Services/BirthdayAssistantTransport.swift": "f1aeee4c0da358b48281daa5929ee572fe2d5af6bd21fceecfae0fe214383161",
+    "App/Services/BirthdayDiagnostics.swift": "cf7144b65c48467d583286263089b047e2e71e6a91097a5704204c2904373a72",
+    "Birthday.xcodeproj/project.pbxproj": "ed0e5d4b2bc242554b0b11dc6dce9e5d27541054e4b8f9115748ff0c66e99529",
+    "Tests/BirthdayDiagnosticsTests.swift": "220a99ea8433955d8459176dd2710174132e152cbe9c8f55ea223ffea0b43257",
+    "UITests/BirthdayUITests.swift": "1a8a6ef85dea80ae560fa03cd05fe3c274a3ab48e6003dd64de4752dfdf9f018"
+  },
+  "xcode": "27.1",
+  "simulator": "iPhone 17 / iOS 26.5",
+  "debug_tests": {
+    "result": "Passed",
+    "passedTests": 56,
+    "failedTests": 0,
+    "skippedTests": 1,
+    "totalTestCount": 57
+  },
+  "release_tests": {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 1
+  },
+  "domain_tests": {
+    "passed": true,
+    "test_count": 27
+  },
+  "binary_boundary": {
+    "Debug": {
+      "bundle_id": "cn.tellyouwhat.birthday.dev",
+      "api_host": "api-test.birthday.tellyouwhat.cn",
+      "diagnostic_export_symbols_present": true,
+      "developer_entry_identifier_present": true
+    },
+    "Release": {
+      "bundle_id": "cn.tellyouwhat.birthday",
+      "api_host": "api.birthday.tellyouwhat.cn",
+      "diagnostic_export_symbols_present": false,
+      "developer_entry_identifier_present": false
+    }
+  },
+  "real_failure_log_privacy_test_passed": true,
+  "simulator_system_share_sheet_verified": true,
+  "simulator_export": {
+    "filename": "birthday-diagnostics.json",
+    "sha256": "05d3af5f20f2df4a0751650b8a3aeafa6aebf06ed042b3d2c30c563f6de65e38",
+    "entry_count": 0,
+    "file_count": 1
+  },
+  "signature": {
+    "source_commit": "398b2ff75de5f3ed8f68cc87418ae65e2ec23c59",
+    "ipa_sha256": "800f5c49b0a026ebeb8f7450124a6c50bbbb99623583f6ee28a7e18385cb2b1e",
+    "ipa_bytes": 3625229,
+    "bundle_id": "cn.tellyouwhat.birthday.dev",
+    "version": "1.0",
+    "build": "5",
+    "distribution": "Ad Hoc",
+    "signature_verified": true,
+    "debug_behavior_marker": true,
+    "bundles": [
+      {
+        "bundle_id": "cn.tellyouwhat.birthday.dev",
+        "registered_device_count": 3,
+        "profile_expires_utc": "2027-08-24T05:02:39+00:00",
+        "default_keychain_group": "T6DD96HY2B.cn.tellyouwhat.birthday.dev",
+        "localized_display_names": {}
+      },
+      {
+        "bundle_id": "cn.tellyouwhat.birthday.dev.widget",
+        "registered_device_count": 3,
+        "profile_expires_utc": "2027-08-24T05:02:39+00:00",
+        "default_keychain_group": "T6DD96HY2B.cn.tellyouwhat.birthday.dev.widget",
+        "localized_display_names": {}
+      }
+    ],
+    "device_installation_verified": false
+  },
+  "final_ipa_diagnostic_entry_verified": true,
+  "export": {
+    "source_commit": "398b2ff75de5f3ed8f68cc87418ae65e2ec23c59",
+    "configuration": "Debug",
+    "distribution": "Ad Hoc",
+    "version": "1.0",
+    "build": "5",
+    "archive_succeeded": true,
+    "export_succeeded": true,
+    "ipa_sha256": "800f5c49b0a026ebeb8f7450124a6c50bbbb99623583f6ee28a7e18385cb2b1e",
+    "ipa_bytes": 3625229
+  },
+  "logging_scope": "Birthday AI subsystem, current process, last hour; at most 500 messages of 512 characters",
+  "cache_file_count_limit": 1,
+  "raw_input_response_credentials_or_device_ids_logged": false,
+  "release_diagnostic_ui_and_export_symbols_absent": true,
+  "screenshots_inspected": true,
+  "user_accepted": false,
+  "real_phone_installation_verified": false,
+  "real_app_attest_verified": false,
+  "ota_published": true,
+  "prior_failed_attempts": [
+    {
+      "phase": "debug-diagnostics",
+      "reason": "UI wait before offscreen row materialized and share-sheet title queried using wrong accessibility type",
+      "summary": {
+        "result": "Failed",
+        "passedTests": 55,
+        "failedTests": 1,
+        "skippedTests": 1,
+        "totalTestCount": 57
+      }
+    },
+    {
+      "phase": "debug-corrected",
+      "reason": "system share actions are accessibility cells, not buttons; actual file caption is an Other element",
+      "summary": {
+        "result": "Failed",
+        "passedTests": 55,
+        "failedTests": 1,
+        "skippedTests": 1,
+        "totalTestCount": 57
+      }
+    }
+  ],
+  "managed_run_finished": true,
+  "owned_simulator_removed": true,
+  "owned_frozen_source_removed": true
+}

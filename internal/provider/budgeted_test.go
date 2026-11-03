@@ -80,3 +80,49 @@ func TestBudgetedProviderReservesBeforeCallAndSettlesUsage(t *testing.T) {
 }
 
 var _ Client = (*providerStub)(nil)
+
+func TestBudgetedProviderFreezesAttemptPriceAndKeepsUnknownModelReservation(t *testing.T) {
+	store := &providerBudgetStore{}
+	controller, err := costcontrol.New(store, costcontrol.Limits{MonthlyBudgetNanos: 1_000_000_000_000, MaxConcurrent: 2, LeaseDuration: time.Minute}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := costcontrol.TokenPrice{InputNanosPerMillionTokens: 12_000_000_000, OutputNanosPerMillionTokens: 8_000_000_000}
+	second := costcontrol.TokenPrice{InputNanosPerMillionTokens: 27_000_000_000, OutputNanosPerMillionTokens: 10_800_000_000}
+	next := &providerStub{response: Response{InputTokens: 100, OutputTokens: 20, ActualModel: "model-returned"}}
+	client := NewBudgetedClient(next, controller, "health", first)
+	current := first
+	client.ResolvePrice = func(context.Context, contracts.Request) (*costcontrol.TokenPrice, error) {
+		copy := current
+		return &copy, nil
+	}
+	client.RecordModel = func(_ context.Context, _ contracts.Request, model string, p costcontrol.TokenPrice) bool {
+		if p != first || model != "model-returned" {
+			t.Fatal("wrong per-attempt attribution")
+		}
+		current = second
+		return true
+	}
+	r := contracts.Request{Operation: contracts.OperationMealTextCapture, Prompt: "synthetic"}
+	if _, err = client.Complete(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	expected, _ := first.Cost(100, 20)
+	if store.actual != expected {
+		t.Fatal("settlement read a later price")
+	}
+	client.RecordModel = func(context.Context, contracts.Request, string, costcontrol.TokenPrice) bool { return false }
+	if _, err = client.Complete(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if store.known {
+		t.Fatal("unknown model released reservation")
+	}
+	calls := next.calls
+	client.ResolvePrice = func(context.Context, contracts.Request) (*costcontrol.TokenPrice, error) {
+		return nil, costcontrol.ErrInvalidAttempt
+	}
+	if _, err = client.Complete(context.Background(), r); err == nil || next.calls != calls {
+		t.Fatal("unavailable pricing reached provider")
+	}
+}

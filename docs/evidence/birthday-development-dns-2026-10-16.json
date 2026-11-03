@@ -1,0 +1,11 @@
+{
+  "hostname": "api-test.birthday.tellyouwhat.cn",
+  "type": "A",
+  "value": "106.55.105.177",
+  "ttl": 300,
+  "record_id": "6ad156e6feee20511d4c4691",
+  "existing_record_count": 0,
+  "created_record_count": 1,
+  "readback_verified": true,
+  "verified_at_utc": "2026-10-15T22:42:48.344165+00:00"
+}

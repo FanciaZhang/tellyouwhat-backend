@@ -1,0 +1,65 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Deletion-accepted original multipart observation, bound abort receipts and worker scheduling",
+  "migration": "0052_album_deletion_multipart_checks.sql",
+  "regression": {
+    "race": true,
+    "top_level_passed": 87,
+    "passed_events": 231,
+    "failed": 0,
+    "skipped": 0,
+    "new_top_level_tests": 10,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "9c27888c91f7936662e545a8774041b89293775bb3e7230532c983f703dd237e",
+    "result_sha256": "b358f08a0a684c9345ddc5ae24872203099a60628ab3cb2343136a53c06c2a34"
+  },
+  "coverage": [
+    "accepted deletion plus matching storage fence required at claim and receipt",
+    "unknown initialization discovered without new initialization",
+    "in-flight or unknown Complete only reconciled; never aborted",
+    "no Complete or initialization write by deletion worker",
+    "ready and proven preflight-retryable sessions use one durable abort identity",
+    "lost abort response keeps pending state and persistent backoff",
+    "old normal reconciliation lease respected; deleted accounts cannot claim normal queue",
+    "late abort success survives cancellation; worker waits for provider to exit",
+    "stale lease and wrong intent/account/provider cannot record success",
+    "post-provider database error keeps lease and permits retry of the same bound abort after expiry",
+    "actual worker invokes COS adapter with exact owned key and provider upload ID via controlled HTTP",
+    "unresolved original multipart prevents permanent purge",
+    "new schema required by API and worker checks"
+  ],
+  "corrected_attempts": [
+    {
+      "phase": "initial compile",
+      "cause": "Renamed shared private provider interface; HTTP type assertion still used the former name",
+      "fixed": true
+    }
+  ],
+  "boundaries": {
+    "runtime_wired": true,
+    "deployed": false,
+    "provider_transport_controlled": true,
+    "real_cloud_calls": false,
+    "object_versions_deleted": false,
+    "quota_released_by_worker": false,
+    "backups_published_by_worker": false,
+    "account_erasure_complete": false,
+    "historical_direct_put_outcomes_remain_blocked": true
+  },
+  "source_sha256": {
+    "cmd/albumworker/main.go": "794b4aef3c76e7ae0b42f2c1d63ef7e8c253765361e154a54bb9b639b178f6a4",
+    "internal/albums/account_deletion_multiparts.go": "53b4637583549993e1fb64a97dd94e27596718461fe7ca998850a33e43b5b5f8",
+    "internal/albums/account_deletion_multiparts_test.go": "a40f4632a9914262e448ffc389468f2448b6e7db7a5d1e134a82895466c5806d",
+    "internal/albums/account_media_observation_worker.go": "a545f99291d0929579036e82a803e7cf3793b61e070e13ddc04d7a77171dd5e7",
+    "internal/albums/http.go": "825ae205619f07ee9519cd61c17e74a6bd1d57133cd0d89eb2b918c489976971",
+    "internal/albums/library.go": "818ae7677fe84cf0c7330c137ec053328ab56b30b47b70e82026125eb522e6a6",
+    "internal/albums/live_pair_multipart_service.go": "26d0bdff05a74cd313bd8d8436227a337923bdc53a0102e278e0a67b0d1acf06",
+    "internal/albums/object_purge_admission.go": "e419a83a139af6f95e2409ce102e4874e19295d87fd6db22fd736174a682345a",
+    "internal/albums/reconciliation_queue.go": "7d65b0809b4cccb4e5f1154122a5e23ec19848a594213f0a10d534595b7786da",
+    "migrations/0052_album_deletion_multipart_checks.sql": "ec3df343ad84dbc336513abf1ec55ce765d216b22fe28a79c5437b9a6c280b0a",
+    "migrations/embed_test.go": "b1d054898c1c9403c19943a141a5a709159eb1b875186c0a9914fb77eb8ba3d4"
+  }
+}

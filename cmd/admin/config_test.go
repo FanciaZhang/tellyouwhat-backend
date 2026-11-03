@@ -1,0 +1,164 @@
+package main
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func adminConfigFixture(t *testing.T) {
+	t.Helper()
+	for key, value := range map[string]string{
+		"DATABASE_DSN": "fixture:fixture@tcp(127.0.0.1:3306)/admin_test",
+		"REDIS_URL":    "redis://127.0.0.1:6379", "ADMIN_APPS": "journal",
+		"ADMIN_PREVIEW_SIGNING_KEY":        base64.RawStdEncoding.EncodeToString(make([]byte, 32)),
+		"HEALTH_APP_STORE_CONNECT_ENABLED": "false", "JOURNAL_APP_STORE_CONNECT_ENABLED": "false",
+		"BIRTHDAY_APP_STORE_CONNECT_ENABLED": "false", "ALBUM_APP_STORE_CONNECT_ENABLED": "false",
+		"HEALTH_APP_STORE_CONNECT_PRIVATE_KEY_PATH":  "/unavailable-health-key",
+		"JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY_PATH": "/unavailable-journal-key",
+		"JOURNAL_ARK_LITE_MODEL_ID":                  "ep-journal-lite", "JOURNAL_ARK_PRO_MODEL_ID": "ep-journal-pro",
+		"JOURNAL_VOICE_MODEL_ID": "ep-journal-voice",
+	} {
+		t.Setenv(key, value)
+	}
+}
+
+func TestAdminConfigSelectsJournalWithoutLoadingEitherAppleKey(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("HEALTH_APP_STORE_CONNECT_ENABLED", "true")
+	configuration, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(configuration.apps) != 1 || configuration.apps[0].id != "journal" || configuration.apps[0].signingKey != nil {
+		t.Fatal("unselected app or disabled App Store Connect was initialized")
+	}
+	if len(configuration.promptDefaults) != 1 || configuration.promptDefaults["journal"].Journal == nil {
+		t.Fatal("unselected prompt scopes were loaded")
+	}
+}
+
+func TestAdminConfigRejectsMissingOrInvalidSelectedPromptModels(t *testing.T) {
+	for name, value := range map[string]string{
+		"JOURNAL_ARK_LITE_MODEL_ID": "", "JOURNAL_ARK_PRO_MODEL_ID": "", "JOURNAL_VOICE_MODEL_ID": "invalid model",
+	} {
+		t.Run(name, func(t *testing.T) {
+			adminConfigFixture(t)
+			t.Setenv(name, value)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("invalid prompt dependencies were deferred until after database initialization")
+			}
+		})
+	}
+}
+
+func TestHealthOnlyAdminDoesNotRequireUnselectedJournalModels(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("ADMIN_APPS", "health")
+	for _, name := range []string{"JOURNAL_ARK_LITE_MODEL_ID", "JOURNAL_ARK_PRO_MODEL_ID", "JOURNAL_VOICE_MODEL_ID"} {
+		t.Setenv(name, "")
+	}
+	configuration, err := loadConfig()
+	if err != nil || len(configuration.promptDefaults) == 0 {
+		t.Fatal("Health-only admin still requires Journal configuration", err)
+	}
+	if _, present := configuration.promptDefaults["journal"]; present {
+		t.Fatal("Journal was not selected")
+	}
+}
+
+func TestAdminConfigDefaultAppRegistryAndRequiredAppleCredentialsRemain(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("ADMIN_APPS", "")
+	configuration, err := loadConfig()
+	if err != nil || len(configuration.apps) != 2 || configuration.apps[0].id != "health" || configuration.apps[1].id != "journal" {
+		t.Fatal("default registry changed", err)
+	}
+	t.Setenv("ADMIN_APPS", "journal")
+	t.Setenv("JOURNAL_APP_STORE_CONNECT_ENABLED", "")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("missing default Apple credentials silently disabled offers")
+	}
+}
+
+func TestAdminConfigRejectsUnknownDuplicateAppsAndInvalidEnableFlags(t *testing.T) {
+	for _, apps := range []string{"journal,journal", "unknown-app", ",journal", "health,", "JOURNAL"} {
+		t.Run(apps, func(t *testing.T) {
+			adminConfigFixture(t)
+			t.Setenv("ADMIN_APPS", apps)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted ambiguous admin registry")
+			}
+		})
+	}
+	adminConfigFixture(t)
+	t.Setenv("JOURNAL_APP_STORE_CONNECT_ENABLED", "yes")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("accepted an invalid enabled flag")
+	}
+}
+
+func TestAdminConfigExplicitAppleClientStillLoadsTheSigningKey(t *testing.T) {
+	adminConfigFixture(t)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "fixture.p8")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"ENABLED": "true", "PRIVATE_KEY_PATH": path, "ISSUER_ID": "fixture-issuer",
+		"KEY_ID": "fixture-key", "SUBSCRIPTION_ID": "fixture-subscription",
+	} {
+		t.Setenv("JOURNAL_APP_STORE_CONNECT_"+name, value)
+	}
+	configuration, err := loadConfig()
+	if err != nil || len(configuration.apps) != 1 || configuration.apps[0].signingKey == nil {
+		t.Fatal("enabled Apple client failed to load", err)
+	}
+}
+
+func TestUnifiedAdminRegistersAllFourAppsWithoutUnrelatedAppleKeys(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("ADMIN_APPS", "health,journal,birthday,albums")
+	t.Setenv("APP_ENV", "development")
+	configuration, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"health", "journal", "birthday", "albums"}
+	if len(configuration.apps) != len(expected) {
+		t.Fatal("incomplete unified admin", configuration.apps)
+	}
+	for i, id := range expected {
+		if configuration.apps[i].id != id || configuration.apps[i].signingKey != nil {
+			t.Fatal("wrong app or unrelated Apple credentials loaded", id)
+		}
+	}
+	if configuration.promptDefaults["journal"].Journal == nil {
+		t.Fatal("Journal prompt module was not loaded")
+	}
+	if _, present := configuration.promptDefaults["health:meal_decision"]; !present {
+		t.Fatal("Health prompt module was not loaded")
+	}
+}
+
+func TestAdminRejectsUnknownEnvironment(t *testing.T) {
+	adminConfigFixture(t)
+	t.Setenv("APP_ENV", "unknown")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("unknown management environment accepted")
+	}
+}

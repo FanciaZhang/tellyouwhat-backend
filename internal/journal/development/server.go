@@ -9,31 +9,41 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/entitlement"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	"github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/privacy"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"github.com/tellyouwhat/backend/internal/quota"
 	"github.com/tellyouwhat/backend/internal/usage"
 )
 
-const ProtocolVersion = "subscription-v1"
+// v2 requires passage provenance in voice revisions, including incremental v20.
+const ProtocolVersion = "subscription-v2"
 
 type Config struct {
-	Token     string
-	Organizer provider.Organizer
-	Speech    voice.Speech
-	Rewriter  voice.Rewriter
-	Now       func() time.Time
+	Prompts       *promptconfig.Cache
+	Token         string
+	Organizer     provider.Organizer
+	Speech        voice.Speech
+	Rewriter      voice.Rewriter
+	Recording     *voice.RecordingExecutor
+	Illustrations *IllustrationRuntime
+	Now           func() time.Time
+	Logger        *slog.Logger
 }
 
 type principalContextKey struct{}
@@ -56,33 +66,45 @@ func New(c Config) (http.Handler, error) {
 	if len(c.Token) < 43 || c.Organizer == nil || c.Speech == nil || c.Rewriter == nil {
 		return nil, errors.New("developer service requires a provisioned random token and providers")
 	}
+	if c.Recording != nil && (c.Recording.Store == nil || c.Recording.Provider == nil || c.Recording.Budget == nil || c.Recording.AppID != "journal-development" || c.Recording.Price.NanosPerHour <= 0) {
+		return nil, errors.New("invalid development recording configuration")
+	}
 	digest := sha256.Sum256([]byte(c.Token))
 	store := entitlement.NewMemoryStore()
 	limiter := quota.NewMemoryLimiter(quota.Limits{DailyTokensPerTransaction: 100_000, MonthlyTokensPerTransaction: 100_000, RequestsPerMinutePerOperation: 10, MaxConcurrentPerDevice: 2})
-	consent := privacy.NewService(privacy.NewMemoryRepository(), nil, nil, c.Now)
+	var consentRepository privacy.Repository = privacy.NewMemoryRepository()
+	if c.Illustrations != nil {
+		var err error
+		consentRepository, err = newImageConsentRepository(c.Illustrations)
+		if err != nil {
+			return nil, err
+		}
+	}
+	consent := privacy.NewService(consentRepository, nil, nil, c.Now)
+	if c.Illustrations != nil {
+		c.Illustrations.prompts = c.Prompts
+		c.Illustrations.authorize = func(ctx context.Context, owner string) bool {
+			record, found, err := store.Get(ctx, owner)
+			if err != nil || !found || !record.ExpiresAt.After(c.Now()) {
+				return false
+			}
+			granted, err := consent.HasRequiredConsents(ctx, attestation.Principal{AppID: "journal", KeyID: owner}, []string{privacy.JournalIllustrationScope})
+			return err == nil && granted
+		}
+	}
+	recordings := newRecordingHTTP(c.Recording, c.Rewriter, store, consent, c.Now)
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err
 	}
-	s := gateway.New(gateway.Dependencies{
-		App:           appregistry.App{ID: appregistry.Journal, AllowedOperationPrefix: "journal."},
-		Authenticator: authenticator{}, Entitlements: entitlement.NewChecker(store, c.Now),
-		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
-		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
-		Privacy: consent, Consent: consent,
-		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope},
-		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: "journal-organize-2026-08-31"},
-		JournalAnalysisVersion: "journal-organize-2026-08-31",
-		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000}, VoiceEntitlements: store,
-		Now: c.Now,
-	})
-	router := s.Router()
-	router.ContextWithFallback = true
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	guard := func(g *gin.Context) {
+		w, r := g.Writer, g.Request
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Journal-Environment", "development")
 		w.Header().Set("X-Journal-Development-Protocol", ProtocolVersion)
+		w.Header().Set("X-Journal-Voice-Protocol", voice.Version)
 		if r.Method == http.MethodGet && r.URL.Path == "/readyz" {
+			g.Abort()
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"ready","environment":"development"}`))
 			return
@@ -90,20 +112,25 @@ func New(c Config) (http.Handler, error) {
 		// The stream uses an expiring, single-use ticket issued by the authenticated
 		// session route. Never substitute the developer credential for that ticket.
 		stream := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/journal/voice/sessions/") && strings.HasSuffix(r.URL.Path, "/stream")
-		allowed := stream || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
-			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/ai/operations/journal.organize/responses"))
+		recording := c.Recording != nil && recordinghttp.Route(r)
+		image := illustrationRoute(r)
+		allowed := stream || recording || image || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
+			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/journal/organization" || r.URL.Path == "/v1/journal/illustration-suggestions"))
 		if !allowed {
+			g.Abort()
 			deny(w, 404, "not_found")
 			return
 		}
 		if !stream {
 			provided := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
 			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || subtle.ConstantTimeCompare(provided[:], digest[:]) != 1 {
+				g.Abort()
 				deny(w, 401, "development_access_denied")
 				return
 			}
 			record, err := simulatedRecord(r, c.Now())
 			if err != nil {
+				g.Abort()
 				deny(w, 400, "development_simulation_invalid")
 				return
 			}
@@ -111,14 +138,49 @@ func New(c Config) (http.Handler, error) {
 			id := hex.EncodeToString(identity[:])
 			record.KeyID, record.TransactionID = id, "development:"+id
 			if err := store.Upsert(r.Context(), record); err != nil {
+				g.Abort()
 				deny(w, 503, "development_state_unavailable")
 				return
 			}
 			p := attestation.Principal{AppID: "journal", KeyID: id, DeviceID: id, TransactionID: record.TransactionID}
 			r = r.WithContext(context.WithValue(r.Context(), principalContextKey{}, p))
 		}
-		router.ServeHTTP(w, r)
-	}), nil
+		g.Request = r
+		if image {
+			g.Abort()
+			if c.Illustrations == nil {
+				deny(w, 503, "not_ready")
+			} else {
+				c.Illustrations.ServeHTTP(w, r)
+			}
+			return
+		}
+		if recording {
+			// Whole audio is streamed to a bounded private spool. It must not
+			// enter the shared gateway's JSON body-buffering middleware.
+			g.Abort()
+			recordings.ServeHTTP(w, r)
+			return
+		}
+		g.Next()
+	}
+	s := gateway.New(gateway.Dependencies{
+		HTTPMiddleware: []gin.HandlerFunc{guard},
+		App:            appregistry.App{ID: appregistry.Journal, AllowedOperationPrefix: "journal."},
+		Authenticator:  authenticator{}, Entitlements: entitlement.NewChecker(store, c.Now),
+		Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(),
+		Media:   media.NewService(nil, media.NewMemoryRegistry(), c.Now),
+		Privacy: consent, Consent: consent,
+		RequiredConsentScopes: []string{privacy.ManagedAIScope}, AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope},
+		JournalOrganizer:       &service.Organizer{Model: c.Organizer, LiteMaxCharacters: 6000, LiteMaxBooks: 24, LiteMaxTags: 80, AnalysisVersion: provider.OrganizationAnalysisVersion},
+		JournalAnalysisVersion: provider.OrganizationAnalysisVersion,
+		PromptConfig:           c.Prompts,
+		Voice:                  &voice.Service{Store: voice.NewMemoryStore(), Speech: c.Speech, Model: c.Rewriter, Secret: secret, Limit: 120 * 60 * 1000, Logger: c.Logger}, VoiceEntitlements: store,
+		Now: c.Now,
+	})
+	router := s.Router()
+	router.ContextWithFallback = true
+	return router, nil
 }
 
 func deny(w http.ResponseWriter, status int, code string) {

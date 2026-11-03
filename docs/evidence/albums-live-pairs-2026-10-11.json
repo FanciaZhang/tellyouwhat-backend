@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-11",
+  "baseCommit": "3a1c62a799f16cf8964cd189b743db003db20757",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "bd09ab59a92bdb5e735e51cb879be8a8dc46f31e7b1e5ead974087babd6773b2",
+    "Contracts/HTTP/Tests/AlbumAPITests/AlbumAPITransportTests.swift": "57a7bfdfcc4027e5c1ec5e7588299e486a0f8a0aa4a0bf2fbb7ede9213b65877",
+    "cmd/albumworker/main.go": "008ba03897990a0c3b282f7061cce1abc9dba2ef5b5008e3e79d5b6dfa3787c2",
+    "internal/albumhttpapi/generated.go": "8c75e9878a179d680e690a5dfebdae7da878891950ac8a70c04ed007c3727ddc",
+    "migrations/0027_album_live_pairs.sql": "9369261e5c9211f9dcf5ac30f15121e11185c2c7a5380f3b6db36ccdfd085d3e",
+    "migrations/albums_upgrade_test.go": "45c1b33484009dd899554c2df95b83a89c90343265ff41b29f07c8b1ea7b8c39",
+    "migrations/embed_test.go": "235b451c40443b74693618ac00999775bb5bb2a1c1c35a07ceca1ff6e7954284",
+    "docs/albums-implementation.md": "57210a0b8e6fb260a8cd37d714f8bb8839ac6bebd7bfc4051ffc7774ffc62c6b",
+    "internal/albums/cos_live_pairs.go": "0435aa7b5ac4bc3bc13547cab725c39843f0e1bdd418c93569f7d755614f0bec",
+    "internal/albums/live_pair_http.go": "48cef598fbdd2ab9c9593e49a99acd2bc498a9feedeac07e8c52987cb03add82",
+    "internal/albums/live_pair_worker.go": "81b318e28d999a2e369921b2d2155cb2be564fb85b947f511d3065709908c446",
+    "internal/albums/live_pairs.go": "bf5af07c7824e7cfc9eb81b5c68734f434a628861e7e2e572e35e3142a6495b5",
+    "internal/albums/live_pairs_test.go": "eb2fe843e462a6885f5e8d43e3e2d3476673015e3116de699c9b7dce3bf3ab33",
+    "internal/albums/mysql_live_pairs.go": "9912ab569c415d0e678c27de58ed3e95ccd1f230122c47cf5e86b7c1b7e4daca",
+    "internal/albums/mysql_live_pairs_integration_test.go": "780ce8fcce9b766e1765da2e6e6fb9a8432280653c9abcaceff73a5d00d960b9"
+  },
+  "checks": [
+    {
+      "command": "go test ./... (without MYSQL_TEST_DSN)",
+      "exitCode": 0,
+      "logSHA256": "d2d7bd75bfb46a9a2c7c078d5e1d8e8fe3336d903d60701dcad603c548504adb"
+    },
+    {
+      "command": "go vet ./...",
+      "exitCode": 0
+    },
+    {
+      "command": "go test -race ./internal/albums ./migrations ./cmd/albumworker (isolated MySQL 8.4)",
+      "exitCode": 0,
+      "logSHA256": "840acdc312923ec022d1e57c2c8c30d14fac99d17f29ef98c3702272ef65404e"
+    },
+    {
+      "command": "swift test --package-path Contracts/HTTP --filter AlbumAPITransportTests",
+      "exitCode": 0,
+      "passed": 14,
+      "logSHA256": "6c764a2331c9e88fd6e761e1332fb62f8fa3e25efa19315b08aad0aa049a3f9b"
+    }
+  ],
+  "providerEvidence": "COS protocol double; no real cloud requests, deployment, native quality or deletion certificate",
+  "openWork": [
+    "native durable finished-pair uploads",
+    "finished-pair staging and abandoned-intent retirement",
+    "real COS/native system-library round trip"
+  ]
+}

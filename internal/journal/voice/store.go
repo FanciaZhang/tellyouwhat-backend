@@ -13,8 +13,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Receipts retain transcript text for at most 24 hours. Quota counters contain
-// no journal content. Each connection holds a subscription-wide fenced lease.
+// Audio receipts contain hashes and duration only. Recognition is independent
+// of quota acknowledgements; replaying billed bytes still feeds the new ASR
+// connection after verifying their complete hash. Each connection holds a
+// subscription-wide fenced lease.
 type Store interface {
 	Lock(context.Context, string, string) error
 	Renew(context.Context, string, string) error

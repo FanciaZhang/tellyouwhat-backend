@@ -1,0 +1,53 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Persistent account-wide COS object purge executor, not activated",
+  "regression": {
+    "race": true,
+    "top_level_passed": 84,
+    "passed_events": 264,
+    "failed": 0,
+    "skipped": 0,
+    "new_top_level_tests": 7,
+    "vet_exit": 0,
+    "gateway_and_worker_build_exit": 0,
+    "services_stopped": true,
+    "database_directory_removed": true,
+    "race_log_sha256": "89a203c1c3c0a1609fda8fa51e70a7ee938b3adfd7c5746b7cd59bf341a2990f",
+    "result_sha256": "937cef37584348b8c93599dfc7717fc845609e0c8f11b6c1b1135d95301838f0"
+  },
+  "coverage": [
+    "real MySQL transactions and real COS SDK with controlled HTTP transport",
+    "all six account namespaces, including unpublished objects and orphan sessions",
+    "1013 versions including delete markers, with 1003 in one area; one orphan multipart session",
+    "1000-entry inventory page persisted before mutations; maximum 100 actions per invocation",
+    "explicit versionId or uploadId only, never versionless object DELETE",
+    "unchanged plans retained while action progress updates; read-only authorization transaction does not rewrite plan",
+    "lost provider response, expired lease and cancellation retain exact retry target",
+    "stale or different plan cannot acknowledge a new worker batch",
+    "empty plan recovered after crash must be listed again",
+    "final fresh inventory of all six areas revisits an earlier nonempty area",
+    "readiness marker cannot override unresolved writes at claim or replay",
+    "foreign account, wrong prefix, duplicate or mixed plan, mismatched fence and missing schema rejected",
+    "nanosecond wall clock normalized for MySQL DATETIME(6) lease equality",
+    "account remains deleting; quota, media metadata and Apple revocation jobs preserved"
+  ],
+  "boundaries": {
+    "required_migration": "0054_album_account_object_purges.sql",
+    "provider_transport_controlled": true,
+    "deployed": false,
+    "runtime_scheduled": false,
+    "deletion_permissions_granted": false,
+    "real_cos_deletion": false,
+    "user_media_modified": false,
+    "account_metadata_and_backup_erasure_complete": false,
+    "account_deletion_http_ui_complete": false,
+    "cloud_and_sales_gates_changed": false
+  },
+  "source_sha256": {
+    "internal/albums/account_object_purge.go": "415bb703a4534765319e704cb42019b19c939d70c5044b27856b20fe2406354f",
+    "internal/albums/account_object_purge_test.go": "55307fe7db7e8778597a2f3e5cc74b76266b8fa6093b039e2e50b7d1f2cbb24c",
+    "internal/albums/library.go": "d114c67f1c361350637a0fa3f479895c4f7162f1036730574a01e9e59a1e2133",
+    "migrations/0054_album_account_object_purges.sql": "848a4233035e0bf4cdbb6a4b7115a2d050b7329cac67b0ca5fc229effb7d7d0e",
+    "migrations/embed_test.go": "81de58578bf0852ae1cb402b1f025543fecc06089df7d23ad4ac1c309b0576bd"
+  }
+}

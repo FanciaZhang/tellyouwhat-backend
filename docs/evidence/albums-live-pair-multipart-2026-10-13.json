@@ -1,0 +1,108 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Durable Live Photo multipart backend and HTTP contract; real COS abort of an in-flight synthetic part",
+  "migration": "0050_album_live_pair_multiparts.sql",
+  "regression": {
+    "phases": [
+      {
+        "phase": "mysql-init.log",
+        "exit": 0
+      },
+      {
+        "phase": "create.log",
+        "exit": 0
+      },
+      {
+        "phase": "targeted.jsonl",
+        "exit": 0
+      },
+      {
+        "phase": "vet.log",
+        "exit": 0
+      },
+      {
+        "phase": "build.log",
+        "exit": 0
+      }
+    ],
+    "servicesStopped": true,
+    "race": true,
+    "top_level_passed": 76,
+    "passed_events": 196,
+    "failed": 0,
+    "skipped": 0,
+    "database_directory_removed": true,
+    "test_log_sha256": "a646bfc5555d8a1bf0cdfd49969b33714d87567cb3fd60e2e288fe04b6ecfcaf"
+  },
+  "live_probe": {
+    "abort_confirmed": true,
+    "abort_returned_at": "2026-10-13T10:03:24.828057Z",
+    "abort_started_at": "2026-10-13T10:03:24.500442Z",
+    "complete_requests": 0,
+    "existing_media_accessed": false,
+    "inflight_response_at": "2026-10-13T10:03:24.940719Z",
+    "inflight_response_status": 404,
+    "inflight_transport_error": false,
+    "initial_part_observed": true,
+    "initial_part_status": 200,
+    "key": "albums/staging/live-pairs/23a53bc1-649c-4a84-bc7e-20d04690d75f/3003e4ab-02b2-4034-a2c1-76fd99005e15/photo",
+    "object_versions_deleted": false,
+    "repeat_abort_confirmed": true,
+    "session_missing_with_NoSuchUpload": true,
+    "size_bytes": 31744
+  },
+  "coverage": [
+    "single initialization permit; lost response does not reinitialize",
+    "ordinary PUT and multipart grants mutually exclusive under account lock",
+    "both components must be assembled before submission",
+    "multipart completion replay does not call provider again",
+    "only a proven preflight failure allows another Complete",
+    "unknown initialization and completion recover through reads",
+    "late successful provider observations survive cancelled request",
+    "stale/conflicting completion cannot replace terminal receipt",
+    "ready sessions may be aborted only after deletion acceptance",
+    "in-flight Complete cannot be declared stopped by Abort",
+    "failed Abort remains unresolved; idempotent retry preserves its binding",
+    "cross-account and invalid HTTP inputs rejected",
+    "HTTP replies validate against generated OpenAPI schemas",
+    "unresolved multipart blocks permanent purge",
+    "missing migration fails startup checks"
+  ],
+  "corrected_test_failure": {
+    "test": "TestMySQLLiveMultipartEvidenceFailureAndPurgeGate",
+    "reason": "Fault injection attempted to rename a CHECK-constrained column; changed injection to rename unconstrained updated_at instead",
+    "product_guard_weakened": false
+  },
+  "boundaries": {
+    "deployed": false,
+    "ios_migrated": false,
+    "automatic_reconciliation_worker_connected": false,
+    "automatic_account_abort_worker_connected": false,
+    "real_multipart_live_photo_roundtrip_verified": false,
+    "http_runtime_wired": true,
+    "permanent_cleanup_enabled": false,
+    "account_erasure_complete": false,
+    "complete_never_sent_by_live_abort_probe": true,
+    "synthetic_temporary_parts_removed": true,
+    "existing_media_or_object_versions_deleted": false
+  },
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "59309c32dee3a23f696bfb70baa837259fc0014ab4767042525b497ada611aee",
+    "internal/albumhttpapi/generated.go": "d2a4d6487c33560ac50d0e298dbf184ce3ba15e626d1b892aab2757b98b759da",
+    "internal/albums/cos_find_multipart.go": "77e5bddac8951328c854ef21e336e32d1286732de124198bdb77178810c78515",
+    "internal/albums/cos_multipart.go": "eadaedaba8bbc47f6ee46c1d9ca8de32999477019d6662ea8a62143c131da775",
+    "internal/albums/cos_reconcile.go": "29282e677bcb5de492d30cceef9473aca49bb57f8d222facf000c1549725e3d1",
+    "internal/albums/http.go": "a4bd7d93072f459c5af4f3ec9ea55e7fd0c45b2dc0e19950f58ca1b7f2f53513",
+    "internal/albums/mysql_live_pairs.go": "18cb3e7353028c629c8422dcaa1af57e1401cd25331332e0874180546b6d5fa6",
+    "internal/albums/mysql_live_pairs_integration_test.go": "0359a697ee521586fa1434cd1042948209cf7e2decfe28b5ac92a26790f28b0e",
+    "internal/albums/object_purge_admission.go": "f753792ecff5ad362732b2aa0d850c24a22691e3966fd2432021fdb1c7dda218",
+    "migrations/embed_test.go": "32ebac93a906697f626bedb8606f8dc896273a91ea04e29fe13c4da0aa8c2ba3",
+    "internal/albums/cos_live_multipart_abort_test.go": "df8f493705d7baa29ee99270cdf55c0c3fac577071641d4b510abe49e88e386b",
+    "internal/albums/live_pair_multipart_http.go": "e3cd893d1bb56cf379b02a07f9e58d2229a83399b04f935b7f9dd7817413e712",
+    "internal/albums/live_pair_multipart_http_test.go": "a04e997c51dffaa4e5688dca48ab7d81d8a3bc5f891bb2d94997b0242c88908e",
+    "internal/albums/live_pair_multipart_repository.go": "e2cc8c4718893fef14eb68b9374e3cb49a6487b4f61b4923aaf7670bc63d22d2",
+    "internal/albums/live_pair_multipart_service.go": "6d70e66d6edde607f9ddd956207f65e4d0d55480079c52b81a95b44cb65c8a45",
+    "internal/albums/live_pair_multipart_test.go": "b5e66daf12a404f78db341441b2bd553ec6ee1c42794e4e40fbedfe0087f099b",
+    "migrations/0050_album_live_pair_multiparts.sql": "5ff06ec7a7d3230cd67390f357be5b0977b99d800d0474e8e01ff0b9f439db83"
+  }
+}

@@ -1,0 +1,85 @@
+[
+  {
+    "name": "preserve uncertain medical fee",
+    "utterances": [
+      {
+        "id": "medical-fee",
+        "text": "医生说检查已经过期，需要重新评估，费用好像是128元。"
+      }
+    ],
+    "draft": "医生说检查已经过期，需要重新评估，费用大概是128元。",
+    "requiredPhrases": ["医生说", "重新评估", "128"],
+    "forbiddenPhrases": ["已经确诊", "没有问题"],
+    "expectedIssueCodes": []
+  },
+  {
+    "name": "flag lost numeric uncertainty",
+    "utterances": [
+      {
+        "id": "uncertain-fee",
+        "text": "费用好像是128元，我记不清了。"
+      }
+    ],
+    "draft": "费用是128元。",
+    "requiredPhrases": ["128"],
+    "forbiddenPhrases": ["费用是128元"],
+    "expectedIssueCodes": [
+      "numeric_uncertainty_needs_review"
+    ]
+  },
+  {
+    "name": "flag invented appointment date",
+    "utterances": [
+      {
+        "id": "appointment-date",
+        "text": "检查约在9月18日。"
+      }
+    ],
+    "draft": "检查约在9月19日。",
+    "requiredPhrases": ["9月18日"],
+    "forbiddenPhrases": ["9月19日"],
+    "expectedIssueCodes": [
+      "ungrounded_number_needs_review"
+    ]
+  },
+  {
+    "name": "flag unsupported medical certainty",
+    "utterances": [
+      {
+        "id": "medical-review",
+        "text": "医生说现在还需要重新评估。"
+      }
+    ],
+    "draft": "医生说已经确诊，而且没有问题。",
+    "requiredPhrases": ["医生说", "重新评估"],
+    "forbiddenPhrases": ["已经确诊", "没有问题"],
+    "expectedIssueCodes": [
+      "ungrounded_medical_certainty_needs_review"
+    ]
+  },
+  {
+    "name": "keep speaker feelings separate",
+    "mode": "narrative",
+    "narratorSpeakerID": "me",
+    "speakers": [
+      {"id": "wife", "name": "妻子"},
+      {"id": "me", "name": "我"}
+    ],
+    "utterances": [
+      {
+        "id": "wife-feeling",
+        "speaker": "wife",
+        "text": "我有点害怕，医生说需要再评估。"
+      },
+      {
+        "id": "narrator-opinion",
+        "speaker": "me",
+        "text": "我只是觉得排队太久。"
+      }
+    ],
+    "draft": "妻子有点害怕，医生说需要再评估。我只是觉得排队太久。",
+    "requiredPhrases": ["妻子有点害怕", "我只是觉得排队太久"],
+    "forbiddenPhrases": ["我有点害怕", "我们都很害怕"],
+    "expectedIssueCodes": []
+  }
+]

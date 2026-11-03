@@ -1,0 +1,82 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Native isolated MySQL 8.4, synthetic account/session/share/deletion/media fixtures, real mysqldump and OpenSSL encryption, disposable restore server; no live database, cloud object or deployment mutation",
+  "verification": {
+    "startedAt": "2026-10-13T14:09:00.838684+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr/race.log",
+        "testCounts": {
+          "pass": 2
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr/build.log"
+      },
+      {
+        "name": "backup-unit",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr/backup-unit.log"
+      },
+      {
+        "name": "control-backup-regression",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-recovery-backup-tv_kk1dr/control-backup-regression.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T14:09:17.870303+00:00"
+  },
+  "go_passed_tests": 2,
+  "python_backup_safety_tests": 10,
+  "python_control_backup_regression_tests": 16,
+  "failed_tests": 0,
+  "skipped_tests": 0,
+  "covered": [
+    "Explicit inventory of 34 album tables agrees with migrations; missing/future/non-InnoDB schemas fail closed",
+    "Single-transaction export encrypted and authenticated using separate key and scoped manifest; shared control backup rejects Albums scope",
+    "Real MySQL restore compares all table row counts and hashes of ordered exported row bytes, including fixed-version media manifest JSON and encrypted Apple grant binary fields",
+    "Fresh socket-only restore server; active accounts, sessions, shares and push are quarantined; no API or worker starts",
+    "Original source account remains active and media remains accessible; temporary restore server and data removed",
+    "Wrong key/database/scope, tampered ciphertext/manifest, symlinks, traversal and nonprivate vault rejected",
+    "Authenticated 14-day age controls pruning and rejects stale archive before decryption/server startup; corrupt and unrecognized files preserved",
+    "Explicit Albums environment unaffected by shared active deployment selection; example key placeholder rejected"
+  ],
+  "development_failures": [
+    "Initial integration cleanup assertion matched the albums-restore-drill.json result file as well as directories. Corrected to inspect file type; actual restore and temporary server cleanup had succeeded. Final run passed."
+  ],
+  "source_sha256": {
+    "deploy/albums/backup.py": "86cd69b983f747150e8a076f11bbd9460949c2a79dd4d721f6d566544f132ca0",
+    "deploy/albums/backup_test.py": "cc819fa6a5a9c098aa7c758f81beadeb0d316fa27fc116bf42343745ef06f369",
+    "deploy/albums/backup.env.example": "81a7eff187a6593171c00549178e251898944c1dd78c1066358a2cce96b5dc7f",
+    "deploy/tencent/ops_backup.py": "7b2a3495d8904e8be1b9154c2d3b77e001b7d2760a1c9e207617058547f04dc2",
+    "internal/albums/recovery_backup_test.go": "966600b127e39805eb9c163b37ac37270411bc3c3594efc4bd03f8d946a46608"
+  },
+  "log_sha256": {
+    "race.log": "74b38f48994bbb9eb9ae743db6c034669f341141b9002f3c0ab123d23e6bd6ec",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backup-unit.log": "58a520a024f15707222afe6575db8a3a9dbe7469c2c156ae0f9979903d48645a",
+    "control-backup-regression.log": "d36846ae1f0323ad0b106d06471ad5181ba7aaaf0cc7724d2146cbdc2a1fec33"
+  },
+  "not_completed": [
+    "Offsite encrypted snapshot publication, independent deletion ledger, account-specific backup purge and actual media read verification during recovery",
+    "Key escrow and restored provider credential acceptance",
+    "Live restore/cutover, registered server producer and scheduled execution",
+    "Full account deletion HTTP/UI and final identity/billing/backup erasure",
+    "No real customer backup, live deployment, new credentials or cloud permissions; no iOS change/Xcode run"
+  ]
+}

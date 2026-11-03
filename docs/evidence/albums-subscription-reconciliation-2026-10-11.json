@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-11T12:10:57.535442+00:00",
+  "baselineCommit": "cb9493998f2abe20423e07aea78ac0b4c998b246",
+  "scope": "album-only Apple notification intake, durable background reconciliation and bounded write authorization freshness",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "f8f2103faa62278208e082e98f4ef59d70015eaac1bfcc3846a5cc2819a3193f",
+    "internal/albumhttpapi/generated.go": "6ac1513c8223e8e13d36188928835ac8d0e6bfc19e6b13f640ba4f59df484f88",
+    "internal/albums/gateway.go": "8f32277a98280118d333440e6866be32393eb06230d965bc5e7dd9fed3cbe859",
+    "internal/albums/http.go": "f2d27137e22171b4caf7df3dc00f7aae01cb39ab092498e27d4c6c9515a19519",
+    "internal/albums/login_http.go": "017fbe05913af2fb59045bf2879163a5f52581c51112c463756fb058dd0eb92e",
+    "internal/albums/login_limit.go": "7e404bb6d11092d8a5f691e23b180c2aa0376702508ba71d1d074b5dfa419a0f",
+    "internal/albums/mysql_live_pairs.go": "7ea97285877adde8fb761614775f03f82ff1bd230a87c9666d40fc7359dd5fd2",
+    "internal/albums/mysql_subscription_notifications.go": "87a922929f4ee83a07388c13fdc62f390df9c5d337c6fefc1f00318e628d1519",
+    "internal/albums/mysql_subscription_refresh.go": "666ae6bb44d724bb6f617a038a24a8f17a268a6ee800f89c7409a6e112d1764e",
+    "internal/albums/mysql_subscriptions.go": "d8ad6674fa87d078d5e2ba9bab7f9f8d8cd6daf087cf2122155e2af245d33d5e",
+    "internal/albums/mysql_subscriptions_integration_test.go": "36b1a659466845833bdac4f05aed070482ed95bea7bb861a7ccdf26f5cadfc16",
+    "internal/albums/mysql_uploads.go": "20f83b781ce2675edbdeac7c155d755b5a2fd295e43a67e6a020a7067d44ed7b",
+    "internal/albums/subscription_notification_http.go": "e4c39ac5a4caa01878595459ad46469a2e0108e3dcfa3e540046659a3c2039fa",
+    "internal/albums/subscription_notifications.go": "8997328fb85d9bd781f694e101767232b883c85a6ae071fcf881b9b94dadda40",
+    "internal/albums/subscription_reconciliation_integration_test.go": "86a9410cc7c11c7e103efcf976bc189a6dfc1e32c86905cdf0653d5e90c62899",
+    "internal/albums/subscription_refresh.go": "81c3e1df485f61ff50a15252bc9a77b1c61539d3c881ee2c8082c78e3a9fef2c",
+    "internal/albums/subscriptions.go": "3d06e2dd3aca651b2fb1be53972beea5996d6ac4e99a56a21c87fe4e27981532",
+    "internal/appstore/client.go": "c99a249bfd33b111827da20b47b187580364e92dddebedbb99b49824d6f15452",
+    "internal/appstore/notification.go": "916d1ddbe0c2245ab155689d350e2a535e7dedd296a905a4905f2a5010454542",
+    "internal/appstore/verifier.go": "9f42fe3d00434631e3b1689563049097b8051aa2cd9e71f169b35edd0d55a90f",
+    "migrations/0029_album_subscription_reconciliation.sql": "78ac443b1b2bf8de1a7ca5f5a374d1bc37512ac235e11f59401e486aac515d94",
+    "migrations/embed_test.go": "d27be03f1a1d7dfbd7460ece13a2b1b6d8b7010da98a73ff1944631c359b1620"
+  },
+  "environment": "isolated MySQL 8.4 and Redis over private Unix sockets; generated restricted database schema/user; real HTTP/Gateway and certificate-chain verification with controlled Apple/COS transports",
+  "validation": [
+    {
+      "name": "subscription-integration",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-3v6ks9el/subscription-integration.log",
+      "testCounts": {
+        "pass": 47
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "related-regression",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-3v6ks9el/related-regression.log",
+      "testCounts": {
+        "pass": 499
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-3v6ks9el/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-3v6ks9el/build.log"
+    },
+    {
+      "name": "subscription-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-ncr62sf3/subscription-race.log",
+      "testCounts": {
+        "pass": 47
+      },
+      "failures": [],
+      "skips": []
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-ncr62sf3/vet.log"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-sub-ncr62sf3/build.log"
+    }
+  ],
+  "raceIncludesNotificationAndRefreshTests": [
+    "TestGatewayAlbumSubscriptionNotificationsCommitBeforeAckAndRejectForgery",
+    "TestMySQLAlbumSubscriptionRefreshClockExpiryKeepsSameSignedTransaction",
+    "TestMySQLAlbumSubscriptionRefreshFreshnessFailureAndRecovery",
+    "TestMySQLAlbumSubscriptionRefreshLeaseFencesCrashAndClientChange"
+  ],
+  "countsOverlap": true,
+  "verified": [
+    "verified envelope and nested transaction before account selection",
+    "wrong App/environment and forged request rejection",
+    "semantic UUID replay detection and concurrent duplicate deliveries",
+    "current-status resolution prevents delayed renewal resurrection after refund",
+    "capacity and notification fingerprint commit before HTTP acknowledgement",
+    "provider failure does not commit acknowledgement or disclose private error",
+    "automatic assembled Gateway workers resume persisted chain after restart without client request",
+    "fenced one-minute leases reject abandoned worker and late client-racing results",
+    "15-minute freshness blocks reserves and all upload grants without removing existing data",
+    "backoff after provider failure and successful recovery",
+    "natural clock expiry with unchanged signed transaction cannot reactivate capacity",
+    "Sandbox anchors cannot be claimed in Production"
+  ],
+  "servicesStopped": true,
+  "liveProviderAcceptance": false,
+  "runtimeEnabled": false,
+  "unverified": [
+    "real Apple products and Sandbox subscription purchase/upgrade/refund/restore",
+    "real Apple V2 notifications and configured HTTPS callback",
+    "live COS/CI deployment and physical device",
+    "user reminders, six-calendar-month permanent all-version purge and deletion races"
+  ]
+}

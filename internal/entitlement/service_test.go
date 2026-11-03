@@ -9,18 +9,24 @@ import (
 	"github.com/tellyouwhat/backend/internal/attestation"
 )
 
-func TestDevelopmentActivationRequiresRotatableSecretAndExpires(t *testing.T) {
+func TestDevelopmentActivationRequiresVerifiedAppPrincipalAndExpiresWithoutPurchase(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
 	store := NewMemoryStore()
-	service := NewDevelopmentService(store, "expected-secret", 30*24*time.Hour, func() time.Time { return now })
-	principal := attestation.Principal{KeyID: "key-1", DeviceID: "device-1"}
+	service := NewDevelopmentService("health", store, 30*24*time.Hour, func() time.Time { return now })
+	principal := attestation.Principal{AppID: "health", KeyID: "key-1", DeviceID: "device-1"}
 
-	if _, err := service.Activate(context.Background(), principal, "wrong"); !errors.Is(err, ErrActivationDenied) {
-		t.Fatalf("expected denied activation, got %v", err)
+	for _, invalid := range []attestation.Principal{
+		{}, {AppID: "journal", KeyID: "key-1", DeviceID: "device-1"},
+		{AppID: "health", KeyID: "key-1"}, {AppID: "health", DeviceID: "device-1"},
+		{AppID: "health", KeyID: "key-1", DeviceID: "device-1", TransactionID: "verified-purchase"},
+	} {
+		if _, err := service.Activate(context.Background(), invalid, "app-attest"); !errors.Is(err, ErrActivationDenied) {
+			t.Fatalf("unverified or other App principal activated: %v", err)
+		}
 	}
-	expiresAt, err := service.Activate(context.Background(), principal, "expected-secret")
+	expiresAt, err := service.Activate(context.Background(), principal, "app-attest")
 	if err != nil {
 		t.Fatalf("activate: %v", err)
 	}
@@ -28,13 +34,42 @@ func TestDevelopmentActivationRequiresRotatableSecretAndExpires(t *testing.T) {
 		t.Fatalf("unexpected expiry: %s", expiresAt)
 	}
 	allowed, _ := service.HasManagedSubscription(context.Background(), principal)
-	if !allowed {
-		t.Fatal("activated principal should be entitled")
+	if allowed {
+		t.Fatal("legacy development grant must not unlock cloud service")
+	}
+	record, ok, err := store.Get(context.Background(), principal.KeyID)
+	if err != nil || !ok || record.Environment != "development" || record.TransactionID != "" || record.Payment.TransactionID != "" || record.Payment.HasPrice() {
+		t.Fatal("developer access was treated as an Apple purchase")
 	}
 	now = expiresAt.Add(time.Second)
 	allowed, _ = service.HasManagedSubscription(context.Background(), principal)
 	if allowed {
 		t.Fatal("expired development entitlement must be rejected")
+	}
+}
+
+func TestDeveloperGrantCannotReplaceVerifiedPurchases(t *testing.T) {
+	for _, environment := range []string{"production", "sandbox"} {
+		t.Run(environment, func(t *testing.T) {
+			now := time.Now().UTC()
+			store := NewMemoryStore()
+			existing := Record{KeyID: "key", TransactionID: "verified", Environment: environment, ExpiresAt: now.Add(time.Hour)}
+			if err := store.Upsert(context.Background(), existing); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Upsert(context.Background(), Record{KeyID: "key", Environment: "development", ExpiresAt: now.Add(30 * 24 * time.Hour)}); !errors.Is(err, ErrActivationDenied) {
+				t.Fatal("stale developer write replaced a verified purchase")
+			}
+			service := NewDevelopmentService("health", store, 30*24*time.Hour, func() time.Time { return now })
+			principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}
+			if _, err := service.Activate(context.Background(), principal, "app-attest"); !errors.Is(err, ErrActivationDenied) {
+				t.Fatalf("verified purchase overwritten by developer access: %v", err)
+			}
+			retained, _, _ := store.Get(context.Background(), "key")
+			if retained.TransactionID != existing.TransactionID || retained.Environment != environment || !retained.ExpiresAt.Equal(existing.ExpiresAt) {
+				t.Fatal("verified purchase changed")
+			}
+		})
 	}
 }
 
@@ -49,6 +84,7 @@ func TestProductionSyncBindsVerifiedActiveSubscriptionToAttestedKey(t *testing.T
 		TransactionID:         "offer-transaction-1",
 		Environment:           "Production",
 		OfferIdentifier:       "friends-september",
+		ProductID:             "app.monthly",
 		OfferType:             3,
 		ExpiresAt:             expiresAt,
 		SignedAt:              now,
@@ -70,7 +106,7 @@ func TestProductionSyncBindsVerifiedActiveSubscriptionToAttestedKey(t *testing.T
 		t.Fatalf("load entitlement: ok=%v err=%v", ok, err)
 	}
 	if record.TransactionID != "original-transaction-1" || record.Environment != "production" ||
-		record.OfferTransactionID != "offer-transaction-1" || record.OfferIdentifier != "friends-september" || record.OfferType != 3 {
+		record.ProductID != "app.monthly" || record.OfferTransactionID != "offer-transaction-1" || record.OfferIdentifier != "friends-september" || record.OfferType != 3 {
 		t.Fatalf("unexpected stored entitlement: %+v", record)
 	}
 	if binder.keyID != "key-1" || binder.transactionID != "original-transaction-1" {

@@ -1,0 +1,83 @@
+{
+  "checked_at": "2026-10-15T14:42:05Z",
+  "route_source_commit": "f41ac04",
+  "backup_source_commit": "d6b5966",
+  "dns": {
+    "hostname": "api-test.journal.tellyouwhat.cn",
+    "type": "A",
+    "value": "106.55.105.177",
+    "record_id": "6ad0e4383336c4ba74863665",
+    "readback_verified": true,
+    "ttl": 300
+  },
+  "runtime": {
+    "routing": {
+      "apps": [
+        "journal"
+      ],
+      "changed": true,
+      "completed_at": 1792074822,
+      "fragment_sha256": "7278c87ae9791d9e8fb049d2b638ec890c25bbf38fa3c01b1da6a5a2e6354151",
+      "operation": "test-routing",
+      "passed": true,
+      "production_routes_verified": true,
+      "recovery": "/opt/tellyouwhat/backend/.operations/test-routing-d04592ea2cca4699a990601abae8cbab",
+      "root_sha256": "6e28f2fc85cd191e47b20df68304ff9bb8ca145b5ca1e6b97dd55e617fb36c27",
+      "script_sha256": "ee310a7fe880c0b0c7499500050082ec17989126f771e4c3ed4e13faeb688bb2"
+    },
+    "backup_code": {
+      "completed_at": 1792075165,
+      "files": {
+        "ops_offsite.py": "f8a746c884c95b569d1106fe379815231a4066ddd393d05e6e7a6af354346ddf",
+        "test_routes.py": "5c94a79494676ebbc8d91d6ca5576404efe145fc10534f00ebeaeefde6d5544b"
+      },
+      "operation": "test-routing-backup-code",
+      "passed": true,
+      "previous": "/opt/tellyouwhat/backend/.operations/test-routing-code-before-d6b5966",
+      "source": "d6b5966"
+    },
+    "backup": {
+      "filename": "mysql-20261015T143947Z-83d5fc.sql.gz.enc",
+      "manifest_authenticated": true,
+      "routing_archive_verified": true,
+      "routing_hashes": {
+        "Caddyfile": "6e28f2fc85cd191e47b20df68304ff9bb8ca145b5ca1e6b97dd55e617fb36c27",
+        "state.json": "aece246d84355747e8d362ea6152ee4e1410fcd7e78623e7c6741393a313680a",
+        "test.caddy": "7278c87ae9791d9e8fb049d2b638ec890c25bbf38fa3c01b1da6a5a2e6354151"
+      },
+      "offsite_objects_read_back": 3,
+      "data_restore_executed": false
+    }
+  },
+  "probe": {
+    "tested_at": "2026-10-15T14:35:49Z",
+    "origin": "https://api-test.journal.tellyouwhat.cn",
+    "public_https_authenticated": true,
+    "development_protocol": "subscription-v2",
+    "voice_protocol": "journal-voice-v36",
+    "synthetic_organization_status": "passed",
+    "request_response_binding_verified": true,
+    "analysis_version": "28320a95-0bde-47ad-bbd0-d04edd180879",
+    "synthetic_tag_count": 3,
+    "unauthenticated_status": 401,
+    "wrong_credential_status": 401,
+    "internal_path_status": 404,
+    "real_device_verified": false,
+    "real_voice_verified": false,
+    "cloudkit_verified": false,
+    "earlier_probe": {
+      "status": 401,
+      "reason": "Probe generated different header/body request IDs; server rejected it. Corrected the probe without changing the service."
+    },
+    "notes": "Existing compatible private development service reused; independent prompt-store and backup migration remain unverified."
+  },
+  "routing_and_backup_tests_passed": 32,
+  "business_binary_redeployed": false,
+  "existing_service_source": "7d5467d81c53904e89cbd0e2c45b4d10012a16eb",
+  "remaining": [
+    "independent test prompt data source",
+    "private Journal state backup",
+    "device/OTA/CloudKit acceptance",
+    "other apps test and production services"
+  ]
+}

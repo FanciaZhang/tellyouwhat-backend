@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -15,21 +16,52 @@ var migrationFiles embed.FS
 const migrationLockName = "tellyouwhat_platform_schema_migrations"
 
 func Run(ctx context.Context, database *sql.DB) error {
+	return run(ctx, database, migrationLockName, false)
+}
+
+// RunIsolatedTest lets independent test databases migrate without sharing the production lock.
+func RunIsolatedTest(ctx context.Context, database *sql.DB) error {
+	var name string
+	if err := database.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&name); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(name, "_test") {
+		return fmt.Errorf("isolated migration requires a test database")
+	}
+	digest := sha256.Sum256([]byte(name))
+	return run(ctx, database, fmt.Sprintf("tellyouwhat_test_migrations_%x", digest[:16]), false)
+}
+
+// RunAlbumDevelopmentProducts applies only the reviewed Albums development updates.
+func RunAlbumDevelopmentProducts(ctx context.Context, database *sql.DB) error {
+	return run(ctx, database, migrationLockName, true)
+}
+
+func run(ctx context.Context, database *sql.DB, lockName string, albumProductsOnly bool) error {
 	connection, err := database.Conn(ctx)
 	if err != nil {
 		return err
 	}
 	defer connection.Close()
 	var acquired sql.NullInt64
-	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(?, 30)`, migrationLockName).Scan(&acquired); err != nil {
+	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(?, 30)`, lockName).Scan(&acquired); err != nil {
 		return fmt.Errorf("lock migrations: %w", err)
 	}
 	if !acquired.Valid || acquired.Int64 != 1 {
 		return fmt.Errorf("lock migrations: timeout")
 	}
 	defer func() {
-		_, _ = connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, migrationLockName)
+		_, _ = connection.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, lockName)
 	}()
+	if albumProductsOnly {
+		var base int
+		if err := connection.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name='0064_album_identity_retirement.sql'`).Scan(&base); err != nil {
+			return fmt.Errorf("inspect Albums development migration base: %w", err)
+		}
+		if base != 1 {
+			return fmt.Errorf("Albums development migration requires the existing identity-retirement schema")
+		}
+	}
 	var unscopedTables int
 	if err := connection.QueryRowContext(ctx, `
         SELECT COUNT(*) FROM information_schema.tables AS existing
@@ -57,23 +89,38 @@ func Run(ctx context.Context, database *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	rows, err := connection.QueryContext(ctx, `SELECT name FROM schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("inspect applied migrations: %w", err)
+	}
+	applied := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[name] = true
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
 	for _, entry := range entries {
 		if entry.IsDir() || !isMigrationFile(entry.Name()) {
 			continue
 		}
 		name := entry.Name()
+		if albumProductsOnly && name != "0073_album_development_subscription_products.sql" && name != "0074_album_system_copy_locators.sql" {
+			continue
+		}
+		if applied[name] {
+			continue
+		}
 		contents, err := migrationFiles.ReadFile(name)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
-		}
-		var applied int
-		err = connection.QueryRowContext(ctx, `
-            SELECT COUNT(*) FROM schema_migrations WHERE name = ?`, name).Scan(&applied)
-		if err != nil {
-			return fmt.Errorf("inspect migration %s: %w", name, err)
-		}
-		if applied > 0 {
-			continue
 		}
 		if _, err = connection.ExecContext(ctx, string(contents)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", name, err)

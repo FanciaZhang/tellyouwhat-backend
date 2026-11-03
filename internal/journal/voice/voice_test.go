@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -32,7 +33,7 @@ func TestReceiptsAreIdempotentAndSubscriptionScoped(t *testing.T) {
 	if err := s.Lock(ctx, "subscription", "other-device"); !errors.Is(err, ErrBusy) {
 		t.Fatal(err)
 	}
-	receipt := Receipt{SegmentID: uuid.NewString(), SHA256: "a", Text: "你好", Milliseconds: 1000}
+	receipt := Receipt{SegmentID: uuid.NewString(), SHA256: "a", Milliseconds: 1000}
 	for range 2 {
 		remaining, err := s.Commit(ctx, "subscription", "session", "month", "lease", receipt, 1200)
 		if err != nil || remaining != 200 {
@@ -64,7 +65,7 @@ func TestFailedSegmentDoesNotChargeAndQuotaResetsByPeriod(t *testing.T) {
 	if n != 1000 {
 		t.Fatal(n)
 	}
-	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Text: "text", Milliseconds: 1000}, 1000)
+	s.Commit(ctx, "owner", "s", "old", "lease", Receipt{SegmentID: "a", SHA256: "hash", Milliseconds: 1000}, 1000)
 	n, _ = s.Remaining(ctx, "owner", "new", 1000)
 	if n != 1000 {
 		t.Fatal(n)
@@ -74,7 +75,7 @@ func TestExpiredTranscriptDoesNotRechargeInNextMonth(t *testing.T) {
 	s := NewMemoryStore()
 	ctx := context.Background()
 	s.Lock(ctx, "owner", "lease")
-	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Text: "原始转写", Milliseconds: 1000}
+	r := Receipt{SegmentID: "segment", SHA256: "audio-hash", Milliseconds: 1000}
 	if _, err := s.Commit(ctx, "owner", "session", "old", "lease", r, 1200); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +129,7 @@ func TestASRPreservesTimedSpeakerEvidence(t *testing.T) {
 	}
 	utterance := result.Utterances[0]
 	if utterance.StartMilliseconds != 120 || utterance.EndMilliseconds != 860 || utterance.Speaker != "2" ||
-		utterance.AcousticEmotion != "happy" || utterance.Volume != 7.5 || utterance.SpeechRate != 3.25 || len(utterance.Words) != 1 {
+		utterance.AcousticEmotion != "happy" || utterance.Volume == nil || *utterance.Volume != 7.5 || utterance.SpeechRate == nil || *utterance.SpeechRate != 3.25 || len(utterance.Words) != 1 {
 		t.Fatalf("provider evidence was dropped: %+v", utterance)
 	}
 }
@@ -313,5 +314,60 @@ func TestTicketsCannotChangeSessionOrOwner(t *testing.T) {
 	}
 	if _, err = s.claim(ticket.Token+"tampered", id); err == nil {
 		t.Fatal("invalid signature")
+	}
+}
+
+func TestPendingEarlierSpeechCannotOverrideManualEdit(t *testing.T) {
+	snapshot := Snapshot{Transcript: "前面说错了，是十元。", ManualEdits: []ManualEdit{{Before: "十", After: "十五", PendingEarlierSpeech: true}}}
+	document := editorialDocument(snapshot)
+	if document.ManualEdits[0].HasLaterSpeech || document.ManualEdits[0].TranscriptOffset != len([]rune(snapshot.Transcript)) {
+		t.Fatal("late ASR became later speech")
+	}
+	if snapshot.ManualEdits[0].TranscriptOffset != 0 {
+		t.Fatal("rewriter mutated session snapshot")
+	}
+	snapshot.ManualEdits[0].PendingEarlierSpeech = false
+	snapshot.ManualEdits[0].TranscriptOffset = len([]rune(snapshot.Transcript))
+	snapshot.Transcript += "刚才手改错了，应当是十二元。"
+	if !editorialDocument(snapshot).ManualEdits[0].HasLaterSpeech {
+		t.Fatal("explicit later correction was blocked")
+	}
+}
+
+func TestAppliedRevisionCannotDiscardManualFactWithoutLaterSpeech(t *testing.T) {
+	id := uuid.NewString()
+	transcript := "检查原来约在下周三。"
+	snapshot := Snapshot{
+		Revision:   4,
+		Transcript: transcript,
+		Blocks:     []Block{{ID: id, Text: "手动确认为下周五，项目可以退款。"}},
+		ManualEdits: []ManualEdit{{
+			BlockID: id, Before: "下周三", After: "下周五",
+			TranscriptOffset: utf8.RuneCountInString(transcript),
+		}},
+	}
+	stale := Revision{BaseRevision: 4, Patches: []Patch{{
+		ID: id, Text: "改成了下周二，项目可以退款。",
+	}}}
+	if _, err := ApplyRevision(snapshot, stale); !errors.Is(err, ErrConflict) {
+		t.Fatal("discarded the user's exact later choice", err)
+	}
+
+	deleted := snapshot
+	deleted.Blocks[0].Text = "项目可以退款。"
+	deleted.ManualEdits[0] = ManualEdit{
+		BlockID: id, Before: "检查原来约在下周三。", After: "",
+		TranscriptOffset: utf8.RuneCountInString(transcript),
+	}
+	restored := stale
+	restored.Patches[0].Text = "检查原来约在下周三。项目可以退款。"
+	if _, err := ApplyRevision(deleted, restored); !errors.Is(err, ErrConflict) {
+		t.Fatal("restored a fact the user explicitly deleted", err)
+	}
+
+	withLaterSpeech := snapshot
+	withLaterSpeech.Transcript += "我刚才又确认了，应该改回下周三。"
+	if _, err := ApplyRevision(withLaterSpeech, stale); err != nil {
+		t.Fatal("an explicit later correction was blocked", err)
 	}
 }

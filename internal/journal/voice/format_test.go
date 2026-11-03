@@ -245,3 +245,27 @@ func TestParagraphFormatRequiresExactWholeBlock(t *testing.T) {
 		}
 	}
 }
+
+func TestExplicitEnumerationReflowCannotBeSatisfiedByOneListStyleCommand(t *testing.T) {
+	block, source := uuid.NewString(), uuid.NewString()
+	text := "出门带几样东西：水杯、雨伞、充电宝。"
+	instruction := "把这些东西整理成无序列表。"
+	s := Snapshot{Blocks: []Block{{ID: block, Style: "body", Text: text}}, PendingUtterances: []SourceUtterance{{ID: source, Text: instruction}}}
+	command := FormatCommand{ID: uuid.NewString(), BlockID: block, SourceID: source, Instruction: instruction, Anchor: TextAnchor{Quote: text}, Mark: "unorderedListItem", Enabled: true}
+	r := Revision{FormatCommands: []FormatCommand{command}, ConsumedSourceIDs: []string{source}}
+	if err := r.Validate(s); err == nil {
+		t.Fatal("multiple items incorrectly accepted as a single styled paragraph")
+	}
+	s.PendingUtterances[0].Text = "把整段设为一个列表项。"
+	r.FormatCommands[0].Instruction = s.PendingUtterances[0].Text
+	if err := r.Validate(s); err != nil {
+		t.Fatal("explicit single-item style request rejected", err)
+	}
+	s.Blocks[0].Text = "带上水杯。"
+	r.FormatCommands[0].Anchor.Quote = s.Blocks[0].Text
+	s.PendingUtterances[0].Text = instruction
+	r.FormatCommands[0].Instruction = instruction
+	if err := r.Validate(s); err != nil {
+		t.Fatal("one item needs no reflow", err)
+	}
+}

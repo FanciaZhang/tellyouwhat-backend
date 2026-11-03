@@ -8,19 +8,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"net"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
 )
 
-type ASRConfig struct{ URL, APIKey, AppKey, AccessKey, ResourceID string }
+type ASRConfig struct {
+	URL, APIKey, AppKey, AccessKey, ResourceID string
+	// Enabled only by the Journal development entry point until live acceptance.
+	StreamInsights bool
+	ObserveSchema  func([]StreamSchema)
+	ObserveTrace   func([]StreamTrace)
+}
 type Transcript struct {
 	Text, Stable string
+	// Original full provider text remains available when canonical confirmed
+	// turns repair an omitted/empty later metadata window.
+	ProviderText string
 	Final        bool
-	Utterances   []Utterance
+	Utterances   []StreamUtterance
 }
 type SpeechConnection interface {
 	Send([]byte, bool) error
@@ -30,11 +41,31 @@ type SpeechConnection interface {
 type Speech interface {
 	Open(context.Context, []string) (SpeechConnection, error)
 }
-type ASR struct{ Config ASRConfig }
-type asrConnection struct{ ws *websocket.Conn }
+type ASR struct {
+	Config  ASRConfig
+	Prompts *promptconfig.Cache
+}
+type asrConnection struct {
+	resultGuard   speechResultGuard
+	ws            *websocket.Conn
+	observeSchema func([]StreamSchema)
+	utterances    streamUtteranceWindow
+	observeTrace  func([]StreamTrace)
+	traces        []StreamTrace
+}
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
 func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error) {
+	punctuation, normalize := true, true
+	if r, ok := promptconfig.FromContext(ctx); ok {
+		punctuation, normalize = r.Policy.Journal.Voice.AutomaticPunctuation, r.Policy.Journal.Voice.NormalizeNumbers
+	} else if a.Prompts != nil {
+		r, err := a.Prompts.Current("journal")
+		if err != nil {
+			return nil, err
+		}
+		punctuation, normalize = r.Policy.Journal.Voice.AutomaticPunctuation, r.Policy.Journal.Voice.NormalizeNumbers
+	}
 	config, err := websocket.NewConfig(a.Config.URL, "https://api.journal.tellyouwhat.cn")
 	if err != nil {
 		return nil, err
@@ -58,16 +89,26 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		hotwords = append(hotwords, map[string]string{"word": w})
 	}
 	corpus, _ := json.Marshal(map[string]any{"hotwords": hotwords})
+	// Raw transcription preserves spoken content. Editorial cleanup belongs to
+	// the separately grounded AI rewrite, where users can inspect and undo it.
+	request := map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": normalize, "enable_punc": punctuation, "enable_ddc": false, "enable_lid": true, "end_window_size": 800, "corpus": map[string]string{"context": string(corpus)}}
+	if a.Config.StreamInsights {
+		request["enable_speaker_info"] = true
+		request["ssd_version"] = "200"
+		request["enable_emotion_detection"] = true
+		request["show_volume"] = true
+		request["show_speech_rate"] = true
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"user":    map[string]string{"uid": uuid.NewString()},
 		"audio":   map[string]any{"format": "pcm", "codec": "raw", "rate": 16000, "bits": 16, "channel": 1},
-		"request": map[string]any{"model_name": "bigmodel", "enable_nonstream": true, "show_utterances": true, "result_type": "full", "enable_itn": true, "enable_punc": true, "corpus": map[string]string{"context": string(corpus)}},
+		"request": request,
 	})
 	if err = websocket.Message.Send(ws, asrPacket(1, false, payload)); err != nil {
 		ws.Close()
 		return nil, err
 	}
-	return &asrConnection{ws}, nil
+	return &asrConnection{ws: ws, observeSchema: a.Config.ObserveSchema, observeTrace: a.Config.ObserveTrace}, nil
 }
 func asrPacket(kind byte, final bool, payload []byte) []byte {
 	flags := byte(0)
@@ -95,9 +136,46 @@ func (c *asrConnection) Receive() (Transcript, error) {
 	if err := websocket.Message.Receive(c.ws, &packet); err != nil {
 		return Transcript{}, err
 	}
-	return parseASR(packet)
+	var trace StreamTrace
+	var collect func(StreamTrace)
+	if c.observeTrace != nil {
+		collect = func(v StreamTrace) { trace = v }
+	}
+	result, err := parseASRWithObserver(packet, c.observeSchema, collect)
+	if err != nil {
+		return Transcript{}, err
+	}
+	parsed := result
+	result, err = c.utterances.merge(result)
+	if err != nil {
+		if c.observeTrace != nil {
+			trace.merged(parsed)
+			if len(c.traces) < 128 {
+				c.traces = append(c.traces, trace)
+			} else {
+				c.traces[len(c.traces)-1] = trace
+			}
+			c.observeTrace(c.traces)
+			c.traces = nil
+		}
+		return Transcript{}, err
+	}
+	if c.observeTrace != nil {
+		trace.merged(result)
+		if len(c.traces) < 128 {
+			c.traces = append(c.traces, trace)
+		} else if result.Final {
+			c.traces[len(c.traces)-1] = trace
+		}
+		if result.Final {
+			c.observeTrace(c.traces)
+			c.traces = nil
+		}
+	}
+	return c.resultGuard.accept(result)
 }
-func parseASR(packet []byte) (Transcript, error) {
+func parseASR(packet []byte) (Transcript, error) { return parseASRWithObserver(packet, nil) }
+func parseASRWithObserver(packet []byte, observe func([]StreamSchema), trace ...func(StreamTrace)) (Transcript, error) {
 	if len(packet) < 8 || packet[0]>>4 != 1 {
 		return Transcript{}, ErrInvalid
 	}
@@ -140,23 +218,8 @@ func parseASR(packet []byte) (Transcript, error) {
 	}
 	var envelope struct {
 		Result struct {
-			Text       string `json:"text"`
-			Utterances []struct {
-				Text       string                     `json:"text"`
-				Definite   bool                       `json:"definite"`
-				Start      *int                       `json:"start_time"`
-				End        int                        `json:"end_time"`
-				Speaker    string                     `json:"speaker"`
-				Emotion    string                     `json:"emotion"`
-				Volume     float64                    `json:"volume"`
-				SpeechRate float64                    `json:"speech_rate"`
-				Additions  map[string]json.RawMessage `json:"additions"`
-				Words      []struct {
-					Text  string `json:"text"`
-					Start int    `json:"start_time"`
-					End   int    `json:"end_time"`
-				} `json:"words"`
-			} `json:"utterances"`
+			Text       string                    `json:"text"`
+			Utterances []providerStreamUtterance `json:"utterances"`
 		} `json:"result"`
 		Code int `json:"code"`
 	}
@@ -166,31 +229,18 @@ func parseASR(packet []byte) (Transcript, error) {
 	if envelope.Code != 0 && envelope.Code != 20000000 {
 		return Transcript{}, errors.New("speech_provider_error")
 	}
-	result := Transcript{Text: envelope.Result.Text, Final: flags&2 != 0}
+	if len(envelope.Result.Utterances) > maxRecognitionUtterances || utf8.RuneCountInString(envelope.Result.Text) > MaxContextCharacters {
+		return Transcript{}, errRecognitionContext
+	}
+	if observe != nil && flags&2 != 0 {
+		observe(streamSchema(payload))
+	}
+	result := Transcript{Text: envelope.Result.Text, ProviderText: envelope.Result.Text, Final: flags&2 != 0}
+	result.Utterances = streamUtterances(envelope.Result.Utterances)
+	if len(trace) > 0 && trace[0] != nil {
+		trace[0](makeStreamTrace(envelope.Result.Utterances, result))
+	}
 	for _, u := range envelope.Result.Utterances {
-		startUnavailable := u.Start == nil
-		start := 0
-		if u.Start != nil {
-			start = max(0, *u.Start)
-		}
-		end := max(start, u.End)
-		speaker := firstAdditionString(u.Speaker, u.Additions, "speaker", "speaker_id")
-		emotion := firstAdditionString(u.Emotion, u.Additions, "emotion", "acoustic_emotion")
-		volume := firstAdditionNumber(u.Volume, u.Additions, "volume")
-		speechRate := firstAdditionNumber(u.SpeechRate, u.Additions, "speech_rate")
-		words := make([]Word, 0, len(u.Words))
-		for _, word := range u.Words {
-			if word.Text != "" && word.Start >= start && word.End >= word.Start && word.End <= end {
-				words = append(words, Word{Text: word.Text, StartMilliseconds: word.Start, EndMilliseconds: word.End})
-			}
-		}
-		providerEnd := u.End
-		result.Utterances = append(result.Utterances, Utterance{
-			Text: u.Text, StartMilliseconds: start, EndMilliseconds: end,
-			ProviderEndMilliseconds: &providerEnd, ProviderStartUnavailable: &startUnavailable,
-			Definite: u.Definite, Speaker: speaker, AcousticEmotion: emotion,
-			Volume: volume, SpeechRate: speechRate, Words: words,
-		})
 		if u.Definite {
 			result.Stable += u.Text
 		}
@@ -201,38 +251,24 @@ func parseASR(packet []byte) (Transcript, error) {
 	return result, nil
 }
 
-func firstAdditionString(fallback string, additions map[string]json.RawMessage, keys ...string) string {
-	if fallback != "" {
-		return fallback
-	}
-	for _, key := range keys {
-		var value string
-		if raw := additions[key]; len(raw) > 0 && json.Unmarshal(raw, &value) == nil {
-			return value
-		}
-	}
-	return ""
-}
+// An empty final after recognized speech is an upstream failure, not a silence
+// receipt. Retrying leaves the original PCM uncommitted and available to resend.
+// Never promote a provisional hypothesis into a definitive transcript.
+type speechResultGuard struct{ lastNonempty *Transcript }
 
-func firstAdditionNumber(fallback float64, additions map[string]json.RawMessage, keys ...string) float64 {
-	if fallback != 0 {
-		return fallback
+func (g *speechResultGuard) accept(t Transcript) (Transcript, error) {
+	if t.Text != "" {
+		copy := t
+		g.lastNonempty = &copy
+		return t, nil
 	}
-	for _, key := range keys {
-		raw := additions[key]
-		if len(raw) == 0 {
-			continue
-		}
-		var number float64
-		if json.Unmarshal(raw, &number) == nil {
-			return number
-		}
-		var text string
-		if json.Unmarshal(raw, &text) == nil {
-			if _, err := fmt.Sscan(text, &number); err == nil {
-				return number
-			}
-		}
+	if g.lastNonempty == nil {
+		return t, nil
 	}
-	return 0
+	if t.Final {
+		return Transcript{}, errors.New("speech_empty_final_after_text")
+	}
+	previous := *g.lastNonempty
+	previous.Final = false
+	return previous, nil
 }

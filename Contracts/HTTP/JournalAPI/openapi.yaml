@@ -363,6 +363,319 @@ paths:
                 "$ref": "#/components/schemas/ManagedAIProduct"
         default:
           "$ref": "#/components/responses/Error"
+  /v1/journal/read-aloud/syntheses: {"post": {"operationId": "createJournalReadAloudSynthesis", "tags": ["Journal"], "parameters": [{"$ref": "#/components/parameters/RequestIDHeader"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudSynthesisRequest"}}}}, "responses": {"200": {"description": "Bounded audio session and durable synthesis outcome.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudSession"}}}}, "default": {"$ref": "#/components/responses/Error"}}, "security": [{"AppAttestKeyID": [], "AppAttestAssertion": [], "AppAttestNonce": [], "AppAttestTimestamp": [], "AppAttestRequestID": []}]}}
+  /v1/journal/read-aloud/syntheses/{synthesisID}: {"get": {"operationId": "getJournalReadAloudSynthesis", "tags": ["Journal"], "parameters": [{"$ref": "#/components/parameters/RequestIDHeader"}, {"name": "synthesisID", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Bounded audio session and durable synthesis outcome.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudSession"}}}}, "default": {"$ref": "#/components/responses/Error"}}, "security": [{"AppAttestKeyID": [], "AppAttestAssertion": [], "AppAttestNonce": [], "AppAttestTimestamp": [], "AppAttestRequestID": []}]}, "delete": {"operationId": "cancelJournalReadAloudSynthesis", "tags": ["Journal"], "parameters": [{"$ref": "#/components/parameters/RequestIDHeader"}, {"name": "synthesisID", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Bounded audio session and durable synthesis outcome.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudSession"}}}}, "default": {"$ref": "#/components/responses/Error"}}, "security": [{"AppAttestKeyID": [], "AppAttestAssertion": [], "AppAttestNonce": [], "AppAttestTimestamp": [], "AppAttestRequestID": []}]}}
+  /v1/journal/read-aloud/syntheses/{synthesisID}/events: {"get": {"operationId": "streamJournalReadAloudSynthesis", "tags": ["Journal"], "parameters": [{"$ref": "#/components/parameters/RequestIDHeader"}, {"name": "synthesisID", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"name": "after", "in": "query", "schema": {"type": "integer", "minimum": 0, "maximum": 11520000, "default": 0}, "description": "Resume at an even, exclusive PCM byte cursor from the last accepted event sequence."}], "responses": {"200": {"description": "SSE audio frames followed by a required terminal state. Resume after the last accepted audio sequence. HTTP disconnect never starts a second synthesis.", "content": {"text/event-stream": {"schema": {"$ref": "#/components/schemas/ReadAloudEvent"}}}}, "default": {"$ref": "#/components/responses/Error"}}, "security": [{"AppAttestKeyID": [], "AppAttestAssertion": [], "AppAttestNonce": [], "AppAttestTimestamp": [], "AppAttestRequestID": []}]}}
+  /v1/journal/read-aloud/allowance: {"get": {"operationId": "getJournalReadAloudAllowance", "tags": ["Journal"], "parameters": [{"$ref": "#/components/parameters/RequestIDHeader"}, {"name": "purpose", "in": "query", "schema": {"type": "string", "enum": ["journal", "preview"], "default": "journal"}}], "responses": {"200": {"description": "Independent character allowance.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudAllowance"}}}}, "default": {"$ref": "#/components/responses/Error"}}, "security": [{"AppAttestKeyID": [], "AppAttestAssertion": [], "AppAttestNonce": [], "AppAttestTimestamp": [], "AppAttestRequestID": []}]}}
+  /v1/journal/read-aloud/voices: {"get": {"operationId": "getJournalReadAloudVoices", "tags": ["Journal"], "summary": "Public verified voice metadata, excluding credentials and provider configuration.", "security": [], "parameters": [{"name": "If-None-Match", "in": "header", "schema": {"type": "string", "maxLength": 512}}], "responses": {"200": {"description": "Published voice catalog.", "headers": {"ETag": {"schema": {"type": "string"}, "required": true}, "Cache-Control": {"schema": {"type": "string"}, "required": true}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadAloudCatalog"}}}}, "304": {"description": "The cached catalog is current.", "headers": {"ETag": {"schema": {"type": "string"}, "required": true}, "Cache-Control": {"schema": {"type": "string"}, "required": true}}}, "default": {"$ref": "#/components/responses/Error"}}}}
+  /v1/journal/writing-styles:
+    get:
+      operationId: getJournalWritingStyles
+      tags: [Journal]
+      summary: Public writing style metadata. No prompts or provider settings.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: {type: string}
+      responses:
+        '200':
+          description: The current writing style catalog.
+          headers:
+            ETag: {schema: {type: string}, required: true}
+            Cache-Control: {schema: {type: string}, required: true}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WritingStyleCatalog'}
+        '304':
+          description: The cached catalog is current.
+          headers:
+            ETag: {schema: {type: string}, required: true}
+            Cache-Control: {schema: {type: string}, required: true}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}":
+    put:
+      operationId: uploadJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: X-Tellyouwhat-Content-SHA256
+          in: header
+          required: true
+          description: SHA-256 of WAV bytes; also used as the App Attest canonical body digest and verified while streaming.
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+    get:
+      operationId: getJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/process":
+    post:
+      operationId: processJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/retry":
+    post:
+      operationId: retryJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        '202':
+          description: Recording uploaded or processing.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingTask"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/recordings/{recordingID}/preview":
+    post:
+      operationId: previewJournalRecording
+      tags: [Journal]
+      summary: Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+        - name: recordingID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Recording task or validated preview.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RecordingPreviewResponse"}
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/sessions":
+    post:
+      operationId: createJournalVoiceSession
+      tags: [Journal]
+      summary: Admit an authenticated subscriber to a resumable voice session.
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/VoiceSessionRequest"
+      responses:
+        '201':
+          description: A short-lived single-use WebSocket ticket.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/VoiceSessionTicket"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/voice/sessions/{sessionID}/stream":
+    get:
+      operationId: streamJournalVoiceSession
+      tags: [Journal]
+      summary: Upgrade to the voice protocol with a single-use bearer ticket.
+      description: Audio and revision frames are described in docs/journal-voice.md. The ticket is never accepted in a URL.
+      security:
+        - VoiceSessionTicket: []
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: WebSocket upgrade accepted.
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/organization":
+    post:
+      operationId: organizeJournal
+      tags:
+        - Journal
+        - AI
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/OrganizeRequest"
+      responses:
+        '200':
+          description: A validated set of tags and book suggestions.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/OrganizeResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '413':
+          "$ref": "#/components/responses/PayloadTooLarge"
+        '422':
+          "$ref": "#/components/responses/UnprocessableEntity"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '502':
+          "$ref": "#/components/responses/BadGateway"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/Error"
+  "/v1/journal/illustration-suggestions":
+    post:
+      operationId: suggestJournalIllustration
+      tags: [Journal, AI]
+      security:
+        - AppAttestKeyID: []
+          AppAttestAssertion: []
+          AppAttestNonce: []
+          AppAttestTimestamp: []
+          AppAttestRequestID: []
+      parameters:
+        - "$ref": "#/components/parameters/RequestIDHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref": "#/components/schemas/IllustrationSuggestionRequest"}
+      responses:
+        '200':
+          description: Optional scene grounded in the supplied journal text.
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/IllustrationSuggestionResponse"}
+        default:
+          "$ref": "#/components/responses/Error"
   "/v1/journal/illustrations":
     post:
       operationId: createJournalIllustration
@@ -469,99 +782,6 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/IllustrationResult"
-        default:
-          "$ref": "#/components/responses/Error"
-  "/v1/journal/voice/sessions":
-    post:
-      operationId: createJournalVoiceSession
-      tags: [Journal]
-      summary: Admit an authenticated subscriber to a resumable voice session.
-      security:
-        - AppAttestKeyID: []
-          AppAttestAssertion: []
-          AppAttestNonce: []
-          AppAttestTimestamp: []
-          AppAttestRequestID: []
-      parameters:
-        - "$ref": "#/components/parameters/RequestIDHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/VoiceSessionRequest"
-      responses:
-        '201':
-          description: A short-lived single-use WebSocket ticket.
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/VoiceSessionTicket"
-        default:
-          "$ref": "#/components/responses/Error"
-  "/v1/journal/voice/sessions/{sessionID}/stream":
-    get:
-      operationId: streamJournalVoiceSession
-      tags: [Journal]
-      summary: Upgrade to the voice protocol with a single-use bearer ticket.
-      description: Audio and revision frames are described in docs/journal-voice.md. The ticket is never accepted in a URL.
-      security:
-        - VoiceSessionTicket: []
-      parameters:
-        - name: sessionID
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '101':
-          description: WebSocket upgrade accepted.
-        default:
-          "$ref": "#/components/responses/Error"
-  "/v1/ai/operations/journal.organize/responses":
-    post:
-      operationId: organizeJournal
-      tags:
-        - Journal
-        - AI
-      security:
-        - AppAttestKeyID: []
-          AppAttestAssertion: []
-          AppAttestNonce: []
-          AppAttestTimestamp: []
-          AppAttestRequestID: []
-      parameters:
-        - "$ref": "#/components/parameters/RequestIDHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/OrganizeRequest"
-      responses:
-        '200':
-          description: A validated set of tags and book suggestions.
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/OrganizeResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '409':
-          "$ref": "#/components/responses/Conflict"
-        '413':
-          "$ref": "#/components/responses/PayloadTooLarge"
-        '422':
-          "$ref": "#/components/responses/UnprocessableEntity"
-        '429':
-          "$ref": "#/components/responses/TooManyRequests"
-        '502':
-          "$ref": "#/components/responses/BadGateway"
-        '503':
-          "$ref": "#/components/responses/ServiceUnavailable"
         default:
           "$ref": "#/components/responses/Error"
 components:
@@ -839,12 +1059,15 @@ components:
           type: string
           enum:
             - adult
+            - age_14_plus
+            - guardian_consent
             - privacy_and_terms
             - lifetime_byok
             - managed_subscription
             - free_managed_recognition
             - sensitive_health_ai
             - journal_illustration
+            - journal_read_aloud
         documentVersion:
           type: string
           minLength: 1
@@ -860,7 +1083,7 @@ components:
         consents:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 8
           items:
             "$ref": "#/components/schemas/PrivacyConsent"
     PrivacyConsentResponse:
@@ -876,7 +1099,7 @@ components:
         count:
           type: integer
           minimum: 1
-          maximum: 6
+          maximum: 7
     QuotaSnapshot:
       type: object
       additionalProperties: false
@@ -956,44 +1179,58 @@ components:
         signedTransaction:
           type: string
           minLength: 1
-    IllustrationRequest:
+    ReadAloudSynthesisRequest: {"type": "object", "additionalProperties": false, "required": ["requestID", "purpose", "voiceID", "voiceRevision", "text", "pitch", "style", "dialect", "language", "consentVersion"], "properties": {"requestID": {"type": "string", "format": "uuid"}, "purpose": {"type": "string", "enum": ["journal", "preview"]}, "voiceID": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"}, "voiceRevision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "text": {"type": "string", "maxLength": 900, "description": "At most 900 UTF-8 bytes. Must be empty for preview; the server selects its public sample."}, "pitch": {"type": "integer", "minimum": -12, "maximum": 12}, "style": {"type": "string", "enum": ["natural", "calm", "storytelling"]}, "dialect": {"type": "string", "maxLength": 16}, "language": {"type": "string", "maxLength": 16}, "consentVersion": {"type": "string", "maxLength": 32}}}
+    ReadAloudSession: {"type": "object", "additionalProperties": false, "required": ["id", "purpose", "state", "audioBytes", "lastSequence", "bufferAvailable", "expiresAt", "sampleRate", "channels", "encoding"], "properties": {"id": {"type": "string", "format": "uuid"}, "purpose": {"type": "string", "enum": ["journal", "preview"]}, "state": {"type": "string", "enum": ["preparing", "reserved", "running", "succeeded", "failed", "cancelled", "unknown"]}, "audioBytes": {"type": "integer", "minimum": 0, "maximum": 11520000}, "lastSequence": {"type": "integer", "minimum": 0, "maximum": 11520000, "description": "Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries."}, "bufferAvailable": {"type": "boolean"}, "expiresAt": {"type": "string", "format": "date-time"}, "sampleRate": {"type": "integer", "enum": [24000]}, "channels": {"type": "integer", "enum": [1]}, "encoding": {"type": "string", "enum": ["pcm_s16le"]}, "problem": {"type": "string", "maxLength": 64}}}
+    ReadAloudEvent: {"type": "object", "additionalProperties": false, "required": ["kind", "sessionID", "sequence"], "properties": {"kind": {"type": "string", "enum": ["audio", "state", "heartbeat"]}, "sessionID": {"type": "string", "format": "uuid"}, "sequence": {"type": "integer", "minimum": 0, "maximum": 11520000, "description": "Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries."}, "offset": {"type": "integer", "minimum": 0, "maximum": 11520000}, "pcm": {"type": "string", "format": "byte"}, "session": {"$ref": "#/components/schemas/ReadAloudSession"}}}
+    ReadAloudAllowance: {"type": "object", "additionalProperties": false, "required": ["purpose", "limit", "used", "reserved", "remaining", "periodEnd"], "properties": {"purpose": {"type": "string", "enum": ["journal", "preview"]}, "limit": {"type": "integer", "minimum": 0}, "used": {"type": "integer", "minimum": 0}, "reserved": {"type": "integer", "minimum": 0}, "remaining": {"type": "integer", "minimum": 0}, "periodEnd": {"type": "string", "format": "date-time"}}}
+    ReadAloudVoice: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "languages", "styles", "dialects", "supportsPitch", "revision"], "properties": {"id": {"type": "string", "maxLength": 128}, "name": {"type": "string", "maxLength": 80}, "description": {"type": "string", "maxLength": 500}, "languages": {"type": "array", "items": {"type": "string"}}, "styles": {"type": "array", "items": {"type": "string"}}, "dialects": {"type": "array", "items": {"type": "string"}}, "supportsPitch": {"type": "boolean"}, "previewURL": {"type": "string", "maxLength": 2048}, "revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+    ReadAloudCatalog: {"type": "object", "additionalProperties": false, "required": ["version", "defaultVoiceID", "maxAgeSeconds", "voices"], "properties": {"version": {"type": "string", "maxLength": 36}, "defaultVoiceID": {"type": "string", "maxLength": 128}, "maxAgeSeconds": {"type": "integer", "minimum": 60, "maximum": 86400}, "voices": {"type": "array", "minItems": 1, "maxItems": 5000, "items": {"$ref": "#/components/schemas/ReadAloudVoice"}}}}
+    RecordingTask:
       type: object
-      additionalProperties: false
-      required: [requestID, versionID, prompt, consentRevision]
-      properties:
-        requestID: {type: string, format: uuid}
-        versionID: {type: string, format: uuid}
-        prompt: {type: string, minLength: 1, maxLength: 20000}
-        consentRevision: {type: string, minLength: 1, maxLength: 128}
-        referenceSHA256: {type: string, pattern: '^[a-f0-9]{64}$'}
-        reference: {type: string, format: byte, maxLength: 33333336}
-    IllustrationCancellation:
-      type: object
-      additionalProperties: false
-      required: [revision]
-      properties:
-        revision: {type: integer, format: int64, minimum: 1}
-    IllustrationTask:
-      type: object
-      additionalProperties: false
-      required: [id, versionID, state, revision, expiresAt]
+      required: [id, providerTaskID, audioHash, milliseconds, state, revision, updatedAt]
       properties:
         id: {type: string, format: uuid}
-        versionID: {type: string, format: uuid}
-        state:
-          type: string
-          enum: [queued, running, succeeded, rejected, uncertain, cancelled]
-        revision: {type: integer, format: int64, minimum: 1}
-        expiresAt: {type: string, format: date-time}
-    IllustrationResult:
+        providerTaskID: {type: string, format: uuid}
+        audioHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        milliseconds: {type: integer, minimum: 1, maximum: 1800000}
+        state: {type: string, enum: [uploaded, submitting, processing, completed, failed]}
+        revision: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+        errorCode: {type: string}
+        result: {"$ref": "#/components/schemas/RecordingAnalysis"}
+    RecordingAnalysis:
       type: object
-      additionalProperties: false
-      required: [image, mime, width, height]
+      required: [taskID, version, milliseconds, text, utterances]
       properties:
-        image: {type: string, format: byte, maxLength: 33333336}
-        mime: {type: string, enum: [image/png, image/jpeg]}
-        width: {type: integer, minimum: 1, maximum: 16000}
-        height: {type: integer, minimum: 1, maximum: 16000}
+        taskID: {type: string, format: uuid}
+        version: {type: string, enum: [journal-recording-v1]}
+        milliseconds: {type: integer, minimum: 1, maximum: 1800000}
+        text: {type: string}
+        utterances:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [id, speaker, startMilliseconds, endMilliseconds, text]
+            properties:
+              id: {type: string}
+              speaker: {type: string}
+              startMilliseconds: {type: integer, minimum: 0}
+              endMilliseconds: {type: integer, minimum: 0}
+              text: {type: string}
+              acousticEmotion: {type: string}
+    RecordingPreviewResponse:
+      type: object
+      required: [requestID, reviewRevision, revision]
+      properties:
+        requestID: {type: string, format: uuid}
+        reviewRevision: {type: integer, minimum: 0}
+        revision:
+          type: object
+          description: Validated Journal voice revision; see the voice protocol document.
+          additionalProperties: true
+    WritingStyleMetadata: {"type": "object", "additionalProperties": false, "required": ["id", "name", "description", "example", "order", "enabled"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"}, "example": {"type": "string"}, "order": {"type": "integer"}, "enabled": {"type": "boolean"}}}
+    WritingStyleCatalog: {"type": "object", "additionalProperties": false, "required": ["version", "defaultStyle", "styles"], "properties": {"version": {"type": "string"}, "defaultStyle": {"type": "string"}, "styles": {"type": "array", "items": {"$ref": "#/components/schemas/WritingStyleMetadata"}}}}
     VoiceSessionRequest:
       type: object
       additionalProperties: false
@@ -1021,6 +1258,23 @@ components:
         resetsAt:
           type: string
           format: date-time
+    IllustrationSuggestion:
+      type: object
+      additionalProperties: false
+      required: [summary, subject, setting, composition, style, sourceQuotes, reason]
+      properties:
+        summary: {type: string, minLength: 1, maxLength: 120}
+        subject: {type: string, minLength: 1, maxLength: 500}
+        setting: {type: string, maxLength: 500}
+        composition: {type: string, maxLength: 500}
+        style: {type: string, maxLength: 120}
+        reason: {type: string, minLength: 1, maxLength: 240}
+        sourceQuotes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 600}
     OrganizeRequest:
       type: object
       additionalProperties: false
@@ -1209,6 +1463,84 @@ components:
           minimum: 0
         available:
           type: boolean
+    IllustrationSuggestionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, contentHash, title, body]
+      properties:
+        requestID: {type: string, format: uuid}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        title: {type: string, maxLength: 120}
+        body: {type: string, minLength: 1, maxLength: 60000}
+    IllustrationSuggestionResponse:
+      type: object
+      additionalProperties: false
+      required: [requestID, contentHash, analysisVersion, quota]
+      properties:
+        requestID: {type: string, format: uuid}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        analysisVersion: {type: string, minLength: 1, maxLength: 128}
+        suggestion: {"$ref": "#/components/schemas/IllustrationSuggestion"}
+        quota: {"$ref": "#/components/schemas/OrganizeQuota"}
+    IllustrationRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, versionID, brief, consentRevision]
+      properties:
+        requestID: {type: string, format: uuid}
+        versionID: {type: string, format: uuid}
+        brief: {"$ref": "#/components/schemas/IllustrationBrief"}
+        consentRevision: {type: string, minLength: 1, maxLength: 128}
+        referenceSHA256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        reference: {type: string, format: byte, maxLength: 33333336}
+    IllustrationBrief:
+      type: object
+      additionalProperties: false
+      required: [title, details]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 300}
+        details:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: {"$ref": "#/components/schemas/IllustrationDetail"}
+    IllustrationDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, text]
+      properties:
+        kind: {type: string, enum: [subject, setting, composition, style, other]}
+        text: {type: string, minLength: 1, maxLength: 8000}
+    IllustrationCancellation:
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+    IllustrationTask:
+      type: object
+      additionalProperties: false
+      required: [id, versionID, state, revision, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        versionID: {type: string, format: uuid}
+        state:
+          type: string
+          enum: [queued, running, succeeded, rejected, uncertain, cancelled]
+        revision: {type: integer, format: int64, minimum: 1}
+        expiresAt: {type: string, format: date-time}
+        problem:
+          type: string
+          enum: [network, unavailable, quota, rejected, invalidImage]
+    IllustrationResult:
+      type: object
+      additionalProperties: false
+      required: [image, mime, width, height]
+      properties:
+        image: {type: string, format: byte, maxLength: 33333336}
+        mime: {type: string, enum: [image/png, image/jpeg]}
+        width: {type: integer, minimum: 1, maximum: 16000}
+        height: {type: integer, minimum: 1, maximum: 16000}
   parameters:
     DevelopmentActivationHeader:
       in: header

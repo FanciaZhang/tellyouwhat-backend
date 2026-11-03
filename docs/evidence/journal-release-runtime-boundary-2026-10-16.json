@@ -1,0 +1,94 @@
+{
+  "verified_at": "2026-10-16T01:43:15.056395+00:00",
+  "source_commit": "f238cd855a2c789c91700deec2a52f8b3877f36d",
+  "source_parent": "e66ada2ae105e52524b186b0fdd491f4653768c1",
+  "source_files_sha256": {
+    "apps/ios/JournalApp/Sources/App/JournalAppApp.swift": "d5a802bbdf4c17743d894dde8c07e8e3683f13021e141ea7091cba4e7164b3ea",
+    "apps/ios/JournalApp/Sources/Persistence/PersistenceController.swift": "b63d771e0edd7201d184cde4cf491831043016e81e63db6f5e6315a7e28d5647",
+    "apps/ios/JournalApp/Sources/Shared/JournalSubscription.swift": "9349be7ec4e1f7d62fa8188951d14b1376f1b780bba99a24751df51874746c89",
+    "apps/ios/JournalApp/Tests/JournalAppTests.swift": "0b4c40b40f2f7992b92da790e7bdde705c99be8f4eb95f6c3715b5102763631d",
+    "apps/ios/JournalApp/UITests/JournalAppUITests.swift": "e1a5485731cc005d0c061ee84bb43ad14a60b0c1ef168b9a0eba7895b9fbb556"
+  },
+  "xcode": "27.1 (27A9275)",
+  "simulator": "iPhone 17 / iOS 26.5",
+  "Debug": {
+    "result": "Passed",
+    "passedTests": 22,
+    "failedTests": 0,
+    "skippedTests": 2,
+    "totalTestCount": 24
+  },
+  "Release": {
+    "result": "Passed",
+    "passedTests": 20,
+    "failedTests": 0,
+    "skippedTests": 4,
+    "totalTestCount": 24
+  },
+  "release_compilation": "ordinary Release, ENABLE_TESTABILITY=YES for unit visibility; DEBUG not defined",
+  "binary_boundary": {
+    "Debug": {
+      "bundle_id": "cn.tellyouwhat.journalapp.dev",
+      "code_sha256": {
+        "JournalApp": "90bbdebc714af7a15156f6b1e74f87cc27d87014ff6789fbfc64646bc9ed3539",
+        "JournalApp.debug.dylib": "ef418b8552ee9bf8a920f13518e8090b1f8642a08e70d732b4750cb9e54d5d0b",
+        "__preview.dylib": "513eca121cdaa1b309fbdf79d3ecc5c4434a2316b8a40edd9f7790f5ad45fc39"
+      },
+      "development_markers_present": {
+        "JOURNALAPP_DISABLE_ICLOUD": true,
+        "JOURNALAPP_UI_TEST_SUBSCRIPTION_CATALOG": true,
+        "-ui-test-developer-settings": true,
+        "journal-developer-settings": true
+      }
+    },
+    "Release": {
+      "bundle_id": "cn.tellyouwhat.journalapp",
+      "code_sha256": {
+        "JournalApp": "72cb6d9acbed21c9e363c483306d43baaff00f654369c95d3af3f1028898f57e"
+      },
+      "development_markers_present": {
+        "JOURNALAPP_DISABLE_ICLOUD": false,
+        "JOURNALAPP_UI_TEST_SUBSCRIPTION_CATALOG": false,
+        "-ui-test-developer-settings": false,
+        "journal-developer-settings": false
+      }
+    }
+  },
+  "release_persisted_write_survives_relaunch_with_development_overrides": true,
+  "release_developer_entry_absent_at_cold_launch_and_relaunch": true,
+  "debug_developer_options_and_development_connection_import_remain_available": true,
+  "device_cloud_sync_environment_override_decision_tested_in_both_configurations": true,
+  "storekit_launch_argument_override_decision_tested_in_both_configurations": true,
+  "unchanged_persistence_schema_and_media_recovery_tests_passed": true,
+  "skip_reasons": {
+    "Debug": [
+      "two explicitly disabled live Apple service tests"
+    ],
+    "Release": [
+      "two Debug-only development entitlement tests",
+      "two explicitly disabled live Apple service tests"
+    ]
+  },
+  "screenshots": {
+    "docs/evidence/journal-debug-runtime-settings-2026-10-16.png": "219ff1e38db5d9767c58151a3470f1bb75d31391ca7107e1b1e6ac2a9626879b",
+    "docs/evidence/journal-release-runtime-settings-2026-10-16.png": "1f684dd60f9b5efc7adf8d68536ef79e74eac48fa58e41581448545d876f9bc3"
+  },
+  "screenshots_inspected": true,
+  "user_accepted": false,
+  "prior_verifier_attempts": [
+    {
+      "check": "Debug executable-only markers",
+      "outcome": "incomplete artifact selection",
+      "reason": "Xcode places Debug app code in JournalApp.debug.dylib; corrected inspection includes executable and app-root dylibs. No app code or tests changed."
+    }
+  ],
+  "real_cloudkit_schema_verified": false,
+  "real_device_cloudkit_sync_verified": false,
+  "ota_updated_for_this_change": false,
+  "testflight_uploaded": false,
+  "production_backend_changed": false,
+  "pushed": false,
+  "owned_simulator_deleted": true,
+  "frozen_source_removed": true,
+  "managed_run_finished": "success"
+}

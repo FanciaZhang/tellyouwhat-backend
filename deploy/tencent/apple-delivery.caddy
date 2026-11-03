@@ -1,0 +1,19 @@
+install.tellyouwhat.cn {
+    log apple_delivery {
+        output discard
+    }
+    log_name apple_delivery
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-store"
+        Referrer-Policy "no-referrer"
+        X-Content-Type-Options "nosniff"
+        -Server
+    }
+    handle /d/* {
+        reverse_proxy 127.0.0.1:18791
+    }
+    handle {
+        respond 404
+    }
+}

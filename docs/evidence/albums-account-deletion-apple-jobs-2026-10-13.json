@@ -1,0 +1,71 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Internal durable Apple revocation phase of account deletion; no complete account erasure or production scheduling",
+  "migration": "0042_album_deletion_apple_jobs.sql",
+  "changes": [
+    "Atomically queue every stored grant with deletion acceptance, including locally revoked grants",
+    "Migration backfills existing deletion requests",
+    "Bounded batch, expiring exclusive lease, restart recovery and exponential retry capped at six hours",
+    "Receipt-bound compare-and-swap completion; acknowledgement and recoverable credential erasure commit together",
+    "Provider, decryption, cancellation and database failures cannot imply successful revocation"
+  ],
+  "verification": {
+    "test_event_counts": {
+      "pass": 47,
+      "fail": 0,
+      "skip": 0
+    },
+    "top_level_passed": [
+      "TestEmbeddedMigrationsStartFromCleanMultiAppSchema",
+      "TestMySQLAppleDeletionRetriesEveryGrantAndPreservesOtherAccount",
+      "TestMySQLAppleDeletionLeaseRecoveryRejectsStaleWorker",
+      "TestMySQLAppleDeletionAcknowledgementFailureRollsBackCredentialWipe",
+      "TestMySQLAppleDeletionCancellationLeavesRecoverableLease",
+      "TestMySQLAppleDeletionConcurrentWorkersClaimOnce",
+      "TestMySQLAppleDeletionMigrationBackfillsAcceptedRequests",
+      "TestAppleDeletionRetryIsBounded",
+      "TestMySQLAppleDeletionRejectsWrongReceiptAndUnreadableCredential",
+      "TestMySQLAccountDeletionRecordedAccessRevocationAndExactReplay",
+      "TestMySQLAccountDeletionFailureRollsBackAndRetrySucceeds",
+      "TestMySQLAccountDeletionRejectsInvalidExpiredOrRevokedCredentials",
+      "TestMySQLAccountDeletionConcurrentExactRetriesConverge",
+      "TestMySQLAccountDeletionRacingLoginCannotLeaveUsableSession",
+      "TestAppleCodeExchangeBindsCodeToBothSignedAssertions",
+      "TestMySQLAppleEventRevokesOldDevicesAndPushButPreservesNewLogin",
+      "TestMySQLAppleEventBeforeFirstLoginAndRollback",
+      "TestAppleRefreshRevocationFixedEndpointAndBoundedAcknowledgement",
+      "TestMySQLAlbumPushEncryptionReplayExpiryAndLogout",
+      "TestMySQLAlbumPushAccountSwitchFencesOldSession",
+      "TestMySQLAlbumPushRotationPermissionAndLateInvalidation",
+      "TestMySQLAlbumPushConcurrentCASAndEnvironmentIsolation",
+      "TestMySQLAlbumPushTransferFailureRollsBackOldBinding"
+    ],
+    "race_enabled": true,
+    "process_exit": 0,
+    "log_sha256": "d529d03f39b91900118cbe5e20a55e46d1ca375df1392934a383a4506e57c69a",
+    "vet": "passed",
+    "gateway_and_worker_build": "passed"
+  },
+  "source_sha256": {
+    "internal/albums/account_deletion.go": "86f4fa035e124ac64bd4022f7172ed21335189fc18c9f408d85dc9ce1da4ca08",
+    "internal/albums/account_deletion_test.go": "68b46634aa19e1ff754c8ea633e0b2e1c755bf5fce1b2e319c7ef50f24379391",
+    "internal/albums/account_deletion_apple.go": "13ba96198006b2720b1d5918b58df5d50302556e6a73ca079d3d476e8458fc9c",
+    "internal/albums/account_deletion_apple_test.go": "c71c71d89759ce81627fa1fe809f3827737a4870e24553363babcc901fce5d3f",
+    "migrations/0042_album_deletion_apple_jobs.sql": "3d0054245abb1b11d3bec99e04c7e61cd3d2e230833ee54394857959a842f7e2",
+    "migrations/embed_test.go": "87e41aea934d6a5dd5932680b1362daffbbb9ca0397f736a7660e1a8210e5177"
+  },
+  "isolated_services_stopped": true,
+  "isolated_databases_removed": true,
+  "deployment": false,
+  "live_apple_calls": false,
+  "live_media_deletion": false,
+  "runtime_scheduling_enabled": false,
+  "http_or_native_entrypoint_added": false,
+  "remaining": [
+    "Wire the complete deletion orchestrator and native request/status flow",
+    "Fence in-flight mutations and expire issued grants/processing before complete erasure",
+    "Verify COS versions, multipart/staging objects, derived media and catalogue erasure",
+    "Propagate deletion through backups and define required audit/transaction retention",
+    "Real Apple credentials, live account, device and complete deletion acceptance"
+  ]
+}

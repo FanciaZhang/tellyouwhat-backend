@@ -1,0 +1,43 @@
+# Journal catalog administration shares the isolated test database and HTTPS origin.
+services:
+  admin:
+    image: "tellyouwhat-platform-test-admin:${PLATFORM_TEST_IMAGE_TAG:?Set the exact reviewed source commit}"
+    restart: unless-stopped
+    init: true
+    user: "65532:65532"
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    env_file: ["${PLATFORM_TEST_ADMIN_ENV_FILE:?Set the private test admin configuration}"]
+    environment:
+      APP_ENV: development
+      ADMIN_PORT: "8082"
+      ADMIN_APPS: journal
+      ADMIN_RP_ID: api-test.journal.tellyouwhat.cn
+      ADMIN_ORIGIN: https://api-test.journal.tellyouwhat.cn
+      ADMIN_WRITES_ENABLED: "false"
+      JOURNAL_APP_STORE_CONNECT_ENABLED: "false"
+      JOURNAL_TTS_WRITES_ENABLED: "true"
+      JOURNAL_TTS_API_KEY_FILE: /journal-api-key.txt
+      JOURNAL_TTS_PROBE_DAILY_CHARACTERS: "10000"
+      AI_PROJECT_MONTHLY_BUDGET_CNY: "10"
+      DATABASE_DSN: "platform_test:${PLATFORM_TEST_MYSQL_PASSWORD:?Set the test password}@tcp(mysql:3306)/platform_test?charset=utf8mb4&collation=utf8mb4_0900_ai_ci&parseTime=true"
+      REDIS_URL: "redis://:${PLATFORM_TEST_REDIS_PASSWORD:?Set the test Redis password}@redis:6379/1"
+      GOMEMLIMIT: "96MiB"
+    volumes:
+      - type: bind
+        source: /opt/tellyouwhat/journal-read-aloud/development/api-key.txt
+        target: /journal-api-key.txt
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [platform-test]
+    ports: ["127.0.0.1:18792:8082/tcp"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    stop_grace_period: 25s
+    mem_limit: 160m
+    pids_limit: 60
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}

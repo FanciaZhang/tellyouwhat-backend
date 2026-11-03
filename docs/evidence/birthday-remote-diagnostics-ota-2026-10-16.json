@@ -1,0 +1,44 @@
+{
+  "source_commit": "398b2ff75de5f3ed8f68cc87418ae65e2ec23c59",
+  "version": "1.0",
+  "build": "5",
+  "ipa_sha256": "800f5c49b0a026ebeb8f7450124a6c50bbbb99623583f6ee28a7e18385cb2b1e",
+  "ipa_bytes": 3625229,
+  "owner_wrapper_completed": true,
+  "publisher_staging_removed": true,
+  "page_and_manifest_verified": true,
+  "full_https_download_sha256_verified": true,
+  "head_verified": true,
+  "range_verified": true,
+  "backend_source": "7c0e6d265a41d98e484c1e84305b1b92dd4760b1",
+  "approved_builds": "4,5",
+  "unauthenticated_assist_status": 401,
+  "challenge_status": 201,
+  "expires_at": "2026-10-17T01:07:01.194514865Z",
+  "raw_installation_url_omitted": true,
+  "real_phone_installation_verified": false,
+  "real_app_attest_verified": false,
+  "platform_deployment": {
+    "approved_builds": "4,5",
+    "apps": [
+      "birthday"
+    ],
+    "deployed": true,
+    "latest_migration": "0064_album_identity_retirement.sql",
+    "mysql_redis_unchanged": true,
+    "owner_cleanup_completed": true,
+    "platform_recovery_authenticated": true,
+    "post_update_backup": "mysql-20261016T010323Z-743cd8.sql.gz.enc",
+    "previous_source": "fb5cd0bace6cd6046384e8d8ab9a4b8376568613",
+    "production_unchanged": true,
+    "real_phone_app_attest_verified": false,
+    "schema_migrations": 66,
+    "source": "7c0e6d265a41d98e484c1e84305b1b92dd4760b1"
+  },
+  "prior_publisher_failure": {
+    "reason": "readiness probe used /healthz; service exposes /readyz",
+    "recovered_existing_receipt": true,
+    "published_again": false,
+    "owner_wrapper_recovery_completed": true
+  }
+}

@@ -45,10 +45,12 @@ func (adapter *appStoreSubscriptionAdapter) Resolve(
 		return SubscriptionState{}, mapAppStoreError(err)
 	}
 	return SubscriptionState{
+		Payment:               state.Payment,
 		OriginalTransactionID: state.OriginalTransactionID,
 		TransactionID:         state.TransactionID,
 		Environment:           state.Environment,
 		OfferIdentifier:       state.OfferIdentifier,
+		ProductID:             state.ProductID,
 		OfferType:             state.OfferType,
 		ExpiresAt:             state.ExpiresAt,
 		StartedAt:             state.StartedAt,
@@ -73,10 +75,13 @@ func (adapter *appStoreNotificationAdapter) ResolveNotification(
 	}
 	return NotificationState{
 		NotificationUUID:      state.NotificationUUID,
+		Payment:               state.Payment,
+		CurrentPayment:        state.CurrentPayment,
 		OriginalTransactionID: state.OriginalTransactionID,
 		Environment:           state.Environment,
 		TransactionID:         state.TransactionID,
 		OfferIdentifier:       state.OfferIdentifier,
+		ProductID:             state.ProductID,
 		OfferType:             state.OfferType,
 		SignedAt:              state.SignedAt,
 		ExpiresAt:             state.ExpiresAt,

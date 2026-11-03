@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-22",
+  "source": "c512264f544b4d14becbb3a29c4869299cccf770",
+  "previous_source": "895f165f06c82ba6e27c11fd5049a1327da991c6",
+  "real_device_build": "1.0 (30)",
+  "reproduced_error": "HTTP 403 subscription_binding_conflict",
+  "root_cause": "Prior Sandbox account continued renewing and blocked a new verified active account purchase",
+  "old_binding_consistent": true,
+  "new_purchase_received_by_apple": true,
+  "regression_failed_before_fix": true,
+  "focused_packages_passed": [
+    "internal/entitlement",
+    "internal/appstore",
+    "internal/gateway",
+    "cmd/gateway"
+  ],
+  "isolated_mysql_top_level_tests_passed": 4,
+  "isolated_mysql_removed": true,
+  "schema_or_runtime_configuration_changed": false,
+  "deployment_verified": true,
+  "post_fix_real_phone_activation_verified": true,
+  "post_fix_cloud_feature_verified": true,
+  "user_acceptance": false,
+  "manual_entitlement_or_direct_database_mutation": false,
+  "owner_registered": true,
+  "cleanup_completed": true,
+  "ready": [
+    {
+      "app": "health",
+      "status": 200
+    },
+    {
+      "app": "journal",
+      "status": 200
+    },
+    {
+      "app": "birthday",
+      "status": 200
+    },
+    {
+      "app": "albums",
+      "status": 200
+    }
+  ],
+  "catalog_voices": 466,
+  "catalog_unchanged": true,
+  "production_sha256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+  "caddy_sha256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+  "authenticated_configuration_recovery": true,
+  "offsite_readbacks": 3,
+  "phone_activation_at": "2026-10-22T00:27:14Z",
+  "activation_requests_http_200": [
+    "2455af9c-a6bb-4f29-8b0a-1911d9343281",
+    "ae1d82d2-a893-40f9-b847-14359300aba8",
+    "1c89511a-d041-4c15-8519-ea6bbe1d1577"
+  ],
+  "phone_active_defaults_confirmed": true,
+  "cloud_feature": "Fresh fixed-phrase Doubao preview from real device",
+  "cloud_request": "e38432c3-afb3-4a25-b049-bec98e07df82",
+  "cloud_preview_at": "2026-10-22T00:31:24Z",
+  "cloud_result": "succeeded",
+  "cloud_actual_characters": 6,
+  "cloud_usage_known": true,
+  "cloud_create_and_stream_http_200": true,
+  "private_content_used": false,
+  "sandbox_last_observed_expiry": "2026-10-22T01:08:35Z",
+  "health_comparison_source": "159952e04ab1b4838531b292aff9a9230ac3fc4a",
+  "health_comparison_build": "1.5.0 (8)",
+  "health_repository_unchanged": true,
+  "annual_new_purchase_retested": false,
+  "acoustic_quality_accepted": false
+}

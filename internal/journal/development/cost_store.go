@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 )
 
 // FileCostStore reuses the normal cost accounting implementation, with an atomic
@@ -23,6 +24,7 @@ type FileCostStore struct {
 }
 type costEvent struct {
 	Reserve *costcontrol.Attempt `json:"reserve,omitempty"`
+	Budget  *monthlyBudgetChange `json:"budget,omitempty"`
 	Limits  costcontrol.Limits   `json:"limits,omitempty"`
 	ID      string               `json:"id,omitempty"`
 	Actual  int64                `json:"actual,omitempty"`
@@ -30,7 +32,15 @@ type costEvent struct {
 	Now     time.Time            `json:"now"`
 }
 
-func NewFileCostStore(path string) (*FileCostStore, error) {
+type monthlyBudgetChange struct {
+	MonthStart         time.Time `json:"month_start"`
+	MonthlyBudgetNanos int64     `json:"monthly_budget_nanos"`
+}
+
+func NewFileCostStore(path string, configuredMonthlyBudgetNanos int64, now time.Time) (*FileCostStore, error) {
+	if configuredMonthlyBudgetNanos <= 0 || now.IsZero() {
+		return nil, costcontrol.ErrInvalidAttempt
+	}
 	s := &FileCostStore{path: path, memory: costcontrol.NewMemoryStore()}
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -46,14 +56,37 @@ func NewFileCostStore(path string) (*FileCostStore, error) {
 		if err = json.Unmarshal(data, &s.events); err != nil {
 			return nil, err
 		}
+		budgets, err := budgetHistory(s.events)
+		if err != nil {
+			return nil, err
+		}
+		changed := false
+		monthStart := calendarMonth(now)
+		month := monthKey(monthStart)
+		if existing, exists := budgets[month]; exists {
+			if configuredMonthlyBudgetNanos < existing {
+				return nil, costcontrol.ErrConfigurationConflict
+			}
+			if configuredMonthlyBudgetNanos > existing {
+				s.events = append(s.events, costEvent{
+					Budget: &monthlyBudgetChange{
+						MonthStart:         monthStart,
+						MonthlyBudgetNanos: configuredMonthlyBudgetNanos,
+					},
+					Now: now.UTC(),
+				})
+				budgets[month] = configuredMonthlyBudgetNanos
+				changed = true
+			}
+		}
 		pending := map[string]bool{}
 		for _, e := range s.events {
-			if err = s.apply(context.Background(), e); err != nil {
+			if err = s.applyReplay(context.Background(), e, budgets); err != nil {
 				return nil, err
 			}
 			if e.Reserve != nil {
 				pending[e.Reserve.ID] = true
-			} else {
+			} else if e.Budget == nil {
 				delete(pending, e.ID)
 			}
 		}
@@ -68,6 +101,9 @@ func NewFileCostStore(path string) (*FileCostStore, error) {
 				}
 				s.events = append(s.events, e)
 			}
+			changed = true
+		}
+		if changed {
 			if err = s.persist(); err != nil {
 				return nil, err
 			}
@@ -75,9 +111,68 @@ func NewFileCostStore(path string) (*FileCostStore, error) {
 	}
 	return s, nil
 }
+
+func budgetHistory(events []costEvent) (map[string]int64, error) {
+	budgets := map[string]int64{}
+	for _, e := range events {
+		if e.Reserve != nil {
+			month := monthKey(e.Reserve.MonthStart)
+			if month == "" || e.Limits.MonthlyBudgetNanos <= 0 {
+				return nil, costcontrol.ErrInvalidAttempt
+			}
+			if existing, exists := budgets[month]; exists && existing != e.Limits.MonthlyBudgetNanos {
+				return nil, costcontrol.ErrConfigurationConflict
+			}
+			budgets[month] = e.Limits.MonthlyBudgetNanos
+			continue
+		}
+		if e.Budget == nil {
+			continue
+		}
+		month := monthKey(e.Budget.MonthStart)
+		if month == "" || !e.Budget.MonthStart.Equal(calendarMonth(e.Budget.MonthStart)) || e.Budget.MonthlyBudgetNanos <= 0 {
+			return nil, costcontrol.ErrInvalidAttempt
+		}
+		if existing, exists := budgets[month]; exists && e.Budget.MonthlyBudgetNanos <= existing {
+			return nil, costcontrol.ErrConfigurationConflict
+		}
+		budgets[month] = e.Budget.MonthlyBudgetNanos
+	}
+	return budgets, nil
+}
+
+func calendarMonth(now time.Time) time.Time {
+	now = now.UTC()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
+func monthKey(monthStart time.Time) string {
+	if monthStart.IsZero() {
+		return ""
+	}
+	return calendarMonth(monthStart).Format("2006-01-02")
+}
+
+func (s *FileCostStore) applyReplay(ctx context.Context, e costEvent, budgets map[string]int64) error {
+	if e.Reserve != nil {
+		limits := e.Limits
+		if budget, exists := budgets[monthKey(e.Reserve.MonthStart)]; exists {
+			limits.MonthlyBudgetNanos = budget
+		}
+		return s.memory.Reserve(ctx, *e.Reserve, limits)
+	}
+	if e.Budget != nil {
+		return nil
+	}
+	return s.memory.Settle(ctx, e.ID, e.Actual, e.Known, e.Now)
+}
+
 func (s *FileCostStore) apply(ctx context.Context, e costEvent) error {
 	if e.Reserve != nil {
 		return s.memory.Reserve(ctx, *e.Reserve, e.Limits)
+	}
+	if e.Budget != nil {
+		return nil
 	}
 	return s.memory.Settle(ctx, e.ID, e.Actual, e.Known, e.Now)
 }

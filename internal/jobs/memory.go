@@ -112,6 +112,19 @@ func (store *MemoryStore) Succeed(_ context.Context, jobID string, attempt int, 
 	return nil
 }
 
+func (store *MemoryStore) DeferAdmission(_ context.Context, jobID string, attempt int, now time.Time) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	job, ok := store.jobs[jobID]
+	if !ok || job.Status != StatusRunning || job.AttemptCount != attempt || attempt < 1 || !now.Before(job.ExpiresAt) || !now.Before(job.ClaimExpiresAt) {
+		return ErrJobNotClaimable
+	}
+	job.Status, job.AttemptCount, job.ClaimExpiresAt, job.UpdatedAt = StatusQueued, attempt-1, time.Time{}, now
+	store.jobs[jobID] = job
+	store.outbox[jobID] = DispatchItem{JobID: jobID}
+	return nil
+}
+
 func (store *MemoryStore) RetryOrFail(_ context.Context, jobID string, attempt int, category string, now time.Time) (bool, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -193,7 +206,7 @@ func (store *MemoryStore) ClaimDispatches(_ context.Context, now time.Time, limi
 			continue
 		}
 		jobReady := job.Status == StatusQueued || (job.Status == StatusRunning && !now.Before(job.ClaimExpiresAt))
-		if jobReady && (job.AttemptCount >= maximumAttempts || item.Attempts >= 10) {
+		if jobReady && !now.Before(item.ClaimedUntil) && (job.AttemptCount >= maximumAttempts || item.Attempts >= 10) {
 			job.Status = StatusFailed
 			if job.AttemptCount >= maximumAttempts {
 				job.FailureCategory = "worker_attempts_exhausted"
@@ -235,6 +248,13 @@ func (store *MemoryStore) RetryDispatch(_ context.Context, jobID string, now tim
 	defer store.mu.Unlock()
 	item, exists := store.outbox[jobID]
 	if !exists {
+		return nil
+	}
+	if category == DispatchDeferred {
+		item.Attempts = max(0, item.Attempts-1)
+		item.AvailableAt = now.Add(30 * time.Second)
+		item.ClaimedUntil = time.Time{}
+		store.outbox[jobID] = item
 		return nil
 	}
 	if item.Attempts >= 10 {

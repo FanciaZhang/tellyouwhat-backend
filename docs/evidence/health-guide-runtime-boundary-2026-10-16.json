@@ -1,0 +1,105 @@
+{
+  "source_parent": "6b8d8bea42dbd651439cbc4a264face41854ec2d",
+  "source_files_sha256": {
+    "HealthApp/App/ContentView.swift": "5d1360d8cfbd27ef054d64599f7a3c795fbcd1156fb4ea26efe04ef8ffe2df29",
+    "HealthApp/Shared/Guidance/GuidePresentationPolicy.swift": "baae585d6235662203b78d1cdb2101d1e5d5e448c5197094a6011bdb1c091632",
+    "healthTests/GuidePresentationPolicyTests.swift": "9d67252828f0e05cde010167cf7dfbd4cf67aa9014e89c42a0c45e7070821601"
+  },
+  "commands": [
+    {
+      "label": "simulator-ready",
+      "exit_code": 0
+    },
+    {
+      "label": "debug-guide",
+      "exit_code": 70
+    },
+    {
+      "label": "debug-unit",
+      "exit_code": 0
+    },
+    {
+      "label": "debug-ui",
+      "exit_code": 0
+    },
+    {
+      "label": "debug-page",
+      "exit_code": 0
+    },
+    {
+      "label": "release-build",
+      "exit_code": 0
+    }
+  ],
+  "debug-unit_summary": {
+    "result": "Passed",
+    "passedTests": 35,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 35
+  },
+  "debug-ui_summary": {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 1
+  },
+  "debug-page_summary": {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 1
+  },
+  "policy_release": {
+    "compile_exit": 0,
+    "run_exit": 0,
+    "assertions": 6,
+    "platform": "macOS host using unchanged policy/model/catalog sources; no DEBUG flag"
+  },
+  "verification_corrections": [
+    "First combined test command named a UI target outside HealthUnit and exited 70 before tests",
+    "First UI selector used AppGuidanceAcceptanceUITests for a method in AppGuidancePageAcceptanceUITests; missing method subsequently ran once with correct class",
+    "Standalone Debug policy check lacked UITestRuntime; actual iOS Debug unit tests already cover this path",
+    "Binary inspection initially assumed health.app; corrected using actual TellYouHealth.app product; no source change or build retry"
+  ],
+  "binary_checks": {
+    "Debug": {
+      "bundle_id": "cn.tellyouwhat.healthapp.dev",
+      "guide_override_string_present": true,
+      "binaries": {
+        "TellYouHealth": "1fc40510ef5f352ff9fc00dd5c60ca0b31d6b703dde984c492ce4390ffb16e92",
+        "__preview.dylib": "dcbc583d199850828a3bcd98a5b5c2fcd60aaddd5bf2a2537b3eda55835dba79",
+        "TellYouHealth.debug.dylib": "bff27c32645b6426ff0141c63505c7297a10bb7eae18913ccfe502fe5eab6602"
+      }
+    },
+    "Release": {
+      "bundle_id": "cn.tellyouwhat.healthapp",
+      "guide_override_string_present": false,
+      "binaries": {
+        "TellYouHealth": "382c6344db7fcf68355851188cb4979f3da1ae17312e31109a121d990515fd76"
+      }
+    }
+  },
+  "implementation_commit": "8c3df1fdf60b67ea7b1323ef3ff867e734d8e0ba",
+  "toolchain": "Xcode 27.1 (27A9275)",
+  "simulator": "iPhone 17 / iOS 26.5",
+  "release_build": "BUILD SUCCEEDED",
+  "ios_test_totals": {
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0
+  },
+  "ui_cases": [
+    "AppGuidanceAcceptanceUITests/testWidgetEntryDefersWelcomeUntilUserReturnsToSummary",
+    "AppGuidancePageAcceptanceUITests/testPlanPageGuidesOnlyTheControlsItCanShow"
+  ],
+  "screenshot": "health-debug-guide-boundary-2026-10-16.png",
+  "user_accepted": false,
+  "limits": [
+    "Targeted checks only, not full release gate",
+    "Standalone Release policy assertions ran on macOS, separate from actual iOS Release build",
+    "No new Ad Hoc export, OTA delivery or real-device acceptance"
+  ]
+}

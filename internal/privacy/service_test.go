@@ -61,25 +61,94 @@ func TestRequiredConsentsMustAllBeExplicitlyGranted(t *testing.T) {
 
 type noopObjectCleaner struct{}
 
-func TestJournalImageConsentCannotBeGrantedByHealth(t *testing.T) {
-	repository := NewMemoryRepository()
-	service := NewService(repository, nil, nil, time.Now)
-	principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}
-	consent := Consent{Scope: JournalIllustrationScope, DocumentVersion: JournalIllustrationDocumentVersion, Granted: true}
-	if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != ErrInvalidConsent {
-		t.Fatal("health accepted journal consent")
+func (noopObjectCleaner) DeleteObject(context.Context, string) error { return nil }
+
+func TestHealthEligibilityRequiresCompleteVersionPair(t *testing.T) {
+	cases := []struct {
+		name     string
+		consents []Consent
+		want     bool
+	}{
+		{"legacy", []Consent{{AdultScope, GeneralDocumentVersion, true}, {PrivacyTermsScope, GeneralDocumentVersion, true}}, true},
+		{"newGeneralWithoutAgeClaim", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, true}}, true},
+		{"guardian", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, true}, {GuardianConsentScope, HealthCurrentDocumentVersion, true}}, true},
+		{"guardianWithoutGeneral", []Consent{{GuardianConsentScope, HealthCurrentDocumentVersion, true}}, false},
+		{"revokedNewGeneral", []Consent{{PrivacyTermsScope, HealthCurrentDocumentVersion, false}}, false},
+		{"publishedICloud", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, HealthICloudDocumentVersion, true}}, true},
+		{"current", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, HealthGeneralDocumentVersion, true}}, true},
+		{"mixed", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, true}, {PrivacyTermsScope, GeneralDocumentVersion, true}}, false},
+		{"revoked", []Consent{{Age14PlusScope, HealthGeneralDocumentVersion, false}, {PrivacyTermsScope, HealthGeneralDocumentVersion, true}}, false},
+		{"missingAge", []Consent{{PrivacyTermsScope, HealthGeneralDocumentVersion, true}}, false},
 	}
-	principal.AppID = "journal"
-	if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != nil {
-		t.Fatal(err)
-	}
-	if allowed, err := service.HasRequiredConsents(context.Background(), principal, []string{JournalIllustrationScope}); err != nil || !allowed {
-		t.Fatal("journal grant unreadable")
-	}
-	principal.AppID = "health"
-	if _, err := service.HasRequiredConsents(context.Background(), principal, []string{JournalIllustrationScope}); err != ErrInvalidConsent {
-		t.Fatal("cross-app consent query")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repository := NewMemoryRepository()
+			service := NewService(repository, noopObjectCleaner{}, nil, time.Now)
+			principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}
+			if _, err := service.RecordConsents(context.Background(), principal, tc.consents); err != nil {
+				t.Fatal(err)
+			}
+			got, err := service.HasRequiredConsents(context.Background(), principal, []string{HealthEligibilityScope})
+			if err != nil || got != tc.want {
+				t.Fatalf("got=%v want=%v err=%v", got, tc.want, err)
+			}
+		})
 	}
 }
 
-func (noopObjectCleaner) DeleteObject(context.Context, string) error { return nil }
+func TestNewHealthConsentDoesNotAuthorizeJournal(t *testing.T) {
+	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
+	principal := attestation.Principal{AppID: "journal", KeyID: "key", DeviceID: "device"}
+	for _, consent := range []Consent{
+		{Age14PlusScope, HealthGeneralDocumentVersion, true},
+		{GuardianConsentScope, HealthCurrentDocumentVersion, true},
+		{PrivacyTermsScope, HealthCurrentDocumentVersion, true},
+	} {
+		if _, err := service.RecordConsents(context.Background(), principal, []Consent{consent}); err != ErrInvalidConsent {
+			t.Fatalf("cross-app consent %s: got %v", consent.Scope, err)
+		}
+	}
+}
+
+func TestJournalIllustrationConsentRemainsAppScopedAfterHealthIntegration(t *testing.T) {
+	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
+	journal := attestation.Principal{AppID: "journal", KeyID: "journal-key", DeviceID: "journal-device"}
+	health := attestation.Principal{AppID: "health", KeyID: "health-key", DeviceID: "health-device"}
+	consent := Consent{JournalIllustrationScope, JournalIllustrationDocumentVersion, true}
+	if _, err := service.RecordConsents(context.Background(), health, []Consent{consent}); err != ErrInvalidConsent {
+		t.Fatalf("Health accepted Journal illustration consent: %v", err)
+	}
+	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+		t.Fatal(err)
+	}
+	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || !granted {
+		t.Fatalf("Journal illustration authorization missing: granted=%v err=%v", granted, err)
+	}
+	if _, err := service.HasRequiredConsents(context.Background(), health, []string{JournalIllustrationScope}); err != ErrInvalidConsent {
+		t.Fatalf("Health checked Journal illustration authorization: %v", err)
+	}
+	consent.Granted = false
+	if _, err := service.RecordConsents(context.Background(), journal, []Consent{consent}); err != nil {
+		t.Fatal(err)
+	}
+	if granted, err := service.HasRequiredConsents(context.Background(), journal, []string{JournalIllustrationScope}); err != nil || granted {
+		t.Fatalf("revoked illustration authorization accepted: granted=%v err=%v", granted, err)
+	}
+}
+
+func TestHealthUpgradeRevocationCannotFallBackToAdult(t *testing.T) {
+	service := NewService(NewMemoryRepository(), noopObjectCleaner{}, nil, time.Now)
+	principal := attestation.Principal{AppID: "health", KeyID: "key", DeviceID: "device"}
+	_, err := service.RecordConsents(context.Background(), principal, []Consent{{AdultScope, GeneralDocumentVersion, true}, {PrivacyTermsScope, GeneralDocumentVersion, true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.RecordConsents(context.Background(), principal, []Consent{{AdultScope, GeneralDocumentVersion, false}, {Age14PlusScope, HealthGeneralDocumentVersion, false}, {PrivacyTermsScope, HealthGeneralDocumentVersion, true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.HasRequiredConsents(context.Background(), principal, []string{HealthEligibilityScope})
+	if err != nil || got {
+		t.Fatalf("revocation bypassed: got=%v err=%v", got, err)
+	}
+}

@@ -96,15 +96,80 @@ func (client *APIClient) CurrentTransactions(
 	ctx context.Context,
 	transactionID string,
 ) ([]SubscriptionStatus, error) {
+	return client.subscriptionStatuses(ctx, transactionID, false)
+}
+
+// AllSubscriptionStatuses includes expired, retrying, and revoked subscriptions.
+// Callers must verify each signed transaction and account binding before changing
+// durable capacity or a retention deadline. Existing active-only callers retain
+// their original query and filtering behavior.
+func (client *APIClient) AllSubscriptionStatuses(ctx context.Context, transactionID string) ([]SubscriptionStatus, error) {
+	return client.subscriptionStatuses(ctx, transactionID, true)
+}
+
+func (client *APIClient) subscriptionStatuses(ctx context.Context, transactionID string, all bool) ([]SubscriptionStatus, error) {
 	if client == nil || !client.validConfig() || transactionID == "" || len(transactionID) > 128 {
 		return nil, ErrStatusUnavailable
 	}
+	path := "/inApps/v1/subscriptions/" + url.PathEscape(transactionID)
+	if !all {
+		path += "?status=1&status=4"
+	}
+	data, err := client.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	var payload statusResponse
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, ErrInvalidAPIResponse
+	}
+	if payload.BundleID != client.config.BundleID ||
+		!strings.EqualFold(payload.Environment, client.config.Environment) ||
+		(strings.EqualFold(client.config.Environment, "Production") && payload.AppAppleID != client.config.AppAppleID) {
+		return nil, ErrInvalidAPIResponse
+	}
+	statuses := make([]SubscriptionStatus, 0)
+	for _, group := range payload.Data {
+		for _, transaction := range group.LastTransactions {
+			if all && (transaction.Status < 1 || transaction.Status > 5 || transaction.SignedTransactionInfo == "") {
+				return nil, ErrInvalidAPIResponse
+			}
+			if (!all && transaction.Status != statusActive && transaction.Status != statusGracePeriod) ||
+				transaction.SignedTransactionInfo == "" {
+				continue
+			}
+			statuses = append(statuses, SubscriptionStatus{
+				Status: transaction.Status, SignedTransaction: transaction.SignedTransactionInfo,
+				SignedRenewal: transaction.SignedRenewalInfo,
+			})
+		}
+	}
+	return statuses, nil
+}
+
+func (client *APIClient) SignedTransaction(ctx context.Context, transactionID string) (string, error) {
+	if client == nil || !client.validConfig() || transactionID == "" || len(transactionID) > 128 {
+		return "", ErrStatusUnavailable
+	}
+	data, err := client.get(ctx, "/inApps/v1/transactions/"+url.PathEscape(transactionID))
+	if err != nil {
+		return "", err
+	}
+	var payload struct {
+		SignedTransaction string `json:"signedTransactionInfo"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.SignedTransaction == "" {
+		return "", ErrInvalidAPIResponse
+	}
+	return payload.SignedTransaction, nil
+}
+
+func (client *APIClient) get(ctx context.Context, path string) ([]byte, error) {
 	bearer, err := client.bearerToken()
 	if err != nil {
 		return nil, fmt.Errorf("%w: create authorization token", ErrStatusUnavailable)
 	}
-	endpoint := strings.TrimRight(client.config.BaseURL, "/") +
-		"/inApps/v1/subscriptions/" + url.PathEscape(transactionID) + "?status=1&status=4"
+	endpoint := strings.TrimRight(client.config.BaseURL, "/") + path
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create status request", ErrStatusUnavailable)
@@ -120,36 +185,21 @@ func (client *APIClient) CurrentTransactions(
 		return nil, ErrTransactionNotFound
 	}
 	if response.StatusCode != http.StatusOK {
+		if response.StatusCode == http.StatusInternalServerError {
+			var failure struct {
+				ErrorCode int `json:"errorCode"`
+			}
+			if json.NewDecoder(io.LimitReader(response.Body, maximumAPIResponseBytes)).Decode(&failure) == nil && failure.ErrorCode == 5000001 {
+				return nil, errRetryableStatus
+			}
+		}
 		return nil, fmt.Errorf("%w: status code %d", ErrStatusUnavailable, response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maximumAPIResponseBytes+1))
 	if err != nil || len(data) > maximumAPIResponseBytes {
 		return nil, ErrInvalidAPIResponse
 	}
-	var payload statusResponse
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, ErrInvalidAPIResponse
-	}
-	if payload.BundleID != client.config.BundleID ||
-		!strings.EqualFold(payload.Environment, client.config.Environment) ||
-		(strings.EqualFold(client.config.Environment, "Production") && payload.AppAppleID != client.config.AppAppleID) {
-		return nil, ErrInvalidAPIResponse
-	}
-	statuses := make([]SubscriptionStatus, 0)
-	for _, group := range payload.Data {
-		for _, transaction := range group.LastTransactions {
-			if (transaction.Status != statusActive && transaction.Status != statusGracePeriod) ||
-				transaction.SignedTransactionInfo == "" {
-				continue
-			}
-			statuses = append(statuses, SubscriptionStatus{
-				Status:            transaction.Status,
-				SignedTransaction: transaction.SignedTransactionInfo,
-				SignedRenewal:     transaction.SignedRenewalInfo,
-			})
-		}
-	}
-	return statuses, nil
+	return data, nil
 }
 
 func (client *APIClient) validConfig() bool {

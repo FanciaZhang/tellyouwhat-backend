@@ -1,0 +1,76 @@
+{
+  "verified_at": "2026-10-13T16:06:01.124146+00:00",
+  "scope": "isolated MySQL/Redis, controlled Swift transport; no deployment or real withdrawal",
+  "verification": {
+    "startedAt": "2026-10-13T16:03:43.027397+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-q_j7u2b1",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-q_j7u2b1/race.log",
+        "testCounts": {
+          "pass": 113
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-q_j7u2b1/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-deletion-http-q_j7u2b1/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T16:04:28.965824+00:00"
+  },
+  "top_level_go_tests": 46,
+  "go_pass_events": 113,
+  "failed": 0,
+  "skipped": 0,
+  "swift_contract_tests": 19,
+  "swift_contract_log_sha256": "ec663b63640046a2ee34d888789989b30754fa98b6b274af260bc023cd0810fd",
+  "covered": [
+    "Acceptance and withdrawal serialize on the same account lock; delayed deletion cannot use the revoked credential",
+    "Active, expired, revoked, disabled and absent original sessions",
+    "Already accepted request returns immutable acceptance, never withdrawal; independent intent authenticates replay after synthetic account rows are removed",
+    "Other credentials or request IDs do not disclose or cancel accepted deletion; other sessions remain active after withdrawal",
+    "Push cleanup failure rolls back session revocation; exact retry is idempotent",
+    "Default-closed handler and fixed Swift withdrawal contract"
+  ],
+  "development_failures": [
+    "Fault injection by renaming a checked column was refused by MySQL 3959",
+    "Trigger-based injection was refused by isolated test-user permissions, MySQL 1419",
+    "Replaced injection with an additional CHECK constraint; final rollback tests pass without expanded permissions"
+  ],
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "d3607215a0046f4743f8fe846eeaa493b3bb9228a5ba6e3b3297f74054347395",
+    "Contracts/HTTP/Tests/AlbumAPITests/AlbumAPITransportTests.swift": "e2c8eaafc63beaf89b73f3ffabd0e0c75f3020dbb81c8bc5deeba33ea5aebc6e",
+    "internal/albumhttpapi/generated.go": "e985a498bf0893fd043e9ec38f77319ec5fbc18bb5a58c3e51a763b0d711f1f8",
+    "internal/albums/account_deletion.go": "34432ba5cf5f0ba6e535c63ff15322c0b867b2c23ed3c2b1e3da9e2d190196e1",
+    "internal/albums/account_deletion_http.go": "6a4630f0fd28e3726b6348dad1494cafde5c7988c14edd9efce8c76297ee0301",
+    "internal/albums/account_deletion_withdrawal.go": "119dc5c6d9b47458b73414cd323fdac97839e77e8e153d0a8129b623e916acb8",
+    "internal/albums/account_deletion_withdrawal_test.go": "93663de48a91bc04cd60f58141c5b9be48f511044ed27e4e8b950a2db7884f95",
+    "internal/albums/http.go": "8cccc5d220742e02201e5ebe0d26e3a726515a7aa83c26d02f8b3a0fb50c85a4"
+  },
+  "log_sha256": {
+    "mysql-init.log": "04c0088efec9acc6385148e2e6a6125fb7b955df9b5115e5c4cee48ea9424853",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mysql.log": "6477b778aba59199b26052016e4cbd55c7998be79f7b2186163a97d14f252ea4",
+    "redis.log": "a07814835a5625fbd9854c74e0402e8f21ac15856af326c9f17502abc9004f23",
+    "race.log": "3c08f57c90f71bf93ba282969293a5af3902406b662fd08ad60834e9249e5e75",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "Final identity, billing and backup erasure",
+    "Real mixed-media and account deletion roundtrip",
+    "Activation of deletion or withdrawal endpoints",
+    "Controlled removal of synthetic account rows is not a final-erasure implementation"
+  ]
+}

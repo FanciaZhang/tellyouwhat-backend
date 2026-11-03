@@ -1,0 +1,245 @@
+{
+  "environment": "shared-platform-test",
+  "adminOrigin": "https://admin-test.tellyouwhat.cn",
+  "deployedSource": "78bdb99e3b00450fc48768fef314d660f42766b9",
+  "database": {
+    "voiceIDs": 466,
+    "latestDraft": {
+      "voices": 466,
+      "enabled": 466,
+      "revision": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+      "publishedAt": null
+    },
+    "catalogUsage": [
+      {
+        "used": 4733,
+        "purpose": "preview",
+        "reserved": 0
+      }
+    ],
+    "probeMutations": [
+      {
+        "count": 470,
+        "state": "succeeded"
+      }
+    ],
+    "currentRevision": null,
+    "verificationCount": 470,
+    "observedAt": "2026-10-21T05:12:39.272991+00:00",
+    "nominalStandardPriceCNY": 1.4199
+  },
+  "capabilities": {
+    "recommended": [
+      {
+        "id": "zh_female_vv_uranus_bigtts",
+        "name": "Vivi 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_female_xiaohe_uranus_bigtts",
+        "name": "小何 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_male_m191_uranus_bigtts",
+        "name": "云舟 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      },
+      {
+        "id": "zh_male_taocheng_uranus_bigtts",
+        "name": "小天 2.0",
+        "cases": 13,
+        "styles": [
+          "natural",
+          "calm",
+          "storytelling"
+        ],
+        "dialects": [
+          "beijing",
+          "dongbei",
+          "henan",
+          "shaanxi",
+          "shanghai",
+          "sichuan",
+          "tianjin",
+          "yue"
+        ],
+        "supportsPitch": 1
+      }
+    ],
+    "totalVerificationCases": 518.0
+  },
+  "draftVersion": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+  "defaultVoiceID": "zh_female_xiaohe_uranus_bigtts",
+  "published": true,
+  "providerResource": "seed-tts-2.0",
+  "publicVoiceCount": 466,
+  "languages": 17,
+  "realSynthesisCases": 518,
+  "failures": 0,
+  "testBudgetCNY": 10,
+  "priceCNYPer10000Characters": 3,
+  "nominalCostCNY": 1.4199,
+  "voiceSlotOrPremiumPurchased": false,
+  "manualAuditionComplete": false,
+  "appCloudPlaybackComplete": true,
+  "remaining": [
+    "Complete App cloud long-form playback, control samples and performance acceptance",
+    "Same-source Ad Hoc packaging",
+    "User screenshot and audio confirmation"
+  ],
+  "stoppedFirstWave": {
+    "verified": 415,
+    "message": "请求过于频繁，请稍后重试",
+    "cause": "Existing admin API limit, 180 requests per minute per address",
+    "resumedRemaining": 51,
+    "completed": 51
+  },
+  "evidence": {
+    "real-verification-database.json": "a023b55e4e5478035407d5758946727c7b7092430dc4f26438121cbbf49bfe62",
+    "recommended-capability-database.json": "f5b733e73c3eecdd492b18f861fabd70f6d00416afa3090e78bdd8545892ef4a",
+    "review-466.txt": "071247b17625c54221fd79d0b675483e95a7e7a988fb34a6307cc2eb5c4c3180",
+    "published-public-catalog.json": "a82d85d1481e0c696be0fcb5fcadb0551b9fc052ec63d32e855cff45eced1c74",
+    "published-public-catalog-evidence.json": "ed396d8856f30cf7468d286e086b4fd5461b734b685c993fce1b28e6ccddc16e",
+    "catalog-published-466.png": "621a792ff42b13291fedfa443e21978a510e3b0b59fcb6862dbc9de02c00f239",
+    "deployment-78bdb99/catalog-publication-backup-result.json": "e4bfba571562e9d07f07a28dd9b81bb0cfa04d8bd49c3d438176604409c34462",
+    "deployment-78bdb99/catalog-publication-post-restore-verification.json": "5557bebdb2f915c320002f0c4f308e1047f0c9a62c143bfa5e1c9dc1ddbccd59"
+  },
+  "publication": {
+    "status": 200,
+    "conditionalStatus": 304,
+    "version": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+    "voices": 466,
+    "defaultVoiceID": "zh_female_xiaohe_uranus_bigtts",
+    "maxAgeSeconds": 14400,
+    "etag": "\"c04e5286-6fc3-461d-900a-d1729d7f49a0\"",
+    "headers": {
+      "Alt-Svc": "h3=\":443\"; ma=2592000",
+      "Cache-Control": "public, max-age=14400, must-revalidate",
+      "Content-Type": "application/json",
+      "Date": "Wed, 21 Oct 2026 05:17:53 GMT",
+      "Etag": "\"c04e5286-6fc3-461d-900a-d1729d7f49a0\"",
+      "Referrer-Policy": "no-referrer",
+      "Strict-Transport-Security": "max-age=31536000",
+      "Via": "1.1 Caddy",
+      "X-Content-Type-Options": "nosniff",
+      "Connection": "close",
+      "Transfer-Encoding": "chunked"
+    },
+    "conditionalHeaders": {
+      "Alt-Svc": "h3=\":443\"; ma=2592000",
+      "Cache-Control": "public, max-age=14400, must-revalidate",
+      "Date": "Wed, 21 Oct 2026 05:17:53 GMT",
+      "Etag": "\"c04e5286-6fc3-461d-900a-d1729d7f49a0\"",
+      "Referrer-Policy": "no-referrer",
+      "Strict-Transport-Security": "max-age=31536000",
+      "Via": "1.1 Caddy",
+      "X-Content-Type-Options": "nosniff",
+      "Connection": "close"
+    },
+    "sha256": "a82d85d1481e0c696be0fcb5fcadb0551b9fc052ec63d32e855cff45eced1c74"
+  },
+  "restoration": {
+    "adminConfigurationBound": true,
+    "configurationRecoveryVerified": true,
+    "exitCode": 0,
+    "filename": "mysql-20261021T052617Z-b7fb40.sql.gz.enc",
+    "finishedAt": 1792560420.868153,
+    "isolatedRestorePassed": true,
+    "manifestAuthenticated": true,
+    "newTestSourceBound": true,
+    "newTestStateBound": true,
+    "offsiteReadbackVerifiedObjects": 3,
+    "pid": 2123194,
+    "privateAppRowsExcluded": true,
+    "readAloudOverlayBound": true,
+    "recoveryFilename": "recovery-mysql-20261021T052617Z-b7fb40.tar.gz.enc",
+    "restoredTables": 102,
+    "selectedFilesBound": 9,
+    "sha256": "e7ec7e472613b3e63c73c3da16a91c1bb8c1a46864850018ff65551d9e29bcb0",
+    "source": "78bdb99e3b00450fc48768fef314d660f42766b9",
+    "startedAt": 1792560365.9155362,
+    "testAdminRoutingBound": true,
+    "testCatalogRestored": {
+      "defaultVoiceID": "zh_female_xiaohe_uranus_bigtts",
+      "enabled": 466,
+      "verified": 470,
+      "version": "c04e5286-6fc3-461d-900a-d1729d7f49a0",
+      "voiceHash": "4bdd55d2249ab134c792d8aee13b3be633a3ef1b80b41ad838d63f11136fd66d",
+      "voices": 466
+    },
+    "testCheckpointFilename": "mysql-20261021T052621Z-57fb1d.sql.gz.enc",
+    "testCheckpointSHA256": "75e3e8ae12188712fcae5be2086d363ad82c1c17bb8bcbdef10d91c48a347985"
+  },
+  "postRestore": {
+    "sourceVoiceHash": "4bdd55d2249ab134c792d8aee13b3be633a3ef1b80b41ad838d63f11136fd66d",
+    "productionStateSHA256": "bb3a27cb722d3fbc94241ccf6ec05331984464f78615153786d698639f08ecb4",
+    "rootCaddySHA256": "026f09e060885bb42d779a6e58771639be606c7fdbb0d5c79e807a954fb1f3ab",
+    "ready": [
+      {
+        "app": "health",
+        "status": 200
+      },
+      {
+        "app": "journal",
+        "status": 200
+      },
+      {
+        "app": "birthday",
+        "status": 200
+      },
+      {
+        "app": "albums",
+        "status": 200
+      }
+    ]
+  }
+}

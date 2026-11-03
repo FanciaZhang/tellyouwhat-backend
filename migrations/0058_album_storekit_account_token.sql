@@ -1,0 +1,6 @@
+-- UUIDv5 in the URL namespace, over the app-specific verified-identity hash.
+-- Recomputable purchase identity; media account IDs remain independent.
+ALTER TABLE album_accounts
+ ADD COLUMN storekit_account_token CHAR(36) CHARACTER SET ascii COLLATE ascii_bin
+ GENERATED ALWAYS AS (LOWER(CONCAT(SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),1,8),'-',SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),9,4),'-5',SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),14,3),'-',SUBSTR('89ab',MOD(CONV(SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),17,1),16,10),4)+1,1),SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),18,3),'-',SUBSTR(SHA1(UNHEX(CONCAT('6ba7b8119dad11d180b400c04fd430c8',HEX(CONCAT('cn.tellyouwhat.albums/storekit/v1:',apple_subject_sha256))))),21,12)))) STORED,
+ ADD UNIQUE KEY album_storekit_identity(storekit_account_token);

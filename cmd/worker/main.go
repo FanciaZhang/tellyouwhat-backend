@@ -3,18 +3,27 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/tellyouwhat/backend/internal/airollout"
 	"github.com/tellyouwhat/backend/internal/config"
+	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/prompteval"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
 	"github.com/tellyouwhat/backend/internal/provider/ark"
 	"github.com/tellyouwhat/backend/internal/quota"
@@ -37,11 +46,31 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
+	if err != nil {
+		return err
+	}
+	ctx = lifecycle.WithController(ctx, control)
 	database, err := mysqlstore.Open(ctx, platform.DatabaseDSN)
 	if err != nil {
 		return err
 	}
 	defer database.Close()
+	ops := platformops.Store{DB: database}
+	defaults, err := config.LoadOperationsDefaults()
+	if err != nil {
+		return err
+	}
+	if err = ops.Initialize(ctx, defaults, time.Now()); err != nil {
+		return err
+	}
+	promptDefaults, err := config.LoadPromptDefaults(platform.Apps...)
+	if err != nil {
+		return err
+	}
+	if _, err = promptconfig.Start(ctx, promptconfig.Store{DB: database}, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") }); err != nil {
+		return err
+	}
 	costController, err := costcontrol.New(mysqlstore.NewCostControlStore(database), platform.AICost.Limits, time.Now)
 	if err != nil {
 		return err
@@ -61,26 +90,54 @@ func run(logger *slog.Logger) error {
 	}
 	workers := make(map[appregistry.AppID]*jobs.Worker)
 	for _, app := range platform.Apps {
+		if app.Registry.ID == appregistry.Journal {
+			engine := &prompteval.Engine{Store: prompteval.Store{DB: database, Cipher: cipher, Limits: platform.AICost.Limits}, Provider: journalprovider.Config{BaseURL: app.JournalAI.BaseURL, APIKey: app.JournalAI.APIKey, LiteModel: app.JournalAI.LiteModel, ProModel: app.JournalAI.ProModel}, ASR: app.VoiceASR, Price: platform.AICost.JournalArk, SpeechPrice: platform.AICost.JournalSpeech}
+			if os.Getenv("JOURNAL_IMAGE_MODEL_ID") != "" {
+				images, imageErr := illustration.NewProvider(app.JournalAI.BaseURL, app.JournalAI.APIKey, os.Getenv("JOURNAL_IMAGE_MODEL_ID"), nil)
+				cost, costErr := strconv.ParseInt(os.Getenv("JOURNAL_IMAGE_MAX_COST_NANOS"), 10, 64)
+				if imageErr != nil || costErr != nil || cost <= 0 || cost > prompteval.ImageReservationNanos {
+					logger.Error("Journal image evaluation unavailable: invalid model or cost configuration")
+				} else {
+					engine.Images, engine.ImageCostNanos = images, cost
+				}
+			}
+			go engine.Run(ctx)
+		}
 		if app.Registry.ID != appregistry.Health {
 			continue
 		}
 		appID := string(app.Registry.ID)
 		store := mysqlstore.NewJobRepository(database, cipher, appID)
 		var modelProvider providerapi.Client = ark.New(app.Ark, http.DefaultClient, tosStore)
-		modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, appID, platform.AICost.HealthArk)
+		endpoints := map[contracts.Operation]string{}
+		for op, route := range app.Ark.Routes {
+			endpoints[op] = route.Model
+		}
+		budgeted := providerapi.NewBudgetedClient(modelProvider, costController, appID, platform.AICost.HealthArk)
+		budgeted.ReserveAttempt = (airollout.Store{DB: database}).Reservation(endpoints)
+		budgeted.RecordModel = (airollout.Store{DB: database}).RecordModel(endpoints)
+		modelProvider = budgeted
 		managedReconciler := redisstore.NewQuotaLimiter(redisClient, app.Quota, appID)
 		freeRecognitionReconciler := redisstore.NewQuotaLimiter(redisClient, app.FreeRecognitionQuota, appID)
+		managedReconciler.ResolveLimits = platformops.QuotaResolver(ops, appID, app.Quota, false)
+		freeRecognitionReconciler.ResolveLimits = platformops.QuotaResolver(ops, appID, app.FreeRecognitionQuota, true)
 		reconciler := quota.NewRoutedTokenReconciler(managedReconciler, freeRecognitionReconciler)
 		workers[app.Registry.ID] = jobs.NewWorker(store, modelProvider, reconciler)
+		workers[app.Registry.ID].Admit = func(ctx context.Context, op string) error { return platformops.Check(ctx, ops, appID, op) }
 	}
 	if len(workers) == 0 {
 		return errors.New("no asynchronous application workers are configured")
 	}
 	router := newWorkerRouter(platform.WorkerSecret, workers, logger)
 
+	closeControl, err := control.Listen("worker")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           router,
+		Handler:           control.Handler(router),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      3 * time.Hour,

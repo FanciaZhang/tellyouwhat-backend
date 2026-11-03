@@ -1,0 +1,67 @@
+{
+  "verified_at": "2026-10-13",
+  "scope": "Isolated MySQL 8.4 and Redis; controlled Apple transport and test-authority signed transactions. No real Apple requests, subscription mutation or deployment.",
+  "verification": {
+    "startedAt": "2026-10-13T13:50:46.083438+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-ofu_x9g0",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-ofu_x9g0/race.log",
+        "testCounts": {
+          "pass": 257
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-ofu_x9g0/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-subscription-rebinding-ofu_x9g0/build.log"
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T13:52:09.022238+00:00"
+  },
+  "top_level_tests": 81,
+  "passed_test_events": 257,
+  "failed_test_events": 0,
+  "skipped_test_events": 0,
+  "covered": [
+    "Last pending binding acknowledgement re-queries every known chain, including previously acknowledged ones",
+    "Every requested chain must be returned and fully verified with stable token; no missing-response inference",
+    "Unknown related chains discovered during final reads persist atomically and prevent last acknowledgement",
+    "Mixed ownership entries for a discovered chain reject the complete chain; no partially matched records imported",
+    "Concurrent partial passes cannot both close the queue without a complete snapshot; last transaction rechecks readiness",
+    "New verified notification during provider reads changes revision and invalidates the old completion proof",
+    "Exact ordered purchase set, transaction anchors, signed timestamps, configured realm and deletion identity checked under locks",
+    "Proof lifetime below one minute; future/expired proof and expired worker lease rejected",
+    "Existing rebinding, identity, notification, retention, App Store transport and Gateway regression tests passed"
+  ],
+  "source_sha256": {
+    "internal/albums/subscription_binding_completion.go": "d0f7ce96448e9c1864143f9c06ce5ac873d68e1eb75f6511516f24545c5b9206",
+    "internal/albums/subscription_binding_completion_test.go": "f4d5e35b86c745b6dc91e32318d5c9ba767af94b30044f29dc447d36472617bd",
+    "internal/albums/subscription_rebinding.go": "e071e1bde08cf4f06f8dc72f869f51da54552beacf9bc70778c550d6010c8078",
+    "internal/albums/subscription_rebinding_test.go": "c23e537406aa4db53c0ebe0e0ea0403b73af620f9050ee335e0c8c51d11cd506",
+    "internal/albums/subscription_binding_discovery_test.go": "01930ee70acf435bce3d55fdb49bf2f3c60d22324d68465bb683c4b412b33509"
+  },
+  "log_sha256": {
+    "race.log": "d82f0cda97c4ff432a89abd4772fb62c9fa95c17c937c43da579b36712176d39",
+    "vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "not_completed": [
+    "This closes the current known binding queue; it does not enumerate every historically unseen purchase",
+    "Final identity/billing/backup erasure transaction and account deletion HTTP/UI",
+    "Real Sandbox purchase, renewal, refund, legacy rebinding and account recreation acceptance",
+    "Deployment or activation; binding worker remains disabled by default",
+    "No native code changes or new Xcode run"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "startedAt": "2026-10-12T08:06:24.522426+00:00",
+  "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-v5zgwd0_",
+  "phases": [
+    {
+      "name": "targeted-after-fix",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-v5zgwd0_/targeted-after-fix.log",
+      "testCounts": {
+        "pass": 37
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "ff396e99db6fff04ac9d1eafa1c8b726cc1e652cf9426b5e4450a2a1d3dd76eb"
+    },
+    {
+      "name": "related-race",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-v5zgwd0_/related-race.log",
+      "testCounts": {
+        "pass": 621
+      },
+      "failures": [],
+      "skips": [],
+      "logSHA256": "3ef99911266798514bdc4b1a9fbc4339c08f23e4b1cbd34911df6175a217e182"
+    },
+    {
+      "name": "vet",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-v5zgwd0_/vet.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "exitCode": 0,
+      "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-object-purge-v5zgwd0_/build.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "servicesStopped": true,
+  "endedAt": "2026-10-12T08:07:30.680558+00:00",
+  "scope": "Expired-trash metadata settlement, atomic once-only quota refund, final purged feed and current object re-inventory; scheduler remains disconnected",
+  "baselineCommit": "57a41dcfcc8fd8fbe480b823353862da271c7b0b",
+  "sourceSHA256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "2144e8a344b54373ae08f079ed1cc521d24e8021fa8228b4ba5ee205ed9be545",
+    "internal/albumhttpapi/generated.go": "935a1b07c612914fe7e9bcd564bba875395d2cdedc59fbbc84e0e416816cd4db",
+    "internal/albums/asset_lifecycle.go": "fffce370ea19c15e495a3e13acfcb981c99e917625e8fd903a7e8ba07262662a",
+    "internal/albums/asset_lifecycle_integration_test.go": "bc95dba2e3d741578d04c46d826f72a06d6c32dab680b5bb449f49e1675eb499",
+    "internal/albums/library_changes.go": "c548007cb4ce53e49285867dd190589075c19dbe0a748ef29a5c4bcd05c20112",
+    "internal/albums/object_purge.go": "123a1185dedac36536b2710c202b14d4f99bd1b023add6dc1fc002ccfed5c9fd",
+    "internal/albums/object_purge_integration_test.go": "608d56093c6ab91f373385338c6820ecd6c11688c10408c654599ad92498d50d",
+    "internal/albums/object_purge_settlement.go": "8f559ba2726d18d40e9fc209dd8c0e83c2d6119af23fd5b4034f6bb16be7095a",
+    "internal/albums/object_purge_settlement_integration_test.go": "bd0298d041c301bb3865fd780087dfa5d5959eb6a641f71c295731ec5189f5a2",
+    "migrations/0036_album_purge_settlement.sql": "733ee0cb3b6d8b058022a4d62eac4eca9462c6ba8b24a902ec66efd47ee2044f",
+    "migrations/embed_test.go": "2ec3ba21ca439ddaf4c9ad6010597f8c45478017d6c1498557623bc03e8e1c53"
+  },
+  "notVerified": [
+    "Production scheduling and live COS quiescence",
+    "Six-month expiry admission and renewal cutoff",
+    "Account-wide erasure, backup deletion propagation and restore drill",
+    "Native client verified separately after submodule update"
+  ]
+}

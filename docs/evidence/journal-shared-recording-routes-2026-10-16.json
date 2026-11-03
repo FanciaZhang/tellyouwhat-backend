@@ -1,0 +1,73 @@
+{
+  "scope": "Generated shared-gateway recording routes and authenticated streaming; runtime dependency activation pending",
+  "base": "94629ef68df3a0230fd637bd89480cc2bfab5d73",
+  "production_modified": false,
+  "remote_deployed": false,
+  "runtime_enabled": false,
+  "validation": {
+    "go_all": {
+      "passed_packages": 59,
+      "packages_without_tests": 14,
+      "passed_test_events_including_subtests": 2324,
+      "skipped_test_events_including_subtests": 651,
+      "failures": 0
+    },
+    "race_packages": [
+      "internal/gateway",
+      "internal/journal/development",
+      "internal/journalhttpapi",
+      "internal/architecture",
+      "internal/platformops"
+    ],
+    "vet": "passed for gateway, recordinghttp, development and journalhttpapi",
+    "linux_amd64_build": "gateway and journaldevserver passed",
+    "management_browser": "platform-admin-ui-test.mjs passed with local Chrome and synthetic API fixtures, including recording duration billing label",
+    "diff_check": "passed",
+    "security_cases": [
+      "Authorization and entitlement/consent checks precede audio reads",
+      "Signed digest passed to App Attest proof and verified against actual streamed WAV before task publication",
+      "6.4 MB upload crosses normal JSON limits without buffering in gateway middleware",
+      "Authenticated key owns task; other key denied result",
+      "One provider submission across repeat process requests; expired subscription may retrieve owned result",
+      "Generated JSON binding preserves exact authenticated preview/retry bytes"
+    ],
+    "provider": "synthetic provider responses only"
+  },
+  "corrections": [
+    "Updated canonical contract path and operation counts for new generated endpoints",
+    "Replaced private adapter closure with the existing explicit handler pattern to preserve generated-route architecture"
+  ],
+  "not_verified": [
+    "Command-entry recording construction and environment-isolated spool mounting",
+    "Privacy deletion fencing, retention and backup/recovery integration",
+    "Native client streamed App Attest upload and real entitlement journey",
+    "Private-state ownership transition, remote cutover and service retirement",
+    "Real cloud transcription/preview through shared gateway"
+  ],
+  "removed_files": [
+    "internal/journal/development/recording_preview.go"
+  ],
+  "sha256": {
+    "Contracts/HTTP/JournalAPI/app.openapi.yaml": "7670375031cde1ddb434148966cbdc26f3f30c8f8bc0aa104c5dbc5c16d820d7",
+    "Contracts/HTTP/JournalAPI/openapi.yaml": "1be8fa3ea5d39a9ee9e1b4bc4619dbeadd892b86897204fffcd3357b5ba2cb32",
+    "docs/journal/recording-analysis-validation.md": "f4ff98b582952a98d49a3399dea1e5dc89aedabe5cb8438b208b7e342d36d0f6",
+    "docs/unified-app-environments.md": "45d8eb07dbc324f771731566bab1b8fe9e7798bcf4a43f12e02d1d1eafef9edf",
+    "internal/adminui/static/insights.js": "41263e574b866727bb99924f3b7cba1a4274117d069e72d303360786fab4101d",
+    "internal/adminui/static/platform.js": "de6d28fbf6e92ba92620d3a0f5a61527964a22357d05f7621bbdefcb2697e34b",
+    "internal/architecture/platform_contract_test.go": "0cebac4b1b1354417d0701a5a6db076170c26373665941bbd5ad5febd9b40b47",
+    "internal/gateway/journal_recording_handlers.go": "7e6512073230ca8d504d00b148f0b6ff08dedc7fa6afac22f18e1bf161ee4e46",
+    "internal/gateway/journal_recording_handlers_test.go": "267ba38b72951c5aa320c8050eeeed4233b2653d510bf0d0b6e0e3cfecc7b31b",
+    "internal/gateway/router.go": "320d0cb22d478b464f883ab89467b31e348871e5e02209cda644f80d878b03a8",
+    "internal/gateway/server.go": "73b674996aa3ff2128afc3a7a6e127466a67d9ed4c9be3b9de3ae993b5e28fd9",
+    "internal/gateway/strict_common.go": "df2542ee63562c7c81698f74abb7de4a05c56d7d2a08e211fe8be1454da7c59f",
+    "internal/journal/development/recording.go": "69747520b66ad3cf5b19a5468cc7df48b8708f25b35b4a077378a19f628555ab",
+    "internal/journal/development/recording_test.go": "1a0b6cc549a0be647ef1572fca010bc0ba329e9d2ad5f0dd85a64c6b065435a8",
+    "internal/journal/development/server.go": "b3ba4d84239393df8b9f608b020c77735f85f17c7f160c78f377799898baeb55",
+    "internal/journal/recordinghttp/handler.go": "ea8eb6b78af80b4f85048aa37cd34568d38897cce9ed8d3aaf7e7d80ea44fe3a",
+    "internal/journal/recordinghttp/preview.go": "1b642eedcf43afe84c98b3286dce4a55cfa1c3712e7e6aba89f8d71673c45435",
+    "internal/journalhttpapi/contract_test.go": "08f974b4702bb09722764d8bce2fdfbe7fbf487c1de7be629baad384b5940cd9",
+    "internal/journalhttpapi/generated.go": "61db772b3a9f6a799ba2e019d8802d2ad87ebb40433290aac8610072a923f75f",
+    "internal/platformops/automation_store.go": "4cdaf2fa8d8f1456f03613e20e9c6d13063db59137c18676fd2692265425299a",
+    "scripts/platform-admin-ui-test.mjs": "07b5efa2e3d7272504e3c96da6ba6a4452b4c3d3202a69f86d1e9a1edb3ed8e4"
+  }
+}

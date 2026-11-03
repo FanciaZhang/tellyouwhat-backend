@@ -1,0 +1,89 @@
+{
+  "observed_at": "2026-10-16T04:04:03.250625+00:00",
+  "identity": "journalapp-development-backend",
+  "identity_id": "97256858",
+  "checks": [
+    {
+      "label": "journal-lite",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true,
+      "response_status": "completed"
+    },
+    {
+      "label": "deny-health-test",
+      "http_status": 403,
+      "expected": 403,
+      "passed": true
+    },
+    {
+      "label": "deny-journal-production",
+      "http_status": 403,
+      "expected": 403,
+      "passed": true
+    },
+    {
+      "label": "journal-illustration",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true,
+      "image_bytes": 141714,
+      "size": "2048x2048"
+    },
+    {
+      "label": "journal-pro",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true,
+      "response_status": "completed",
+      "response_model": "doubao-seed-2-1-pro-260915"
+    }
+  ],
+  "pro_model_pending_version_switch": false,
+  "service_updated": true,
+  "updated_at": "2026-10-16T04:46:39.857667+00:00",
+  "policy": "JournalDevelopmentInferenceOnly",
+  "policy_path": "config/iam/journal-development-inference-only.json",
+  "policy_sha256": "19388fa1f0ebadbab5e98dbc5507dfe9727361d053d19f446996545ebc0ec639",
+  "console_access_enabled": false,
+  "access_key_count": 0,
+  "iam_api_key_count": 1,
+  "attached_policy_count": 1,
+  "credential_local_permissions": "0600",
+  "credential_local_directory_permissions": "0700",
+  "credential_remote_permissions": "0600",
+  "credential_remote_directory_permissions": "0700",
+  "credential_local_remote_match": true,
+  "credential_values_omitted": true,
+  "models": {
+    "lite": {
+      "endpoint": "ep-20261016114832-xrl4h",
+      "version": "260428"
+    },
+    "pro": {
+      "endpoint": "ep-20261016114934-6nzjt",
+      "current_response_version": "260628",
+      "requested_version": "260628",
+      "switch_complete": true
+    },
+    "illustration": {
+      "endpoint": "ep-20261016115027-2rx24",
+      "version": "260915"
+    }
+  },
+  "deployment_blocker": null,
+  "speech_credentials_changed": false,
+  "production_services_changed": false,
+  "device_journey_verified": false,
+  "version_switch_verification": {
+    "checked_at": "2026-10-16T04:38:57.560117+00:00",
+    "http_status": 200,
+    "model": "doubao-seed-2-1-pro-260628",
+    "status": "completed",
+    "expected_model": "doubao-seed-2-1-pro-260628",
+    "console_completed": true,
+    "screenshot": "journal-development-pro-ready-2026-10-16.jpg"
+  },
+  "runtime_source_commit": "ae02ac4416d857a5e74e92826b7f4399e171abfb",
+  "activation_evidence": "journal-development-inference-activation-2026-10-16.json"
+}

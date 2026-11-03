@@ -16,7 +16,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/contracts"
 	"github.com/tellyouwhat/backend/internal/healthhttpapi"
 	"github.com/tellyouwhat/backend/internal/jobs"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/privacy"
 	providerapi "github.com/tellyouwhat/backend/internal/provider"
@@ -57,18 +60,41 @@ func strictGinContext(ctx context.Context) *gin.Context {
 }
 
 func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) (Principal, *apiFailure) {
+	return server.apiAuthenticateProof(ctx, requestID, apiRequestProof(ctx, requestID))
+}
+
+func (server *Server) apiAuthenticateProof(ctx context.Context, requestID uuid.UUID, proof RequestProof) (Principal, *apiFailure) {
 	requestIDString := requestID.String()
-	if server.authenticator == nil {
+	authenticator := server.authenticator
+	ginContext := strictGinContext(ctx)
+	if schemes := ginContext.Request.Header.Values("X-Tellyouwhat-Authentication"); len(schemes) != 0 {
+		if len(schemes) != 1 || schemes[0] != simulatortest.Scheme || server.readAloudSimulatorAuthenticator == nil ||
+			server.app.ID != appregistry.Journal || server.app.BundleID != simulatortest.BundleID || ginContext.Request.Host != simulatortest.Host {
+			ginContext.Set(observability.AuthenticationFailureStageContextKey, "app_scope")
+			return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+		}
+		proof.Path = ginContext.Request.URL.RequestURI()
+		if !simulatortest.Allowed(proof.Method, proof.Path) {
+			ginContext.Set(observability.AuthenticationFailureStageContextKey, "app_scope")
+			return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+		}
+		authenticator = server.readAloudSimulatorAuthenticator
+	} else if simulatortest.IsKey(proof.KeyID) {
+		return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
+	}
+	if authenticator == nil {
+		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	proof := apiRequestProof(ctx, requestID)
-	principal, err := server.authenticator.Authenticate(ctx, proof)
+	principal, err := authenticator.Authenticate(ctx, proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {
+			strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "app_scope")
 			return Principal{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestIDString)
 		}
 		return principal, nil
 	}
+	strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 	switch {
 	case errors.Is(err, attestation.ErrReplay):
 		return Principal{}, newAPIFailure(http.StatusConflict, "replay_detected", "request nonce or assertion was already used", requestIDString)
@@ -143,6 +169,9 @@ func (server *Server) apiValidateAIRequest(
 	if failure != nil {
 		return contracts.Request{}, nil, Principal{}, false, failure
 	}
+	if failure := server.freezeHealthPrompt(&artifact); failure != nil {
+		return contracts.Request{}, nil, Principal{}, false, failure
+	}
 	return artifact.FreezeOutputBudget(), rawRequestBody(strictGinContext(ctx)), principal, managed, nil
 }
 
@@ -204,6 +233,9 @@ func (server *Server) apiAuthorizeAIEntitlement(
 	artifact contracts.Request,
 	requestID string,
 ) (bool, *apiFailure) {
+	if failure := server.operationsFailure(ctx, string(artifact.Operation), requestID); failure != nil {
+		return false, failure
+	}
 	managed, failure := server.apiManagedEntitlement(ctx, principal, requestID)
 	if failure != nil {
 		return false, failure
@@ -235,7 +267,7 @@ func (server *Server) apiAuthorizeAIEntitlement(
 	case err == nil:
 		return false, nil
 	case errors.Is(err, recognitionquota.ErrExceeded):
-		return false, newAPIFailure(http.StatusTooManyRequests, "free_recognition_quota_exceeded", "three free meal recognitions have already been used or reserved for this business day", requestID)
+		return false, newAPIFailure(http.StatusTooManyRequests, "free_recognition_quota_exceeded", "the free meal recognition limit has been reached for this business day", requestID)
 	case errors.Is(err, recognitionquota.ErrInvalid):
 		return false, newAPIFailure(http.StatusUnprocessableEntity, "invalid_recognition_session", "recognition session is invalid", requestID)
 	default:
@@ -282,12 +314,17 @@ func mappedContractFailure(err error, requestID string) *apiFailure {
 	}
 }
 
-func (server *Server) apiAcquireQuota(
+func (server *Server) apiAcquireQuota(ctx context.Context, principal Principal, artifact contracts.Request, reservationID string, managed bool) (quota.Releaser, *apiFailure) {
+	return server.apiQuota(ctx, principal, artifact, reservationID, managed, false)
+}
+
+func (server *Server) apiQuota(
 	ctx context.Context,
 	principal Principal,
 	artifact contracts.Request,
 	reservationID string,
 	managed bool,
+	prepare bool,
 ) (quota.Releaser, *apiFailure) {
 	quotaService := server.quota
 	if !managed {
@@ -298,11 +335,18 @@ func (server *Server) apiAcquireQuota(
 	}
 	quotaPrincipal := principalForQuota(principal, managed)
 	ginContext := strictGinContext(ctx)
-	lease, err := quotaService.Acquire(ctx, quota.Identity{
+	identity := quota.Identity{
 		DeviceID:      quotaPrincipal.DeviceID,
 		TransactionID: quotaPrincipal.TransactionID,
 		IP:            server.ipResolver(ginContext.Request),
-	}, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	}
+	var lease quota.Releaser
+	var err error
+	if prepare {
+		err = quotaService.PrepareJob(ctx, identity, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	} else {
+		lease, err = quotaService.Acquire(ctx, identity, artifact.Operation, contracts.ReservationTokens(artifact), reservationID, server.now())
+	}
 	if err == nil {
 		return lease, nil
 	}
@@ -310,6 +354,7 @@ func (server *Server) apiAcquireQuota(
 		return nil, newAPIFailure(http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", artifact.RequestID)
 	}
 	code, message := quotaExceededResponse(err)
+	server.recordOperationRejection(ctx, string(artifact.Operation), "quota")
 	return nil, newAPIFailure(http.StatusTooManyRequests, code, message, artifact.RequestID)
 }
 

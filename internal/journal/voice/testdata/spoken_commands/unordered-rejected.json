@@ -1,0 +1,97 @@
+{
+  "baseRevision": 0,
+  "transcriptRevision": 0,
+  "blockEdits": [
+    {
+      "kind": "replace",
+      "id": "fac8a113-a28b-4780-b547-3afe01736f9b",
+      "afterID": "",
+      "style": "body",
+      "text": "周末出门打算带几样东西："
+    },
+    {
+      "kind": "insert",
+      "id": "24371296-1142-4b74-8e00-5ef7b1bf6e9d",
+      "afterID": "fac8a113-a28b-4780-b547-3afe01736f9b",
+      "style": "unorderedListItem",
+      "text": "水杯"
+    },
+    {
+      "kind": "insert",
+      "id": "ac9f18a5-a6f4-4048-99d2-1df57b1ab088",
+      "afterID": "24371296-1142-4b74-8e00-5ef7b1bf6e9d",
+      "style": "unorderedListItem",
+      "text": "雨伞"
+    },
+    {
+      "kind": "insert",
+      "id": "1b104de5-3d56-4186-9d17-67e99582dba5",
+      "afterID": "ac9f18a5-a6f4-4048-99d2-1df57b1ab088",
+      "style": "unorderedListItem",
+      "text": "充电宝"
+    }
+  ],
+  "consumedSourceIDs": [
+    "8b3615a7-4fe9-50e2-10e9-4a37ed54fb84"
+  ],
+  "corrections": [],
+  "diagramCreations": [],
+  "diagramEdits": [],
+  "emotions": [],
+  "formatCommands": [],
+  "formatResolutions": [],
+  "illustrationSuggestion": null,
+  "journeyCreations": [],
+  "journeyEdits": [],
+  "moveCommands": [],
+  "moveResolutions": [],
+  "paragraphCommands": [],
+  "paragraphResolutions": [],
+  "passages": [
+    {
+      "blockID": "fac8a113-a28b-4780-b547-3afe01736f9b",
+      "sourceIDs": []
+    },
+    {
+      "blockID": "24371296-1142-4b74-8e00-5ef7b1bf6e9d",
+      "sourceIDs": []
+    },
+    {
+      "blockID": "ac9f18a5-a6f4-4048-99d2-1df57b1ab088",
+      "sourceIDs": []
+    },
+    {
+      "blockID": "1b104de5-3d56-4186-9d17-67e99582dba5",
+      "sourceIDs": []
+    }
+  ],
+  "questions": [],
+  "semanticState": {
+    "entities": [],
+    "unresolvedMentions": [],
+    "outline": []
+  },
+  "sourcePartitions": [
+    {
+      "sourceID": "8b3615a7-4fe9-50e2-10e9-4a37ed54fb84",
+      "segments": [
+        {
+          "text": "把这些东西整理成无序列表。",
+          "role": "instruction",
+          "blockIDs": [
+            "fac8a113-a28b-4780-b547-3afe01736f9b",
+            "24371296-1142-4b74-8e00-5ef7b1bf6e9d",
+            "ac9f18a5-a6f4-4048-99d2-1df57b1ab088",
+            "1b104de5-3d56-4186-9d17-67e99582dba5"
+          ]
+        }
+      ]
+    }
+  ],
+  "tableCreations": [],
+  "tableEdits": [],
+  "tableResolutions": [],
+  "timelineCreations": [],
+  "timelineEdits": [],
+  "overallEmotion": ""
+}

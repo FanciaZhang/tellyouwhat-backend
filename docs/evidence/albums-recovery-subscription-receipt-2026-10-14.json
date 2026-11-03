@@ -1,0 +1,43 @@
+{
+  "verified_at": "2026-10-14",
+  "scope": "Offline recovery invalidation of subscription completion receipts",
+  "fix": "Restored deletion-ledger reconciliation clears the whole-revision subscription receipt in the same transaction as reopening individual binding jobs; drill checks the receipt is absent.",
+  "validation": {
+    "mysql": "Local isolated MySQL 8.4 using Unix sockets; disposable schemas; controlled Apple responses; Go race detector",
+    "passed_top_level_tests": [
+      "TestMySQLRecoveryLedgerInvalidatesSubscriptionCompletionAtomically",
+      "TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill",
+      "TestMySQLSubscriptionCompletionReceiptTracksRevisionAndNotification",
+      "TestMySQLSubscriptionCompletionReceiptAndInvalidationRollBackTogether",
+      "TestMySQLSubscriptionCompletionReceiptMigrationRechecksOldAcknowledgements"
+    ],
+    "python_tests_passed": 37,
+    "skipped_in_integration_runs": 0,
+    "covered": [
+      "An acknowledged two-chain fixture has a persisted full-revision receipt before recovery",
+      "An injected failure after invalidation rolls back both receipt and job changes",
+      "Recovery and replay clear full and per-chain receipts without changing subscription revision",
+      "An unrelated active account stays active",
+      "Fresh controlled provider verification re-establishes both chain and full-revision receipts",
+      "Actual encrypted snapshot restore remains quarantined; source database unchanged"
+    ],
+    "initial_failure": "New test SQL producer omitted backup module import that installs the shared operations module path. Existing drill and receipt regressions passed; the new test passed after correcting its harness import.",
+    "fixture_processes_stopped": true
+  },
+  "source_sha256": {
+    "deploy/albums/deletion_ledger.py": "5caa8f742a7bc53deb23a8871ced0f5d81d24fffb00cb2f6e4c093021f46c721",
+    "deploy/albums/backup.py": "398d24b174b22034649004c3b81b6aaaf6bd6be51491aaace83836daaa08db49",
+    "internal/albums/recovery_subscription_receipt_test.go": "f0f770843c6847ab5df48152326b45e66668cc317084e769b0d259a81744fc16"
+  },
+  "log_sha256": {
+    "tests.log": "b7c67d1127d1b69653beeede9a0cc8f0be2a872cd19fe854ec6ee14600315924",
+    "tests-retry.log": "6cde8580b4a174f7d0b8755ceeec4917b60af5c9dff4e3719d6a331ba3b3d76f"
+  },
+  "not_verified": [
+    "Live COS offsite restore and independent key escrow",
+    "Real Apple Sandbox purchase or subscription rebinding",
+    "Complete identity and backup erasure",
+    "Production deployment"
+  ],
+  "deployed": false
+}

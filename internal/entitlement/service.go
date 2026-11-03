@@ -2,16 +2,17 @@ package entitlement
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"time"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 var ErrActivationDenied = errors.New("development entitlement activation denied")
 
 type Record struct {
+	Payment            purchase.Evidence
 	KeyID              string
 	TransactionID      string
 	ExpiresAt          time.Time
@@ -19,18 +20,23 @@ type Record struct {
 	Environment        string
 	OfferTransactionID string
 	OfferIdentifier    string
+	ProductID          string
 	OfferType          int32
 	OfferSignedAt      time.Time
 }
 
-type Store interface {
-	Upsert(context.Context, Record) error
+type Reader interface {
 	Get(context.Context, string) (Record, bool, error)
+}
+
+type Store interface {
+	Reader
+	Upsert(context.Context, Record) error
 }
 
 type DevelopmentService struct {
 	store       Store
-	secret      []byte
+	appID       string
 	duration    time.Duration
 	now         func() time.Time
 	environment string
@@ -59,12 +65,13 @@ func (checker *Checker) HasManagedSubscription(
 	if err != nil || !ok {
 		return false, err
 	}
-	return checker.now().Before(record.ExpiresAt), nil
+	return (record.Environment == "sandbox" || record.Environment == "production") &&
+		record.TransactionID != "" && checker.now().Before(record.ExpiresAt), nil
 }
 
 func NewDevelopmentService(
+	appID string,
 	store Store,
-	secret string,
 	duration time.Duration,
 	now func() time.Time,
 ) *DevelopmentService {
@@ -73,7 +80,7 @@ func NewDevelopmentService(
 	}
 	return &DevelopmentService{
 		store:       store,
-		secret:      []byte(secret),
+		appID:       appID,
 		duration:    duration,
 		now:         now,
 		environment: "development",
@@ -83,19 +90,26 @@ func NewDevelopmentService(
 func (service *DevelopmentService) Activate(
 	ctx context.Context,
 	principal attestation.Principal,
-	secret string,
+	_ string,
 ) (time.Time, error) {
-	if service == nil || service.store == nil || len(service.secret) == 0 || principal.KeyID == "" ||
-		len(secret) != len(service.secret) || subtle.ConstantTimeCompare([]byte(secret), service.secret) != 1 {
+	if service == nil || service.store == nil || service.appID == "" || principal.AppID != service.appID ||
+		principal.KeyID == "" || principal.DeviceID == "" || principal.TransactionID != "" ||
+		service.duration <= 0 || service.duration > 30*24*time.Hour {
+		return time.Time{}, ErrActivationDenied
+	}
+	existing, found, err := service.store.Get(ctx, principal.KeyID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if found && existing.Environment != service.environment {
 		return time.Time{}, ErrActivationDenied
 	}
 	expiresAt := service.now().Add(service.duration)
 	record := Record{
-		KeyID:         principal.KeyID,
-		TransactionID: principal.TransactionID,
-		ExpiresAt:     expiresAt,
-		StartedAt:     service.now(),
-		Environment:   service.environment,
+		KeyID:       principal.KeyID,
+		ExpiresAt:   expiresAt,
+		StartedAt:   service.now(),
+		Environment: service.environment,
 	}
 	if err := service.store.Upsert(ctx, record); err != nil {
 		return time.Time{}, err

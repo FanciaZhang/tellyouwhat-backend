@@ -1,0 +1,275 @@
+{
+  "verified_at": "2026-10-14",
+  "scope": "iPhone 17 iOS 26.5; production native upload coordinator across two App processes; synthetic account and isolated local Go/MySQL/Redis; real COS and CI",
+  "builds": {
+    "initial": "passed",
+    "revised_production_coordinator_path": "passed"
+  },
+  "run_directory": "/Users/harborzeng/Library/Caches/XcodeMaintenance/Runs/albums-mixed-cloud.Xnbckq",
+  "native_phases": [
+    {
+      "name": "native-1",
+      "exitCode": 0,
+      "summary": {
+        "result": "Passed",
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+              "deviceName": "告你相册 批量挑片 20261013",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 1,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "testFailures": []
+      }
+    },
+    {
+      "name": "native-2",
+      "exitCode": 0,
+      "summary": {
+        "result": "Passed",
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+              "deviceName": "告你相册 批量挑片 20261013",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 1,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "testFailures": []
+      }
+    }
+  ],
+  "native_evidence": {
+    "firstTaskReused": true,
+    "originalBytes": [
+      1735889,
+      8545465,
+      8758879
+    ],
+    "passed": true,
+    "pendingAfterRestart": 3,
+    "pendingAfterResume": 0,
+    "scope": "mixed upload across two App processes; no derived system copies or deletion",
+    "sourceCount": 3,
+    "sourceRetained": true,
+    "taskCount": 3,
+    "versionCount": 3,
+    "versionIDs": [
+      "3442d74d-72bf-4cf2-9ea5-8843804cb474",
+      "93fa6329-1192-4249-b2fe-bb1f5bdc3dcc",
+      "e6a28aa1-f365-4277-9080-3d47316a4f2d"
+    ]
+  },
+  "backend": {
+    "exitCode": 0,
+    "passed": true,
+    "counts": {
+      "originalsVerified": 3,
+      "pairsVerified": 0,
+      "previewsStored": 4,
+      "videosStored": 2
+    },
+    "originalBytes": 19040233,
+    "usedBytes": 21568665,
+    "reservedBytes": 0
+  },
+  "verified_resources": [
+    {
+      "kind": "photo",
+      "versionID": "3442d74d-72bf-4cf2-9ea5-8843804cb474",
+      "resourceCount": 1,
+      "originalBytes": 1735889
+    },
+    {
+      "kind": "video",
+      "versionID": "93fa6329-1192-4249-b2fe-bb1f5bdc3dcc",
+      "resourceCount": 1,
+      "originalBytes": 8545465
+    },
+    {
+      "kind": "live_photo",
+      "versionID": "e6a28aa1-f365-4277-9080-3d47316a4f2d",
+      "resourceCount": 2,
+      "originalBytes": 8758879
+    }
+  ],
+  "fixed_COS_original_version_size_and_sha256_verified": true,
+  "services_stopped": true,
+  "temporary_database_removed": true,
+  "regression": {
+    "result": "Passed",
+    "passedTests": 21,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+          "deviceName": "告你相册 批量挑片 20261013",
+          "modelName": "iPhone 17",
+          "osBuildNumber": "23F77",
+          "osVersion": "26.5",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 21,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ],
+    "testFailures": []
+  },
+  "go_vet_albums_live": "passed",
+  "failures_before_final_pass": [
+    {
+      "run": "roundtrip-9twmukhb",
+      "summary": {
+        "result": "Failed",
+        "passedTests": 0,
+        "failedTests": 1,
+        "skippedTests": 0,
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+              "deviceName": "告你相册 批量挑片 20261013",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 1,
+            "passedTests": 0,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "testFailures": [
+          {
+            "failureText": "failed: caught error: \"permission\"",
+            "targetName": "AlbumsTests",
+            "testIdentifier": 1,
+            "testIdentifierString": "AlbumCloudMediaIntegrationTests/testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload()",
+            "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumCloudMediaIntegrationTests/testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload",
+            "testName": "testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload()"
+          }
+        ]
+      },
+      "servicesStopped": true,
+      "workerCounts": {
+        "originalsVerified": 0,
+        "pairsVerified": 0,
+        "previewsStored": 0,
+        "videosStored": 0
+      },
+      "reason": "PhotoKit readWrite remained notDetermined despite legacy simctl grant; completed actual owned-simulator permission prompt before final pass"
+    },
+    {
+      "run": "roundtrip-31l0nkec",
+      "summary": {
+        "result": "Failed",
+        "passedTests": 0,
+        "failedTests": 1,
+        "skippedTests": 0,
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+              "deviceName": "告你相册 批量挑片 20261013",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 1,
+            "passedTests": 0,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "testFailures": [
+          {
+            "failureText": "XCTAssertEqual failed: (\"PHAuthorizationStatus(rawValue: 0)\") is not equal to (\"PHAuthorizationStatus(rawValue: 3)\") - owned simulator requires full photo access; status=0",
+            "targetName": "AlbumsTests",
+            "testIdentifier": 1,
+            "testIdentifierString": "AlbumCloudMediaIntegrationTests/testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload()",
+            "testIdentifierURL": "test://com.apple.xcode/Albums/AlbumsTests/AlbumCloudMediaIntegrationTests/testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload",
+            "testName": "testMixedBatchFirstProcessStopsAfterFirstVerifiedUpload()"
+          }
+        ]
+      },
+      "servicesStopped": true,
+      "workerCounts": {
+        "originalsVerified": 0,
+        "pairsVerified": 0,
+        "previewsStored": 0,
+        "videosStored": 0
+      },
+      "reason": "PhotoKit readWrite remained notDetermined despite legacy simctl grant; completed actual owned-simulator permission prompt before final pass"
+    }
+  ],
+  "source_sha256": {
+    "Albums/Services/AlbumUploadCoordinator.swift": "8607c1809053dfb2528023a6f838b851824b36b81718ed1545b4c2c49676cc09",
+    "AlbumsTests/AlbumCloudMediaIntegrationTests.swift": "f67fa3ff3fb3aed4c2eaaaedf7236004e22dc8a45338f2a7cc691bdd794fa43d",
+    "scripts/test-native-roundtrip.py": "3ceae4977b908a0238bacbd72c14b142d621fdd6e494b84411f467f748015f11",
+    "internal/albums/cos_native_pipeline_test.go": "c68d38113eb999eadbb48ef09d68c5a23f3ea87791ba4d8f3ba0464da8af0e71"
+  },
+  "not_verified": [
+    "Real Apple sign-in and Sandbox purchase",
+    "Mixed-batch daily copy and original restoration",
+    "System original deletion, background transfer and physical device",
+    "This mixed scenario on iOS 18.6"
+  ],
+  "unchanged": [
+    "Production deployment and sales",
+    "All source and synthetic cloud media retained"
+  ]
+}

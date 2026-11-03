@@ -2,6 +2,7 @@ package entitlement
 
 import (
 	"context"
+	"strings"
 	"sync"
 )
 
@@ -20,8 +21,11 @@ func NewMemoryStore() *MemoryStore {
 
 func (store *MemoryStore) Upsert(_ context.Context, record Record) error {
 	store.mu.Lock()
+	defer store.mu.Unlock()
+	if existing, found := store.records[record.KeyID]; record.Environment == "development" && found && existing.Environment != "development" {
+		return ErrActivationDenied
+	}
 	store.records[record.KeyID] = record
-	store.mu.Unlock()
 	return nil
 }
 
@@ -46,7 +50,7 @@ func (store *MemoryStore) ApplyNotification(
 	}
 	store.notifications[state.NotificationUUID] = struct{}{}
 	for keyID, record := range store.records {
-		if record.TransactionID != state.OriginalTransactionID {
+		if record.TransactionID != state.OriginalTransactionID || !strings.EqualFold(record.Environment, state.Environment) {
 			continue
 		}
 		record.Environment = state.Environment

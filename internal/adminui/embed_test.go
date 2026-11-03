@@ -52,6 +52,25 @@ func TestHandlerDoesNotServeUnknownOrTraversalPaths(t *testing.T) {
 
 func testRouter() *gin.Engine {
 	router := gin.New()
-	router.NoRoute(Handle)
+	router.NoRoute(func(context *gin.Context) { Render(context, false) })
 	return router
+}
+
+func TestTestEnvironmentIsVisibleBeforeLoginAndDoesNotChangeProduction(t *testing.T) {
+	router := gin.New()
+	router.NoRoute(func(c *gin.Context) { Render(c, true) })
+	for _, path := range []string{"/", "/setup", "/enroll"} {
+		result := httptest.NewRecorder()
+		router.ServeHTTP(result, httptest.NewRequest("GET", path, nil))
+		for _, text := range []string{"Tellyouwhat 测试管理后台", "<h1>测试管理后台</h1>", "Tellyouwhat · 测试环境"} {
+			if !strings.Contains(result.Body.String(), text) {
+				t.Fatal("test environment missing", path, text)
+			}
+		}
+	}
+	result := httptest.NewRecorder()
+	testRouter().ServeHTTP(result, httptest.NewRequest("GET", "/", nil))
+	if strings.Contains(result.Body.String(), "测试管理后台") {
+		t.Fatal("development label leaked into production")
+	}
 }

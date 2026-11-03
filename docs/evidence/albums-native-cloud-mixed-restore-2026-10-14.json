@@ -1,0 +1,528 @@
+{
+  "verified_at": "2026-10-14",
+  "scope": "Five independent native App processes per runtime; production upload/restore coordinators and PhotoKit; real COS/CI; synthetic account and entitlement in isolated local Go/MySQL/Redis",
+  "runs": [
+    {
+      "directory": "/Users/harborzeng/Library/Caches/XcodeMaintenance/Runs/albums-mixed-restore.vc6MDH/roundtrip-1wr1a9lj",
+      "device": "ACE29165-C44F-4586-AC7D-435B695E3631",
+      "native_phases": [
+        {
+          "name": "native-1",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-2",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-3",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-4",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-5",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "ACE29165-C44F-4586-AC7D-435B695E3631",
+                  "deviceName": "告你相册 批量挑片 20261013",
+                  "modelName": "iPhone 17",
+                  "osBuildNumber": "23F77",
+                  "osVersion": "26.5",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        }
+      ],
+      "backend": {
+        "exitCode": 0,
+        "passed": true,
+        "counts": {
+          "originalsVerified": 3,
+          "pairsVerified": 1,
+          "previewsStored": 4,
+          "videosStored": 2
+        },
+        "originalBytes": 19040233,
+        "usedBytes": 22492830,
+        "reservedBytes": 0
+      },
+      "upload": {
+        "firstTaskReused": true,
+        "originalBytes": [
+          8758879,
+          1735889,
+          8545465
+        ],
+        "passed": true,
+        "pendingAfterRestart": 3,
+        "pendingAfterResume": 0,
+        "scope": "mixed upload across two App processes; no derived system copies or deletion",
+        "sourceCount": 3,
+        "sourceRetained": true,
+        "taskCount": 3,
+        "versionCount": 3,
+        "versionIDs": [
+          "e397c062-abb1-4529-9ba5-fdad38bf0027",
+          "23127901-0098-4074-8980-0ccf3bb30a48",
+          "eea5314b-1a65-4e18-bc3f-4e57e020f646"
+        ]
+      },
+      "restoration": {
+        "daily": {
+          "completedBeforeRestart": 1,
+          "copiesReusedAfterRestart": 2,
+          "duplicatesAfterReplay": 0,
+          "livePlaybackCompleted": true,
+          "movieFrameAndAudioDecoded": true,
+          "originalSystemAssetCount": 35,
+          "passed": true,
+          "pendingAfterRestart": 2,
+          "pendingAfterResume": 0,
+          "sourceRetained": true,
+          "systemAssetCount": 41,
+          "systemCopiesAdded": 3,
+          "target": "daily"
+        },
+        "original": {
+          "completedBeforeRestart": 1,
+          "copiesReusedAfterRestart": 2,
+          "duplicatesAfterReplay": 0,
+          "livePlaybackCompleted": true,
+          "movieFrameAndAudioDecoded": true,
+          "originalSystemAssetCount": 35,
+          "passed": true,
+          "pendingAfterRestart": 2,
+          "pendingAfterResume": 0,
+          "sourceRetained": true,
+          "systemAssetCount": 44,
+          "systemCopiesAdded": 3,
+          "target": "original"
+        }
+      },
+      "services_stopped": true,
+      "temporary_database_removed": true,
+      "log_sha256": {
+        "mysql-init.log": "3d86404d0f53418520c901e46389a2fe65e95a0ad96af538e67ff2b621e3f1a0",
+        "backend.log": "c85256a04be6f48543e27537fb35f59678bad919351f7c83f6ba96ecd815927a",
+        "native-1.log": "84b2d0cafe9208cb1f17a2f61a9fda3293e053334d37d4573cd3ed760bfae746",
+        "native-3.log": "43365267f73357f63d8dcba1ed149146d33f16497ccd4570bdc9eab7811d5052",
+        "mysql.log": "bbc94a698a953fc4221d927734ff6d22674402d1b4e3a5aeab8611ab628bbdda",
+        "native-2.log": "4a86a8426d2d75887163d480566b44b384a1debea546950e8c759ed4ce39b24e",
+        "synthetic-video.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "redis.log": "23ec8aa454ab1303a348cf63a2829ae12835830cda8f30fabb9ccf4e001c05c2",
+        "native-5.log": "944b5cc3a4742c28d65e2c311e3a582cf5de04e0193e9b38929f0db38bc06933",
+        "native-4.log": "6106d0d88c0bc8865e7687b7e22b3e2025209021db230d006cc0ebe9bdf64c11"
+      }
+    },
+    {
+      "directory": "/Users/harborzeng/Library/Caches/XcodeMaintenance/Runs/albums-mixed-restore.vc6MDH/roundtrip-uih9n_z9",
+      "device": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+      "native_phases": [
+        {
+          "name": "native-1",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-2",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-3",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-4",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        },
+        {
+          "name": "native-5",
+          "exitCode": 0,
+          "summary": {
+            "result": "Passed",
+            "passedTests": 1,
+            "failedTests": 0,
+            "skippedTests": 0,
+            "devicesAndConfigurations": [
+              {
+                "device": {
+                  "architecture": "arm64",
+                  "deviceId": "1F7A3D79-0A18-403C-BD10-565C1ED62A45",
+                  "deviceName": "告你相册 连拍回归 iOS18.6 20261012",
+                  "modelName": "iPhone 16",
+                  "osBuildNumber": "22G86",
+                  "osVersion": "18.6",
+                  "platform": "iOS Simulator"
+                },
+                "expectedFailures": 0,
+                "failedTests": 0,
+                "passedTests": 1,
+                "skippedTests": 0,
+                "testPlanConfiguration": {
+                  "configurationId": "1",
+                  "configurationName": "Test Scheme Action"
+                }
+              }
+            ],
+            "testFailures": []
+          }
+        }
+      ],
+      "backend": {
+        "exitCode": 0,
+        "passed": true,
+        "counts": {
+          "originalsVerified": 3,
+          "pairsVerified": 1,
+          "previewsStored": 4,
+          "videosStored": 2
+        },
+        "originalBytes": 19040233,
+        "usedBytes": 22505865,
+        "reservedBytes": 0
+      },
+      "upload": {
+        "firstTaskReused": true,
+        "originalBytes": [
+          8545465,
+          1735889,
+          8758879
+        ],
+        "passed": true,
+        "pendingAfterRestart": 3,
+        "pendingAfterResume": 0,
+        "scope": "mixed upload across two App processes; no derived system copies or deletion",
+        "sourceCount": 3,
+        "sourceRetained": true,
+        "taskCount": 3,
+        "versionCount": 3,
+        "versionIDs": [
+          "400e6d83-8e91-4d09-81aa-3ecdc4cfa0c2",
+          "711f1bd7-7621-420d-ad90-d44deeb24a80",
+          "a7c2a922-f885-4c2d-8a14-414f1aaf3ab3"
+        ]
+      },
+      "restoration": {
+        "daily": {
+          "completedBeforeRestart": 1,
+          "copiesReusedAfterRestart": 2,
+          "duplicatesAfterReplay": 0,
+          "livePlaybackCompleted": true,
+          "movieFrameAndAudioDecoded": true,
+          "originalSystemAssetCount": 281,
+          "passed": true,
+          "pendingAfterRestart": 2,
+          "pendingAfterResume": 0,
+          "sourceRetained": true,
+          "systemAssetCount": 287,
+          "systemCopiesAdded": 3,
+          "target": "daily"
+        },
+        "original": {
+          "completedBeforeRestart": 1,
+          "copiesReusedAfterRestart": 2,
+          "duplicatesAfterReplay": 0,
+          "livePlaybackCompleted": true,
+          "movieFrameAndAudioDecoded": true,
+          "originalSystemAssetCount": 281,
+          "passed": true,
+          "pendingAfterRestart": 2,
+          "pendingAfterResume": 0,
+          "sourceRetained": true,
+          "systemAssetCount": 290,
+          "systemCopiesAdded": 3,
+          "target": "original"
+        }
+      },
+      "services_stopped": true,
+      "temporary_database_removed": true,
+      "log_sha256": {
+        "mysql-init.log": "cda18cc197ec72a69a976ccf86cbecfd3d0518861189df45bc533cb9aa909b4f",
+        "backend.log": "5ccf9c116863563b0c79b559bd1b1eef80330ca3b93d5cf480b6e476c9e7e5e4",
+        "native-1.log": "399278e51b1e1831e46fc9b4fbaffe86f1e7dbe7b3d5ead0ce849bead7458e23",
+        "native-3.log": "06da07689bdf803b34ec90102e15c7a9a8bea49d5b716451c2bc77d445173056",
+        "mysql.log": "1077968188a10f0e2b2049f1d68f5dc465d8c2d54a26994d49c8c9f7f8762498",
+        "native-2.log": "df447d71c78b5887e6c3b6fe865c809df5d324251d4b15924c6370bf966d88e3",
+        "synthetic-video.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "redis.log": "ba70baef1ff8a7178b6a84eb1aa2f1f4dbe9cd7c2cdc2b41e90af62f68a38559",
+        "native-5.log": "5e74b8f51d83ff635f0278fc80caf990bbe78edd31aef7a21866c6f25ac51f96",
+        "native-4.log": "c627d369e29b802383ad4e932e7b3e7b2ca72de33712bc2dbae860eb5cbf6651"
+      }
+    }
+  ],
+  "build_for_testing": "passed",
+  "go_vet_albums_live": "passed",
+  "source_sha256": {
+    "AlbumsTests/AlbumCloudMediaIntegrationTests.swift": "c4676ee07bc997540d1829271f492a6b8cbd7a438faf531c83efc2a94fcd9c6d",
+    "scripts/test-native-roundtrip.py": "b7eb148d18a9bed0f19e89d899aa947d8683ea6208ec81c9ad5193173b13dca9",
+    "Albums/Services/AlbumRestoreCoordinator.swift": "42daa67c7208642924d4b7c612f06fa1d03c205bd168a5a2b40f913a1aba6e11",
+    "internal/albums/cos_native_pipeline_test.go": "666d0a32b0e4fdc5c576e3878db2b23e56c3f2b5575f0c39f33cdeaa49eb8c41"
+  },
+  "covered": [
+    "Upload submission accepted before simulated lost response; next App process reuses durable task",
+    "Photo, H.264/AAC video and paired Live Photo originals on real fixed COS versions",
+    "CI previews and canonical daily Live Photo pair upload and worker verification",
+    "Daily and original batches interrupted after second system copy is verified but before queue checkpoint",
+    "Next process reuses two committed system identifiers and adds only the third copy",
+    "Explicit replay of the entire batch creates no additional system assets",
+    "Original and source resource verification, daily journal verification, video frame/PCM audio, PHLivePhotoView playback",
+    "All preexisting and newly uploaded source system assets retained; final quota reservations zero"
+  ],
+  "unchanged": [
+    "Production app implementation",
+    "Live deployment, permissions and sales",
+    "All synthetic cloud and system media retained"
+  ],
+  "not_verified": [
+    "Real Apple login, Sandbox purchase, paid conversion, renewal and refund",
+    "Physical device, iCloud and WeChat or Messages integration",
+    "System original deletion and real-account full workflow",
+    "Background persistent network transfer",
+    "Broader media codec, HDR and long-duration corpus"
+  ]
+}

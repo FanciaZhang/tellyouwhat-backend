@@ -1,0 +1,223 @@
+{
+  "observedAt": "2026-10-18T00:27:47.608568+00:00",
+  "catalogues": {
+    "health": {
+      "appleID": "6824089036",
+      "bundleID": "cn.tellyouwhat.healthapp.dev",
+      "sandboxNotificationURL": "https://api-test.health.tellyouwhat.cn/v1/app-store/notifications",
+      "products": [
+        {
+          "productID": "health.premium.subscription.annual.dev",
+          "appleID": "6824091510",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        },
+        {
+          "productID": "health.premium.subscription.monthly.dev",
+          "appleID": "6824091717",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        },
+        {
+          "productID": "health.premium.lifetime.dev",
+          "appleID": "6824092266",
+          "manualPriceCount": 1
+        }
+      ]
+    },
+    "journal": {
+      "appleID": "6824089154",
+      "bundleID": "cn.tellyouwhat.journalapp.dev",
+      "sandboxNotificationURL": "https://api-test.journal.tellyouwhat.cn/v1/app-store/notifications",
+      "products": [
+        {
+          "productID": "journal.ai.subscription.annual.dev",
+          "appleID": "6824091721",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        },
+        {
+          "productID": "journal.ai.subscription.monthly.dev",
+          "appleID": "6824091778",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        }
+      ]
+    },
+    "albums": {
+      "appleID": "6824089160",
+      "bundleID": "cn.tellyouwhat.albums.dev",
+      "sandboxNotificationURL": "https://api-test.albums.tellyouwhat.cn/v1/albums/subscription/notifications",
+      "products": [
+        {
+          "productID": "albums.cloud.50gb.annual.dev",
+          "appleID": "6824090051",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        },
+        {
+          "productID": "albums.cloud.500gb.annual.dev",
+          "appleID": "6824091915",
+          "state": "MISSING_METADATA",
+          "territories": [
+            "CHN",
+            "USA"
+          ]
+        }
+      ]
+    }
+  },
+  "notifications": {
+    "healthapp": {
+      "attempts": [
+        {
+          "attemptDate": 1792282793351,
+          "sendAttemptResult": "SUCCESS"
+        }
+      ],
+      "environment": "Sandbox",
+      "http_status": 200,
+      "notification_id": "297db921-733d-422c-b780-5e5a3338f80e",
+      "signed_at": "2026-10-18T08:19:53.292+08:00",
+      "signed_payload_sha256": "e58d58eaa7cd785092a8c40957d19a0a5f9c4c522535eb7ac506ca67b506f038",
+      "type": "TEST"
+    },
+    "journalapp": {
+      "attempts": [
+        {
+          "attemptDate": 1792282794493,
+          "sendAttemptResult": "SUCCESS"
+        }
+      ],
+      "environment": "Sandbox",
+      "http_status": 200,
+      "notification_id": "07ccd9f9-d644-4f41-a5eb-c7fe957aedac",
+      "signed_at": "2026-10-18T08:19:54.466+08:00",
+      "signed_payload_sha256": "88019490afede51b815ee4b897fc4058d02981da3baf3cfebde48ab28245ad75",
+      "type": "TEST"
+    },
+    "albums": {
+      "attempts": [
+        {
+          "attemptDate": 1792282795497,
+          "sendAttemptResult": "SUCCESS"
+        }
+      ],
+      "environment": "Sandbox",
+      "http_status": 200,
+      "notification_id": "51e0671b-5b63-4c4e-bfa5-758392d07ba8",
+      "signed_at": "2026-10-18T08:19:55.473+08:00",
+      "signed_payload_sha256": "c2fb52aca60e9714d9c064f5c13d5f66d982bd6a6b4ffa86cacafcda4a0fdb0b",
+      "type": "TEST"
+    }
+  },
+  "verifiedSigningKeyID": "YTX5GYG2Z5",
+  "initialKeyIDMismatchCorrected": true,
+  "realDevicePurchaseVerified": false,
+  "productionChanged": false,
+  "backup": {
+    "source": "8ba35c19df92264eed5fbb6ab3f250bebfb0fbdd",
+    "backup": "mysql-20261018T003152Z-cc0487.sql.gz.enc",
+    "offsiteObjectsReadBack": 3,
+    "authenticatedAndDecrypted": true,
+    "signingInputsIncluded": true,
+    "scheduledCycleVerified": false
+  },
+  "httpChecks": [
+    {
+      "app": "health",
+      "path": "/readyz",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "app": "journal",
+      "path": "/readyz",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "app": "birthday",
+      "path": "/readyz",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "app": "albums",
+      "path": "/readyz",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "app": "health",
+      "path": "/v1/app-store/notifications",
+      "method": "POST",
+      "status": 400
+    },
+    {
+      "app": "journal",
+      "path": "/v1/app-store/notifications",
+      "method": "POST",
+      "status": 400
+    },
+    {
+      "app": "albums",
+      "path": "/v1/albums/subscription/notifications",
+      "method": "POST",
+      "status": 422
+    }
+  ],
+  "runtime": [
+    {
+      "name": "tellyouwhat-platform-test-gateway-1",
+      "image": "tellyouwhat-platform-test-gateway:8ba35c19df92264eed5fbb6ab3f250bebfb0fbdd",
+      "startedAt": "2026-10-18T00:30:57.144628182Z",
+      "running": true
+    },
+    {
+      "name": "tellyouwhat-blue-gateway-1",
+      "image": "ghcr.io/fanciazhang/tellyouwhat-ai-gateway@sha256:d98b85cf34a1fbc303ad4205e8d548119392f2282e58206fa196c7b937ceefb6",
+      "startedAt": "2026-10-17T14:00:43.007455447Z",
+      "running": true
+    },
+    {
+      "name": "tellyouwhat-blue-worker-1",
+      "image": "ghcr.io/fanciazhang/tellyouwhat-ai-worker@sha256:bf253306f225d3cbaaeea2e4e284bc2bee3050025eacb9357a8a577a9b63fb77",
+      "startedAt": "2026-10-17T14:00:43.010106596Z",
+      "running": true
+    },
+    {
+      "name": "tellyouwhat-blue-admin-1",
+      "image": "ghcr.io/fanciazhang/tellyouwhat-ai-admin@sha256:b6d0f8d6e2bd92168f730659cdde87db8b9fb8f934ee9e705859c0565e97ddf2",
+      "startedAt": "2026-10-17T14:00:43.008690043Z",
+      "running": true
+    }
+  ],
+  "deploymentCleanup": {
+    "apple_delivery": null,
+    "completed_at": 1792283461,
+    "errors": [],
+    "free_bytes_after": 13172142080,
+    "free_bytes_before": 13172178944,
+    "operation": "artifacts-platform-test",
+    "passed": true,
+    "reclaimed_bytes": -36864,
+    "removed_files": [],
+    "removed_images": []
+  }
+}

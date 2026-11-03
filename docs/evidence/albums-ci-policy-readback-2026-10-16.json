@@ -1,0 +1,56 @@
+{
+  "verifiedAt": "2026-10-16T14:22:45.422Z",
+  "method": "Readonly console JSON editor selection; both documents compared structurally to approved policy files",
+  "service": {
+    "id": 290105929,
+    "version": 2,
+    "document": {
+      "statement": [
+        {
+          "action": [
+            "cos:GetObject",
+            "cos:HeadObject"
+          ],
+          "effect": "allow",
+          "resource": [
+            "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-production-1251995834/albums/originals/*",
+            "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-production-1251995834/albums/video-previews/*"
+          ]
+        },
+        {
+          "action": [
+            "cos:PutObject",
+            "cos:InitiateMultipartUpload",
+            "cos:UploadPart",
+            "cos:CompleteMultipartUpload",
+            "cos:ListParts",
+            "cos:AbortMultipartUpload"
+          ],
+          "effect": "allow",
+          "resource": [
+            "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-production-1251995834/albums/video-previews/*"
+          ]
+        }
+      ],
+      "version": "2.0"
+    }
+  },
+  "passRole": {
+    "id": 290105972,
+    "version": 2,
+    "document": {
+      "statement": [
+        {
+          "action": [
+            "cam:PassRole"
+          ],
+          "effect": "allow",
+          "resource": [
+            "qcs::cam::uin/757772438:roleName/CI_QCSRole"
+          ]
+        }
+      ],
+      "version": "2.0"
+    }
+  }
+}

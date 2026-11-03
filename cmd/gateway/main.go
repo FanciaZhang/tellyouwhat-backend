@@ -6,6 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/tellyouwhat/backend/internal/aiconfig"
+	"github.com/tellyouwhat/backend/internal/airollout"
+	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,8 +24,10 @@ import (
 	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 
+	"github.com/tellyouwhat/backend/internal/albums"
 	"github.com/tellyouwhat/backend/internal/appstore"
 	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/birthday"
 	"github.com/tellyouwhat/backend/internal/capability"
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/contracts"
@@ -30,9 +36,14 @@ import (
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/jobs"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
+	"github.com/tellyouwhat/backend/internal/journal/recordinghttp"
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
@@ -58,15 +69,22 @@ type entitlementRepository interface {
 }
 
 type sharedStorage struct {
-	imageCostController *costcontrol.Controller
-	database            *sql.DB
-	redis               *redis.Client
-	cipher              *mysqlstore.PayloadCipher
-	readiness           gateway.Readiness
+	prompts   *promptconfig.Cache
+	database  *sql.DB
+	redis     *redis.Client
+	cipher    *mysqlstore.PayloadCipher
+	readiness gateway.Readiness
 }
 
 type appStorage struct {
-	illustrations              *illustration.Service
+	voiceCatalog               *readaloud.CatalogStore
+	images                     *illustrationstore.Store
+	background                 *sync.WaitGroup
+	prompts                    *promptconfig.Cache
+	operations                 platformops.Reader
+	executionPolicies          gateway.PolicyResolver
+	attemptPrices              providerapi.AtomicReservation
+	attemptModels              providerapi.ModelRecorder
 	voiceStore                 voice.Store
 	nonces                     attestation.NonceStore
 	keys                       keyRepository
@@ -99,8 +117,14 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	birthdayOnly := len(platform.Apps) == 1 && platform.Apps[0].Registry.ID == appregistry.Birthday
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	control, err := lifecycle.New(os.Getenv("TELLYOUWHAT_DEPLOYMENT_SLOT"))
+	if err != nil {
+		return err
+	}
+	ctx = lifecycle.WithController(ctx, control)
 
 	rootPEM, err := os.ReadFile(platform.AppAttestRootPEMPath)
 	if err != nil {
@@ -110,37 +134,68 @@ func run(logger *slog.Logger) error {
 	if !attestationRoots.AppendCertsFromPEM(rootPEM) {
 		return errors.New("APP_ATTEST_ROOT_PEM_PATH contains no certificates")
 	}
-	tosStore, err := media.NewTOSStore(platform.TOS)
-	if err != nil {
-		return err
+	var tosStore *media.TOSStore
+	if !birthdayOnly {
+		tosStore, err = media.NewTOSStore(platform.TOS)
+		if err != nil {
+			return err
+		}
 	}
 	shared, closeStorage, err := openSharedStorage(ctx, platform)
 	if err != nil {
 		return err
 	}
 	defer closeStorage()
-	var imageWorkers sync.WaitGroup
-	defer func() { stop(); imageWorkers.Wait() }()
-	var imageSchedulers []*illustration.Scheduler
+	var background sync.WaitGroup
+	defer func() { stop(); background.Wait() }()
+	if platform.StorageMode == "mysql" && !birthdayOnly {
+		defaults, err := config.LoadOperationsDefaults()
+		if err != nil {
+			return err
+		}
+		if err = (platformops.Store{DB: shared.database}).Initialize(ctx, defaults, time.Now()); err != nil {
+			return err
+		}
+		promptDefaults, err := config.LoadPromptDefaults(platform.Apps...)
+		if err != nil {
+			return err
+		}
+		shared.prompts, err = promptconfig.Start(ctx, promptconfig.Store{DB: shared.database}, promptDefaults, func(error) { logger.Error("prompt configuration refresh failed; retaining last snapshot") })
+		if err != nil {
+			return err
+		}
+	}
 	costController, err := newAICostController(platform, shared)
 	if err != nil {
 		return err
 	}
-	shared.imageCostController = costController
 
 	registryEntries := make([]appregistry.App, 0, len(platform.Apps))
-	routers := make(map[appregistry.AppID]*gin.Engine, len(platform.Apps))
+	routers := make(map[appregistry.AppID]http.Handler, len(platform.Apps))
+	var albumGateway *albums.Gateway
 	for _, appConfig := range platform.Apps {
 		registryEntries = append(registryEntries, appConfig.Registry)
+		if appConfig.Registry.ID == appregistry.Albums {
+			albumConfig, configErr := albums.LoadGatewayConfig(os.Getenv)
+			if configErr != nil {
+				return fmt.Errorf("album API configuration: %w", configErr)
+			}
+			if err := validateAlbumGatewayIdentity(platform, appConfig.Registry, albumConfig); err != nil {
+				return err
+			}
+			startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+			albumGateway, err = albums.NewGateway(startup, albumConfig, nil)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("build app albums: %w", err)
+			}
+			defer albumGateway.Close()
+			routers[appregistry.Albums] = albumGateway
+			continue
+		}
 		storage := storageForApp(platform, shared, appConfig)
-		imageService, scheduler, imageErr := buildIllustrationRuntime(platform, appConfig, shared, storage)
-		if imageErr != nil {
-			return imageErr
-		}
-		storage.illustrations = imageService
-		if scheduler != nil {
-			imageSchedulers = append(imageSchedulers, scheduler)
-		}
+		storage.prompts = shared.prompts
+		storage.background = &background
 		appReadiness := shared.readiness
 		if platform.StorageMode == "mysql" && appConfig.Registry.ID == appregistry.Health {
 			appReadiness, err = readinessWithWorker(shared.readiness, platform.WorkerAsyncURL, nil)
@@ -163,9 +218,14 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	closeControl, err := control.Listen("gateway")
+	if err != nil {
+		return err
+	}
+	defer closeControl()
 	server := &http.Server{
 		Addr:              ":" + platform.Port,
-		Handler:           hostMux,
+		Handler:           control.Handler(hostMux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      0,
@@ -173,19 +233,15 @@ func run(logger *slog.Logger) error {
 		MaxHeaderBytes:    32 << 10,
 	}
 	errChannel := make(chan error, 1)
-	for _, scheduler := range imageSchedulers {
-		imageWorkers.Add(1)
-		go func(s *illustration.Scheduler) {
-			defer imageWorkers.Done()
-			_ = s.Run(ctx, 5*time.Second, func(error) { logger.Error("Journal image scheduler batch failed") })
-		}(scheduler)
-	}
 	go func() {
 		logger.Info("gateway listening", "port", platform.Port, "environment", platform.Environment, "apps", len(platform.Apps))
 		errChannel <- server.ListenAndServe()
 	}()
 	select {
 	case <-ctx.Done():
+		if albumGateway != nil {
+			albumGateway.BeginDrain()
+		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdownContext)
@@ -296,10 +352,20 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 		}
 		return storage
 	}
+	ops := platformops.Store{DB: shared.database}
 	limiter := redisstore.NewQuotaLimiter(shared.redis, limits, appID)
+	if appConfig.Registry.ID != appregistry.Birthday {
+		limiter.ResolveLimits = platformops.QuotaResolver(ops, appID, limits, false)
+	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
-		nonces: redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
+		images:            &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
+		voiceCatalog:      &readaloud.CatalogStore{DB: shared.database},
+		operations:        ops,
+		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
+		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
+		attemptModels:     (airollout.Store{DB: shared.database}).RecordModel(arkEndpoints(appConfig.Ark)),
+		nonces:            redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
 		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
 		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
 		capabilityUses: redisstore.NewCapabilityUseStore(shared.redis, appID),
@@ -308,9 +374,18 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	if appConfig.Registry.ID == appregistry.Health {
 		freeLimiter := redisstore.NewQuotaLimiter(shared.redis, appConfig.FreeRecognitionQuota, appID)
+		freeLimiter.ResolveLimits = platformops.QuotaResolver(ops, appID, appConfig.FreeRecognitionQuota, true)
 		storage.freeRecognitionLimiter = freeLimiter
 		storage.freeRecognitionQuotaReader = freeLimiter
-		storage.recognitionSessions = redisstore.NewRecognitionQuotaStore(shared.redis, appID)
+		recognition := redisstore.NewRecognitionQuotaStore(shared.redis, appID)
+		recognition.ResolveDailyLimit = func(ctx context.Context) (int, error) {
+			r, err := ops.Current(ctx)
+			if err != nil {
+				return 0, err
+			}
+			return r.Policy.Apps[appID].FreeDailySessions, nil
+		}
+		storage.recognitionSessions = recognition
 		storage.reconciler = quota.NewRoutedTokenReconciler(limiter, freeLimiter)
 	}
 	if shared.redis != nil {
@@ -336,25 +411,75 @@ func buildAppHandler(
 	attestationVerifier := attestation.NewAppleAttestationVerifier(app.TeamID, app.BundleID, appConfig.AttestationEnvironment, attestationRoots)
 	enrollment := attestation.NewEnrollmentService(attestation.EnrollmentConfig{
 		AppID: string(app.ID), Environment: appConfig.AttestationEnvironment,
-		DevelopmentSecret: appConfig.DevelopmentSecret, AllowedBuilds: appConfig.AllowedBuilds,
+		AllowedBuilds: appConfig.AllowedBuilds,
 	}, storage.nonces, storage.keys, attestationVerifier, time.Now)
 	authenticator := attestation.NewService(
 		storage.nonces, storage.keys, attestation.NewAppleAssertionVerifier(app.TeamID, app.BundleID), time.Now,
 	).RequireEnvironment(appConfig.AttestationEnvironment)
-	entitlementChecker := entitlement.NewChecker(storage.entitlements, time.Now)
+	var entitlementChecker gateway.EntitlementChecker = entitlement.NewChecker(storage.entitlements, time.Now)
+	var voiceEntitlements entitlement.Reader = storage.entitlements
 	activator, productionSync, notifications, err := commerceServices(platform.Environment, appConfig, storage.keys, storage.entitlements)
 	if err != nil {
 		return nil, err
+	}
+	var recordingPrivacy *journalRecordingPrivacy
+	if appConfig.JournalRecording != nil {
+		if app.ID != appregistry.Journal || storage.background == nil {
+			return nil, errors.New("Journal recording storage requires managed lifecycle")
+		}
+		store, err := voice.NewEnvironmentRecordingJobStore(appConfig.JournalRecording.Root, platform.Environment, time.Now)
+		if err != nil {
+			return nil, errors.New("Journal recording storage is unavailable or belongs to another environment")
+		}
+		recordingPrivacy = &journalRecordingPrivacy{store: store, next: storage.privacyCache}
+		storage.privacyCache = recordingPrivacy
+		runRecordingRetention(ctx, store, storage.background, logger)
+	}
+	var speechConfig *readAloudConfig
+	var speechPrivacy *readAloudPrivacy
+	if app.ID == appregistry.Journal {
+		var err error
+		speechConfig, err = loadReadAloudConfig()
+		if err != nil {
+			return nil, err
+		}
+		if speechConfig != nil {
+			speechPrivacy = &readAloudPrivacy{next: storage.privacyCache}
+			storage.privacyCache = speechPrivacy
+		}
+	}
+	var simulator *simulatortest.Service
+	if path := appConfig.ReadAloudSimulatorCredentialsFile; path != "" {
+		if speechConfig == nil || storage.voiceCatalog == nil {
+			return nil, errors.New("simulator read-aloud integration requires enabled TTS and durable storage")
+		}
+		simulator, err = simulatortest.New(path, platform.Environment, app, storage.nonces, time.Now)
+		if err != nil {
+			return nil, err
+		}
+		repository := simulatortest.PrivacyRepository{Repository: storage.privacy, DB: storage.voiceCatalog.DB, Simulator: simulator}
+		if err := repository.Ready(ctx); err != nil {
+			return nil, err
+		}
+		storage.privacy = repository
+		storage.media = simulatortest.MediaRegistry{Registry: storage.media, Simulator: simulator, Uses: storage.capabilityUses}
+	}
+	if simulator != nil {
+		access := &entitlement.DevelopmentAccess{AppID: string(app.ID), Purchases: storage.entitlements,
+			Keys: simulatortest.GrantKeys{KeyStore: storage.keys, Simulator: simulator}, Grants: simulator.DevelopmentGrants, Now: time.Now}
+		entitlementChecker, voiceEntitlements, activator = access, access, access
 	}
 	privacyService := privacy.NewService(storage.privacy, tosStore, storage.privacyCache, time.Now)
 	mediaService := media.NewService(tosStore, storage.media, time.Now)
 
 	dependencies := gateway.Dependencies{
-		App: app, Authenticator: authenticator, Entitlements: entitlementChecker,
+		Operations: storage.operations,
+		App:        app, Authenticator: authenticator, Entitlements: entitlementChecker,
 		Quota: storage.limiter, QuotaReader: storage.quotaReader,
 		Enrollment: enrollment, Activator: activator, ProductionEntitlement: productionSync,
 		AppStoreNotifications: notifications, Usage: storage.usage, Readiness: readiness,
-		Privacy: privacyService, Consent: privacyService, Media: mediaService,
+		PromptConfig: storage.prompts,
+		Privacy:      privacyService, Consent: privacyService, Media: mediaService,
 		ManagedProduct: gateway.ManagedProduct{
 			ProductID: app.ManagedAIProductID, BillingPeriod: appConfig.Product.BillingPeriod,
 			DailyTokenLimit: appConfig.Quota.DailyTokensPerTransaction, MonthlyTokenLimit: appConfig.Quota.MonthlyTokensPerTransaction,
@@ -364,6 +489,9 @@ func buildAppHandler(
 			PrivacyChoicesURL: appConfig.Product.PrivacyChoicesURL, SupportURL: appConfig.Product.SupportURL,
 		},
 		HTTPMiddleware: observability.MiddlewareForApp(logger, string(app.ID)),
+	}
+	if simulator != nil {
+		dependencies.ReadAloudSimulatorAuthenticator = simulator
 	}
 	if platform.TrustedIPHeader != "" {
 		dependencies.IPResolver = func(request *http.Request) string {
@@ -375,18 +503,25 @@ func buildAppHandler(
 	}
 
 	switch app.ID {
-	case appregistry.Health:
-		dependencies.AllowedConsentScopes = []string{
-			privacy.AdultScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
-			privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
+	case appregistry.Birthday:
+		if costController == nil {
+			return nil, errors.New("birthday requires project cost controls")
 		}
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope}
+		dependencies.BirthdayAssistant = birthday.New(birthday.Config{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.JournalAI.LiteModel}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second}, costController, appConfig.BirthdayPrice)
+	case appregistry.Health:
+		dependencies.ExecutionPolicies = storage.executionPolicies
+		configureHealthConsents(&dependencies)
 		manifest, err := contracts.LoadManifest(appConfig.SchemaManifestPath)
 		if err != nil {
 			return nil, err
 		}
 		var modelProvider providerapi.Client = ark.New(appConfig.Ark, http.DefaultClient, tosStore)
 		if costController != nil {
-			modelProvider = providerapi.NewBudgetedClient(modelProvider, costController, string(app.ID), platform.AICost.HealthArk)
+			budgeted := providerapi.NewBudgetedClient(modelProvider, costController, string(app.ID), platform.AICost.HealthArk)
+			budgeted.ReserveAttempt = storage.attemptPrices
+			budgeted.RecordModel = storage.attemptModels
+			modelProvider = budgeted
 		}
 		jobService := jobs.NewService(storage.jobs, time.Now)
 		capabilities := capability.NewService([]byte(platform.JobCapabilitySecret), storage.capabilityUses, time.Now)
@@ -411,40 +546,103 @@ func buildAppHandler(
 		dependencies.Dispatcher = dispatcher
 		dependencies.Capabilities = capabilities
 		dependencies.Contracts = manifest
-		dependencies.RequiredConsentScopes = []string{privacy.SensitiveHealthScope}
 	case appregistry.Journal:
-		// Keep revocation available even while image dispatch is disabled.
-		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope}
-		if storage.illustrations != nil {
-			dependencies.JournalIllustrations = storage.illustrations
+		dependencies.AllowedConsentScopes = []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope}
+		dependencies.ReadAloudCatalog = storage.voiceCatalog
+		if speechConfig != nil {
+			speech, access, err := configuredReadAloud(ctx, speechConfig, storage, costController, privacyService, simulator, voiceEntitlements, simulator != nil)
+			if err != nil {
+				return nil, err
+			}
+			dependencies.ReadAloudSessions = speech
+			dependencies.ReadAloudAccess = access
+			speechPrivacy.sessions = speech
+			storage.background.Add(1)
+			go func() { defer storage.background.Done(); speech.Run() }()
+		}
+		if appConfig.JournalImage != nil {
+			if storage.images == nil || storage.background == nil || costController == nil {
+				return nil, errors.New("Journal images require durable storage and managed background tasks")
+			}
+			if err := storage.images.Ready(ctx); err != nil {
+				return nil, errors.New("Journal image schema unavailable")
+			}
+			image := appConfig.JournalImage
+			provider, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil)
+			if err != nil {
+				return nil, err
+			}
+			imageService := &illustration.Service{Store: storage.images, Generator: &illustration.BudgetedGenerator{Next: provider, Controller: costController, MaxCostNanos: image.MaxCostNanos, SettlementFailed: func() { logger.Error("Journal image cost settlement failed") }}, Prompts: storage.prompts, Now: time.Now}
+			imageService.Authorize = func(ctx context.Context, owner string) bool {
+				principal := attestation.Principal{AppID: "journal", KeyID: owner}
+				allowed, err := entitlementChecker.HasManagedSubscription(ctx, principal)
+				if err != nil || !allowed {
+					return false
+				}
+				allowed, err = privacyService.HasRequiredConsents(ctx, principal, []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope})
+				return err == nil && allowed && platformops.Check(ctx, storage.operations, "journal", "journal.illustration") == nil
+			}
+			dependencies.JournalIllustrations = imageService
+			storage.background.Add(1)
+			go func() { defer storage.background.Done(); imageService.Run(ctx) }()
 		}
 		var model journalprovider.Organizer = journalprovider.New(journalprovider.Config{
 			BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey,
 			LiteModel: appConfig.JournalAI.LiteModel, ProModel: appConfig.JournalAI.ProModel,
-		}, &http.Client{Timeout: time.Duration(appConfig.JournalAI.TimeoutSeconds) * time.Second})
+		}, &http.Client{})
 		if costController != nil {
 			model = journalprovider.NewBudgetedClient(model, costController, string(app.ID), platform.AICost.JournalArk)
 		}
 		organizer := &journalservice.Organizer{
-			Model: model, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
-			AnalysisVersion: "journal-organize-2026-08-31",
+			Model: model, Config: storage.prompts, LiteMaxCharacters: 6_000, LiteMaxBooks: 24, LiteMaxTags: 80,
+			AnalysisVersion: journalprovider.OrganizationAnalysisVersion,
 		}
 		if appConfig.VoiceEnabled {
 			if (appConfig.VoiceASR.APIKey == "" && (appConfig.VoiceASR.AppKey == "" || appConfig.VoiceASR.AccessKey == "")) || appConfig.VoiceModel == "" || len(platform.JobCapabilitySecret) < 32 {
 				return nil, errors.New("voice requires speech credentials, model, and a 32-byte capability secret")
 			}
-			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR}
-			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel}
+			voiceLogger := logger.With("app_id", app.ID, "component", "journal_voice")
+			var speech voice.Speech = voice.ASR{Config: appConfig.VoiceASR, Prompts: storage.prompts}
+			var rewriter voice.Rewriter = voice.ArkRewriter{BaseURL: appConfig.JournalAI.BaseURL, APIKey: appConfig.JournalAI.APIKey, Model: appConfig.VoiceModel, Logger: voiceLogger}
 			if costController != nil {
 				speech = voice.NewBudgetedSpeech(speech, costController, string(app.ID), platform.AICost.JournalSpeech)
 				rewriter = voice.NewBudgetedRewriter(rewriter, costController, string(app.ID), platform.AICost.JournalArk)
 			}
-			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+			if storage.prompts != nil {
+				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
+			}
+			if appConfig.JournalRecording != nil && appConfig.JournalRecording.Enabled {
+				if recordingPrivacy == nil || costController == nil {
+					return nil, errors.New("Journal recording dependencies unavailable")
+				}
+				asr := appConfig.VoiceASR
+				asr.URL, asr.ResourceID = "https://openspeech.bytedance.com/api/v3/auc/bigmodel", "volc.seedasr.auc"
+				executor := &voice.RecordingExecutor{Store: recordingPrivacy.store, Provider: voice.RecordingASR{Config: asr}, Budget: costController, AppID: "journal", Price: platform.AICost.JournalSpeech}
+				recordingPrivacy.handler = recordinghttp.New(executor, rewriter, time.Now)
+				dependencies.JournalRecordings = recordingPrivacy.handler
+			}
+			dependencies.Voice = &voice.Service{Store: storage.voiceStore, Speech: speech, Model: rewriter, Secret: []byte(platform.JobCapabilitySecret), Logger: voiceLogger, Usage: func(ctx context.Context, identity voice.Identity, input, output int) {
+				// Explicit simulator calls use the real cost ledger without inventing an Apple key row.
+				if simulatortest.IsKey(identity.KeyID) {
+					return
+				}
 				if err := storage.usage.Record(ctx, usage.Record{RequestID: uuid.NewString(), KeyID: identity.KeyID, Operation: contracts.Operation("journal.voice"), InputTokens: input, OutputTokens: output, OccurredAt: time.Now()}); err != nil {
 					logger.Error("voice usage record failed")
 				}
 			}}
-			dependencies.VoiceEntitlements = storage.entitlements
+			if storage.operations != nil {
+				dependencies.Voice.ResolveLimit = func(ctx context.Context) (int, error) {
+					r, err := storage.operations.Current(ctx)
+					if err != nil {
+						return 0, err
+					}
+					if err = r.Policy.Check("journal", "journal.voice"); err != nil {
+						return 0, err
+					}
+					return r.Policy.Apps["journal"].VoicePeriodMinutes * 60000, nil
+				}
+			}
+			dependencies.VoiceEntitlements = voiceEntitlements
 		}
 		dependencies.JournalOrganizer = organizer
 		dependencies.JournalAnalysisVersion = organizer.AnalysisVersion
@@ -452,7 +650,24 @@ func buildAppHandler(
 	default:
 		return nil, errors.New("unsupported app runtime")
 	}
+	if repository, ok := storage.privacy.(*mysqlstore.PrivacyRepository); ok {
+		base := dependencies.Readiness
+		dependencies.Readiness = gateway.ReadinessFunc(func(ctx context.Context) error {
+			if err := base.Ready(ctx); err != nil {
+				return err
+			}
+			return repository.CheckConsentScopes(ctx, dependencies.AllowedConsentScopes)
+		})
+	}
 	return gateway.New(dependencies).Router(), nil
+}
+
+func configureHealthConsents(dependencies *gateway.Dependencies) {
+	dependencies.AllowedConsentScopes = []string{
+		privacy.AdultScope, privacy.Age14PlusScope, privacy.GuardianConsentScope, privacy.PrivacyTermsScope, privacy.LifetimeBYOKScope,
+		privacy.ManagedAIScope, privacy.FreeRecognitionScope, privacy.SensitiveHealthScope,
+	}
+	dependencies.RequiredConsentScopes = []string{privacy.HealthEligibilityScope, privacy.SensitiveHealthScope}
 }
 
 func commerceServices(
@@ -461,8 +676,11 @@ func commerceServices(
 	keys keyRepository,
 	store entitlementRepository,
 ) (gateway.EntitlementActivator, gateway.ProductionEntitlementSync, gateway.AppStoreNotificationProcessor, error) {
-	if environment == "development" {
-		return entitlement.NewDevelopmentService(store, appConfig.DevelopmentSecret, 30*24*time.Hour, time.Now), nil, nil, nil
+	if appConfig.Registry.ID == appregistry.Birthday {
+		return nil, nil, nil, nil
+	}
+	if environment == "development" && appConfig.AppStore.Environment != "Sandbox" {
+		return nil, nil, nil, errors.New("development purchases require Apple Sandbox")
 	}
 	rootPEM, err := os.ReadFile(appConfig.AppStore.RootPEMPath)
 	if err != nil {
@@ -511,4 +729,12 @@ func commerceServices(
 		store, entitlement.NewAppStoreNotificationResolver(appstore.NewMultiEnvironmentNotificationProcessor(processors...)),
 	)
 	return nil, production, notifications, nil
+}
+
+func arkEndpoints(c ark.Config) map[contracts.Operation]string {
+	out := map[contracts.Operation]string{}
+	for op, route := range c.Routes {
+		out[op] = route.Model
+	}
+	return out
 }

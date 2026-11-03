@@ -6,14 +6,19 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/tellyouwhat/backend/internal/purchase"
 )
 
 type NotificationState struct {
+	Payment               purchase.Evidence
+	CurrentPayment        purchase.Evidence
 	NotificationUUID      string
 	OriginalTransactionID string
 	Environment           string
 	TransactionID         string
 	OfferIdentifier       string
+	ProductID             string
 	OfferType             int32
 	SignedAt              time.Time
 	ExpiresAt             time.Time

@@ -1,0 +1,91 @@
+{
+  "verified_at": "2026-10-14",
+  "scope": "Point-in-time availability of previously byte-verified immutable originals; not local deletion authority",
+  "backend_base": "58c46ae9447346ceb403992ffaedfc5b00c84cc1",
+  "verification": {
+    "startedAt": "2026-10-13T23:01:57.063860+00:00",
+    "runDirectory": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-availability-2phi7j8z",
+    "phases": [
+      {
+        "name": "race",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-availability-2phi7j8z/race.log",
+        "testCounts": {
+          "pass": 58
+        },
+        "failures": [],
+        "skips": []
+      },
+      {
+        "name": "vet",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-availability-2phi7j8z/vet.log"
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-availability-2phi7j8z/build.log"
+      },
+      {
+        "name": "live-cos",
+        "exitCode": 0,
+        "log": "/var/folders/wm/1cr6dyzs72lbhjn1pxs5rfnc0000gn/T/albums-availability-2phi7j8z/live-cos.log",
+        "testCounts": {
+          "pass": 1
+        },
+        "failures": [],
+        "skips": []
+      }
+    ],
+    "success": true,
+    "servicesStopped": true,
+    "endedAt": "2026-10-13T23:02:18.879696+00:00"
+  },
+  "live_cos": {
+    "fixed_version_query": true,
+    "fixtures": [
+      "jpeg",
+      "oriented-jpeg",
+      "transparent-png",
+      "video"
+    ],
+    "head_requests": 4,
+    "media_downloaded": false,
+    "mutations": false,
+    "passed": true,
+    "scope": "COS adapter only; fixed previously byte-verified synthetic originals; not system-original deletion authority",
+    "storage_class": "MAZ_STANDARD_IA"
+  },
+  "source_sha256": {
+    "Contracts/HTTP/AlbumAPI/openapi.yaml": "b2798a702ba650cc684ed83688f33489158394683fd4d162cb1efc3e9b724c99",
+    "internal/albumhttpapi/generated.go": "0affa4f1ed794908860a8a430c58a6055b9734dc4851563f0907063cff10cd4e",
+    "internal/albums/library_http.go": "6d5b66b93ea112a0fe709c8ec869f25e7a5518549167d25bddd7d1fbf4ced834",
+    "internal/albums/original_availability.go": "851810befde67c9f25dc65ff8edf29e9983b64715455ec2cb8f88a6c3fd5c3ac",
+    "internal/albums/cos_original_availability.go": "4b521f7b24e67526061f1dda7a50c262d3a267259d05eaf12f1dd849adfa71e4",
+    "internal/albums/original_availability_test.go": "0f9718a35e7d8f3ea8ab13250a96e7fbcd4cd77479782a9c7b6d9ecefbde8717",
+    "internal/albums/original_availability_integration_test.go": "d168cdfe8aa3b004860e62e1bd83fda428557acf2b875f06aec978a0555e825d",
+    "internal/albums/cos_original_availability_live_test.go": "de0864e14c22fb249c8a2cdddd946c9fbb5be927c2dc38866fd5b373305b8e14"
+  },
+  "coverage": [
+    "Complete manifest and sealed resource evidence required, including companion resources",
+    "Account and retention checks before storage I/O and after all resources",
+    "No provider I/O under database account lock; real MySQL single-connection test permits concurrent trash",
+    "Account disabled, trash or retention expiry during I/O rejects success",
+    "COS immutable version and exact length required; archive and unknown storage classes rejected",
+    "No cached availability, signed URLs, or provider object locations returned",
+    "Context cancellation, 30-second limit and backwards wall clock fail closed",
+    "HTTP authentication scope, no-store, empty request body and no arbitrary query",
+    "58 passing race tests including subtests; no skips; vet and gateway/worker build pass",
+    "Four real fixed-version HEAD requests on prior synthetic MAZ_STANDARD_IA originals; no media download"
+  ],
+  "not_verified": [
+    "Not a purge reservation: cloud state may change after this response",
+    "HEAD does not rehash bytes or demonstrate current GET permission",
+    "No native optimization orchestration or PhotoKit deletion wired to this endpoint",
+    "No deployment, system-original deletion or production-sales activation",
+    "Full product acceptance, real device and Apple purchase remain pending"
+  ],
+  "references": [
+    "https://cloud.tencent.com/document/api/436/7745"
+  ]
+}

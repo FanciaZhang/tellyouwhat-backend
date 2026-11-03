@@ -1,0 +1,61 @@
+{
+  "checked_at": "2026-10-16T05:04:02.203086+00:00",
+  "scope": "Albums production media resource isolation preparation",
+  "cloud_readback": {
+    "production_bucket": "tellyouwhat-albums-production-1251995834",
+    "region": "ap-guangzhou",
+    "objects_displayed": 0,
+    "media_workflow_enabled": false,
+    "production_identities_present_in_initial_CAM_inventory": false,
+    "identity_form": "two programming-only users prepared; safety check before permission selection; not submitted to final creation"
+  },
+  "runtime_readback": {
+    "development_source": "42165fed8a08049ffa1250345901beef1b61c11a",
+    "legacy_formal_domain_test_source": "fb2cf960651c58bf84d7697b8dc57e2001a8be17",
+    "both_use_test_bucket": true,
+    "both_media_processing_disabled": true
+  },
+  "implemented_checks": {
+    "worker_gateway_bucket_environment_boundary": true,
+    "region_boundary": true,
+    "production_rejects_known_test_queue": true,
+    "test_requires_known_test_queue": true,
+    "production_queue_remote_ownership_verified": false
+  },
+  "validation": {
+    "go_test_packages": [
+      "internal/albums",
+      "cmd/albumgateway",
+      "cmd/albumworker"
+    ],
+    "go_test_passed": true,
+    "focused_race_passed": true,
+    "static_CAM_tests_passed": 6,
+    "real_CAM_permissions_verified": false,
+    "real_media_processing_verified": false
+  },
+  "pending_approval": {
+    "identities": [
+      "albums-production-upload",
+      "albums-production-backend"
+    ],
+    "policy_files": [
+      "deploy/albums/cam-production-upload.policy.json",
+      "deploy/albums/cam-production-backend.policy.json"
+    ],
+    "pass_role": false,
+    "shared_CI_role_change": false,
+    "permanent_delete_permission": false
+  },
+  "deployed": false,
+  "source_sha256": {
+    "internal/albums/worker_config.go": "3e66b1ae4ca53840bafae27c4686e4f99f21a7964f477cc902f9ca7a42650095",
+    "internal/albums/worker_config_test.go": "753ef6f2c6e16336b3d17c4edb815ea5860b3d5dcd4054d0c0e535fb01b5a41e",
+    "internal/albums/gateway_config_test.go": "5da1ecccf23f3c1d0000d1ee45bd4ebb4edae92ef3830a6a078031060c9ce48f",
+    "internal/albums/environment_identity_test.go": "1b8f45c8409a5e985fde1a44f023c04677cf3a1c5482bf08bfc1986e4f408ee9",
+    "internal/albums/push_environments_test.go": "49fe76f097a60a62020352878f5a28977bef00c6d46c64fd5a3d404759d39ae2",
+    "deploy/albums/cam-production-upload.policy.json": "bae646977b3645ce7e5679f106ec3d224c5c25cbc81cac669cee4dbe331086aa",
+    "deploy/albums/cam-production-backend.policy.json": "868d4d131326fb02cc5b2a64529187ea2fc24327a849b47b63427b18b4bb07c3",
+    "deploy/albums/cam_policy_test.py": "1ef5012a8d7147b23043251268689340c127030cb016594b1a73a6ac574bf908"
+  }
+}
