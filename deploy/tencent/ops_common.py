@@ -28,7 +28,8 @@ def install_operations(source, root):
             continue
         destination = target / script.name
         # Registered test producers own their validators independently of production releases.
-        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):
+        if registered_test and (script.name.startswith('platform_test_')
+                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py')):
             continue
         if script.is_symlink() or destination.is_symlink() or not script.is_file():
             raise OperationError('operations scripts must be regular files')
@@ -146,7 +147,9 @@ class Runtime:
         child_env["TELLYOUWHAT_ENV_FILE"] = str(self.environment_file)
         if "--env-file" in command:
             child_env["TELLYOUWHAT_ENV_FILE"] = command[command.index("--env-file") + 1]
-        result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout)
+        inherited = getattr(self, "_child_pass_fds", ())
+        result = subprocess.run(command, input=input, capture_output=True, env=child_env, timeout=timeout,
+                                **({"pass_fds": inherited} if inherited else {}))
         if result.returncode:
             # Tool errors can include SQL or credentials. Diagnostics stay on the server.
             diagnostic = self.state / (label + ".stderr")

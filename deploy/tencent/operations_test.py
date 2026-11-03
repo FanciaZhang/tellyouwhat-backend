@@ -346,6 +346,25 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertTrue(path.exists())
         self.assertTrue(alias.exists())
 
+    def test_child_backup_lease_is_inherited_only_when_explicitly_selected(self):
+        import fcntl
+        import subprocess
+        import sys
+        self.runtime.backups.mkdir()
+        path = self.runtime.backups / 'lease-fixture.enc'
+        path.write_bytes(b'synthetic encrypted input')
+        probe = ('import fcntl,sys; f=open(sys.argv[1],"rb"); '
+                 'fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)')
+        with locked_backup_file(path, False) as (handle, _):
+            self.runtime._child_pass_fds = (handle.fileno(),)
+            result = self.runtime.execute('lease-fixture', [sys.executable, '-c',
+                'import os,sys; print(os.fstat(int(sys.argv[1])).st_size)', str(handle.fileno())])
+            self.assertEqual(int(result), path.stat().st_size)
+            self.assertNotEqual(subprocess.run([sys.executable, '-c', probe, str(path)], capture_output=True).returncode, 0)
+            del self.runtime._child_pass_fds
+            self.runtime.execute('no-inherited-lease', [sys.executable, '-c',
+                'import os,sys\ntry: os.fstat(int(sys.argv[1]))\nexcept OSError: sys.exit(0)\nsys.exit(1)', str(handle.fileno())])
+
     def test_failed_schema_export_never_publishes_a_partial_backup(self):
         with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):
             with self.assertRaisesRegex(OperationError, "export failed"):

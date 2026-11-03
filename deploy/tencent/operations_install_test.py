@@ -14,13 +14,13 @@ class OperationsOwnershipTests(unittest.TestCase):
             source.mkdir(parents=True)
             (root / '.operations').mkdir()
             (root / '.operations/platform-test.json').write_text('independent test selection')
-            for name in ('ops_backup.py', 'platform_test_deploy.py', 'test_routes.py'):
+            for name in ('ops_backup.py', 'platform_test_deploy.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py'):
                 (installed / name).write_text('installed ' + name)
                 (source / name).write_text('candidate ' + name)
             (source / 'platform_test_future.py').write_text('future test helper')
             install_operations(stage, root)
             self.assertEqual((installed / 'ops_backup.py').read_text(), 'candidate ops_backup.py')
-            for name in ('platform_test_deploy.py', 'test_routes.py'):
+            for name in ('platform_test_deploy.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py'):
                 self.assertEqual((installed / name).read_text(), 'installed ' + name)
             self.assertFalse((installed / 'platform_test_future.py').exists())
             install_operations(root, root)
