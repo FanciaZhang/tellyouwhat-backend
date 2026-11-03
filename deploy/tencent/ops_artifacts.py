@@ -16,6 +16,7 @@ from ops_common import OperationError, Runtime, atomic_json
 
 OWNERS = ("production", "journal-development", "birthday-development", "albums-test", "albums-production", "platform-test", "apple-development")
 GRACE_SECONDS = 48 * 3600
+MAX_VERSIONS = 5
 IMAGE_PREFIXES = {
     "production": ("ghcr.io/fanciazhang/tellyouwhat-ai-", "ghcr.io/fanciazhang/health-ai-", "health-ai-"),
     "birthday-development": ("birthday-development:",),
@@ -41,10 +42,24 @@ def inspect_containers(runtime):
 
 def inspect_host(runtime):
     containers = inspect_containers(runtime)
-    ids = sorted(set(runtime.execute("artifacts-images", ["docker", "image", "ls", "-q", "--no-trunc"]).decode().split()))
+    ids = sorted(set(runtime.execute("artifacts-images", ["docker", "image", "ls", "-aq", "--no-trunc"]).decode().split()))
     images = []
     for start in range(0, len(ids), 100):
         images.extend(json.loads(runtime.execute("artifacts-image-details", ["docker", "image", "inspect", *ids[start:start + 100]])))
+    # Legacy multi-stage builders leave untagged compiler images outside BuildKit GC.
+    parents = {i.get("Parent") for i in images}
+    for image in images:
+        if image.get("RepoTags") or image.get("RepoDigests") or image["Id"] in parents:
+            continue
+        history = runtime.execute("artifacts-build-history", ["docker", "history", "--no-trunc",
+                                  "--format", "{{.CreatedBy}}", image["Id"]]).decode()
+        match = re.search(r"for service in ([a-z ]+);", history)
+        if match and "-o /out/${service} ./cmd/${service}" in history:
+            services = set(match[1].split())
+            if services <= {"gateway", "worker", "admin", "migrate", "maintenance", "servicecheck"} and {"gateway", "servicecheck"} <= services:
+                image["build_owner"] = "platform-test"
+            elif services == {"albumgateway", "albumworker", "migrate", "servicecheck"}:
+                image["build_owner"] = "albums-test"
     return containers, images
 
 
@@ -71,12 +86,24 @@ def directory_size(path):
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file() and not p.is_symlink())
 
 
+def expired_versions(versions, now):
+    """Each group counts distinct revisions, not service images or aliases."""
+    groups = {}
+    for group, revision, created in versions:
+        group_versions = groups.setdefault(group, {})
+        group_versions[revision] = max(created, group_versions.get(revision, created))
+    return {(group, revision) for group, revisions in groups.items()
+            for rank, (revision, created) in enumerate(sorted(revisions.items(), key=lambda x: (-x[1], x[0])))
+            if created <= now - GRACE_SECONDS or rank >= MAX_VERSIONS}
+
+
+
 def plan_cleanup(root, state, containers, images, owners=None, now=None):
     root = Path(root).resolve()
     owners = set(owners or OWNERS)
     now = time.time() if now is None else now
     mounts = {Path(m["Source"]).resolve() for c in containers for m in c.get("Mounts", []) if m.get("Type") == "bind"}
-    protected_images = {c["Image"] for c in containers}
+    protected_images = set()
     protected_paths = set(mounts)
     for kind, value in references(state):
         if kind == "image":
@@ -99,6 +126,22 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
         if lease and lease.get("expires_at", 0) > now:
             protected_paths.update(Path(p).resolve() for p in lease.get("paths", []))
             protected_images.update(lease.get("images", []))
+
+    retired_containers = []
+    if 'production' in owners and state.get('blue-green', state).get('phase') == 'STABLE':
+        recovery_ids = {i['Id'] for i in images if {i['Id'], *(i.get('RepoTags') or []), *(i.get('RepoDigests') or [])} & protected_images}
+        owned_ids = {i['Id'] for i in images if i.get('RepoTags') and all(owned_image(tag, 'production') for tag in i['RepoTags'])}
+        for container in containers:
+            labels = container.get('Config', {}).get('Labels') or {}
+            status = container.get('State', {})
+            finished = status.get('FinishedAt', '')
+            if (labels.get('com.docker.compose.project') in ('tellyouwhat-backend', 'tellyouwhat-blue', 'tellyouwhat-green')
+                    and labels.get('com.docker.compose.service') in ('gateway', 'worker', 'admin')
+                    and status.get('Status') == 'exited' and not status.get('Running', False)
+                    and finished and not finished.startswith('0001-') and timestamp(finished) <= now - GRACE_SECONDS
+                    and container['Image'] in owned_ids - recovery_ids):
+                retired_containers.append({'owner': 'production', 'id': container['Id'], 'name': container.get('Name', '')})
+    protected_images.update(c['Image'] for c in containers)
 
     # Legacy development deployments predate owner records: retain two builds per image family.
     for owner in ("birthday-development", "albums-test", "platform-test", "apple-development"):
@@ -153,24 +196,94 @@ def plan_cleanup(root, state, containers, images, owners=None, now=None):
             if directory.is_symlink():
                 raise OperationError("release slot directory is a symlink")
             files.extend(("production", p) for p in directory.glob("*") if p.is_dir() and re.fullmatch(r"[0-9a-f]{40}-[0-9]+", p.name))
+    file_versions = [(owner, p.name.split("-", 1)[0] if re.match(r"[0-9a-f]{40}-", p.name) else p.name,
+                      p.lstat().st_mtime) for owner, p in files if not p.is_symlink()]
+    expired_files = expired_versions(file_versions, now)
     selected_files = []
     for owner, p in files:
-        if p.is_symlink() or p.lstat().st_mtime > now - GRACE_SECONDS:
+        revision = p.name.split("-", 1)[0] if re.match(r"[0-9a-f]{40}-", p.name) else p.name
+        if p.is_symlink() or (owner, revision) not in expired_files:
             continue
         path = p.resolve()
         if any(path == keep or path.is_relative_to(keep) or keep.is_relative_to(path) for keep in protected_paths):
             continue
         selected_files.append({"owner": owner, "path": str(p), "bytes": directory_size(p)})
-    selected_images = []
+
+    by_id = {i["Id"]: i for i in images}
+    identities, versions = {}, []
+    source_owners = {}
     for image in images:
         tags = image.get("RepoTags") or []
-        names = {image["Id"], *tags, *(image.get("RepoDigests") or [])}
-        if names & protected_images or timestamp(image["Created"]) > now - GRACE_SECONDS:
-            continue
-        owner = next((o for o in owners if tags and all(owned_image(t, o) for t in tags)), None)
+        owner = next((o for o in OWNERS if tags and all(owned_image(t, o) for t in tags)), None)
         if owner:
-            selected_images.append({"owner": owner, "id": image["Id"], "tags": tags})
-    return {"files": selected_files, "images": selected_images,
+            revisions = {t.rsplit(":", 1)[1] for t in tags}
+            identities[image["Id"]] = (owner, revisions)
+            labels = image.get("Config", {}).get("Labels") or {}
+            source = labels.get("cn.tellyouwhat.source-tar-sha256")
+            if source:
+                source_owners.setdefault(source, set()).update((owner, rev) for rev in revisions)
+    for image in images:
+        image_id = image["Id"]
+        labels = image.get("Config", {}).get("Labels") or {}
+        if not image.get("RepoTags") and not image.get("RepoDigests"):
+            source = source_owners.get(labels.get("cn.tellyouwhat.source-tar-sha256"), set())
+            if source and len({o for o, _ in source}) == 1:
+                identities[image_id] = (next(iter(source))[0], {rev for _, rev in source})
+            elif image.get("build_owner") in OWNERS:
+                identities[image_id] = (image["build_owner"] + ":build", {image_id})
+            elif labels.get("cn.tellyouwhat.lifecycle") == "1":
+                # Historical labels lack an owner/revision: only full, age-based maintenance adopts them.
+                identities[image_id] = ("legacy", {image_id})
+        if image_id in identities:
+            group, revisions = identities[image_id]
+            versions.extend((group, rev, timestamp(image["Created"])) for rev in revisions)
+    expired_images = expired_versions(versions, now)
+    selected = {}
+    for image in images:
+        image_id = image["Id"]
+        tags = image.get("RepoTags") or []
+        names = {image_id, *tags, *(image.get("RepoDigests") or [])}
+        if names & protected_images or image_id not in identities:
+            continue
+        group, revisions = identities[image_id]
+        owner = group.split(":", 1)[0]
+        if owner == "legacy":
+            eligible = owners == set(OWNERS) and timestamp(image["Created"]) <= now - GRACE_SECONDS
+        else:
+            eligible = owner in owners and all((group, rev) in expired_images for rev in revisions)
+        if eligible:
+            selected[image_id] = {"owner": owner, "id": image_id, "tags": tags}
+
+    # Only collect untagged ancestry when every child is also being removed.
+    protected_ids = {i["Id"] for i in images
+                     if {i["Id"], *(i.get("RepoTags") or []), *(i.get("RepoDigests") or [])} & protected_images}
+    for item in list(selected.values()):
+        parent = by_id[item["id"]].get("Parent")
+        seen = {item["id"]}
+        while parent in by_id and parent not in seen:
+            seen.add(parent)
+            image = by_id[parent]
+            if parent in protected_ids or image.get("RepoTags") or image.get("RepoDigests"):
+                break
+            selected.setdefault(parent, {"owner": item["owner"], "id": parent, "tags": []})
+            parent = image.get("Parent")
+    children = {i["Id"]: set() for i in images}
+    for image in images:
+        if image.get("Parent") in children:
+            children[image["Parent"]].add(image["Id"])
+    while True:
+        blocked = {i for i in selected if children[i] - selected.keys()}
+        if not blocked:
+            break
+        for image_id in blocked:
+            del selected[image_id]
+    selected_images = []
+    while selected:
+        leaves = sorted(i for i in selected if not children[i] & selected.keys())
+        if not leaves:
+            raise OperationError("cyclic image ancestry")
+        selected_images.extend(selected.pop(i) for i in leaves)
+    return {"files": selected_files, "images": selected_images, 'containers': retired_containers,
             "protected_paths": sorted(str(p) for p in protected_paths), "protected_images": sorted(protected_images)}
 
 
@@ -191,7 +304,21 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
     plan = plan_cleanup(runtime.root, read_state(runtime), containers, images, [owner] if owner else None)
     if not apply:
         return {"dry_run": True, "free_bytes": before, **plan}
-    removed_files, removed_images, errors = [], [], []
+    removed_files, removed_images, removed_containers, errors = [], [], [], []
+    for item in plan.get('containers', []):
+        latest = inspect_containers(runtime)
+        fresh = plan_cleanup(runtime.root, read_state(runtime), latest, images, [owner] if owner else None)
+        if item['id'] not in {c['id'] for c in fresh['containers']}:
+            continue
+        try:
+            # No force and no volume removal: Docker refuses a concurrent restart.
+            runtime.execute('artifacts-remove-container', ['docker', 'rm', item['id']], timeout=30)
+            removed_containers.append(item)
+        except OperationError as error:
+            errors.append(str(error))
+    if removed_containers:
+        containers, images = inspect_host(runtime)
+        plan = plan_cleanup(runtime.root, read_state(runtime), containers, images, [owner] if owner else None)
     for item in plan["files"]:
         # Recheck live mounts immediately before deletion, including newly created containers.
         latest = inspect_containers(runtime)
@@ -215,9 +342,21 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
             errors.append(type(error).__name__ + " removing an owned artifact")
             continue
         removed_files.append(item)
+    if plan["images"]:
+        latest, fresh_images = inspect_host(runtime)
+        fresh = plan_cleanup(runtime.root, read_state(runtime), latest, fresh_images, [owner] if owner else None)
+        approved = {i["id"] for i in fresh["images"]}
     for item in plan["images"]:
+        if item["id"] not in approved:
+            continue
         try:
-            runtime.execute("artifacts-remove-image", ["docker", "image", "rm", *item["tags"]], timeout=120)
+            current = json.loads(runtime.execute("artifacts-recheck-image", ["docker", "image", "inspect", item["id"]]))[0]
+            if sorted(current.get("RepoTags") or []) != sorted(item["tags"]):
+                continue
+            if not item["tags"] and current.get("RepoDigests"):
+                continue
+            runtime.execute("artifacts-remove-image", ["docker", "image", "rm", "--no-prune",
+                            *(item["tags"] or [item["id"]])], timeout=120)
             removed_images.append(item)
         except OperationError as error:
             errors.append(str(error))
@@ -236,6 +375,7 @@ def cleanup(runtime, owner=None, *, apply=True, cache=False):
     after = shutil.disk_usage(runtime.root).free
     result = runtime.record("artifacts" + ("-" + owner if owner else ""), passed=not errors, errors=errors,
                           removed_files=removed_files, removed_images=removed_images,
+                          removed_containers=removed_containers,
                           free_bytes_before=before, free_bytes_after=after, reclaimed_bytes=after - before,
                           apple_delivery=apple_delivery)
     if errors:

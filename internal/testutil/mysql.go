@@ -40,7 +40,12 @@ func MySQL(t *testing.T) *sql.DB {
 		admin.Close()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { admin.Exec("DROP DATABASE `" + name + "`"); admin.Close() })
+	t.Cleanup(func() {
+		if _, err := admin.Exec("DROP DATABASE `" + name + "`"); err != nil {
+			t.Error("isolated database cleanup failed")
+		}
+		admin.Close()
+	})
 	cfg.DBName = name
 	db, err := mysqlstore.Open(ctx, cfg.FormatDSN())
 	if err != nil {

@@ -1,4 +1,4 @@
-"""Verify a manual interruption targets a failed, trusted, fully built production run."""
+"""Verify immutable build evidence; the host separately authenticates its capacity refusal."""
 
 import json
 import os
@@ -11,20 +11,16 @@ def validate(run, jobs, repository, sha, confirmation):
         raise ValueError("explicit confirmation must match the full deployment SHA")
     if (run.get("path") != ".github/workflows/backend.yml" or run.get("head_sha") != sha
             or run.get("head_branch") != "main" or run.get("event") not in ("push", "workflow_dispatch")
-            or run.get("status") != "completed" or run.get("conclusion") != "failure"
+            or run.get("status") != "completed" or run.get("conclusion") not in ('success', 'failure')
             or run.get("repository", {}).get("full_name") != repository
             or run.get("head_repository", {}).get("full_name") != repository):
-        raise ValueError("source must be a failed production Backend CI/CD run for the exact current main SHA")
+        raise ValueError("source must be a trusted production Backend CI/CD run for the exact current main SHA")
     by_name = {job["name"]: job for job in jobs}
     for name in ["verify", *["container (" + s + ")" for s in ("gateway", "worker", "admin", "adminctl", "migrate", "maintenance")]]:
         job = by_name.get(name, {})
         if job.get("conclusion") != "success" or job.get("head_sha") != sha:
             raise ValueError("source verification and all six image builds must succeed for the exact SHA")
-    failed = [job for job in jobs if job.get("name") == "deploy / deploy" and job.get("conclusion") == "failure"
-              and job.get("head_sha") == sha and any(step.get("name") == "Deploy and verify internal services"
-                  and step.get("conclusion") == "failure" for step in job.get("steps", []))]
-    if len(failed) != 1:
-        raise ValueError("source did not fail at the production activation step")
+    # Reused images can come from an earlier successful run; only the host owns the current refusal.
 
 
 def main():

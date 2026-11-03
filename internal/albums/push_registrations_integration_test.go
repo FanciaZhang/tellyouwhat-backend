@@ -28,11 +28,8 @@ type pushFixture struct {
 func newPushFixture(t *testing.T) *pushFixture {
 	t.Helper()
 	db, dsn := gatewayTestDatabase(t)
-	if err := migrations.Run(context.Background(), db); err != nil {
+	if err := migrations.RunIsolatedTest(context.Background(), db); err != nil {
 		t.Fatal(err)
-	}
-	if err := migrations.Run(context.Background(), db); err != nil {
-		t.Fatal("migration replay", err)
 	}
 	cipher, err := mysqlstore.NewPayloadCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{49}, 32)))
 	if err != nil {

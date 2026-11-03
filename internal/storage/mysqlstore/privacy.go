@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/privacy"
@@ -17,6 +19,29 @@ type PrivacyRepository struct {
 
 func NewPrivacyRepository(database *sql.DB, appID string) *PrivacyRepository {
 	return &PrivacyRepository{database: database, appID: appID}
+}
+
+// CheckConsentScopes detects a missing migration without writing a user's consent.
+func (repository *PrivacyRepository) CheckConsentScopes(ctx context.Context, scopes []string) error {
+	var clause string
+	err := repository.database.QueryRowContext(ctx, `SELECT checks.CHECK_CLAUSE
+		FROM information_schema.CHECK_CONSTRAINTS AS checks
+		JOIN information_schema.TABLE_CONSTRAINTS AS constraints_in_table
+		ON checks.CONSTRAINT_SCHEMA = constraints_in_table.CONSTRAINT_SCHEMA
+		AND checks.CONSTRAINT_NAME = constraints_in_table.CONSTRAINT_NAME
+		WHERE checks.CONSTRAINT_SCHEMA = DATABASE() AND constraints_in_table.TABLE_NAME = 'privacy_consents'
+		AND checks.CONSTRAINT_NAME = 'privacy_consents_scope_chk' AND constraints_in_table.ENFORCED = 'YES'`).Scan(&clause)
+	if err != nil {
+		return fmt.Errorf("inspect consent scope constraint: %w", err)
+	}
+	// MySQL exposes backslash-escaped literals in CHECK_CLAUSE.
+	clause = strings.ReplaceAll(clause, "\\", "")
+	for _, scope := range scopes {
+		if !strings.Contains(clause, "'"+scope+"'") {
+			return fmt.Errorf("consent scope %q requires a database migration", scope)
+		}
+	}
+	return nil
 }
 
 func (repository *PrivacyRepository) RecordConsents(ctx context.Context, records []privacy.Record) error {

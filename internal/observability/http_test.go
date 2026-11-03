@@ -2,6 +2,7 @@ package observability
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
 )
 
 func TestRecoverPanicsReturns500(t *testing.T) {
@@ -24,6 +26,27 @@ func TestRecoverPanicsReturns500(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/panic", nil))
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", response.Code)
+	}
+}
+
+func TestStorageFailureLogsOnlyErrorCodeAndRaisesSeverity(t *testing.T) {
+	var output bytes.Buffer
+	router := gin.New()
+	router.Use(MiddlewareForApp(slog.New(slog.NewJSONHandler(&output, nil)), "health")...)
+	router.POST("/v1/privacy/consents", func(ctx *gin.Context) {
+		RecordStorageFailure(ctx, fmt.Errorf("wrapped: %w", &mysql.MySQLError{Number: 3819, Message: "private SQL health contents"}))
+		ctx.Status(http.StatusServiceUnavailable)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/privacy/consents", nil)
+	request.Header.Set("X-Request-ID", "fixture-request")
+	router.ServeHTTP(httptest.NewRecorder(), request)
+	for _, required := range []string{`"level":"ERROR"`, `"sql_error_code":3819`, `"failure_class":"storage"`, `"request_id":"fixture-request"`} {
+		if !bytes.Contains(output.Bytes(), []byte(required)) {
+			t.Fatalf("missing diagnostic %s: %s", required, output.String())
+		}
+	}
+	if bytes.Contains(output.Bytes(), []byte("private SQL")) {
+		t.Fatal("SQL error message leaked into request logs")
 	}
 }
 

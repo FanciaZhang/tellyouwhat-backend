@@ -63,6 +63,47 @@ class BackupSafetyTests(unittest.TestCase):
         self.assertFalse((self.runtime.state / "backup.json").exists())
         self.assertFalse(json.loads((self.runtime.state / "backup-failure.json").read_text())["passed"])
 
+    def test_production_checkpoint_does_not_replace_host_backup_or_failure_evidence(self):
+        host = create_backup(self.runtime)
+        self.runtime.record('backup-failure', passed=False)
+        production = create_backup(self.runtime, scope='production')
+        self.assertEqual(production['operation'], 'production_backup')
+        self.assertEqual(json.loads((self.runtime.state / 'backup.json').read_text())['filename'], host['filename'])
+        self.assertTrue((self.runtime.state / 'backup-failure.json').exists())
+        self.assertEqual(verify_backup(self.runtime, self.runtime.backups / production['filename'])['recovery_scope'], 'production')
+        with patch.dict(os.environ, {'DUMP_EXIT_CODE': '7'}), self.assertRaises(OperationError):
+            create_backup(self.runtime, scope='production')
+        self.assertTrue((self.runtime.state / 'production_backup-failure.json').exists())
+
+    def test_backup_budget_failure_leaves_no_uncommitted_pair(self):
+        with patch('ops_backup.BACKUP_BUDGET_BYTES', 1), self.assertRaisesRegex(OperationError, 'storage budget'):
+            create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / 'backup.json').exists())
+
+    def test_failed_recovery_assembly_removes_its_own_unpublished_file(self):
+        def interrupted(runtime, filename, **unused):
+            recovery = runtime.backups / ('recovery-' + filename.replace('.sql.gz.enc', '.tar.gz.enc'))
+            recovery.write_bytes(b'uncommitted')
+            raise OperationError('recovery assembly interrupted')
+        with patch('ops_offsite.enabled', return_value=True), patch('ops_offsite.create_recovery_bundle', side_effect=interrupted):
+            with self.assertRaisesRegex(OperationError, 'assembly interrupted'):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+
+    def test_interrupted_backup_temporaries_expire_without_collecting_unknown_files(self):
+        self.runtime.backups.mkdir()
+        stale = self.runtime.backups / '.backup-abcdefgh'
+        stale.mkdir()
+        (stale / 'plaintext').write_text('disposable')
+        os.utime(stale, (time.time() - 49 * 3600,) * 2)
+        for name in ('.backup-recent12', 'preserved'):
+            (self.runtime.backups / name).mkdir()
+        self.assertEqual(prune_backups(self.runtime), 0)
+        self.assertFalse(stale.exists())
+        self.assertTrue((self.runtime.backups / '.backup-recent12').exists())
+        self.assertTrue((self.runtime.backups / 'preserved').exists())
+
     def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
         previous = create_backup(self.runtime)
         with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
