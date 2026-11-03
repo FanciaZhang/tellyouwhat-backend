@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from ops_common import OperationError, Runtime
+from ops_backup import manifest_signature
 from ops_cos import transfer, validate_bucket
 from ops_offsite import download, publish, transport, verify_recovery_bundle, create_recovery_bundle
 
@@ -19,7 +20,7 @@ class OffsiteSafetyTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name) / "backend"
         self.root.mkdir()
-        (self.root / ".env.production").write_text("BACKUP_ENCRYPTION_KEY=" + "x" * 64 + "\n")
+        (self.root / ".env.production").write_text("MYSQL_DATABASE=synthetic\nBACKUP_ENCRYPTION_KEY=" + "x" * 64 + "\n")
         self.runtime = Runtime(self.root, self.root / "backups")
         self.runtime.backups.mkdir()
 
@@ -30,6 +31,19 @@ class OffsiteSafetyTests(unittest.TestCase):
             client.get_bucket_acl.return_value["Grant"].append({"Grantee": {"URI": "AllUsers"}})
         client.get_bucket_lifecycle.return_value = {"Rule": [{"Status": "Enabled", "Filter": {"Prefix": "backups/"}, "Expiration": {"Days": days}}]}
         return client
+
+    def checkpoint(self):
+        source = self.runtime.backups / "mysql-20261013T035318Z-abcdef.sql.gz.enc"
+        source.write_bytes(b"ciphertext")
+        recovery = self.runtime.backups / ("recovery-" + source.name.replace(".sql.gz.enc", ".tar.gz.enc"))
+        recovery.write_bytes(b"encrypted configuration")
+        manifest = {"filename": source.name, "database": "synthetic", "created_at": 1,
+                    "table_rows": {"apps": 0}, "recovery_filename": recovery.name,
+                    "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "recovery_sha256": hashlib.sha256(recovery.read_bytes()).hexdigest()}
+        metadata = Path(str(source) + ".json")
+        metadata.write_text(json.dumps({"manifest": manifest, "hmac_sha256": manifest_signature("x" * 64, manifest)}))
+        return source, manifest, [source, recovery, metadata]
 
     def test_public_bucket_and_wrong_retention_are_rejected_before_transfer(self):
         for client in (self.client(public=True), self.client(days=1), self.client(days=30)):
@@ -60,7 +74,8 @@ class OffsiteSafetyTests(unittest.TestCase):
         link.symlink_to(source)
         for path in (source, link):
             with self.assertRaises(OperationError):
-                transfer(client, "backup", "backups/", "upload", [path])
+                transfer(client, "backup", "backups/", "upload", [path],
+                         expected={path.name: hashlib.sha256(b"plaintext").hexdigest()})
         client.put_object.assert_not_called()
 
     def test_download_stream_is_closed_and_file_permissions_are_private(self):
@@ -74,16 +89,69 @@ class OffsiteSafetyTests(unittest.TestCase):
         self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
 
     def test_offsite_success_requires_readback_of_every_object(self):
-        source = self.runtime.backups / "mysql-20261013T035318Z-abcdef.sql.gz.enc"
-        source.write_bytes(b"ciphertext")
-        Path(str(source) + ".json").write_text("manifest")
-        recovery = self.runtime.backups / ("recovery-" + source.name.replace(".sql.gz.enc", ".tar.gz.enc"))
-        recovery.write_bytes(b"encrypted configuration")
-        manifest = {"recovery_filename": recovery.name, "sha256": hashlib.sha256(source.read_bytes()).hexdigest()}
+        source, manifest, _ = self.checkpoint()
         with patch("ops_offsite.transport", return_value={"bucket": "private", "objects": []}):
             with self.assertRaisesRegex(OperationError, "readback differs"):
                 publish(self.runtime, source, manifest)
         self.assertFalse((self.runtime.state / "offsite.json").exists())
+
+    def test_publication_passes_authenticated_inventory_through_the_real_transport_boundary(self):
+        source, manifest, paths = self.checkpoint()
+        interpreter = self.runtime.state / "backup-venv/bin/python"
+        interpreter.parent.mkdir(parents=True)
+        interpreter.touch()
+        credentials = self.root.parent / "backup/cos.env"
+        credentials.parent.mkdir()
+        credentials.touch()
+        client = self.client()
+        objects = {}
+        def put(**kwargs):
+            objects[kwargs['Key']] = kwargs['Body'].read()
+        def get(**kwargs):
+            return {'Body': Mock(get_raw_stream=Mock(return_value=io.BytesIO(objects[kwargs['Key']])))}
+        client.put_object.side_effect = put
+        client.get_object.side_effect = get
+        def execute(_label, _command, *, input, timeout):
+            request = json.loads(input)
+            self.assertEqual(request['expected'], {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths})
+            result = transfer(client, 'private', 'backups/', request['action'], request['paths'], expected=request['expected'])
+            return json.dumps({'passed': True, 'bucket': 'private', 'objects': result}).encode()
+        with patch.object(self.runtime, 'execute', side_effect=execute):
+            self.assertTrue(publish(self.runtime, source, manifest)['passed'])
+        self.assertEqual([c.kwargs['Key'] for c in client.put_object.call_args_list], ['backups/' + p.name for p in paths])
+
+    def test_invalid_or_changed_inventory_never_starts_upload(self):
+        _, _, paths = self.checkpoint()
+        expected = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+        for inventory in (None, {}, {**expected, paths[1].name: '0' * 64}):
+            client = self.client()
+            with self.subTest(inventory=inventory), self.assertRaises(OperationError):
+                transfer(client, 'private', 'backups/', 'upload', paths, expected=inventory)
+            client.put_object.assert_not_called()
+
+    def test_bad_readback_or_mutating_source_cannot_publish_the_final_manifest(self):
+        for mutation in (False, True):
+            with self.subTest(mutation=mutation):
+                _, _, paths = self.checkpoint()
+                expected = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+                client = self.client()
+                def put(**kwargs):
+                    if mutation:
+                        paths[1].write_bytes(b'changed input')
+                client.put_object.side_effect = put
+                body = io.BytesIO(paths[0].read_bytes() if mutation else b'incorrect remote bytes')
+                client.get_object.return_value = {'Body': Mock(get_raw_stream=Mock(return_value=body))}
+                with self.assertRaises(OperationError):
+                    transfer(client, 'private', 'backups/', 'upload', paths, expected=expected)
+                self.assertEqual(client.put_object.call_count, 1)
+                self.assertTrue(body.closed)
+
+    def test_untrusted_manifest_cannot_authorize_publication(self):
+        source, manifest, paths = self.checkpoint()
+        paths[-1].write_text(paths[-1].read_text().replace('synthetic', 'different'))
+        with patch('ops_offsite.transport') as send, self.assertRaises(OperationError):
+            publish(self.runtime, source, manifest)
+        send.assert_not_called()
 
     def test_required_offsite_configuration_cannot_silently_fall_back_to_local(self):
         with self.assertRaisesRegex(OperationError, "missing"):

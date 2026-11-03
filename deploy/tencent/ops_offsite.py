@@ -1,6 +1,7 @@
 """Publish authenticated database/configuration pairs to a private backup bucket."""
 
 import hmac
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,11 +20,13 @@ def enabled(runtime):
     return config_path(runtime).exists() or (runtime.state / "offsite-required").exists()
 
 
-def transport(runtime, action, paths=()):
+def transport(runtime, action, paths=(), *, expected=None):
     interpreter = runtime.state / "backup-venv/bin/python"
     if not interpreter.is_file() or not config_path(runtime).is_file():
         raise OperationError("required offsite backup SDK or dedicated credentials are missing")
     request = {"config": str(config_path(runtime)), "action": action, "paths": [str(p) for p in paths]}
+    if action == 'upload':
+        request['expected'] = expected
     result = json.loads(runtime.execute("backup-cos-" + action,
         [str(interpreter), str(runtime.root / "deploy/tencent/ops_cos.py")],
         input=json.dumps(request).encode(), timeout=300))
@@ -107,17 +110,34 @@ def create_recovery_bundle(runtime, filename, *, scope='host'):
 
 
 def publish(runtime, source, manifest):
-    from ops_backup import file_digest
-    paths = [source, runtime.backups / manifest["recovery_filename"], Path(str(source) + ".json")]
-    # The authenticated manifest is the final object and commits the complete pair.
-    result = transport(runtime, "upload", paths)
-    expected = {p.name: file_digest(p) for p in paths}
-    actual = {p["filename"]: p["sha256"] for p in result["objects"]}
-    if expected != actual:
-        raise OperationError("offsite readback differs from the encrypted local backup")
-    operation = 'offsite-production' if manifest.get('recovery_scope') == 'production' else 'offsite'
-    return runtime.record(operation, filename=source.name, sha256=manifest["sha256"], bucket=result["bucket"],
-                          recovery_filename=manifest["recovery_filename"], verified_objects=len(expected), passed=True)
+    from ops_backup import _verified_backup, _same_backup_file
+    source = Path(source)
+    with _verified_backup(runtime, source) as (verified, files):
+        if verified != manifest or not manifest.get('recovery_filename'):
+            raise OperationError('offsite publication requires the authenticated complete backup')
+        manifest = verified
+        paths = [source, runtime.backups / manifest['recovery_filename'], Path(str(source) + '.json')]
+        envelope, _ = files[paths[-1]]
+        envelope.seek(0)
+        expected = {source.name: manifest['sha256'], paths[1].name: manifest['recovery_sha256'],
+                    paths[-1].name: hashlib.sha256(envelope.read(1024 * 1024 + 1)).hexdigest()}
+        if any(not _same_backup_file(p, handle, before) for p, (handle, before) in files.items()):
+            raise OperationError('backup input changed before publication')
+        # Each payload must read back correctly before the final inventory can be sent.
+        result = transport(runtime, 'upload', paths, expected=expected)
+        objects = result.get('objects')
+        sizes = {p.name: files[p][1].st_size for p in paths}
+        if (not isinstance(objects, list) or len(objects) != len(expected)
+                or not all(isinstance(obj, dict) and isinstance(obj.get('filename'), str)
+                           and obj['filename'] in expected and obj.get('sha256') == expected[obj['filename']]
+                           and type(obj.get('bytes')) is int and obj['bytes'] == sizes[obj['filename']]
+                           for obj in objects)
+                or len({obj['filename'] for obj in objects}) != len(expected)
+                or any(not _same_backup_file(p, handle, before) for p, (handle, before) in files.items())):
+            raise OperationError('offsite readback differs from the encrypted local backup')
+        operation = 'offsite-production' if manifest.get('recovery_scope') == 'production' else 'offsite'
+        return runtime.record(operation, filename=source.name, sha256=manifest['sha256'], bucket=result['bucket'],
+                              recovery_filename=manifest['recovery_filename'], verified_objects=len(expected), passed=True)
 
 
 def download(runtime, filename, directory):

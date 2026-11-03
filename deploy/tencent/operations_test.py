@@ -8,7 +8,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ops_backup import create_backup, crypt, prune_backups, restore_drill, verify_backup
+from ops_backup import create_backup, crypt, locked_backup_file, prune_backups, restore_drill, verify_backup
 from ops_common import OperationError, Runtime, read_environment
 from operations import operate
 
@@ -301,6 +301,50 @@ class BackupSafetyTests(unittest.TestCase):
         with patch("ops_backup.time.time", return_value=now + 1):
             self.assertEqual(prune_backups(self.runtime), 1)
         self.assertFalse(path.exists())
+
+    def test_retention_preserves_an_active_snapshot_then_removes_it_after_release(self):
+        now = int(time.time())
+        with patch('ops_backup.time.time', return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result['filename']
+        metadata = Path(str(path) + '.json')
+        with locked_backup_file(path, False), self.assertRaisesRegex(OperationError, 'retention verification failed'):
+            prune_backups(self.runtime)
+        self.assertTrue(path.exists())
+        self.assertTrue(metadata.exists())
+        self.assertEqual(prune_backups(self.runtime), 1)
+        self.assertFalse(path.exists())
+        self.assertFalse(metadata.exists())
+
+    def test_retention_resumes_after_payload_removal_without_trusting_file_ages(self):
+        now = int(time.time())
+        with patch('ops_backup.time.time', return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result['filename']
+        metadata = Path(str(path) + '.json')
+        unlink = Path.unlink
+        def interrupted(member, *args, **kwargs):
+            if member == metadata:
+                raise OSError('interrupted before final inventory removal')
+            return unlink(member, *args, **kwargs)
+        with patch.object(Path, 'unlink', interrupted), self.assertRaises(OperationError):
+            prune_backups(self.runtime)
+        self.assertFalse(path.exists())
+        self.assertTrue(metadata.exists())
+        self.assertEqual(prune_backups(self.runtime), 1)
+        self.assertFalse(metadata.exists())
+
+    def test_linked_payload_cannot_be_verified_or_pruned(self):
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result['filename']
+        alias = self.root / 'preserved-alias'
+        os.link(path, alias)
+        with self.assertRaises(OperationError):
+            verify_backup(self.runtime, path)
+        with self.assertRaises(OperationError):
+            prune_backups(self.runtime)
+        self.assertTrue(path.exists())
+        self.assertTrue(alias.exists())
 
     def test_failed_schema_export_never_publishes_a_partial_backup(self):
         with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):

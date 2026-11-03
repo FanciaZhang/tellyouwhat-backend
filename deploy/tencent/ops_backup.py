@@ -1,5 +1,7 @@
 """Encrypted MySQL snapshots and disposable restore verification."""
 
+import contextlib
+import fcntl
 import gzip
 import hashlib
 import hmac
@@ -9,6 +11,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -244,14 +247,33 @@ def prune_backups(runtime):
     cutoff = time.time() - BACKUP_RETENTION_SECONDS
     removed = 0
     failed = 0
-    for path in runtime.backups.glob("mysql-*.sql.gz.enc"):
+    snapshots = set(runtime.backups.glob("mysql-*.sql.gz.enc"))
+    snapshots.update(Path(str(p)[:-5]) for p in runtime.backups.glob("mysql-*.sql.gz.enc.json"))
+    snapshots.update(p.parent / (p.name[len("recovery-"):-len(".tar.gz.enc")] + ".sql.gz.enc")
+                     for p in runtime.backups.glob("recovery-mysql-*.tar.gz.enc"))
+    for path in sorted(snapshots):
         try:
-            manifest = verify_backup(runtime, path)
-            if manifest["created_at"] <= cutoff:
-                path.unlink()
-                Path(str(path) + ".json").unlink()
-                if manifest.get("recovery_filename"):
-                    (path.parent / manifest["recovery_filename"]).unlink()
+            with _verified_backup(runtime, path, pruning_cutoff=cutoff) as (manifest, files):
+                if manifest["created_at"] > cutoff:
+                    continue
+                metadata = Path(str(path) + ".json")
+                # Keep the authenticated inventory until every payload is gone.
+                # A killed process can then resume without trusting file ages.
+                order = [p for p in files if p != metadata] + [metadata]
+                directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    for member in order:
+                        handle, before = files[member]
+                        if member == metadata:
+                            recovery = path.parent / ('recovery-' + path.name.replace('.sql.gz.enc', '.tar.gz.enc'))
+                            if any(p.exists() or p.is_symlink() for p in (path, recovery)):
+                                raise OperationError("backup payload reappeared during retention; inventory retained")
+                        if not _same_backup_file(member, handle, before):
+                            raise OperationError("backup changed during retention; preserved for review")
+                        member.unlink()
+                        os.fsync(directory)
+                finally:
+                    os.close(directory)
                 removed += 1
         except (OperationError, OSError):
             failed += 1
@@ -260,12 +282,30 @@ def prune_backups(runtime):
     return removed
 
 
-def verify_backup(runtime, path):
-    path = Path(path)
+@contextlib.contextmanager
+def locked_backup_file(path, exclusive):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise OperationError("backup must be a regular file without additional links")
+        try:
+            fcntl.flock(handle.fileno(), (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise OperationError("backup file is active; retained") from error
+        if not _same_backup_file(Path(path), handle, before):
+            raise OperationError("backup changed while acquiring its lease")
+        yield handle, before
+
+
+def _same_backup_file(path, handle, before):
+    fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_size", "st_mtime_ns", "st_ctime_ns")
+    return all(getattr(before, field) == getattr(current, field)
+               for current in (os.fstat(handle.fileno()), path.lstat()) for field in fields)
+
+
+def _backup_manifest(runtime, path, envelope):
     try:
-        if path.is_symlink() or Path(str(path) + ".json").is_symlink():
-            raise OperationError("backup symlinks are not permitted")
-        envelope = json.loads(Path(str(path) + ".json").read_text())
         manifest = envelope["manifest"]
         if manifest.get('recovery_scope', 'host') not in ('host', 'production'):
             raise OperationError('invalid backup recovery scope')
@@ -274,18 +314,22 @@ def verify_backup(runtime, path):
         expected = manifest_signature(backup_secret(runtime), manifest)
         if not hmac.compare_digest(expected, envelope["hmac_sha256"]):
             raise OperationError("backup manifest authentication failed")
-        if manifest["filename"] != path.name or manifest["sha256"] != file_digest(path):
+        if (manifest["filename"] != path.name or not isinstance(manifest["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", manifest["sha256"])):
             raise OperationError("backup content verification failed")
         if manifest.get("recovery_filename"):
             name = manifest["recovery_filename"]
             if (name != "recovery-" + path.name.replace(".sql.gz.enc", ".tar.gz.enc")
-                    or (path.parent / name).is_symlink() or file_digest(path.parent / name) != manifest["recovery_sha256"]):
+                    or not isinstance(manifest["recovery_sha256"], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", manifest["recovery_sha256"])):
                 raise OperationError("configuration recovery content verification failed")
         if manifest["database"] != runtime.config["MYSQL_DATABASE"]:
             raise OperationError("backup belongs to another application database")
         if type(manifest["created_at"]) is not int or manifest["created_at"] <= 0:
             raise OperationError("invalid backup creation time")
-        if not manifest["table_rows"] or not all(re.fullmatch(r"[A-Za-z0-9_]+", table) for table in manifest["table_rows"]):
+        if (not isinstance(manifest["table_rows"], dict) or not manifest["table_rows"]
+                or not all(isinstance(table, str) and re.fullmatch(r"[A-Za-z0-9_]+", table)
+                           and type(count) is int and count >= 0 for table, count in manifest["table_rows"].items())):
             raise OperationError("invalid backup table manifest")
         included = manifest.get("included_data_tables")
         excluded = manifest.get("excluded_data_tables")
@@ -299,8 +343,52 @@ def verify_backup(runtime, path):
                     or any(manifest["table_rows"].get(table) != 0 for table in excluded)):
                 raise OperationError("invalid backup data retention manifest")
         return manifest
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
         raise OperationError("backup manifest is missing or invalid") from error
+
+
+@contextlib.contextmanager
+def _verified_backup(runtime, path, *, pruning_cutoff=None):
+    path = Path(path)
+    try:
+        with contextlib.ExitStack() as leases:
+            metadata = Path(str(path) + ".json")
+            files = {metadata: leases.enter_context(locked_backup_file(metadata, pruning_cutoff is not None))}
+            handle, before = files[metadata]
+            if before.st_size > 1024 * 1024:
+                raise OperationError("backup manifest exceeds its size limit")
+            manifest = _backup_manifest(runtime, path, json.loads(handle.read(1024 * 1024 + 1)))
+            expired = pruning_cutoff is not None and manifest["created_at"] <= pruning_cutoff
+            recovery = path.parent / ('recovery-' + path.name.replace('.sql.gz.enc', '.tar.gz.enc'))
+            if (pruning_cutoff is not None and not manifest.get('recovery_filename')
+                    and (recovery.exists() or recovery.is_symlink())):
+                raise OperationError("unregistered recovery package; inventory retained for review")
+            payloads = [(path, manifest["sha256"])]
+            if manifest.get("recovery_filename"):
+                payloads.append((path.parent / manifest["recovery_filename"], manifest["recovery_sha256"]))
+            for member, expected in payloads:
+                try:
+                    files[member] = leases.enter_context(locked_backup_file(member, pruning_cutoff is not None))
+                except FileNotFoundError:
+                    if expired:
+                        continue
+                    raise
+                digest = hashlib.sha256()
+                for block in iter(lambda: files[member][0].read(1024 * 1024), b""):
+                    digest.update(block)
+                if not hmac.compare_digest(digest.hexdigest(), expected):
+                    raise OperationError("backup content verification failed" if member == path
+                                         else "configuration recovery content verification failed")
+            if not all(_same_backup_file(p, h, info) for p, (h, info) in files.items()):
+                raise OperationError("backup changed during verification; preserved for review")
+            yield manifest, files
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise OperationError("backup manifest or payload is missing, active or invalid") from error
+
+
+def verify_backup(runtime, path):
+    with _verified_backup(runtime, path) as (manifest, _):
+        return manifest
 
 
 def restore_drill(runtime, filename=None, *, source_directory=None):

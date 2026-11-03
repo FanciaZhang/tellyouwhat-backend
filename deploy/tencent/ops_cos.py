@@ -1,6 +1,8 @@
 """Private COS transport. Executed with the pinned SDK virtual environment."""
 
+import contextlib
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import re
 import sys
 
 from ops_common import OperationError, read_environment
+from ops_backup import locked_backup_file, _same_backup_file
 
 
 def validate_bucket(client, bucket, prefix):
@@ -30,16 +33,44 @@ def valid_filename(name):
     return bool(re.fullmatch(r"(?:mysql-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\.sql\.gz\.enc(?:\.json)?|recovery-mysql-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\.tar\.gz\.enc)", name))
 
 
-def transfer(client, bucket, prefix, action, paths):
+def transfer(client, bucket, prefix, action, paths, *, expected=None):
+    paths = [Path(p) for p in paths]
+    if action == 'upload' and (not isinstance(expected, dict) or not paths
+            or len(expected) != len(paths) or set(expected) != {p.name for p in paths}
+            or not all(isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) for digest in expected.values())):
+        raise OperationError('upload requires the complete authenticated content inventory')
+    with contextlib.ExitStack() as leases:
+        sources = {}
+        for path in paths:
+            if not valid_filename(path.name) or path.is_symlink():
+                raise OperationError("COS transport accepts only owned encrypted backup files and their manifests")
+            if action == "upload":
+                stream, info = leases.enter_context(locked_backup_file(path, False))
+                if not 0 < info.st_size <= 64 * 1024 * 1024:
+                    raise OperationError("encrypted backup exceeded the bounded transport size")
+                digest = hashlib.sha256()
+                length = 0
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    length += len(block)
+                    if length > info.st_size:
+                        raise OperationError('backup input grew while checking its inventory')
+                    digest.update(block)
+                if (not _same_backup_file(path, stream, info)
+                        or not hmac.compare_digest(digest.hexdigest(), expected[path.name])):
+                    raise OperationError('backup input differs from its authenticated inventory')
+                stream.seek(0)
+                sources[path] = (stream, info, expected[path.name])
+        return _transfer(client, bucket, prefix, action, paths, sources)
+
+
+def _transfer(client, bucket, prefix, action, paths, sources):
     results = []
     for path in paths:
-        path = Path(path)
-        if not valid_filename(path.name) or path.is_symlink():
-            raise OperationError("COS transport accepts only owned encrypted backup files and their manifests")
         if action == "upload":
-            with path.open("rb") as stream:
-                client.put_object(Bucket=bucket, Key=prefix + path.name, Body=stream, EnableMD5=True,
-                                  ServerSideEncryption="AES256", ContentType="application/octet-stream")
+            if any(not _same_backup_file(p, handle, before) for p, (handle, before, _) in sources.items()):
+                raise OperationError('backup input changed before publication')
+            client.put_object(Bucket=bucket, Key=prefix + path.name, Body=sources[path][0], EnableMD5=True,
+                              ServerSideEncryption="AES256", ContentType="application/octet-stream")
         elif path.exists():
             raise OperationError("download destination must be a new file")
         digest = hashlib.sha256()
@@ -56,6 +87,8 @@ def transfer(client, bucket, prefix, action, paths):
                 length += len(block)
                 if length > 64 * 1024 * 1024:
                     raise OperationError("encrypted backup exceeded the bounded transport size")
+                if action == 'upload' and length > sources[path][1].st_size:
+                    raise OperationError('offsite readback exceeded its authenticated size')
                 digest.update(block)
                 if output:
                     output.write(block)
@@ -63,6 +96,10 @@ def transfer(client, bucket, prefix, action, paths):
             body.close()
             if output:
                 output.close()
+        if action == 'upload' and (length != sources[path][1].st_size
+                or not hmac.compare_digest(digest.hexdigest(), sources[path][2])
+                or any(not _same_backup_file(p, handle, before) for p, (handle, before, _) in sources.items())):
+            raise OperationError('offsite readback or local input differs from the authenticated backup')
         results.append({"filename": path.name, "sha256": digest.hexdigest(), "bytes": length})
     return results
 
@@ -89,7 +126,8 @@ def main():
         validate_bucket(client, bucket, prefix)
         if request["action"] not in ("upload", "download", "check"):
             raise OperationError("unknown COS backup action")
-        result = [] if request["action"] == "check" else transfer(client, bucket, prefix, request["action"], request["paths"])
+        result = [] if request["action"] == "check" else transfer(client, bucket, prefix, request["action"], request["paths"],
+                                                                 expected=request.get('expected'))
         print(json.dumps({"passed": True, "bucket": bucket, "objects": result}))
         return 0
     except CosServiceError as error:
