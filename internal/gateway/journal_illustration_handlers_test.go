@@ -40,6 +40,10 @@ func (f *imageStoreFixture) Save(_ context.Context, j illustration.Job, _ uint64
 	f.job = j
 	return nil
 }
+func (f *imageStoreFixture) HasRunningClaim(_ context.Context, task illustration.Task) (bool, error) {
+	return f.job.Task.ID == task.ID && f.job.Task.OwnerID == task.OwnerID &&
+		f.job.Task.Revision == task.Revision && f.job.Task.State == illustration.TaskRunning, nil
+}
 func (*imageStoreFixture) Pending(context.Context, time.Time, int) ([]illustration.Task, error) {
 	return nil, nil
 }

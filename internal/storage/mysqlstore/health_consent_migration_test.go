@@ -211,13 +211,18 @@ func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
 	if allowed, err := service.HasRequiredConsents(ctx, principal, []string{privacy.HealthEligibilityScope}); err != nil || allowed {
 		t.Fatalf("guardian consent replaced revoked general consent: allowed=%v err=%v", allowed, err)
 	}
-	journalService := privacy.NewService(mysqlstore.NewPrivacyRepository(db, "journal"), nil, nil, time.Now)
+	journalRepository := mysqlstore.NewPrivacyRepository(db, "journal")
+	journalService := privacy.NewService(journalRepository, nil, nil, time.Now)
 	if _, err := journalService.RecordConsents(ctx, journal, consents[2:3]); !errors.Is(err, privacy.ErrInvalidConsent) {
 		t.Fatalf("Health guardian consent crossed the app boundary: %v", err)
 	}
 	illustration := []privacy.Consent{{Scope: privacy.JournalIllustrationScope, DocumentVersion: privacy.JournalIllustrationDocumentVersion, Granted: true}}
-	if _, err := journalService.RecordConsents(ctx, journal, illustration); err != nil {
-		t.Fatalf("existing Journal contract scope rejected: %v", err)
+	// Exercise the scope added by this historical migration before the later read-aloud migration.
+	if err := journalRepository.RecordConsents(ctx, []privacy.Record{{
+		KeyID: journal.KeyID, DeviceID: journal.DeviceID, Scope: illustration[0].Scope,
+		DocumentVersion: illustration[0].DocumentVersion, Granted: true, RecordedAt: time.Now(),
+	}}); err != nil {
+		t.Fatalf("migration did not admit the Journal illustration scope: %v", err)
 	}
 	if _, err := service.RecordConsents(ctx, principal, illustration); !errors.Is(err, privacy.ErrInvalidConsent) {
 		t.Fatalf("Journal illustration consent crossed the app boundary: %v", err)

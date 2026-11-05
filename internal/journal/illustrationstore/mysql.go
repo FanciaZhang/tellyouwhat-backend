@@ -10,12 +10,18 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 )
 
 type Store struct {
 	Database *sql.DB
 	Cipher   *mysqlstore.PayloadCipher
+}
+
+type taskDB interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
 func illustrationAAD(owner, id string) []byte {
@@ -44,30 +50,58 @@ func (s Store) Create(ctx context.Context, job illustration.Job) (illustration.J
 	if err != nil {
 		return illustration.Job{}, err
 	}
-	_, err = s.Database.ExecContext(ctx, `INSERT INTO journal_illustration_jobs
-  (owner_key_id,request_id,revision,state,created_at,expires_at,has_payload,ciphertext,nonce) VALUES (?,?,1,'queued',?,?,true,?,?)`, job.Task.OwnerID, job.Task.ID, job.Task.CreatedAt, job.Task.ExpiresAt, encrypted, nonce)
-	if err == nil {
-		return job, nil
+	if job.Task.ConsentRevision != privacy.JournalIllustrationDocumentVersion {
+		return illustration.Job{}, illustration.ErrConsentRequired
 	}
-	var duplicate *mysql.MySQLError
-	if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
-		return illustration.Job{}, err
-	}
-	existing, err := s.Get(ctx, job.Task.OwnerID, job.Task.ID)
+	tx, err := s.Database.BeginTx(ctx, nil)
 	if err != nil {
 		return illustration.Job{}, err
 	}
-	if !existing.Task.SameRequest(job.Task) {
-		return illustration.Job{}, illustration.ErrTaskConflict
+	defer tx.Rollback()
+	// The unified decision updates this same row before withdrawing the jobs.
+	// Hold the grant stable until admission commits.
+	var granted bool
+	var recordedAt time.Time
+	err = tx.QueryRowContext(ctx, `SELECT granted,recorded_at FROM privacy_consents
+		WHERE app_id='journal' AND key_id=? AND scope=? AND document_version=? FOR SHARE`,
+		job.Task.OwnerID, privacy.JournalIllustrationScope, job.Task.ConsentRevision).Scan(&granted, &recordedAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return illustration.Job{}, err
 	}
-	return existing, nil
+	if !granted || recordedAt.After(job.Task.CreatedAt) {
+		return illustration.Job{}, illustration.ErrConsentRequired
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO journal_illustration_jobs
+  (owner_key_id,request_id,revision,state,created_at,expires_at,has_payload,ciphertext,nonce) VALUES (?,?,1,'queued',?,?,true,?,?)`, job.Task.OwnerID, job.Task.ID, job.Task.CreatedAt, job.Task.ExpiresAt, encrypted, nonce)
+	if err != nil {
+		var duplicate *mysql.MySQLError
+		if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+			return illustration.Job{}, err
+		}
+		existing, err := s.get(ctx, tx, job.Task.OwnerID, job.Task.ID)
+		if err != nil {
+			return illustration.Job{}, err
+		}
+		if !existing.Task.SameRequest(job.Task) {
+			return illustration.Job{}, illustration.ErrTaskConflict
+		}
+		job = existing
+	}
+	if err := tx.Commit(); err != nil {
+		return illustration.Job{}, err
+	}
+	return job, nil
 }
 
 func (s Store) Get(ctx context.Context, owner, id string) (illustration.Job, error) {
+	return s.get(ctx, s.Database, owner, id)
+}
+
+func (s Store) get(ctx context.Context, db taskDB, owner, id string) (illustration.Job, error) {
 	var encrypted, nonce []byte
 	var revision uint64
 	var state string
-	err := s.Database.QueryRowContext(ctx, `SELECT ciphertext,nonce,revision,state FROM journal_illustration_jobs WHERE owner_key_id=? AND request_id=?`, owner, id).Scan(&encrypted, &nonce, &revision, &state)
+	err := db.QueryRowContext(ctx, `SELECT ciphertext,nonce,revision,state FROM journal_illustration_jobs WHERE owner_key_id=? AND request_id=?`, owner, id).Scan(&encrypted, &nonce, &revision, &state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return illustration.Job{}, illustration.ErrNotFound
 	}
@@ -89,6 +123,10 @@ func (s Store) Get(ctx context.Context, owner, id string) (illustration.Job, err
 }
 
 func (s Store) Save(ctx context.Context, job illustration.Job, previous uint64) error {
+	return s.save(ctx, s.Database, job, previous)
+}
+
+func (s Store) save(ctx context.Context, db taskDB, job illustration.Job, previous uint64) error {
 	if previous == 0 || job.Task.Revision != previous+1 {
 		return illustration.ErrTaskConflict
 	}
@@ -100,7 +138,7 @@ func (s Store) Save(ctx context.Context, job illustration.Job, previous uint64) 
 	if !job.LeaseUntil.IsZero() {
 		lease = job.LeaseUntil
 	}
-	result, err := s.Database.ExecContext(ctx, `UPDATE journal_illustration_jobs SET revision=?,state=?,expires_at=?,lease_until=?,has_payload=?,ciphertext=?,nonce=? WHERE owner_key_id=? AND request_id=? AND revision=?`, job.Task.Revision, job.Task.State, job.Task.ExpiresAt, lease, job.Input != nil || job.Result != nil, encrypted, nonce, job.Task.OwnerID, job.Task.ID, previous)
+	result, err := db.ExecContext(ctx, `UPDATE journal_illustration_jobs SET revision=?,state=?,expires_at=?,lease_until=?,has_payload=?,ciphertext=?,nonce=? WHERE owner_key_id=? AND request_id=? AND revision=?`, job.Task.Revision, job.Task.State, job.Task.ExpiresAt, lease, job.Input != nil || job.Result != nil, encrypted, nonce, job.Task.OwnerID, job.Task.ID, previous)
 	if err != nil {
 		return err
 	}
@@ -110,6 +148,55 @@ func (s Store) Save(ctx context.Context, job illustration.Job, previous uint64) 
 	}
 	if count != 1 {
 		return illustration.ErrTaskConflict
+	}
+	return nil
+}
+
+func (s Store) HasRunningClaim(ctx context.Context, task illustration.Task) (bool, error) {
+	var running bool
+	err := s.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM journal_illustration_jobs
+		WHERE owner_key_id=? AND request_id=? AND revision=? AND state='running')`,
+		task.OwnerID, task.ID, task.Revision).Scan(&running)
+	return running, err
+}
+
+// Withdraw runs in the transaction that records the owner's revoked consent.
+func (s Store) Withdraw(ctx context.Context, tx *sql.Tx, owner string) error {
+	rows, err := tx.QueryContext(ctx, `SELECT request_id FROM journal_illustration_jobs
+		WHERE owner_key_id=? AND state<>'cancelled'
+		AND (has_payload=true OR state IN ('queued','running','uncertain'))
+		ORDER BY request_id FOR UPDATE`, owner)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		job, err := s.get(ctx, tx, owner, id)
+		if err != nil {
+			return err
+		}
+		previous := job.Task.Revision
+		if err := job.Task.Cancel(previous); err != nil {
+			return err
+		}
+		job.Input, job.Result = nil, nil
+		job.LeaseUntil = time.Time{}
+		job.Problem = ""
+		if err := s.save(ctx, tx, job, previous); err != nil {
+			return err
+		}
 	}
 	return nil
 }
