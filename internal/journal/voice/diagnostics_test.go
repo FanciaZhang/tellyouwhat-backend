@@ -3,6 +3,7 @@ package voice
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -90,5 +91,16 @@ func TestArkRewriterRetainsStructuredFailureStageAndUsage(t *testing.T) {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("log missing %q: %s", expected, output)
 		}
+	}
+}
+
+func TestSpeechDiagnosticsUseClosedReasonCodesWithoutTranscript(t *testing.T) {
+	for code, err := range map[string]error{"speech_context_too_large": errRecognitionContext, "speech_empty_utterance_after_text": errEmptyCompletedUtterance, "speech_empty_final_after_text": errors.New("speech_empty_final_after_text"), "speech_provider_error": errors.New("speech_provider_error")} {
+		if got := errorClass(err); got != code {
+			t.Fatalf("%s: %s", code, got)
+		}
+	}
+	if got := errorClass(errors.New("private spoken words must not appear")); got == "private spoken words must not appear" {
+		t.Fatal("diagnostics leaked speech")
 	}
 }

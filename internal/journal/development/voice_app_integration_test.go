@@ -50,6 +50,15 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	if err := os.MkdirAll(c.OutputDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
+	c.ASR.ObserveTrace = func(traces []voice.StreamTrace) {
+		data, err := json.MarshalIndent(map[string]any{"synthetic": true, "traces": traces}, "", "  ")
+		if err == nil {
+			err = os.WriteFile(filepath.Join(c.OutputDirectory, "asr-trace-"+uuid.NewString()+".json"), data, 0600)
+		}
+		if err != nil {
+			t.Errorf("synthetic ASR evidence write failed: %T", err)
+		}
+	}
 	price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 10_000_000_000, OutputNanosPerMillionTokens: 100_000_000_000}
 	policy := promptconfig.Defaults(c.Lite, c.Pro, c.Voice, 90)["journal"]
 	policy.Journal.Voice.Parameters.Price = &price
@@ -59,11 +68,11 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	if err := prompts.Refresh(t.Context(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), 20*costcontrol.NanosPerCNY, time.Now())
+	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), 30*costcontrol.NanosPerCNY, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: 20 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
+	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: 30 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +97,7 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	handler := syntheticVoiceAppHandler(c.Token, prompts, service, time.Now)
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": 20, "synthetic": true})
+	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": 30, "synthetic": true})
 	if err := os.WriteFile(filepath.Join(c.OutputDirectory, "ready.json"), ready, 0600); err != nil {
 		t.Fatal(err)
 	}

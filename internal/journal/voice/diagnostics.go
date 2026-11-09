@@ -142,10 +142,15 @@ func errorClass(err error) string {
 		"invalid_result": ErrInvalid, "revision_conflict": ErrConflict,
 		"budget_exceeded": costcontrol.ErrBudgetExceeded, "concurrency_exceeded": costcontrol.ErrConcurrencyExceeded,
 		"budget_configuration_conflict": costcontrol.ErrConfigurationConflict,
+		"speech_context_too_large":      errRecognitionContext, "speech_empty_utterance_after_text": errEmptyCompletedUtterance,
 	} {
 		if errors.Is(err, target) {
 			return code
 		}
+	}
+	switch err.Error() {
+	case "speech_empty_final_after_text", "speech_provider_error":
+		return err.Error()
 	}
 	var networkError net.Error
 	if errors.As(err, &networkError) {

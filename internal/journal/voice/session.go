@@ -651,6 +651,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					wireUtterances[i].Definite = false
 				}
 			}
+			// Word timing is final source evidence; repeating it in every
+			// cumulative draft makes long recordings increasingly expensive.
+			if !v.Final {
+				for i := range wireUtterances {
+					wireUtterances[i].Words = nil
+				}
+			}
 			kind := "transcript"
 			if v.Final {
 				if !recognitionClosing || segment != "" || recognitionBytes == 0 {
