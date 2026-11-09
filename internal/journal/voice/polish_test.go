@@ -133,7 +133,7 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 10000 {
 		t.Fatalf("ordinary task has structural context or exceeds 10000 bytes: %d bytes", len(prepared.Body))
 	}
-	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 25 || prepared.Parameters.ReasoningEffort != "disabled" {
+	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 40 || prepared.Parameters.ReasoningEffort != "disabled" {
 		t.Fatal("unbounded polish parameters")
 	}
 }

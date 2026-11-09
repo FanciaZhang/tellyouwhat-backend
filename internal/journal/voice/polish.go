@@ -340,16 +340,25 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 	// Historical selection informs relevance but may never be copied as a new
 	// disposition. Only source IDs in this actual request are output-eligible.
 	currentSourceIDs := []string{}
-	for _, source := range polishSources(p) {
+	sources := polishSources(p)
+	for _, source := range sources {
 		currentSourceIDs = append(currentSourceIDs, source.ID)
 	}
 	omissionSchema := schema["properties"].(map[string]any)["omissions"].(map[string]any)
 	omissionSchema["maxItems"] = len(currentSourceIDs)
+	reasons := []string{"situationalInterruption", "speechDisfluency"}
+	if slices.ContainsFunc(sources, func(source SourceUtterance) bool { return source.PersonID == "" }) {
+		reasons = append(reasons, "recognitionNoise")
+	}
+	if p.Narrator == nil || slices.ContainsFunc(sources, func(source SourceUtterance) bool { return source.PersonID != p.Narrator.PersonID }) {
+		reasons = append(reasons, "backgroundConversation")
+	}
+	omissionSchema["items"].(map[string]any)["properties"].(map[string]any)["reason"] = map[string]any{"type": "string", "enum": reasons}
 	if len(currentSourceIDs) > 0 {
 		omissionSchema["items"].(map[string]any)["properties"].(map[string]any)["sourceID"] = map[string]any{"type": "string", "enum": currentSourceIDs}
 	}
 	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + promptconfig.ScenePrompt(ctx) + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v36", "strict": true, "schema": schema}}}
-	tokenLimit, timeout, effort := 2048, 25, "disabled"
+	tokenLimit, timeout, effort := 2048, 40, "disabled"
 	if p.Narrator != nil && slices.ContainsFunc(p.Targets, func(target PolishTarget) bool {
 		return slices.ContainsFunc(target.Turns, func(turn SourceUtterance) bool {
 			return turn.PersonID != "" && turn.PersonID != p.Narrator.PersonID

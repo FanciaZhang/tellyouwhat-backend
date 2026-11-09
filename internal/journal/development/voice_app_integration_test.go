@@ -68,11 +68,11 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	if err := prompts.Refresh(t.Context(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), 30*costcontrol.NanosPerCNY, time.Now())
+	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), 40*costcontrol.NanosPerCNY, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: 30 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
+	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: 40 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	handler := syntheticVoiceAppHandler(c.Token, prompts, service, time.Now)
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": 30, "synthetic": true})
+	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": 40, "synthetic": true})
 	if err := os.WriteFile(filepath.Join(c.OutputDirectory, "ready.json"), ready, 0600); err != nil {
 		t.Fatal(err)
 	}
