@@ -43,6 +43,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         (scripts.parent / 'albums').mkdir(mode=0o755)
         for name in ('backup.py', 'deletion_ledger.py', 'asset_deletion_ledger.py', 'collection_deletion_ledger.py'):
             shutil.copy2(Path(__file__).resolve().parent.parent / 'albums' / name, scripts.parent / 'albums' / name)
+        (self.root / 'migrations').mkdir(mode=0o755)
+        for name in ('0077_album_collections.sql', '0078_album_asset_deletion_ledger.sql'):
+            shutil.copy2(Path(__file__).resolve().parents[2] / 'migrations' / name, self.root / 'migrations' / name)
         (self.runtime.state / 'blue-green.json').write_text('{"phase":"STABLE","current":{"path":"production"}}')
         for name in ('operations', 'deployment'):
             (self.runtime.state / (name + '.lock')).touch(mode=0o600)
@@ -145,6 +148,65 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         (self.folder / 'selection.json').write_text(json.dumps(record))
         for p in self.folder.iterdir():
             p.chmod(0o600)
+
+    def recovery_sql_fixture(self):
+        data = {}
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            for name in ('0077_album_collections.sql', '0078_album_asset_deletion_ledger.sql'):
+                path = 'migrations/' + name
+                content = (self.root / path).read_bytes()
+                entry = tarfile.TarInfo(path); entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+                data[path] = content
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        return data
+
+    def test_recovery_sql_inputs_install_and_rollback_with_their_helpers(self):
+        data = self.recovery_sql_fixture()
+        for name in data:
+            (self.root / name).unlink()
+        (self.root / 'migrations').rmdir()
+        replace = Path.replace
+        def interrupted(path, destination):
+            if Path(destination).name == '0078_album_asset_deletion_ledger.sql':
+                raise OSError('controlled SQL input install failure')
+            return replace(path, destination)
+        with patch.object(Path, 'replace', interrupted), self.assertRaisesRegex(OSError, 'SQL input install failure'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('partial SQL input installation admitted')
+        self.assertFalse((self.root / 'migrations').exists())
+        for error in (RuntimeError, KeyboardInterrupt):
+            with self.assertRaisesRegex(error, 'activation failed'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    for name, content in data.items():
+                        self.assertEqual((self.root / name).read_bytes(), content)
+                    raise error('activation failed')
+            self.assertFalse((self.root / 'migrations').exists())
+        with dev.test_operations_transition(self.runtime, self.source):
+            pass
+        for name, content in data.items():
+            self.assertEqual((self.root / name).read_bytes(), content)
+        self.runtime.execute.assert_not_called()
+
+    def test_recovery_sql_inputs_reject_drift_and_symlinks(self):
+        data = self.recovery_sql_fixture()
+        installed = self.root / next(iter(data))
+        installed.write_bytes(b'-- unrelated installed SQL\n')
+        with self.assertRaisesRegex(OperationError, 'rollback source'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('unregistered SQL replaced')
+        self.assertEqual(installed.read_bytes(), b'-- unrelated installed SQL\n')
+        installed.unlink()
+        original = self.root.parent / 'sql-original'
+        original.write_bytes(data[next(iter(data))])
+        installed.symlink_to(original)
+        with self.assertRaisesRegex(OperationError, 'operator owned'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('symlinked recovery input accepted')
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(original.read_bytes(), data[next(iter(data))])
 
     def test_test_only_operations_update_rolls_back_and_rejects_drift(self):
         name = 'platform_test_journal.py'

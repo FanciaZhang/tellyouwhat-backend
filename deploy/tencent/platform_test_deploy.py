@@ -507,20 +507,32 @@ def update_configuration(runtime, source, previous_source, folder, record):
 @contextlib.contextmanager
 def test_operations_transition(runtime, update_from):
     # Test validators travel with the release; the shared backup change is pinned below.
-    names = tuple('tencent/' + name for name in (
+    recovery_sql = ('migrations/0077_album_collections.sql', 'migrations/0078_album_asset_deletion_ledger.sql')
+    names = tuple('deploy/tencent/' + name for name in (
         'platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
         'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')) + (
-            'albums/backup.py', 'albums/deletion_ledger.py', 'albums/asset_deletion_ledger.py', 'albums/collection_deletion_ledger.py')
-    source, installed = Path(__file__).resolve().parent.parent, runtime.root / 'deploy'
+            'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py', 'deploy/albums/asset_deletion_ledger.py',
+            'deploy/albums/collection_deletion_ledger.py') + recovery_sql
+    source, installed = Path(__file__).resolve().parents[2], runtime.root
+    from platform_test_schema import ADDITIONS
+    for name in recovery_sql:
+        expected, path = source / name, installed / name
+        if (expected.is_symlink() or not expected.is_file()
+                or hashlib.sha256(expected.read_bytes()).hexdigest() != ADDITIONS[name]):
+            raise OperationError('unreviewed recovery SQL input')
+        if (path.is_symlink() or path.parent.is_symlink()
+                or (path.exists() and (not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
+                                       or path.stat().st_mode & 0o022))):
+            raise OperationError('recovery SQL inputs must be operator owned regular files')
     changed = {n: (source / n).read_bytes() for n in names if not (installed / n).exists() or (installed / n).read_bytes() != (source / n).read_bytes()}
     shared, shared_sources = {}, {}
     for name in SHARED_BACKUP_UPGRADE:
         for base in (installed, source):
-            path = base / name
+            path = base / 'deploy' / name
             if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
                     or path.stat().st_mode & 0o022 or path.stat().st_size > 131072):
                 raise OperationError('shared backup operations must be bounded and operator owned')
-        before, after = (installed / name).read_bytes(), (source / name).read_bytes()
+        before, after = (installed / 'deploy' / name).read_bytes(), (source / 'deploy' / name).read_bytes()
         shared[name] = hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest()
         shared_sources[name] = after
     shared_upgrade = False
@@ -534,12 +546,12 @@ def test_operations_transition(runtime, update_from):
         legacy = ('e367cbe4f1e5068664b3ad2ca9e152d9dbac73e2df46ae988d9d13ae8e50c577',
                   'c4f84df20f967623fbfe79c529ba04bf9a041bc52e323a4f6c8bfcbef8c98a59')
         if shared_upgrade:
-            changed.update(shared_sources)
+            changed.update(('deploy/' + name, data) for name, data in shared_sources.items())
         elif shared[backup] == legacy and all(a == b for name, (a, b) in shared.items() if name != backup):
-            changed[backup] = shared_sources[backup]
+            changed['deploy/' + backup] = shared_sources[backup]
         else:
             raise OperationError('shared backup update is outside the reviewed recovery-helper transition')
-    common = 'tencent/ops_common.py'
+    common = 'deploy/tencent/ops_common.py'
     if (installed / common).read_bytes() != (source / common).read_bytes():
         reviewed = ('f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc',
                     '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760')
@@ -560,20 +572,20 @@ def test_operations_transition(runtime, update_from):
     with tarfile.open(previous / 'source.tar') as archive:
         for name in changed:
             path = installed / name
-            if name.startswith('albums/') and not path.exists() and not path.is_symlink():
+            if name.startswith(('deploy/albums/', 'migrations/')) and not path.exists() and not path.is_symlink():
                 try:
-                    member = archive.getmember('deploy/' + name)
+                    member = archive.getmember(name)
                 except KeyError:
-                    if name == 'albums/backup.py':
-                        raise OperationError('registered Albums snapshot implementation is unavailable')
+                    if name == 'deploy/albums/backup.py' or name in recovery_sql:
+                        raise OperationError('registered recovery implementation or SQL input is unavailable')
                 else:
                     if not member.isfile() or not 0 < member.size < 65536:
                         raise OperationError('registered Albums snapshot implementation is unavailable')
                 originals[name] = None
                 continue
-            if name in ('tencent/platform_test_admin.py', 'tencent/albums_recovery.py') and not path.exists() and not path.is_symlink():
+            if name in ('deploy/tencent/platform_test_admin.py', 'deploy/tencent/albums_recovery.py') and not path.exists() and not path.is_symlink():
                 try:
-                    archive.getmember('deploy/' + name)
+                    archive.getmember(name)
                 except KeyError:
                     originals[name] = None
                     continue
@@ -582,15 +594,16 @@ def test_operations_transition(runtime, update_from):
                 raise OperationError('test operations must be operator owned')
             originals[name] = path.read_bytes()
             try:
-                member = archive.getmember('deploy/' + name)
+                member = archive.getmember(name)
             except KeyError as error:
                 raise OperationError('installed test operations are absent from the registered rollback source') from error
             if not member.isfile() or member.size > 131072:
                 raise OperationError('registered test operations are unavailable')
             baseline = archive.extractfile(member).read()
-            if shared_upgrade and name in SHARED_BACKUP_UPGRADE:
-                if (hashlib.sha256(baseline).hexdigest() not in previous_shared[name]
-                        or hashlib.sha256(originals[name]).hexdigest() not in (*previous_shared[name], SHARED_BACKUP_UPGRADE[name][1])):
+            shared_name = name.removeprefix('deploy/')
+            if shared_upgrade and shared_name in SHARED_BACKUP_UPGRADE:
+                if (hashlib.sha256(baseline).hexdigest() not in previous_shared[shared_name]
+                        or hashlib.sha256(originals[name]).hexdigest() not in (*previous_shared[shared_name], SHARED_BACKUP_UPGRADE[shared_name][1])):
                     raise OperationError('shared backup baseline differs from the registered rollback source')
                 originals[name] = baseline
             elif baseline != originals[name]:
@@ -598,7 +611,7 @@ def test_operations_transition(runtime, update_from):
     created_directories = []
     def replace(files):
         # Install imported modules first; remove new modules last on rollback.
-        for name in sorted(files, key=lambda name: (files[name] is None, name != 'tencent/platform_test_admin.py')):
+        for name in sorted(files, key=lambda name: (files[name] is None, name != 'deploy/tencent/platform_test_admin.py')):
             data = files[name]
             target = installed / name
             if data is None:
