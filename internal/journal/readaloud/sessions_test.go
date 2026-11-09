@@ -282,6 +282,8 @@ func TestReadAloudSessionsBoundOwnersAndRetainDurableIdentityAfterExpiry(t *test
 	}
 	close(f.provider.release)
 	waitSession(t, f.s, f.grant.Subject, f.command.RequestID, "succeeded")
+	// Drain canceled prefetch workers before comparing the provider call count.
+	f.s.jobs.Wait()
 	f.clock.Add(int64(4 * time.Minute))
 	if _, _, _, err := f.s.Read(ctx, f.grant.Subject, f.command.RequestID, 0); err != ErrAudioUnavailable {
 		t.Fatal("expired audio retained", err)
