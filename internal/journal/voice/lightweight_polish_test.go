@@ -3,6 +3,8 @@ package voice
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -106,5 +108,33 @@ func TestLightweightPolishNeverUsesNarrativeOmissionsToRemoveFacts(t *testing.T)
 		if _, err := decodePolish(string(invalid), request); err == nil {
 			t.Fatal("lightweight cleanup discarded a substantive source")
 		}
+	}
+}
+
+func TestLightweightPolishKeepsSourceWhenASRLeavesPartialWordNotes(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{"今天去河边看柳树。回。"}, false)
+	request := *snapshot.Polish
+	request.Lightweight = true
+	target := request.Targets[0]
+	response, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: "今天去河边看柳树。", TargetIDs: []string{target.ID}, Style: "body"}}, "questions": []string{}, "omissions": []PolishOmission{{SourceID: target.Turns[0].ID, Text: "回。", Reason: "speechDisfluency"}}, "illustrationSuggestion": nil})
+	revision, err := decodePolish(string(response), request)
+	if err != nil || len(revision.Omissions) != 0 {
+		t.Fatal("partial-word notes must not discard or invalidate the whole source", err)
+	}
+}
+
+func TestLightweightDiagnosticsReportTheChosenModelInsteadOfTheFullFallback(t *testing.T) {
+	s := comparisonSnapshot([]string{"今天去河边看柳树。"}, false)
+	s.Polish.Lightweight = true
+	target := s.Polish.Targets[0]
+	text, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: target.SourceText, TargetIDs: []string{target.ID}, Style: "body"}}, "questions": []string{}, "omissions": []PolishOmission{}, "illustrationSuggestion": nil})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"status": "completed", "model": "observed-lite", "usage": map[string]int{"input_tokens": 10, "output_tokens": 10}, "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(text)}}}}})
+	}))
+	defer server.Close()
+	ctx := promptconfig.WithRevision(t.Context(), promptconfig.Revision{Policy: promptconfig.Defaults("chosen-lite", "pro", "full-fallback", 90)["journal"]})
+	result, err := (ArkRewriter{BaseURL: server.URL, APIKey: "synthetic", Model: "full-fallback"}).Rewrite(ctx, s, 1)
+	if err != nil || result.Diagnostics.RequestedModel != "chosen-lite" {
+		t.Fatal("requested-model metadata described the wrong route", err)
 	}
 }

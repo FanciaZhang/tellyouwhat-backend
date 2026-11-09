@@ -351,9 +351,11 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 || len(output.Omissions) > 192 {
 		return nil, ErrInvalid
 	}
-	if request.Lightweight && (len(output.Questions) > 0 || slices.ContainsFunc(output.Paragraphs, func(p PolishParagraph) bool { return p.Style != "body" }) ||
-		slices.ContainsFunc(output.Omissions, func(o PolishOmission) bool { return o.Reason != "speechDisfluency" || !onlySpeechFillers(o.Text) })) {
-		return nil, ErrInvalid
+	if request.Lightweight && len(output.Questions) > 0 {
+		return nil, polishInvalid("lightweight_questions")
+	}
+	if request.Lightweight && slices.ContainsFunc(output.Paragraphs, func(p PolishParagraph) bool { return p.Style != "body" }) {
+		return nil, polishInvalid("lightweight_style")
 	}
 	// Disfluency dispositions only remove whole meaningless sources. Local
 	// editing notes are not deletion instructions, even if the model joins
@@ -368,6 +370,9 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 		source, exists := sourcesByID[item.SourceID]
 		return exists && item.Reason == "speechDisfluency" && item.Text != source
 	})
+	if request.Lightweight && slices.ContainsFunc(output.Omissions, func(o PolishOmission) bool { return o.Reason != "speechDisfluency" || !onlySpeechFillers(o.Text) }) {
+		return nil, polishInvalid("lightweight_omission")
+	}
 	omitted, err := validatePolishOmissions(output.Omissions, request)
 	if err != nil {
 		return nil, err

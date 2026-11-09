@@ -182,6 +182,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	if err != nil {
 		return failedRewrite(result, "voice_rewrite_unavailable", "prepare_request", err, started)
 	}
+	result.Diagnostics.RequestedModel = prepared.Parameters.Model
 	result.ConfigVersion = prepared.Version
 	payload := prepared.Body
 	requestContext, cancel := context.WithTimeout(ctx, time.Duration(prepared.TimeoutSeconds)*time.Second)
