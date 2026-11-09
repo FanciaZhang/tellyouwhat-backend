@@ -90,3 +90,21 @@ func TestDeferredPolishWaitsWithoutCancellingAnAlreadyPaidRequest(t *testing.T) 
 		t.Fatal("new speech cancelled previously admitted work")
 	}
 }
+
+func TestLightweightPolishNeverUsesNarrativeOmissionsToRemoveFacts(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{"预算280元，还没付款。"}, false)
+	request := *snapshot.Polish
+	request.Lightweight = true
+	target := request.Targets[0]
+	valid, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: target.SourceText, TargetIDs: []string{target.ID}, Style: "body"}}, "questions": []string{}, "omissions": []PolishOmission{}, "illustrationSuggestion": nil})
+	revision, err := decodePolish(string(valid), request)
+	if err != nil || !revision.Lightweight {
+		t.Fatal("server did not preserve the chosen cleanup phase")
+	}
+	for _, reason := range []string{"backgroundConversation", "situationalInterruption", "speechDisfluency"} {
+		invalid, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{}, "questions": []string{}, "omissions": []PolishOmission{{SourceID: target.Turns[0].ID, Text: target.SourceText, Reason: reason}}, "illustrationSuggestion": nil})
+		if _, err := decodePolish(string(invalid), request); err == nil {
+			t.Fatal("lightweight cleanup discarded a substantive source")
+		}
+	}
+}

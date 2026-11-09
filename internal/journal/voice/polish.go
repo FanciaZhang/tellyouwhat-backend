@@ -351,6 +351,10 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 || len(output.Omissions) > 192 {
 		return nil, ErrInvalid
 	}
+	if request.Lightweight && (len(output.Questions) > 0 || slices.ContainsFunc(output.Paragraphs, func(p PolishParagraph) bool { return p.Style != "body" }) ||
+		slices.ContainsFunc(output.Omissions, func(o PolishOmission) bool { return o.Reason != "speechDisfluency" || !onlySpeechFillers(o.Text) })) {
+		return nil, ErrInvalid
+	}
 	// Disfluency dispositions only remove whole meaningless sources. Local
 	// editing notes are not deletion instructions, even if the model joins
 	// several "嗯" occurrences into a nonliteral quote. Keep their source
