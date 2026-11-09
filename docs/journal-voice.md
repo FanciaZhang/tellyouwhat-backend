@@ -144,8 +144,12 @@ read-only request context. Historical turns can span a stabilized paragraph
 and the active paragraph; they must not force the model to repeat that context.
 The guard ignores case,
 punctuation, and whitespace, and permits repeated speech to share an anchor.
-Long turns require three content characters; short turns require up to two.
-This coarse check does not prove all facts survived and does not replace real
+Long turns require two distinct three-character anchors. The same check also
+covers their long sentences when within the existing 32-sentence cue bound,
+so a merged acoustic turn cannot hide an entirely missing experience behind
+another sentence. Short ASR fragments keep their whole-turn guard, requiring
+up to two content characters. Ordered small-gap anchors permit ordinary
+linguistic editing. This coarse check does not prove all facts survived and does not replace real
 semantic acceptance. The model does not copy source UUIDs or validation quotes.
 An output body paragraph identical to stable body context (ignoring case,
 spacing, and punctuation) is rejected, rather than duplicating that paragraph.

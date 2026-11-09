@@ -548,3 +548,18 @@ func TestPolishRejectsRepeatedReadOnlyContextEvenIfNewTopicIsPresent(t *testing.
 		t.Fatal("model repeated stable context", err)
 	}
 }
+
+func TestPolishRejectsMissingExperienceInsideOneMergedProviderTurn(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Targets[0].Turns = []SourceUtterance{{ID: uuid.NewString(), Text: "我叫老公宝，今天我去了公园看柳树，心情很好。我叫老婆宝，昨天我在医院值班，今天觉得很累。窗外的风很轻，河边也很安静。"}}
+	output := func(text string) string {
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: text, Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+		return string(raw)
+	}
+	if _, err := decodePolish(output("我叫老公宝，今天去公园看柳树，心情很好。窗外的风很轻，河边也很安静。"), p); !errors.Is(err, errPolishMissingSource) {
+		t.Fatal("merged acoustic turn hid a missing personal experience", err)
+	}
+	if _, err := decodePolish(output("我叫老公宝，今天去公园看柳树，心情很好。老婆宝昨天在医院值班，今天觉得很累。窗外的风很轻，河边也很安静。"), p); err != nil {
+		t.Fatal("complete merged-turn prose was rejected", err)
+	}
+}
