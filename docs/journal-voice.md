@@ -154,6 +154,16 @@ semantic acceptance. The model does not copy source UUIDs or validation quotes.
 An output body paragraph identical to stable body context (ignoring case,
 spacing, and punctuation) is rejected, rather than duplicating that paragraph.
 Rejection diagnostics expose only a fixed reason code, never journal content.
+The App can explicitly mark at most two complete, automatic context blocks in
+`reusableContextIDs`. A body paragraph identical to one of those blocks (apart
+from outer whitespace) reuses its unchanged baseline, position and original
+block ID, adding the new source dependencies. An empty provider paragraph is
+filled only when every referenced target contains exactly that existing text
+and no additional retained facts. Punctuation, decimals, signs and emoji are
+not discarded when comparing reusable text. Unmarked context stays read-only.
+The App checks the baseline and automatic ownership again when applying the
+result; manual or edited blocks cannot be claimed. Existing rich text, media
+and both original recordings remain linked to the single visible paragraph.
 Explicit requests to turn an enumeration into a list use a paragraph reflow
 proposal. A list-style command cannot satisfy a request to split multiple
 enumerated items into separate entries; a single existing item may still use
