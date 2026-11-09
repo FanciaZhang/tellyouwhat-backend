@@ -1,0 +1,72 @@
+package privacy
+
+import (
+	"context"
+	"sync"
+
+	"github.com/tellyouwhat/backend/internal/attestation"
+)
+
+type MemoryRepository struct {
+	mu       sync.Mutex
+	records  map[string]Record
+	receipts map[DeletionReceipt]bool
+}
+
+func NewMemoryRepository() *MemoryRepository {
+	return &MemoryRepository{records: make(map[string]Record), receipts: make(map[DeletionReceipt]bool)}
+}
+
+func (repository *MemoryRepository) RecordConsents(_ context.Context, records []Record) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	for _, record := range records {
+		repository.records[record.KeyID+"\x00"+record.Scope+"\x00"+record.DocumentVersion] = record
+	}
+	return nil
+}
+
+func (repository *MemoryRepository) HasGrantedConsents(_ context.Context, keyID string, requirements []Consent) (bool, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	for _, requirement := range requirements {
+		record, ok := repository.records[keyID+"\x00"+requirement.Scope+"\x00"+requirement.DocumentVersion]
+		if !ok || !record.Granted {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (*MemoryRepository) PlanDeletion(_ context.Context, principal attestation.Principal) (DeletionPlan, error) {
+	return DeletionPlan{Principals: []attestation.Principal{principal}}, nil
+}
+
+func (repository *MemoryRepository) DeletePrincipal(_ context.Context, principal attestation.Principal) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	repository.deletePrincipal(principal)
+	return nil
+}
+
+func (repository *MemoryRepository) deletePrincipal(principal attestation.Principal) {
+	for key, record := range repository.records {
+		if record.KeyID == principal.KeyID {
+			delete(repository.records, key)
+		}
+	}
+}
+
+func (repository *MemoryRepository) DeletionCompleted(_ context.Context, receipt DeletionReceipt) (bool, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return repository.receipts[receipt], nil
+}
+
+func (repository *MemoryRepository) DeletePrincipalWithReceipt(_ context.Context, principal attestation.Principal, receipt DeletionReceipt) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	repository.deletePrincipal(principal)
+	repository.receipts[receipt] = true
+	return nil
+}

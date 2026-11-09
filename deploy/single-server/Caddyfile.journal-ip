@@ -1,0 +1,25 @@
+# Render __JOURNAL_IP__ before importing this file into the existing Caddyfile.
+# The certificate must contain the IP address as an IP SAN (not a DNS SAN).
+https://__JOURNAL_IP__ {
+	tls /etc/caddy/journal-ip/fullchain.pem /etc/caddy/journal-ip/privkey.pem
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	@internal path /internal /internal/*
+	respond @internal 404
+
+	reverse_proxy 127.0.0.1:18080 {
+		# The public IP is only a Journal entry point. Do not trust a client-supplied
+		# Host or X-Forwarded-Host to select another application's identity store.
+		header_up Host api.journal.tellyouwhat.cn
+		header_up X-Forwarded-Host api.journal.tellyouwhat.cn
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+		# Certificate reloads should allow a 30-minute voice session to finish.
+		stream_close_delay 35m
+	}
+}

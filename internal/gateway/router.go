@@ -1,0 +1,316 @@
+package gateway
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"net/http"
+	"regexp"
+	"strings"
+	"sync"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/tellyouwhat/backend/internal/birthdayhttpapi"
+	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/healthhttpapi"
+	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	"github.com/tellyouwhat/backend/internal/journalhttpapi"
+	"github.com/tellyouwhat/backend/internal/observability"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformhttpapi"
+)
+
+const rawRequestBodyKey = "gateway.raw-request-body"
+
+var configureGinOnce sync.Once
+var openAPIPathParameter = regexp.MustCompile(`\{([^}/]+)\}`)
+
+func configureHTTPGin() {
+	configureGinOnce.Do(func() {
+		gin.SetMode(gin.ReleaseMode)
+		binding.EnableDecoderDisallowUnknownFields = true
+		binding.EnableDecoderUseNumber = true
+	})
+}
+
+func (server *Server) newHTTPRouter() *gin.Engine {
+	configureHTTPGin()
+
+	router := gin.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+	router.HandleMethodNotAllowed = true
+	router.UseRawPath = true
+	router.UnescapePathValues = false
+	router.Use(server.httpMiddleware...)
+	router.Use(operationIDMiddleware(server.operationIDs()))
+	if server.app.ID == appregistry.Journal {
+		// Bound large reference/result allocations before reading an image request body.
+		imageRequests := make(chan struct{}, 1)
+		router.Use(func(ctx *gin.Context) {
+			path := ctx.Request.URL.Path
+			if path != "/v1/journal/illustrations" && !strings.HasPrefix(path, "/v1/journal/illustrations/") {
+				ctx.Next()
+				return
+			}
+			if server.journalIllustrations == nil {
+				writeTransportError(ctx, 503, "not_ready", "image service is not configured")
+				ctx.Abort()
+				return
+			}
+			select {
+			case imageRequests <- struct{}{}:
+				defer func() { <-imageRequests }()
+			default:
+				ctx.Header("Retry-After", "2")
+				writeTransportError(ctx, 429, "image_busy", "image service is busy")
+				ctx.Abort()
+				return
+			}
+			ctx.Header("Cache-Control", "no-store")
+			ctx.Next()
+		})
+	}
+	router.Use(captureRawRequestBody())
+
+	server.registerPlatformRoutes(router)
+	switch server.app.ID {
+	case appregistry.Health:
+		server.registerHealthRoutes(router)
+	case appregistry.Journal:
+		server.registerJournalRoutes(router)
+	case appregistry.Birthday:
+		strict := birthdayhttpapi.NewStrictHandlerWithOptions(server, nil, birthdayhttpapi.StrictGinServerOptions{
+			RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+				writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request violates the transport contract")
+			},
+			HandlerErrorFunc: strictHandlerError, ResponseErrorHandlerFunc: strictResponseError,
+		})
+		birthdayhttpapi.RegisterHandlersWithOptions(router, strict, birthdayhttpapi.GinServerOptions{ErrorHandler: parameterError})
+	default:
+		panic("unsupported App router")
+	}
+	return router
+}
+
+func (server *Server) registerPlatformRoutes(router gin.IRouter) {
+	platformhttpapi.RegisterHandlersWithOptions(router, server.platformStrictHandler(), platformhttpapi.GinServerOptions{ErrorHandler: parameterError})
+}
+
+func (server *Server) platformStrictHandler() platformhttpapi.ServerInterface {
+	return platformhttpapi.NewStrictHandlerWithOptions(server, nil, platformhttpapi.StrictGinServerOptions{
+		RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+			status := http.StatusUnprocessableEntity
+			code := "contract_violation"
+			message := "request violates the transport contract"
+			if context.FullPath() == "/v1/app-store/notifications" {
+				status = http.StatusBadRequest
+				code = "invalid_notification_envelope"
+				message = "notification envelope is invalid"
+			}
+			writeTransportError(context, status, code, message)
+		},
+		HandlerErrorFunc:         strictHandlerError,
+		ResponseErrorHandlerFunc: strictResponseError,
+	})
+}
+
+// NewAttestationRouter exposes only platform enrollment, without AI or commerce routes.
+func NewAttestationRouter(enrollment Enrollment) http.Handler {
+	configureHTTPGin()
+	router := gin.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+	router.Use(captureRawRequestBody())
+	server := &Server{enrollment: enrollment}
+	wrapper := platformhttpapi.ServerInterfaceWrapper{Handler: server.platformStrictHandler(), ErrorHandler: parameterError}
+	router.POST("/v1/attest/challenges", wrapper.IssueAttestationChallenge)
+	router.POST("/v1/attest/keys", wrapper.RegisterAttestationKey)
+	return router
+}
+
+func (server *Server) registerHealthRoutes(router gin.IRouter) {
+	strict := healthhttpapi.NewStrictHandlerWithOptions(server, nil, healthhttpapi.StrictGinServerOptions{
+		RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+			writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request violates the transport contract")
+		},
+		HandlerErrorFunc:         strictHandlerError,
+		ResponseErrorHandlerFunc: strictResponseError,
+	})
+	healthhttpapi.RegisterHandlersWithOptions(router, strict, healthhttpapi.GinServerOptions{ErrorHandler: parameterError})
+}
+
+func (server *Server) registerJournalRoutes(router gin.IRouter) {
+	strict := journalhttpapi.NewStrictHandlerWithOptions(server, nil, journalhttpapi.StrictGinServerOptions{
+		RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
+			writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request violates the transport contract")
+		},
+		HandlerErrorFunc:         strictHandlerError,
+		ResponseErrorHandlerFunc: strictResponseError,
+	})
+	journalhttpapi.RegisterHandlersWithOptions(router, strict, journalhttpapi.GinServerOptions{ErrorHandler: parameterError})
+}
+
+func strictHandlerError(context *gin.Context, _ error) {
+	writeTransportError(context, http.StatusInternalServerError, "internal_error", "request could not be completed")
+}
+
+func strictResponseError(context *gin.Context, _ error) {
+	if !context.Writer.Written() {
+		writeTransportError(context, http.StatusInternalServerError, "response_encoding_failed", "response could not be encoded")
+	}
+}
+
+func parameterError(context *gin.Context, _ error, status int) {
+	writeTransportError(context, status, "invalid_parameter", "request parameter is invalid")
+}
+
+func captureRawRequestBody() gin.HandlerFunc {
+	return func(context *gin.Context) {
+		// The generated recording upload adapter preserves the reader. Its handler
+		// authenticates the signed digest before streaming and verifies actual bytes.
+		if context.Request.Method == http.MethodPut && context.FullPath() == "/v1/journal/voice/recordings/:recordingID" {
+			context.Next()
+			return
+		}
+		limit := requestBodyLimit(context.Request.Method, context.Request.URL.Path)
+		body, err := readLimitedBody(context.Request.Body, limit)
+		if err != nil {
+			if limit == 0 && errors.Is(err, contracts.ErrPayloadTooLarge) {
+				writeTransportError(context, http.StatusUnprocessableEntity, "unexpected_body", "this operation does not accept a request body")
+			} else if errors.Is(err, contracts.ErrPayloadTooLarge) {
+				writeTransportError(context, http.StatusRequestEntityTooLarge, "payload_too_large", "request exceeds the operation limit")
+			} else {
+				writeTransportError(context, http.StatusUnprocessableEntity, "contract_violation", "request body could not be read")
+			}
+			context.Abort()
+			return
+		}
+		if limit == 0 && len(body) != 0 {
+			writeTransportError(context, http.StatusUnprocessableEntity, "unexpected_body", "this operation does not accept a request body")
+			context.Abort()
+			return
+		}
+		context.Set(rawRequestBodyKey, body)
+		context.Request.Body = io.NopCloser(bytes.NewReader(body))
+		context.Next()
+	}
+}
+
+func requestBodyLimit(method, path string) int64 {
+	if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/voice/recordings/") {
+		if strings.HasSuffix(path, "/preview") {
+			return 1 << 20
+		}
+		if strings.HasSuffix(path, "/retry") {
+			return 1024
+		}
+	}
+	switch method + " " + path {
+	case "POST /v1/journal/illustrations":
+		return 34_000_000
+	case "POST /v2/birthday/assist":
+		return 64 << 10
+	case "POST /v1/journal/voice/sessions":
+		return 8 << 10
+	case "POST /v1/journal/read-aloud/syntheses":
+		return 8 << 10
+	case "POST /v1/attest/challenges":
+		return 8 << 10
+	case "POST /v1/attest/keys":
+		return 512 << 10
+	case "POST /v1/entitlements/transactions", "POST /v1/app-store/notifications":
+		return 1 << 20
+	case "POST /v1/privacy/consents":
+		return 16 << 10
+	case "POST /v1/media/upload-authorizations":
+		return 64 << 10
+	case "POST /v1/ai/requests", "POST /v1/ai/streams", "POST /v1/ai/job-capabilities", "POST /v1/ai/jobs":
+		return contracts.DefaultBodyLimit
+	case "POST /v1/journal/organization", "POST /v1/journal/illustration-suggestions":
+		return journalcontracts.MaxBodyBytes
+	default:
+		if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/illustrations/") && strings.HasSuffix(path, "/cancel") {
+			return 1024
+		}
+		return 0
+	}
+}
+
+func readLimitedBody(reader io.ReadCloser, limit int64) ([]byte, error) {
+	if reader == nil {
+		return nil, nil
+	}
+	defer reader.Close()
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, contracts.ErrPayloadTooLarge
+	}
+	return body, nil
+}
+
+func rawRequestBody(context *gin.Context) []byte {
+	value, exists := context.Get(rawRequestBodyKey)
+	if !exists {
+		return nil
+	}
+	body, _ := value.([]byte)
+	return body
+}
+
+func writeTransportError(context *gin.Context, status int, code, message string) {
+	requestID := strings.ToLower(context.GetHeader("X-Tellyouwhat-Request-ID"))
+	context.JSON(status, platformhttpapi.ErrorResponse{Error: platformhttpapi.ErrorDetail{
+		Code: code, Message: message, RequestID: requestID,
+	}})
+}
+
+func (server *Server) operationIDs() map[string]string {
+	documents := []*openapi3.T{mustOpenAPI(platformhttpapi.GetSwagger())}
+	switch server.app.ID {
+	case appregistry.Health:
+		documents = append(documents, mustOpenAPI(healthhttpapi.GetSwagger()))
+	case appregistry.Journal:
+		documents = append(documents, mustOpenAPI(journalhttpapi.GetSwagger()))
+	case appregistry.Birthday:
+		documents = append(documents, mustOpenAPI(birthdayhttpapi.GetSwagger()))
+	}
+	result := make(map[string]string)
+	for _, document := range documents {
+		for path, item := range document.Paths.Map() {
+			ginPath := openAPIPathParameter.ReplaceAllString(path, `:$1`)
+			for method, operation := range item.Operations() {
+				result[strings.ToUpper(method)+" "+ginPath] = canonicalOperationID(operation.OperationID)
+			}
+		}
+	}
+	return result
+}
+
+func canonicalOperationID(value string) string {
+	if value == "" || value[0] < 'A' || value[0] > 'Z' {
+		return value
+	}
+	return string(value[0]+('a'-'A')) + value[1:]
+}
+
+func mustOpenAPI(document *openapi3.T, err error) *openapi3.T {
+	if err != nil {
+		panic("generated OpenAPI contract is invalid: " + err.Error())
+	}
+	return document
+}
+
+func operationIDMiddleware(operationIDs map[string]string) gin.HandlerFunc {
+	return func(context *gin.Context) {
+		if operationID := operationIDs[context.Request.Method+" "+context.FullPath()]; operationID != "" {
+			context.Set(observability.OperationIDContextKey, operationID)
+		}
+		context.Next()
+	}
+}

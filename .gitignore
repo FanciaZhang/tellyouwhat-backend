@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcresult
+.env
+.env.*
+!.env.example
+!*.env.example
+secrets/
+*.p8
+__pycache__/
+*.pyc
+
+.ark-management/
+ark-management.json

@@ -1,0 +1,764 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-sql-driver/mysql"
+
+	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/provider/ark"
+	"github.com/tellyouwhat/backend/internal/quota"
+)
+
+// PlatformConfig owns infrastructure shared by every Tellyouwhat application.
+// App identity never comes from a request body or header; the gateway resolves
+// it from AppConfig.Registry.Hosts before selecting an isolated runtime.
+type PlatformConfig struct {
+	Environment          string
+	Port                 string
+	StorageMode          string
+	DatabaseDSN          string
+	RedisURL             string
+	PayloadEncryptionKey string
+	AppAttestRootPEMPath string
+	WorkerSecret         string
+	WorkerAsyncURL       string
+	JobCapabilitySecret  string
+	TrustedIPHeader      string
+	TOS                  media.TOSConfig
+	AICost               AICostConfig
+	Apps                 []AppConfig
+}
+
+type AICostConfig struct {
+	Limits        costcontrol.Limits
+	HealthArk     costcontrol.TokenPrice
+	JournalArk    costcontrol.TokenPrice
+	JournalSpeech costcontrol.DurationPrice
+}
+
+func (config AICostConfig) Valid() bool {
+	return config.Limits.Valid() && config.HealthArk.Valid() && config.JournalArk.Valid() &&
+		config.JournalSpeech.NanosPerHour > 0
+}
+
+type AppConfig struct {
+	ReadAloudSimulatorCredentialsFile string
+
+	JournalRecording       *JournalRecordingConfig
+	JournalImage           *JournalImageConfig
+	Registry               appregistry.App
+	AttestationEnvironment attestation.Environment
+	AllowedBuilds          map[string]struct{}
+	SchemaManifestPath     string
+	Ark                    ark.Config
+	JournalAI              JournalAIConfig
+	BirthdayPrice          costcontrol.TokenPrice
+	VoiceEnabled           bool
+	VoiceASR               voice.ASRConfig
+	VoiceModel             string
+	Quota                  quota.Limits
+	FreeRecognitionQuota   quota.Limits
+	AppStore               AppStoreConfig
+	ManagedAIProductIDs    []string
+	Product                ProductConfig
+}
+
+type JournalImageConfig struct {
+	BaseURL, APIKey, Model string
+	MaxCostNanos           int64
+}
+
+type JournalAIConfig struct {
+	BaseURL        string
+	APIKey         string
+	LiteModel      string
+	ProModel       string
+	TimeoutSeconds int
+}
+
+type ProductConfig struct {
+	BillingPeriod     string
+	PrivacyURL        string
+	TermsURL          string
+	PrivacyChoicesURL string
+	SupportURL        string
+}
+
+func LoadPlatform() (PlatformConfig, error) {
+	result, err := loadPlatformUnchecked()
+	if err != nil {
+		return PlatformConfig{}, err
+	}
+	for i := range result.Apps {
+		if result.Apps[i].Registry.ID == appregistry.Journal {
+			result.Apps[i].JournalRecording, err = LoadJournalRecording(result.Environment)
+			if err != nil {
+				return PlatformConfig{}, err
+			}
+		}
+	}
+	if err := result.Validate(); err != nil {
+		return PlatformConfig{}, err
+	}
+	return result, nil
+}
+
+func LoadWorkerPlatform() (PlatformConfig, error) {
+	// Recording storage belongs to the gateway and maintenance, not the AI worker.
+	result, err := loadPlatformUnchecked()
+	if err != nil {
+		return PlatformConfig{}, err
+	}
+	if err := result.Validate(); err != nil {
+		return PlatformConfig{}, err
+	}
+	if result.StorageMode != "mysql" {
+		return PlatformConfig{}, errors.New("distributed worker requires mysql storage")
+	}
+	return result, nil
+}
+
+func loadPlatformUnchecked() (PlatformConfig, error) {
+	environment := value("APP_ENV", "development")
+	commonTeamID := strings.TrimSpace(os.Getenv("APPLE_TEAM_ID"))
+	aiCost, err := loadAICostConfig()
+	if err != nil {
+		return PlatformConfig{}, err
+	}
+	result := PlatformConfig{
+		Environment:          environment,
+		Port:                 value("PORT", "8080"),
+		StorageMode:          value("STORAGE_MODE", "mysql"),
+		DatabaseDSN:          os.Getenv("DATABASE_DSN"),
+		RedisURL:             os.Getenv("REDIS_URL"),
+		PayloadEncryptionKey: os.Getenv("PAYLOAD_ENCRYPTION_KEY"),
+		AppAttestRootPEMPath: os.Getenv("APP_ATTEST_ROOT_PEM_PATH"),
+		WorkerSecret:         os.Getenv("WORKER_INTERNAL_SECRET"),
+		WorkerAsyncURL:       os.Getenv("WORKER_ASYNC_URL"),
+		JobCapabilitySecret:  os.Getenv("JOB_CAPABILITY_SECRET"),
+		TrustedIPHeader:      os.Getenv("TRUSTED_CLIENT_IP_HEADER"),
+		AICost:               aiCost,
+		TOS: media.TOSConfig{
+			Endpoint:  value("TOS_ENDPOINT", "https://tos-cn-beijing.volces.com"),
+			Region:    value("TOS_REGION", "cn-beijing"),
+			Bucket:    os.Getenv("TOS_BUCKET"),
+			AccessKey: os.Getenv("TOS_ACCESS_KEY"),
+			SecretKey: os.Getenv("TOS_SECRET_KEY"),
+		},
+	}
+
+	definitions := map[appregistry.AppID]appDefaults{
+		appregistry.Albums: {ID: appregistry.Albums, DisplayName: "告你相册", Host: "api.albums.tellyouwhat.cn", BundleID: "cn.tellyouwhat.albums"},
+		appregistry.Health: {
+			ID: appregistry.Health, DisplayName: "告你健康", Host: "api.health.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.healthapp", ProductID: "health.premium.subscription.monthly",
+			ProductIDs:        []string{"health.premium.subscription.monthly", "health.premium.subscription.annual"},
+			AllowedOperations: operationStrings(contracts.OperationValues()), PrivacyBaseURL: "https://health.tellyouwhat.cn",
+		},
+		appregistry.Journal: {
+			ID: appregistry.Journal, DisplayName: "告你手记", Host: "api.journal.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.journalapp", ProductID: "journal.ai.subscription.monthly",
+			ProductIDs:      []string{"journal.ai.subscription.monthly", "journal.ai.subscription.annual"},
+			OperationPrefix: "journal.", PrivacyBaseURL: "https://journal.tellyouwhat.cn",
+		},
+		appregistry.Birthday: {
+			ID: appregistry.Birthday, DisplayName: "告你生日", Host: "api.birthday.tellyouwhat.cn",
+			BundleID: "cn.tellyouwhat.birthday", ProductID: "birthday.assistant", ProductIDs: []string{"birthday.assistant"},
+			AllowedOperations: []string{"birthday.propose", "birthday.revise"}, PrivacyBaseURL: "https://birthday.tellyouwhat.cn",
+		},
+	}
+	seen := map[appregistry.AppID]bool{}
+	for _, name := range strings.Split(value("PLATFORM_APPS", "health,journal"), ",") {
+		id := appregistry.AppID(strings.TrimSpace(name))
+		defaults, known := definitions[id]
+		if !known || seen[id] {
+			return PlatformConfig{}, errors.New("PLATFORM_APPS must select unique known applications")
+		}
+		seen[id] = true
+		app, err := loadPlatformApp(strings.ToUpper(string(id)), defaults, environment, commonTeamID)
+		if err != nil {
+			return PlatformConfig{}, err
+		}
+		result.Apps = append(result.Apps, app)
+	}
+	return result, nil
+}
+
+type appDefaults struct {
+	ID                appregistry.AppID
+	DisplayName       string
+	Host              string
+	BundleID          string
+	ProductID         string
+	ProductIDs        []string
+	OperationPrefix   string
+	AllowedOperations []string
+	PrivacyBaseURL    string
+}
+
+func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTeamID string) (AppConfig, error) {
+	if environment == "development" {
+		defaults.BundleID += ".dev"
+		if defaults.ID != appregistry.Birthday {
+			defaults.ProductID += ".dev"
+			for i := range defaults.ProductIDs {
+				defaults.ProductIDs[i] += ".dev"
+			}
+		}
+		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
+	}
+	if defaults.ID == appregistry.Albums {
+		return AppConfig{AttestationEnvironment: attestation.Environment(prefixedValue("ALBUM", "APP_ATTEST_ENV", string(attestation.EnvironmentProduction))),
+			AllowedBuilds: splitSet(prefixedValue("ALBUM", "ALLOWED_APP_BUILDS", "")), Registry: appregistry.App{
+				ID: defaults.ID, DisplayName: defaults.DisplayName,
+				Hosts:    []string{prefixedValue("ALBUM", "API_HOST", defaults.Host)},
+				TeamID:   prefixedValue("ALBUM", "APPLE_TEAM_ID", commonTeamID),
+				BundleID: prefixedValue("ALBUM", "APPLE_BUNDLE_ID", defaults.BundleID),
+			}}, nil
+	}
+	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", string(attestation.EnvironmentProduction)))
+	defaultTimeout := 90
+	if defaults.ID == appregistry.Birthday {
+		defaultTimeout = 70
+	}
+	timeout, err := prefixedInt(prefix, "ARK_TIMEOUT_SECONDS", defaultTimeout)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	quotaLimits, err := loadPrefixedQuota(prefix)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	appAppleID, err := prefixedInt64Optional(prefix, "APP_STORE_APP_APPLE_ID")
+	if err != nil {
+		return AppConfig{}, err
+	}
+	base := defaults.PrivacyBaseURL
+	managedProductID := prefixedValue(prefix, "MANAGED_AI_PRODUCT_ID", defaults.ProductID)
+	managedProductIDs := splitList(prefixedValue(prefix, "MANAGED_AI_PRODUCT_IDS", strings.Join(defaults.ProductIDs, ",")))
+	if !containsString(managedProductIDs, managedProductID) {
+		managedProductIDs = append([]string{managedProductID}, managedProductIDs...)
+	}
+	config := AppConfig{
+		ReadAloudSimulatorCredentialsFile: prefixedValue(prefix, "READ_ALOUD_SIMULATOR_CREDENTIALS_FILE", ""),
+		Registry: appregistry.App{
+			ID:                     defaults.ID,
+			DisplayName:            prefixedValue(prefix, "DISPLAY_NAME", defaults.DisplayName),
+			Hosts:                  splitList(prefixedValue(prefix, "API_HOSTS", defaults.Host)),
+			TeamID:                 prefixedValue(prefix, "APPLE_TEAM_ID", commonTeamID),
+			BundleID:               prefixedValue(prefix, "APPLE_BUNDLE_ID", defaults.BundleID),
+			AppAppleID:             appAppleID,
+			ManagedAIProductID:     managedProductID,
+			AllowedOperationPrefix: defaults.OperationPrefix,
+			AllowedOperations:      append([]string(nil), defaults.AllowedOperations...),
+		},
+		AttestationEnvironment: attestationEnvironment,
+		AllowedBuilds:          splitSet(prefixedValue(prefix, "ALLOWED_APP_BUILDS", "")),
+		SchemaManifestPath:     prefixedValue(prefix, "SCHEMA_MANIFEST_PATH", ""),
+		Quota:                  quotaLimits,
+		ManagedAIProductIDs:    managedProductIDs,
+		AppStore: AppStoreConfig{
+			Environment:    prefixedValue(prefix, "APP_STORE_ENV", ""),
+			IssuerID:       prefixedValue(prefix, "APP_STORE_ISSUER_ID", ""),
+			KeyID:          prefixedValue(prefix, "APP_STORE_KEY_ID", ""),
+			PrivateKeyPath: prefixedValue(prefix, "APP_STORE_PRIVATE_KEY_PATH", ""),
+			RootPEMPath:    prefixedValue(prefix, "APP_STORE_ROOT_PEM_PATH", ""),
+			AppAppleID:     appAppleID,
+		},
+		Product: ProductConfig{
+			BillingPeriod:     prefixedValue(prefix, "BILLING_PERIOD", "P1M"),
+			PrivacyURL:        prefixedValue(prefix, "PRIVACY_URL", base+"/privacy"),
+			TermsURL:          prefixedValue(prefix, "TERMS_URL", base+"/terms"),
+			PrivacyChoicesURL: prefixedValue(prefix, "PRIVACY_CHOICES_URL", base+"/privacy-choices"),
+			SupportURL:        prefixedValue(prefix, "SUPPORT_URL", base+"/support"),
+		},
+	}
+	if defaults.ID == appregistry.Health {
+		freeRecognitionQuota, err := loadFreeRecognitionQuota(prefix, quotaLimits)
+		if err != nil {
+			return AppConfig{}, err
+		}
+		config.FreeRecognitionQuota = freeRecognitionQuota
+		config.Ark = ark.Config{
+			BaseURL: prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com"),
+			APIKey:  prefixedValue(prefix, "ARK_API_KEY", ""),
+			Routes:  prefixedArkRoutes(prefix, timeout),
+		}
+	}
+	if defaults.ID == appregistry.Journal {
+		enabled := prefixedValue(prefix, "IMAGE_ENABLED", "false")
+		if enabled != "true" && enabled != "false" {
+			return AppConfig{}, errors.New("JOURNAL_IMAGE_ENABLED must be true or false")
+		}
+		if enabled == "true" {
+			price, err := prefixedInt64Optional(prefix, "IMAGE_MAX_COST_NANOS")
+			image := JournalImageConfig{BaseURL: prefixedValue(prefix, "IMAGE_BASE_URL", ""), APIKey: prefixedValue(prefix, "IMAGE_API_KEY", ""), Model: prefixedValue(prefix, "IMAGE_MODEL_ID", ""), MaxCostNanos: price}
+			if err != nil || price <= 0 || price > costcontrol.NanosPerCNY {
+				return AppConfig{}, errors.New("invalid Journal image price ceiling")
+			}
+			if _, err := illustration.NewProvider(image.BaseURL, image.APIKey, image.Model, nil); err != nil {
+				return AppConfig{}, errors.New("invalid Journal image provider configuration")
+			}
+			config.JournalImage = &image
+		}
+		config.VoiceEnabled = prefixedValue(prefix, "VOICE_ENABLED", "false") == "true"
+		config.VoiceASR = voice.ASRConfig{URL: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", APIKey: prefixedValue(prefix, "SPEECH_API_KEY", ""), AppKey: prefixedValue(prefix, "SPEECH_APP_KEY", ""), AccessKey: prefixedValue(prefix, "SPEECH_ACCESS_KEY", ""), ResourceID: "volc.seedasr.sauc.duration", StreamInsights: true}
+		config.VoiceModel = prefixedValue(prefix, "VOICE_MODEL_ID", prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""))
+		config.JournalAI = JournalAIConfig{
+			BaseURL:        prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+			APIKey:         prefixedValue(prefix, "ARK_API_KEY", ""),
+			LiteModel:      prefixedValue(prefix, "ARK_LITE_MODEL_ID", ""),
+			ProModel:       prefixedValue(prefix, "ARK_PRO_MODEL_ID", ""),
+			TimeoutSeconds: timeout,
+		}
+	}
+	if defaults.ID == appregistry.Birthday {
+		config.JournalAI = JournalAIConfig{BaseURL: prefixedValue(prefix, "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"), APIKey: prefixedValue(prefix, "ARK_API_KEY", ""), LiteModel: prefixedValue(prefix, "ARK_MODEL_ID", ""), TimeoutSeconds: timeout}
+		input, err := parseOptionalCNYNanos("BIRTHDAY_ARK_INPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_INPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		output, err := parseOptionalCNYNanos("BIRTHDAY_ARK_OUTPUT_CNY_PER_MILLION_TOKENS", prefixedValue(prefix, "ARK_OUTPUT_CNY_PER_MILLION_TOKENS", ""))
+		if err != nil {
+			return AppConfig{}, err
+		}
+		config.BirthdayPrice = costcontrol.TokenPrice{InputNanosPerMillionTokens: input, OutputNanosPerMillionTokens: output}
+	}
+	return config, nil
+}
+
+func (config PlatformConfig) Validate() error {
+	if config.Environment != "development" && config.Environment != "production" {
+		return errors.New("APP_ENV must be development or production")
+	}
+	if config.Environment == "production" && !config.AICost.Valid() {
+		return errors.New("AI_PROJECT_MONTHLY_BUDGET_CNY and valid provider cost settings are required in production")
+	}
+	if config.StorageMode != "memory" && config.StorageMode != "mysql" {
+		return errors.New("STORAGE_MODE must be memory or mysql")
+	}
+	if config.StorageMode == "memory" && config.Environment != "development" {
+		return errors.New("memory storage is forbidden in production")
+	}
+	if config.StorageMode == "mysql" && (config.DatabaseDSN == "" || config.RedisURL == "" || config.PayloadEncryptionKey == "") {
+		return errors.New("DATABASE_DSN, REDIS_URL, and PAYLOAD_ENCRYPTION_KEY are required")
+	}
+	if config.StorageMode == "mysql" {
+		if err := validateDatabaseEnvironment(config.DatabaseDSN, config.Environment); err != nil {
+			return err
+		}
+	}
+	if config.AppAttestRootPEMPath == "" {
+		return errors.New("APP_ATTEST_ROOT_PEM_PATH is required")
+	}
+	if config.WorkerSecret == "" {
+		return errors.New("WORKER_INTERNAL_SECRET is required")
+	}
+	if config.StorageMode == "mysql" && config.WorkerAsyncURL == "" {
+		return errors.New("WORKER_ASYNC_URL is required for distributed storage")
+	}
+	if len(config.JobCapabilitySecret) < 32 {
+		return errors.New("JOB_CAPABILITY_SECRET must be at least 32 bytes")
+	}
+	if len(config.Apps) != 1 || config.Apps[0].Registry.ID != appregistry.Birthday {
+		if config.TOS.Bucket == "" || config.TOS.AccessKey == "" || config.TOS.SecretKey == "" {
+			return errors.New("TOS bucket credentials are required")
+		}
+		testBucket := strings.HasSuffix(config.TOS.Bucket, "-test") || strings.HasSuffix(config.TOS.Bucket, "-development")
+		if (config.Environment == "development") != testBucket {
+			return errors.New("TOS_BUCKET must end in -test or -development only in development")
+		}
+	}
+	registryEntries := make([]appregistry.App, 0, len(config.Apps))
+	for _, app := range config.Apps {
+		if app.JournalRecording != nil && app.JournalRecording.Enabled && (!app.VoiceEnabled || config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal recordings require voice configuration, persistent storage and project cost controls")
+		}
+		if app.JournalImage != nil && (config.StorageMode != "mysql" || !config.AICost.Valid()) {
+			return errors.New("Journal images require persistent storage and project cost controls")
+		}
+		if err := app.Validate(config.Environment); err != nil {
+			return fmt.Errorf("app %s: %w", app.Registry.ID, err)
+		}
+		registryEntries = append(registryEntries, app.Registry)
+	}
+	_, err := appregistry.New(registryEntries)
+	return err
+}
+
+func (config AppConfig) Validate(environment string) error {
+	if path := config.ReadAloudSimulatorCredentialsFile; path != "" {
+		if environment != "development" || config.Registry.ID != appregistry.Journal ||
+			config.Registry.BundleID != simulatortest.BundleID || len(config.Registry.Hosts) != 1 ||
+			config.Registry.Hosts[0] != simulatortest.Host || !filepath.IsAbs(path) {
+			return errors.New("READ_ALOUD_SIMULATOR_CREDENTIALS_FILE requires the isolated Journal development gateway and an absolute path")
+		}
+	}
+	if err := config.Registry.Validate(); err != nil {
+		return err
+	}
+	if err := config.validateEnvironmentIdentity(environment); err != nil {
+		return err
+	}
+	if config.Registry.ID == appregistry.Albums {
+		if config.AttestationEnvironment != attestation.EnvironmentProduction {
+			return errors.New("albums requires production App Attest with its environment-specific Bundle ID")
+		}
+		// Account authentication and storage plans remain independent of AI commerce.
+		return nil
+	}
+	if len(config.ManagedAIProductIDs) == 0 {
+		return errors.New("MANAGED_AI_PRODUCT_IDS must contain the primary product")
+	}
+	seenProductIDs := make(map[string]struct{}, len(config.ManagedAIProductIDs))
+	primaryProductConfigured := false
+	for _, productID := range config.ManagedAIProductIDs {
+		productID = strings.TrimSpace(productID)
+		if productID == "" {
+			return errors.New("MANAGED_AI_PRODUCT_IDS contains an empty product")
+		}
+		if _, duplicate := seenProductIDs[productID]; duplicate {
+			return errors.New("MANAGED_AI_PRODUCT_IDS contains a duplicate product")
+		}
+		seenProductIDs[productID] = struct{}{}
+		primaryProductConfigured = primaryProductConfigured || productID == config.Registry.ManagedAIProductID
+	}
+	if !primaryProductConfigured {
+		return errors.New("MANAGED_AI_PRODUCT_IDS must contain MANAGED_AI_PRODUCT_ID")
+	}
+	if config.AttestationEnvironment != attestation.EnvironmentDevelopment && config.AttestationEnvironment != attestation.EnvironmentProduction {
+		return errors.New("APP_ATTEST_ENV must be development or production")
+	}
+	if environment == "production" && config.AttestationEnvironment != attestation.EnvironmentProduction {
+		return errors.New("production requires production App Attest")
+	}
+	if environment == "development" && len(config.AllowedBuilds) == 0 {
+		return errors.New("ALLOWED_APP_BUILDS is required in development")
+	}
+	if config.Registry.ID != appregistry.Birthday {
+		if err := config.AppStore.validate(); err != nil {
+			return err
+		}
+		if environment == "development" && config.AppStore.Environment != "Sandbox" {
+			return errors.New("development APP_STORE_ENV must be Sandbox")
+		}
+	}
+	switch config.Registry.ID {
+	case appregistry.Birthday:
+		if config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.TimeoutSeconds <= 0 || config.JournalAI.TimeoutSeconds > 75 {
+			return errors.New("birthday requires an explicit Ark key/model and a timeout between 1 and 75 seconds")
+		}
+		if !strings.HasPrefix(config.JournalAI.BaseURL, "https://") {
+			return errors.New("birthday Ark endpoint must use HTTPS")
+		}
+		if !config.BirthdayPrice.Valid() {
+			return errors.New("birthday requires provider token prices")
+		}
+	case appregistry.Health:
+		if config.SchemaManifestPath == "" {
+			return errors.New("SCHEMA_MANIFEST_PATH is required")
+		}
+		if err := validateArkConfig(config.Ark); err != nil {
+			return err
+		}
+		minimumDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+		if config.FreeRecognitionQuota.DailyTokensPerTransaction < minimumDailyTokens {
+			return fmt.Errorf("FREE_RECOGNITION_DAILY_TOKENS must be at least %d", minimumDailyTokens)
+		}
+		if config.FreeRecognitionQuota.MonthlyTokensPerTransaction < config.FreeRecognitionQuota.DailyTokensPerTransaction {
+			return errors.New("FREE_RECOGNITION_MONTHLY_TOKENS must not be lower than the daily limit")
+		}
+	case appregistry.Journal:
+		if config.JournalAI.BaseURL == "" || config.JournalAI.APIKey == "" || config.JournalAI.LiteModel == "" || config.JournalAI.ProModel == "" {
+			return errors.New("journal Ark Responses API configuration is incomplete")
+		}
+		if config.JournalAI.TimeoutSeconds <= 0 || config.JournalAI.TimeoutSeconds > 14*60 {
+			return errors.New("journal ARK_TIMEOUT_SECONDS must be between 1 and 840")
+		}
+	default:
+		return errors.New("unsupported app")
+	}
+	return nil
+}
+
+// Naming catches copied production configuration before opening a connection;
+// deployment must also verify the database user's grants and isolated resources.
+func validateDatabaseEnvironment(dsn, environment string) error {
+	database, err := mysql.ParseDSN(dsn)
+	if err != nil || database.DBName == "" || database.User == "" || strings.EqualFold(database.User, "root") {
+		return errors.New("DATABASE_DSN requires a named database and a non-root account")
+	}
+	testDatabase := strings.HasSuffix(strings.ToLower(database.DBName), "_test")
+	testUser := strings.HasSuffix(strings.ToLower(database.User), "_test")
+	if (environment == "development" && (!testDatabase || !testUser)) ||
+		(environment == "production" && (testDatabase || testUser)) {
+		return errors.New("DATABASE_DSN database and account must end in _test only in development")
+	}
+	return nil
+}
+
+// App Attest and StoreKit environments are independent of the API environment.
+func (config AppConfig) validateEnvironmentIdentity(environment string) error {
+	if environment != "development" && environment != "production" {
+		return errors.New("APP_ENV must be development or production")
+	}
+	development := environment == "development"
+	if strings.HasSuffix(config.Registry.BundleID, ".dev") != development {
+		return errors.New("APPLE_BUNDLE_ID must end in .dev only in development")
+	}
+	for _, rawHost := range config.Registry.Hosts {
+		host := strings.ToLower(strings.TrimSpace(rawHost))
+		if name, _, err := net.SplitHostPort(host); err == nil {
+			host = name
+		}
+		host = strings.TrimSuffix(host, ".")
+		if strings.HasSuffix(host, ".tellyouwhat.cn") &&
+			((development && strings.HasPrefix(host, "api.")) ||
+				(!development && strings.HasPrefix(host, "api-test."))) {
+			return errors.New("API_HOSTS belongs to the opposite application environment")
+		}
+	}
+	return nil
+}
+
+func loadPrefixedQuota(prefix string) (quota.Limits, error) {
+	keys := []struct {
+		name     string
+		fallback int
+		target   *int
+	}{}
+	result := quota.Limits{}
+	keys = append(keys,
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_REQUESTS_PER_MINUTE_IP", 30, &result.RequestsPerMinutePerIP},
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_REQUESTS_PER_MINUTE_DEVICE", 20, &result.RequestsPerMinutePerDevice},
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_REQUESTS_PER_MINUTE_OPERATION", 10, &result.RequestsPerMinutePerOperation},
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_DAILY_TOKENS", 300_000, &result.DailyTokensPerTransaction},
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_MONTHLY_TOKENS", 5_000_000, &result.MonthlyTokensPerTransaction},
+		struct {
+			name     string
+			fallback int
+			target   *int
+		}{"QUOTA_MAX_CONCURRENT_DEVICE", 2, &result.MaxConcurrentPerDevice},
+	)
+	for _, key := range keys {
+		value, err := prefixedInt(prefix, key.name, key.fallback)
+		if err != nil {
+			return quota.Limits{}, err
+		}
+		*key.target = value
+	}
+	return result, nil
+}
+
+func loadFreeRecognitionQuota(prefix string, base quota.Limits) (quota.Limits, error) {
+	minimumDailyTokens := 6 * contracts.MaxFreeRecognitionSessionReservationTokens
+	daily, err := prefixedInt(prefix, "FREE_RECOGNITION_DAILY_TOKENS", minimumDailyTokens)
+	if err != nil {
+		return quota.Limits{}, err
+	}
+	monthly, err := prefixedInt(prefix, "FREE_RECOGNITION_MONTHLY_TOKENS", daily*31)
+	if err != nil {
+		return quota.Limits{}, err
+	}
+	base.DailyTokensPerTransaction = daily
+	base.MonthlyTokensPerTransaction = monthly
+	return base, nil
+}
+
+func prefixedArkRoutes(prefix string, timeout int) map[contracts.Operation]ark.Route {
+	routes := make(map[contracts.Operation]ark.Route)
+	for _, operation := range contracts.OperationValues() {
+		key := arkEndpointEnvironmentKeys[operation]
+		if model := prefixedValue(prefix, key, ""); model != "" {
+			routes[operation] = ark.Route{Model: model, TimeoutSeconds: timeout}
+		}
+	}
+	return routes
+}
+
+func prefixedValue(prefix, key, fallback string) string {
+	if result := strings.TrimSpace(os.Getenv(prefix + "_" + key)); result != "" {
+		return result
+	}
+	return fallback
+}
+
+func prefixedInt(prefix, key string, fallback int) (int, error) {
+	raw := prefixedValue(prefix, key, "")
+	if raw == "" {
+		return fallback, nil
+	}
+	return parsePositiveInt(prefix+"_"+key, raw)
+}
+
+func prefixedInt64Optional(prefix, key string) (int64, error) {
+	raw := prefixedValue(prefix, key, "")
+	if raw == "" {
+		return 0, nil
+	}
+	return parsePositiveInt64(prefix+"_"+key, raw)
+}
+
+func loadAICostConfig() (AICostConfig, error) {
+	budget, err := parseOptionalCNYNanos("AI_PROJECT_MONTHLY_BUDGET_CNY", strings.TrimSpace(os.Getenv("AI_PROJECT_MONTHLY_BUDGET_CNY")))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	concurrent, err := positiveInt("AI_PROJECT_MAX_CONCURRENT", value("AI_PROJECT_MAX_CONCURRENT", "4"))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	leaseSeconds, err := positiveInt("AI_PROJECT_LEASE_SECONDS", value("AI_PROJECT_LEASE_SECONDS", "900"))
+	if err != nil {
+		return AICostConfig{}, err
+	}
+	prices := make([]int64, 0, 5)
+	for _, item := range []struct{ key, fallback string }{
+		{"HEALTH_ARK_MAX_INPUT_CNY_PER_MILLION", "0.8"},
+		{"HEALTH_ARK_MAX_OUTPUT_CNY_PER_MILLION", "8"},
+		{"JOURNAL_ARK_MAX_INPUT_CNY_PER_MILLION", "9.6"},
+		{"JOURNAL_ARK_MAX_OUTPUT_CNY_PER_MILLION", "48"},
+		{"JOURNAL_ASR_CNY_PER_HOUR", "4.5"},
+	} {
+		price, parseErr := parseOptionalCNYNanos(item.key, value(item.key, item.fallback))
+		if parseErr != nil || price <= 0 {
+			if parseErr != nil {
+				return AICostConfig{}, parseErr
+			}
+			return AICostConfig{}, fmt.Errorf("%s must be greater than zero", item.key)
+		}
+		prices = append(prices, price)
+	}
+	return AICostConfig{
+		Limits: costcontrol.Limits{
+			MonthlyBudgetNanos: budget, MaxConcurrent: concurrent,
+			LeaseDuration: time.Duration(leaseSeconds) * time.Second,
+		},
+		HealthArk: costcontrol.TokenPrice{
+			InputNanosPerMillionTokens: prices[0], OutputNanosPerMillionTokens: prices[1],
+		},
+		JournalArk: costcontrol.TokenPrice{
+			InputNanosPerMillionTokens: prices[2], OutputNanosPerMillionTokens: prices[3],
+		},
+		JournalSpeech: costcontrol.DurationPrice{NanosPerHour: prices[4]},
+	}, nil
+}
+
+func parseOptionalCNYNanos(key, raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	if strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-") || strings.Count(raw, ".") > 1 {
+		return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+	}
+	parts := strings.SplitN(raw, ".", 2)
+	if parts[0] == "" {
+		parts[0] = "0"
+	}
+	if len(parts) == 2 && (parts[1] == "" || len(parts[1]) > 9) {
+		return 0, fmt.Errorf("%s supports at most 9 decimal places", key)
+	}
+	whole, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || whole < 0 || whole > (int64(^uint64(0)>>1))/costcontrol.NanosPerCNY {
+		return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+	}
+	fraction := int64(0)
+	if len(parts) == 2 {
+		padded := parts[1] + strings.Repeat("0", 9-len(parts[1]))
+		fraction, err = strconv.ParseInt(padded, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a positive decimal amount", key)
+		}
+	}
+	result := whole*costcontrol.NanosPerCNY + fraction
+	if result <= 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
+	return result, nil
+}
+
+func positiveInt(key, raw string) (int, error) {
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return parsed, nil
+}
+
+func parsePositiveInt(key, raw string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return value, nil
+}
+
+func parsePositiveInt64(key, raw string) (int64, error) {
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return value, nil
+}
+
+func splitList(raw string) []string {
+	var values []string
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func operationStrings(values []contracts.Operation) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, string(value))
+	}
+	return result
+}

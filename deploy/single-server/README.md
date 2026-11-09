@@ -1,0 +1,89 @@
+# One-server application topology
+
+一台 CVM 或轻量服务器只运行无状态应用容器；MySQL 和 Redis 使用同地域私网中的托管实例：
+
+```text
+Internet
+   |
+ Caddy :443
+   |-- api.health.tellyouwhat.cn  ---\
+   |-- api.journal.tellyouwhat.cn ---- gateway :8080 ---- MySQL / Redis / TOS / Ark
+   `-- admin.tellyouwhat.cn       ---- admin :8082
+                                           worker :8081 (private)
+```
+
+Caddy 保留原始 Host，gateway 因而能在认证和存储访问之前选定 App。Health 与 Journal 使用两个显式站点块，通过 Caddy snippet 复用安全 Header 和反向代理配置；以后可以按 App 单独增加限流、超时或上传约束。`/internal/*` 不对公网开放。gateway、worker、admin 分别在服务器回环地址的 18080、18081、18082 端口提供验收入口；只有 Caddy 暴露公网 80/443。Caddy 属于 `public` Compose profile，内部部署只启动应用服务。
+
+服务器固定目录为 `/opt/tellyouwhat/backend`。该目录包含 `compose.production.yaml`、Caddyfile、未纳入版本控制的 `.env.production` 和 `secrets/`：
+
+```sh
+cd /opt/tellyouwhat/backend
+cp deploy/single-server/production.env.example .env.production
+mkdir -p secrets
+chmod 600 .env.production
+chmod 750 secrets
+chmod 640 secrets/*.p8
+sudo chgrp 65532 secrets secrets/*.p8
+docker compose --env-file .env.production -f compose.production.yaml config --quiet
+```
+
+四个私钥文件分别是：
+
+- `health-subscription.p8`
+- `journal-subscription.p8`
+- `health-marketing.p8`
+- `journal-marketing.p8`
+
+Apple 公共根证书、App Attest 根证书和 Health schema manifest 已固定打入服务镜像，不作为 GitHub Secret 上传。
+
+使用已验证提交的镜像先完成内部部署：
+
+```sh
+bash deploy/tencent/deploy-production.sh <verified-commit-sha> ghcr.io/fanciazhang/tellyouwhat-ai internal
+```
+
+内部服务验收成功后，脚本将镜像版本写入 `.env.production`，后续运维命令自动使用该版本。
+
+创建首位 Passkey 管理员：
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl bootstrap
+```
+
+命令会输出一个 15 分钟有效、仅可使用一次的设置链接。最后一位管理员丢失全部 Passkey 时，只能在服务器执行：
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl users
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps adminctl recover <user-id>
+```
+
+完整权限与恢复边界见 [`../../docs/modules/admin.md`](../../docs/modules/admin.md)。
+
+DNS 和可信证书条件满足后，通过 CI 的 `deployment=public` 运行完成公网代理激活和独立 HTTPS 验收。验证目标来自本次受保护配置，覆盖所有启用的 App 和管理后台；手动运行见 [公网验收命令](../tencent/README.md#5-acceptance)。
+
+每天运行一次保留期清理：
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml run --rm maintenance
+```
+
+托管 MySQL 保留云数据库自动备份。服务器侧逻辑备份使用独立随机 `BACKUP_ENCRYPTION_KEY` 加密，并对备份内容和表记录数清单做完整性认证。将该密钥保存在生产配置和受保护的发布 Secret 中。运行 `deploy/single-server/backup-mysql.sh` 创建备份，默认保留 14 天；导出失败不会发布备份文件。
+
+运行 `python3 deploy/tencent/operations.py restore --backend-dir "$PWD"`，可把最近一次备份恢复到无网络、无宿主机数据库卷的临时 MySQL 容器，逐表核对记录数，随后删除测试容器。该命令不会恢复到生产数据库。备份和恢复结果保存在 `.operations/`，数据库内容和密钥不会进入日志。
+
+`.env.production`、`.p8`、备份文件和 registry credential 均不得进入源码仓库。
+
+`AI_PROJECT_MONTHLY_BUDGET_CNY` 是 Health 与 Journal 共用的 UTC 自然月供应商现金上限。每次 Ark、手记整理、语音整理和语音识别都会先按保守价格预留，再按供应商返回的已知用量结算；未知结果保留预留金额。`AI_PROJECT_MAX_CONCURRENT` 同样跨 App、gateway、worker 和服务验收进程生效。成本账本只保存 App、操作、计量类型、金额和时间，不保存用户标识、提示词、回复或媒体。生产配置缺少预算会阻止服务启动。
+
+同一个 UTC 月内更改预算时，先在停机维护窗口更新 `ai_cost_months.budget_nanos`，再用完全相同的新值部署所有进程。运行中的不同预算会被拒绝，避免旧副本重新放大上限。新月份会自动使用当前生产配置。
+
+只读查看本月额度、已计费预留和不确定调用：
+
+```sql
+SELECT month_start, budget_nanos / 1000000000 AS budget_cny,
+       charged_nanos / 1000000000 AS charged_cny
+FROM ai_cost_months ORDER BY month_start DESC LIMIT 1;
+SELECT status, COUNT(*) FROM ai_cost_attempts
+WHERE month_start = DATE_FORMAT(UTC_DATE(), '%Y-%m-01')
+GROUP BY status;
+```

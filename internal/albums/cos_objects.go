@@ -1,0 +1,216 @@
+package albums
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	cos "github.com/tencentyun/cos-go-sdk-v5"
+)
+
+var ErrCOSOperation = errors.New("album object storage operation failed")
+
+// COSConfig credentials are supplied by the server environment, never by clients.
+// The bucket must be private with versioning enabled. Clients receive only signed
+// staging PUTs and scoped immutable GETs; the server role alone writes archives.
+type COSConfig struct {
+	Bucket       string
+	Region       string
+	SecretID     string
+	SecretKey    string
+	SessionToken string
+	// Upload signer must have only PutObject/UploadPart on albums/staging/*, without
+	// GetObject, ACL changes, bucket administration or archive access.
+	UploadSecretID     string
+	UploadSecretKey    string
+	UploadSessionToken string
+}
+
+type COSObjects struct {
+	client       *cos.Client
+	uploadClient *cos.Client
+	archiveHTTP  *http.Client
+	host         string
+	now          func() time.Time
+}
+
+var cosBucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,49}-[0-9]{5,20}$`)
+var cosRegionPattern = regexp.MustCompile(`^[a-z]{2}-[a-z0-9-]{2,40}$`)
+
+func NewCOSObjects(config COSConfig) (*COSObjects, error) {
+	return newCOSObjects(config, http.DefaultTransport)
+}
+
+func newCOSObjects(config COSConfig, transport http.RoundTripper) (*COSObjects, error) {
+	if !cosBucketPattern.MatchString(config.Bucket) || !cosRegionPattern.MatchString(config.Region) || config.SecretID == "" || config.SecretKey == "" || config.UploadSecretID == "" || config.UploadSecretKey == "" || config.UploadSecretID == config.SecretID || transport == nil {
+		return nil, errors.New("invalid album COS configuration")
+	}
+	host := config.Bucket + ".cos." + config.Region + ".myqcloud.com"
+	archiveHTTP := &http.Client{
+		Transport:     &cos.AuthorizationTransport{SecretID: config.SecretID, SecretKey: config.SecretKey, SessionToken: config.SessionToken, Transport: transport},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	client := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}, CIURL: &url.URL{Scheme: "https", Host: config.Bucket + ".ci." + config.Region + ".myqcloud.com"}}, archiveHTTP)
+	uploadClient := cos.NewClient(&cos.BaseURL{BucketURL: &url.URL{Scheme: "https", Host: host}}, &http.Client{
+		Transport:     &cos.AuthorizationTransport{SecretID: config.UploadSecretID, SecretKey: config.UploadSecretKey, SessionToken: config.UploadSessionToken, Transport: transport},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	})
+	// A lost initiation/completion response is an unknown outcome. Do not let
+	// the SDK silently repeat mutations; durable workers decide recovery.
+	client.Conf.RetryOpt.Count = 1
+	uploadClient.Conf.RetryOpt.Count = 1
+	return &COSObjects{client: client, uploadClient: uploadClient, archiveHTTP: archiveHTTP, host: host, now: time.Now}, nil
+}
+
+// Check verifies configuration without mutating the customer's bucket settings.
+func (s *COSObjects) Check(ctx context.Context) error {
+	result, _, err := s.client.Bucket.GetVersioning(ctx)
+	if err != nil {
+		return ErrCOSOperation
+	}
+	if result == nil || result.Status != "Enabled" {
+		return ErrIncompleteBackup
+	}
+	return nil
+}
+
+func albumObjectKey(key, area string) bool {
+	parts := strings.Split(key, "/")
+	return len(parts) == 5 && parts[0] == "albums" && parts[1] == area && validOwner(parts[2]) && validOwner(parts[3]) && resourceIDPattern.MatchString(parts[4])
+}
+
+func (s *COSObjects) AuthorizePut(ctx context.Context, key string, resource Resource, expiry time.Time) (PutGrant, error) {
+	now := s.now()
+	duration := expiry.Sub(now)
+	if !albumObjectKey(key, "staging") || !strings.HasSuffix(key, "/"+resource.ID) || resource.SizeBytes <= 0 || duration <= 0 || duration > 10*time.Minute {
+		return PutGrant{}, ErrInvalidManifest
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/octet-stream")
+	headers.Set("Content-Length", strconv.FormatInt(resource.SizeBytes, 10))
+	signed, err := s.uploadClient.Object.GetPresignedURL2(ctx, http.MethodPut, key, duration, &cos.PresignedURLOptions{Header: &headers, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
+	if err != nil {
+		return PutGrant{}, ErrCOSOperation
+	}
+	return PutGrant{ResourceID: resource.ID, URL: signed.String(), Headers: map[string]string{
+		"Content-Type": "application/octet-stream", "Content-Length": strconv.FormatInt(resource.SizeBytes, 10),
+	}, ExpiresAt: expiry}, nil
+}
+
+func concreteCOSVersion(value string) bool {
+	return value != "" && value != "null" && len(value) <= 1024 && !strings.ContainsFunc(value, func(r rune) bool { return r < 32 || r == 127 })
+}
+
+func (s *COSObjects) PrepareSeal(ctx context.Context, key string) (OriginalSealSource, error) {
+	if !albumObjectKey(key, "staging") {
+		return OriginalSealSource{}, ErrInvalidManifest
+	}
+	response, err := s.client.Object.Head(ctx, key, nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if err != nil || response == nil || response.StatusCode != http.StatusOK {
+		return OriginalSealSource{}, ErrCOSOperation
+	}
+	version := response.Header.Get("x-cos-version-id")
+	if !concreteCOSVersion(version) || response.ContentLength <= 0 {
+		return OriginalSealSource{}, ErrIncompleteBackup
+	}
+	return OriginalSealSource{version, response.ContentLength}, nil
+}
+
+func (s *COSObjects) Seal(ctx context.Context, from, to string, source OriginalSealSource) (string, error) {
+	if !albumObjectKey(from, "staging") || !albumObjectKey(to, "originals") || strings.TrimPrefix(from, "albums/staging/") != strings.TrimPrefix(to, "albums/originals/") || !concreteCOSVersion(source.VersionID) || source.SizeBytes <= 0 {
+		return "", ErrInvalidManifest
+	}
+	// Every copy part reads the exact source version observed above.
+	archived, err := s.copyVersion(ctx, from, to, source.VersionID, source.SizeBytes)
+	if err != nil {
+		if errors.Is(err, ErrCOSCleanup) {
+			return "", errors.Join(ErrCOSOperation, ErrCOSCleanup)
+		}
+		return "", ErrCOSOperation
+	}
+	if !concreteCOSVersion(archived) {
+		return "", ErrIncompleteBackup
+	}
+	return archived, nil
+}
+
+func (s *COSObjects) OpenVersion(ctx context.Context, key, version string) (io.ReadCloser, error) {
+	if !albumObjectKey(key, "originals") || !concreteCOSVersion(version) {
+		return nil, ErrIncompleteBackup
+	}
+	response, err := s.client.Object.Get(ctx, key, nil, url.QueryEscape(version))
+	if err != nil {
+		return nil, ErrCOSOperation
+	}
+	if response == nil || response.Body == nil {
+		return nil, ErrIncompleteBackup
+	}
+	if response.Header.Get("x-cos-version-id") != version {
+		response.Body.Close()
+		return nil, ErrIncompleteBackup
+	}
+	return response.Body, nil
+}
+
+// The signed GET includes versionId in its authenticated query; changing the
+// object, verb, or provider version invalidates the COS signature.
+func (s *COSObjects) AuthorizeOriginalRead(ctx context.Context, object SealedObject, expiry time.Time) (string, error) {
+	if !albumObjectKey(object.Key, "originals") || !strings.HasSuffix(object.Key, "/"+object.ResourceID) || object.SizeBytes <= 0 {
+		return "", ErrInvalidManifest
+	}
+	return s.signImmutableRead(ctx, object.Key, object.VersionID, expiry)
+}
+
+// Callers validate the key against their own original or derivative namespace.
+func (s *COSObjects) signImmutableRead(ctx context.Context, key, version string, expiry time.Time) (string, error) {
+	return s.signImmutableReadWithQuery(ctx, key, version, expiry, nil)
+}
+
+func (s *COSObjects) signImmutableReadWithQuery(ctx context.Context, key, version string, expiry time.Time, extra url.Values) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	now := s.now()
+	duration := expiry.Sub(now)
+	if !concreteCOSVersion(version) || duration <= 0 || duration > 5*time.Minute {
+		return "", ErrInvalidManifest
+	}
+	query := url.Values{"versionId": []string{version}}
+	for name, values := range extra {
+		query[name] = append([]string(nil), values...)
+	}
+	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, key, duration, &cos.PresignedURLOptions{Query: &query, AuthTime: &cos.AuthTime{SignStartTime: now, SignEndTime: expiry, KeyStartTime: now, KeyEndTime: expiry}})
+	if err != nil {
+		return "", ErrCOSOperation
+	}
+	return signed.String(), nil
+}
+
+// Reconcile only the server-owned archive key. The caller still reads this exact
+// version and checks all bytes against the original manifest before publication.
+func (s *COSObjects) ReconcileSeal(ctx context.Context, key string) (string, error) {
+	if !albumObjectKey(key, "originals") {
+		return "", ErrInvalidManifest
+	}
+	response, err := s.client.Object.Head(ctx, key, nil)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if err != nil || response == nil || response.StatusCode != http.StatusOK {
+		return "", ErrCOSOperation
+	}
+	version := response.Header.Get("x-cos-version-id")
+	if !concreteCOSVersion(version) {
+		return "", ErrIncompleteBackup
+	}
+	return version, nil
+}

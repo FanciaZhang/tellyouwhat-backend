@@ -1,0 +1,75 @@
+api-test.albums.tellyouwhat.cn {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    @internal path /internal/*
+    respond @internal 404
+    reverse_proxy 127.0.0.1:18790 {
+        stream_close_delay 4h
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+}
+
+api-test.birthday.tellyouwhat.cn {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    @internal path /internal/*
+    respond @internal 404
+    reverse_proxy 127.0.0.1:18790 {
+        stream_close_delay 4h
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+}
+
+api-test.health.tellyouwhat.cn {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    @internal path /internal/*
+    respond @internal 404
+    reverse_proxy 127.0.0.1:18790 {
+        stream_close_delay 4h
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+}
+
+api-test.journal.tellyouwhat.cn {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    @internal path /internal/*
+    handle @internal {
+        respond 404
+    }
+    @native path /v1 /v1/* /livez /healthz /readyz
+    handle @native {
+    reverse_proxy 127.0.0.1:18790 {
+        stream_close_delay 4h
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+    }
+    handle {
+    reverse_proxy 127.0.0.1:18792 {
+        stream_close_delay 4h
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+    }
+}

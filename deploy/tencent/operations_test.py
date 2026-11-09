@@ -1,0 +1,435 @@
+import gzip
+import json
+import os
+from pathlib import Path
+import tempfile
+import time
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from ops_backup import create_backup, crypt, prune_backups, restore_drill, verify_backup
+from ops_common import OperationError, Runtime, read_environment
+from operations import operate
+
+
+class BackupSafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        for name, filename in [('ROOT', 'Caddyfile'), ('FRAGMENT', 'test.caddy')]:
+            routing = patch('test_routes.' + name, self.root / filename)
+            routing.start()
+            self.addCleanup(routing.stop)
+        self.backend = self.root / "backend"
+        self.backend.mkdir()
+        (self.backend / ".env.production").write_text(
+            "MYSQL_HOST=database.internal\nMYSQL_USER=application\nMYSQL_PASSWORD=secret\n"
+            "MYSQL_DATABASE=tellyouwhat_test\nBACKUP_ENCRYPTION_KEY=" + "x" * 64 + "\n"
+        )
+        from release import KEY_FILES
+        (self.backend / "compose.production.yaml").write_text("services: {}\n")
+        (self.backend / "secrets").mkdir()
+        for name in KEY_FILES:
+            (self.backend / "secrets" / name).write_text("fixture signing material")
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        docker = self.bin / "docker"
+        docker.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, sys\n"
+            "tables = ['schema_migrations', 'apps', 'privacy_deletion_receipts', 'private_records', 'ai_jobs', 'job_dispatch_outbox']\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('\\n'.join(tables)); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    for table in tables: print('CREATE TABLE `' + table + '` (`payload` text);')\n"
+            "    raise SystemExit(int(os.getenv('DUMP_SCHEMA_EXIT_CODE', '0')))\n"
+            "for table, payload in [('schema_migrations', '1'), ('apps', 'health'), "
+            "('privacy_deletion_receipts', 'opaque deletion digest')]:\n"
+            "    if table in sys.argv: print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
+            "raise SystemExit(int(os.getenv('DUMP_EXIT_CODE', '0')))\n"
+        )
+        docker.chmod(0o755)
+        environment = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"]})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.runtime = Runtime(self.backend, self.root / "backups")
+        cleanup = patch("operations.cleanup", return_value={"passed": True})
+        cleanup.start()
+        self.addCleanup(cleanup.stop)
+
+    def test_failed_export_never_publishes_a_backup(self):
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaisesRegex(OperationError, "export failed"):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+        self.assertFalse(json.loads((self.runtime.state / "backup-failure.json").read_text())["passed"])
+
+    def test_production_checkpoint_does_not_replace_host_backup_or_failure_evidence(self):
+        host = create_backup(self.runtime)
+        self.runtime.record('backup-failure', passed=False)
+        production = create_backup(self.runtime, scope='production')
+        self.assertEqual(production['operation'], 'production_backup')
+        self.assertEqual(json.loads((self.runtime.state / 'backup.json').read_text())['filename'], host['filename'])
+        self.assertTrue((self.runtime.state / 'backup-failure.json').exists())
+        self.assertEqual(verify_backup(self.runtime, self.runtime.backups / production['filename'])['recovery_scope'], 'production')
+        with patch.dict(os.environ, {'DUMP_EXIT_CODE': '7'}), self.assertRaises(OperationError):
+            create_backup(self.runtime, scope='production')
+        self.assertTrue((self.runtime.state / 'production_backup-failure.json').exists())
+
+    def test_backup_budget_failure_leaves_no_uncommitted_pair(self):
+        with patch('ops_backup.BACKUP_BUDGET_BYTES', 1), self.assertRaisesRegex(OperationError, 'storage budget'):
+            create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / 'backup.json').exists())
+
+    def test_failed_recovery_assembly_removes_its_own_unpublished_file(self):
+        def interrupted(runtime, filename, **unused):
+            recovery = runtime.backups / ('recovery-' + filename.replace('.sql.gz.enc', '.tar.gz.enc'))
+            recovery.write_bytes(b'uncommitted')
+            raise OperationError('recovery assembly interrupted')
+        with patch('ops_offsite.enabled', return_value=True), patch('ops_offsite.create_recovery_bundle', side_effect=interrupted):
+            with self.assertRaisesRegex(OperationError, 'assembly interrupted'):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+
+    def test_interrupted_backup_temporaries_expire_without_collecting_unknown_files(self):
+        self.runtime.backups.mkdir()
+        stale = self.runtime.backups / '.backup-abcdefgh'
+        stale.mkdir()
+        (stale / 'plaintext').write_text('disposable')
+        os.utime(stale, (time.time() - 49 * 3600,) * 2)
+        for name in ('.backup-recent12', 'preserved'):
+            (self.runtime.backups / name).mkdir()
+        self.assertEqual(prune_backups(self.runtime), 0)
+        self.assertFalse(stale.exists())
+        self.assertTrue((self.runtime.backups / '.backup-recent12').exists())
+        self.assertTrue((self.runtime.backups / 'preserved').exists())
+
+    def test_failed_new_export_preserves_the_verified_snapshot_and_successful_retry_clears_failure(self):
+        previous = create_backup(self.runtime)
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaises(OperationError):
+                create_backup(self.runtime)
+        self.assertEqual(json.loads((self.runtime.state / "backup.json").read_text())["filename"], previous["filename"])
+        self.assertTrue((self.runtime.state / "backup-failure.json").exists())
+        verify_backup(self.runtime, self.runtime.backups / previous["filename"])
+        create_backup(self.runtime)
+        self.assertFalse((self.runtime.state / "backup-failure.json").exists())
+
+    def test_offsite_failure_does_not_publish_a_success_record(self):
+        (self.runtime.state / "offsite-required").touch()
+        with patch("ops_offsite.publish", side_effect=OperationError("offsite unavailable")):
+            with self.assertRaisesRegex(OperationError, "offsite unavailable"):
+                create_backup(self.runtime)
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_authenticated_configuration_pair_is_verified_before_restore(self):
+        (self.runtime.state / "offsite-required").touch()
+        with patch("ops_offsite.publish"):
+            result = create_backup(self.runtime)
+        source = self.runtime.backups / result["filename"]
+        manifest = verify_backup(self.runtime, source)
+        from ops_offsite import verify_recovery_bundle
+        self.assertTrue(verify_recovery_bundle(self.runtime, source, manifest))
+        recovery = self.runtime.backups / manifest["recovery_filename"]
+        recovery.write_bytes(recovery.read_bytes() + b"tampered")
+        with self.assertRaisesRegex(OperationError, "configuration recovery content"):
+            verify_backup(self.runtime, source)
+
+    def test_production_albums_is_authenticated_inside_shared_backup(self):
+        import hashlib
+        import stat
+        from albums_artifacts import PRODUCTION_FILES, KEYS
+        from ops_common import atomic_json, atomic_text
+        from ops_artifacts import register
+        source = 'a' * 40
+        folder = self.runtime.root / '.albums-production/releases' / source
+        folder.mkdir(parents=True, mode=0o700)
+        app = self.runtime.root.parent / 'albums-production'
+        (app / 'secrets').mkdir(parents=True, mode=0o700)
+        files = {name: b'synthetic production configuration' for name in PRODUCTION_FILES if name != 'selection.json'}
+        files['runtime.env'] = (b'ALBUM_APPLE_BUNDLE_ID=cn.tellyouwhat.albums\n'
+                                b'ALBUM_API_HOST=api.albums.tellyouwhat.cn\n'
+                                b'ALBUM_COS_BUCKET=tellyouwhat-albums-production-1251995834\n')
+        for name, data in files.items():
+            atomic_text(folder / name, data.decode())
+        atomic_json(folder / 'selection.json', {'source': source, 'files': {
+            name: hashlib.sha256(data).hexdigest() for name, data in files.items()}})
+        atomic_json(self.runtime.state / 'albums-production.json', {'source': source, 'release': str(folder)})
+        register(self.runtime, 'albums-production', [str(folder)], [], source)
+        atomic_text(app / 'database.env', 'synthetic database configuration')
+        keys = {app / 'secrets' / name: b'synthetic production key' for name in KEYS}
+        for path, data in keys.items():
+            atomic_text(path, data.decode())
+        original_stat, execute = Path.stat, self.runtime.execute
+
+        def metadata(path, *args, **kwargs):
+            value = original_stat(path, *args, **kwargs)
+            if path in keys:
+                fields = list(value)
+                fields[0], fields[4], fields[5] = stat.S_IFREG | 0o440, 0, 65532
+                return os.stat_result(fields)
+            return value
+
+        def command(label, args, **kwargs):
+            return keys[Path(args[-1])] if label == 'backup-albums-production-key' else execute(label, args, **kwargs)
+
+        snapshot = 'checkpoint/albums-' + 'b' * 32 + '.sql.gz.enc'
+        checkpoint = {'backup.env': b'no inner key', snapshot: b'encrypted SQL',
+                      snapshot + '.json': b'inner manifest',
+                      'checkpoint/albums-deletions-' + 'c' * 32 + '.json': b'deletion fence'}
+        (self.runtime.state / 'offsite-required').touch()
+        with patch.object(Path, 'stat', metadata), patch.object(self.runtime, 'execute', side_effect=command), \
+                patch('albums_artifacts.checkpoint', return_value=checkpoint) as export, patch('ops_offsite.publish'):
+            result = create_backup(self.runtime)
+            manifest = verify_backup(self.runtime, self.runtime.backups / result['filename'])
+            export.assert_called_once_with(self.runtime, folder, 'production')
+        self.assertEqual(manifest['recovery_albums_development'], {})
+        self.assertEqual(len(manifest['recovery_albums_production']), 15)
+        from ops_offsite import verify_recovery_bundle
+        incomplete = {**manifest, 'recovery_albums_production': {
+            **manifest['recovery_albums_production'], 'secrets/apple-sign-in.p8': '0' * 64}}
+        with self.assertRaisesRegex(OperationError, 'content verification'):
+            verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], incomplete)
+        missing_album_data = {**manifest, 'recovery_platform_test': {'current/albums.env': 'a' * 64}}
+        with self.assertRaisesRegex(OperationError, 'independent data and keys'):
+            verify_recovery_bundle(self.runtime, self.runtime.backups / result['filename'], missing_album_data)
+
+    def test_authenticated_backup_includes_registered_apple_service_binary_and_configuration(self):
+        import hashlib
+        from apple_delivery_deploy import FILES, IMAGE, ORIGIN, environment
+        from ops_common import atomic_json, atomic_text
+        from ops_artifacts import register
+        from ops_offsite import verify_recovery_bundle
+        source = 'a' * 40
+        folder = self.runtime.root / '.apple-delivery/releases' / source
+        folder.mkdir(mode=0o700, parents=True)
+        folder.parent.chmod(0o700)
+        folder.parent.parent.chmod(0o700)
+        files = {}
+        for name in FILES:
+            content = 'synthetic backup fixture for ' + name
+            atomic_text(folder / name, content)
+            files[name] = hashlib.sha256(content.encode()).hexdigest()
+        atomic_json(folder / 'selection.json', {'source': source, 'image': IMAGE + source, 'origin': ORIGIN, 'files': files})
+        atomic_text(folder / '.env', ''.join(key + '=' + val + '\n' for key, val in environment(self.runtime, source).items()))
+        atomic_json(self.runtime.state / 'apple-delivery.json', {'source': source, 'image': IMAGE + source,
+                    'origin': ORIGIN, 'release': str(folder), 'previous': None})
+        register(self.runtime, 'apple-development', [str(folder)], [IMAGE + source], source)
+        (self.runtime.state / 'offsite-required').touch()
+        with patch('ops_offsite.publish'), patch('apple_delivery_artifacts.CADDY_ROOT', self.root / 'inactive-Caddyfile'), \
+                patch('apple_delivery_artifacts.CADDY_FILES', {'delivery.caddy': self.root / 'inactive-delivery.caddy',
+                                                            'logging.caddy': self.root / 'inactive-logging.caddy'}):
+            result = create_backup(self.runtime)
+        encrypted = self.runtime.backups / result['filename']
+        manifest = verify_backup(self.runtime, encrypted)
+        self.assertIn('current/service', manifest['recovery_apple_delivery'])
+        self.assertIn('current/.env', manifest['recovery_apple_delivery'])
+        self.assertTrue(verify_recovery_bundle(self.runtime, encrypted, manifest))
+
+    def test_backup_age_uses_authenticated_creation_time_after_file_copy(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        os.utime(path, (now, now))
+        create_backup(self.runtime)
+        self.assertFalse(path.exists())
+        self.assertFalse(Path(str(path) + ".json").exists())
+
+    def test_expired_backup_is_pruned_even_when_new_database_export_fails(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        with patch.dict(os.environ, {"DUMP_EXIT_CODE": "7"}):
+            with self.assertRaisesRegex(OperationError, "export failed"):
+                create_backup(self.runtime)
+        self.assertFalse(path.exists())
+
+    def test_expired_snapshot_is_rejected_before_decryption_or_restore(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 14 * 86400):
+            result = create_backup(self.runtime)
+        with patch("ops_backup.time.time", return_value=now), patch("ops_backup.crypt") as decrypt:
+            with self.assertRaisesRegex(OperationError, "retention"):
+                restore_drill(self.runtime, result["filename"])
+        decrypt.assert_not_called()
+
+    def test_maintenance_prunes_backups_without_successful_new_export(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            result = create_backup(self.runtime)
+        with patch.object(self.runtime, "execute") as execute:
+            operate(self.runtime, SimpleNamespace(operation="maintenance"))
+        self.assertFalse((self.runtime.backups / result["filename"]).exists())
+        execute.assert_called_once()
+        record = json.loads((self.runtime.state / "maintenance.json").read_text())
+        self.assertEqual(record["expired_backups_removed"], 1)
+
+    def test_test_environment_cleanup_failure_does_not_skip_other_maintenance(self):
+        with patch.object(self.runtime, 'execute') as execute, patch('operations.cleanup') as cleanup, \
+                patch('platform_test_maintenance.maintain', side_effect=OperationError('test cleanup failed')):
+            with self.assertRaisesRegex(OperationError, 'test cleanup failed'):
+                operate(self.runtime, SimpleNamespace(operation='maintenance'))
+        execute.assert_called_once()
+        cleanup.assert_called_once()
+        self.assertFalse((self.runtime.state / 'maintenance.json').exists())
+
+    def test_invalid_snapshot_does_not_skip_other_expired_snapshots_or_database_cleanup(self):
+        corrupt = create_backup(self.runtime)
+        corrupt_path = self.runtime.backups / corrupt["filename"]
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 15 * 86400):
+            expired = create_backup(self.runtime)
+        corrupt_path.write_bytes(corrupt_path.read_bytes() + b"invalid")
+        with patch.object(self.runtime, "execute") as execute:
+            with self.assertRaisesRegex(OperationError, "retention verification failed"):
+                operate(self.runtime, SimpleNamespace(operation="maintenance"))
+        execute.assert_called_once()
+        self.assertTrue(corrupt_path.exists())
+        self.assertFalse((self.runtime.backups / expired["filename"]).exists())
+        self.assertFalse((self.runtime.state / "maintenance.json").exists())
+
+    def test_recent_backup_is_preserved_at_retention_boundary(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 14 * 86400 + 1):
+            result = create_backup(self.runtime)
+        with patch("ops_backup.time.time", return_value=now):
+            self.assertEqual(prune_backups(self.runtime), 0)
+        path = self.runtime.backups / result["filename"]
+        self.assertTrue(path.exists())
+        with patch("ops_backup.time.time", return_value=now + 1):
+            self.assertEqual(prune_backups(self.runtime), 1)
+        self.assertFalse(path.exists())
+
+    def test_failed_schema_export_never_publishes_a_partial_backup(self):
+        with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):
+            with self.assertRaisesRegex(OperationError, "export failed"):
+                create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_encrypted_backup_round_trip_and_table_counts(self):
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        self.assertNotIn(b"synthetic private payload", path.read_bytes())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        manifest = verify_backup(self.runtime, path)
+        self.assertEqual(manifest["table_rows"], {
+            "schema_migrations": 1, "apps": 1, "privacy_deletion_receipts": 1,
+            "private_records": 0, "ai_jobs": 0, "job_dispatch_outbox": 0,
+        })
+        decrypted = self.root / "decrypted.gz"
+        crypt(self.runtime, path, decrypted, decrypt=True)
+        sql = gzip.decompress(decrypted.read_bytes())
+        self.assertIn(b"opaque deletion digest", sql)
+        self.assertNotIn(b"synthetic private payload", sql)
+
+    def test_unexpected_application_data_aborts_without_publishing(self):
+        (self.bin / "docker").write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('schema_migrations\\napps\\nai_jobs'); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    print('CREATE TABLE `schema_migrations` (`version` int);')\n"
+            "    print('CREATE TABLE `apps` (`id` int);')\n"
+            "    print('CREATE TABLE `ai_jobs` (`payload` blob);'); raise SystemExit(0)\n"
+            "print('INSERT INTO `schema_migrations` VALUES (1);')\n"
+            "print('INSERT INTO `ai_jobs` VALUES (0x73656e736974697665);')\n"
+        )
+        with self.assertRaisesRegex(OperationError, "excluded application data"):
+            create_backup(self.runtime)
+        self.assertEqual(list(self.runtime.backups.iterdir()), [])
+        self.assertFalse((self.runtime.state / "backup.json").exists())
+
+    def test_current_and_future_application_rows_are_not_in_encrypted_backup(self):
+        docker = self.bin / "docker"
+        docker.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "tables = ['schema_migrations', 'apps', 'privacy_deletion_receipts', 'private_records', 'ai_jobs', 'job_dispatch_outbox', 'future_user_data']\n"
+            "if 'mysql' in sys.argv and 'mysqldump' not in sys.argv:\n"
+            "    print('\\n'.join(tables)); raise SystemExit(0)\n"
+            "if '--no-data' in sys.argv:\n"
+            "    for table in tables: print('CREATE TABLE `' + table + '` (`payload` blob);')\n"
+            "    raise SystemExit(0)\n"
+            "for table, payload in [('schema_migrations', 'migration'), ('apps', 'app registry'), "
+            "('privacy_deletion_receipts', 'opaque deletion digest')]:\n"
+            "    if table in sys.argv: print(\"INSERT INTO `\" + table + \"` VALUES ('\" + payload + \"');\")\n"
+        )
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        decrypted = self.root / "decrypted.gz"
+        crypt(self.runtime, path, decrypted, decrypt=True)
+        sql = gzip.decompress(decrypted.read_bytes())
+        self.assertNotIn(b"temporary AI private payload", sql)
+        self.assertNotIn(b"INSERT INTO `ai_jobs`", sql)
+        self.assertNotIn(b"INSERT INTO `job_dispatch_outbox`", sql)
+        self.assertNotIn(b"INSERT INTO `private_records`", sql)
+        self.assertNotIn(b"INSERT INTO `future_user_data`", sql)
+        self.assertIn(b"CREATE TABLE `ai_jobs`", sql)
+        self.assertIn(b"CREATE TABLE `job_dispatch_outbox`", sql)
+        self.assertIn(b"CREATE TABLE `future_user_data`", sql)
+        self.assertIn(b"opaque deletion digest", sql)
+        manifest = verify_backup(self.runtime, path)
+        self.assertEqual(manifest["table_rows"]["ai_jobs"], 0)
+        self.assertEqual(manifest["table_rows"]["job_dispatch_outbox"], 0)
+        self.assertEqual(manifest["table_rows"]["future_user_data"], 0)
+        self.assertEqual(manifest["included_data_tables"], ["schema_migrations", "apps", "privacy_deletion_receipts"])
+        self.assertEqual(manifest["excluded_data_tables"], ["ai_jobs", "future_user_data", "job_dispatch_outbox", "private_records"])
+
+    def test_corrupt_archive_is_rejected_before_restore(self):
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        path.write_bytes(path.read_bytes() + b"changed")
+        with self.assertRaisesRegex(OperationError, "content verification"):
+            restore_drill(self.runtime)
+        self.assertFalse((self.runtime.state / "restore.json").exists())
+
+    def test_modified_metadata_cannot_authorize_another_database(self):
+        result = create_backup(self.runtime)
+        path = self.runtime.backups / result["filename"]
+        metadata = Path(str(path) + ".json")
+        envelope = json.loads(metadata.read_text())
+        envelope["manifest"]["database"] = "health_ai"
+        metadata.write_text(json.dumps(envelope))
+        with self.assertRaisesRegex(OperationError, "authentication failed"):
+            verify_backup(self.runtime, path)
+
+    def test_environment_values_are_data_not_shell_commands(self):
+        target = self.root / "must-not-exist"
+        source = self.root / "literal.env"
+        value = "$(touch " + str(target) + ")`id`$HOME"
+        source.write_text("SECRET=" + value + "\n")
+        self.assertEqual(read_environment(source)["SECRET"], value)
+        self.assertFalse(target.exists())
+
+    def test_explicit_environment_file_reaches_child_process_without_global_changes(self):
+        credential = self.root / "production-credential"
+        credential.write_text((self.backend / ".env.production").read_text())
+        runtime = Runtime(self.backend, self.root / "backups", os.path.relpath(credential))
+        probe = self.root / "probe.py"
+        probe.write_text(
+            "import os, pathlib, sys\n"
+            "path = pathlib.Path(os.environ['TELLYOUWHAT_ENV_FILE'])\n"
+            "assert path.is_absolute() and path.samefile(sys.argv[1])\n"
+            "assert 'MYSQL_DATABASE=tellyouwhat_test' in path.read_text()\n"
+            "print('configuration available')\n"
+        )
+        with patch.dict(os.environ, {"TELLYOUWHAT_ENV_FILE": "/unrelated/environment"}):
+            output = runtime.execute("credential-probe", ["python3", str(probe), str(credential)])
+            self.assertEqual(os.environ["TELLYOUWHAT_ENV_FILE"], "/unrelated/environment")
+        self.assertEqual(output.strip(), b"configuration available")
+
+    def test_restore_rejects_paths_outside_backup_directory(self):
+        with self.assertRaisesRegex(OperationError, "only a backup filename"):
+            restore_drill(self.runtime, "../unrelated.sql.gz.enc")
+
+
+if __name__ == "__main__":
+    unittest.main()

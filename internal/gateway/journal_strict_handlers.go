@@ -1,0 +1,238 @@
+package gateway
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/contracts"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
+	journalcontracts "github.com/tellyouwhat/backend/internal/journal/contracts"
+	journalprovider "github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journalhttpapi"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/quota"
+	"github.com/tellyouwhat/backend/internal/usage"
+)
+
+var _ journalhttpapi.StrictServerInterface = (*Server)(nil)
+
+func journalErrorResponse(failure *apiFailure) journalhttpapi.ErrorResponse {
+	return journalhttpapi.ErrorResponse{Error: journalhttpapi.ErrorDetail{
+		Code: failure.code, Message: failure.message, RequestID: failure.requestID,
+	}}
+}
+
+func (server *Server) OrganizeJournal(ctx context.Context, request journalhttpapi.OrganizeJournalRequestObject) (journalhttpapi.OrganizeJournalResponseObject, error) {
+	requestID := request.Params.XTellyouwhatRequestID
+	input, failure := journalOrganizeRequest(request.Body, requestID)
+	if failure != nil {
+		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	response, failure := server.executeJournalAnalysis(ctx, input, requestID)
+	if failure != nil {
+		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	output, err := journalOrganizeResponse(response, requestID)
+	if err != nil {
+		failure = newAPIFailure(http.StatusBadGateway, "invalid_model_result", "managed AI returned an invalid result", input.RequestID)
+		return journalhttpapi.OrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	return journalhttpapi.OrganizeJournal200JSONResponse(output), nil
+}
+
+func (server *Server) SuggestJournalIllustration(ctx context.Context, request journalhttpapi.SuggestJournalIllustrationRequestObject) (journalhttpapi.SuggestJournalIllustrationResponseObject, error) {
+	id := request.Params.XTellyouwhatRequestID
+	input := journalcontracts.OrganizeRequest{ContractVersion: journalcontracts.ContractVersion, IllustrationSuggestionsEnabled: true}
+	if request.Body != nil {
+		input.RequestID = request.Body.RequestID.String()
+		input.ContentHash = request.Body.ContentHash
+		input.Title = request.Body.Title
+		input.Body = request.Body.Body
+	}
+	if input.RequestID != id.String() || input.Validate() != nil {
+		failure := newAPIFailure(422, "contract_violation", "invalid illustration suggestion material", id.String())
+		return journalhttpapi.SuggestJournalIllustrationdefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	response, failure := server.executeJournalAnalysis(ctx, input, id)
+	if failure != nil {
+		return journalhttpapi.SuggestJournalIllustrationdefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	}
+	output := journalhttpapi.IllustrationSuggestionResponse{RequestID: id, ContentHash: response.ContentHash, AnalysisVersion: response.AnalysisVersion, Quota: journalhttpapi.OrganizeQuota{DailyTokensRemaining: response.Quota.DailyTokensRemaining, MonthlyTokensRemaining: response.Quota.MonthlyTokensRemaining, Available: response.Quota.Available}}
+	if scene := response.IllustrationSuggestion; scene.Valid() {
+		output.Suggestion = &journalhttpapi.IllustrationSuggestion{Summary: scene.Summary, Subject: scene.Subject, Setting: scene.Setting, Composition: scene.Composition, Style: scene.Style, SourceQuotes: scene.SourceQuotes, Reason: scene.Reason}
+	}
+	return journalhttpapi.SuggestJournalIllustration200JSONResponse(output), nil
+}
+
+// Share authentication, entitlement, consent and quota enforcement, not a public
+// catch-all operation or a caller-controlled prompt/model selector.
+func (server *Server) executeJournalAnalysis(ctx context.Context, input journalcontracts.OrganizeRequest, requestID uuid.UUID) (journalcontracts.OrganizeResponse, *apiFailure) {
+	if server.journalOrganizer == nil || server.journalAnalysisVersion == "" || server.entitlements == nil || server.quota == nil || server.quotaReader == nil || server.media == nil || server.usage == nil {
+		failure := newAPIFailure(http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", requestID.String())
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	principal, failure := server.apiAuthenticate(ctx, requestID)
+	if failure != nil {
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	if !server.app.AllowsOperation("journal.organize") {
+		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "operation is not available for this application", requestID.String())
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	if failure = server.apiRequireManagedEntitlement(ctx, principal, requestID.String()); failure != nil {
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	if failure = server.apiRequireConsents(ctx, principal, server.requiredConsentScopes, requestID.String()); failure != nil {
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	transactionID := principal.TransactionID
+	if transactionID == "" {
+		transactionID = principal.KeyID
+	}
+	estimatedTokens := journalReservationTokens(input)
+	analysisVersion := server.journalAnalysisVersion
+	ginContext := strictGinContext(ctx)
+	if server.promptConfig != nil {
+		var configErr error
+		ctx, configErr = promptconfig.Freeze(ctx, server.promptConfig)
+		if configErr != nil {
+			failure = newAPIFailure(503, "prompt_config_unavailable", "AI configuration unavailable", requestID.String())
+			return journalcontracts.OrganizeResponse{}, failure
+		}
+		lite, _, _ := journalprovider.PrepareOrganize(ctx, input, false, journalprovider.Config{})
+		pro, _, _ := journalprovider.PrepareOrganize(ctx, input, true, journalprovider.Config{})
+		estimatedTokens = len(lite.Body) + len(pro.Body) + lite.Parameters.MaxOutputTokens + pro.Parameters.MaxOutputTokens + 2048
+		analysisVersion = lite.Version
+	}
+	if failure = server.operationsFailure(ctx, "journal.organize", requestID.String()); failure != nil {
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	lease, err := server.quota.Acquire(ctx, quota.Identity{
+		DeviceID: principal.DeviceID, TransactionID: transactionID,
+		IP: server.ipResolver(ginContext.Request),
+	}, contracts.Operation("journal.organize"), estimatedTokens, "", server.now())
+	if err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			server.recordOperationRejection(ctx, "journal.organize", "quota")
+			code, message := journalQuotaExceededResponse(err)
+			failure = newAPIFailure(http.StatusTooManyRequests, code, message, requestID.String())
+		} else {
+			failure = newAPIFailure(http.StatusServiceUnavailable, "quota_unavailable", "quota service unavailable", requestID.String())
+		}
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	artifact := contracts.Request{RequestID: input.RequestID, Operation: contracts.Operation("journal.organize")}
+	if err := server.media.Consume(ctx, principal, artifact, contracts.BodySHA256(rawRequestBody(ginContext))); err != nil {
+		lease.Release(0)
+		failure = server.apiAdmissionFailure(err, input.RequestID)
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	ctx = costcontrol.WithAccess(ctx, principal.KeyID, true)
+	result, err := server.journalOrganizer.Organize(ctx, input)
+	if err != nil {
+		if errors.Is(err, costcontrol.ErrProtectionActive) {
+			lease.Release(0)
+			failure = newAPIFailure(http.StatusServiceUnavailable, "ai_paused", "automatic service protection is active", input.RequestID)
+			return journalcontracts.OrganizeResponse{}, failure
+		}
+		actualTokens := estimatedTokens
+		if tokens, known := result.KnownTokenTotal(); known {
+			actualTokens = tokens
+		}
+		lease.Release(actualTokens)
+		failure = newAPIFailure(http.StatusBadGateway, "upstream_error", "managed AI provider failed", input.RequestID)
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	actualTokens := result.InputTokens + result.OutputTokens
+	if err := server.usage.Record(ctx, usage.Record{
+		RequestID: input.RequestID, KeyID: principal.KeyID, DeviceID: principal.DeviceID,
+		TransactionID: transactionID, Operation: contracts.Operation("journal.organize"),
+		InputTokens: result.InputTokens, OutputTokens: result.OutputTokens, OccurredAt: server.now(),
+	}); err != nil {
+		actualTokens = estimatedTokens
+	}
+	lease.Release(actualTokens)
+	snapshot, snapshotErr := server.quotaReader.Snapshot(ctx, transactionID, server.now())
+	response := journalcontracts.OrganizeResponse{
+		RequestID: input.RequestID, ContentHash: input.ContentHash,
+		AnalysisVersion:             analysisVersion,
+		Tags:                        result.Value.Tags,
+		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
+		NewBookSuggestions:          result.Value.NewBookSuggestions,
+		IllustrationSuggestion:      result.Value.IllustrationSuggestion,
+		Quota: journalcontracts.Quota{
+			DailyTokensRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
+			MonthlyTokensRemaining: max(0, snapshot.MonthlyLimit-snapshot.MonthlyUsed),
+			Available:              snapshotErr == nil,
+		},
+	}
+	bookIDs := make(map[string]bool, len(input.Books))
+	for _, book := range input.Books {
+		bookIDs[book.ID] = true
+	}
+	if err := response.Validate(bookIDs); err != nil {
+		failure = newAPIFailure(http.StatusBadGateway, "invalid_model_result", "managed AI returned an invalid result", input.RequestID)
+		return journalcontracts.OrganizeResponse{}, failure
+	}
+	return response, nil
+}
+
+func journalOrganizeRequest(body *journalhttpapi.OrganizeRequest, requestID uuid.UUID) (journalcontracts.OrganizeRequest, *apiFailure) {
+	if body == nil {
+		return journalcontracts.OrganizeRequest{}, newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request body is required", requestID.String())
+	}
+	if body.RequestID != requestID {
+		return journalcontracts.OrganizeRequest{}, newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestID.String())
+	}
+	input := journalcontracts.OrganizeRequest{
+		RequestID: body.RequestID.String(), ContractVersion: string(body.ContractVersion),
+		ContentHash: body.ContentHash, Title: body.Title, Body: body.Body,
+		ExistingTags:     append([]string(nil), body.ExistingTags...),
+		RejectedTagNames: append([]string(nil), body.RejectedTagNames...),
+		Books:            make([]journalcontracts.BookContext, 0, len(body.Books)),
+	}
+	for _, book := range body.Books {
+		input.Books = append(input.Books, journalcontracts.BookContext{
+			ID: book.Id.String(), Name: book.Name, Description: book.Description, ContainsEntry: book.ContainsEntry,
+		})
+	}
+	if err := input.Validate(); err != nil {
+		return journalcontracts.OrganizeRequest{}, newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request violates the journal organization contract", requestID.String())
+	}
+	return input, nil
+}
+
+func journalOrganizeResponse(response journalcontracts.OrganizeResponse, requestID uuid.UUID) (journalhttpapi.OrganizeResponse, error) {
+	output := journalhttpapi.OrganizeResponse{
+		RequestID: requestID, ContentHash: response.ContentHash, AnalysisVersion: response.AnalysisVersion,
+		Tags:                        make([]journalhttpapi.Tag, 0, len(response.Tags)),
+		ExistingBookRecommendations: make([]journalhttpapi.ExistingBookRecommendation, 0, len(response.ExistingBookRecommendations)),
+		NewBookSuggestions:          make([]journalhttpapi.NewBookSuggestion, 0, len(response.NewBookSuggestions)),
+		Quota: journalhttpapi.OrganizeQuota{
+			DailyTokensRemaining:   response.Quota.DailyTokensRemaining,
+			MonthlyTokensRemaining: response.Quota.MonthlyTokensRemaining,
+			Available:              response.Quota.Available,
+		},
+	}
+	for _, tag := range response.Tags {
+		output.Tags = append(output.Tags, journalhttpapi.Tag{Name: tag.Name, Type: journalhttpapi.TagType(tag.Type)})
+	}
+	for _, recommendation := range response.ExistingBookRecommendations {
+		bookID, err := uuid.Parse(recommendation.BookID)
+		if err != nil {
+			return journalhttpapi.OrganizeResponse{}, err
+		}
+		output.ExistingBookRecommendations = append(output.ExistingBookRecommendations, journalhttpapi.ExistingBookRecommendation{
+			BookID: bookID, Reason: recommendation.Reason,
+		})
+	}
+	for _, suggestion := range response.NewBookSuggestions {
+		output.NewBookSuggestions = append(output.NewBookSuggestions, journalhttpapi.NewBookSuggestion{
+			Name: suggestion.Name, Description: suggestion.Description, Reason: suggestion.Reason,
+			RelatedTags: append([]string(nil), suggestion.RelatedTags...),
+		})
+	}
+	return output, nil
+}

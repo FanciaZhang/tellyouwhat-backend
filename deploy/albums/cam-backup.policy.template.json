@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucketVersioning"
+      ],
+      "resource": [
+        "qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucketObjectVersions"
+      ],
+      "resource": [
+        "qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/*"
+      ],
+      "condition": {
+        "string_like": {
+          "cos:prefix": [
+            "albums%2Frecovery%2F*"
+          ]
+        }
+      }
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:InitiateMultipartUpload",
+        "cos:UploadPart",
+        "cos:CompleteMultipartUpload",
+        "cos:GetObject"
+      ],
+      "resource": [
+        "qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/albums/recovery/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+// journaldevserver is a isolated, persistent Journal development service.
+// It is deliberately absent from the production image build targets.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"log"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/development"
+	"github.com/tellyouwhat/backend/internal/journal/illustration"
+	"github.com/tellyouwhat/backend/internal/journal/provider"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
+)
+
+func main() {
+	action := run
+	if len(os.Args) == 2 && os.Args[1] == "verify-recovery" {
+		action = verifyRecovery
+	}
+	if err := action(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("app_id", "journal", "environment", "development", "component", "journal_voice")
+	// The fixed loopback listener is reached through the authenticated Journal HTTPS route.
+	if os.Getenv("DATABASE_DSN") != "" || os.Getenv("JOURNAL_PROMPT_DATABASE_DSN") != "" || os.Getenv("REDIS_URL") != "" || os.Getenv("APP_ENV") == "production" {
+		return errors.New("refusing production configuration in developer service")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	policyPath := os.Getenv("JOURNAL_PROMPT_FILE")
+	if policyPath == "" {
+		return errors.New("missing independent Journal Prompt file")
+	}
+	prompts := promptconfig.NewJournalCache(journalPromptFile{path: policyPath})
+	refresh, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err := prompts.Refresh(refresh, time.Now())
+	cancel()
+	if err != nil {
+		return errors.New("published Journal Prompt configuration unavailable")
+	}
+	go prompts.Run(ctx, func(error) { logger.Error("Journal Prompt refresh failed; retaining last valid revision") })
+	base, key := os.Getenv("JOURNAL_ARK_BASE_URL"), os.Getenv("JOURNAL_ARK_API_KEY")
+	lite, pro, rewrite := os.Getenv("JOURNAL_ARK_LITE_MODEL"), os.Getenv("JOURNAL_ARK_PRO_MODEL"), os.Getenv("JOURNAL_VOICE_MODEL")
+	asr := voice.ASRConfig{StreamInsights: true, ObserveTrace: func(v []voice.StreamTrace) { data, _ := json.Marshal(v); log.Printf("journal_stream_trace=%s", data) }, ObserveSchema: func(v []voice.StreamSchema) { data, _ := json.Marshal(v); log.Printf("journal_stream_schema=%s", data) }, URL: os.Getenv("JOURNAL_VOICE_ASR_URL"), APIKey: os.Getenv("JOURNAL_VOICE_ASR_API_KEY"), AppKey: os.Getenv("JOURNAL_VOICE_ASR_APP_KEY"), AccessKey: os.Getenv("JOURNAL_VOICE_ASR_ACCESS_KEY"), ResourceID: os.Getenv("JOURNAL_VOICE_ASR_RESOURCE_ID")}
+	if base == "" || key == "" || lite == "" || pro == "" || rewrite == "" || asr.URL == "" || asr.ResourceID == "" || (asr.APIKey == "" && (asr.AppKey == "" || asr.AccessKey == "")) {
+		return errors.New("missing Journal provider configuration")
+	}
+	stateDir := os.Getenv("JOURNAL_DEVELOPMENT_STATE_DIR")
+	if stateDir == "" {
+		return errors.New("missing persistent development state directory")
+	}
+	monthlyCNY, err := strconv.ParseInt(os.Getenv("JOURNAL_DEVELOPMENT_MONTHLY_BUDGET_CNY"), 10, 64)
+	if err != nil || monthlyCNY < 1 || monthlyCNY > 1000 {
+		return errors.New("invalid development monthly budget")
+	}
+	store, err := development.NewFileCostStore(filepath.Join(stateDir, "cost-events.json"), monthlyCNY*costcontrol.NanosPerCNY, time.Now())
+	if err != nil {
+		return err
+	}
+	budget, err := costcontrol.New(store, costcontrol.Limits{MonthlyBudgetNanos: monthlyCNY * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
+	if err != nil {
+		return err
+	}
+	price := costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000}
+	model := provider.New(provider.Config{BaseURL: base, APIKey: key, LiteModel: lite, ProModel: pro}, &http.Client{Timeout: 2 * time.Minute})
+	recordingStore, err := voice.NewRecordingJobStore(filepath.Join(stateDir, "recordings"), time.Now)
+	if err != nil {
+		return err
+	}
+	recordingASR := asr
+	recordingASR.URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel"
+	recordingASR.ResourceID = "volc.seedasr.auc"
+	recording := &voice.RecordingExecutor{Store: recordingStore, Provider: voice.RecordingASR{Config: recordingASR}, Budget: budget, AppID: "journal-development", Price: costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}}
+	var images *development.IllustrationRuntime
+	if os.Getenv("JOURNAL_IMAGE_ENABLED") == "true" {
+		imageProvider, err := illustration.NewProvider(os.Getenv("JOURNAL_IMAGE_BASE_URL"), os.Getenv("JOURNAL_IMAGE_API_KEY"), os.Getenv("JOURNAL_IMAGE_MODEL_ID"), nil)
+		if err != nil {
+			return errors.New("invalid Journal image provider configuration")
+		}
+		max, err := strconv.ParseInt(os.Getenv("JOURNAL_IMAGE_MAX_COST_NANOS"), 10, 64)
+		if err != nil || max <= 0 || max > costcontrol.NanosPerCNY {
+			return errors.New("invalid Journal image price ceiling")
+		}
+		images, err = development.NewIllustrationRuntime(filepath.Join(stateDir, "illustrations"), os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"), &illustration.BudgetedGenerator{Next: imageProvider, Controller: budget, MaxCostNanos: max}, time.Now)
+		if err != nil {
+			return err
+		}
+	} else if value := os.Getenv("JOURNAL_IMAGE_ENABLED"); value != "" && value != "false" {
+		return errors.New("invalid Journal image enablement")
+	}
+	handler, err := development.New(development.Config{
+		Prompts:       prompts,
+		Token:         os.Getenv("JOURNAL_DEVELOPMENT_TOKEN"),
+		Organizer:     provider.NewBudgetedClient(model, budget, "journal-development", price),
+		Speech:        voice.NewBudgetedSpeech(voice.ASR{Config: asr, Prompts: prompts}, budget, "journal-development", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
+		Rewriter:      voice.ConfiguredRewriter{Next: voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: base, APIKey: key, Model: rewrite, Logger: logger}, budget, "journal-development", price), Config: prompts},
+		Recording:     recording,
+		Illustrations: images,
+		Logger:        logger,
+	})
+	if err != nil {
+		return err
+	}
+	if images != nil {
+		done := make(chan struct{})
+		go func() { defer close(done); images.Run(ctx) }()
+		defer func() { stop(); <-done }()
+	}
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := recordingStore.Cleanup(); err != nil {
+					log.Print("journal recording temporary cleanup failed")
+				}
+			}
+		}
+	}()
+	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: nil}
+	go func() { <-ctx.Done(); _ = server.Close() }()
+	fmt.Println("Journal development ready; credential valid until revoked; audio 120 minutes/month")
+	err = server.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}

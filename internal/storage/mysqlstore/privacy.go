@@ -1,0 +1,244 @@
+package mysqlstore
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/tellyouwhat/backend/internal/attestation"
+	"github.com/tellyouwhat/backend/internal/privacy"
+)
+
+type PrivacyRepository struct {
+	database *sql.DB
+	appID    string
+}
+
+func NewPrivacyRepository(database *sql.DB, appID string) *PrivacyRepository {
+	return &PrivacyRepository{database: database, appID: appID}
+}
+
+// CheckConsentScopes detects a missing migration without writing a user's consent.
+func (repository *PrivacyRepository) CheckConsentScopes(ctx context.Context, scopes []string) error {
+	var clause string
+	err := repository.database.QueryRowContext(ctx, `SELECT checks.CHECK_CLAUSE
+		FROM information_schema.CHECK_CONSTRAINTS AS checks
+		JOIN information_schema.TABLE_CONSTRAINTS AS constraints_in_table
+		ON checks.CONSTRAINT_SCHEMA = constraints_in_table.CONSTRAINT_SCHEMA
+		AND checks.CONSTRAINT_NAME = constraints_in_table.CONSTRAINT_NAME
+		WHERE checks.CONSTRAINT_SCHEMA = DATABASE() AND constraints_in_table.TABLE_NAME = 'privacy_consents'
+		AND checks.CONSTRAINT_NAME = 'privacy_consents_scope_chk' AND constraints_in_table.ENFORCED = 'YES'`).Scan(&clause)
+	if err != nil {
+		return fmt.Errorf("inspect consent scope constraint: %w", err)
+	}
+	// MySQL exposes backslash-escaped literals in CHECK_CLAUSE.
+	clause = strings.ReplaceAll(clause, "\\", "")
+	for _, scope := range scopes {
+		if !strings.Contains(clause, "'"+scope+"'") {
+			return fmt.Errorf("consent scope %q requires a database migration", scope)
+		}
+	}
+	return nil
+}
+
+func (repository *PrivacyRepository) RecordConsents(ctx context.Context, records []privacy.Record) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+	for _, record := range records {
+		if _, err := transaction.ExecContext(ctx, `
+            INSERT INTO privacy_consents
+				(app_id, key_id, device_id, scope, document_version, granted, recorded_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                device_id = VALUES(device_id), granted = VALUES(granted), recorded_at = VALUES(recorded_at)`,
+			repository.appID, record.KeyID, record.DeviceID, record.Scope, record.DocumentVersion, record.Granted, record.RecordedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return transaction.Commit()
+}
+
+func (repository *PrivacyRepository) HasGrantedConsents(
+	ctx context.Context,
+	keyID string,
+	requirements []privacy.Consent,
+) (bool, error) {
+	for _, requirement := range requirements {
+		var granted bool
+		err := repository.database.QueryRowContext(ctx, `
+			SELECT granted FROM privacy_consents
+			WHERE app_id = ? AND key_id = ? AND scope = ? AND document_version = ?`,
+			repository.appID, keyID, requirement.Scope, requirement.DocumentVersion,
+		).Scan(&granted)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if !granted {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (repository *PrivacyRepository) PlanDeletion(ctx context.Context, principal attestation.Principal) (privacy.DeletionPlan, error) {
+	keyRows, err := repository.database.QueryContext(ctx, `
+        SELECT key_id, device_id, transaction_id, production_transaction_id, sandbox_transaction_id
+        FROM app_attest_keys
+		WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?))`,
+		repository.appID, principal.KeyID, principal.TransactionID, principal.TransactionID)
+	if err != nil {
+		return privacy.DeletionPlan{}, err
+	}
+	var plan privacy.DeletionPlan
+	var keyIDs []string
+	for keyRows.Next() {
+		var value attestation.Principal
+		var productionID, sandboxID string
+		value.AppID = repository.appID
+		if err := keyRows.Scan(&value.KeyID, &value.DeviceID, &value.TransactionID, &productionID, &sandboxID); err != nil {
+			keyRows.Close()
+			return privacy.DeletionPlan{}, err
+		}
+		plan.Principals = append(plan.Principals, value)
+		for _, id := range distinctTransactionIDs(productionID, sandboxID) {
+			if id != value.TransactionID {
+				alias := value
+				alias.TransactionID = id
+				plan.Principals = append(plan.Principals, alias)
+			}
+		}
+		keyIDs = append(keyIDs, value.KeyID)
+	}
+	if err := keyRows.Close(); err != nil {
+		return privacy.DeletionPlan{}, err
+	}
+	if err := keyRows.Err(); err != nil {
+		return privacy.DeletionPlan{}, err
+	}
+	if len(keyIDs) == 0 {
+		return privacy.DeletionPlan{Principals: []attestation.Principal{principal}}, nil
+	}
+	arguments := make([]any, 0, len(keyIDs)+1)
+	arguments = append(arguments, repository.appID)
+	for _, keyID := range keyIDs {
+		arguments = append(arguments, keyID)
+	}
+	rows, err := repository.database.QueryContext(ctx, `
+        SELECT object_id FROM media_objects
+		WHERE app_id = ? AND owner_key_id IN (`+placeholders(len(keyIDs))+`) AND deleted_at IS NULL`, arguments...)
+	if err != nil {
+		return privacy.DeletionPlan{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var objectID string
+		if err := rows.Scan(&objectID); err != nil {
+			return privacy.DeletionPlan{}, err
+		}
+		plan.MediaObjectIDs = append(plan.MediaObjectIDs, objectID)
+	}
+	return plan, rows.Err()
+}
+
+func (repository *PrivacyRepository) DeletePrincipal(ctx context.Context, principal attestation.Principal) error {
+	return repository.deletePrincipal(ctx, principal, nil)
+}
+
+func (repository *PrivacyRepository) DeletionCompleted(ctx context.Context, receipt privacy.DeletionReceipt) (bool, error) {
+	var completed bool
+	err := repository.database.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM privacy_deletion_receipts WHERE app_id = ? AND request_digest = ?)`,
+		repository.appID, receipt[:]).Scan(&completed)
+	return completed, err
+}
+
+func (repository *PrivacyRepository) DeletePrincipalWithReceipt(ctx context.Context, principal attestation.Principal, receipt privacy.DeletionReceipt) error {
+	if receipt == (privacy.DeletionReceipt{}) {
+		return privacy.ErrInvalidDeletionReceipt
+	}
+	return repository.deletePrincipal(ctx, principal, &receipt)
+}
+
+func (repository *PrivacyRepository) deletePrincipal(ctx context.Context, principal attestation.Principal, receipt *privacy.DeletionReceipt) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+	transactionID := principal.TransactionID
+	rows, err := transaction.QueryContext(ctx, `SELECT transaction_id, production_transaction_id, sandbox_transaction_id
+		FROM app_attest_keys WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?)) FOR UPDATE`,
+		repository.appID, principal.KeyID, transactionID, transactionID)
+	if err != nil {
+		return err
+	}
+	ids := []string{transactionID}
+	for rows.Next() {
+		var active, production, sandbox string
+		if err := rows.Scan(&active, &production, &sandbox); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, active, production, sandbox)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range distinctTransactionIDs(ids...) {
+		if _, err := transaction.ExecContext(ctx,
+			`DELETE FROM app_store_notifications WHERE app_id = ? AND original_transaction_id = ?`, repository.appID, id,
+		); err != nil {
+			return err
+		}
+		originalHash := sha256.Sum256([]byte(id))
+		if _, err := transaction.ExecContext(ctx,
+			`DELETE FROM app_store_offer_redemptions WHERE app_id = ? AND original_transaction_hash = ?`, repository.appID, originalHash[:],
+		); err != nil {
+			return err
+		}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM offer_delivery_verified_links WHERE app_id=? AND original_hash=?`, repository.appID, originalHash[:]); err != nil {
+			return err
+		}
+	}
+	if _, err := transaction.ExecContext(ctx, `
+        DELETE FROM app_attest_keys
+		WHERE app_id = ? AND (key_id = ? OR (? <> '' AND transaction_id = ?))`,
+		repository.appID, principal.KeyID, transactionID, transactionID); err != nil {
+		return err
+	}
+	if receipt != nil {
+		if _, err := transaction.ExecContext(ctx, `
+			INSERT INTO privacy_deletion_receipts (app_id, request_digest) VALUES (?, ?)
+			ON DUPLICATE KEY UPDATE request_digest = VALUES(request_digest)`, repository.appID, receipt[:]); err != nil {
+			return err
+		}
+	}
+	return transaction.Commit()
+}
+
+var _ privacy.Repository = (*PrivacyRepository)(nil)
+
+func distinctTransactionIDs(values ...string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}

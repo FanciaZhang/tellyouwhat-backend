@@ -1,0 +1,28 @@
+# 数据保留与恢复边界
+
+AI 任务和临时媒体具有最长 24 小时的服务有效期。任务 API 在准确到期时拒绝读取、取消和幂等重放旧结果，Worker 不再领取过期任务；数据库物理删除由每日 maintenance 执行。物理清理发生在下一次成功的清理作业，不承诺在服务到期瞬间完成。
+
+任务物理清理覆盖排队、运行、成功、失败和取消状态，派发记录通过外键级联删除。对象存储删除失败时保留媒体元数据供重试；数据库清理不依赖对象存储清理成功。清理作业任一部分失败时整体状态为失败，不更新成功记录。
+
+应用层备份只保存数据库结构、App 注册表、管理控制面以及不含设备身份的删除完成摘要。App Attest 身份、授权同意、权益、交易通知、优惠核销、额度、幂等记录、媒体元数据和 AI 任务等 App 用户数据只保留表结构，不进入新备份。备份脚本使用数据表白名单；以后新增的表默认不备份数据，必须经过隐私与恢复评审后才能加入白名单。恢复旧备份不会重新启用用户身份、同意或购买派生状态；客户端重新注册后，StoreKit 交易可从 Apple 重新同步。
+
+配置恢复包可能包含相册等独立业务库的完整检查点；共享主库的数据白名单不证明这些库已清除用户数据，仍须按对应 App 的恢复与删除规则核验。
+
+共享网关的手记录音目录同样属于临时处理数据，不加入配置备份。正常发布和回滚共用本环境的现存目录，保留 `.environment`、任务、执行锁及删除标记；禁止用旧目录快照覆盖它。整机丢失后的恢复只恢复控制面与配置，使用本环境的新空目录，客户端重新注册并重新发起未完成的录音。不要从旧机器备份恢复录音任务、删除标记或设备身份的任意子集；这不是录音内容备份服务，也不新增此类私人数据的异地副本。
+
+备份最长保留 14 天，以 HMAC 验证后的创建时间判断期限，不使用可因复制而变化的文件时间戳。生成新备份前和每日 maintenance 均独立清理到期备份，因此新数据库导出失败不会延长旧备份的保留期。到期备份禁止进入恢复演练。
+
+本机到期清理以认证清单为入口，先核验所有仍在的密文与恢复包，最后才删除清单；每次删除落盘后，中断可由下一进程继续。未到期时缺少任何成员仍视为损坏，不能借清理规则恢复不完整备份。上传进程持有输入文件共享锁，清理须取得整组文件的排他锁；上传失败、取消或进程退出后释放。无清单的遗留文件、额外硬链接、符号链接、非普通文件或校验中被替换的文件保留并报错，不扩大清理目录。
+
+异地发布先认证并锁定完整输入，将文件摘要传给私有 SDK 进程；每份密文的摘要和字节数读回一致后，才继续下一份，认证清单最后上传。来源变化、缺项、重复或错误大小的回执都不能写入成功记录，调用方后续修改也不能改变已认证的发布范围。上传仍使用普通 PUT；历史版本、未决写入和完整账户擦除尚待完成。[源码与验证](evidence/albums-shared-publication-integrity-2026-11-02.json)。
+
+无法通过完整性校验的备份保留供运维核查，同时继续清理其他已验证的到期备份，并将作业标记为失败。运维须处理校验失败和清理失败告警，不能据此宣称全部副本已经删除。
+
+云数据库快照独立于应用层备份，其保留周期和删除结果必须在云控制台或 API 单独核验。现有旧备份仍可能带回已删除身份和已撤回同意，必须等其按保留周期轮换清除。隔离恢复演练只证明备份完整性，不能授权恢复对外服务；生产恢复只允许使用带有数据白名单清单的新备份，并在恢复后确认所有非白名单表为 0 行，再开放服务。删除完成摘要仅用于相同删除请求的结果确认，不能恢复已删除内容。
+
+运营分层的费用账本只保存调用时权益类别与环境，不保存用户标识，随原费用账本保留。免费设备观察组与 Apple 交易观察关联 App Attest 身份，删除身份时级联清除，并按 400 天使用记录保留窗口清理；这两张表不备份数据。采集起点是无身份的配置元数据，随管理控制面备份。
+
+
+### Albums collection deletion recovery
+
+Albums' current authenticated deletion checkpoint is v3: account and media fences plus existing collection tombstones. It replays collection deletion only into the quarantined disposable restore database, clears the retired group name and membership, and leaves media and quota untouched. Older v1/v2 checkpoints cannot authorize this restore. Authenticated v2 copies retain their original expiry cleanup rules; v1 retains its review boundary. Production checkpoint code remains bound to its selected source, while the development bundle authenticates all four current modules. This does not enable automatic retention erasure or claim historical-backup/account erasure complete. See [verification](evidence/albums-collection-deletion-recovery-2026-11-02.json).

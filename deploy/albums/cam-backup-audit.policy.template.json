@@ -1,0 +1,11 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["cos:GetBucketObjectVersions", "cos:ListMultipartUploads"],
+      "resource": ["qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/*"],
+      "condition": {"string_like": {"cos:prefix": ["albums%2Frecovery%2F*"]}}
+    }
+  ]
+}

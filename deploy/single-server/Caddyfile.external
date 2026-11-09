@@ -1,0 +1,40 @@
+(tellyouwhat_public_api) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	@internal path /internal/*
+	respond @internal 404
+
+	reverse_proxy 127.0.0.1:18080 {
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+	}
+}
+
+{$HEALTH_API_DOMAIN} {
+	tls {$ACME_EMAIL}
+	import tellyouwhat_public_api
+}
+
+{$JOURNAL_API_DOMAIN} {
+	tls {$ACME_EMAIL}
+	import tellyouwhat_public_api
+}
+
+{$ADMIN_DOMAIN} {
+	tls {$ACME_EMAIL}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:18082 {
+		header_up X-Real-IP {remote_host}
+	}
+}

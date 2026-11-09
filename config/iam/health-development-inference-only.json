@@ -1,0 +1,15 @@
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ark:SendInference"
+      ],
+      "Resource": [
+        "trn:ark:cn-beijing:2100218112:endpoint/ep-20261016104637-869cv",
+        "trn:ark:cn-beijing:2100218112:endpoint/ep-20261016105050-bcl4b",
+        "trn:ark:cn-beijing:2100218112:endpoint/ep-20261016105205-wt9gw"
+      ]
+    }
+  ]
+}

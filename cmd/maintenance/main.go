@@ -1,0 +1,67 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"github.com/tellyouwhat/backend/internal/config"
+	"log"
+	"os"
+	"time"
+
+	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/media"
+	"github.com/tellyouwhat/backend/internal/prompteval"
+	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
+)
+
+func main() {
+	databaseDSN := os.Getenv("DATABASE_DSN")
+	if databaseDSN == "" {
+		log.Fatal("DATABASE_DSN is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	database, err := mysqlstore.Open(ctx, databaseDSN)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer database.Close()
+	store, err := media.NewTOSStore(media.TOSConfig{
+		Endpoint: os.Getenv("TOS_ENDPOINT"), Region: os.Getenv("TOS_REGION"), Bucket: os.Getenv("TOS_BUCKET"),
+		AccessKey: os.Getenv("TOS_ACCESS_KEY"), SecretKey: os.Getenv("TOS_SECRET_KEY"),
+	})
+	if err != nil {
+		log.Fatal("object storage configuration is required for retention cleanup")
+	}
+	cipher, err := mysqlstore.NewPayloadCipher(os.Getenv("PAYLOAD_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatal("payload encryption key is required for retention cleanup")
+	}
+	repository := mysqlstore.NewMaintenanceRepository(database)
+	now := time.Now().UTC()
+	evaluationError := (prompteval.Store{DB: database}).Recover(ctx, now)
+	result, databaseError := repository.Cleanup(ctx, now)
+	expiredImages, imageError := (illustrationstore.Store{Database: database, Cipher: cipher}).Expire(ctx, now)
+	recordingConfig, recordingError := config.LoadJournalRecording(os.Getenv("APP_ENV"))
+	if recordingError == nil && recordingConfig != nil {
+		var recordings *voice.RecordingJobStore
+		recordings, recordingError = voice.NewEnvironmentRecordingJobStore(recordingConfig.Root, os.Getenv("APP_ENV"), func() time.Time { return now })
+		if recordingError == nil {
+			recordingError = recordings.Cleanup()
+		}
+	}
+	purgedMedia, mediaError := repository.PurgeExpiredMedia(ctx, now, store)
+	if err := errors.Join(databaseError, mediaError, evaluationError, imageError, recordingError); err != nil {
+		log.Fatal(err)
+	}
+	log.Printf(
+		"maintenance completed: idempotency=%d media=%d jobs=%d notifications=%d usage=%d identities=%d images=%d",
+		result.IdempotencyRecords,
+		result.MediaObjects+purgedMedia,
+		result.Jobs,
+		result.Notifications,
+		result.UsageRecords,
+		result.IdentityRecords, expiredImages,
+	)
+}

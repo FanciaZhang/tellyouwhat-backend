@@ -1,0 +1,862 @@
+package adminportal
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/tellyouwhat/backend/internal/adminauth"
+	"github.com/tellyouwhat/backend/internal/adminhttpapi"
+	"github.com/tellyouwhat/backend/internal/adminui"
+	"github.com/tellyouwhat/backend/internal/appstoreconnect"
+	"github.com/tellyouwhat/backend/internal/cloudbilling"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/readaloud"
+	"github.com/tellyouwhat/backend/internal/offerdelivery"
+	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
+	"github.com/tellyouwhat/backend/internal/prompteval"
+)
+
+const (
+	maximumBodyBytes             = 64 << 10
+	maximumAdminRequestBodyBytes = 1 << 20
+)
+
+var (
+	validDurations     = []string{"THREE_DAYS", "ONE_WEEK", "TWO_WEEKS", "ONE_MONTH", "TWO_MONTHS", "THREE_MONTHS", "SIX_MONTHS", "ONE_YEAR"}
+	validCustomers     = []string{"NEW", "EXISTING", "EXPIRED"}
+	idempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{8,128}$`)
+	customCodePattern  = regexp.MustCompile(`^[A-Z0-9]{4,64}$`)
+	resourceIDPattern  = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+)
+
+type OfferManager interface {
+	ListOffers(context.Context) ([]appstoreconnect.Offer, error)
+	CreateFreeOffer(context.Context, appstoreconnect.OfferDraft) (appstoreconnect.Offer, error)
+	DeactivateOffer(context.Context, string) (appstoreconnect.Offer, error)
+	CreateCustomCode(context.Context, string, string, int, string) (appstoreconnect.CodePool, error)
+	CreateOneTimeCodeBatch(context.Context, string, int, string, string) (appstoreconnect.CodePool, error)
+	ListCodePools(context.Context, string) ([]appstoreconnect.CodePool, error)
+	DownloadOneTimeCodes(context.Context, string) ([]byte, error)
+}
+
+type Config struct {
+	Environment             string
+	VoiceCatalog            *readaloud.CatalogStore
+	VoiceDiscovery          VoiceDiscovery
+	VoiceProbe              *readaloud.CatalogProbe
+	VoiceWritesEnabled      bool
+	Delivery                *offerdelivery.Store
+	Evaluations             *prompteval.Store
+	EvaluationSpeechPrice   costcontrol.DurationPrice
+	Billing                 *cloudbilling.Cache
+	Operations              *platformops.Store
+	Prompts                 *promptconfig.Store
+	PromptCache             *promptconfig.Cache
+	OperationsWritesEnabled bool
+	AI                      *AIConfig
+	PreviewSigningKey       []byte
+	WritesEnabled           bool
+	Apps                    []AdminApp
+	Readiness               func(context.Context) error
+	HTTPMiddleware          []gin.HandlerFunc
+}
+
+type AdminApp struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
+
+type Server struct {
+	router     *gin.Engine
+	auth       *adminauth.Service
+	offers     map[string]OfferManager
+	operations OperationStore
+	metrics    MetricsReader
+	now        func() time.Time
+	config     Config
+	limiter    *rateLimiter
+	readiness  func(context.Context) error
+}
+
+type adminHTTPServer struct {
+	*Server
+	*adminauth.Service
+}
+
+var _ adminhttpapi.ServerInterface = (*adminHTTPServer)(nil)
+
+var configureAdminGinOnce sync.Once
+
+func NewServer(auth *adminauth.Service, offers map[string]OfferManager, operations OperationStore, metrics MetricsReader, config Config, now func() time.Time) (*Server, error) {
+	if auth == nil || operations == nil || metrics == nil || len(config.PreviewSigningKey) < 32 || len(config.Apps) == 0 {
+		return nil, errors.New("admin portal dependencies and a 32-byte preview key are required")
+	}
+	for _, app := range config.Apps {
+		if cleanID(app.ID) == "" || strings.TrimSpace(app.DisplayName) == "" {
+			return nil, errors.New("admin application registry is invalid")
+		}
+	}
+	if now == nil {
+		now = time.Now
+	}
+	readiness := config.Readiness
+	if readiness == nil {
+		readiness = func(context.Context) error { return nil }
+	}
+	configureAdminGinOnce.Do(func() {
+		gin.SetMode(gin.ReleaseMode)
+		binding.EnableDecoderDisallowUnknownFields = true
+		binding.EnableDecoderUseNumber = true
+	})
+	router := gin.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+	router.HandleMethodNotAllowed = true
+	router.UseRawPath = true
+	router.UnescapePathValues = false
+	server := &Server{router: router, auth: auth, offers: offers, operations: operations, metrics: metrics, now: now, config: config, limiter: newRateLimiter(now), readiness: readiness}
+	router.Use(config.HTTPMiddleware...)
+	router.Use(server.securityAndRateLimit())
+	router.Use(limitAdminRequestBody())
+	adminhttpapi.RegisterHandlersWithOptions(router, &adminHTTPServer{Server: server, Service: auth}, adminhttpapi.GinServerOptions{
+		ErrorHandler: func(context *gin.Context, _ error, status int) {
+			writeFailure(context.Writer, status, "invalid_parameter", "请求参数无效")
+		},
+	})
+	router.NoRoute(func(context *gin.Context) { adminui.Render(context, config.Environment == "development") })
+	return server, nil
+}
+
+func limitAdminRequestBody() gin.HandlerFunc {
+	return func(context *gin.Context) {
+		switch context.Request.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch:
+			limit := int64(maximumAdminRequestBodyBytes)
+			if context.Request.URL.Path == "/api/v1/journal/read-aloud/catalog/drafts" {
+				limit = 32 << 20
+			}
+			context.Request.Body = http.MaxBytesReader(context.Writer, context.Request.Body, limit)
+		}
+		context.Next()
+	}
+}
+
+func (server *Server) ListAdminApps(context *gin.Context) {
+	writer, request := context.Writer, context.Request
+	authenticated, ok := server.auth.RequireAuthenticated(writer, request, false, false)
+	if !ok {
+		return
+	}
+	apps := make([]AdminApp, 0, len(server.config.Apps))
+	for _, app := range server.config.Apps {
+		if authenticated.User.CanAccessApp(app.ID) {
+			apps = append(apps, app)
+		}
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"apps": apps})
+}
+
+func (server *Server) offerManager(writer http.ResponseWriter, rawAppID string) (string, OfferManager, bool) {
+	appID := cleanID(rawAppID)
+	manager := server.offers[appID]
+	if appID == "" || !slices.ContainsFunc(server.config.Apps, func(app AdminApp) bool { return app.ID == appID }) {
+		writeFailure(writer, http.StatusNotFound, "app_not_found", "未找到这个 App")
+		return "", nil, false
+	}
+	if manager == nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "offer_service_unavailable", "这个环境未配置 App Store Connect")
+		return "", nil, false
+	}
+	return appID, manager, true
+}
+
+func requireScopedOffer(writer http.ResponseWriter, request *http.Request, manager OfferManager, offerID string) bool {
+	offers, err := manager.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return false
+	}
+	if !slices.ContainsFunc(offers, func(offer appstoreconnect.Offer) bool { return offer.ID == offerID }) {
+		writeFailure(writer, http.StatusNotFound, "offer_not_found", "未找到这个 App 的 Offer")
+		return false
+	}
+	return true
+}
+
+func (server *Server) ListCodePools(context *gin.Context, rawAppID adminhttpapi.AppID, rawOfferID adminhttpapi.OfferID) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferRead, appID, false, false); !ok {
+		return
+	}
+	offerID := cleanID(rawOfferID)
+	if offerID == "" {
+		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 标识无效")
+		return
+	}
+	known, err := offers.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	if !slices.ContainsFunc(known, func(o appstoreconnect.Offer) bool { return o.ID == offerID }) {
+		writeFailure(writer, 404, "offer_not_found", "未找到这个 App 的 Offer")
+		return
+	}
+	pools, err := offers.ListCodePools(request.Context(), offerID)
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	for i := range pools {
+		pools[i].Code = ""
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"codePools": pools})
+}
+
+func (server *Server) DownloadOneTimeCodes(context *gin.Context, rawAppID adminhttpapi.AppID, rawBatchID adminhttpapi.BatchID, _ adminhttpapi.DownloadOneTimeCodesParams) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	authenticated, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferCodeDownload, appID, true, true)
+	if !ok {
+		return
+	}
+	batchID := cleanID(rawBatchID)
+	if batchID == "" {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "一次性码池标识无效")
+		return
+	}
+	known, err := offers.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	found := false
+	for _, offer := range known {
+		pools, err := offers.ListCodePools(request.Context(), offer.ID)
+		if err != nil {
+			writeAppleFailure(writer, err)
+			return
+		}
+		if slices.ContainsFunc(pools, func(p appstoreconnect.CodePool) bool { return p.ID == batchID && p.Kind == "oneTime" }) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeFailure(writer, 404, "code_pool_not_found", "未找到这个 App 的一次性码池")
+		return
+	}
+	data, err := offers.DownloadOneTimeCodes(request.Context(), batchID)
+	if err != nil {
+		server.recordMutationFailure(request, authenticated.User.ID, appID,
+			"offer_codes.download", "code_batch", batchID)
+		writeAppleFailure(writer, err)
+		return
+	}
+	if server.config.Delivery != nil {
+		if err := server.config.Delivery.ManagedExport(request.Context(), appID, batchID, authenticated.User.ID, server.now()); err != nil {
+			deliveryFailure(writer, err)
+			return
+		}
+	}
+	writer.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	writer.Header().Set("Content-Disposition", `attachment; filename="offer-codes-`+batchID+`.csv"`)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(data)
+	server.auth.RecordAudit(request.Context(), authenticated.User.ID, appID, request,
+		"offer_codes.download", "succeeded", "code_batch", batchID, nil)
+}
+
+func (server *Server) GetOfferMetrics(context *gin.Context, rawAppID adminhttpapi.AppID) {
+	writer, request := context.Writer, context.Request
+	appID, _, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionMetricsRead, appID, false, false); !ok {
+		return
+	}
+	metrics, err := server.metrics.OfferMetrics(request.Context(), appID)
+	if err != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "metrics_unavailable", "兑换统计暂时不可用")
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"metrics": metrics, "anonymous": true})
+}
+
+func (server *Server) Router() *gin.Engine {
+	return server.router
+}
+
+func (server *Server) securityAndRateLimit() gin.HandlerFunc {
+	return func(context *gin.Context) {
+		writer, request := context.Writer, context.Request
+		writer.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob: https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		writer.Header().Set("X-Content-Type-Options", "nosniff")
+		writer.Header().Set("Referrer-Policy", "no-referrer")
+		writer.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		if !server.limiter.allow(request) {
+			writer.Header().Set("Retry-After", "60")
+			writeFailure(writer, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后重试")
+			context.Abort()
+			return
+		}
+		context.Next()
+	}
+}
+
+func (server *Server) GetAdminHealth(context *gin.Context) {
+	writeJSON(context.Writer, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (server *Server) GetAdminReadiness(ginContext *gin.Context) {
+	writer, request := ginContext.Writer, ginContext.Request
+	if server.readiness == nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "not_ready", "服务依赖尚未就绪")
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+	defer cancel()
+	if err := server.readiness(ctx); err != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "not_ready", "服务依赖尚未就绪")
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+func (server *Server) ListOffers(context *gin.Context, rawAppID adminhttpapi.AppID) {
+	writer, request := context.Writer, context.Request
+	appID, manager, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferRead, appID, false, false); !ok {
+		return
+	}
+	offers, err := manager.ListOffers(request.Context())
+	if err != nil {
+		writeAppleFailure(writer, err)
+		return
+	}
+	active, creationActive := 0, 0
+	appAppleID, creationSubscriptionID := offerScope(manager)
+	for _, offer := range offers {
+		if offer.Active {
+			active++
+		}
+		if offer.Active && (creationSubscriptionID == "" || offer.SubscriptionID == creationSubscriptionID) {
+			creationActive++
+		}
+	}
+	var deliverySummary []offerdelivery.OfferSummary
+	deliveryAvailable := server.config.Delivery != nil
+	if deliveryAvailable {
+		deliverySummary, err = server.config.Delivery.OfferSummaries(request.Context(), appID)
+		deliveryAvailable = err == nil
+	}
+	scope := "subscription"
+	if appAppleID != "" {
+		scope = "app"
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"offers": offers, "activeCount": active, "activeLimit": 10, "syncedAt": server.now().UTC(),
+		"writesEnabled": server.config.WritesEnabled, "creationActiveCount": creationActive,
+		"creationSubscriptionID": creationSubscriptionID, "inventoryScope": scope,
+		"deliverySummary": deliverySummary, "deliveryAvailable": deliveryAvailable,
+	})
+}
+
+func (server *Server) PreviewOffer(context *gin.Context, rawAppID adminhttpapi.AppID, _ adminhttpapi.PreviewOfferParams) {
+	writer, request := context.Writer, context.Request
+	appID, _, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	if _, ok := server.auth.RequirePermission(writer, request, adminauth.PermissionOfferManage, appID, true, false); !ok {
+		return
+	}
+	draft, ok := decodeOfferDraft(writer, request)
+	if !ok {
+		return
+	}
+	token, expiresAt, err := server.signPreview(appID, draft)
+	if err != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "preview_unavailable", "暂时无法生成确认预览")
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"draft": draft, "previewToken": token, "expiresAt": expiresAt,
+		"summary":  previewSummary(draft),
+		"warnings": []string{"Offer 创建后只能停用，名称、适用人群、时长和续订设置无法修改。"},
+	})
+}
+
+func (server *Server) CreateOffer(context *gin.Context, rawAppID adminhttpapi.AppID, _ adminhttpapi.CreateOfferParams) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	session, ok := server.requireWrite(writer, request, appID)
+	if !ok {
+		return
+	}
+	var input adminhttpapi.CreateOfferRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	draft := offerDraftFromAPI(input.Draft)
+	if !validateOfferDraft(writer, draft) {
+		return
+	}
+	draft = normalizeOfferDraft(draft)
+	if !server.verifyPreview(appID, draft, input.PreviewToken) {
+		writeFailure(writer, http.StatusConflict, "preview_expired", "确认预览已过期或内容已改变，请重新预览")
+		return
+	}
+	existing, err := offers.ListOffers(request.Context())
+	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.create", "offer", "")
+		writeAppleFailure(writer, err)
+		return
+	}
+	active := 0
+	_, creationSubscriptionID := offerScope(offers)
+	for _, offer := range existing {
+		if offer.Active && (creationSubscriptionID == "" || offer.SubscriptionID == creationSubscriptionID) {
+			active++
+		}
+	}
+	if active >= 10 {
+		writeFailure(writer, http.StatusConflict, "active_offer_limit", "启用中的 Offer 已达到 Apple 上限")
+		return
+	}
+	operationInput := struct {
+		Draft        appstoreconnect.OfferDraft `json:"draft"`
+		PreviewToken string                     `json:"previewToken"`
+	}{Draft: draft, PreviewToken: input.PreviewToken}
+	if !server.beginOperation(writer, request, appID, session.User.ID, "offer.create", operationInput) {
+		return
+	}
+	offer, err := offers.CreateFreeOffer(request.Context(), draft)
+	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.create", "offer", "")
+		writeAppleFailure(writer, err)
+		return
+	}
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer.create", "succeeded", "offer", offer.ID, nil)
+	server.completeOperation(writer, request, appID, session.User.ID, http.StatusCreated, map[string]any{"offer": offer})
+}
+
+func (server *Server) DeactivateOffer(context *gin.Context, rawAppID adminhttpapi.AppID, rawOfferID adminhttpapi.OfferID, _ adminhttpapi.DeactivateOfferParams) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	session, ok := server.requireWrite(writer, request, appID)
+	if !ok {
+		return
+	}
+	offerID := cleanID(rawOfferID)
+	if offerID == "" {
+		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 标识无效")
+		return
+	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
+		return
+	}
+	if !server.beginOperation(writer, request, appID, session.User.ID, "offer.deactivate", map[string]string{"offerID": offerID}) {
+		return
+	}
+	offer, err := offers.DeactivateOffer(request.Context(), offerID)
+	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID, "offer.deactivate", "offer", offerID)
+		writeAppleFailure(writer, err)
+		return
+	}
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer.deactivate", "succeeded", "offer", offerID, nil)
+	server.completeOperation(writer, request, appID, session.User.ID, http.StatusOK, map[string]any{"offer": offer})
+}
+
+func (server *Server) CreateCustomCode(context *gin.Context, rawAppID adminhttpapi.AppID, rawOfferID adminhttpapi.OfferID, _ adminhttpapi.CreateCustomCodeParams) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	session, ok := server.requireWrite(writer, request, appID)
+	if !ok {
+		return
+	}
+	var input adminhttpapi.CustomCodeRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	input.Code = strings.ToUpper(strings.TrimSpace(input.Code))
+	expirationDate := ""
+	if input.ExpirationDate != nil {
+		expirationDate = input.ExpirationDate.String()
+	}
+	offerID := cleanID(rawOfferID)
+	if !validCodePoolCount(input.NumberOfCodes, false) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_count", "正式邀请码需选择 500～25,000 次，且为 500 的整数倍")
+		return
+	}
+	if !validCodePoolExpiration(expirationDate, true, server.now()) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_expiration", "邀请码到期日需在未来六个月内")
+		return
+	}
+	if offerID == "" || !customCodePattern.MatchString(input.Code) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "自定义码池参数无效")
+		return
+	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
+		return
+	}
+	operationInput := struct {
+		OfferID string
+		Input   any
+	}{offerID, input}
+	if !server.beginOperation(writer, request, appID, session.User.ID, "custom-code.create", operationInput) {
+		return
+	}
+	pool, err := offers.CreateCustomCode(request.Context(), offerID, input.Code, input.NumberOfCodes, expirationDate)
+	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID,
+			"offer_codes.custom_create", "offer", offerID)
+		writeAppleFailure(writer, err)
+		return
+	}
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer_codes.custom_create", "succeeded", "offer", offerID, map[string]any{"count": input.NumberOfCodes})
+	server.completeOperation(writer, request, appID, session.User.ID, http.StatusCreated, map[string]any{"codePool": pool})
+}
+
+func (server *Server) CreateOneTimeCodeBatch(context *gin.Context, rawAppID adminhttpapi.AppID, rawOfferID adminhttpapi.OfferID, _ adminhttpapi.CreateOneTimeCodeBatchParams) {
+	writer, request := context.Writer, context.Request
+	appID, offers, ok := server.offerManager(writer, rawAppID)
+	if !ok {
+		return
+	}
+	session, ok := server.requireWrite(writer, request, appID)
+	if !ok {
+		return
+	}
+	var input adminhttpapi.OneTimeCodeBatchRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	environment := strings.ToUpper(strings.TrimSpace(string(input.Environment)))
+	expirationDate := input.ExpirationDate.String()
+	offerID := cleanID(rawOfferID)
+	if !validCodePoolCount(input.NumberOfCodes, environment == "SANDBOX") {
+		message := "正式邀请码需选择 500～25,000 次，且为 500 的整数倍"
+		if environment == "SANDBOX" {
+			message = "沙盒邀请码请选择 10、100、500 或 1,000 个"
+		}
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_count", message)
+		return
+	}
+	if !validCodePoolExpiration(expirationDate, false, server.now()) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_expiration", "邀请码到期日需在未来六个月内")
+		return
+	}
+	if offerID == "" || environment != "PRODUCTION" && environment != "SANDBOX" {
+		writeFailure(writer, http.StatusBadRequest, "invalid_code_pool", "一次性码池参数无效")
+		return
+	}
+	if !requireScopedOffer(writer, request, offers, offerID) {
+		return
+	}
+	operationInput := struct {
+		OfferID string
+		Input   any
+	}{offerID, input}
+	if !server.beginOperation(writer, request, appID, session.User.ID, "one-time-code-batch.create", operationInput) {
+		return
+	}
+	pool, err := offers.CreateOneTimeCodeBatch(request.Context(), offerID, input.NumberOfCodes, expirationDate, environment)
+	if err != nil {
+		server.recordMutationFailure(request, session.User.ID, appID,
+			"offer_codes.batch_create", "offer", offerID)
+		writeAppleFailure(writer, err)
+		return
+	}
+	server.auth.RecordAudit(request.Context(), session.User.ID, appID, request,
+		"offer_codes.batch_create", "succeeded", "offer", offerID,
+		map[string]any{"count": input.NumberOfCodes, "environment": environment})
+	result := map[string]any{"codePool": pool}
+	if server.config.Delivery != nil {
+		prepareErr := server.prepareFreshBatch(request.Context(), appID, offerID, session.User.ID, pool)
+		result["deliveryReady"] = prepareErr == nil
+		if prepareErr != nil {
+			result["deliveryMessage"] = "Apple 已生成兑换码，后台暂未完成接入。请刷新后使用已有批次，不必再次新建。"
+		}
+	}
+	server.completeOperation(writer, request, appID, session.User.ID, http.StatusCreated, result)
+}
+
+func (server *Server) beginOperation(writer http.ResponseWriter, request *http.Request, appID, userID, action string, value any) bool {
+	result, err := server.operations.Begin(request.Context(), userID, appID, request.Header.Get("Idempotency-Key"), action, operationHash(value))
+	if errors.Is(err, ErrOperationConflict) {
+		writeFailure(writer, http.StatusConflict, "idempotency_conflict", "该防重复标识已经用于其他操作")
+		return false
+	}
+	if errors.Is(err, ErrOperationPending) {
+		writeFailure(writer, http.StatusConflict, "operation_pending", "操作正在处理或结果待核对，请刷新 Offer 列表")
+		return false
+	}
+	if err != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "operation_unavailable", "暂时无法安全提交操作")
+		return false
+	}
+	if result != nil {
+		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Idempotent-Replayed", "true")
+		writer.WriteHeader(result.Status)
+		_, _ = writer.Write(result.Body)
+		return false
+	}
+	return true
+}
+
+func (server *Server) completeOperation(writer http.ResponseWriter, request *http.Request, appID, userID string, status int, value any) {
+	body, err := json.Marshal(value)
+	if err != nil || server.operations.Complete(request.Context(), userID, appID, request.Header.Get("Idempotency-Key"), status, body, server.now()) != nil {
+		writeFailure(writer, http.StatusServiceUnavailable, "operation_result_uncertain", "操作结果未能安全记录，请刷新 Offer 列表核对")
+		return
+	}
+	writeJSON(writer, status, value)
+}
+
+func (server *Server) recordMutationFailure(
+	request *http.Request,
+	userID string,
+	appID string,
+	action string,
+	targetType string,
+	targetID string,
+) {
+	server.auth.RecordAudit(request.Context(), userID, appID, request,
+		action, "failed", targetType, targetID, nil)
+}
+
+func (server *Server) requireWrite(writer http.ResponseWriter, request *http.Request, appID string) (adminauth.Authenticated, bool) {
+	authenticated, ok := server.auth.RequirePermission(
+		writer, request, adminauth.PermissionOfferManage, appID, true, true)
+	if !ok {
+		return adminauth.Authenticated{}, false
+	}
+	if !server.config.WritesEnabled {
+		writeFailure(writer, http.StatusServiceUnavailable, "writes_disabled", "生产写操作尚未启用")
+		return adminauth.Authenticated{}, false
+	}
+	if !idempotencyPattern.MatchString(request.Header.Get("Idempotency-Key")) {
+		writeFailure(writer, http.StatusBadRequest, "idempotency_key_required", "缺少有效的防重复提交标识")
+		return adminauth.Authenticated{}, false
+	}
+	return authenticated, true
+}
+
+type previewPayload struct {
+	AppID     string                     `json:"appID"`
+	Draft     appstoreconnect.OfferDraft `json:"draft"`
+	ExpiresAt int64                      `json:"expiresAt"`
+}
+
+func (server *Server) signPreview(appID string, draft appstoreconnect.OfferDraft) (string, time.Time, error) {
+	expiresAt := server.now().UTC().Add(10 * time.Minute)
+	payload, err := json.Marshal(previewPayload{AppID: appID, Draft: draft, ExpiresAt: expiresAt.Unix()})
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	signature := hmac.New(sha256.New, server.config.PreviewSigningKey)
+	_, _ = signature.Write(payload)
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature.Sum(nil)), expiresAt, nil
+}
+
+func (server *Server) verifyPreview(appID string, draft appstoreconnect.OfferDraft, token string) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	payload, payloadErr := base64.RawURLEncoding.DecodeString(parts[0])
+	supplied, signatureErr := base64.RawURLEncoding.DecodeString(parts[1])
+	if payloadErr != nil || signatureErr != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, server.config.PreviewSigningKey)
+	_, _ = mac.Write(payload)
+	if !hmac.Equal(supplied, mac.Sum(nil)) {
+		return false
+	}
+	var value previewPayload
+	return json.Unmarshal(payload, &value) == nil && value.AppID == appID && server.now().Unix() < value.ExpiresAt && equalDraft(value.Draft, draft)
+}
+
+func decodeOfferDraft(writer http.ResponseWriter, request *http.Request) (appstoreconnect.OfferDraft, bool) {
+	var input adminhttpapi.OfferDraft
+	if !decodeJSON(writer, request, &input) {
+		return appstoreconnect.OfferDraft{}, false
+	}
+	draft := offerDraftFromAPI(input)
+	if !validateOfferDraft(writer, draft) {
+		return appstoreconnect.OfferDraft{}, false
+	}
+	return normalizeOfferDraft(draft), true
+}
+
+func offerDraftFromAPI(input adminhttpapi.OfferDraft) appstoreconnect.OfferDraft {
+	customers := make([]string, 0, len(input.CustomerEligibilities))
+	for _, customer := range input.CustomerEligibilities {
+		customers = append(customers, string(customer))
+	}
+	return appstoreconnect.OfferDraft{
+		Name:                  input.Name,
+		CustomerEligibilities: customers,
+		Duration:              string(input.Duration),
+		AutoRenewEnabled:      input.AutoRenewEnabled,
+	}
+}
+
+func normalizeOfferDraft(draft appstoreconnect.OfferDraft) appstoreconnect.OfferDraft {
+	draft.Name = strings.TrimSpace(draft.Name)
+	draft.Duration = strings.TrimSpace(draft.Duration)
+	slices.Sort(draft.CustomerEligibilities)
+	return draft
+}
+
+func validateOfferDraft(writer http.ResponseWriter, draft appstoreconnect.OfferDraft) bool {
+	if !draftIsValid(draft) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_offer", "Offer 名称、时长或适用人群无效")
+		return false
+	}
+	return true
+}
+
+func draftIsValid(draft appstoreconnect.OfferDraft) bool {
+	if len([]rune(strings.TrimSpace(draft.Name))) < 1 || len([]rune(strings.TrimSpace(draft.Name))) > 64 ||
+		!slices.Contains(validDurations, draft.Duration) || len(draft.CustomerEligibilities) == 0 || len(draft.CustomerEligibilities) > 3 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, eligibility := range draft.CustomerEligibilities {
+		if !slices.Contains(validCustomers, eligibility) || seen[eligibility] {
+			return false
+		}
+		seen[eligibility] = true
+	}
+	return true
+}
+
+func equalDraft(left, right appstoreconnect.OfferDraft) bool {
+	leftJSON, _ := json.Marshal(left)
+	rightJSON, _ := json.Marshal(right)
+	return hmac.Equal(leftJSON, rightJSON)
+}
+
+func previewSummary(draft appstoreconnect.OfferDraft) map[string]any {
+	return map[string]any{"price": "免费", "duration": draft.Duration, "periods": 1,
+		"autoRenewEnabled": draft.AutoRenewEnabled, "customerEligibilities": draft.CustomerEligibilities,
+		"offerEligibility": "REPLACE_INTRO_OFFERS", "targetSubscriptionPlanType": "UPFRONT"}
+}
+
+func validFutureDate(value string, optional bool, now time.Time) bool {
+	if value == "" {
+		return optional
+	}
+	date, err := time.Parse("2006-01-02", value)
+	return err == nil && date.After(time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC))
+}
+
+func cleanID(value string) string {
+	value = strings.TrimSpace(value)
+	if !resourceIDPattern.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
+func decodeJSON(writer http.ResponseWriter, request *http.Request, destination any) bool {
+	request.Body = http.MaxBytesReader(writer, request.Body, maximumBodyBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		writeFailure(writer, http.StatusBadRequest, "invalid_request", "请求格式无效")
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeFailure(writer, http.StatusBadRequest, "invalid_request", "请求只能包含一个 JSON 对象")
+		return false
+	}
+	return true
+}
+
+func writeAppleFailure(writer http.ResponseWriter, err error) {
+	status, code, message := http.StatusBadGateway, "apple_unavailable", "App Store Connect 暂时不可用，请稍后核对状态"
+	if errors.Is(err, appstoreconnect.ErrForbidden) {
+		status, code, message = http.StatusFailedDependency, "apple_credentials_forbidden", "App Store Connect 专用密钥没有所需权限"
+	} else if errors.Is(err, appstoreconnect.ErrRejected) {
+		status, code, message = http.StatusUnprocessableEntity, "apple_request_rejected", "Apple 未接受这些设置，请核对名称、优惠条件及订阅的销售地区和状态"
+		var rejection *appstoreconnect.RequestRejection
+		if errors.As(err, &rejection) {
+			switch rejection.Field {
+			case "numberOfCodes":
+				message = "Apple 未接受兑换数量，请选择页面提供的批次数量"
+			case "expirationDate":
+				message = "Apple 未接受到期日，请选择未来六个月内的日期"
+			case "customCode":
+				message = "Apple 未接受这个自定义码，请核对字符及该码是否已用于其他优惠"
+			}
+		}
+	} else if errors.Is(err, appstoreconnect.ErrMethodNotAllowed) {
+		code, message = "apple_method_not_allowed", "App Store Connect 不支持此请求，请检查后台接口配置"
+	}
+	writeJSON(writer, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func writeFailure(writer http.ResponseWriter, status int, code, message string) {
+	writeJSON(writer, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func writeJSON(writer http.ResponseWriter, status int, value any) {
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(status)
+	_ = json.NewEncoder(writer).Encode(value)
+}
+
+// The creation subscription remains explicit while inventory spans the whole App.
+func offerScope(manager OfferManager) (string, string) {
+	if scoped, ok := manager.(interface{ OfferScope() (string, string) }); ok {
+		return scoped.OfferScope()
+	}
+	return "", ""
+}

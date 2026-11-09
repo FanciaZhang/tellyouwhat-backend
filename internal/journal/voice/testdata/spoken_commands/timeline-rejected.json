@@ -1,0 +1,172 @@
+{
+  "baseRevision": 0,
+  "transcriptRevision": 0,
+  "blockEdits": [],
+  "corrections": [],
+  "formatCommands": [],
+  "formatResolutions": [],
+  "moveCommands": [],
+  "moveResolutions": [],
+  "paragraphCommands": [],
+  "paragraphResolutions": [],
+  "timelineEdits": [],
+  "timelineCreations": [
+    {
+      "id": "78f5d47f-a132-4f79-8a76-1366549e308b",
+      "blockID": "6ecb80aa-c205-44cb-b321-c0d66be28c3d",
+      "timelineID": "84ec8510-c3e8-46f6-b616-1b643f869f68",
+      "afterID": "f2aa0bef-2a19-4982-8346-f42ec76fe1b5",
+      "sourceID": "e8cdef41-1afe-9c9d-f9f8-de77f74fbd36",
+      "instruction": "把今天的行程整理成时间线。",
+      "title": "今天的行程",
+      "events": [
+        {
+          "id": "611057c4-3f59-48c0-a1ff-a6188a1d8d19",
+          "title": "出门",
+          "detail": "早上8点出门。",
+          "timeExpression": "今天早上8点",
+          "day": "",
+          "precision": "minute",
+          "period": "morning",
+          "minute": 480,
+          "approximate": false,
+          "afterEventID": null,
+          "intent": "experience",
+          "needsReview": false,
+          "sources": [
+            {
+              "sourceID": "01A899C5-BECC-4F2E-03FF-C282B7C087B2",
+              "anchor": {
+                "quote": "今天早上8点出门",
+                "prefix": "",
+                "suffix": "，9点到博物馆，中午12点吃饭，下午3点回家。"
+              }
+            }
+          ],
+          "blockIDs": [],
+          "photoIDs": [],
+          "locationID": null,
+          "personIDs": []
+        },
+        {
+          "id": "e19e8418-b54b-4b78-9e6f-712c87411a9f",
+          "title": "到达博物馆",
+          "detail": "9点到博物馆。",
+          "timeExpression": "9点",
+          "day": "",
+          "precision": "minute",
+          "period": "morning",
+          "minute": 540,
+          "approximate": false,
+          "afterEventID": "611057c4-3f59-48c0-a1ff-a6188a1d8d19",
+          "intent": "experience",
+          "needsReview": false,
+          "sources": [
+            {
+              "sourceID": "01A899C5-BECC-4F2E-03FF-C282B7C087B2",
+              "anchor": {
+                "quote": "9点到博物馆",
+                "prefix": "今天早上8点出门，",
+                "suffix": "，中午12点吃饭，下午3点回家。"
+              }
+            }
+          ],
+          "blockIDs": [],
+          "photoIDs": [],
+          "locationID": null,
+          "personIDs": []
+        },
+        {
+          "id": "0ec1f40f-dc8c-4fbb-90a1-06ed78c45c81",
+          "title": "吃饭",
+          "detail": "中午12点吃饭。",
+          "timeExpression": "中午12点",
+          "day": "",
+          "precision": "minute",
+          "period": "noon",
+          "minute": 720,
+          "approximate": false,
+          "afterEventID": "e19e8418-b54b-4b78-9e6f-712c87411a9f",
+          "intent": "experience",
+          "needsReview": false,
+          "sources": [
+            {
+              "sourceID": "01A899C5-BECC-4F2E-03FF-C282B7C087B2",
+              "anchor": {
+                "quote": "中午12点吃饭",
+                "prefix": "今天早上8点出门，9点到博物馆，",
+                "suffix": "，下午3点回家。"
+              }
+            }
+          ],
+          "blockIDs": [],
+          "photoIDs": [],
+          "locationID": null,
+          "personIDs": []
+        },
+        {
+          "id": "1c60e40f-dc89-4a08-a07b-c820a07bd489",
+          "title": "回家",
+          "detail": "下午3点回家。",
+          "timeExpression": "下午3点",
+          "day": "",
+          "precision": "minute",
+          "period": "afternoon",
+          "minute": 900,
+          "approximate": false,
+          "afterEventID": "0ec1f40f-dc8c-4fbb-90a1-06ed78c45c81",
+          "intent": "experience",
+          "needsReview": false,
+          "sources": [
+            {
+              "sourceID": "01A899C5-BECC-4F2E-03FF-C282B7C087B2",
+              "anchor": {
+                "quote": "下午3点回家",
+                "prefix": "今天早上8点出门，9点到博物馆，中午12点吃饭，",
+                "suffix": "。"
+              }
+            }
+          ],
+          "blockIDs": [],
+          "photoIDs": [],
+          "locationID": null,
+          "personIDs": []
+        }
+      ]
+    }
+  ],
+  "journeyCreations": [],
+  "journeyEdits": [],
+  "diagramCreations": [],
+  "diagramEdits": [],
+  "tableCreations": [],
+  "tableEdits": [],
+  "tableResolutions": [],
+  "passages": [],
+  "consumedSourceIDs": [
+    "e8cdef41-1afe-9c9d-f9f8-de77f74fbd36"
+  ],
+  "sourcePartitions": [
+    {
+      "sourceID": "e8cdef41-1afe-9c9d-f9f8-de77f74fbd36",
+      "segments": [
+        {
+          "text": "把今天的行程整理成时间线。",
+          "role": "instruction",
+          "blockIDs": [
+            "6ecb80aa-c205-44cb-b321-c0d66be28c3d"
+          ]
+        }
+      ]
+    }
+  ],
+  "semanticState": {
+    "entities": [],
+    "unresolvedMentions": [],
+    "outline": []
+  },
+  "questions": [],
+  "emotions": [],
+  "overallEmotion": "",
+  "illustrationSuggestion": null
+}

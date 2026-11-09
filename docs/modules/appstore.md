@@ -1,0 +1,54 @@
+# App Store subscription module
+
+## Responsibility
+
+`internal/appstore` owns the production-only trust boundary between StoreKit, App Store Server API, and the managed-AI entitlement store. It verifies Apple-signed transaction and notification JWS values, asks Apple for current subscription status, and returns a normalized subscription state. It does not authenticate Health App devices and does not grant AI access directly.
+
+## Public surface
+
+- Verify a StoreKit transaction JWS received through an App Attest-authenticated request.
+- Resolve current subscription status from App Store Server API using a verified transaction identifier.
+- Verify and normalize App Store Server Notifications V2.
+- Create the short-lived ES256 bearer token required by App Store Server API.
+
+`internal/entitlement` consumes this surface to bind or refresh an original transaction for an attested key. `internal/gateway` only decodes HTTP, invokes the entitlement service, and maps typed errors.
+
+## Dependencies
+
+Allowed dependencies are the Go standard library, configured Apple root certificates, an injected HTTP client, and the existing entitlement store interface. The package must not import gateway, App Attest, Ark, quota, media, jobs, or storage adapters.
+
+## Security invariants
+
+- Accept only ES256 compact JWS with the three-certificate `x5c` chain Apple documents and uses in its official server libraries.
+- Require the Apple receipt-signing leaf OID and WWDR intermediate OID, validate the chain to configured Apple roots, and verify the JWS signature.
+- Require the configured bundle ID, App Apple ID in production, environment, and the current App's subscription allowlist. Health accepts `health.premium.subscription.monthly` and `health.premium.subscription.annual`; Journal accepts `journal.ai.subscription.monthly` and `journal.ai.subscription.annual`.
+- A client transaction is evidence for an identifier, not proof of current access; App Store Server API remains the source of current expiry/revocation status.
+- Notification processing is idempotent by Apple `notificationUUID`; the nested signed transaction is independently verified before storage changes.
+- No JWS, private key, subscription payload, or transaction identifier is written to ordinary logs.
+
+## Error model
+
+Malformed or untrusted Apple data is a permanent verification denial. Apple network/rate-limit/server failures are retryable service-unavailable errors. A valid but inactive subscription produces a forbidden entitlement result. Duplicate notifications acknowledge success without applying a second mutation.
+
+## Switching StoreKit environments
+
+An attested device can synchronize an active, Apple-verified sandbox or production
+subscription. The current entitlement and active transaction binding switch
+atomically. Each environment retains its original transaction binding, so a
+production → sandbox → production round trip restores the same production
+purchase. A different production purchase returns `subscription_binding_conflict`.
+A persisted sandbox entitlement can be replaced atomically by a new
+Apple-verified active sandbox purchase submitted by the attested client, even if
+the previous sandbox account keeps renewing after sign-out. Notifications only
+update matching chains and cannot select the account or undo that replacement.
+Unknown expiry, inconsistent anchors, and replacement via a production record
+remain denied. Existing production anchors and verified production expiry are
+retained; late notifications for the replaced sandbox chain cannot update its
+replacement.
+
+Existing verified entitlements initialize the environment anchors on their next
+successful synchronization. App Store notifications refresh matching active
+entitlements and never select a different environment. Privacy deletion removes
+both environment anchors and includes their transaction identities in cache and
+notification cleanup. Xcode's local subscription simulation does not establish an
+Apple-verified server entitlement.

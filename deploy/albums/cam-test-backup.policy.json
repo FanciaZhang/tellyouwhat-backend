@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucketVersioning"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucketObjectVersions"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+      ],
+      "condition": {
+        "string_like": {
+          "cos:prefix": [
+            "albums%2Frecovery%2F*"
+          ]
+        }
+      }
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:InitiateMultipartUpload",
+        "cos:UploadPart",
+        "cos:CompleteMultipartUpload",
+        "cos:GetObject"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucketObjectVersions",
+        "cos:ListMultipartUploads"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+      ],
+      "condition": {
+        "string_like": {
+          "cos:prefix": [
+            "albums%2Frecovery%2F*"
+          ]
+        }
+      }
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetObject",
+        "cos:AbortMultipartUpload",
+        "cos:ListParts"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "cos:DeleteObject"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+      ],
+      "condition": {
+        "string_not_equal": {
+          "cos:versionid": ""
+        }
+      }
+    },
+    {
+      "effect": "deny",
+      "action": [
+        "cos:DeleteObject"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+      ],
+      "condition": {
+        "string_equal": {
+          "cos:versionid": "null"
+        }
+      }
+    }
+  ]
+}

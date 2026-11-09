@@ -1,0 +1,26 @@
+-- Durable reminder intent only; no device token, message delivery or media deletion.
+CREATE TABLE album_retention_reminders (
+    reminder_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    owner_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    retention_deadline DATETIME(6) NOT NULL,
+    days_before INT NOT NULL,
+    due_at DATETIME(6) NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    available_at DATETIME(6) NOT NULL,
+    state VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    lease_token CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    lease_until DATETIME(6) NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    delivered_at DATETIME(6) NULL,
+    UNIQUE KEY album_reminder_identity(owner_id,environment,retention_deadline,days_before),
+    KEY album_reminder_due(environment,state,available_at,lease_until),
+    CONSTRAINT album_reminder_owner_fk FOREIGN KEY(owner_id) REFERENCES album_storage_accounts(owner_id),
+    CHECK(environment IN ('Sandbox','Production')),
+    CHECK(days_before IN (30,7,1)),
+    CHECK(state IN ('pending','delivered','cancelled')),
+    CHECK(attempts BETWEEN 0 AND 255),
+    CHECK(due_at < expires_at AND expires_at <= retention_deadline),
+    CHECK((lease_token IS NULL) = (lease_until IS NULL)),
+    CHECK((state='delivered') = (delivered_at IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
