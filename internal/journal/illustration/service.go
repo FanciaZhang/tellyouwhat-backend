@@ -11,7 +11,10 @@ import (
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
-var ErrNotFound = errors.New("illustration task not found")
+var (
+	ErrNotFound        = errors.New("illustration task not found")
+	ErrConsentRequired = errors.New("current illustration consent is required")
+)
 
 type Job struct {
 	Task          Task
@@ -26,6 +29,7 @@ type Store interface {
 	Create(context.Context, Job) (Job, error)
 	Get(context.Context, string, string) (Job, error)
 	Save(context.Context, Job, uint64) error
+	HasRunningClaim(context.Context, Task) (bool, error)
 	Pending(context.Context, time.Time, int) ([]Task, error)
 }
 
@@ -39,8 +43,8 @@ type Service struct {
 	Now       func() time.Time
 }
 
-func (s *Service) Create(ctx context.Context, owner string, confirmation Confirmation, reference []byte) (Job, error) {
-	task, err := NewTask("journal", owner, s.Generator.Model(), confirmation, reference, s.Now())
+func (s *Service) Create(ctx context.Context, owner string, confirmation Confirmation, reference []byte, receivedAt time.Time) (Job, error) {
+	task, err := NewTask("journal", owner, s.Generator.Model(), confirmation, reference, receivedAt)
 	if err != nil {
 		return Job{}, err
 	}
@@ -159,8 +163,15 @@ func (s *Service) process(ctx context.Context, owner, id string) error {
 	call, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	var result Result
 	var failure error
-	if !s.Authorize(call, owner) {
-		failure = NotDispatched{Cause: errors.New("image authorization revoked")}
+	ready := s.Authorize(call, owner)
+	if ready {
+		ready, failure = s.Store.HasRunningClaim(call, job.Task)
+	}
+	if failure == nil && !ready {
+		failure = errors.New("image authorization revoked or claim lost")
+	}
+	if failure != nil {
+		failure = NotDispatched{Cause: failure}
 	} else {
 		result, failure = s.Generator.Generate(call, *job.Input)
 	}

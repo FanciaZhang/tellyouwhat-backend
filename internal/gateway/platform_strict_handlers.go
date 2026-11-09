@@ -275,7 +275,8 @@ func (server *Server) RecordPrivacyConsents(
 			Scope: string(consent.Scope), DocumentVersion: consent.DocumentVersion, Granted: consent.Granted,
 		})
 	}
-	recordedAt, err := server.privacy.RecordConsents(ctx, principal, consents)
+	// SQL cancellation can outlive the pooled Gin context after the response.
+	recordedAt, err := server.privacy.RecordConsents(strictGinContext(ctx).Request.Context(), principal, consents)
 	if errors.Is(err, privacy.ErrInvalidConsent) {
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope or document version is invalid", requestID.String())
 		return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
