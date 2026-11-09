@@ -43,6 +43,9 @@ func (e *rewriteDiagnosticError) Error() string { return e.clientCode }
 func (e *rewriteDiagnosticError) Unwrap() error { return e.cause }
 
 func failedRewrite(result RewriteResult, clientCode, stage string, cause error, started time.Time) (RewriteResult, error) {
+	if clientCode == "voice_rewrite_unavailable" && (strings.HasPrefix(stage, "validate_") || strings.HasPrefix(stage, "decode_")) {
+		clientCode = "voice_rewrite_invalid_result"
+	}
 	result.Diagnostics.Stage = stage
 	result.Diagnostics.Duration = time.Since(started)
 	return result, &rewriteDiagnosticError{clientCode: clientCode, diagnostics: result.Diagnostics, cause: cause}

@@ -742,14 +742,14 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						emit(Event{Type: "identity_error", Code: "voice_identity_unavailable", Identity: &IdentityRevision{Request: *runningIdentity,
 							Assignments: []IdentityAssignment{}, NarratorEvidenceIDs: []string{}, Commands: []IdentityCommand{}}})
 					} else {
-						emit(Event{Type: "rewrite_error", Code: "voice_rewrite_unavailable"})
+						emit(Event{Type: "rewrite_error", Code: rewriteClientCode(result.err)})
 					}
 					waitingForPolishRetry = true
 					// Keep ASR and audio receipts alive. The client owns the independent
 					// bounded polish retry/pause state, persisted with the visible body.
 					dirty = false
 				} else {
-					failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
+					failWithCause(rewriteClientCode(result.err), "rewrite_result", result.err)
 					dirty = true
 					if finishing {
 						return

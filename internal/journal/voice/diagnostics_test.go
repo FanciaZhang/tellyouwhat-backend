@@ -8,9 +8,25 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestRewriteRecoverySeparatesInvalidResultsFromTransientFailures(t *testing.T) {
+	for _, stage := range []string{"decode_structured_revision", "validate_identity", "validate_polish", "validate_polish_missing_source"} {
+		_, err := failedRewrite(RewriteResult{}, "voice_rewrite_unavailable", stage, ErrInvalid, time.Now())
+		if rewriteClientCode(err) != "voice_rewrite_invalid_result" {
+			t.Fatalf("%s must preserve the input and wait for explicit recovery", stage)
+		}
+	}
+	for _, code := range []string{"voice_rewrite_unavailable", "voice_rewrite_timeout", "voice_service_budget_exhausted"} {
+		_, err := failedRewrite(RewriteResult{}, code, "http_transport", context.DeadlineExceeded, time.Now())
+		if rewriteClientCode(err) != code {
+			t.Fatal("transient or budget failure was misclassified", code)
+		}
+	}
+}
 
 func TestArkRewriterLogsSafeProviderHTTPDiagnostics(t *testing.T) {
 	const privateText = "不应出现在日志里的私人正文"
