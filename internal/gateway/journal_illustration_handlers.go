@@ -42,6 +42,8 @@ func imageFailure(err error, id string) *apiFailure {
 	switch {
 	case errors.Is(err, illustration.ErrNotFound):
 		return newAPIFailure(404, "not_found", "image task not found", id)
+	case errors.Is(err, illustration.ErrConsentRequired):
+		return newAPIFailure(403, "consent_required", "required privacy consent has not been granted", id)
 	case errors.Is(err, illustration.ErrInput):
 		return newAPIFailure(422, "contract_violation", "invalid image request", id)
 	case errors.Is(err, illustration.ErrTaskConflict):
@@ -52,6 +54,7 @@ func imageFailure(err error, id string) *apiFailure {
 }
 
 func (s *Server) CreateJournalIllustration(ctx context.Context, r journalhttpapi.CreateJournalIllustrationRequestObject) (journalhttpapi.CreateJournalIllustrationResponseObject, error) {
+	receivedAt := s.now()
 	id := r.Params.XTellyouwhatRequestID
 	deny := func(f *apiFailure) (journalhttpapi.CreateJournalIllustrationResponseObject, error) {
 		return journalhttpapi.CreateJournalIllustrationdefaultJSONResponse{StatusCode: f.status, Body: journalErrorResponse(f)}, nil
@@ -78,7 +81,7 @@ func (s *Server) CreateJournalIllustration(ctx context.Context, r journalhttpapi
 	if body.ReferenceSHA256 != nil {
 		confirmation.ReferenceSHA256 = *body.ReferenceSHA256
 	}
-	job, err := s.journalIllustrations.Create(ctx, p.KeyID, confirmation, reference)
+	job, err := s.journalIllustrations.Create(apiRequestContext(ctx), p.KeyID, confirmation, reference, receivedAt)
 	if err != nil {
 		return deny(imageFailure(err, id.String()))
 	}
@@ -94,7 +97,7 @@ func (s *Server) GetJournalIllustration(ctx context.Context, r journalhttpapi.Ge
 	if f != nil {
 		return deny(f)
 	}
-	job, err := s.journalIllustrations.Get(ctx, p.KeyID, r.TaskID.String())
+	job, err := s.journalIllustrations.Get(apiRequestContext(ctx), p.KeyID, r.TaskID.String())
 	if err != nil {
 		return deny(imageFailure(err, id.String()))
 	}
@@ -113,7 +116,7 @@ func (s *Server) CancelJournalIllustration(ctx context.Context, r journalhttpapi
 	if r.Body == nil || r.Body.Revision < 1 {
 		return deny(imageFailure(illustration.ErrInput, id.String()))
 	}
-	job, err := s.journalIllustrations.Cancel(ctx, p.KeyID, r.TaskID.String(), uint64(r.Body.Revision))
+	job, err := s.journalIllustrations.Cancel(apiRequestContext(ctx), p.KeyID, r.TaskID.String(), uint64(r.Body.Revision))
 	if err != nil {
 		return deny(imageFailure(err, id.String()))
 	}
@@ -129,7 +132,7 @@ func (s *Server) GetJournalIllustrationResult(ctx context.Context, r journalhttp
 	if f != nil {
 		return deny(f)
 	}
-	job, err := s.journalIllustrations.Get(ctx, p.KeyID, r.TaskID.String())
+	job, err := s.journalIllustrations.Get(apiRequestContext(ctx), p.KeyID, r.TaskID.String())
 	if err != nil {
 		return deny(imageFailure(err, id.String()))
 	}

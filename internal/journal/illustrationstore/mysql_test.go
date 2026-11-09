@@ -3,6 +3,7 @@ package illustrationstore_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"errors"
 	"image"
@@ -20,6 +21,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/journal/illustrationstore"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/platformops"
+	"github.com/tellyouwhat/backend/internal/privacy"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/testutil"
 )
@@ -36,12 +38,178 @@ func imageFixture(t *testing.T) (illustrationstore.Store, illustration.Job, time
 			t.Fatal(err)
 		}
 	}
+	store := illustrationstore.Store{Database: db, Cipher: cipher}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	task, err := illustration.NewTask("journal", "owner", "image-model", illustration.Confirmation{RequestID: uuid.NewString(), VersionID: uuid.NewString(), Brief: illustration.Brief{Title: "private scene", Details: []illustration.Detail{{Kind: "other", Text: "private scene"}}}, ConsentRevision: "v1"}, nil, now)
+	for _, owner := range []string{"owner", "other-owner"} {
+		recordImageConsent(t, store, owner, true, now.Add(-time.Second))
+	}
+	return store, queuedImageJob(t, "owner", now), now
+}
+
+func queuedImageJob(t *testing.T, owner string, now time.Time) illustration.Job {
+	t.Helper()
+	task, err := illustration.NewTask("journal", owner, "image-model", illustration.Confirmation{
+		RequestID: uuid.NewString(), VersionID: uuid.NewString(),
+		Brief:           illustration.Brief{Title: "private scene", Details: []illustration.Detail{{Kind: "other", Text: "private scene"}}},
+		ConsentRevision: privacy.JournalIllustrationDocumentVersion,
+	}, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return illustrationstore.Store{Database: db, Cipher: cipher}, illustration.Job{Task: task, Input: &illustration.Input{Prompt: "private scene"}}, now
+	return illustration.Job{Task: task, Input: &illustration.Input{Prompt: "private scene"}}
+}
+
+func imageOwner(t *testing.T, store illustrationstore.Store, owner string) attestation.Principal {
+	t.Helper()
+	key, err := mysqlstore.NewKeyRepository(store.Database, "journal").Get(context.Background(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attestation.Principal{AppID: "journal", KeyID: owner, DeviceID: key.DeviceID}
+}
+
+func recordImageConsent(t *testing.T, store illustrationstore.Store, owner string, granted bool, at time.Time) {
+	t.Helper()
+	consents := privacy.NewService(mysqlstore.NewJournalPrivacyRepository(store.Database, store.Withdraw), nil, nil, func() time.Time { return at })
+	if _, err := consents.RecordConsents(context.Background(), imageOwner(t, store, owner), privacy.JournalCloudAIConsents(granted)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMySQLIllustrationConsentWithdrawalClearsOnlyOwnersTasks(t *testing.T) {
+	store, queued, now := imageFixture(t)
+	ctx := context.Background()
+	running := queuedImageJob(t, queued.Task.OwnerID, now)
+	completed := queuedImageJob(t, queued.Task.OwnerID, now)
+	other := queued
+	other.Task.OwnerID = "other-owner"
+	for _, job := range []illustration.Job{queued, running, completed, other} {
+		if _, err := store.Create(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, job := range []*illustration.Job{&running, &completed} {
+		if err := job.Task.Start(1, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Save(ctx, *job, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	if err := png.Encode(&output, image.NewRGBA(image.Rect(0, 0, 12, 8))); err != nil {
+		t.Fatal(err)
+	}
+	result := &illustration.Result{Image: output.Bytes(), MIME: "image/png", Width: 12, Height: 8}
+	if deliver, err := completed.Task.RecordOutcome(2, result, nil, now); err != nil || !deliver {
+		t.Fatal("could not prepare a completed image", err)
+	}
+	completed.Input, completed.Result = nil, result
+	if err := store.Save(ctx, completed, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := errors.New("forced transaction failure after cleanup")
+	repository := mysqlstore.NewJournalPrivacyRepository(store.Database, func(ctx context.Context, tx *sql.Tx, owner string) error {
+		if err := store.Withdraw(ctx, tx, owner); err != nil {
+			return err
+		}
+		return failed
+	})
+	principal := imageOwner(t, store, queued.Task.OwnerID)
+	consents := privacy.NewService(repository, nil, nil, func() time.Time { return now.Add(time.Second) })
+	if _, err := consents.RecordConsents(ctx, principal, privacy.JournalCloudAIConsents(false)); !errors.Is(err, failed) {
+		t.Fatal("expected rollback of cleanup and consent", err)
+	}
+	stillGranted, err := consents.HasRequiredConsents(ctx, principal, []string{privacy.JournalIllustrationScope})
+	stillCompleted, readErr := store.Get(ctx, principal.KeyID, completed.Task.ID)
+	if err != nil || !stillGranted || readErr != nil || stillCompleted.Result == nil || stillCompleted.Task.State != illustration.TaskSucceeded {
+		t.Fatalf("partial withdrawal committed: granted=%t consent error=%v read error=%v", stillGranted, err, readErr)
+	}
+
+	recordImageConsent(t, store, principal.KeyID, false, now.Add(time.Second))
+	for _, tc := range []struct {
+		job    illustration.Job
+		charge illustration.ChargeState
+	}{
+		{queued, illustration.ChargeRelease},
+		{running, illustration.ChargeUncertain},
+		{completed, illustration.ChargeOneImage},
+	} {
+		stored, err := store.Get(ctx, tc.job.Task.OwnerID, tc.job.Task.ID)
+		if err != nil || stored.Task.State != illustration.TaskCancelled || stored.Task.Charge != tc.charge ||
+			stored.Input != nil || stored.Result != nil || !stored.Task.SameRequest(tc.job.Task) {
+			t.Errorf("%s task survived withdrawal: state=%s charge=%s input=%t result=%t err=%v",
+				tc.job.Task.State, stored.Task.State, stored.Task.Charge, stored.Input != nil, stored.Result != nil, err)
+		}
+	}
+	stored, err := store.Get(ctx, other.Task.OwnerID, other.Task.ID)
+	if err != nil || stored.Task.State != illustration.TaskQueued || stored.Input == nil {
+		t.Fatal("withdrawal affected another device's task", err)
+	}
+
+	recordImageConsent(t, store, principal.KeyID, true, now.Add(2*time.Second))
+	queued.Task.CreatedAt = now.Add(3 * time.Second) // Timestamp of the replay, as in the HTTP handler.
+	replay, err := store.Create(ctx, queued)
+	if err != nil || replay.Task.State != illustration.TaskCancelled || replay.Input != nil || replay.Result != nil {
+		t.Fatal("regrant or request replay resurrected a withdrawn task", err)
+	}
+}
+
+func TestMySQLIllustrationAdmissionWaitsForWithdrawalAndRequiresCurrentGrant(t *testing.T) {
+	store, request, now := imageFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	withdrawing, finishWithdrawal := make(chan struct{}), make(chan struct{})
+	repository := mysqlstore.NewJournalPrivacyRepository(store.Database, func(ctx context.Context, tx *sql.Tx, owner string) error {
+		close(withdrawing)
+		select {
+		case <-finishWithdrawal:
+			return store.Withdraw(ctx, tx, owner)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	principal := imageOwner(t, store, request.Task.OwnerID)
+	consents := privacy.NewService(repository, nil, nil, func() time.Time { return now.Add(time.Second) })
+	revoked := make(chan error, 1)
+	go func() {
+		_, err := consents.RecordConsents(ctx, principal, privacy.JournalCloudAIConsents(false))
+		revoked <- err
+	}()
+	select {
+	case <-withdrawing:
+	case err := <-revoked:
+		t.Fatal("withdrawal did not reach cleanup", err)
+	case <-ctx.Done():
+		t.Fatal("withdrawal did not reach cleanup")
+	}
+	admission := make(chan error, 1)
+	go func() {
+		_, err := store.Create(ctx, request)
+		admission <- err
+	}()
+	select {
+	case err := <-admission:
+		close(finishWithdrawal)
+		t.Fatal("admission did not wait for the consent transaction", err)
+	case <-time.After(50 * time.Millisecond):
+		close(finishWithdrawal)
+	}
+	if err := <-revoked; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-admission; !errors.Is(err, illustration.ErrConsentRequired) {
+		t.Fatal("admission ignored the committed withdrawal", err)
+	}
+	recordImageConsent(t, store, principal.KeyID, true, now.Add(2*time.Second))
+	if _, err := store.Create(ctx, request); !errors.Is(err, illustration.ErrConsentRequired) {
+		t.Fatal("pre-withdrawal request admitted under the new grant", err)
+	}
+	fresh := queuedImageJob(t, principal.KeyID, now.Add(3*time.Second))
+	if _, err := store.Create(ctx, fresh); err != nil {
+		t.Fatal("new request under the current grant was rejected", err)
+	}
 }
 
 func TestMySQLIllustrationEncryptionIsolationAndAtomicClaim(t *testing.T) {
@@ -130,6 +298,17 @@ func (g *gatedImageGenerator) Generate(ctx context.Context, _ illustration.Input
 }
 
 func TestMySQLIllustrationOverlappingWorkersCancelAndLateResult(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		name := "cancel task"
+		if withdraw {
+			name = "withdraw and regrant consent"
+		}
+		t.Run(name, func(t *testing.T) { verifyLateImageCancellation(t, withdraw) })
+	}
+}
+
+func verifyLateImageCancellation(t *testing.T, withdraw bool) {
+	t.Helper()
 	store, job, now := imageFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -157,7 +336,10 @@ func TestMySQLIllustrationOverlappingWorkersCancelAndLateResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Cancel(ctx, job.Task.OwnerID, job.Task.ID, claimed.Task.Revision); err != nil {
+	if withdraw {
+		recordImageConsent(t, store, job.Task.OwnerID, false, now.Add(time.Second))
+		recordImageConsent(t, store, job.Task.OwnerID, true, now.Add(2*time.Second))
+	} else if _, err = s.Cancel(ctx, job.Task.OwnerID, job.Task.ID, claimed.Task.Revision); err != nil {
 		t.Fatal(err)
 	}
 	close(generator.release)
@@ -176,6 +358,61 @@ func TestMySQLIllustrationOverlappingWorkersCancelAndLateResult(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("known provider outcome was not settled")
+}
+
+func TestMySQLIllustrationWithdrawalFencesAClaimBeforeProviderDispatch(t *testing.T) {
+	store, job, now := imageFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	checking, resume := make(chan struct{}), make(chan struct{})
+	generator := &gatedImageGenerator{entered: make(chan struct{}), release: make(chan struct{})}
+	close(generator.release)
+	var checks atomic.Int32
+	service := &illustration.Service{Store: store, Generator: generator, Now: func() time.Time { return now },
+		Authorize: func(ctx context.Context, _ string) bool {
+			if checks.Add(1) == 2 {
+				close(checking)
+				select {
+				case <-resume:
+				case <-ctx.Done():
+					return false
+				}
+			}
+			return true // The new grant is already valid when the worker resumes.
+		}}
+	done := make(chan struct{})
+	go func() { defer close(done); service.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	select {
+	case <-checking:
+	case <-ctx.Done():
+		t.Fatal("worker did not claim the task")
+	}
+	recordImageConsent(t, store, job.Task.OwnerID, false, now.Add(time.Second))
+	recordImageConsent(t, store, job.Task.OwnerID, true, now.Add(2*time.Second))
+	close(resume)
+	for ctx.Err() == nil {
+		select {
+		case <-generator.entered:
+			t.Fatal("regrant restarted the withdrawn claim")
+		default:
+		}
+		stored, err := store.Get(ctx, job.Task.OwnerID, job.Task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Task.State == illustration.TaskCancelled && stored.Task.Charge == illustration.ChargeRelease {
+			if stored.Input != nil || stored.Result != nil || generator.calls.Load() != 0 {
+				t.Fatal("withdrawn claim retained content or reached the provider")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("withdrawn claim was not settled as undispatched")
 }
 
 func TestMySQLIllustrationCrashAndExpiryNeverRedispatch(t *testing.T) {

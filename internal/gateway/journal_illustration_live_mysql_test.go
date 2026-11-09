@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/png"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +24,81 @@ import (
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/testutil"
 )
+
+func TestMySQLJournalIllustrationResultStaysWithdrawnAfterNewConsent(t *testing.T) {
+	db := testutil.MySQL(t)
+	ctx := context.Background()
+	if err := mysqlstore.NewKeyRepository(db, "journal").Register(ctx, attestation.RegisteredKey{
+		KeyID: "valid-key", DeviceID: "device-1", PublicKey: []byte("synthetic"),
+		Environment: "production", Receipt: []byte("synthetic"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := mysqlstore.NewPayloadCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &illustrationstore.Store{Database: db, Cipher: cipher}
+	consents := privacy.NewService(mysqlstore.NewJournalPrivacyRepository(db, store.Withdraw), nil, nil, time.Now)
+	router := New(Dependencies{
+		App: appregistry.App{ID: appregistry.Journal}, Authenticator: fakeAuthenticator{appID: "journal"},
+		Entitlements: fakeEntitlements{allowed: true}, Privacy: consents, Consent: consents,
+		AllowedConsentScopes: []string{privacy.ManagedAIScope, privacy.JournalIllustrationScope, privacy.JournalReadAloudScope},
+		JournalIllustrations: &illustration.Service{Store: store, Generator: imageGeneratorFixture{}, Now: time.Now},
+	}).Router()
+	call := func(method, path, body string, status int, contains string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, authorizedRequest(method, path, body))
+		if w.Code != status || !strings.Contains(w.Body.String(), contains) {
+			t.Fatalf("%s %s returned %d: %s", method, path, w.Code, w.Body.String())
+		}
+	}
+	setConsent := func(granted bool) {
+		t.Helper()
+		body, err := json.Marshal(map[string][]privacy.Consent{"consents": privacy.JournalCloudAIConsents(granted)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		call("POST", "/v1/privacy/consents", string(body), 200, "")
+	}
+	const id = "19be2f9e-bd92-4699-b561-e3816092114c"
+	const route = "/v1/journal/illustrations"
+	const body = `{"requestID":"` + id + `","versionID":"` + id + `","brief":{"title":"River","details":[{"kind":"subject","text":"A dog by the river"}]},"consentRevision":"` + privacy.JournalIllustrationDocumentVersion + `"}`
+	setConsent(true)
+	call("POST", route, body, 200, `"state":"queued"`)
+	job, err := store.Get(ctx, "valid-key", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := job.Task.Start(1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, job, 1); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := png.Encode(&output, image.NewRGBA(image.Rect(0, 0, 12, 8))); err != nil {
+		t.Fatal(err)
+	}
+	result := &illustration.Result{Image: output.Bytes(), MIME: "image/png", Width: 12, Height: 8}
+	if deliver, err := job.Task.RecordOutcome(2, result, nil, now); err != nil || !deliver {
+		t.Fatal("could not prepare a completed image", err)
+	}
+	job.Input, job.Result = nil, result
+	if err := store.Save(ctx, job, 2); err != nil {
+		t.Fatal(err)
+	}
+	taskPath := route + "/" + id
+	call("GET", taskPath+"/result", "", 200, base64.StdEncoding.EncodeToString(result.Image))
+	setConsent(false)
+	call("GET", taskPath+"/result", "", 403, "consent_required")
+	setConsent(true)
+	call("GET", taskPath, "", 200, `"state":"cancelled"`)
+	call("GET", taskPath+"/result", "", 409, "image_task_changed")
+	call("POST", route, body, 200, `"state":"cancelled"`)
+}
 
 // Explicit backend integration: real MySQL and configured image model, synthetic
 // material and test authentication. This does not verify Apple device attestation.
@@ -55,7 +132,7 @@ func TestLiveJournalIllustrationConsentGenerationAndResultWithMySQL(t *testing.T
 		t.Fatal(err)
 	}
 	store := &illustrationstore.Store{Database: db, Cipher: cipher}
-	consents := privacy.NewService(mysqlstore.NewPrivacyRepository(db, "journal"), nil, nil, time.Now)
+	consents := privacy.NewService(mysqlstore.NewJournalPrivacyRepository(db, store.Withdraw), nil, nil, time.Now)
 	service := &illustration.Service{Store: store, Generator: &illustration.BudgetedGenerator{
 		Next: provider, Controller: budget, MaxCostNanos: maximum}, Now: time.Now,
 		Authorize: func(ctx context.Context, owner string) bool {

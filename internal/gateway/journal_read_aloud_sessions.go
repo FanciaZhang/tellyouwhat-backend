@@ -56,10 +56,6 @@ func (s *Server) speechPrincipal(ctx context.Context, id uuid.UUID) (Principal, 
 	strictGinContext(ctx).Header("Cache-Control", "no-store")
 	return s.apiAuthenticate(ctx, id)
 }
-func speechRequestContext(ctx context.Context) context.Context {
-	return strictGinContext(ctx).Request.Context()
-}
-
 func speechResponse(info readaloud.SessionInfo) journalhttpapi.ReadAloudSession {
 	id, _ := uuid.Parse(info.ID)
 	r := journalhttpapi.ReadAloudSession{Id: id, Purpose: journalhttpapi.ReadAloudSessionPurpose(info.Purpose), State: journalhttpapi.ReadAloudSessionState(info.State), AudioBytes: info.AudioBytes, LastSequence: info.LastSequence, BufferAvailable: info.BufferAvailable, ExpiresAt: info.ExpiresAt, SampleRate: 24000, Channels: 1, Encoding: "pcm_s16le"}
@@ -86,11 +82,11 @@ func (s *Server) CreateJournalReadAloudSynthesis(ctx context.Context, r journalh
 	if purpose == "journal" && b.ConsentVersion != privacy.JournalReadAloudDocumentVersion {
 		return deny(speechFailure(readaloud.ErrConsentRequired, id.String()))
 	}
-	grant, err := s.readAloudAccess.Grant(speechRequestContext(ctx), p.KeyID, purpose)
+	grant, err := s.readAloudAccess.Grant(apiRequestContext(ctx), p.KeyID, purpose)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	info, err := s.readAloudSessions.Create(speechRequestContext(ctx), grant, readaloud.SessionCommand{Synthesis: readaloud.Synthesis{RequestID: id.String(), Text: b.Text, VoiceID: b.VoiceID, Pitch: b.Pitch, Style: string(b.Style), Dialect: b.Dialect, Language: b.Language}, VoiceRevision: b.VoiceRevision, Purpose: purpose, AccessKey: p.KeyID})
+	info, err := s.readAloudSessions.Create(apiRequestContext(ctx), grant, readaloud.SessionCommand{Synthesis: readaloud.Synthesis{RequestID: id.String(), Text: b.Text, VoiceID: b.VoiceID, Pitch: b.Pitch, Style: string(b.Style), Dialect: b.Dialect, Language: b.Language}, VoiceRevision: b.VoiceRevision, Purpose: purpose, AccessKey: p.KeyID})
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
@@ -105,11 +101,11 @@ func (s *Server) GetJournalReadAloudSynthesis(ctx context.Context, r journalhttp
 	if f != nil {
 		return deny(f)
 	}
-	subject, err := s.readAloudAccess.Subject(speechRequestContext(ctx), p.KeyID)
+	subject, err := s.readAloudAccess.Subject(apiRequestContext(ctx), p.KeyID)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	info, err := s.readAloudSessions.Get(speechRequestContext(ctx), subject, r.SynthesisID.String())
+	info, err := s.readAloudSessions.Get(apiRequestContext(ctx), subject, r.SynthesisID.String())
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
@@ -124,11 +120,11 @@ func (s *Server) CancelJournalReadAloudSynthesis(ctx context.Context, r journalh
 	if f != nil {
 		return deny(f)
 	}
-	subject, err := s.readAloudAccess.Subject(speechRequestContext(ctx), p.KeyID)
+	subject, err := s.readAloudAccess.Subject(apiRequestContext(ctx), p.KeyID)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	info, err := s.readAloudSessions.Cancel(speechRequestContext(ctx), subject, r.SynthesisID.String())
+	info, err := s.readAloudSessions.Cancel(apiRequestContext(ctx), subject, r.SynthesisID.String())
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
@@ -147,11 +143,11 @@ func (s *Server) GetJournalReadAloudAllowance(ctx context.Context, r journalhttp
 	if r.Params.Purpose != nil {
 		purpose = string(*r.Params.Purpose)
 	}
-	g, err := s.readAloudAccess.Grant(speechRequestContext(ctx), p.KeyID, purpose)
+	g, err := s.readAloudAccess.Grant(apiRequestContext(ctx), p.KeyID, purpose)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	usage, err := s.readAloudSessions.Usage(speechRequestContext(ctx), g)
+	usage, err := s.readAloudSessions.Usage(apiRequestContext(ctx), g)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
@@ -166,15 +162,15 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 	if f != nil {
 		return deny(f)
 	}
-	subject, err := s.readAloudAccess.Subject(speechRequestContext(ctx), p.KeyID)
+	subject, err := s.readAloudAccess.Subject(apiRequestContext(ctx), p.KeyID)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	info, err := s.readAloudSessions.Get(speechRequestContext(ctx), subject, r.SynthesisID.String())
+	info, err := s.readAloudSessions.Get(apiRequestContext(ctx), subject, r.SynthesisID.String())
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
-	if err = s.readAloudAccess.Consent(speechRequestContext(ctx), p.KeyID, info.Purpose); err != nil {
+	if err = s.readAloudAccess.Consent(apiRequestContext(ctx), p.KeyID, info.Purpose); err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
 	purpose := info.Purpose
@@ -188,7 +184,7 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 	if r.Params.After != nil {
 		after = *r.Params.After
 	}
-	info, frames, changed, err := s.readAloudSessions.Read(speechRequestContext(ctx), subject, r.SynthesisID.String(), after)
+	info, frames, changed, err := s.readAloudSessions.Read(apiRequestContext(ctx), subject, r.SynthesisID.String(), after)
 	if err != nil {
 		return deny(speechFailure(err, id.String()))
 	}
@@ -216,11 +212,11 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 		return nil, nil
 	}
 	for {
-		if speechRequestContext(ctx).Err() != nil {
+		if apiRequestContext(ctx).Err() != nil {
 			return nil, nil
 		}
-		if err = s.readAloudAccess.Consent(speechRequestContext(ctx), p.KeyID, info.Purpose); err != nil {
-			if speechRequestContext(ctx).Err() != nil {
+		if err = s.readAloudAccess.Consent(apiRequestContext(ctx), p.KeyID, info.Purpose); err != nil {
+			if apiRequestContext(ctx).Err() != nil {
 				return nil, nil
 			}
 			info.State = "failed"
@@ -249,7 +245,7 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 		}
 		if after >= info.LastSequence {
 			select {
-			case <-speechRequestContext(ctx).Done():
+			case <-apiRequestContext(ctx).Done():
 				return nil, nil
 			case <-changed:
 			case <-ticker.C:
@@ -258,9 +254,9 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 				}
 			}
 		}
-		info, frames, changed, err = s.readAloudSessions.Read(speechRequestContext(ctx), subject, r.SynthesisID.String(), after)
+		info, frames, changed, err = s.readAloudSessions.Read(apiRequestContext(ctx), subject, r.SynthesisID.String(), after)
 		if err != nil {
-			if speechRequestContext(ctx).Err() != nil {
+			if apiRequestContext(ctx).Err() != nil {
 				return nil, nil
 			}
 			info = readaloud.SessionInfo{ID: r.SynthesisID.String(), Purpose: purpose, State: "failed", Problem: "audio_unavailable", LastSequence: after, ExpiresAt: s.now()}

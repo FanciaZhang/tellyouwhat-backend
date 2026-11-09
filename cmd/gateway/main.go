@@ -380,6 +380,9 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 		media:          mysqlstore.NewMediaRepository(shared.database, appID), usage: mysqlstore.NewUsageRepository(shared.database, appID),
 		privacy: mysqlstore.NewPrivacyRepository(shared.database, appID), privacyCache: redisstore.NewPrivacyCleaner(shared.redis, appID),
 	}
+	if appConfig.Registry.ID == appregistry.Journal {
+		storage.privacy = mysqlstore.NewJournalPrivacyRepository(shared.database, storage.images.Withdraw)
+	}
 	if appConfig.Registry.ID == appregistry.Health {
 		freeLimiter := redisstore.NewQuotaLimiter(shared.redis, appConfig.FreeRecognitionQuota, appID)
 		freeLimiter.ResolveLimits = platformops.QuotaResolver(ops, appID, appConfig.FreeRecognitionQuota, true)

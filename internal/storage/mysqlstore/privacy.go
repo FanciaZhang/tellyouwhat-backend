@@ -13,12 +13,17 @@ import (
 )
 
 type PrivacyRepository struct {
-	database *sql.DB
-	appID    string
+	database              *sql.DB
+	appID                 string
+	withdrawIllustrations func(context.Context, *sql.Tx, string) error
 }
 
 func NewPrivacyRepository(database *sql.DB, appID string) *PrivacyRepository {
 	return &PrivacyRepository{database: database, appID: appID}
+}
+
+func NewJournalPrivacyRepository(database *sql.DB, withdrawIllustrations func(context.Context, *sql.Tx, string) error) *PrivacyRepository {
+	return &PrivacyRepository{database: database, appID: "journal", withdrawIllustrations: withdrawIllustrations}
 }
 
 // CheckConsentScopes detects a missing migration without writing a user's consent.
@@ -60,6 +65,15 @@ func (repository *PrivacyRepository) RecordConsents(ctx context.Context, records
 			repository.appID, record.KeyID, record.DeviceID, record.Scope, record.DocumentVersion, record.Granted, record.RecordedAt,
 		); err != nil {
 			return err
+		}
+	}
+	if repository.withdrawIllustrations != nil {
+		for _, record := range records {
+			if record.Scope == privacy.JournalIllustrationScope && !record.Granted {
+				if err := repository.withdrawIllustrations(ctx, transaction, record.KeyID); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return transaction.Commit()

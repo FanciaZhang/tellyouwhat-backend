@@ -59,6 +59,11 @@ func strictGinContext(ctx context.Context) *gin.Context {
 	return context
 }
 
+func apiRequestContext(ctx context.Context) context.Context {
+	// Database cancellation can outlive Gin's pooled request wrapper.
+	return strictGinContext(ctx).Request.Context()
+}
+
 func (server *Server) apiAuthenticate(ctx context.Context, requestID uuid.UUID) (Principal, *apiFailure) {
 	return server.apiAuthenticateProof(ctx, requestID, apiRequestProof(ctx, requestID))
 }
@@ -86,7 +91,7 @@ func (server *Server) apiAuthenticateProof(ctx context.Context, requestID uuid.U
 		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "dependencies")
 		return Principal{}, newAPIFailure(http.StatusServiceUnavailable, "not_ready", "authentication service unavailable", requestIDString)
 	}
-	principal, err := authenticator.Authenticate(ctx, proof)
+	principal, err := authenticator.Authenticate(apiRequestContext(ctx), proof)
 	if err == nil {
 		if principal.AppID != string(server.app.ID) {
 			strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, "app_scope")
@@ -130,7 +135,7 @@ func (server *Server) apiManagedEntitlement(ctx context.Context, principal Princ
 	if server.entitlements == nil {
 		return false, newAPIFailure(http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", requestID)
 	}
-	allowed, err := server.entitlements.HasManagedSubscription(ctx, principal)
+	allowed, err := server.entitlements.HasManagedSubscription(apiRequestContext(ctx), principal)
 	if err != nil {
 		return false, newAPIFailure(http.StatusServiceUnavailable, "entitlement_unavailable", "entitlement service unavailable", requestID)
 	}
@@ -293,7 +298,7 @@ func (server *Server) apiRequireConsents(
 	if server.consent == nil {
 		return newAPIFailure(http.StatusServiceUnavailable, "consent_unavailable", "privacy consent service unavailable", requestID)
 	}
-	granted, err := server.consent.HasRequiredConsents(ctx, principal, scopes)
+	granted, err := server.consent.HasRequiredConsents(apiRequestContext(ctx), principal, scopes)
 	if err != nil {
 		return newAPIFailure(http.StatusServiceUnavailable, "consent_unavailable", "privacy consent service unavailable", requestID)
 	}
