@@ -1,10 +1,13 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -85,5 +88,22 @@ func TestContextReuseCannotConflateDecimalPunctuationOrEmoji(t *testing.T) {
 		if _, err := decodePolish(string(raw), p); err == nil {
 			t.Fatal("different punctuation or symbols changed an earlier fact")
 		}
+	}
+}
+
+func TestPolishPromptCommunicatesTheAuthorizedReuseContract(t *testing.T) {
+	p := *comparisonSnapshot([]string{"今天下午在河边散步。"}, false).Polish
+	old := Block{ID: uuid.NewString(), Text: p.Targets[0].SourceText, Style: "body"}
+	p.Context = []Block{old}
+	p.ReusableContextIDs = []string{old.ID}
+	body, _ := preparePolish(context.Background(), p, promptconfig.Style{}, nil, promptconfig.Parameters{})
+	var input struct {
+		ReusableContextIDs []string `json:"reusableContextIDs"`
+	}
+	if json.Unmarshal([]byte(body["input"].(string)), &input) != nil || len(input.ReusableContextIDs) != 1 || input.ReusableContextIDs[0] != old.ID {
+		t.Fatal("model was not told which prior paragraph may receive the new source")
+	}
+	if !strings.Contains(body["instructions"].(string), "不因重复跳过 target") {
+		t.Fatal("deduplication still contradicts source coverage")
 	}
 }
