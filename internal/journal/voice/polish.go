@@ -26,12 +26,15 @@ type PolishTarget struct {
 	Turns              []SourceUtterance `json:"turns"`
 	RetainedText       string            `json:"retainedText"`
 	SourceKeys         []string          `json:"sourceKeys"`
+	SourceOffsets      []int             `json:"sourceOffsets,omitempty"`
 }
 type PolishSelectionContext struct {
 	Opening   string           `json:"opening"`
 	Omissions []PolishOmission `json:"omissions"`
 }
 type PolishRequest struct {
+	Deferred                       bool                    `json:"deferred,omitempty"`
+	Lightweight                    bool                    `json:"lightweight,omitempty"`
 	SelectionContext               *PolishSelectionContext `json:"selectionContext,omitempty"`
 	Narrator                       *Narrator               `json:"narrator,omitempty"`
 	Targets                        []PolishTarget          `json:"targets"`
@@ -53,6 +56,7 @@ type PolishOmission struct {
 	Reason   string `json:"reason"`
 }
 type PolishRevision struct {
+	Lightweight            bool                              `json:"lightweight,omitempty"`
 	Omissions              []PolishOmission                  `json:"omissions"`
 	ID                     string                            `json:"id"`
 	Narrator               *Narrator                         `json:"narrator,omitempty"`
@@ -99,6 +103,14 @@ func (p PolishRequest) Validate() error {
 		}
 		if len(target.SourceKeys) != 0 && len(target.SourceKeys) != len(target.Turns) {
 			return ErrInvalid
+		}
+		if len(target.SourceOffsets) != 0 && len(target.SourceOffsets) != len(target.Turns) {
+			return ErrInvalid
+		}
+		for _, offset := range target.SourceOffsets {
+			if offset < 0 || offset > MaxContextCharacters {
+				return ErrInvalid
+			}
 		}
 		keys := map[string]bool{}
 		for _, key := range target.SourceKeys {
@@ -218,6 +230,9 @@ func polishSourceSentences(text string) []string {
 }
 
 func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Style, words []string, parameters promptconfig.Parameters) (map[string]any, promptconfig.Parameters) {
+	if p.Lightweight {
+		return prepareLightweightPolish(p, words, parameters)
+	}
 	targets := make([]map[string]any, 0, len(p.Targets))
 	for _, target := range p.Targets {
 		turns := []map[string]any{}
@@ -357,7 +372,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	// Exact excerpts guide rewriting/grounding here; their original source
 	// remains linked to the prose and uses the ordinary original-text recovery.
 	whole := slices.DeleteFunc(slices.Clone(output.Omissions), func(item PolishOmission) bool { return !omitted[item.SourceID] })
-	revision := &PolishRevision{Omissions: whole, Narrator: request.Narrator, Targets: slices.Clone(request.Targets), Paragraphs: []PolishParagraph{}, Questions: output.Questions}
+	revision := &PolishRevision{Lightweight: request.Lightweight, Omissions: whole, Narrator: request.Narrator, Targets: slices.Clone(request.Targets), Paragraphs: []PolishParagraph{}, Questions: output.Questions}
 	seen := map[string]bool{}
 	characters := 0
 	for _, paragraph := range output.Paragraphs {
@@ -632,7 +647,9 @@ func polishNeedsLexicalAnchor(text string) bool {
 func onlySpeechFillers(text string) bool {
 	return strings.TrimFunc(text, func(r rune) bool { return strings.ContainsRune("嗯啊呃唔额哦喔，。！？、,.!? \t\r\n", r) }) == ""
 }
-func pendingPolish(p *PolishRequest) bool { return p != nil && !p.Paused && len(p.Targets) > 0 }
+func pendingPolish(p *PolishRequest) bool {
+	return p != nil && !p.Paused && !p.Deferred && len(p.Targets) > 0
+}
 func polishAcknowledged(nextID, awaitingID string) bool {
 	return awaitingID != "" && nextID == awaitingID
 }

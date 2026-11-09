@@ -265,7 +265,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	}
 	if s.Polish != nil {
 		request := *s.Polish
-		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
+		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled && !request.Lightweight
 		polish, err := decodePolish(text, request)
 		if err != nil {
 			result.Diagnostics.ValidationCode = polishValidationCode(err)
@@ -449,7 +449,10 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	}
 	if s.Polish != nil {
 		request := *s.Polish
-		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled
+		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled && !request.Lightweight
+		if request.Lightweight {
+			parameters = settings.Organize.Lite
+		}
 		body, parameters = preparePolish(ctx, request, style, s.Words, parameters)
 	}
 	parameters.Apply(body)
