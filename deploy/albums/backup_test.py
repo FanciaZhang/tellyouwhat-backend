@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from backup import (TABLES, SCOPE, RETENTION, configure, drill, prune, verify,
+from backup import (TABLES, SCOPE, RETENTION, configure, create, drill, prune, verify,
                     Runtime, OperationError, manifest_signature, backup_secret)
 from ops_backup import verify_backup as verify_control_backup
 
@@ -43,6 +43,25 @@ class AlbumsBackupSafetyTests(unittest.TestCase):
         result = subprocess.run([sys.executable, '-c', script], cwd=Path(__file__).parent,
                                 capture_output=True, text=True, timeout=10, check=True)
         self.assertEqual(result.stdout.splitlines(), [str(Path(__file__).with_name(n).resolve()) for n in ('offsite.py','offsite_test.py')])
+
+    def test_export_child_keeps_its_active_workspace_lease(self):
+        root = Path(self.temp.name)
+        lease = root / 'owned-export.lease'; lease.write_bytes(b'controlled lease')
+        self.runtime.config.update(MYSQL_HOST='fixture', MYSQL_USER='fixture')
+        with lease.open('rb') as handle:
+            self.runtime._child_pass_fds = (handle.fileno(),)
+            executable = root / 'mysqldump'
+            executable.write_text('#!' + sys.executable + '\nimport os\n' +
+                'assert os.fstat(' + str(handle.fileno()) + ').st_ino == os.stat(' + repr(str(lease)) + ').st_ino\n' +
+                '\n'.join('print(' + repr('CREATE TABLE `' + t + '` (id INT);') + ')' for t in TABLES) + '\n' +
+                'print("INSERT INTO `album_recovery_state` (`singleton_id`, `quarantined`, `quarantined_at`) VALUES (1,0,NULL);")\n')
+            executable.chmod(0o700)
+            inventory = ('albums_test\t1\n' + '\n'.join(t + '\tInnoDB' for t in TABLES) + '\n').encode()
+            def encrypt(runtime, source, target, **kwargs):
+                target.touch(mode=0o600); target.write_bytes(b'controlled encryption boundary')
+            with patch.object(self.runtime, 'execute', return_value=inventory), patch('backup.crypt', side_effect=encrypt):
+                result = create(self.runtime, root)
+            self.assertEqual(len(verify(self.runtime, self.runtime.backups / result['filename'])['table_rows']), len(TABLES))
 
     def test_explicit_albums_environment_is_not_replaced_by_active_deployment(self):
         active = self.runtime.root / ".slots" / "health"
@@ -83,7 +102,8 @@ class AlbumsBackupSafetyTests(unittest.TestCase):
         for changed in (inventory[:-1], sorted(inventory + ["album_unknown\tInnoDB"]),
                         [row for row in inventory if not row.startswith("album_collection_members\t")],
                         [row.replace("\tInnoDB", "\tMyISAM") for row in inventory]):
-            with self.subTest(inventory=changed), patch.object(self.runtime, "execute", return_value=("\n".join(changed) + "\n").encode()), \
+            source_and_tables = ("albums_test\t1\n" + "\n".join(changed) + "\n").encode()
+            with self.subTest(inventory=changed), patch.object(self.runtime, "execute", return_value=source_and_tables), \
                     patch("backup.subprocess.run") as export:
                 with self.assertRaisesRegex(OperationError, "schema inventory"):
                     create(self.runtime, Path("/unused"))

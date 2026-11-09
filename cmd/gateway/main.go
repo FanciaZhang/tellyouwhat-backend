@@ -197,7 +197,8 @@ func run(logger *slog.Logger) error {
 			defer albumGateway.Close()
 			nonces := redisstore.NewNonceStore(shared.redis, "albums")
 			keys := mysqlstore.NewKeyRepository(shared.database, "albums")
-			routers[appregistry.Albums] = newAlbumAttestedHandler(appConfig, nonces, keys, attestationRoots, shared.readiness, albumGateway)
+			routers[appregistry.Albums] = newAlbumAttestedHandler(appConfig, nonces, keys, attestationRoots,
+				shared.readiness, albumGateway, albumGateway.GuardAttestationBootstrap)
 			continue
 		}
 		storage := storageForApp(platform, shared, appConfig)

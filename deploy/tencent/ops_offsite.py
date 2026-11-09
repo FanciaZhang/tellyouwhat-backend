@@ -3,10 +3,12 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import tarfile
 import tempfile
+import time
 
 from ops_common import OperationError, read_environment
 
@@ -109,12 +111,14 @@ def create_recovery_bundle(runtime, filename, *, scope='host'):
 
 
 def publish(runtime, source, manifest):
-    from ops_backup import _verified_backup, _same_backup_file
+    from ops_backup import BACKUP_RETENTION_SECONDS, _verified_backup, _same_backup_file
     source = Path(source)
     with _verified_backup(runtime, source) as (verified, files):
         if verified != manifest or not manifest.get('recovery_filename'):
             raise OperationError('offsite publication requires the authenticated complete backup')
         manifest = verified
+        if manifest['created_at'] <= time.time() - BACKUP_RETENTION_SECONDS:
+            raise OperationError('backup is outside the retention period')
         paths = [source, runtime.backups / manifest['recovery_filename'], Path(str(source) + '.json')]
         envelope, _ = files[paths[-1]]
         envelope.seek(0)
@@ -140,7 +144,7 @@ def publish(runtime, source, manifest):
 
 
 def download(runtime, filename, directory):
-    from ops_backup import _backup_manifest, verify_backup
+    from ops_backup import BACKUP_RETENTION_SECONDS, _backup_manifest, verify_backup
     from ops_cos import valid_filename
     if not valid_filename(filename) or not filename.endswith(".sql.gz.enc"):
         raise OperationError("invalid offsite backup filename")
@@ -148,6 +152,8 @@ def download(runtime, filename, directory):
     envelope_path = Path(str(source) + ".json")
     transport(runtime, "download", [envelope_path])
     manifest = _backup_manifest(runtime, source, json.loads(envelope_path.read_text()))
+    if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
+        raise OperationError("backup is outside the retention period")
     recovery = manifest.get("recovery_filename", "")
     if not valid_filename(recovery) or not recovery.startswith("recovery-"):
         raise OperationError("offsite configuration recovery file is missing or invalid")
@@ -156,9 +162,21 @@ def download(runtime, filename, directory):
     return source
 
 
-def verify_recovery_bundle(runtime, source, manifest):
+def verify_recovery_bundle(runtime, source, manifest, *, albums_checkpoints=None, verify_checkpoint_source=False):
     from ops_backup import crypt
     from release import KEY_FILES
+    if albums_checkpoints is None:
+        albums_checkpoints = {}
+    if verify_checkpoint_source and not albums_checkpoints:
+        raise OperationError('source verification requires an independent Albums checkpoint')
+    if (not isinstance(albums_checkpoints, dict)
+            or any(environment not in ('development', 'production')
+                   or not manifest.get('recovery_albums_' + environment)
+                   or not isinstance(selection, (tuple, list)) or len(selection) != 2
+                   or not isinstance(selection[0], (str, Path)) or not str(selection[0])
+                   or not isinstance(selection[1], str) or not re.fullmatch('[a-f0-9]{64}', selection[1])
+                   for environment, selection in albums_checkpoints.items())):
+        raise OperationError('independent Albums checkpoints must match the recovered environments and pinned digests')
     encrypted = Path(source).parent / manifest["recovery_filename"]
     with tempfile.TemporaryDirectory(prefix="recovery-check-", dir=runtime.state) as directory:
         archive_path = Path(directory) / "recovery.tar.gz"
@@ -245,4 +263,13 @@ def verify_recovery_bundle(runtime, source, manifest):
                 for name in ["compose.production.yaml", *["secrets/" + key for key in KEY_FILES]]:
                     if not archive.getmember(prefix + name).isfile():
                         raise OperationError("configuration recovery signing or Compose files are incomplete")
+            for environment in ('development', 'production'):
+                checkpoint = manifest.get('recovery_albums_' + environment)
+                if checkpoint:
+                    from albums_artifacts import verify_runtime_recovery as restore_albums
+                    independent = albums_checkpoints.get(environment)
+                    restore_albums(runtime, archive, checkpoint, environment=environment,
+                                   image=manifest['image'], backup_filename=manifest['filename'],
+                                   independent_checkpoint=independent,
+                                   verify_checkpoint_source=verify_checkpoint_source and independent is not None)
     return True

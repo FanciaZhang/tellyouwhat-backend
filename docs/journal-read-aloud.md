@@ -227,15 +227,3 @@ App 受限模拟器客户端已在 JournalApp `50599f7` 本地提交，两系统
 发布后新备份 `mysql-20261021T052617Z-b7fb40.sql.gz.enc` 的 SHA-256 为 `e7ec7e472613b3e63c73c3da16a91c1bb8c1a46864850018ff65551d9e29bcb0`，认证清单、九个选择文件、源码、测试后台路由绑定及三对象 COS 回读通过。既有测试库独立只读账号和独立密钥生成的内层检查点为 `mysql-20261021T052621Z-57fb1d.sql.gz.enc`，摘要 `75e3e8ae12188712fcae5be2086d363ad82c1c17bb8bcbdef10d91c48a347985`。
 
 该检查点实际恢复到无网络、内存与进程数受限的临时 MySQL 容器，102 个表的行数完整匹配；额外读取恢复后的发布指针、小何默认声音、466 个开放声音、470 条验证及目录文档摘要，并与源测试库一致。App 身份、权益、授权和朗读用户额度、请求数据按既有控制面备份规则不恢复。容器由恢复流程清理，未向正在使用的测试库或正式库写入恢复数据。四 App 测试就绪检查仍为 200，正式发布状态与主 Caddyfile 摘要保持不变。完整结果见同一份目录验证证据；这不是新一轮定时任务验证。
-
-## Unified consent revision 2026-11-03
-
-Cloud features share a single current decision. The client sends all three scopes
-with the same boolean and document version; partial, mixed and stale requests
-are rejected without modifying the prior decision. An old read-aloud approval
-does not imply consent to the wider scope. See
-[journal-development-entitlements.md](journal-development-entitlements.md) for
-the constrained simulator ledger and independent capability checks. Existing
-stream cancellation follows a committed withdrawal. Deploy the matching client,
-shared gateway and public policy together only after separate delivery approval.
-Local contract tests do not prove provider availability or production deployment.

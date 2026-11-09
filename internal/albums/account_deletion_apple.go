@@ -92,6 +92,9 @@ func lockDeletingAccount(ctx context.Context, tx *sql.Tx, account, expectedReque
 	if err := tx.QueryRowContext(ctx, `SELECT state FROM album_accounts WHERE account_id=? FOR UPDATE`, account).Scan(&state); err != nil {
 		return err
 	}
+	if err := lockRecoveryState(ctx, tx); err != nil {
+		return err
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT request_id FROM album_account_deletions WHERE account_id=?`, account).Scan(&request); err != nil {
 		return err
 	}

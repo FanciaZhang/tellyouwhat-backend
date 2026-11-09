@@ -210,10 +210,10 @@ func (h *uploadHTTP) AuthorizeAlbumSharedReads(c *gin.Context) {
 	if !decodeShareJSON(c, &input) {
 		return
 	}
-	values, err := h.login.Shares.ReadGrants(c.Request.Context(), input.Token)
+	value, err := h.login.Shares.ReadGrants(c.Request.Context(), input.Token)
 	if err != nil {
 		writeShareError(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"resources": values})
+	c.JSON(200, value)
 }

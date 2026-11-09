@@ -118,6 +118,52 @@ func TestMySQLAccountRecordErasureRequiresReceiptsAndRollsBack(t *testing.T) {
 	}
 }
 
+func TestMySQLAccountRecordErasureDefersBlockedAccountAcrossRestart(t *testing.T) {
+	x := newAccessErasureFixture(t, true, true)
+	r := readyRecordErasure(t, x)
+	ctx := context.Background()
+	x.f.now = x.f.now.Add(time.Second)
+	now := func() time.Time { return x.f.now }
+	other := acceptAppleDeletion(t, x.f, x.other.Token)
+	media := sharingFixture{db: x.f.r.db, repo: r, login: x.grants[2], now: &x.f.now}
+	storage := readyAccountMediaSettlement(t, media, other.RequestID)
+	if _, err := r.settleAccountMediaPurge(ctx, other.AccountID, other.RequestID, storage, now); err != nil {
+		t.Fatal(err)
+	}
+	if batch, err := x.f.accounts.runAppleDeletionBatch(ctx, func(context.Context, string) error { return nil }, 10, now); err != nil || batch.Acknowledged != 1 {
+		t.Fatal(batch, err)
+	}
+	if _, err := x.f.accounts.eraseAccountAccess(ctx, other.AccountID, other.RequestID, now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.f.r.db.Exec(`INSERT INTO album_collections(owner_id,collection_id,revision,request_id,name,deleted,updated_at) VALUES (?,UUID(),1,UUID(),'',true,?)`, x.d.AccountID, now()); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := r.runAccountRecordErasureBatch(ctx, 1, now); err != nil || count != 0 {
+		t.Fatal("blocked account unexpectedly erased", count, err)
+	}
+	r = NewMySQLUploads(x.f.r.db).WithSubscriptionEnvironment("Sandbox")
+	if count, err := r.runAccountRecordErasureBatch(ctx, 1, now); err != nil || count != 1 {
+		t.Fatal("blocked account kept the next account out of the batch", count, err)
+	}
+	if _, err := r.erasedAccountRecords(ctx, other.AccountID, other.RequestID); err != nil {
+		t.Fatal("later ready account has no receipt", err)
+	}
+	if _, err := r.erasedAccountRecords(ctx, x.d.AccountID, x.d.RequestID); !errors.Is(err, ErrDerivedPending) {
+		t.Fatal("oldest account was not safely retained", err)
+	}
+	if _, err := x.f.r.db.Exec(`DELETE FROM album_collections WHERE owner_id=?`, x.d.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := r.runAccountRecordErasureBatch(ctx, 1, now); err != nil || count != 0 {
+		t.Fatal("retried before scheduled time", count, err)
+	}
+	x.f.now = x.f.now.Add(time.Minute)
+	if count, err := r.runAccountRecordErasureBatch(ctx, 1, now); err != nil || count != 1 {
+		t.Fatal("repaired account did not complete when due", count, err)
+	}
+}
+
 func TestMySQLAccountRecordErasureRechecksStaleSubscriptionsAndRestoresPurchase(t *testing.T) {
 	f, r, s, provider, deletion := completionFixture(t)
 	ctx := context.Background()

@@ -78,6 +78,33 @@ func TestGeneratedAlbumPathErrorsUsePublicErrorShape(t *testing.T) {
 	}
 }
 
+func TestAlbumHTTPDoesNotIssueWholeObjectWriteGrants(t *testing.T) {
+	check := func(t *testing.T, uploads *UploadService, owner, path string) {
+		t.Helper()
+		router, err := NewHTTPRouter("albums.example", testAccountAuth{identity: AccountIdentity{"albums", owner}}, uploads)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "https://albums.example"+path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("whole-object grant endpoint returned %d, want 404", response.Code)
+		}
+	}
+	t.Run("original", func(t *testing.T) {
+		uploads, _, _, owner, manifest := uploadFixture(t)
+		u, err := uploads.Create(context.Background(), owner, uuid.NewString(), manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(t, uploads, owner, "/v1/albums/uploads/"+u.ID+"/grants")
+	})
+	t.Run("live-pair", func(t *testing.T) {
+		_, _, uploads, pair, _ := liveMultipartFixture(t)
+		check(t, uploads, pair.OwnerID, "/v1/albums/live-pair-uploads/"+pair.ID+"/resource-grants")
+	})
+}
+
 func TestCreateAndGetPreserveReconstructionDescriptors(t *testing.T) {
 	service, _, _, owner, manifest := uploadFixture(t)
 	manifest.Resources[0].Descriptor = &ResourceDescriptor{PhotoKitType: 1, Filename: "原图.heic", UniformTypeIdentifier: "public.heic"}

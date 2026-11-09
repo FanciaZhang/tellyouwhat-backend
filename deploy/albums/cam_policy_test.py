@@ -108,7 +108,7 @@ class CIMediaPolicyTests(unittest.TestCase):
 
     def test_backup_identity_has_only_dedicated_recovery_access(self):
         policy = json.loads(Path(__file__).with_name("cam-test-backup.policy.json").read_text())
-        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/"
+        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/"
         self.assertEqual(policy, {"version": "2.0", "statement": [
             {"effect": "allow", "action": ["cos:GetBucketVersioning"], "resource": [base + "*"]},
             {"effect": "allow", "action": ["cos:GetBucketObjectVersions"], "resource": [base + "*"],
@@ -118,7 +118,7 @@ class CIMediaPolicyTests(unittest.TestCase):
 
     def test_backup_cleanup_has_separate_session_and_version_permissions(self):
         policy = json.loads(Path(__file__).with_name("cam-test-backup-expiry.policy.json").read_text())
-        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/"
+        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/"
         self.assertEqual(policy, {"version":"2.0","statement":[
             {"effect":"allow","action":["cos:GetBucketObjectVersions","cos:ListMultipartUploads"],"resource":[base+"*"],
              "condition":{"string_like":{"cos:prefix":["albums%2Frecovery%2F*"]}}},

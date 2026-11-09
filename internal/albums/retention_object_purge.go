@@ -41,6 +41,10 @@ func (r *MySQLUploads) prepareRetentionObjectPurge(ctx context.Context, proof ex
 	if err == nil && (old.Reason != "retention" || !old.StartedAt.IsZero()) {
 		return objectPurge{}, ErrConflict
 	}
+	existing := err == nil
+	if existing && old.State == "running" && now.Before(old.LeaseUntil) && now.Before(old.VerificationUntil) {
+		return objectPurge{}, ErrLease
+	}
 	targets, err := closedPurgeTargets(ctx, tx, proof.owner, asset, now)
 	if err != nil {
 		return objectPurge{}, err
@@ -53,6 +57,22 @@ func (r *MySQLUploads) prepareRetentionObjectPurge(ctx context.Context, proof ex
 	data, err := json.Marshal(targets)
 	if err != nil || len(data) > 4<<20 {
 		return p, ErrConflict
+	}
+	oldTargets, _ := json.Marshal(old.Targets)
+	if existing && old.Revision == a.Revision && old.Environment == proof.environment && old.ExpiresAt.Equal(proof.deadline) && string(oldTargets) == string(data) {
+		// Refresh proof without losing empty-key progress between bounded passes.
+		// A current lease with a still-valid proof cannot be taken over.
+		state := old.State
+		if state == "running" {
+			state = "queued"
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE album_object_purges SET subscription_revision=?,verification_until=?,state=?,lease_token=NULL,lease_until=NULL,available_at=?,updated_at=? WHERE owner_id=? AND asset_id=?`, proof.revision, proof.until, state, now, now, proof.owner, asset)
+		if err != nil {
+			return p, err
+		}
+		old.SubscriptionRevision, old.VerificationUntil, old.State = proof.revision, proof.until, state
+		old.LeaseToken, old.LeaseUntil = "", time.Time{}
+		return old, tx.Commit()
 	}
 	// No provider mutation has been authorized; a fresh proof may replace an
 	// expired plan and its lease without discarding an external outcome.
@@ -72,6 +92,14 @@ func maxTime(a, b time.Time) time.Time {
 }
 
 func (r *MySQLUploads) validatePurgeLifecycle(ctx context.Context, tx *sql.Tx, p objectPurge, now time.Time) (CloudAssetState, error) {
+	var deleting bool
+	if err := tx.QueryRowContext(ctx, `SELECT deletion_requested_at IS NOT NULL FROM album_storage_accounts WHERE owner_id=?`, p.OwnerID).Scan(&deleting); err != nil {
+		return CloudAssetState{}, err
+	}
+	if deleting {
+		// The account eraser owns this namespace after its fence commits.
+		return CloudAssetState{}, ErrLease
+	}
 	a, err := scanAssetState(tx.QueryRowContext(ctx, `SELECT `+lifecycleColumns+` FROM album_asset_lifecycle WHERE owner_id=? AND asset_id=? FOR UPDATE`, p.OwnerID, p.AssetID))
 	if err != nil {
 		return a, err

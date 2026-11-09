@@ -83,7 +83,7 @@ class OffsiteProbeTests(unittest.TestCase):
                 probe.run(source, Path("/usr/bin"), "snapshot", ["mysql", "--host=production"], self.root)
             config.assert_not_called()
 
-    def test_failure_preserves_recovery_inputs_and_does_not_claim_remote_success(self):
+    def disposable_source(self):
         source_temp = tempfile.TemporaryDirectory(prefix="album-snapshot-", dir="/tmp")
         self.addCleanup(source_temp.cleanup)
         folder = Path(source_temp.name)
@@ -97,13 +97,43 @@ class OffsiteProbeTests(unittest.TestCase):
         ledger = "albums-deletions-" + "b" * 32 + ".json"
         for name in (filename, filename + ".json", ledger):
             (source.backups / name).write_bytes(b"guard-only fixture, never uploaded")
+        sql = ["/usr/bin/mysql", "--no-defaults", "--protocol=socket", "--socket=" + source.config["MYSQL_SOCKET"],
+               "--user=root", "--database=albums_test"]
+        return source, filename, ledger, sql
+
+    def test_restore_scratch_uses_owned_short_fixture_root_and_downloaded_inputs(self):
+        source, filename, ledger, sql = self.disposable_source()
+        fetched = self.root / "vault" / "albums-recovered-fixture"
+        manifest = dict(created_at=int(time.time()), sha256="c" * 64, table_rows={})
+        with patch("offsite_probe.backup.verify", return_value=manifest), \
+                patch("offsite_probe.deletion_ledger.publish", return_value=dict(filename=ledger, sha256="d" * 64)), \
+                patch("offsite_probe.offsite.publish", return_value=dict(remote={"Version": "fixture"},
+                      receipt_remote={"Version": "fixture"}, receipt="fixture", receipt_sha256="e" * 64)), \
+                patch("offsite_probe.offsite.check_ledger", return_value=dict(bundle_version="fixture",
+                      consistent_database_snapshot=True, authorizes_erasure_or_recovery=False)), \
+                patch("offsite_probe.offsite.fetch", return_value=dict(directory=str(fetched),
+                      deletion_ledger=str(fetched / ledger), deletion_ledger_sha256="d" * 64)), \
+                patch("offsite_probe.backup.drill", return_value=dict(quarantined=True, deletion_ledger_applied=True)) as drill, \
+                patch("offsite_probe.recover", return_value=[]):
+            report = probe.run(source, Path("/usr/bin"), filename, sql, self.root)
+        recovered = drill.call_args.args[0]
+        self.assertEqual(recovered.root, source.root)
+        self.assertEqual(recovered.state, source.state)
+        self.assertEqual(recovered.backups, fetched)
+        self.assertEqual(recovered.environment_file, (self.root / "probe.env").resolve())
+        self.assertEqual(drill.call_args.args[3:], (fetched / ledger, "d" * 64))
+        self.assertTrue(report["restored"])
+        self.assertTrue(report["checkpoint_matched_source"])
+        self.assertTrue((self.root / "intent.json").exists())
+        self.assertTrue((self.root / "vault" / filename).exists())
+
+    def test_failure_preserves_recovery_inputs_and_does_not_claim_remote_success(self):
+        source, filename, ledger, sql = self.disposable_source()
         manifest = dict(created_at=int(time.time()), sha256="c" * 64, table_rows={})
         with patch("offsite_probe.backup.verify", return_value=manifest), \
                 patch("offsite_probe.deletion_ledger.publish", return_value=dict(filename=ledger, sha256="d" * 64)), \
                 patch("offsite_probe.offsite.publish", side_effect=OperationError("controlled failure")), \
                 patch("offsite_probe.recover", return_value=[]) as recover:
-            sql = ["/usr/bin/mysql", "--no-defaults", "--protocol=socket", "--socket=" + source.config["MYSQL_SOCKET"],
-                   "--user=root", "--database=albums_test"]
             with self.assertRaises(OperationError): probe.run(source, Path("/usr/bin"), filename, sql, self.root)
             recover.assert_called_once_with(self.root)
         report = json.loads((self.root / "report.json").read_text())

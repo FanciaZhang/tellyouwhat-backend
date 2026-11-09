@@ -132,16 +132,21 @@ func (r *MySQLUploads) erasedAccountRecords(ctx context.Context, owner, request 
 }
 
 func (r *MySQLUploads) runAccountRecordErasureBatch(ctx context.Context, limit int, now func() time.Time) (int, error) {
-	if limit < 1 || limit > 100 || now == nil {
+	if limit < 1 || limit > 100 || now == nil || (r.billingEnvironment != "Sandbox" && r.billingEnvironment != "Production") {
+		return 0, ErrInvalidManifest
+	}
+	at := now().UTC().Truncate(time.Microsecond)
+	if at.IsZero() {
 		return 0, ErrInvalidManifest
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT d.account_id,d.request_id FROM album_account_deletions d
  JOIN album_account_object_purges p ON p.account_id=d.account_id AND p.request_id=d.request_id
 	 JOIN album_storage_accounts s ON s.owner_id=d.account_id
 	 WHERE d.access_erased_at IS NOT NULL AND p.media_settled_at IS NOT NULL
+	 AND (d.record_erase_after IS NULL OR d.record_erase_after<=?)
 	 AND (s.subscription_checked_at IS NOT NULL OR s.subscription_revision=0)
 	 AND NOT EXISTS (SELECT 1 FROM album_deletion_subscription_jobs b WHERE b.account_id=d.account_id AND b.acknowledged_at IS NULL)
-	 ORDER BY d.requested_at,d.account_id LIMIT ?`, limit)
+	 ORDER BY COALESCE(d.record_erase_after,d.requested_at),d.account_id LIMIT ?`, at, limit)
 	if err != nil {
 		return 0, err
 	}
@@ -160,15 +165,38 @@ func (r *MySQLUploads) runAccountRecordErasureBatch(ctx context.Context, limit i
 		return 0, err
 	}
 	count := 0
+	var batchErr error
 	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return count, errors.Join(batchErr, err)
+		}
+		// Commit the retry deadline before attempting erasure so it survives a restart.
+		at := now().UTC().Truncate(time.Microsecond)
+		if at.IsZero() {
+			return count, errors.Join(batchErr, ErrInvalidManifest)
+		}
+		claim, err := r.db.ExecContext(ctx, `UPDATE album_account_deletions SET record_erase_after=? WHERE account_id=? AND request_id=? AND (record_erase_after IS NULL OR record_erase_after<=?)`, at.Add(time.Minute), ref[0], ref[1], at)
+		if err != nil {
+			batchErr = errors.Join(batchErr, err)
+			continue
+		}
+		claimed, err := claim.RowsAffected()
+		if err != nil {
+			batchErr = errors.Join(batchErr, err)
+			continue
+		}
+		if claimed == 0 {
+			continue
+		}
 		_, err = r.eraseAccountRecords(ctx, ref[0], ref[1], now)
 		if errors.Is(err, ErrDerivedPending) {
 			continue
 		}
 		if err != nil {
-			return count, err
+			batchErr = errors.Join(batchErr, err)
+			continue
 		}
 		count++
 	}
-	return count, nil
+	return count, batchErr
 }

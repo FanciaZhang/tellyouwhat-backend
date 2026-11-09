@@ -216,7 +216,12 @@ func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
 		t.Fatalf("Health guardian consent crossed the app boundary: %v", err)
 	}
 	illustration := []privacy.Consent{{Scope: privacy.JournalIllustrationScope, DocumentVersion: privacy.JournalIllustrationDocumentVersion, Granted: true}}
-	if _, err := journalService.RecordConsents(ctx, journal, illustration); err != nil {
+	journalConsents := []privacy.Consent{
+		{Scope: privacy.ManagedAIScope, DocumentVersion: privacy.JournalCloudAIDocumentVersion, Granted: true},
+		illustration[0],
+		{Scope: privacy.JournalReadAloudScope, DocumentVersion: privacy.JournalCloudAIDocumentVersion, Granted: true},
+	}
+	if _, err := journalService.RecordConsents(ctx, journal, journalConsents); err != nil {
 		t.Fatalf("existing Journal contract scope rejected: %v", err)
 	}
 	if _, err := service.RecordConsents(ctx, principal, illustration); !errors.Is(err, privacy.ErrInvalidConsent) {
@@ -234,7 +239,7 @@ func TestMySQLGuardianConsentScopeMigration(t *testing.T) {
 			t.Fatalf("migration checkpoint recovery failed: %v", err)
 		}
 	}
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != 9 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM privacy_consents`).Scan(&count); err != nil || count != len(consents)+len(journalConsents) {
 		t.Fatalf("migration replay changed existing consents: count=%d err=%v", count, err)
 	}
 }

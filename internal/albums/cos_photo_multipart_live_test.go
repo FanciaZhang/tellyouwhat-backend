@@ -103,8 +103,13 @@ func photoMultipartProbeTrace(t *testing.T, s *COSObjects) func() []map[string]a
 func cleanPhotoMultipartProbe(t *testing.T, cleaner, reader *COSObjects, root string, intent photoMultipartProbeIntent) bool {
 	t.Helper()
 	candidate := photoMultipartProbeCandidate(t)
+	return cleanPhotoMultipartCandidateProbe(t, cleaner, reader, root, intent, candidate, PhotoGridJPEG)
+}
+
+func cleanPhotoMultipartCandidateProbe(t *testing.T, cleaner, reader *COSObjects, root string, intent photoMultipartProbeIntent, candidate PhotoCandidate, preset PhotoPreset) bool {
+	t.Helper()
 	key, err := intent.Spec.key()
-	if err != nil || intent.Scope != photoMultipartProbeScope || !intent.Spec.Multipart || intent.Spec.Preset != PhotoGridJPEG ||
+	if err != nil || intent.Scope != photoMultipartProbeScope || !intent.Spec.Multipart || intent.Spec.Preset != preset ||
 		intent.Spec.SHA256 != candidate.SHA256 || intent.Spec.SizeBytes != int64(len(candidate.Bytes)) || intent.Spec.Width != candidate.Width || intent.Spec.Height != candidate.Height {
 		t.Error("photo cleanup intent rejected")
 		return false

@@ -383,22 +383,6 @@ struct AlbumAPITransportTests {
         #expect(legacy.resources[0].descriptor == nil)
     }
 
-    @Test("generated grant path carries no owner or client proof")
-    func uploadGrant() async throws {
-        let recorder = AlbumRequestRecorder()
-        let transport = AlbumAPITransport { request in
-            await recorder.record(request)
-            return AlbumAPIHTTPResponse(statusCode: 200,
-                headers: [.init(name: "Content-Type", value: "application/json")],
-                body: .data(Data(#"{"grants":[{"resourceID":"photo","url":"https://storage.example/staging","headers":{"Content-Length":"23"},"expiresAt":"2026-10-11T02:00:00Z"}]}"#.utf8)))
-        }
-        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
-        _ = try await client.authorizeAlbumUploadResources(path: .init(id: Self.uploadID))
-        let request = try #require(await recorder.last)
-        #expect(request.path == "/v1/albums/uploads/\(Self.uploadID)/grants")
-        #expect(request.body.isEmpty)
-    }
-
     @Test("create serializes manifest without client authority fields")
     func createUpload() async throws {
         let recorder = AlbumRequestRecorder()

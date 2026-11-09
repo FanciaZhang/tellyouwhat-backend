@@ -20,28 +20,16 @@ illustrations and read-aloud use this same decision; development read-aloud uses
 a distinct subject from purchase accounting.
 
 Explicit simulator integration credentials use the existing signed, expiring
-registry and replay protection. A separately approved development grant is still
-required for voice and organizing; ordinary read-aloud credentials retain their
-narrow route allowlist. These requests use real providers, budgets and quotas,
-without creating an Apple attestation or purchase row.
-
-Journal cloud AI consent is one all-or-nothing decision dated 2026-11-03. Every
-consent request contains the three scopes `managed_subscription`,
-`journal_illustration`, `journal_read_aloud` exactly once with the same boolean.
-The privacy service rejects partial/mixed/duplicate/old decisions before writing,
-and every cloud feature requires the complete current decision. Earlier partial
-approvals are never promoted. Health's published document versions are unchanged.
-
-The constrained simulator repository persists one unified decision in the existing
-isolated `journal_simulator_read_aloud_consents` ledger, using its historical
-read-aloud scope column and the new common document version. It acknowledges all
-three requested scopes only after the single write succeeds. All scopes resolve
-to that one current choice; it does not create voice/illustration route grants or
-paid entitlements. The row expires with the credential and restart cannot recreate
-withdrawn consent. Real Apple identities retain their normal transactional,
-three-row privacy repository. No schema change, fake Apple key or purchase is
-needed. Text organizing retains its durable, expiring nonce store; media-bearing
-requests remain denied for constrained simulator credentials.
+registry and replay protection. Only a separately approved grant admits voice,
+organizing and managed-AI consent; ordinary read-aloud credentials retain their
+narrow scope. These requests use real providers, budgets and quotas, without
+creating an Apple attestation or purchase row. Synthetic voice consent uses the
+existing in-memory privacy repository, bounded to 16 live integration identities;
+restart requires a new explicit consent request. Ordinary device consent and the
+existing read-aloud consent table retain their persistent behavior. No test-only
+schema change or production operations deployment is needed. Text organizing uses the
+existing durable, expiring nonce store to reject reused integration request IDs,
+without inserting Apple key or media rows; media-bearing attempts remain denied.
 Simulator private keys are never
 compiled into device or Release builds. The test producer removes its credential
 and grant when verification ends; expiry and the registry's fixed size cap bound

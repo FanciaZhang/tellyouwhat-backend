@@ -123,11 +123,16 @@ func NewAttestationRouter(enrollment Enrollment) http.Handler {
 	router := gin.New()
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
+	router.Use(func(context *gin.Context) {
+		if !strings.HasPrefix(context.FullPath(), "/v1/attest/") {
+			context.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		context.Next()
+	})
 	router.Use(captureRawRequestBody())
 	server := &Server{enrollment: enrollment}
-	wrapper := platformhttpapi.ServerInterfaceWrapper{Handler: server.platformStrictHandler(), ErrorHandler: parameterError}
-	router.POST("/v1/attest/challenges", wrapper.IssueAttestationChallenge)
-	router.POST("/v1/attest/keys", wrapper.RegisterAttestationKey)
+	platformhttpapi.RegisterHandlersWithOptions(router, server.platformStrictHandler(), platformhttpapi.GinServerOptions{ErrorHandler: parameterError})
 	return router
 }
 

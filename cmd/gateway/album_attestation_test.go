@@ -20,11 +20,43 @@ import (
 	"github.com/tellyouwhat/backend/internal/config"
 	"github.com/tellyouwhat/backend/internal/gateway"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
+	"github.com/tellyouwhat/backend/internal/platformhttpapi"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"github.com/tellyouwhat/backend/internal/storage/redisstore"
 	"github.com/tellyouwhat/backend/internal/testutil"
 	"github.com/tellyouwhat/backend/internal/testutil/appattest"
 )
+
+func allowAlbumBootstrap(next http.Handler) http.Handler { return next }
+
+func TestAlbumAttestationRouterRejectsOtherPlatformOperationsBeforeDecoding(t *testing.T) {
+	document, err := platformhttpapi.GetSwagger()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := gateway.NewAttestationRouter(nil)
+	checked := 0
+	for path, item := range document.Paths.Map() {
+		if strings.HasPrefix(path, "/v1/attest/") {
+			continue
+		}
+		for method := range item.Operations() {
+			for _, body := range []string{`{}`, `{broken`} {
+				request := httptest.NewRequest(method, path, strings.NewReader(body))
+				request.Header.Set("Content-Type", "application/json")
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				if response.Code != http.StatusNotFound {
+					t.Errorf("%s %s: status=%d body=%s", method, path, response.Code, response.Body.String())
+				}
+				checked++
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no non-enrollment operations checked")
+	}
+}
 
 func TestAlbumAppAttestHTTPBindsRequestWithoutGrantingAccountOrSubscription(t *testing.T) {
 	for _, tc := range []struct{ bundle, storage string }{
@@ -84,7 +116,7 @@ func TestAlbumAppAttestHTTPBindsRequestWithoutGrantingAccountOrSubscription(t *t
 				}
 				_, _ = io.Copy(w, r.Body)
 			})
-			handler := newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next)
+			handler := newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next, allowAlbumBootstrap)
 			serve := func(r *http.Request, status int) *httptest.ResponseRecorder {
 				t.Helper()
 				w := httptest.NewRecorder()
@@ -127,7 +159,7 @@ func TestAlbumAppAttestHTTPBindsRequestWithoutGrantingAccountOrSubscription(t *t
 			bad["build"] = "8"
 			post("/v1/attest/keys", bad, 401)
 			registered := post("/v1/attest/keys", registration, 201)
-			handler = newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next)
+			handler = newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next, allowAlbumBootstrap)
 			if recovered := post("/v1/attest/keys", registration, 201); recovered.Body.String() != registered.Body.String() {
 				t.Fatal("lost enrollment reply changed the identity")
 			}
@@ -153,7 +185,7 @@ func TestAlbumAppAttestHTTPBindsRequestWithoutGrantingAccountOrSubscription(t *t
 				t.Fatal("body not preserved")
 			}
 			r.Body = io.NopCloser(strings.NewReader(`{"title":"synthetic"}`))
-			handler = newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next)
+			handler = newAlbumAttestedHandler(app, nonces, keys, client.Roots, nil, next, allowAlbumBootstrap)
 			serve(r, 409)
 			for _, mutate := range []func(*http.Request){
 				func(r *http.Request) { r.Body = io.NopCloser(strings.NewReader(`{"title":"tampered"}`)) },
@@ -203,7 +235,7 @@ func TestAlbumAppAttestHTTPBindsRequestWithoutGrantingAccountOrSubscription(t *t
 func TestAlbumAppAttestPublicExceptionsAreExact(t *testing.T) {
 	app := config.AppConfig{Registry: appregistry.App{ID: appregistry.Albums}, AttestationEnvironment: attestation.EnvironmentProduction}
 	seen := 0
-	h := newAlbumAttestedHandler(app, nil, nil, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen++; w.WriteHeader(204) }))
+	h := newAlbumAttestedHandler(app, nil, nil, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen++; w.WriteHeader(204) }), allowAlbumBootstrap)
 	for _, tc := range []struct {
 		method, path string
 		status       int
@@ -236,7 +268,7 @@ func TestAlbumAppAttestEnrollmentRejectsForeignIdentityAndSandboxProof(t *testin
 			client := appattest.New(t, tc.identity, time.Now())
 			keys := attestation.NewMemoryKeyStore()
 			app := config.AppConfig{Registry: appregistry.App{ID: appregistry.Albums, TeamID: "TEAM", BundleID: "cn.tellyouwhat.albums.dev"}, AttestationEnvironment: attestation.EnvironmentProduction}
-			h := newAlbumAttestedHandler(app, attestation.NewMemoryNonceStore(), keys, client.Roots, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("invalid enrollment reached account API") }))
+			h := newAlbumAttestedHandler(app, attestation.NewMemoryNonceStore(), keys, client.Roots, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("invalid enrollment reached account API") }), allowAlbumBootstrap)
 			post := func(path string, body any, status int) *httptest.ResponseRecorder {
 				t.Helper()
 				data, err := json.Marshal(body)
@@ -275,11 +307,31 @@ func TestAlbumAppAttestReadinessChecksSharedDependencies(t *testing.T) {
 			}
 			return nil
 		})
-		h := newAlbumAttestedHandler(app, nil, nil, nil, readiness, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+		h := newAlbumAttestedHandler(app, nil, nil, nil, readiness, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), allowAlbumBootstrap)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", "/readyz", nil))
 		if (ready && w.Code != 204) || (!ready && w.Code != 503) {
 			t.Fatalf("ready=%t: status=%d", ready, w.Code)
+		}
+	}
+}
+
+func TestAlbumAppAttestBootstrapUsesRecoveryGuard(t *testing.T) {
+	app := config.AppConfig{Registry: appregistry.App{ID: appregistry.Albums}, AttestationEnvironment: attestation.EnvironmentProduction}
+	denyBootstrap := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
+	}
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("request unexpectedly reached account API") })
+	h := newAlbumAttestedHandler(app, nil, nil, nil, nil, next, denyBootstrap)
+	for path, want := range map[string]int{
+		"/v1/attest/challenges": http.StatusServiceUnavailable,
+		"/v1/attest/keys":       http.StatusServiceUnavailable,
+		"/v1/albums/account":    http.StatusUnauthorized,
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
+		if w.Code != want {
+			t.Errorf("%s = %d, want %d", path, w.Code, want)
 		}
 	}
 }

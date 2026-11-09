@@ -36,7 +36,7 @@ func completionProbeData() []byte {
 	return bytes.Repeat([]byte("disposable-albums-completion-probe-"), 512)
 }
 
-func completionProbeLease(t *testing.T, root string) {
+func completionProbeLease(t *testing.T, root string) *os.File {
 	t.Helper()
 	if os.Getenv("ALBUM_CI_LIVE_PROBE") != "1" {
 		t.Skip("explicit live probe required")
@@ -55,6 +55,7 @@ func completionProbeLease(t *testing.T, root string) {
 		t.Fatal("probe directory is unsafe or active in another process")
 	}
 	t.Cleanup(func() { lock.Close() })
+	return lock
 }
 
 func completionProbeCleaner(t *testing.T) *COSObjects {

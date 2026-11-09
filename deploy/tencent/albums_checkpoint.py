@@ -24,12 +24,16 @@ def database_scope(environment):
     return DATABASES[environment]
 
 
-def wrapper(name, environment='development'):
+def mysql_container(environment):
     database_scope(environment)
+    return 'tellyouwhat-albums-' + environment + '-mysql-1'
+
+
+def wrapper(name, environment='development'):
     if name not in ('mysql', 'mysqldump'):
         raise OperationError('unknown Albums backup client')
     return ('#!/bin/sh\nset -eu\nexec docker exec --env MYSQL_PWD '
-            'tellyouwhat-albums-' + environment + '-mysql-1 ' + name + ' "$@"\n').encode()
+            + mysql_container(environment) + ' ' + name + ' "$@"\n').encode()
 
 
 def private(path, maximum):
@@ -39,7 +43,7 @@ def private(path, maximum):
     return path.read_bytes()
 
 
-def checkpoint(runtime, folder, environment='development'):
+def backup_settings(runtime, environment='development'):
     database, user = database_scope(environment)
     app = runtime.root.parent / ('albums-' + environment)
     settings = app / 'backup.env'
@@ -52,6 +56,13 @@ def checkpoint(runtime, folder, environment='development'):
             or any(not re.fullmatch('[a-f0-9]{64}', config.get(k, '')) for k in ('MYSQL_PASSWORD', 'ALBUM_BACKUP_ENCRYPTION_KEY'))
             or config['MYSQL_PASSWORD'] == config['ALBUM_BACKUP_ENCRYPTION_KEY']):
         raise OperationError('Albums checkpoint database/key isolation is invalid')
+    return app, config
+
+
+def checkpoint(runtime, folder, environment='development'):
+    app, config = backup_settings(runtime, environment)
+    settings = app / 'backup.env'
+    database = config['MYSQL_DATABASE']
     for name in ('backups', 'operations', 'backup-bin'):
         path = app / name
         path.mkdir(mode=0o700, exist_ok=True)

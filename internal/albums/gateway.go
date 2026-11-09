@@ -17,16 +17,17 @@ import (
 // executable; controlled tests can exercise the real assembly without keys or
 // requests reaching Apple/COS. Provider hosts remain fixed in their adapters.
 type Gateway struct {
-	db                  *sql.DB
-	redis               *redis.Client
-	router              http.Handler
-	host                string
-	draining            atomic.Bool
-	closed              sync.Once
-	subscriptionCancel  context.CancelFunc
-	retentionCancel     context.CancelFunc
-	appleDeletionCancel context.CancelFunc
-	subscriptionWorkers sync.WaitGroup
+	db                     *sql.DB
+	redis                  *redis.Client
+	router                 http.Handler
+	host                   string
+	draining               atomic.Bool
+	closed                 sync.Once
+	subscriptionCancel     context.CancelFunc
+	retentionCancel        context.CancelFunc
+	retentionCleanupCancel context.CancelFunc
+	appleDeletionCancel    context.CancelFunc
+	subscriptionWorkers    sync.WaitGroup
 }
 
 func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundTripper) (_ *Gateway, err error) {
@@ -188,12 +189,27 @@ func NewGateway(ctx context.Context, config GatewayConfig, transport http.RoundT
 			}
 		}
 	}
+	var retentionCleanup *retentionCleanupWorker
+	var cleanupSubscriptions *AlbumSubscriptionService
+	if subscriptions != nil && subscriptions.retentionErasureEnabled {
+		cleanupSubscriptions = subscriptions
+	}
+	if cleanupSubscriptions != nil || config.TrashErasureEnabled {
+		retentionCleanup = &retentionCleanupWorker{repository: repository, subscriptions: cleanupSubscriptions, storage: objects,
+			batchSize: config.Worker.BatchSize, now: time.Now, trashEnabled: config.TrashErasureEnabled}
+		if err := retentionCleanup.check(ctx); err != nil {
+			return nil, errors.New("album retention cleanup schema or environment")
+		}
+	}
 	if err := g.startAppleDeletion(context.WithoutCancel(ctx), accounts, exchanger, config.Worker.BatchSize, config.Worker.PollInterval); err != nil {
 		return nil, errors.New("album Apple deletion worker configuration")
 	}
 	g.startSubscriptionRefresh(context.WithoutCancel(ctx), subscriptions, repository)
 	if dispatcher != nil {
 		g.startRetentionDispatch(context.WithoutCancel(ctx), dispatcher)
+	}
+	if retentionCleanup != nil {
+		g.startRetentionCleanup(context.WithoutCancel(ctx), retentionCleanup)
 	}
 	return g, nil
 }
@@ -210,7 +226,7 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 	// challenges or uploads; this process never applies migrations itself.
 	for _, query := range []string{
 		`SELECT subject_sha256,revoked_before,deleted_at FROM album_apple_identity_state LIMIT 0`,
-		`SELECT account_id,request_id,requested_at,access_erased_at FROM album_account_deletions LIMIT 0`,
+		`SELECT account_id,request_id,requested_at,access_erased_at,record_erase_after FROM album_account_deletions LIMIT 0`,
 		`SELECT account_id,request_id,authorizing_session_sha256,requested_at,records_erased_at FROM album_deletion_ledger LIMIT 0`,
 		`SELECT owner_id,asset_id,final_revision,reason,purged_at,version_ids FROM album_asset_deletion_ledger LIMIT 0`,
 		`SELECT account_id,request_id,grant_id,available_at,attempts,lease_token,lease_until,acknowledged_at FROM album_deletion_apple_jobs LIMIT 0`,
@@ -246,7 +262,34 @@ func (g *Gateway) checkSchema(ctx context.Context) error {
 	return err
 }
 
+func (g *Gateway) admitsActiveDatabase(ctx context.Context) bool {
+	if g.draining.Load() {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return CheckRecoveryState(ctx, g.db) == nil
+}
+
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.serve(w, r, g.router)
+}
+
+// GuardAttestationBootstrap applies the Albums recovery gate to shared device enrollment.
+func (g *Gateway) GuardAttestationBootstrap(next http.Handler) http.Handler {
+	return albumBootstrapGuard{gateway: g, next: next}
+}
+
+type albumBootstrapGuard struct {
+	gateway *Gateway
+	next    http.Handler
+}
+
+func (h albumBootstrapGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.gateway.serve(w, r, h.next)
+}
+
+func (g *Gateway) serve(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	defer func() {
@@ -266,7 +309,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/readyz" {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
-			if g.draining.Load() || g.db.PingContext(ctx) != nil || g.redis.Ping(ctx).Err() != nil {
+			if !g.admitsActiveDatabase(ctx) || g.redis.Ping(ctx).Err() != nil {
 				writeGatewayStatus(w, http.StatusServiceUnavailable, "not_ready")
 				return
 			}
@@ -274,11 +317,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeGatewayStatus(w, http.StatusOK, "ok")
 		return
 	}
-	if g.draining.Load() {
+	if !g.admitsActiveDatabase(r.Context()) {
 		writeGatewayStatus(w, http.StatusServiceUnavailable, "not_ready")
 		return
 	}
-	g.router.ServeHTTP(w, r)
+	next.ServeHTTP(w, r)
 }
 
 // RequestNeedsAppAttest leaves only service probes, signed Apple callbacks and
@@ -306,6 +349,9 @@ func (g *Gateway) BeginDrain() {
 	}
 	if g.retentionCancel != nil {
 		g.retentionCancel()
+	}
+	if g.retentionCleanupCancel != nil {
+		g.retentionCleanupCancel()
 	}
 	if g.subscriptionCancel != nil {
 		g.subscriptionCancel()

@@ -39,19 +39,23 @@ class RestoreWorkspaceTests(unittest.TestCase):
 
     def abandoned(self, kind='download'):
         folder = Path(tempfile.mkdtemp(prefix='.restore-' + kind + '-', dir=self.runtime.state))
-        owner, names = _restore_workspace_owner(self.runtime, folder, kind, self.filename if kind == 'download' else self.container)
+        owner, names = _restore_workspace_owner(self.runtime, folder, kind, self.filename if kind == 'download' else self.container,
+                                               **self.selection(kind))
         atomic_json(folder / 'owner.json', {'owner': owner, 'hmac_sha256': manifest_signature(backup_secret(self.runtime), owner)})
         for name in names:
             self.write(folder / name)
         return folder
 
+    def selection(self, kind):
+        return dict(snapshot='albums-' + '1' * 32 + '.sql.gz.enc', ledger='albums-deletions-' + '2' * 32 + '.json') if kind == 'albums-sql' else {}
+
     def test_success_failure_and_cancellation_remove_only_owned_files(self):
-        for kind in ('download', 'sql'):
+        for kind in ('download', 'sql', 'albums-sql'):
             for failure in (None, RuntimeError, KeyboardInterrupt):
                 with self.subTest(kind=kind, failure=failure), patch.object(self.runtime, 'execute', return_value=b''):
                     try:
-                        with restore_workspace(self.runtime, kind, self.filename if kind == 'download' else self.container) as folder:
-                            _, names = _restore_workspace_owner(self.runtime, folder, kind, self.filename if kind == 'download' else self.container)
+                        with restore_workspace(self.runtime, kind, self.filename if kind == 'download' else self.container, **self.selection(kind)) as folder:
+                            _, names = _restore_workspace_owner(self.runtime, folder, kind, self.filename if kind == 'download' else self.container, **self.selection(kind))
                             for name in names:
                                 self.write(folder / name)
                             if failure:
@@ -68,6 +72,24 @@ class RestoreWorkspaceTests(unittest.TestCase):
                 with restore_workspace(self.runtime, kind, reference):
                     self.fail('invalid workspace admitted')
         self.assertEqual(list(self.runtime.state.glob('.restore-*')), [])
+
+    def test_albums_selection_is_authenticated_and_never_reused_for_other_kinds(self):
+        for selection in ({}, dict(snapshot='../private', ledger='albums-deletions-' + '2' * 32 + '.json')):
+            with self.assertRaises(OperationError):
+                with restore_workspace(self.runtime, 'albums-sql', self.container, **selection):
+                    self.fail('invalid selection accepted')
+        with self.assertRaises(OperationError):
+            with restore_workspace(self.runtime, 'sql', self.container, **self.selection('albums-sql')):
+                self.fail('Albums selection accepted by unrelated workspace')
+        folder = self.abandoned('albums-sql')
+        with (folder / 'client.cnf').open('rb') as lease:
+            fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            with patch.object(self.runtime, 'execute') as execute, self.assertRaises(OperationError):
+                prune_restore_workspaces(self.runtime)
+            execute.assert_not_called()
+        with patch.object(self.runtime, 'execute', return_value=b''):
+            prune_restore_workspaces(self.runtime)
+        self.assertFalse(folder.exists())
 
     def test_active_owner_or_payload_prevents_any_removal(self):
         for name in ('owner.json', self.filename):
@@ -188,9 +210,13 @@ class RestoreWorkspaceTests(unittest.TestCase):
         return state, execute
 
     def test_orphaned_container_requires_exact_ownership_and_positive_termination(self):
+        for kind in ('sql', 'albums-sql'):
+            self.check_orphaned_container(kind)
+
+    def check_orphaned_container(self, kind):
         for fault in (None, 'foreign-name', 'foreign-label', 'foreign-operation', 'inventory', 'delete-failed', 'still-present', 'changed-payload'):
-            with self.subTest(fault=fault):
-                folder = self.abandoned('sql')
+            with self.subTest(fault=fault, kind=kind):
+                folder = self.abandoned(kind)
                 state, execute = self.docker(folder, fault)
                 with patch.object(self.runtime, 'execute', side_effect=execute):
                     if fault is None:

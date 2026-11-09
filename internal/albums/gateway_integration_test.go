@@ -104,6 +104,7 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	values := gatewayEnvironment(t)
 	values["ALBUM_DATABASE_DSN"] = dsn
 	values["ALBUM_REDIS_URL"] = os.Getenv("REDIS_TEST_URL")
+	values["ALBUM_TRASH_ERASURE_ENABLED"] = "true"
 	config, err := LoadGatewayConfig(func(k string) string { return values[k] })
 	if err != nil {
 		t.Fatal(err)
@@ -207,6 +208,9 @@ func TestGatewayMySQLRedisAppleLoginAndSessionLifecycle(t *testing.T) {
 	gateway, err := NewGateway(ctx, config, transport)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if gateway.retentionCleanupCancel == nil {
+		t.Fatal("explicit trash cleanup was not assembled into the gateway")
 	}
 	t.Cleanup(gateway.Close)
 	server := httptest.NewServer(gateway)

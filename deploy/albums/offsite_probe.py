@@ -1,4 +1,5 @@
 """Explicit real-COS extension of the disposable MySQL test, never a live backup source."""
+from contextlib import contextmanager
 import hmac
 import json
 import os
@@ -76,7 +77,8 @@ def recover(root):
         return results
 
 
-def run(source, binaries, filename, sql, root):
+@contextmanager
+def publication(source, binaries, filename, sql, root):
     root = Path(root)
     # The only caller supplies this socket-only source created by backup_integration_test.py.
     socket = Path(source.config.get("MYSQL_SOCKET", ""))
@@ -116,20 +118,32 @@ def run(source, binaries, filename, sql, root):
                                        runtime.backups / ledger["filename"], ledger["sha256"])
             report.update(published=True, bundle_version=published["remote"]["Version"],
                           receipt_version=published["receipt_remote"]["Version"])
+            checked = offsite.check_ledger(runtime, c["transfer"], c["writer"], published["receipt"],
+                                           published["receipt_sha256"], sql + ["--batch", "--skip-column-names"], {"MYSQL_PWD": ""})
+            if (checked["bundle_version"] != report["bundle_version"] or not checked["consistent_database_snapshot"]
+                    or checked["authorizes_erasure_or_recovery"]):
+                raise OperationError("COS probe did not match the pinned checkpoint to its source")
+            report["checkpoint_matched_source"] = True
             fetched = offsite.fetch(runtime, c["transfer"], c["writer"], published["receipt"], published["receipt_sha256"])
-            recovered = backup.Runtime(root, fetched["directory"], env)
+            # Keep the drill's Unix socket under the fixture's short, owned scratch root.
+            recovered = backup.Runtime(source.root, fetched["directory"], env)
             copied = backup.verify(recovered, recovered.backups / filename)
             if copied["sha256"] != m["sha256"]:
                 raise OperationError("COS probe recovered snapshot differs from its source")
             report["downloaded"] = True
-            result = backup.drill(recovered, binaries, filename, recovered.backups / ledger["filename"], ledger["sha256"])
-            if not result["quarantined"] or not result["deletion_ledger_applied"]:
-                raise OperationError("COS probe restore was not quarantined with its deletion fence")
-            report["restored"] = True
+            yield recovered, fetched, report
     finally:
         try:
             removed = recover(root)
             report.update(cleanup_confirmed=bool(removed), cleanup=[r["remote"] for r in removed])
         finally:
             atomic_json(root / "report.json", report)
+
+
+def run(source, binaries, filename, sql, root):
+    with publication(source, binaries, filename, sql, root) as (recovered, fetched, report):
+        result = backup.drill(recovered, binaries, filename, Path(fetched["deletion_ledger"]), fetched["deletion_ledger_sha256"])
+        if not result["quarantined"] or not result["deletion_ledger_applied"]:
+            raise OperationError("COS probe restore was not quarantined with its deletion fence")
+        report["restored"] = True
     return report

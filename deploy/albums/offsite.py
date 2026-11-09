@@ -1,4 +1,5 @@
 """Encrypted, version-pinned COS recovery bundles; no latest-checkpoint or cutover claim."""
+from contextlib import contextmanager
 import copy
 import hashlib
 import hmac
@@ -14,7 +15,7 @@ import tarfile
 import time
 
 from backup import configure, verify, RETENTION, staging, cleanup_staging, _remove_recovered_owner
-from deletion_ledger import verify as verify_ledger
+from deletion_ledger import require_current, verify as verify_ledger, verify_checkpoint
 from ops_backup import backup_secret, crypt, file_digest, manifest_signature
 from ops_common import OperationError, atomic_json
 
@@ -395,15 +396,14 @@ def publish_receipt(runtime, executable, credentials, path, digest):
                           latest_checkpoint_proven=False)
 
 
-def fetch(runtime, executable, credentials, receipt, receipt_digest):
+@contextmanager
+def _download_bundle(runtime, executable, credentials, receipt, receipt_digest, *, destination=None):
     configure(runtime)
     r = read_receipt(runtime, receipt, receipt_digest)
     remote = r["remote"]
     cleanup_staging(runtime)
     if shutil.disk_usage(runtime.backups).free < 3 * remote["Bytes"] + 64 * 1024**2:
         raise OperationError("insufficient space for the downloaded and decoded recovery bundle")
-    # A complete verified result is handed off atomically; interrupted work remains leased staging.
-    destination = runtime.backups / ("albums-recovered-" + secrets.token_hex(4))
     names = (r["snapshot"], r["snapshot"] + ".json", r["ledger"])
     with staging(runtime, "offsite", (*names, "bundle.enc", "bundle.tar"), destination=destination) as folder:
         encrypted, raw = folder / "bundle.enc", folder / "bundle.tar"
@@ -432,10 +432,29 @@ def fetch(runtime, executable, credentials, receipt, receipt_digest):
         m = verify(stage, folder / r["snapshot"])
         if m["created_at"] != r["snapshot_created_at"]:
             raise OperationError("snapshot differs from publication receipt")
-        verify_ledger(stage, folder / r["ledger"], r["ledger_sha256"], m["created_at"])
+        checkpoint = verify_checkpoint(stage, folder / r["ledger"], r["ledger_sha256"], m["created_at"])
         encrypted.unlink()
         raw.unlink()
+        yield r, checkpoint
+
+
+def fetch(runtime, executable, credentials, receipt, receipt_digest):
+    # A complete verified result is handed off atomically; interrupted work remains leased staging.
+    destination = runtime.backups / ("albums-recovered-" + secrets.token_hex(4))
+    with _download_bundle(runtime, executable, credentials, receipt, receipt_digest, destination=destination) as (r, _):
+        names = (r["snapshot"], r["snapshot"] + ".json", r["ledger"])
     _remove_recovered_owner(runtime, destination, names)
     return runtime.record("albums-offsite-fetch", directory=str(destination), snapshot=r["snapshot"],
                           deletion_ledger=str(destination / r["ledger"]), deletion_ledger_sha256=r["ledger_sha256"],
+                          latest_checkpoint_proven=False, recovery_ready=False)
+
+
+def check_ledger(runtime, executable, credentials, receipt, receipt_digest, sql, mysql_credentials):
+    with _download_bundle(runtime, executable, credentials, receipt, receipt_digest) as (r, checkpoint):
+        rows = require_current(runtime, sql, mysql_credentials, checkpoint)
+    return runtime.record("albums-offsite-ledger-check", receipt_sha256=receipt_digest,
+                          bundle_version=r["remote"]["Version"], deletion_ledger_sha256=r["ledger_sha256"],
+                          records=len(rows["entries"]), asset_records=len(rows["assets"]),
+                          collection_records=len(rows["collections"]), consistent_database_snapshot=True,
+                          point_in_time_only=True, authorizes_erasure_or_recovery=False,
                           latest_checkpoint_proven=False, recovery_ready=False)

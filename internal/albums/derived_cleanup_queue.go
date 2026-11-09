@@ -106,6 +106,9 @@ func (r *MySQLUploads) ClaimDerivedCleanup(ctx context.Context, owner, id, token
 		return DerivedCleanup{}, err
 	}
 	defer tx.Rollback()
+	if err := lockRecoveryState(ctx, tx); err != nil {
+		return DerivedCleanup{}, err
+	}
 	c, err := scanCleanup(tx.QueryRowContext(ctx, `SELECT `+cleanupColumns+` FROM album_derived_cleanups WHERE owner_id=? AND cleanup_id=? AND ((state='queued' AND available_at<=?) OR (state='running' AND lease_until<=?)) FOR UPDATE`, owner, id, now, now))
 	if errors.Is(err, ErrNotFound) {
 		return DerivedCleanup{}, ErrLease

@@ -81,7 +81,8 @@ class AssetDeletionCheckpointTests(unittest.TestCase):
     def test_combined_account_and_asset_limit_applies_to_publish_and_read(self):
         row=self.asset;data="\t".join([row[0],row[1],str(row[2]),row[3],row[4],json.dumps(row[5])])+"\n"
         with patch.object(deletion_ledger,'MAX_RECORDS',1):
-            with patch.object(self.runtime,'execute',side_effect=[b"1\t1\n",b"",("\t".join(self.entries[0])+"\n").encode(),b"1\t1\n",data.encode()]):
+            raw = ("__albums_source__\nalbums_fixture\t1\n__albums_entries__\n" + "\t".join(self.entries[0]) + "\n__albums_assets__\n" + data + "__albums_collections__\n").encode()
+            with patch.object(self.runtime,'execute',side_effect=[b"1\t1\n",b"1\t1\n",raw]):
                 with self.assertRaisesRegex(OperationError,'combined'):deletion_ledger.publish(self.runtime,['mysql'],{})
             self.payload['assets']=[row]
             with self.assertRaisesRegex(OperationError,'combined'):deletion_ledger.verify_checkpoint(self.runtime,self.path,self.write(),0)

@@ -52,6 +52,13 @@ func lockExpiredTrash(ctx context.Context, tx *sql.Tx, owner, asset string, now 
 	if _, err := lockAccount(ctx, tx, owner); err != nil {
 		return CloudAssetState{}, err
 	}
+	var deleting bool
+	if err := tx.QueryRowContext(ctx, `SELECT deletion_requested_at IS NOT NULL FROM album_storage_accounts WHERE owner_id=?`, owner).Scan(&deleting); err != nil {
+		return CloudAssetState{}, err
+	}
+	if deleting {
+		return CloudAssetState{}, ErrLease
+	}
 	a, err := scanAssetState(tx.QueryRowContext(ctx, `SELECT `+lifecycleColumns+` FROM album_asset_lifecycle WHERE owner_id=? AND asset_id=? FOR UPDATE`, owner, asset))
 	if err != nil {
 		return a, err

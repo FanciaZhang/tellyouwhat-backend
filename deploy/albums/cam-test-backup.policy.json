@@ -7,7 +7,7 @@
         "cos:GetBucketVersioning"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/*"
       ]
     },
     {
@@ -16,7 +16,7 @@
         "cos:GetBucketObjectVersions"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/*"
       ],
       "condition": {
         "string_like": {
@@ -35,7 +35,7 @@
         "cos:GetObject"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/albums/recovery/*"
       ]
     }
   ]

@@ -21,7 +21,8 @@ COPY_MIGRATION = 'migrations/0074_album_system_copy_locators.sql'
 SCHEMA_MIGRATIONS = (PRODUCT_MIGRATION, COPY_MIGRATION,
     'migrations/0075_album_content_corrections.sql', 'migrations/0076_album_asset_favorites.sql',
     'migrations/0077_album_collections.sql', 'migrations/0078_album_asset_deletion_ledger.sql',
-    'migrations/0080_album_photo_multipart.sql', 'migrations/0081_album_photo_completion_fence.sql')
+    'migrations/0080_album_photo_multipart.sql', 'migrations/0081_album_photo_completion_fence.sql',
+    'migrations/0082_album_retention_cleanup_schedule.sql', 'migrations/0083_album_record_erasure_schedule.sql')
 FILES = {OVERLAY: 32768, 'albums.env': 32768}
 REGISTRY = {'ALBUM_API_HOST': HOST, 'ALBUM_APPLE_BUNDLE_ID': 'cn.tellyouwhat.albums.dev',
             'ALBUM_APPLE_TEAM_ID': 'T6DD96HY2B'}

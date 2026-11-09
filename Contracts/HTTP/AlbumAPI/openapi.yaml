@@ -655,23 +655,6 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LivePairUpload'}
         default: {$ref: '#/components/responses/Error'}
-  /v1/albums/live-pair-uploads/{pairUploadID}/resource-grants:
-    post:
-      operationId: authorizeAlbumLivePairUpload
-      parameters:
-        - {name: pairUploadID, in: path, required: true, schema: {type: string, format: uuid}}
-      responses:
-        '200':
-          description: Ten-minute size and content-type constrained JPEG and MOV staging PUTs, never archive writes
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [grants]
-                properties:
-                  grants: {type: array, minItems: 2, maxItems: 2, items: {$ref: '#/components/schemas/Grant'}}
-        default: {$ref: '#/components/responses/Error'}
   /v1/albums/live-pair-uploads/{pairUploadID}/submit:
     post:
       operationId: submitAlbumLivePair
@@ -728,26 +711,6 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Upload'}
-        default: {$ref: '#/components/responses/Error'}
-  /v1/albums/uploads/{id}/grants:
-    parameters:
-      - {$ref: '#/components/parameters/UploadID'}
-    post:
-      operationId: authorizeAlbumUploadResources
-      description: Empty body. Grants cover only the manifest's exact staging objects, never archived originals.
-      responses:
-        '200':
-          description: Short-lived staging write grants
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [grants]
-                properties:
-                  grants:
-                    type: array
-                    items: {$ref: '#/components/schemas/Grant'}
         default: {$ref: '#/components/responses/Error'}
   /v1/albums/uploads/{id}/submit:
     parameters:
@@ -910,7 +873,7 @@ paths:
             schema: {$ref: '#/components/schemas/ShareTokenRequest'}
       responses:
         '200':
-          description: Limited metadata for a secret-authenticated active link; no count consumed
+          description: Active link status. Protected links withhold all media details until a successful claim; no count consumed.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ShareLookup'}
@@ -942,14 +905,15 @@ paths:
             schema: {$ref: '#/components/schemas/ShareTokenRequest'}
       responses:
         '200':
-          description: Claim-authenticated version-pinned attachment GET URLs; refreshing consumes no extra claim
+          description: Claim-authenticated media details and version-pinned attachment GET URLs; refreshing consumes no extra claim
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                required: [resources]
+                required: [kind, resources]
                 properties:
+                  kind: {type: string, enum: [photo, video, live_photo]}
                   resources: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/SharedReadGrant'}}
         default: {$ref: '#/components/responses/Error'}
 components:
@@ -1053,10 +1017,10 @@ components:
     ShareLookup:
       type: object
       additionalProperties: false
-      required: [kind, resources, expiresAt, requiresPassword, remainingClaims]
+      required: [expiresAt, requiresPassword, remainingClaims]
       properties:
-        kind: {type: string, enum: [photo, video, live_photo]}
-        resources: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/SharedResource'}}
+        kind: {type: string, enum: [photo, video, live_photo], description: Present only when requiresPassword is false.}
+        resources: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/SharedResource'}, description: Present only when requiresPassword is false.}
         expiresAt: {type: string, format: date-time}
         requiresPassword: {type: boolean}
         remainingClaims: {type: integer, minimum: 0, maximum: 100}

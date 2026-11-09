@@ -95,9 +95,9 @@ def prune_backup_temporaries(runtime):
             shutil.rmtree(path)
 
 
-def _restore_workspace_owner(runtime, folder, kind, reference):
+def _restore_workspace_owner(runtime, folder, kind, reference, *, snapshot=None, ledger=None):
     from ops_cos import valid_filename
-    if (kind not in ('download', 'sql') or not isinstance(reference, str)
+    if (kind not in ('download', 'sql', 'albums-sql') or not isinstance(reference, str)
             or not re.fullmatch(r'\.restore-' + kind + r'-[a-z0-9_]{8}', folder.name)):
         raise OperationError('invalid restore workspace owner')
     if kind == 'download':
@@ -108,8 +108,19 @@ def _restore_workspace_owner(runtime, folder, kind, reference):
         if not re.fullmatch(r'tellyouwhat-restore-[0-9a-f]{16}', reference):
             raise OperationError('invalid restore container selection')
         names = ('snapshot.sql.gz', 'restore.stderr')
-    return {'scope': 'shared-restore-workspace-v1', 'database': runtime.config['MYSQL_DATABASE'],
-            'directory': folder.name, 'kind': kind, 'reference': reference}, names
+    if kind == 'albums-sql':
+        if (not isinstance(snapshot, str) or not re.fullmatch(r'albums-[a-f0-9]{32}\.sql\.gz\.enc', snapshot)
+                or not isinstance(ledger, str) or not re.fullmatch(r'albums-deletions-[a-f0-9]{32}\.json', ledger)):
+            raise OperationError('invalid Albums restore selection')
+        names = (snapshot, snapshot + '.json', ledger, 'snapshot.sql.gz', 'snapshot.sql',
+                 'restored.sql', 'restore.stderr', 'client.cnf', 'backup.env')
+    elif snapshot is not None or ledger is not None:
+        raise OperationError('unexpected restore selection')
+    owner = {'scope': 'shared-restore-workspace-v1', 'database': runtime.config['MYSQL_DATABASE'],
+            'directory': folder.name, 'kind': kind, 'reference': reference}
+    if kind == 'albums-sql':
+        owner.update(snapshot=snapshot, ledger=ledger)
+    return owner, names
 
 
 def _close_restore_container(runtime, owner):
@@ -137,7 +148,7 @@ def _close_restore_container(runtime, owner):
 def _remove_restore_workspace(runtime, folder):
     folder = Path(folder)
     info = folder.lstat()
-    if (folder.parent != runtime.state or not re.fullmatch(r'\.restore-(download|sql)-[a-z0-9_]{8}', folder.name)
+    if (folder.parent != runtime.state or not re.fullmatch(r'\.restore-(download|sql|albums-sql)-[a-z0-9_]{8}', folder.name)
             or not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077
             or info.st_uid != runtime.state.stat().st_uid):
         raise OperationError('invalid restore workspace; retained')
@@ -156,7 +167,8 @@ def _remove_restore_workspace(runtime, folder):
             raise OperationError('oversized restore workspace owner; retained')
         envelope = json.loads(handle.read(4097))
         owner = envelope['owner']
-        expected, names = _restore_workspace_owner(runtime, folder, owner['kind'], owner['reference'])
+        expected, names = _restore_workspace_owner(runtime, folder, owner['kind'], owner['reference'],
+                                                    snapshot=owner.get('snapshot'), ledger=owner.get('ledger'))
         if (set(envelope) != {'owner', 'hmac_sha256'} or owner != expected
                 or not hmac.compare_digest(manifest_signature(backup_secret(runtime), owner), envelope['hmac_sha256'])):
             raise OperationError('restore workspace authentication failed; retained')
@@ -170,7 +182,7 @@ def _remove_restore_workspace(runtime, folder):
         for path, (_, current) in files.items():
             if current.st_uid != info.st_uid or current.st_mode & 0o077:
                 raise OperationError('restore workspace file is not private; retained')
-        if owner['kind'] == 'sql':
+        if owner['kind'] in ('sql', 'albums-sql'):
             _close_restore_container(runtime, owner)
         current_directory = folder.lstat()
         if (current_directory.st_dev, current_directory.st_ino) != (info.st_dev, info.st_ino):
@@ -207,15 +219,16 @@ def prune_restore_workspaces(runtime):
 
 
 @contextlib.contextmanager
-def restore_workspace(runtime, kind, reference):
-    if kind not in ('download', 'sql') or runtime.state.is_symlink():
+def restore_workspace(runtime, kind, reference, *, snapshot=None, ledger=None):
+    if kind not in ('download', 'sql', 'albums-sql') or runtime.state.is_symlink():
         raise OperationError('invalid restore workspace selection')
-    _restore_workspace_owner(runtime, runtime.state / ('.restore-' + kind + '-00000000'), kind, reference)
+    _restore_workspace_owner(runtime, runtime.state / ('.restore-' + kind + '-00000000'), kind, reference,
+                             snapshot=snapshot, ledger=ledger)
     with runtime.lock('restore-workspaces'):
         folder = Path(tempfile.mkdtemp(prefix='.restore-' + kind + '-', dir=runtime.state))
         lease = None
         try:
-            owner, _ = _restore_workspace_owner(runtime, folder, kind, reference)
+            owner, _ = _restore_workspace_owner(runtime, folder, kind, reference, snapshot=snapshot, ledger=ledger)
             atomic_json(folder / 'owner.json', {'owner': owner, 'hmac_sha256': manifest_signature(backup_secret(runtime), owner)})
             lease = (folder / 'owner.json').open('rb')
             fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
@@ -536,14 +549,17 @@ def verify_backup(runtime, path):
         return manifest
 
 
-def restore_drill(runtime, filename=None, *, source_directory=None):
+def restore_drill(runtime, filename=None, *, source_directory=None, albums_checkpoints=None, verify_checkpoint_source=False):
+    if verify_checkpoint_source and not albums_checkpoints:
+        raise OperationError('source verification requires an independent Albums checkpoint')
     if source_directory is None:
         prune_restore_workspaces(runtime)
     if source_directory is None and ops_offsite.enabled(runtime):
         filename = filename or json.loads((runtime.state / "backup.json").read_text())["filename"]
         with restore_workspace(runtime, 'download', filename) as directory:
             ops_offsite.download(runtime, filename, directory)
-            result = restore_drill(runtime, filename, source_directory=Path(directory))
+            result = restore_drill(runtime, filename, source_directory=Path(directory), albums_checkpoints=albums_checkpoints,
+                                   verify_checkpoint_source=verify_checkpoint_source)
         return runtime.record("restore", **{k: v for k, v in result.items() if k not in ("operation", "completed_at")}, source="cos")
     if filename:
         if Path(filename).name != filename:
@@ -555,10 +571,13 @@ def restore_drill(runtime, filename=None, *, source_directory=None):
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
-    if manifest.get("recovery_filename"):
-        ops_offsite.verify_recovery_bundle(runtime, source, manifest)
     if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
         raise OperationError("backup is outside the retention period")
+    if manifest.get("recovery_filename"):
+        ops_offsite.verify_recovery_bundle(runtime, source, manifest, albums_checkpoints=albums_checkpoints,
+                                           verify_checkpoint_source=verify_checkpoint_source)
+    elif albums_checkpoints:
+        raise OperationError('selected Albums checkpoints require an application recovery bundle')
     container = "tellyouwhat-restore-" + secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     database = "tellyouwhat_restore_test"
@@ -613,4 +632,12 @@ def restore_drill(runtime, filename=None, *, source_directory=None):
                                      env={"MYSQL_PWD": password}).decode().strip()
             if int(actual) != count:
                 raise OperationError("restored row counts differ from the snapshot")
-    return runtime.record("restore", filename=source.name, sha256=manifest["sha256"], tables=len(manifest["table_rows"]))
+    source_checks = {}
+    if verify_checkpoint_source:
+        from albums_recovery import recheck_source_checkpoint
+        source_checks['albums_checkpoint_source_final_checked_at'] = {
+            environment: recheck_source_checkpoint(runtime, environment, pin)
+            for environment, pin in sorted(albums_checkpoints.items())}
+        source_checks['albums_checkpoint_source_checks'] = {environment: pin[1] for environment, pin in albums_checkpoints.items()}
+        source_checks['albums_checkpoint_source_point_in_time_only'] = True
+    return runtime.record("restore", filename=source.name, sha256=manifest["sha256"], tables=len(manifest["table_rows"]), **source_checks)

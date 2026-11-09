@@ -1,4 +1,5 @@
 import datetime
+import copy
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from backup import Runtime, configure, prune, RETENTION
-from deletion_ledger import publish, verify, validate, SCOPE, MAX_RECORDS
+from deletion_ledger import publish, verify, verify_current, validate, merge_recovery_checkpoints, SCOPE, MAX_RECORDS
 from ops_backup import backup_secret, manifest_signature
 from ops_common import OperationError, atomic_json
 
@@ -35,8 +36,54 @@ class DeletionLedgerTests(unittest.TestCase):
         atomic_json(self.path, {"payload": self.payload, "hmac_sha256": manifest_signature(backup_secret(self.runtime), self.payload)})
         return hashlib.sha256(self.path.read_bytes()).hexdigest()
 
+    def recovery_pair(self):
+        earlier = copy.deepcopy(self.payload)
+        owner, _, _, stamp = self.entries[0]
+        earlier['assets'] = [[owner, 'photo', 2, 'trash', stamp,
+                              ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002']]]
+        earlier['collections'] = [[owner, '40000000-0000-4000-8000-000000000001', 3,
+                                   '50000000-0000-4000-8000-000000000001', stamp]]
+        later = copy.deepcopy(earlier)
+        later['exported_at'] += 1
+        return earlier, later
+
+    def test_independent_checkpoint_keeps_retired_fences_and_canonicalizes_version_sets(self):
+        earlier, later = self.recovery_pair()
+        later['entries'] = []
+        later['collections'] = []
+        later['assets'][0][5].reverse()
+        before = copy.deepcopy((earlier, later))
+        result = merge_recovery_checkpoints(earlier, later)
+        self.assertEqual(result['entries'], earlier['entries'])
+        self.assertEqual(result['assets'], earlier['assets'])
+        self.assertEqual(result['collections'], earlier['collections'])
+        self.assertEqual(result['exported_at'], later['exported_at'])
+        self.assertEqual((earlier, later), before)
+
+    def test_independent_checkpoint_rejects_conflicting_records_and_wrong_order_or_scope(self):
+        for fault in ('entries', 'assets', 'collections', 'older', 'database', 'scope'):
+            earlier, later = self.recovery_pair()
+            if fault == 'entries': later[fault][0][1] = '20000000-0000-4000-8000-000000000002'
+            if fault == 'assets': later[fault][0][2] += 1
+            if fault == 'collections': later[fault][0][2] += 1
+            if fault == 'older': later['exported_at'] = earlier['exported_at'] - 1
+            if fault == 'database': later['database'] = 'another_database'
+            if fault == 'scope': later['scope'] = 'albums-deletion-ledger-v2'
+            with self.subTest(fault=fault), self.assertRaises(OperationError):
+                merge_recovery_checkpoints(earlier, later)
+
+    def test_independent_checkpoint_checks_combined_record_and_version_limits(self):
+        earlier, later = self.recovery_pair()
+        with patch('deletion_ledger.MAX_RECORDS', 2), self.assertRaisesRegex(OperationError, 'combined'):
+            merge_recovery_checkpoints(earlier, later)
+        later['assets'] = copy.deepcopy(later['assets'])
+        later['assets'][0][1] = 'another-photo'
+        with self.assertRaisesRegex(OperationError, 'duplicated deleted version'):
+            merge_recovery_checkpoints(earlier, later)
+
     def test_export_is_private_authenticated_and_explicitly_local(self):
-        with patch.object(self.runtime, "execute", side_effect=[b"1\t1\n", b"", ("\t".join(self.entries[0]) + "\n").encode(), b"1\t1\n", b""]):
+        raw = self.source_snapshot_output()
+        with patch.object(self.runtime, "execute", side_effect=[b"1\t1\n", b"1\t1\n", raw]):
             result = publish(self.runtime, ["mysql-fixture"], {})
         path = self.runtime.backups / result["filename"]
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -46,12 +93,80 @@ class DeletionLedgerTests(unittest.TestCase):
     def test_checkpoint_includes_deleted_collection_fences(self):
         row = [self.entries[0][0], "30000000-0000-4000-8000-000000000001", 3,
                "40000000-0000-4000-8000-000000000001", self.entries[0][3]]
-        responses = [b"1\t1\n", ("\t".join(map(str, row)) + "\n").encode(),
-                     ("\t".join(self.entries[0]) + "\n").encode(), b"1\t1\n", b""]
+        responses = [b"1\t1\n", b"1\t1\n", self.source_snapshot_output(collections=[row])]
         with patch.object(self.runtime, "execute", side_effect=responses):
             result = publish(self.runtime, ["mysql-fixture"], {})
         payload = json.loads((self.runtime.backups / result["filename"]).read_text())["payload"]
         self.assertEqual(payload["collections"], [row])
+
+    def snapshot_output(self, entries=None, assets=(), collections=()):
+        entries = self.entries if entries is None else entries
+        rows = ["__albums_entries__", *("\t".join(row) for row in entries),
+                "__albums_assets__", *("\t".join([*map(str, row[:5]), json.dumps(row[5])]) for row in assets),
+                "__albums_collections__", *("\t".join(map(str, row)) for row in collections)]
+        return ("\n".join(rows) + "\n").encode()
+
+    def source_snapshot_output(self, **rows):
+        return b"__albums_source__\nalbums_fixture\t1\n" + self.snapshot_output(**rows)
+
+    def test_incomplete_or_ambiguous_snapshot_does_not_publish(self):
+        correct = self.source_snapshot_output()
+        for raw in (b"", correct.replace(b"__albums_assets__\n", b""),
+                    correct + b"__albums_entries__\n", b"unframed\n" + correct,
+                    correct.replace(b"__albums_assets__", b"__albums_unknown__"),
+                    correct + b"\xff"):
+            with self.subTest(raw=raw[:40]), patch.object(self.runtime, "execute", side_effect=[b"1\t1", b"1\t1", raw]):
+                with self.assertRaises(OperationError): publish(self.runtime, ["mysql-fixture"], {})
+        self.assertEqual(list(self.runtime.backups.glob("albums-deletions-*.json")), [])
+
+    def test_current_check_authenticates_before_database_and_grants_no_erasure(self):
+        digest = self.write()
+        with patch.object(self.runtime, "execute") as execute:
+            with self.assertRaises(OperationError): verify_current(self.runtime, [], {}, self.path, "00" * 32)
+            execute.assert_not_called()
+        before = self.path.read_bytes()
+        with patch.object(self.runtime, "execute", side_effect=[b"1\t1", b"1\t1", self.source_snapshot_output()]) as execute:
+            result = verify_current(self.runtime, ["mysql-fixture"], {}, self.path, digest)
+        script = execute.call_args.args[1][-1]
+        self.assertLess(script.index("WITH CONSISTENT SNAPSHOT, READ ONLY"), script.index("FROM album_recovery_state"))
+        self.assertLess(script.index("FROM album_recovery_state"), script.index("FROM album_deletion_ledger"))
+        self.assertTrue(result["consistent_database_snapshot"])
+        self.assertTrue(result["point_in_time_only"])
+        self.assertFalse(result["authorizes_erasure_or_recovery"])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_current_check_detects_new_or_missing_fences_in_every_dataset(self):
+        stamp, owner = self.entries[0][3], self.entries[0][0]
+        asset = [owner, "photo", 3, "trash", stamp, ["30000000-0000-4000-8000-000000000001"]]
+        collection = [owner, "40000000-0000-4000-8000-000000000001", 3,
+                      "50000000-0000-4000-8000-000000000001", stamp]
+        for field, values in (("entries", self.entries), ("assets", [asset]), ("collections", [collection])):
+            for missing in (False, True):
+                with self.subTest(field=field, missing=missing):
+                    self.payload.update(entries=[], assets=[], collections=[])
+                    self.payload[field] = values if missing else []
+                    digest = self.write()
+                    current = dict(entries=[], assets=[], collections=[])
+                    current[field] = [] if missing else values
+                    with patch.object(self.runtime, "execute", side_effect=[b"1\t1", b"1\t1", self.source_snapshot_output(**current)]):
+                        with self.assertRaisesRegex(OperationError, "differs from the current"):
+                            verify_current(self.runtime, ["mysql-fixture"], {}, self.path, digest)
+
+    def test_current_check_rejects_wrong_database_or_inactive_source_even_with_matching_rows(self):
+        digest = self.write()
+        for marker in (b"albums_restored_fixture\t1\n", b"albums_fixture\t0\n",
+                       b"albums_fixture\t1\nalbums_fixture\t1\n"):
+            raw = b"__albums_source__\n" + marker + self.snapshot_output()
+            with self.subTest(marker=marker), patch.object(self.runtime, "execute", side_effect=[b"1\t1", b"1\t1", raw]):
+                with self.assertRaisesRegex(OperationError, "active source"):
+                    verify_current(self.runtime, ["mysql-fixture"], {}, self.path, digest)
+
+    def test_sql_failure_preserves_checkpoint_and_does_not_publish(self):
+        digest = self.write()
+        with patch.object(self.runtime, "execute", side_effect=[b"1\t1", b"1\t1", OperationError("controlled failure")]):
+            with self.assertRaises(OperationError): publish(self.runtime, ["mysql-fixture"], {})
+        self.assertEqual(verify(self.runtime, self.path, digest, 0), self.entries)
+        self.assertEqual(list(self.runtime.backups.glob("albums-deletions-*.json")), [])
 
     def test_pin_and_authentication_are_both_required(self):
         digest = self.write()

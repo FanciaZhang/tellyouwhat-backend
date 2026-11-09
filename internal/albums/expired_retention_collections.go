@@ -8,7 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Not scheduled until cloud-write closure and backup erasure are verified.
+// The opt-in retention worker consumes a fresh proof; activation also requires
+// cloud-write closure and backup erasure verification.
 func (r *MySQLUploads) expireRetentionCollections(ctx context.Context, proof expiredRetentionProof, limit int, now func() time.Time) (int, error) {
 	if limit < 1 || limit > 100 || now == nil {
 		return 0, ErrInvalidManifest

@@ -8,7 +8,7 @@
         "cos:ListMultipartUploads"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/*"
       ],
       "condition": {
         "string_like": {
@@ -26,7 +26,7 @@
         "cos:ListParts"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/albums/recovery/*"
       ]
     },
     {
@@ -35,7 +35,7 @@
         "cos:DeleteObject"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/albums/recovery/*"
       ],
       "condition": {
         "string_not_equal": {
@@ -49,7 +49,7 @@
         "cos:DeleteObject"
       ],
       "resource": [
-        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/albums/recovery/*"
+        "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/albums/recovery/*"
       ],
       "condition": {
         "string_equal": {

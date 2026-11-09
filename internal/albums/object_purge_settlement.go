@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// No scheduler calls this yet. Complete object removal still needs provider
-// quiescence and backup deletion propagation before production activation.
+// The opt-in retention worker settles observed removals. Provider quiescence
+// and backup deletion propagation remain prerequisites for activation.
 func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset string, storage objectPurgeStorage, now func() time.Time) (int64, error) {
 	if storage == nil || now == nil {
 		return 0, ErrInvalidManifest

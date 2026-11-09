@@ -29,7 +29,7 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 	keyFile := privateFile("album.p8", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
 	rootsFile := privateFile("test-root.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fixture.rootDER}))
 	baseline := map[string]string{"ALBUM_SUBSCRIPTIONS_ENABLED": "true", "ALBUM_APP_STORE_ISSUER_ID": uuid.NewString(), "ALBUM_APP_STORE_KEY_ID": "ALBUMSKEY1", "ALBUM_APP_STORE_KEY_FILE": keyFile, "ALBUM_APP_STORE_ROOTS_FILE": rootsFile}
-	for _, name := range []string{"disabled", "erasure", "erasure-invalid", "erasure-without-rebinding", "erasure-without-verification", "rebinding", "rebinding-invalid", "rebinding-without-verification", "test", "production", "production-id-missing", "production-cap", "production-zero-cap", "production-large-cap", "production-rebinding", "production-erasure", "flag-invalid", "issuer-invalid", "key-id-invalid", "key-unavailable", "key-oversized", "roots-invalid", "invalid-deployment"} {
+	for _, name := range []string{"disabled", "retention-invalid", "retention-test", "retention-without-verification", "production-retention", "erasure", "erasure-invalid", "erasure-without-rebinding", "erasure-without-verification", "rebinding", "rebinding-invalid", "rebinding-without-verification", "test", "production", "production-id-missing", "production-cap", "production-zero-cap", "production-large-cap", "production-rebinding", "production-erasure", "flag-invalid", "issuer-invalid", "key-id-invalid", "key-unavailable", "key-oversized", "roots-invalid", "invalid-deployment"} {
 		t.Run(name, func(t *testing.T) {
 			values := map[string]string{}
 			for k, v := range baseline {
@@ -37,6 +37,13 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 			}
 			deployment, wantEnvironment, rejected := "test", "Sandbox", false
 			switch name {
+			case "retention-invalid":
+				values["ALBUM_RETENTION_ERASURE_ENABLED"], rejected = "yes", true
+			case "retention-test", "retention-without-verification":
+				values["ALBUM_RETENTION_ERASURE_ENABLED"], rejected = "true", true
+				if name == "retention-without-verification" {
+					deployment, values["ALBUM_SUBSCRIPTIONS_ENABLED"] = "production", "false"
+				}
 			case "erasure":
 				values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] = "true"
 				values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] = "true"
@@ -63,11 +70,13 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 			case "disabled":
 				values["ALBUM_SUBSCRIPTIONS_ENABLED"] = "false"
 				values["ALBUM_APP_STORE_KEY_FILE"] = "missing"
-			case "production", "production-cap", "production-zero-cap", "production-large-cap", "production-rebinding", "production-erasure":
+			case "production", "production-cap", "production-zero-cap", "production-large-cap", "production-rebinding", "production-erasure", "production-retention":
 				deployment = "production"
 				wantEnvironment = "Both"
 				values["ALBUM_APP_STORE_APP_APPLE_ID"] = "12345"
 				switch name {
+				case "production-retention":
+					values["ALBUM_RETENTION_ERASURE_ENABLED"] = "true"
 				case "production-cap":
 					values["ALBUM_SANDBOX_QUOTA_BYTES"] = "17000000"
 				case "production-zero-cap":
@@ -118,8 +127,15 @@ func TestAlbumSubscriptionConfigurationIsExplicitAndEnvironmentBound(t *testing.
 				}
 				return
 			}
-			if err != nil || config == nil || config.RebindingEnabled != (values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] == "true") || config.RecordErasureEnabled != (values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] == "true") || config.Environment != wantEnvironment || config.BundleID != albumAudienceForDeployment(deployment) || config.SigningKey == nil || config.Roots == nil {
+			if err != nil || config == nil || config.RebindingEnabled != (values["ALBUM_SUBSCRIPTION_REBINDING_ENABLED"] == "true") || config.RecordErasureEnabled != (values["ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED"] == "true") || config.RetentionErasureEnabled != (values["ALBUM_RETENTION_ERASURE_ENABLED"] == "true") || config.Environment != wantEnvironment || config.BundleID != albumAudienceForDeployment(deployment) || config.SigningKey == nil || config.Roots == nil {
 				t.Fatal("realm selection", err)
+			}
+			if name == "production-retention" {
+				r := NewMySQLUploads(nil).WithSubscriptionEnvironment("Production")
+				service, err := newConfiguredAlbumSubscriptions(r, config, nil)
+				if err != nil || !service.retentionErasureEnabled || service.sandbox == nil || service.sandbox.retentionErasureEnabled {
+					t.Fatal("retention erasure escaped production realm", err)
+				}
 			}
 			if name == "production" && config.SandboxQuotaBytes != 1_000_000_000 || name == "production-cap" && config.SandboxQuotaBytes != 17_000_000 {
 				t.Fatal("Sandbox allowance does not match deployment limit")

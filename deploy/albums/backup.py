@@ -348,16 +348,22 @@ def prune(runtime):
 
 
 def create(runtime, binaries):
+    from deletion_ledger import ACTIVE_SOURCE_QUERY, check_active_source
+
     database = configure(runtime)
-    prune(runtime)
     credentials = {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")}
     sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + database,
            "--batch", "--skip-column-names"]
-    inventory = runtime.execute("albums-backup-inventory", sql + ["--execute=SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND LEFT(TABLE_NAME,6)='album_' ORDER BY TABLE_NAME"], env=credentials).decode().splitlines()
+    inventory_query = "SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND LEFT(TABLE_NAME,6)='album_' ORDER BY TABLE_NAME"
+    source_and_tables = runtime.execute("albums-backup-inventory", sql + [
+        "--execute=" + ACTIVE_SOURCE_QUERY + ";" + inventory_query], env=credentials).decode().splitlines()
+    check_active_source(runtime, source_and_tables[:1])
+    inventory = source_and_tables[1:]
     tables = next((tables for tables in TABLE_INVENTORIES
                    if inventory == [table + "\tInnoDB" for table in tables]), None)
     if tables is None:
         raise OperationError("Albums schema inventory differs; review coverage before backup")
+    prune(runtime)
     counts = {}
     digests = {}
     with tempfile.TemporaryDirectory(prefix=".albums-backup-", dir=runtime.backups) as directory:
@@ -371,7 +377,8 @@ def create(runtime, binaries):
         env = dict(os.environ, **credentials)
         with raw.open("xb") as output, (folder / "export.stderr").open("xb") as errors:
             os.chmod(raw, 0o600)
-            result = subprocess.run(command, stdout=output, stderr=errors, env=env, timeout=900)
+            result = subprocess.run(command, stdout=output, stderr=errors, env=env, timeout=900,
+                                    pass_fds=getattr(runtime, "_child_pass_fds", ()))
         if result.returncode:
             raise OperationError("Albums export failed; no backup published")
         with raw.open("rb") as source, gzip.open(compressed, "wb") as target:
@@ -388,11 +395,17 @@ def create(runtime, binaries):
                     table = inserted[1].decode()
                     if table not in counts:
                         raise OperationError("unexpected Albums export data")
+                    # The earlier SELECT and mysqldump use different snapshots.
+                    if table == "album_recovery_state" and line.rstrip(b"\r\n") != (
+                            b"INSERT INTO `album_recovery_state` (`singleton_id`, `quarantined`, `quarantined_at`) VALUES (1,0,NULL);"):
+                        raise OperationError("Albums export did not capture an active source database")
                     counts[table] += 1
                     digests[table].update(line)
                 target.write(line)
         if set(counts) != set(tables):
             raise OperationError("incomplete Albums export")
+        if counts["album_recovery_state"] != 1:
+            raise OperationError("Albums export did not capture an active source database")
         crypt(runtime, compressed, encrypted)
         filename = "albums-" + secrets.token_hex(16) + ".sql.gz.enc"
         m = {"scope": SCOPE, "created_at": int(time.time()), "database": database, "filename": filename,
@@ -403,6 +416,72 @@ def create(runtime, binaries):
         os.replace(encrypted, destination)
         atomic_json(str(destination) + ".json", {"manifest": m, "hmac_sha256": manifest_signature(backup_secret(runtime), m)})
     return runtime.record("albums-backup", filename=filename, sha256=m["sha256"], tables=len(counts))
+
+
+def prepare_restore_sql(runtime, source_path, folder):
+    compressed = folder / "snapshot.sql.gz"
+    raw = folder / "snapshot.sql"
+    crypt(runtime, source_path, compressed, decrypt=True)
+    total = 0
+    with gzip.open(compressed, "rb") as source, raw.open("xb") as output:
+        os.chmod(raw, 0o600)
+        while block := source.read(1024 * 1024):
+            total += len(block)
+            if total > 32 * 1024 ** 3:
+                raise OperationError("Albums restore exceeds the 32 GiB drill limit")
+            output.write(block)
+    return raw
+
+
+def restore_database(runtime, sql, dump_command, m, raw, folder, diagnostic, checkpoint):
+    entries = None if checkpoint is None else checkpoint["entries"]
+    assets = [] if checkpoint is None else checkpoint["assets"]
+    collections = [] if checkpoint is None else checkpoint["collections"]
+    runtime.execute("albums-restore-create", sql + ["--execute=CREATE DATABASE albums_restore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"])
+    sql += ["--database=albums_restore_test"]
+    with raw.open("rb") as source:
+        restored = subprocess.run(sql, stdin=source, stdout=subprocess.DEVNULL, stderr=diagnostic, timeout=900, pass_fds=getattr(runtime, "_child_pass_fds", ()))
+    if restored.returncode:
+        raise OperationError("isolated Albums restore failed")
+    for table, count in m["table_rows"].items():
+        actual = runtime.execute("albums-restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"]).decode().strip()
+        if int(actual) != count:
+            raise OperationError("Albums restored row count mismatch")
+    # Compare exported row bytes too, including JSON and binary fields.
+    restored_dump = folder / "restored.sql"
+    command = [*dump_command,
+               "--single-transaction", "--quick", "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
+               "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4",
+               "--no-create-info", "albums_restore_test", *sorted(m["table_rows"])]
+    with restored_dump.open("xb") as output:
+        os.chmod(restored_dump, 0o600)
+        compared = subprocess.run(command, stdout=output, stderr=diagnostic, timeout=900, pass_fds=getattr(runtime, "_child_pass_fds", ()))
+    if compared.returncode:
+        raise OperationError("Albums restored content export failed")
+    hashes = {table: hashlib.sha256() for table in m["table_rows"]}
+    with restored_dump.open("rb") as source:
+        for line in source:
+            row = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
+            if row:
+                hashes[row[1].decode()].update(line)
+    if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in m["table_rows"]):
+        raise OperationError("Albums restored content differs from snapshot")
+    runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
+    if entries is not None:
+        from asset_deletion_ledger import restore_fences as restore_asset_fences
+        restore_asset_fences(runtime, sql, assets)
+        from deletion_ledger import restore_fences
+        restore_fences(runtime, sql, entries)
+        from collection_deletion_ledger import restore_fences as restore_collection_fences
+        restore_collection_fences(runtime, sql, collections)
+        restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
+        unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at OR s.subscription_checked_revision IS NOT NULL OR s.subscription_checked_at IS NOT NULL"]).decode().strip()
+        if restored_intents != str(len(entries)) or unblocked != "0":
+            raise OperationError("restored deletion intent or storage fence mismatch")
+    runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
+    exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT IF((SELECT COUNT(*) FROM album_recovery_state WHERE singleton_id=1 AND quarantined=TRUE AND quarantined_at IS NOT NULL)=1,0,1)+(SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
+    if exposed != "0":
+        raise OperationError("Albums restore quarantine failed")
 
 
 def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
@@ -419,17 +498,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
     # server receives SQL; quarantine never substitutes for a deletion ledger.
     with tempfile.TemporaryDirectory(prefix="albums-restore-", dir=runtime.state) as directory:
         folder = Path(directory)
-        compressed = folder / "snapshot.sql.gz"
-        raw = folder / "snapshot.sql"
-        crypt(runtime, runtime.backups / filename, compressed, decrypt=True)
-        total = 0
-        with gzip.open(compressed, "rb") as source, raw.open("xb") as output:
-            os.chmod(raw, 0o600)
-            while block := source.read(1024 * 1024):
-                total += len(block)
-                if total > 32 * 1024 ** 3:
-                    raise OperationError("Albums restore exceeds the 32 GiB drill limit")
-                output.write(block)
+        raw = prepare_restore_sql(runtime, runtime.backups / filename, folder)
         data = folder / "data"
         data.mkdir(mode=0o700)
         sock = folder / "mysql.sock"
@@ -449,50 +518,9 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                     time.sleep(0.1)
                 else:
                     raise OperationError("isolated Albums database startup timed out")
-                runtime.execute("albums-restore-create", sql + ["--execute=CREATE DATABASE albums_restore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"])
-                sql += ["--database=albums_restore_test"]
-                with raw.open("rb") as source:
-                    restored = subprocess.run(sql, stdin=source, stdout=subprocess.DEVNULL, stderr=diagnostic, timeout=900)
-                if restored.returncode:
-                    raise OperationError("isolated Albums restore failed")
-                for table, count in m["table_rows"].items():
-                    actual = runtime.execute("albums-restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"]).decode().strip()
-                    if int(actual) != count:
-                        raise OperationError("Albums restored row count mismatch")
-                # Compare exported row bytes too, including JSON and binary fields.
-                restored_dump = folder / "restored.sql"
-                command = [str(binaries / "mysqldump"), "--no-defaults", "--protocol=socket", "--socket=" + str(sock), "--user=root",
-                           "--single-transaction", "--quick", "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
-                           "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4",
-                           "--no-create-info", "albums_restore_test", *sorted(m["table_rows"])]
-                with restored_dump.open("xb") as output:
-                    compared = subprocess.run(command, stdout=output, stderr=diagnostic, timeout=900)
-                if compared.returncode:
-                    raise OperationError("Albums restored content export failed")
-                hashes = {table: hashlib.sha256() for table in m["table_rows"]}
-                with restored_dump.open("rb") as source:
-                    for line in source:
-                        row = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
-                        if row:
-                            hashes[row[1].decode()].update(line)
-                if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in m["table_rows"]):
-                    raise OperationError("Albums restored content differs from snapshot")
-                runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
-                if entries is not None:
-                    from asset_deletion_ledger import restore_fences as restore_asset_fences
-                    restore_asset_fences(runtime, sql, assets)
-                    from deletion_ledger import restore_fences
-                    restore_fences(runtime, sql, entries)
-                    from collection_deletion_ledger import restore_fences as restore_collection_fences
-                    restore_collection_fences(runtime, sql, collections)
-                    restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
-                    unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at OR s.subscription_checked_revision IS NOT NULL OR s.subscription_checked_at IS NOT NULL"]).decode().strip()
-                    if restored_intents != str(len(entries)) or unblocked != "0":
-                        raise OperationError("restored deletion intent or storage fence mismatch")
-                runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
-                exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT IF((SELECT COUNT(*) FROM album_recovery_state WHERE singleton_id=1 AND quarantined=TRUE AND quarantined_at IS NOT NULL)=1,0,1)+(SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
-                if exposed != "0":
-                    raise OperationError("Albums restore quarantine failed")
+                dump_command = [str(binaries / "mysqldump"), "--no-defaults", "--protocol=socket", "--socket=" + str(sock), "--user=root"]
+                restore_database(runtime, sql, dump_command, m, raw, folder, diagnostic,
+                                 checkpoint if entries is not None else None)
             finally:
                 if server.poll() is None:
                     server.terminate()
@@ -506,7 +534,7 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch", "publish-receipt", "expire-offsite", "prune-offsite", "audit-offsite"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "check-ledger", "check-offsite-ledger", "publish", "fetch", "publish-receipt", "expire-offsite", "prune-offsite", "audit-offsite"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
@@ -527,10 +555,20 @@ def main():
             binaries = Path(args.mysql_bin_dir)
             if args.operation == "backup": result = create(runtime, binaries)
             elif args.operation == "prune": result = {"removed": prune(runtime)}
-            elif args.operation == "ledger":
-                from deletion_ledger import publish
+            elif args.operation in ("ledger", "check-ledger", "check-offsite-ledger"):
+                from deletion_ledger import publish, verify_current
                 sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + runtime.config["MYSQL_DATABASE"], "--batch", "--skip-column-names"]
-                result = publish(runtime, sql, {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")})
+                credentials = {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")}
+                if args.operation == "ledger":
+                    result = publish(runtime, sql, credentials)
+                elif args.operation == "check-ledger":
+                    result = verify_current(runtime, sql, credentials, args.deletion_ledger, args.deletion_ledger_sha256)
+                else:
+                    from offsite import check_ledger
+                    if (not all((args.receipt, args.receipt_sha256, args.transfer_bin, args.cos_config))
+                            or any(value is not None for value in (args.backup, args.deletion_ledger, args.deletion_ledger_sha256))):
+                        raise OperationError("check-offsite-ledger requires only a pinned receipt and COS transfer settings")
+                    result = check_ledger(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256, sql, credentials)
             elif args.operation == "publish":
                 from offsite import publish
                 if not args.backup: raise OperationError("publish requires a backup filename")

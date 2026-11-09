@@ -40,7 +40,7 @@ def validate(entries):
     return entries
 
 
-def export(runtime, sql, credentials):
+def export_query(runtime, sql, credentials):
     schema = runtime.execute("albums-asset-deletion-ledger-schema", sql + ["--execute=SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='album_asset_deletion_ledger'),EXISTS(SELECT 1 FROM schema_migrations WHERE name='0078_album_asset_deletion_ledger.sql')"], env=credentials).strip()
     if schema in (b"1\t0", b"1\t1"):
         query = "SELECT l.owner_id,l.asset_id,l.final_revision,l.reason,DATE_FORMAT(l.purged_at,'%Y-%m-%dT%H:%i:%s.%fZ'),l.version_ids FROM album_asset_deletion_ledger l UNION ALL SELECT 'invalid','',0,'','',JSON_ARRAY() WHERE EXISTS (SELECT 1 FROM album_object_purges p LEFT JOIN album_asset_deletion_ledger l ON l.owner_id=p.owner_id AND l.asset_id=p.asset_id WHERE p.state='completed' AND (l.owner_id IS NULL OR l.final_revision<>p.revision+1 OR l.reason<>p.reason OR l.purged_at<>p.completed_at)) ORDER BY owner_id,asset_id LIMIT 100001"
@@ -49,7 +49,10 @@ def export(runtime, sql, credentials):
         query = "SELECT p.owner_id,p.asset_id,p.revision+1,IF(p.refunded_bytes>0,p.reason,'invalid'),DATE_FORMAT(p.completed_at,'%Y-%m-%dT%H:%i:%s.%fZ'),JSON_ARRAYAGG(c.version_id) FROM album_object_purges p LEFT JOIN album_library_changes c ON c.owner_id=p.owner_id AND c.asset_id=p.asset_id AND c.state='purged' AND c.revision=p.revision+1 WHERE p.state='completed' GROUP BY p.owner_id,p.asset_id,p.revision,p.reason,p.completed_at,p.refunded_bytes ORDER BY p.owner_id,p.asset_id LIMIT 100001"
     else:
         raise OperationError("asset deletion ledger schema is missing after migration or invalid")
-    raw = runtime.execute("albums-asset-deletion-ledger-export", sql + ["--execute=" + query], env=credentials)
+    return query
+
+
+def parse_export(raw):
     result = []
     try:
         for line in raw.decode().splitlines():
@@ -58,6 +61,11 @@ def export(runtime, sql, credentials):
     except (ValueError, UnicodeError) as error:
         raise OperationError("invalid asset deletion export") from error
     return validate(result)
+
+
+def export(runtime, sql, credentials):
+    query = export_query(runtime, sql, credentials)
+    return parse_export(runtime.execute("albums-asset-deletion-ledger-export", sql + ["--execute=" + query], env=credentials))
 
 
 def restore_fences(runtime, sql, entries):

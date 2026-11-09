@@ -15,12 +15,22 @@ from ops_offsite import download, publish, transport, verify_recovery_bundle, cr
 from ops_backup import file_digest, manifest_signature
 
 
+class COSConflict(Exception):
+    def get_status_code(self):
+        return 409
+
+    def get_error_code(self):
+        return str(self)
+
+
 class MemoryCOS:
     def __init__(self, corrupt=None, after_put=None):
         self.corrupt, self.after_put = corrupt, after_put
         self.objects, self.puts, self.streams = {}, [], []
 
     def put_object(self, **kwargs):
+        if kwargs['Key'] in self.objects and kwargs.get('Metadata', {}).get('x-cos-forbid-overwrite') == 'true':
+            raise COSConflict('FileAlreadyExists')
         self.puts.append(kwargs['Key'])
         self.objects[kwargs['Key']] = kwargs['Body'].read()
         if self.after_put:
@@ -36,6 +46,19 @@ class MemoryCOS:
 
 
 class OffsiteSafetyTests(unittest.TestCase):
+    def test_independent_checkpoint_selection_must_match_recovery_and_pin_before_decryption(self):
+        pin = ('/private/checkpoint.json', 'a' * 64)
+        for selections, manifest in (
+            ({'development': pin}, {}),
+            ({'unknown': pin}, {}),
+            ({'development': (pin[0], 'invalid')}, {'recovery_albums_development': {'fixture': True}}),
+            ({'development': (pin[0],)}, {'recovery_albums_development': {'fixture': True}}),
+            ([], {})):
+            with self.subTest(selections=selections), patch('ops_backup.crypt') as decrypt:
+                with self.assertRaisesRegex(OperationError, 'independent Albums checkpoints'):
+                    verify_recovery_bundle(self.runtime, Path('unread'), manifest, albums_checkpoints=selections)
+                decrypt.assert_not_called()
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -87,6 +110,29 @@ class OffsiteSafetyTests(unittest.TestCase):
         self.assertEqual(client.puts, ['backups/' + p.name for p in paths])
         self.assertTrue(all(s.closed for s in client.streams))
         self.assertTrue(all(client.objects['backups/' + p.name] == p.read_bytes() for p in paths))
+
+    def test_publication_retry_verifies_existing_bytes_without_rewriting_objects(self):
+        paths, manifest = self.publication()
+        client = MemoryCOS()
+        with self.bridge(client):
+            publish(self.runtime, paths[0], manifest)
+            result = publish(self.runtime, paths[0], manifest)
+        self.assertEqual(result['verified_objects'], 3)
+        self.assertEqual(client.puts, ['backups/' + p.name for p in paths])
+        key = 'backups/' + paths[0].name
+        client.objects[key] = b'other encrypted backup bytes'
+        with self.bridge(client), self.assertRaisesRegex(OperationError, 'readback'):
+            publish(self.runtime, paths[0], manifest)
+        self.assertEqual(len(client.puts), 3)
+        self.assertEqual(client.objects[key], b'other encrypted backup bytes')
+
+    def test_expired_authenticated_backup_never_reaches_upload(self):
+        from ops_backup import BACKUP_RETENTION_SECONDS
+        paths, manifest = self.publication()
+        with patch('ops_offsite.time.time', return_value=manifest['created_at'] + BACKUP_RETENTION_SECONDS), \
+                patch('ops_offsite.transport') as send, self.assertRaisesRegex(OperationError, 'outside the retention period'):
+            publish(self.runtime, paths[0], manifest)
+        send.assert_not_called()
 
     def test_callers_late_changes_cannot_rebind_the_verified_publication(self):
         paths, manifest = self.publication()
@@ -185,11 +231,63 @@ class OffsiteSafetyTests(unittest.TestCase):
 
     def client(self, public=False, days=14):
         client = Mock()
+        client.get_bucket_versioning.return_value = {"VersioningConfiguration": None}
         client.get_bucket_acl.return_value = {"Owner": {"ID": "owner"}, "Grant": [{"Grantee": {"ID": "owner"}}]}
         if public:
             client.get_bucket_acl.return_value["Grant"].append({"Grantee": {"URI": "AllUsers"}})
         client.get_bucket_lifecycle.return_value = {"Rule": [{"Status": "Enabled", "Filter": {"Prefix": "backups/"}, "Expiration": {"Days": days}}]}
         return client
+
+    def test_versioned_and_suspended_buckets_cannot_pass_age_expiry_validation(self):
+        for status in ('Enabled', 'Suspended'):
+            with self.subTest(status=status):
+                client = self.client()
+                client.get_bucket_versioning.return_value = {'Status': status}
+                with self.assertRaises(OperationError):
+                    validate_bucket(client, 'private-backup', 'backups/')
+                client.put_object.assert_not_called()
+                client.get_object.assert_not_called()
+
+    def test_empty_versioning_roots_from_the_pinned_sdk_are_accepted(self):
+        for name in ('VersioningConfiguration', '{http://cos.ap-guangzhou.myqcloud.com/doc/2006-03-01/}VersioningConfiguration'):
+            for value in (None, '', '\n  '):
+                with self.subTest(name=name, value=value):
+                    client = self.client()
+                    client.get_bucket_versioning.return_value = {name: value}
+                    validate_bucket(client, 'private-backup', 'backups/')
+                    client.get_bucket_versioning.assert_called_once_with(Bucket='private-backup')
+
+    def test_unknown_versioning_responses_and_failed_lookup_never_authorize_transfer(self):
+        for value in (None, {}, [], '', {'Status': None}, {'Status': ''}, {'Status': 'Disabled'},
+                      {'Other': None}, {'VersioningConfiguration': {}}, {1: None},
+                      {'VersioningConfiguration': False}, {'VersioningConfiguration': 0}, {'VersioningConfiguration': 'Enabled'},
+                      {'VersioningConfiguration': None, 'Status': 'Enabled'}):
+            with self.subTest(value=value):
+                client = self.client()
+                client.get_bucket_versioning.return_value = value
+                with self.assertRaises(OperationError):
+                    validate_bucket(client, 'private-backup', 'backups/')
+                client.get_bucket_lifecycle.assert_not_called()
+                client.put_object.assert_not_called()
+                client.get_object.assert_not_called()
+        client = self.client()
+        client.get_bucket_versioning.side_effect = RuntimeError('version read denied')
+        with self.assertRaisesRegex(RuntimeError, 'version read denied'):
+            validate_bucket(client, 'private-backup', 'backups/')
+        client.get_bucket_lifecycle.assert_not_called()
+        client.put_object.assert_not_called()
+        client.get_object.assert_not_called()
+
+    def test_backup_policy_adds_only_bucket_versioning_read_to_existing_scope(self):
+        policy = json.loads((Path(__file__).parent / 'backup-cos/policy.json').read_text())
+        self.assertEqual(policy['version'], '2.0')
+        self.assertEqual(len(policy['statement']), 2)
+        objects, bucket = policy['statement']
+        self.assertEqual(set(objects['action']), {'cos:PutObject', 'cos:GetObject', 'cos:HeadObject'})
+        self.assertEqual(set(bucket['action']), {'cos:GetBucketLifecycle', 'cos:GetBucketACL', 'cos:GetBucketVersioning'})
+        self.assertEqual(objects['resource'], ['qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-backups-1251995834/backups/*'])
+        self.assertEqual(bucket['resource'], ['qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-backups-1251995834/*'])
+        self.assertTrue(all(s['effect'] == 'allow' and set(s) == {'effect', 'action', 'resource'} for s in policy['statement']))
 
     def test_public_bucket_and_wrong_retention_are_rejected_before_transfer(self):
         for client in (self.client(public=True), self.client(days=1), self.client(days=30)):
@@ -256,6 +354,30 @@ class OffsiteSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(OperationError, "authentication failed"):
                 download(self.runtime, name, directory)
         self.assertEqual(fetcher.call_count, 1)
+
+    def test_expired_remote_backup_downloads_only_its_authenticated_manifest(self):
+        now = int(time.time())
+        for age in (14 * 86400 - 1, 14 * 86400, 15 * 86400):
+            with self.subTest(age=age), tempfile.TemporaryDirectory(dir=self.root) as directory:
+                paths, manifest = self.publication()
+                manifest['created_at'] = now - age
+                envelope = json.dumps({'manifest': manifest, 'hmac_sha256': manifest_signature('x' * 64, manifest)})
+                client = MemoryCOS()
+                client.objects = {'backups/' + p.name: p.read_bytes() for p in paths[:2]}
+                client.objects['backups/' + paths[2].name] = envelope.encode()
+                def fetch(_runtime, action, destinations):
+                    return transfer(client, 'fixture', 'backups/', action, destinations)
+                with patch('ops_backup.time.time', return_value=now), \
+                        patch('ops_offsite.transport', side_effect=fetch) as fetcher:
+                    if age < 14 * 86400:
+                        self.assertEqual(download(self.runtime, paths[0].name, directory), Path(directory) / paths[0].name)
+                    else:
+                        with self.assertRaisesRegex(OperationError, 'retention'):
+                            download(self.runtime, paths[0].name, directory)
+                self.assertEqual(fetcher.call_count, 2 if age < 14 * 86400 else 1)
+                expected = sorted(p.name for p in paths) if age < 14 * 86400 else [paths[2].name]
+                self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), expected)
+                self.assertTrue(all(stream.closed for stream in client.streams))
 
     def test_signed_but_invalid_remote_manifest_stops_before_payload_download(self):
         changes = (
@@ -365,8 +487,8 @@ class OffsiteSafetyTests(unittest.TestCase):
             album = bundle / 'albums-production'
             album.mkdir()
             (album / 'state.json').write_text(json.dumps({'source': 'a' * 40}))
-            matched = dict(legacy, recovery_albums_production={'fixture': 'verified separately'})
-            with patch('albums_artifacts.verify_recovery'):
+            matched = dict(legacy, image='mysql:8.4', filename='snapshot.enc', recovery_albums_production={'fixture': 'verified separately'})
+            with patch('albums_artifacts.verify_recovery'), patch('albums_artifacts.verify_runtime_recovery', create=True) as restored_albums:
                 archive()
                 with self.assertRaisesRegex(OperationError, 'configuration is missing'):
                     verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched)
@@ -374,6 +496,14 @@ class OffsiteSafetyTests(unittest.TestCase):
                 (current / 'compose.shared-albums-production.yaml').write_text('services: {}\n')
                 archive()
                 self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched))
+                restored_albums.assert_called_once()
+                restored_albums.reset_mock()
+                pin = (self.root / 'independent-checkpoint.json', 'a' * 64)
+                self.assertTrue(verify_recovery_bundle(self.runtime, self.runtime.backups / 'snapshot.enc', matched,
+                                                      albums_checkpoints={'production': pin}, verify_checkpoint_source=True))
+                self.assertEqual(restored_albums.call_args.kwargs['independent_checkpoint'], pin)
+                self.assertTrue(restored_albums.call_args.kwargs['verify_checkpoint_source'])
+                self.assertEqual(restored_albums.call_args.kwargs['environment'], 'production')
                 (album / 'state.json').write_text(json.dumps({'source': 'b' * 40}))
                 archive()
                 with self.assertRaisesRegex(OperationError, 'differs from its data selection'):

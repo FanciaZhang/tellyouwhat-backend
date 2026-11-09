@@ -232,13 +232,14 @@ type AlbumSubscriptionRepository interface {
 }
 
 type AlbumSubscriptionService struct {
-	sandbox              *AlbumSubscriptionService
-	bindingPeer          *AlbumSubscriptionResolver
-	rebindingEnabled     bool
-	recordErasureEnabled bool
-	repository           AlbumSubscriptionRepository
-	resolver             *AlbumSubscriptionResolver
-	now                  func() time.Time
+	sandbox                 *AlbumSubscriptionService
+	bindingPeer             *AlbumSubscriptionResolver
+	rebindingEnabled        bool
+	recordErasureEnabled    bool
+	retentionErasureEnabled bool
+	repository              AlbumSubscriptionRepository
+	resolver                *AlbumSubscriptionResolver
+	now                     func() time.Time
 }
 
 func NewAlbumSubscriptionService(repository AlbumSubscriptionRepository, resolver *AlbumSubscriptionResolver, now func() time.Time) (*AlbumSubscriptionService, error) {

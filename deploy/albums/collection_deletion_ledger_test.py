@@ -90,9 +90,8 @@ class CollectionDeletionCheckpointTests(unittest.TestCase):
         with patch.object(deletion_ledger, 'MAX_RECORDS', 1):
             with self.assertRaisesRegex(OperationError, 'combined'):
                 deletion_ledger.verify_checkpoint(self.runtime, self.path, self.write(), 0)
-            raw = ('\t'.join(map(str, self.row)) + '\n').encode()
-            with patch.object(self.runtime, 'execute', side_effect=[b'1\t1\n', raw,
-                    ('\t'.join(self.entries[0]) + '\n').encode(), b'1\t1\n', b'']):
+            raw = ('__albums_source__\nalbums_fixture\t1\n__albums_entries__\n' + '\t'.join(self.entries[0]) + '\n__albums_assets__\n__albums_collections__\n' + '\t'.join(map(str, self.row)) + '\n').encode()
+            with patch.object(self.runtime, 'execute', side_effect=[b'1\t1\n', b'1\t1\n', raw]):
                 with self.assertRaisesRegex(OperationError, 'combined'):
                     deletion_ledger.publish(self.runtime, ['mysql'], {})
 

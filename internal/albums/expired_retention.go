@@ -104,6 +104,13 @@ func (r *MySQLUploads) checkExpiredRetention(ctx context.Context, tx *sql.Tx, pr
 	if r.developmentCloud != nil || (r.productionSandboxQuota > 0 && proof.environment == "Sandbox") || !validOwner(proof.owner) || proof.environment != r.billingEnvironment || (proof.environment != "Sandbox" && proof.environment != "Production") || proof.revision <= 0 || now.IsZero() || proof.deadline.After(now) || !now.Before(proof.until) {
 		return ErrLease
 	}
+	var deleting bool
+	if err := tx.QueryRowContext(ctx, `SELECT deletion_requested_at IS NOT NULL FROM album_storage_accounts WHERE owner_id=?`, proof.owner).Scan(&deleting); err != nil {
+		return err
+	}
+	if deleting {
+		return ErrLease
+	}
 	a, err := r.cloudAccountInTransaction(ctx, tx, proof.owner, now)
 	if err != nil {
 		return err

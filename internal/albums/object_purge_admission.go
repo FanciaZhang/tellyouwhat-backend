@@ -9,6 +9,25 @@ import (
 	"time"
 )
 
+// Choose the already-authorized trash deadline before subscription retention.
+// Each preparation rechecks the chosen condition under the account/asset lock.
+func (r *MySQLUploads) prepareScheduledObjectPurge(ctx context.Context, owner, asset string, proof *expiredRetentionProof, now time.Time) (objectPurge, error) {
+	if !validOwner(owner) || !resourceIDPattern.MatchString(asset) || now.IsZero() || proof != nil && proof.owner != owner {
+		return objectPurge{}, ErrInvalidManifest
+	}
+	state, err := scanAssetState(r.db.QueryRowContext(ctx, `SELECT `+lifecycleColumns+` FROM album_asset_lifecycle WHERE owner_id=? AND asset_id=?`, owner, asset))
+	if err != nil {
+		return objectPurge{}, err
+	}
+	if state.State == "trashed" && state.TrashExpiresAt != nil && !state.TrashExpiresAt.After(now) {
+		return r.prepareExpiredTrashPurge(ctx, owner, asset, now)
+	}
+	if proof != nil {
+		return r.prepareRetentionObjectPurge(ctx, *proof, asset, now)
+	}
+	return objectPurge{}, ErrLease
+}
+
 // Only the immutable 30-day trash deadline qualifies here. Subscription expiry
 // requires a separate current-Apple-evidence cutover and cannot call this path.
 func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asset string, now time.Time) (objectPurge, error) {
@@ -25,14 +44,18 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 		return objectPurge{}, err
 	}
 	old, err := scanObjectPurge(tx.QueryRowContext(ctx, `SELECT `+objectPurgeColumns+` FROM album_object_purges WHERE owner_id=? AND asset_id=? FOR UPDATE`, owner, asset))
-	if err == nil {
-		if old.Reason != "trash" || old.Revision != a.Revision || !old.ExpiresAt.Equal(*a.TrashExpiresAt) {
+	if err == nil && old.Reason == "trash" {
+		if old.Revision != a.Revision || !old.ExpiresAt.Equal(*a.TrashExpiresAt) {
 			return old, ErrConflict
 		}
 		return old, tx.Commit()
 	}
-	if !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return objectPurge{}, err
+	}
+	existing := err == nil
+	if existing && (old.Reason != "retention" || !old.StartedAt.IsZero() || old.Environment != r.billingEnvironment || old.Revision != a.Revision) {
+		return objectPurge{}, ErrConflict
 	}
 	targets, err := closedPurgeTargets(ctx, tx, owner, asset, now)
 	if err != nil {
@@ -45,6 +68,32 @@ func (r *MySQLUploads) prepareExpiredTrashPurge(ctx context.Context, owner, asse
 	data, err := json.Marshal(targets)
 	if err != nil || len(data) > 4<<20 {
 		return p, ErrConflict
+	}
+	if existing {
+		// An expired user-trash choice is independent of subscription renewal.
+		// No retention DELETE was authorized; replacing its lease fences late readers.
+		previous, _ := json.Marshal(old.Targets)
+		if string(previous) == string(data) {
+			p.Index, p.Plan, p.ActionIndex = old.Index, old.Plan, old.ActionIndex
+			if old.State == "objects_removed" {
+				p.State = old.State
+			}
+		}
+		if err := p.validate(); err != nil {
+			return p, err
+		}
+		var plan []byte
+		if p.Plan != nil {
+			plan, err = json.Marshal(p.Plan)
+			if err != nil {
+				return p, err
+			}
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE album_object_purges SET trash_expires_at=?,targets_json=?,target_index=?,plan_json=?,action_index=?,state=?,lease_token=NULL,lease_until=NULL,available_at=?,updated_at=?,reason='trash',environment=NULL,subscription_revision=NULL,verification_until=NULL,started_at=NULL WHERE owner_id=? AND asset_id=?`, p.ExpiresAt, data, p.Index, plan, p.ActionIndex, p.State, now, now, owner, asset)
+		if err != nil {
+			return p, err
+		}
+		return p, tx.Commit()
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO album_object_purges(owner_id,asset_id,revision,trash_expires_at,targets_json,available_at,updated_at) VALUES(?,?,?,?,?,?,?)`, owner, asset, p.Revision, p.ExpiresAt, data, now, now)
 	if err != nil {

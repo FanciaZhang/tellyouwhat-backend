@@ -28,7 +28,7 @@ func albumDevelopmentMigration(name string) bool {
 	switch name {
 	case "0073_album_development_subscription_products.sql", "0074_album_system_copy_locators.sql",
 		"0075_album_content_corrections.sql", "0076_album_asset_favorites.sql",
-		"0077_album_collections.sql", "0078_album_asset_deletion_ledger.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql":
+		"0077_album_collections.sql", "0078_album_asset_deletion_ledger.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql", "0082_album_retention_cleanup_schedule.sql", "0083_album_record_erasure_schedule.sql":
 		return true
 	default:
 		return false

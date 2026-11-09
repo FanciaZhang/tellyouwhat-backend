@@ -3,9 +3,12 @@ import os
 import copy
 import datetime
 import json
+import hashlib
+import io
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import time
 import unittest
 from unittest.mock import patch
@@ -21,6 +24,215 @@ from ops_backup import file_digest
 
 @unittest.skipUnless(os.getenv('ALBUM_BACKUP_MYSQL_BIN'), 'explicit disposable MySQL backup fixture required')
 class AlbumsBackupRoundTripTests(unittest.TestCase):
+    def verify_historical_cos_backup(self, runtime, binaries, sql, root):
+        from offsite_probe import configuration, publication, recover
+
+        root = Path(root)
+        successor = root / 'post-deletion'
+        config, _ = configuration(root)
+        successor.mkdir(mode=0o700)
+        atomic_json(successor / 'probe.json', config)
+        owner = 'a0000000-0000-4000-8000-000000000041'
+        neighbor = '00000000-0000-0000-0000-000000000010'
+        request = 'a0000000-0000-4000-8000-000000000042'
+        source_sql = sql + ['--batch', '--skip-column-names']
+        runtime.execute('historical-seed', source_sql, input=f"""
+INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES ('{owner}',REPEAT('f',64));
+INSERT INTO album_storage_accounts(owner_id) VALUES ('{owner}');
+""".encode())
+        historical = backup.create(runtime, binaries)
+        with publication(runtime, binaries, historical['filename'], sql, root) as (restored, old, old_report):
+            runtime.execute('historical-delete', source_sql, input=f"""
+START TRANSACTION;
+INSERT INTO album_deletion_ledger(account_id,request_id,authorizing_session_sha256,requested_at)
+VALUES ('{owner}','{request}',UNHEX(REPEAT('ab',32)),UTC_TIMESTAMP(6));
+DELETE FROM album_storage_accounts WHERE owner_id='{owner}';
+DELETE FROM album_accounts WHERE account_id='{owner}';
+COMMIT;
+""".encode())
+            earlier = deletion_ledger.verify_checkpoint(restored, old['deletion_ledger'], old['deletion_ledger_sha256'], 0)
+            self.assertFalse(any(entry[0] == owner for entry in earlier['entries']))
+            with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                deletion_ledger.require_current(restored, source_sql, {}, earlier)
+            old_report['stale_checkpoint_rejected'] = True
+
+            current = backup.create(runtime, binaries)
+            with publication(runtime, binaries, current['filename'], sql, successor) as (_, new, new_report):
+                self.assertNotEqual(old_report['bundle_version'], new_report['bundle_version'])
+                execute = restored.execute
+                states = []
+
+                def observe(name, args, **kwargs):
+                    result = execute(name, args, **kwargs)
+                    if name in ('albums-restore-fence', 'albums-restore-check'):
+                        query = f"""SELECT
+ (SELECT state FROM album_accounts WHERE account_id='{owner}'),
+ (SELECT state FROM album_accounts WHERE account_id='{neighbor}'),
+ (SELECT COUNT(*) FROM album_account_deletions WHERE account_id='{owner}' AND request_id='{request}'),
+ (SELECT COUNT(*) FROM album_storage_accounts WHERE owner_id='{owner}' AND deletion_requested_at IS NOT NULL)"""
+                        states.append(execute('historical-restored-state', args[:-1] + ['--execute=' + query]).decode().strip())
+                    return result
+
+                with patch.object(restored, 'execute', side_effect=observe):
+                    result = backup.drill(restored, binaries, historical['filename'],
+                                          new['deletion_ledger'], new['deletion_ledger_sha256'])
+                self.assertEqual(states, ['active\tactive\t0\t0', 'deleting\tdisabled\t1\t1'])
+                self.assertTrue(result['quarantined'] and result['deletion_ledger_applied'])
+                self.assertEqual(result['deletion_intents'], 1)
+                old_report.update(restored=True, deleted_account_fenced=True, unrelated_account_quarantined=True)
+                new_report['checkpoint_used_for_historical_restore'] = True
+        for path, report in ((root, old_report), (successor, new_report)):
+            self.assertTrue(report['cleanup_confirmed'])
+            self.assertEqual([item['VersionsRemoved'] for item in report['cleanup']], [2])
+            repeated = recover(path)
+            self.assertEqual(len(repeated), 1)
+            self.assertEqual(repeated[0]['remote']['VersionsRemoved'], 0)
+            self.assertTrue(repeated[0]['remote']['Empty'] and repeated[0]['remote']['UploadsEmpty'])
+            report['cleanup_repeat_confirmed'] = True
+            atomic_json(path / 'report.json', report)
+        runtime.execute('historical-remove-fixture', source_sql,
+                        input=f"DELETE FROM album_deletion_ledger WHERE account_id='{owner}';".encode())
+
+    def shared_runtime_restore(self, runtime, binaries, source_sql, snapshot, ledger, independent):
+        # Execute the complete portable validator on real MySQL. Only Docker
+        # transport/lifecycle is adapted to this owned, socket-only fixture.
+        import albums_artifacts
+        import albums_recovery
+        from ops_common import Runtime as SharedRuntime
+        platform = runtime.root / 'shared-platform'; platform.mkdir(mode=0o700)
+        env = platform / '.env.production'
+        env.write_text('MYSQL_DATABASE=controlled_shared\nBACKUP_ENCRYPTION_KEY=' + os.urandom(32).hex() + '\n')
+        env.chmod(0o600)
+        shared = SharedRuntime(platform, platform / 'backups')
+        app = runtime.root / 'albums-development'; app.mkdir(mode=0o700)
+        source_password = os.urandom(32).hex()
+        saved = ('MYSQL_HOST=localhost\nMYSQL_PORT=3306\nMYSQL_DATABASE=albums_test\n'
+                 'MYSQL_USER=albums_development_backup_test\nMYSQL_PASSWORD=' + source_password + '\n')
+        settings = app / 'backup.env'
+        settings.write_text(saved + 'ALBUM_BACKUP_ENCRYPTION_KEY=' + runtime.config['ALBUM_BACKUP_ENCRYPTION_KEY'] + '\n')
+        settings.chmod(0o600)
+        files = {name: b'controlled recovery configuration' for name in
+                 ('state.json', 'owner.json', 'database.env', *('current/' + n for n in albums_artifacts.FILES),
+                  *('secrets/' + n for n in albums_artifacts.KEYS))}
+        files['backup.env'] = saved.encode()
+        for name in (snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']):
+            files['checkpoint/' + name] = (runtime.backups / name).read_bytes()
+        packed = io.BytesIO()
+        with tarfile.open(fileobj=packed, mode='w') as archive:
+            for name, data in files.items():
+                member = tarfile.TarInfo('recovery/albums-development/' + name)
+                member.size = len(data); archive.addfile(member, io.BytesIO(data))
+        packed.seek(0)
+        manifest = {n: hashlib.sha256(data).hexdigest() for n, data in files.items()}
+        original_run, original_execute = subprocess.run, shared.execute
+        native = [arg for arg in source_sql[1:] if not arg.startswith('--database=')]
+        state = {'present': False, 'starts': 0, 'source_checks': 0, 'change_before_recheck': False}
+        extra_owner = '10000000-0000-4000-8000-000000000099'
+        def change_source():
+            original_run(source_sql, input=("INSERT INTO album_deletion_ledger(account_id,request_id,authorizing_session_sha256,requested_at) "
+                         "VALUES ('" + extra_owner + "','20000000-0000-4000-8000-000000000099',UNHEX(REPEAT('cd',32)),UTC_TIMESTAMP(6));").encode(),
+                         check=True, capture_output=True)
+        def undo_source_change():
+            original_run(source_sql, input=("DELETE FROM album_deletion_ledger WHERE account_id='" + extra_owner + "';").encode(),
+                         check=True, capture_output=True)
+        def translate(command, **kwargs):
+            if command[:3] == ['docker', 'exec', '--interactive']:
+                self.assertEqual(command[3], state['container'])
+                command = [str(binaries / command[4]), *native,
+                           *[arg for arg in command[5:] if not arg.startswith('--defaults-extra-file=')]]
+            elif command[:4] == ['docker', 'exec', '--env', 'MYSQL_PWD']:
+                self.assertEqual(command[4:6], ['tellyouwhat-albums-development-mysql-1', 'mysql'])
+                self.assertIn('--database=albums_test', command)
+                self.assertIn('--user=albums_development_backup_test', command)
+                self.assertTrue(kwargs['env']['MYSQL_PWD'] == source_password)
+                command = [str(binaries / 'mysql'), *[arg for arg in native if not arg.startswith('--user=')],
+                           *[arg for arg in command[7:] if not arg.startswith(('--host=', '--port='))]]
+            return original_run(command, **kwargs)
+        def execute(label, command, **kwargs):
+            if label == 'albums-runtime-restore-start':
+                state['starts'] += 1
+                state.update(present=True, container=command[command.index('--name') + 1])
+                state['folder'] = Path(command[command.index('--mount') + 1].split('source=')[1].split(',')[0]).parent
+                return b'a' * 64
+            if label == 'restore-workspace-list':
+                return b'a' * 64 + b'\n' if state['present'] else b''
+            if label == 'restore-workspace-inspect':
+                return json.dumps([{'Name': '/' + state['container'], 'Id': 'a' * 64, 'Config': {'Labels': {
+                    'cn.tellyouwhat.operation': 'restore-drill',
+                    'cn.tellyouwhat.restore-workspace': state['folder'].name}}}]).encode()
+            if label == 'restore-workspace-cleanup':
+                state['present'] = False
+                return b''
+            if label == 'albums-deletion-ledger-export':
+                state['source_checks'] += 1
+                if state['change_before_recheck'] and state['source_checks'] == 2:
+                    change_source()
+            return original_execute(label, command, **kwargs)
+        before = original_run(source_sql + ['--batch', '--skip-column-names', '--execute=SELECT COUNT(*) FROM album_asset_versions'],
+                              capture_output=True, check=True).stdout
+        independent_path = runtime.backups / independent['filename']
+        independent_bytes = independent_path.read_bytes()
+        def drill():
+            packed.seek(0)
+            state['source_checks'] = 0
+            with tarfile.open(fileobj=packed) as archive, patch.object(subprocess, 'run', side_effect=translate), \
+                 patch.object(shared, 'execute', side_effect=execute):
+                return albums_recovery.verify_runtime_recovery(shared, archive, manifest, environment='development',
+                                                               image='mysql:8.4', backup_filename='controlled-shared.enc',
+                                                               independent_checkpoint=(independent_path, independent['sha256']),
+                                                               verify_checkpoint_source=True)
+
+        original_run(source_sql, input=("CREATE USER 'albums_development_backup_test'@'localhost' IDENTIFIED BY '" + source_password +
+                     "'; GRANT SELECT ON albums_test.* TO 'albums_development_backup_test'@'localhost';").encode(),
+                     check=True, capture_output=True)
+        result = drill()
+        self.assertTrue(result['quarantined']); self.assertFalse(result['recovery_ready'])
+        self.assertFalse(result['latest_checkpoint_proven']); self.assertEqual(result['asset_deletion_intents'], 3)
+        self.assertEqual(result['collection_deletion_intents'], 1); self.assertEqual(result['deletion_intents'], 1)
+        self.assertTrue(result['independent_checkpoint_applied'])
+        self.assertEqual(result['independent_checkpoint_sha256'], independent['sha256'])
+        self.assertTrue(result['checkpoint_source_point_in_time_only'])
+        self.assertEqual(state['source_checks'], 2)
+        self.assertEqual(independent_path.read_bytes(), independent_bytes)
+        self.assertFalse(state['present']); self.assertEqual(list(shared.state.glob('.restore-*')), [])
+        after = original_run(source_sql + ['--batch', '--skip-column-names', '--execute=SELECT COUNT(*) FROM album_asset_versions'],
+                             capture_output=True, check=True).stdout
+        self.assertEqual(before, after)
+        restored = [str(binaries / 'mysql'), *native, '--batch', '--skip-column-names', '--database=albums_restore_test']
+        proof = original_run(restored + ["--execute=SELECT (SELECT COUNT(*) FROM album_asset_versions WHERE owner_id='00000000-0000-0000-0000-000000000001'),(SELECT COUNT(*) FROM album_collections WHERE owner_id='00000000-0000-0000-0000-000000000010' AND deleted=TRUE AND name=''),(SELECT COUNT(*) FROM album_recovery_state WHERE quarantined=TRUE),(SELECT COUNT(*) FROM album_accounts WHERE state='active')"],
+                             capture_output=True, check=True).stdout.strip()
+        self.assertEqual(proof, b'0\t1\t1\t0')
+        self.assertTrue(all((runtime.backups / Path(n).name).read_bytes() == data for n, data in files.items() if n.startswith('checkpoint/')))
+        record = shared.state / 'albums-development-restore.json'
+        receipt = record.read_bytes()
+        original_run(source_sql, input=b'DROP DATABASE albums_restore_test;', check=True, capture_output=True)
+        try:
+            pin = (independent_path, independent['sha256'])
+            with patch.object(subprocess, 'run', side_effect=translate), patch.object(shared, 'execute', side_effect=execute):
+                self.assertGreaterEqual(albums_recovery.recheck_source_checkpoint(shared, 'development', pin),
+                                        result['checkpoint_source_rechecked_at'])
+                change_source()
+                with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                    albums_recovery.recheck_source_checkpoint(shared, 'development', pin)
+                self.assertEqual(record.read_bytes(), receipt)
+                undo_source_change()
+            change_source()
+            with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                drill()
+            self.assertEqual((state['source_checks'], state['starts']), (1, 1))
+            undo_source_change()
+            state['change_before_recheck'] = True
+            with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                drill()
+            self.assertEqual((state['source_checks'], state['starts']), (2, 2))
+            self.assertEqual(record.read_bytes(), receipt)
+            self.assertFalse(state['present'])
+            self.assertEqual(list(shared.state.glob('.restore-*')), [])
+        finally:
+            undo_source_change()
+            original_run(source_sql, input=b"DROP DATABASE IF EXISTS albums_restore_test; DROP USER 'albums_development_backup_test'@'localhost';",
+                         check=True, capture_output=True)
+
     def test_previous_and_current_snapshot_restore_every_recorded_table(self):
         binaries = Path(os.environ['ALBUM_BACKUP_MYSQL_BIN'])
         with tempfile.TemporaryDirectory(prefix='album-snapshot-', dir='/tmp') as directory:
@@ -131,6 +343,9 @@ INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,pr
 VALUES ('00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',REPEAT('b',64),'daily_jpeg_v1',2,REPEAT('e',64),1,1,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),TRUE,'known-photo-session');
 """, check=True, capture_output=True)
                     subprocess.run(sql, input=(migrations / '0081_album_photo_completion_fence.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0082_album_retention_cleanup_schedule.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0083_album_record_erasure_schedule.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=b"UPDATE album_storage_accounts SET retention_cleanup_after='2026-11-04',retention_cleanup_token='00000000-0000-4000-8000-000000000099',retention_cleanup_until='2026-11-05',retention_cleanup_cursor='unresolved-media' WHERE owner_id='00000000-0000-0000-0000-000000000001';", check=True, capture_output=True)
                     subprocess.run(sql, input=b"""
 INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,created_at,updated_at,multipart,provider_upload_id,multipart_phase,retirement_started_at,object_version)
 VALUES ('00000000-0000-0000-0000-000000000032','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',REPEAT('b',64),'grid_png_v1',2,REPEAT('e',64),1,1,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),TRUE,'aborted-photo-session','aborted',UTC_TIMESTAMP(6),NULL),
@@ -164,6 +379,22 @@ VALUES ('00000000-0000-0000-0000-000000000032','00000000-0000-0000-0000-00000000
                             published = offsite.publish(runtime, 'controlled', credentials, current['filename'],
                                                        runtime.backups / ledger['filename'], ledger['sha256'])
                             fetched = offsite.fetch(runtime, 'controlled', credentials, published['receipt'], published['receipt_sha256'])
+                            selection = (runtime, 'controlled', credentials, published['receipt'], published['receipt_sha256'],
+                                         sql + ['--batch', '--skip-column-names'], {})
+                            checked = offsite.check_ledger(*selection)
+                            self.assertTrue(checked['consistent_database_snapshot'])
+                            self.assertFalse(checked['latest_checkpoint_proven'])
+                            self.assertFalse(checked['authorizes_erasure_or_recovery'])
+                            owner = 'a0000000-0000-4000-8000-000000000001'
+                            subprocess.run(sql, input=(f"INSERT INTO album_deletion_ledger(account_id,request_id,authorizing_session_sha256,requested_at) "
+                                f"VALUES ('{owner}','a0000000-0000-4000-8000-000000000002',UNHEX(REPEAT('de',32)),UTC_TIMESTAMP(6));").encode(),
+                                check=True, capture_output=True)
+                            try:
+                                with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                                    offsite.check_ledger(*selection)
+                            finally:
+                                subprocess.run(sql, input=f"DELETE FROM album_deletion_ledger WHERE account_id='{owner}';".encode(),
+                                               check=True, capture_output=True)
                         self.assertFalse(fetched['recovery_ready']); self.assertFalse(fetched['latest_checkpoint_proven'])
                         restored = copy.copy(runtime); restored.backups = Path(fetched['directory'])
                         self.assertEqual(file_digest(restored.backups / current['filename']), file_digest(runtime.backups / current['filename']))
@@ -173,10 +404,7 @@ VALUES ('00000000-0000-0000-0000-000000000032','00000000-0000-0000-0000-00000000
                         self.assertTrue(drilled['quarantined']); self.assertEqual(drilled['tables'], len(backup.TABLES))
                     probe = os.environ.get('ALBUM_BACKUP_COS_PROBE_DIR')
                     if probe:
-                        from offsite_probe import run
-                        remote = run(runtime, binaries, current['filename'], sql, probe)
-                        self.assertTrue(remote['restored'])
-                        self.assertTrue(remote['cleanup_confirmed'])
+                        self.verify_historical_cos_backup(runtime, binaries, sql, probe)
                     old_time = int(time.time()) - backup.RETENTION - 60
                     requested = datetime.datetime.fromtimestamp(old_time - 1, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
                     subprocess.run(sql, input=("INSERT INTO album_deletion_ledger(account_id,request_id,authorizing_session_sha256,requested_at) VALUES ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',UNHEX(REPEAT('ab',32)),'" + requested + "');").encode(), check=True, capture_output=True)
@@ -189,6 +417,7 @@ VALUES ('00000000-0000-0000-0000-000000000001','synthetic',3,'retention',UTC_TIM
                         subprocess.run(sql, input=b"UPDATE album_collections SET name='',deleted=TRUE,revision=2,request_id='00000000-0000-0000-0000-000000000023',updated_at=UTC_TIMESTAMP(6) WHERE owner_id='00000000-0000-0000-0000-000000000010';", check=True, capture_output=True)
                         active = deletion_ledger.publish(runtime, sql + ['--batch', '--skip-column-names'], {})
                         active_path = runtime.backups / active['filename']
+                        self.shared_runtime_restore(runtime, binaries, sql, current, ledger, active)
                         envelope = json.loads(active_path.read_text())
                         stamp = datetime.datetime.fromtimestamp(old_time-1,datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
                         envelope['payload']['exported_at']=old_time
@@ -217,6 +446,10 @@ VALUES ('00000000-0000-0000-0000-000000000001','synthetic',3,'retention',UTC_TIM
                         def observe(name,args,**kwargs):
                             result=original_execute(name,args,**kwargs)
                             if name=='albums-restore-quarantine':
+                                scheduled=original_execute('retention-schema-proof',args+["--execute=SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='album_storage_accounts' AND column_name='retention_cleanup_after'"]).decode().strip()
+                                if scheduled=='1':
+                                    preserved=original_execute('retention-state-proof',args+["--execute=SELECT COUNT(*) FROM album_storage_accounts WHERE owner_id='00000000-0000-0000-0000-000000000001' AND retention_cleanup_after='2026-11-04' AND retention_cleanup_token='00000000-0000-4000-8000-000000000099' AND retention_cleanup_until='2026-11-05' AND retention_cleanup_cursor='unresolved-media'"]).decode().strip()
+                                    self.assertEqual(preserved,'1')
                                 # A second producer invocation must converge without another refund.
                                 with patch.object(runtime,'execute',original_execute):
                                     asset_deletion_ledger.restore_fences(runtime,args,asset_rows)
@@ -282,6 +515,9 @@ VALUES ('00000000-0000-0000-0000-000000000001','synthetic',3,'retention',UTC_TIM
                             asset_deletion_ledger.export(runtime, sql + ['--batch', '--skip-column-names'], {})
                     finally:
                         subprocess.run(sql, input=b"RENAME TABLE owned_hidden_asset_ledger TO album_asset_deletion_ledger;", check=True, capture_output=True)
+                    from deletion_checkpoint_integration_test import check_snapshot
+                    with self.subTest(checkpoint_snapshot_consistency=True):
+                        check_snapshot(self, runtime, binaries, sql)
                     self.assertFalse([p for p in runtime.state.glob('albums-restore-*') if p.is_dir()])
                 finally:
                     if server.poll() is None:

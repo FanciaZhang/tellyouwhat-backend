@@ -174,8 +174,11 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         name = 'ops_common.py'
         current = (Path(__file__).parent / name).read_bytes()
         old = current.replace(
-            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py')):\n",
+            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')):\n",
             b"        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):\n")
+        start = old.index(b"    candidate = source / 'deploy/tencent'\n")
+        end = old.index(b"    for script in (source / 'deploy/tencent').iterdir():\n", start)
+        old = old[:start] + old[end:]
         self.assertEqual(hashlib.sha256(old).hexdigest(), 'f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc')
         installed = self.root / 'deploy/tencent' / name
         installed.write_bytes(old)
@@ -200,7 +203,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(installed.read_bytes(), current)
 
     def test_development_backup_helpers_are_source_bound_and_restored_after_failure(self):
-        names = ['tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'albums/backup.py',
+        names = ['tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'tencent/albums_recovery.py', 'albums/backup.py',
                  'albums/deletion_ledger.py', 'albums/asset_deletion_ledger.py', 'albums/collection_deletion_ledger.py']
         for index, name in enumerate(names):
             original = ('# registered snapshot implementation ' + str(index)).encode()
@@ -262,15 +265,18 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(installed.read_bytes(), b'# unexpected collection helper drift')
 
     def test_new_admin_helper_is_removed_when_first_activation_fails(self):
-        installed = self.root / 'deploy/tencent/platform_test_admin.py'
-        installed.unlink()
-        state = self.runtime.state / 'platform-test.json'
-        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
-        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
-            with dev.test_operations_transition(self.runtime, self.source):
-                self.assertTrue(installed.is_file())
-                raise RuntimeError('activation failed')
-        self.assertFalse(installed.exists())
+        for name in ('platform_test_admin.py', 'albums_recovery.py'):
+            installed = self.root / 'deploy/tencent' / name
+            original = installed.read_bytes()
+            installed.unlink()
+            state = self.runtime.state / 'platform-test.json'
+            state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'activation failed'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    self.assertTrue(installed.is_file())
+                    raise RuntimeError('activation failed')
+            self.assertFalse(installed.exists())
+            installed.write_bytes(original)
 
     def test_shared_backup_update_does_not_replace_current_production_recovery(self):
         name = 'ops_backup.py'
@@ -414,14 +420,14 @@ original=Path.replace;count=0
 def replace(path,destination):
     global count
     result=original(path,destination)
-    if Path(destination).name in ('ops_backup.py','ops_cos.py','ops_offsite.py'):
+    if 'tencent/' + Path(destination).name in dev.SHARED_BACKUP_UPGRADE:
         count+=1
         if count==int(stop):os.kill(os.getpid(),signal.SIGKILL)
     return result
 Path.replace=replace
 with dev.test_operations_transition(r,revision):pass
 """
-        for count in (1, 2):
+        for count in range(1, len(reviewed)):
             for name, data in originals.items(): (self.root / 'deploy' / name).write_bytes(data)
             result = subprocess.run([sys.executable, '-c', code, str(self.root), self.source, json.dumps(reviewed), str(count)], capture_output=True, timeout=15)
             self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
@@ -439,11 +445,13 @@ with dev.test_operations_transition(r,revision):pass
         source = Path(dev.__file__).resolve().parent.parent
         collection = self.root / 'deploy/albums/collection_deletion_ledger.py'; collection.unlink()
         with tarfile.open(os.environ['PLATFORM_TEST_REGISTERED_SOURCE_TAR']) as registered, tarfile.open(self.folder / 'source.tar', 'a') as selected:
-            for name, (digest, _) in dev.SHARED_BACKUP_UPGRADE.items():
+            for name in dict.fromkeys((*dev.SHARED_BACKUP_UPGRADE, 'tencent/operations.py')):
                 member = registered.getmember('deploy/' + name)
                 self.assertTrue(member.isfile()); self.assertLessEqual(member.size, 131072)
                 data = registered.extractfile(member).read()
-                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+                if name in dev.SHARED_BACKUP_UPGRADE:
+                    digest, _ = dev.SHARED_BACKUP_UPGRADE[name]
+                    self.assertIn(hashlib.sha256(data).hexdigest(), (digest, *dev.SHARED_BACKUP_INTERMEDIATE.get(name, ())))
                 originals[name] = data
                 (self.root / 'deploy' / name).write_bytes(data)
                 entry = tarfile.TarInfo('deploy/' + name); entry.size = len(data)
@@ -459,6 +467,8 @@ with dev.test_operations_transition(r,revision):pass
                 with dev.test_operations_transition(self.runtime, self.source):
                     for name in originals: self.assertEqual((self.root / 'deploy' / name).read_bytes(), (source / name).read_bytes())
                     self.assertEqual(collection.read_bytes(), (source / 'albums/collection_deletion_ledger.py').read_bytes())
+                    with patch.object(dev.recording, 'available', return_value=True):
+                        dev.require_installed_operations(self.runtime, self.folder)
                     raise RuntimeError('candidate rejected')
             for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
             self.assertFalse(collection.exists())
@@ -1581,7 +1591,7 @@ with dev.test_operations_transition(r,revision):pass
             self.photo_update()
         state = json.loads((self.runtime.state / 'platform-test.json').read_text())
         self.assertEqual(state['source'], self.old_source)
-        self.assertEqual(state['latest_migration'], '0081_album_photo_completion_fence.sql')
+        self.assertEqual(state['latest_migration'], Path(dev.albums.SCHEMA_MIGRATIONS[-1]).name)
         self.assertNotIn('album_worker_transition', state)
         commands = [c.args[1] for c in self.runtime.execute.call_args_list]
         self.assertFalse(any('down' in c or '--volumes' in c or 'mysql' in c and 'up' in c for c in commands))
@@ -1603,7 +1613,7 @@ with dev.test_operations_transition(r,revision):pass
         path = self.runtime.state / 'platform-test.json'
         state = json.loads(path.read_text())
         self.assertIn('album_worker_transition', state)
-        self.assertEqual(state['latest_migration'], '0081_album_photo_completion_fence.sql')
+        self.assertEqual(state['latest_migration'], Path(dev.albums.SCHEMA_MIGRATIONS[-1]).name)
         self.runtime.execute.reset_mock()
         self.photo_update()
         self.assertNotIn('album_worker_transition', json.loads(path.read_text()))
@@ -1744,7 +1754,8 @@ with dev.test_operations_transition(r,revision):pass
             path = scripts / name
             expected = path.read_bytes()
             path.write_bytes(b'old operations version')
-            with self.subTest(name=name), self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
+            error = 'reviewed recovery-helper transition' if name == 'operations.py' else 'matched scheduled operations'
+            with self.subTest(name=name), self.assertRaisesRegex(OperationError, error):
                 self.activate()
             path.write_bytes(expected)
         self.runtime.execute.assert_not_called()

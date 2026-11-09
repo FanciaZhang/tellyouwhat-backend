@@ -108,7 +108,7 @@ func TestMySQLAlbumDevelopmentProductsPreserveRowsAndRecoverUnrecordedDDL(t *tes
 				t.Fatal("legacy purchase changed", product, quota, err)
 			}
 			if variant.scoped {
-				if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE name > '0064_album_identity_retirement.sql' AND name NOT IN (?, '0074_album_system_copy_locators.sql','0075_album_content_corrections.sql','0076_album_asset_favorites.sql','0077_album_collections.sql','0078_album_asset_deletion_ledger.sql','0080_album_photo_multipart.sql','0081_album_photo_completion_fence.sql')`, migration).Scan(&count); err != nil || count != 0 {
+				if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE name > '0064_album_identity_retirement.sql' AND name NOT IN (?, '0074_album_system_copy_locators.sql','0075_album_content_corrections.sql','0076_album_asset_favorites.sql','0077_album_collections.sql','0078_album_asset_deletion_ledger.sql','0080_album_photo_multipart.sql','0081_album_photo_completion_fence.sql','0082_album_retention_cleanup_schedule.sql','0083_album_record_erasure_schedule.sql')`, migration).Scan(&count); err != nil || count != 0 {
 					t.Fatal("scoped job applied unrelated migrations", count, err)
 				}
 			}
@@ -166,7 +166,7 @@ func TestMySQLAlbumScopedMigrationRequiresExistingBase(t *testing.T) {
 
 func TestMySQLAlbumDevelopmentMetadataPreservesMediaAndReplaysDDL(t *testing.T) {
 	metadata := []string{"0075_album_content_corrections.sql", "0076_album_asset_favorites.sql",
-		"0077_album_collections.sql", "0078_album_asset_deletion_ledger.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql"}
+		"0077_album_collections.sql", "0078_album_asset_deletion_ledger.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql", "0082_album_retention_cleanup_schedule.sql", "0083_album_record_erasure_schedule.sql"}
 	for _, interrupted := range append([]string{""}, metadata...) {
 		name := interrupted
 		if name == "" {
@@ -210,6 +210,7 @@ func TestMySQLAlbumDevelopmentMetadataPreservesMediaAndReplaysDDL(t *testing.T) 
 				args  []any
 			}{
 				{`INSERT INTO album_accounts(account_id,apple_subject_sha256) VALUES(?,REPEAT('a',64))`, []any{owner}},
+				{`INSERT INTO album_account_deletions(account_id,request_id,authorizing_session_sha256,requested_at) VALUES(?,?,UNHEX(REPEAT('a',64)),'2026-10-01')`, []any{owner, uuid.NewString()}},
 				{`INSERT INTO album_storage_accounts(owner_id,quota_bytes,used_bytes,reserved_bytes) VALUES(?,50000000000,12,3)`, []any{owner}},
 				{`INSERT INTO album_asset_lifecycle(owner_id,asset_id,revision,lifecycle_epoch,state) VALUES(?,'active-media',1,1,'active'),(?,'deleted-media',3,3,'purged')`, []any{owner, owner}},
 				{`INSERT INTO album_asset_versions(owner_id,asset_id,version_id,manifest_digest,manifest_json,sealed_objects,original_bytes,published_at) VALUES(?,'active-media',?,REPEAT('b',64),'{}','[]',12,'2026-10-01 00:00:00')`, []any{owner, version}},
@@ -250,6 +251,16 @@ func TestMySQLAlbumDevelopmentMetadataPreservesMediaAndReplaysDDL(t *testing.T) 
 					}
 				}
 			}
+			if interrupted == "0082_album_retention_cleanup_schedule.sql" {
+				if _, err := db.Exec(`UPDATE album_storage_accounts SET retention_cleanup_after='2026-10-02',retention_cleanup_token=?,retention_cleanup_until='2026-10-03',retention_cleanup_cursor='active-media' WHERE owner_id=?`, owner, owner); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if interrupted == "0083_album_record_erasure_schedule.sql" {
+				if _, err := db.Exec(`UPDATE album_account_deletions SET record_erase_after='2026-10-02' WHERE account_id=?`, owner); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for range 2 {
 				if err := RunAlbumDevelopmentMetadata(ctx, db); err != nil {
 					t.Fatal("scoped metadata replay", err)
@@ -258,6 +269,22 @@ func TestMySQLAlbumDevelopmentMetadataPreservesMediaAndReplaysDDL(t *testing.T) 
 			var reason, receiptVersion, locator string
 			var revision int64
 			var count int
+			recordQuery := `SELECT COUNT(*) FROM album_account_deletions WHERE account_id=? AND record_erase_after IS NULL`
+			if interrupted == "0083_album_record_erasure_schedule.sql" {
+				recordQuery = `SELECT COUNT(*) FROM album_account_deletions WHERE account_id=? AND record_erase_after='2026-10-02'`
+			}
+			if err := db.QueryRow(recordQuery, owner).Scan(&count); err != nil || count != 1 {
+				t.Fatal("record erasure schedule default or interrupted DDL state changed", count, err)
+			}
+			query := `SELECT COUNT(*) FROM album_storage_accounts WHERE owner_id=? AND retention_cleanup_after IS NULL AND retention_cleanup_token IS NULL AND retention_cleanup_until IS NULL AND retention_cleanup_cursor IS NULL`
+			args := []any{owner}
+			if interrupted == "0082_album_retention_cleanup_schedule.sql" {
+				query = `SELECT COUNT(*) FROM album_storage_accounts WHERE owner_id=? AND retention_cleanup_after='2026-10-02' AND retention_cleanup_token=? AND retention_cleanup_until='2026-10-03' AND retention_cleanup_cursor='active-media'`
+				args = append(args, owner)
+			}
+			if err := db.QueryRow(query, args...).Scan(&count); err != nil || count != 1 {
+				t.Fatal("retention schedule default or interrupted DDL state changed", count, err)
+			}
 			if err := db.QueryRow(`SELECT final_revision,reason,JSON_UNQUOTE(JSON_EXTRACT(version_ids,'$[0]')) FROM album_asset_deletion_ledger WHERE owner_id=? AND asset_id='deleted-media' AND JSON_LENGTH(version_ids)=1`, owner).Scan(&revision, &reason, &receiptVersion); err != nil || revision != 3 || reason != "trash" || receiptVersion != deleted {
 				t.Fatal("completed purge receipt missing or changed", revision, reason, receiptVersion, err)
 			}

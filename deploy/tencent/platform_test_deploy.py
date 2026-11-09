@@ -29,12 +29,24 @@ FILES = {'source.tar': 64 * 1024**2, 'compose.platform-test.yaml': 32768,
 HEALTH_HOST = 'api-test.health.tellyouwhat.cn'
 # Paired recovery implementations from the authenticated running and candidate source archives.
 SHARED_BACKUP_UPGRADE = {
+    'tencent/operations.py': ('cff6bbeb98fb1f866cbdce4b53ac8580addf7c175522e0c91d9c771b4d598dac',
+                             '2574fb4a5f1328d66370c02036e00d92faaaa5490fc4b804cd74a73c4357b090'),
     'tencent/ops_backup.py': ('d67c0af3a21c7407e442ff68910293a91473dd1b777ca8783cf381bca327aedc',
-                            'c02dacd404f12801517806f5458f27f6186b7b4bd3837e528c05033ba0d1bb9d'),
+                            '7580d3eb23c8dab69404275086bbaaa4c7e66d73021931599f739cf0dfdceb07'),
     'tencent/ops_offsite.py': ('2c3543c7417010cd61a620c25d70729953279e3cf520709c8db5d7e896c4ac93',
-                             '6d385a1ee60cf8c7d8b39243dd6b07e0d9ab29b85a1a4f28d8d5e08bbbcdf5b4'),
+                             '52a8c23ecf0dfe4555cae32d5516e199b4ddb675876a7aad679dbc2a0b7a9b9a'),
     'tencent/ops_cos.py': ('ea15539f9de8ae68b1f0791384476da3669fb6665cbbbb69f078498dd4696f74',
-                         'ea15539f9de8ae68b1f0791384476da3669fb6665cbbbb69f078498dd4696f74'),
+                         '8154b72a91708c4c76d9d4eee3c1c288966ca8c329b0bde61745170423a99f59'),
+}
+# Also admit a partially or fully installed preceding, authenticated helper set.
+SHARED_BACKUP_INTERMEDIATE = {
+    'tencent/ops_backup.py': ('c02dacd404f12801517806f5458f27f6186b7b4bd3837e528c05033ba0d1bb9d',
+                              'e2a9ecaa6c00b1451dbe9338608647ec5869ba4e1bd982ebd729f9eef697a5cc',
+                              '6800ae85cd544350e9fd0fdd753d71b08d37ab501b6a5952bb5b8bfd01a90cff'),
+    'tencent/ops_offsite.py': ('6d385a1ee60cf8c7d8b39243dd6b07e0d9ab29b85a1a4f28d8d5e08bbbcdf5b4',
+                               'ef252175cb0208d7f85bb7aad649bfea92af19deb8a1fb8f17f0760dc13e4b35',
+                               'aacfa90b30619c879d22deaac168cbb645f12d459552511e4da7b3ee6b8bae8f'),
+    'tencent/ops_cos.py': ('10ec967217abb9d070623fede5bcb33862aa2423c4c836274c4e3f23fbdaa1d5',),
 }
 TOS_SETTINGS = {'TOS_ENDPOINT', 'TOS_REGION', 'TOS_BUCKET', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY'}
 HEALTH_ENDPOINTS = {'HEALTH_ARK_ENDPOINT_' + name for name in (
@@ -301,7 +313,7 @@ def require_installed_operations(runtime, folder):
     for name in ('operations.py', 'ops_common.py', 'ops_backup.py', 'ops_offsite.py', 'ops_cos.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
                  'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_admin.py', 'platform_test_schema.py',
-                 'albums_checkpoint.py', 'albums_artifacts.py', '../albums/backup.py',
+                 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py', '../albums/backup.py',
                  '../albums/deletion_ledger.py', '../albums/asset_deletion_ledger.py', '../albums/collection_deletion_ledger.py'):
         path = installed / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
@@ -497,7 +509,7 @@ def test_operations_transition(runtime, update_from):
     # Test validators travel with the release; the shared backup change is pinned below.
     names = tuple('tencent/' + name for name in (
         'platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
-        'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py')) + (
+        'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')) + (
             'albums/backup.py', 'albums/deletion_ledger.py', 'albums/asset_deletion_ledger.py', 'albums/collection_deletion_ledger.py')
     source, installed = Path(__file__).resolve().parent.parent, runtime.root / 'deploy'
     changed = {n: (source / n).read_bytes() for n in names if not (installed / n).exists() or (installed / n).read_bytes() != (source / n).read_bytes()}
@@ -512,10 +524,12 @@ def test_operations_transition(runtime, update_from):
         shared[name] = hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest()
         shared_sources[name] = after
     shared_upgrade = False
+    previous_shared = {name: (running, *SHARED_BACKUP_INTERMEDIATE.get(name, ()))
+                       for name, (running, _) in SHARED_BACKUP_UPGRADE.items()}
     if any(before != after for before, after in shared.values()):
         # A killed producer may have copied only some members; all must still be from this exact pair.
         shared_upgrade = all(pair[1] == SHARED_BACKUP_UPGRADE[name][1]
-                             and pair[0] in SHARED_BACKUP_UPGRADE[name] for name, pair in shared.items())
+                             and pair[0] in (*previous_shared[name], pair[1]) for name, pair in shared.items())
         backup = 'tencent/ops_backup.py'
         legacy = ('e367cbe4f1e5068664b3ad2ca9e152d9dbac73e2df46ae988d9d13ae8e50c577',
                   'c4f84df20f967623fbfe79c529ba04bf9a041bc52e323a4f6c8bfcbef8c98a59')
@@ -529,7 +543,8 @@ def test_operations_transition(runtime, update_from):
     if (installed / common).read_bytes() != (source / common).read_bytes():
         reviewed = ('f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc',
                     '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760')
-        if tuple(hashlib.sha256((folder / common).read_bytes()).hexdigest() for folder in (installed, source)) != reviewed:
+        before, after = (hashlib.sha256((folder / common).read_bytes()).hexdigest() for folder in (installed, source))
+        if before not in reviewed or after != '64779e74fa99c2c41a804c9c9803c8914ce0f0592386200d718494c653779d24':
             raise OperationError('shared operations update is outside the reviewed registered-test ownership protection')
         changed[common] = (source / common).read_bytes()
     if not changed:
@@ -556,7 +571,7 @@ def test_operations_transition(runtime, update_from):
                         raise OperationError('registered Albums snapshot implementation is unavailable')
                 originals[name] = None
                 continue
-            if name == 'tencent/platform_test_admin.py' and not path.exists() and not path.is_symlink():
+            if name in ('tencent/platform_test_admin.py', 'tencent/albums_recovery.py') and not path.exists() and not path.is_symlink():
                 try:
                     archive.getmember('deploy/' + name)
                 except KeyError:
@@ -574,8 +589,8 @@ def test_operations_transition(runtime, update_from):
                 raise OperationError('registered test operations are unavailable')
             baseline = archive.extractfile(member).read()
             if shared_upgrade and name in SHARED_BACKUP_UPGRADE:
-                if (hashlib.sha256(baseline).hexdigest() != SHARED_BACKUP_UPGRADE[name][0]
-                        or hashlib.sha256(originals[name]).hexdigest() not in SHARED_BACKUP_UPGRADE[name]):
+                if (hashlib.sha256(baseline).hexdigest() not in previous_shared[name]
+                        or hashlib.sha256(originals[name]).hexdigest() not in (*previous_shared[name], SHARED_BACKUP_UPGRADE[name][1])):
                     raise OperationError('shared backup baseline differs from the registered rollback source')
                 originals[name] = baseline
             elif baseline != originals[name]:

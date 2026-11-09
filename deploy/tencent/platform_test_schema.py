@@ -26,7 +26,9 @@ ADDITIONS = {'migrations/0066_privacy_consent_scopes.sql': 'd9c4daee552a498e2581
              'migrations/0078_album_asset_deletion_ledger.sql': 'ea23c6d57ad6c0929713049119a99ebc83cda71eb514d113469ee9efec23d194',
              'migrations/0079_platform_albums_app_attest.sql': '0aba31a0fd1e12eefff8952950a52af2d54918861dda5faf8a6174dade5104ab',
              'migrations/0080_album_photo_multipart.sql': 'b69af44ed45c2c2916266eb3d7c100e633a1fea07a4fd2a074f2a7d1b5c90fcc',
-             'migrations/0081_album_photo_completion_fence.sql': '454ee51c7ed85cb4b5ed9297503468512d8cc268cb1a7fe61acb271eb5342bcd'}
+             'migrations/0081_album_photo_completion_fence.sql': '454ee51c7ed85cb4b5ed9297503468512d8cc268cb1a7fe61acb271eb5342bcd',
+             'migrations/0082_album_retention_cleanup_schedule.sql': '7a62b38df7e4bc94e0dd67aa08bbd6714d34931546f1e9c30f5c4f6ad1e71eb1',
+             'migrations/0083_album_record_erasure_schedule.sql': '536b576e4c0fc94c387aa288a0c550cee86068a3d1f39e552ad2c7f77326ecb1'}
 
 
 def hashes(folder):

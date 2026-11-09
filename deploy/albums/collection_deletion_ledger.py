@@ -30,14 +30,16 @@ def validate(entries):
     return entries
 
 
-def export(runtime, sql, credentials):
+def export_query(runtime, sql, credentials):
     schema = runtime.execute('albums-collection-deletion-schema', sql + ["--execute=SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='album_collections'),EXISTS(SELECT 1 FROM schema_migrations WHERE name='0077_album_collections.sql')"], env=credentials).strip()
     if schema == b'0\t0':
-        return []
+        return None
     if schema not in (b'1\t0', b'1\t1'):
         raise OperationError('collection table missing after migration or invalid')
-    query = "SELECT owner_id,collection_id,revision,request_id,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') FROM album_collections WHERE deleted=TRUE UNION ALL SELECT 'invalid','',0,'','' WHERE EXISTS(SELECT 1 FROM album_collections WHERE deleted=TRUE AND name<>'') ORDER BY owner_id,collection_id LIMIT 100001"
-    raw = runtime.execute('albums-collection-deletion-export', sql + ['--execute=' + query], env=credentials)
+    return "SELECT owner_id,collection_id,revision,request_id,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') FROM album_collections WHERE deleted=TRUE UNION ALL SELECT 'invalid','',0,'','' WHERE EXISTS(SELECT 1 FROM album_collections WHERE deleted=TRUE AND name<>'') ORDER BY owner_id,collection_id LIMIT 100001"
+
+
+def parse_export(raw):
     rows = []
     try:
         for line in raw.decode().splitlines():
@@ -46,6 +48,13 @@ def export(runtime, sql, credentials):
     except (ValueError, UnicodeError) as error:
         raise OperationError('invalid collection deletion export') from error
     return validate(rows)
+
+
+def export(runtime, sql, credentials):
+    query = export_query(runtime, sql, credentials)
+    if query is None:
+        return []
+    return parse_export(runtime.execute('albums-collection-deletion-export', sql + ['--execute=' + query], env=credentials))
 
 
 def restore_fences(runtime, sql, entries):
