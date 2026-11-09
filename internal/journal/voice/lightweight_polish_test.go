@@ -138,3 +138,33 @@ func TestLightweightDiagnosticsReportTheChosenModelInsteadOfTheFullFallback(t *t
 		t.Fatal("requested-model metadata described the wrong route", err)
 	}
 }
+
+func TestRejectedLightweightOutputPreservesVisibleTextAndDefersFullOrganization(t *testing.T) {
+	for _, sliced := range []bool{false, true} {
+		snapshot := comparisonSnapshot([]string{"预算280元，还没付款。"}, false)
+		snapshot.Polish.Lightweight = true
+		target := &snapshot.Polish.Targets[0]
+		if sliced {
+			target.SourceOffsets = []int{300}
+			target.Text = target.SourceText + "明天再确认。"
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]any{"status": "completed", "model": "lite", "usage": map[string]int{"input_tokens": 10, "output_tokens": 10}, "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": `{"paragraphs":[],"omissions":[],"questions":[],"illustrationSuggestion":null}`}}}}})
+		}))
+		ctx := promptconfig.WithRevision(t.Context(), promptconfig.Revision{Policy: promptconfig.Defaults("lite", "pro", "pro", 90)["journal"]})
+		result, err := (ArkRewriter{BaseURL: server.URL, APIKey: "synthetic", Model: "pro"}).Rewrite(ctx, snapshot, 1)
+		server.Close()
+		if err != nil || result.Polish == nil || !result.Polish.RequiresFullOrganization || !result.Polish.Lightweight || result.Diagnostics.Stage != "lightweight_preserved_source" {
+			t.Fatal("invalid live cleanup blocked preserved speech", err)
+		}
+		if len(result.Polish.Paragraphs) != 1 || result.Polish.Paragraphs[0].Text != target.SourceText {
+			t.Fatal("source preservation duplicated or dropped the unconsumed tail")
+		}
+		if !sliced {
+			snapshot.Polish.Lightweight = false
+			if _, err := decodePolish(result.OutputText, *snapshot.Polish); err == nil {
+				t.Fatal("full organization must still reject missing facts")
+			}
+		}
+	}
+}

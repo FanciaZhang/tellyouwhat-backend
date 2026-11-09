@@ -56,17 +56,39 @@ type PolishOmission struct {
 	Reason   string `json:"reason"`
 }
 type PolishRevision struct {
-	Lightweight            bool                              `json:"lightweight,omitempty"`
-	Omissions              []PolishOmission                  `json:"omissions"`
-	ID                     string                            `json:"id"`
-	Narrator               *Narrator                         `json:"narrator,omitempty"`
-	Targets                []PolishTarget                    `json:"targets"`
-	Paragraphs             []PolishParagraph                 `json:"paragraphs"`
-	Questions              []string                          `json:"questions"`
-	IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
+	Lightweight              bool                              `json:"lightweight,omitempty"`
+	RequiresFullOrganization bool                              `json:"requiresFullOrganization,omitempty"`
+	Omissions                []PolishOmission                  `json:"omissions"`
+	ID                       string                            `json:"id"`
+	Narrator                 *Narrator                         `json:"narrator,omitempty"`
+	Targets                  []PolishTarget                    `json:"targets"`
+	Paragraphs               []PolishParagraph                 `json:"paragraphs"`
+	Questions                []string                          `json:"questions"`
+	IllustrationSuggestion   *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
 }
 
 const maxPolishParagraphs = 16
+
+func preservingLightweightSource(request PolishRequest) *PolishRevision {
+	characters := 0
+	revision := &PolishRevision{Lightweight: true, RequiresFullOrganization: true, Narrator: request.Narrator,
+		Targets: slices.Clone(request.Targets), Paragraphs: []PolishParagraph{}, Questions: []string{}, Omissions: []PolishOmission{}}
+	for _, target := range request.Targets {
+		text := target.Text
+		if len(target.SourceOffsets) > 0 {
+			text = ""
+			for _, turn := range target.Turns {
+				text += retainedPolishSourceText(turn, nil)
+			}
+		}
+		characters += utf8.RuneCountInString(text)
+		if strings.TrimSpace(text) == "" || characters > 6000 {
+			return nil
+		}
+		revision.Paragraphs = append(revision.Paragraphs, PolishParagraph{Text: text, TargetIDs: []string{target.ID}, Style: target.Style})
+	}
+	return revision
+}
 
 func (p PolishRequest) Validate() error {
 	if err := validateNarrator(p.Narrator); err != nil {

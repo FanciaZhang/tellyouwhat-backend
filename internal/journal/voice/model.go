@@ -270,6 +270,14 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		polish, err := decodePolish(text, request)
 		if err != nil {
 			result.Diagnostics.ValidationCode = polishValidationCode(err)
+			if request.Lightweight {
+				if preserved := preservingLightweightSource(request); preserved != nil {
+					result.Polish = preserved
+					result.Diagnostics.Stage = "lightweight_preserved_source"
+					result.Diagnostics.Duration = time.Since(started)
+					return result, nil
+				}
+			}
 			if errors.Is(err, errPolishRepeatsContext) {
 				return failedRewrite(result, "voice_rewrite_unavailable", "validate_polish_repeated_context", err, started)
 			}
