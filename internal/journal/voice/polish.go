@@ -34,6 +34,7 @@ type PolishSelectionContext struct {
 	Omissions []PolishOmission `json:"omissions"`
 }
 type PolishRequest struct {
+	compactNarrative               bool
 	ReusableContextIDs             []string                `json:"reusableContextIDs,omitempty"`
 	Deferred                       bool                    `json:"deferred,omitempty"`
 	Lightweight                    bool                    `json:"lightweight,omitempty"`
@@ -358,6 +359,9 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 		omissionSchema["items"].(map[string]any)["properties"].(map[string]any)["sourceID"] = map[string]any{"type": "string", "enum": currentSourceIDs}
 	}
 	body := map[string]any{"store": false, "instructions": polishInstructions + narratorInstructions + promptconfig.ScenePrompt(ctx) + "\n本次写作风格：" + style.Prompt + narrativeSelectionInstructions, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v36", "strict": true, "schema": schema}}}
+	if p.compactNarrative {
+		prepareCompactNarrative(ctx, p, words, style, body, schema)
+	}
 	tokenLimit, timeout, effort := 2048, 40, "disabled"
 	if p.Narrator != nil && slices.ContainsFunc(p.Targets, func(target PolishTarget) bool {
 		return slices.ContainsFunc(target.Turns, func(turn SourceUtterance) bool {

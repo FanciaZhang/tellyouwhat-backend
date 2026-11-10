@@ -52,6 +52,7 @@ func (e ManualEdit) characters() int {
 }
 
 type Snapshot struct {
+	Organization                   bool             `json:"-"`
 	AcknowledgedPolishID           string           `json:"acknowledgedPolishID,omitempty"`
 	Identity                       *IdentityRequest `json:"identity,omitempty"`
 	Narrator                       *Narrator        `json:"narrator,omitempty"`
