@@ -22,6 +22,8 @@ class RestoreWorkspaceTests(unittest.TestCase):
     container = 'tellyouwhat-restore-' + '1' * 16
 
     def setUp(self):
+        imports = patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parent)})
+        imports.start(); self.addCleanup(imports.stop)
         temporary = tempfile.TemporaryDirectory(prefix='shared-restore-test-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
