@@ -126,11 +126,14 @@ func TestVoiceCatalogHTTPAuthCSRFWriteGateAndNoClientVerification(t *testing.T) 
 	if r := call("POST", base+"/probe", map[string]any{"id": "voice", "verification": map[string]any{"policySHA256": "forged"}}, true, session.CSRFToken); r.Code != 400 {
 		t.Fatal("client probe evidence accepted", r.Code, r.Body.String())
 	}
+	if r := call("POST", base+"/drafts", map[string]any{"voices": []any{map[string]any{"id": "voice", "approvedPolicySHA256": "forged"}}}, true, session.CSRFToken); r.Code != 400 {
+		t.Fatal("client injected publication approval", r.Code, r.Body.String())
+	}
 	session.ReauthenticatedAt = now.Add(-time.Hour)
 	if err := sessions.PutSession(context.Background(), adminauth.TokenHash(token), session, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if r := call("POST", base+"/publish", map[string]any{}, true, session.CSRFToken); r.Code != 401 || !strings.Contains(r.Body.String(), "reauthentication_required") {
+	if r := call("POST", base+"/publish", map[string]any{"skipSynthesisVerification": true}, true, session.CSRFToken); r.Code != 401 || !strings.Contains(r.Body.String(), "reauthentication_required") {
 		t.Fatal("publication skipped fresh authentication", r.Code)
 	}
 	repo.user.Role = adminauth.RoleOperator

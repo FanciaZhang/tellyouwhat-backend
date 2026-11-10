@@ -21,7 +21,7 @@ const proof={policySHA256:'fixture-policy',audioSHA256:'fixture-audio',verifiedA
 const voice=(id,name,extra={})=>({id,name,description:'适合安静地听一篇手记',languages:['zh-cn'],styles:['natural'],dialects:[],supportsPitch:false,previewURL:'',billingClass:'unreviewed',enabled:false,rank:100,probeText:'今天沿着河边散步。',...extra});
 let current={version:'version-one',defaultVoiceID:'voice_one',voices:[voice('voice_one','小何 <script>',{billingClass:'standard',enabled:true,verification:proof}),voice('voice_two','Vivi')],createdAt:at,publishedAt:at};
 const initial=structuredClone(current),drafts=[],probes=new Map();
-let actualProbeCalls=0,probeHTTPCalls=0,publishCalls=0,firstProbeResponseLost=true;
+let actualProbeCalls=0,probeHTTPCalls=0,publishCalls=0,lastPublication,firstProbeResponseLost=true;
 let heldProbe,releaseProbe,probeArrived;
 let isolatedAdmin=true;
 const registeredApps=[{id:'health',displayName:'告你健康'},{id:'journal',displayName:'告你手记'},{id:'birthday',displayName:'告你生日'},{id:'albums',displayName:'告你相册'}],offerAppReads=[];
@@ -48,7 +48,7 @@ await page.route('**/api/**',async route=>{
   const body=request.postDataJSON();assert.ok(body.voices.every(v=>v.verification===undefined&&v.resourceID===undefined));
   data={...body,version:'draft-'+drafts.length,createdAt:at,voices:body.voices.map(v=>({...v,...((v.id==='voice_one'||v.id==='voice_two')?{verification:proof}:{})}))};drafts.push(structuredClone(data));
  }
- else if(u.pathname===base+'/publish'){publishCalls++;const body=request.postDataJSON();assert.equal(body.baseVersion,current.version);current={...drafts.find(d=>d.version===body.revision),publishedAt:at};data=current;}
+ else if(u.pathname===base+'/publish'){publishCalls++;const body=request.postDataJSON();assert.equal(body.baseVersion,current?.version||'');lastPublication=body;const draft=drafts.find(d=>d.version===body.revision);current={...draft,publishedAt:at,voices:draft.voices.map(v=>({...v,...(body.skipSynthesisVerification&&v.enabled&&!v.verification?{approvedPolicySHA256:'fixture-admin-approval'}:{})}))};data=current;}
  else if(u.pathname===base+'/history')data={revisions:[current,initial].map(({version,baseVersion,createdAt,publishedAt,voices})=>({version,baseVersion,createdAt,publishedAt,voiceCount:voices.length,enabledCount:voices.filter(v=>v.enabled).length})),nextCursor:''};
  else if(u.pathname.startsWith(base+'/revisions/')){const id=decodeURIComponent(u.pathname.split('/').at(-1));data=[initial,...drafts,current].find(v=>v.version===id);assert.ok(data,'missing revision fixture');}
  else{status=404;data={error:{message:'Unhandled fixture '+u.pathname}};}
@@ -196,6 +196,29 @@ try{
  assert.equal(actualProbeCalls,beforeBulk+471,'batch did not stop after three failed voices');
  assert.equal(await page.evaluate(()=>window.reauthChecks),1,'fresh server authentication was not reused for the batch');
  await page.setViewportSize({width:1100,height:900});await geometry();await capture('bulk-validation-desktop');
+ // Direct publication is explicit, performs no probe, preserves passkey confirmation and excludes nonstandard billing.
+ current=null;await page.evaluate(()=>sessionStorage.clear());await page.evaluate(()=>openVoiceCatalog());
+ await importCandidates([voice('direct_voice','直接开放'),voice('paid_voice','额外付费',{billingClass:'premium'}),voice('clone_voice','复刻声音',{billingClass:'voice-slot'})]);
+ await page.getByRole('status').filter({hasText:'已导入 3 个'}).waitFor();
+ await page.locator('#voice-search').fill('direct_voice');await page.locator('[data-voice-edit]').click();
+ await page.locator('#voice-form [name="billingClass"]').selectOption('standard');await page.locator('#voice-form [name="enabled"]').check();
+ await page.locator('#voice-default').click();await page.getByRole('button',{name:'返回音色目录',exact:true}).click();
+ await page.locator('#voice-save').click();await page.getByRole('heading',{name:'确认音色目录变更',exact:true}).waitFor();
+ assert.equal(await page.locator('#voice-publish').isDisabled(),true,'ordinary review skipped proof without administrator approval');
+ await page.locator('#voice-edit-again').click();
+ const probesBeforeDirect=probeHTTPCalls,reauthBeforeDirect=await page.evaluate(()=>window.reauthChecks);
+ await page.locator('#voice-direct').click();await page.locator('#voice-direct-notice').waitFor();
+ assert.equal(await page.locator('#voice-publish').isDisabled(),false);assert.equal(probeHTTPCalls,probesBeforeDirect);
+ for(const width of [390,1100]){await page.setViewportSize({width,height:900});await geometry();await page.evaluate(()=>scrollTo(0,0));await capture('direct-publication-review-'+width);}
+ await page.locator('#voice-publish').click();await page.getByRole('heading',{name:'手记 · 朗读音色',exact:true}).waitFor();
+ assert.equal(lastPublication.skipSynthesisVerification,true);assert.equal(await page.evaluate(()=>window.reauthChecks),reauthBeforeDirect+1);
+ assert.equal(probeHTTPCalls,probesBeforeDirect,'direct publication purchased synthesis');
+ assert.equal(current.defaultVoiceID,'direct_voice');assert.deepEqual(current.voices.filter(v=>v.enabled).map(v=>v.id),['direct_voice']);
+ assert.equal(current.voices[0].verification,undefined);assert.ok(current.voices[0].approvedPolicySHA256);
+ await page.locator('#voice-search').fill('');assert.ok((await page.locator('#voice-rows').textContent()).includes('管理员已确认 · 未合成验证'));
+ await geometry();await capture('direct-publication-result');
+ await page.locator('#voice-save').click();await page.getByRole('heading',{name:'确认音色目录变更',exact:true}).waitFor();
+ assert.equal(await page.locator('#voice-publish').isDisabled(),false,'existing administrator approval lost on an unchanged draft');
  assert.deepEqual(errors,[]);
- console.log('PASS: atomic 466-voice import, HTML hyphen IDs, reviewed batch validation, uncertain-result replay, cancellation and outage stop, four-App selection and scoped unavailable services, test-environment header geometry, catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
+ console.log('PASS: explicit direct publication without probe charges or forged evidence, standard billing only, passkey confirmation and persistent approval; atomic 466-voice import, HTML hyphen IDs, reviewed batch validation, uncertain-result replay, cancellation and outage stop, four-App selection and scoped unavailable services, test-environment header geometry, catalog filtering/escaping, caret/IME, persisted draft, sync merge, capability probe replay without repeat charge, default/enable, reviewed publication, history restore, concurrent-edit merge, empty publish blocked, WAV framing, mobile/desktop light/dark geometry');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
