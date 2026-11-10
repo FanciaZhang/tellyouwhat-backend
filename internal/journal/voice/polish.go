@@ -34,6 +34,7 @@ type PolishSelectionContext struct {
 	Omissions []PolishOmission `json:"omissions"`
 }
 type PolishRequest struct {
+	compactNarrative               bool
 	ReusableContextIDs             []string                `json:"reusableContextIDs,omitempty"`
 	Deferred                       bool                    `json:"deferred,omitempty"`
 	Lightweight                    bool                    `json:"lightweight,omitempty"`

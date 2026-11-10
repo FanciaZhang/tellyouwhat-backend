@@ -1,0 +1,21 @@
+CREATE TABLE journal_voice_organization_jobs (
+ app_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'journal',
+ owner_key_id VARCHAR(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ request_digest CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ revision BIGINT UNSIGNED NOT NULL,
+ state VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ created_at DATETIME(6) NOT NULL,
+ expires_at DATETIME(6) NOT NULL,
+ available_at DATETIME(6) NOT NULL,
+ lease_until DATETIME(6) NULL,
+ has_payload BOOLEAN NOT NULL,
+ ciphertext LONGBLOB NULL,
+ nonce VARBINARY(12) NULL,
+ PRIMARY KEY (owner_key_id,request_id),
+ KEY voice_organization_queue (state,available_at,lease_until),
+ KEY voice_organization_expiry (expires_at,has_payload),
+ CONSTRAINT voice_organization_owner_fk FOREIGN KEY (app_id,owner_key_id) REFERENCES app_attest_keys(app_id,key_id) ON DELETE CASCADE,
+ CHECK (app_id='journal'), CHECK (revision>0),
+ CHECK (state IN ('queued','running','succeeded','failed','uncertain','cancelled','expired'))
+) ENGINE=InnoDB;

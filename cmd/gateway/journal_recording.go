@@ -20,6 +20,24 @@ type journalRecordingPrivacy struct {
 	next    privacy.CacheCleaner
 }
 
+type journalVoiceOrganizationPrivacy struct {
+	store voice.OrganizationStore
+	next  privacy.CacheCleaner
+}
+
+func (c *journalVoiceOrganizationPrivacy) DeletePrincipal(ctx context.Context, p attestation.Principal) error {
+	if p.AppID != "journal" || p.KeyID == "" {
+		return errors.New("voice organization privacy identity mismatch")
+	}
+	if err := c.store.ForgetOwner(ctx, p.KeyID); err != nil {
+		return err
+	}
+	if c.next != nil {
+		return c.next.DeletePrincipal(ctx, p)
+	}
+	return nil
+}
+
 func (c *journalRecordingPrivacy) DeletePrincipal(ctx context.Context, p attestation.Principal) error {
 	if p.AppID != "journal" || p.KeyID == "" {
 		return errors.New("recording privacy identity mismatch")

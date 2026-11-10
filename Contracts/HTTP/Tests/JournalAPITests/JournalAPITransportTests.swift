@@ -5,6 +5,33 @@ import OpenAPIRuntime
 
 @Suite("Journal API transport")
 struct JournalAPITransportTests {
+    @Test("durable voice task binds the generated route, digest and bounded payload")
+    func voiceOrganizationRequestAndLimits() async throws {
+        let id = UUID().uuidString.lowercased()
+        let hash = String(repeating: "a", count: 64)
+        let recorder = RequestRecorder()
+        let client = Client(serverURL: URL(string: "https://api.journal.example")!, transport: JournalAPITransport { request in
+            await recorder.record(request)
+            return .init(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
+                body: .data(Data(#"{"id":"\#(id)","inputSHA256":"\#(hash)","state":"queued","revision":1,"expiresAt":"2026-11-11T00:00:00Z"}"#.utf8)))
+        })
+        _ = try await client.createJournalVoiceOrganization(headers: .init(xTellyouwhatRequestID: id),
+            body: .json(.init(requestID: id, inputSHA256: hash, plan: Data("synthetic".utf8).base64EncodedString())))
+        let request = try #require(await recorder.request)
+        #expect(request.path == "/v1/journal/voice/organizations")
+        let body = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: String])
+        #expect(body["inputSHA256"] == hash)
+        #expect(Set(body.keys) == ["requestID", "inputSHA256", "plan"])
+        let operation = Operations.GetJournalVoiceOrganization.id
+        let route = "/v1/journal/voice/organizations/" + id
+        #expect(JournalAPIBodyLimits.response(method: "GET", path: route, operationID: operation, status: 200) == 8 * 1024 * 1024)
+        for path in [route + "/other", "/v1/journal/voice/organizations/not-a-task", route + "?all=true"] {
+            #expect(JournalAPIBodyLimits.response(method: "GET", path: path, operationID: operation, status: 200) == JournalAPIBodyLimits.ordinaryResponse)
+        }
+        #expect(JournalAPIBodyLimits.response(method: "GET", path: route, operationID: operation, status: 503) == JournalAPIBodyLimits.ordinaryResponse)
+        #expect(JournalAPIBodyLimits.request(method: "POST", path: route, operationID: Operations.CreateJournalVoiceOrganization.id, fallback: 100) == 100)
+    }
+
     @Test("generated organizer request owns the route, headers, and JSON body")
     func generatedOrganizerRequest() async throws {
         let requestID = UUID()
