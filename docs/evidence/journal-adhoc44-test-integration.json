@@ -20,5 +20,18 @@
     "deploymentTestsRun": 118,
     "deploymentTestsSkipped": 5
   },
-  "deployed": false
+  "deployed": false,
+  "matchedAlreadyInstalledOperations": {
+    "file": "deploy/tencent/release.py",
+    "sha256": "eaeb00578e0712f078ef5645dd3c5af8dd8eaf44aed610861625af6326e8a38d",
+    "changes": [
+      "Existing TTS credential validation",
+      "Existing managed operations verification"
+    ],
+    "hostOperationsChanged": false,
+    "dependencies": {
+      "operations_guard.py": "746e7e5c1a432e196c9d2dd15491cc517dffcdc9c5d8532ae7301fe7d8f9cd59",
+      "read_aloud_credentials.py": "d417188f9e34a6704778297a1cc5846af372f711e054718ea9f2fe2fd0f17103"
+    }
+  }
 }

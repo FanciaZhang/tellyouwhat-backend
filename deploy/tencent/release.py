@@ -85,6 +85,8 @@ def validate(source, tag, registry, acceptance):
     readiness_checks(config)
     from ops_recording import configured_root
     configured_root(config, 'production')
+    from read_aloud_credentials import validate_config
+    validate_config(config)
     return config
 
 
@@ -189,6 +191,8 @@ def require_automation_compatibility(current, target):
 
 
 def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-green", source_run="", confirmation=""):
+    from operations_guard import verify as verify_operations
+    verify_operations(runtime, Path(bundle).resolve() if bundle else runtime.root)
     if strategy not in ("blue-green", "disruptive"):
         raise OperationError("unsupported release strategy")
     source = Path(bundle).resolve() if bundle else runtime.root
