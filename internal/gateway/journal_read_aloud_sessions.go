@@ -210,6 +210,7 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 		c.Writer.Flush()
 		return nil
 	}
+	timingRevision := 0
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	if send(journalhttpapi.ReadAloudEvent{Kind: "heartbeat", SessionID: r.SynthesisID, Sequence: after}) != nil {
@@ -234,6 +235,16 @@ func (s *Server) StreamJournalReadAloudSynthesis(ctx context.Context, r journalh
 			info.AudioBytes = 0
 			info.LastSequence = after
 			frames = nil
+		}
+		if info.BufferAvailable && info.TimingRevision != timingRevision && len(info.Timings) > 0 {
+			cues := make([]journalhttpapi.ReadAloudTiming, len(info.Timings))
+			for i, cue := range info.Timings {
+				cues[i] = journalhttpapi.ReadAloudTiming{StartMilliseconds: cue.StartMilliseconds, EndMilliseconds: cue.EndMilliseconds, Utf16Location: cue.UTF16Location, Utf16Length: cue.UTF16Length}
+			}
+			if send(journalhttpapi.ReadAloudEvent{Kind: "timing", SessionID: r.SynthesisID, Sequence: after, Timings: &cues}) != nil {
+				return nil, nil
+			}
+			timingRevision = info.TimingRevision
 		}
 		for _, frame := range frames {
 			data, offset := frame.PCM, frame.Offset
