@@ -85,6 +85,8 @@ def validate(source, tag, registry, acceptance):
     readiness_checks(config)
     from ops_recording import configured_root
     configured_root(config, 'production')
+    from read_aloud_credentials import validate_config
+    validate_config(config)
     return config
 
 
