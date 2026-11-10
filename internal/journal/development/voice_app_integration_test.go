@@ -42,10 +42,17 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	var c struct {
 		BaseURL, APIKey, Lite, Pro, Voice, Token, OutputDirectory, ReplaySnapshot string
 		ASR                                                                       voice.ASRConfig
+		BudgetCNY                                                                 int64
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil || json.Unmarshal(raw, &c) != nil || c.APIKey == "" || len(c.Token) < 43 || c.Lite == "" || c.Pro == "" || c.Voice == "" || c.OutputDirectory == "" {
 		t.Fatal("private candidate configuration required")
+	}
+	if c.BudgetCNY == 0 {
+		c.BudgetCNY = 45
+	}
+	if c.BudgetCNY < 1 || c.BudgetCNY > 50 {
+		t.Fatal("synthetic acceptance budget must be between 1 and 50 CNY")
 	}
 	if err := os.MkdirAll(c.OutputDirectory, 0700); err != nil {
 		t.Fatal(err)
@@ -68,11 +75,11 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	if err := prompts.Refresh(t.Context(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), 45*costcontrol.NanosPerCNY, time.Now())
+	ledger, err := NewFileCostStore(filepath.Join(c.OutputDirectory, "cost-events.json"), c.BudgetCNY*costcontrol.NanosPerCNY, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: 45 * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
+	budget, err := costcontrol.New(ledger, costcontrol.Limits{MonthlyBudgetNanos: c.BudgetCNY * costcontrol.NanosPerCNY, MaxConcurrent: 2, LeaseDuration: 15 * time.Minute}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +104,7 @@ func TestConfiguredSyntheticVoiceAppServer(t *testing.T) {
 	handler := syntheticVoiceAppHandler(c.Token, prompts, service, time.Now)
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": 45, "synthetic": true})
+	ready, _ := json.Marshal(map[string]any{"url": server.URL, "voiceProtocol": voice.Version, "budgetCNY": c.BudgetCNY, "synthetic": true})
 	if err := os.WriteFile(filepath.Join(c.OutputDirectory, "ready.json"), ready, 0600); err != nil {
 		t.Fatal(err)
 	}
