@@ -9,6 +9,7 @@ function voiceConfiguration(v){
 function voicePolicy(v){return JSON.stringify([v.id,v.billingClass,v.probeText,v.languages,v.styles,v.dialects,v.supportsPitch]);}
 function voiceRememberProof(v){if(v.verification)voices.proofs.set(v.id,{policy:voicePolicy(v),value:v.verification});}
 function voiceProof(v){const p=voices.proofs.get(v.id);return p?.policy===voicePolicy(v)?p.value:null;}
+function voiceApproved(v){return !!voiceProof(v)||(voices.data.current?.voices||[]).some(old=>old.id===v.id&&old.approvedPolicySHA256&&voicePolicy(old)===voicePolicy(v));}
 function voiceStorage(){return 'voice-editor:'+state.user.id;}
 function voicePersist(){
  ai.dirty=true;
@@ -33,17 +34,17 @@ async function openVoiceCatalog(){
   ai.dirty=Array.isArray(saved?.edit?.voices);voices.page=0;voiceList();
  });
 }
-function voiceControls(){return '<div class="ai-actions"><button id="voice-sync" data-ai-work '+(!voices.data.writesEnabled||!voices.data.syncEnabled?'disabled':'')+'>同步官方候选</button><button id="voice-add" '+(!voices.data.writesEnabled?'disabled':'')+'>添加音色</button><button id="voice-import" '+(!voices.data.writesEnabled?'disabled':'')+'>导入候选</button><input id="voice-import-file" type="file" accept="application/json,.json" hidden><button id="voice-batch" '+(!voices.data.writesEnabled||!voices.data.probesEnabled?'disabled':'')+'>批量验证候选</button><button id="voice-history">历史版本</button><button id="voice-discard" class="quiet">放弃本机草稿并刷新</button></div>';}
+function voiceControls(){return '<div class="ai-actions"><button id="voice-sync" data-ai-work '+(!voices.data.writesEnabled||!voices.data.syncEnabled?'disabled':'')+'>同步官方候选</button><button id="voice-add" '+(!voices.data.writesEnabled?'disabled':'')+'>添加音色</button><button id="voice-import" '+(!voices.data.writesEnabled?'disabled':'')+'>导入候选</button><input id="voice-import-file" type="file" accept="application/json,.json" hidden><button id="voice-batch" '+(!voices.data.writesEnabled||!voices.data.probesEnabled?'disabled':'')+'>批量验证候选</button><button id="voice-direct" data-ai-work '+(!voices.data.writesEnabled?'disabled':'')+'>直接开放候选（不试听）</button><button id="voice-history">历史版本</button><button id="voice-discard" class="quiet">放弃本机草稿并刷新</button></div>';}
 function voiceList(){
  aiNavigate('voices');
  const current=voices.data.current,stale=voices.edit.baseVersion!==(current?.version||'');
- aiFrame('手记 · 朗读音色','候选与发布目录分开管理。只有标准计费且验证通过的声音可以开放。',
+ aiFrame('手记 · 朗读音色','仅开放标准公共音色。可合成验证，也可由管理员确认后直接发布。',
   '<div class="card voice-catalog">'+(stale?'<p class="notice error">本机草稿基于较早版本，请先合并最新目录。</p><button id="voice-rebase" data-ai-work>合并最新发布版</button>':'')+
   voiceControls()+'<div class="prompt-two voice-filters"><label>搜索音色<input id="voice-search" type="search" value="'+aiEscape(voices.query)+'" placeholder="名称、说明或 ID"></label><label>语言<select id="voice-language"><option value="">全部语言</option>'+[...new Set(voices.edit.voices.flatMap(v=>v.languages))].sort().map(v=>'<option value="'+aiEscape(v)+'" '+(v===voices.language?'selected':'')+'>'+aiEscape(v)+'</option>').join('')+'</select></label></div><p id="voice-count" class="muted"></p><div id="voice-rows" class="ai-list"></div><div id="voice-pages" class="ai-actions"></div><div class="ai-foot"><span class="muted" id="voice-save-status">'+(ai.dirty?'有未发布的修改 · 已暂存在本机':'当前为已发布目录')+'</span><button id="voice-save" class="primary" data-ai-work '+(!voices.data.writesEnabled||stale?'disabled':'')+'>保存草稿并预览</button></div></div>',voiceBack);
  const render=()=>{
   const q=voices.query.toLowerCase(),rows=voices.edit.voices.map((v,i)=>({v,i})).filter(({v})=>(!voices.language||v.languages.includes(voices.language))&&(v.name+' '+v.description+' '+v.id).toLowerCase().includes(q)).sort((a,b)=>a.v.rank-b.v.rank||a.v.name.localeCompare(b.v.name,'zh-CN'));
   const start=voices.page*50;$('#voice-count').textContent='共 '+rows.length+' 个声音 · 已启用 '+voices.edit.voices.filter(v=>v.enabled).length+' 个';
-  $('#voice-rows').innerHTML=rows.slice(start,start+50).map(({v,i})=>'<article class="ai-row voice-row"><div><strong>'+aiEscape(v.name)+'</strong><small>'+aiEscape(v.id)+'</small><small>'+aiEscape(v.languages.join('、'))+'</small></div><div class="ai-modelcell"><span>'+aiEscape(v.description)+'</span><small>'+aiEscape(voiceBilling[v.billingClass]||v.billingClass)+' · '+(voiceProof(v)?'已验证':'待验证')+' · '+(v.enabled?'已启用':'未启用')+(voices.edit.defaultVoiceID===v.id?' · 默认声音':'')+'</small></div><button data-voice-edit="'+i+'">管理</button></article>').join('')||'<p class="empty">没有匹配的声音。可以同步官方候选或手动添加。</p>';
+  $('#voice-rows').innerHTML=rows.slice(start,start+50).map(({v,i})=>'<article class="ai-row voice-row"><div><strong>'+aiEscape(v.name)+'</strong><small>'+aiEscape(v.id)+'</small><small>'+aiEscape(v.languages.join('、'))+'</small></div><div class="ai-modelcell"><span>'+aiEscape(v.description)+'</span><small>'+aiEscape(voiceBilling[v.billingClass]||v.billingClass)+' · '+(voiceProof(v)?'已验证':voiceApproved(v)?'管理员已确认 · 未合成验证':'待验证')+' · '+(v.enabled?'已启用':'未启用')+(voices.edit.defaultVoiceID===v.id?' · 默认声音':'')+'</small></div><button data-voice-edit="'+i+'">管理</button></article>').join('')||'<p class="empty">没有匹配的声音。可以同步官方候选或手动添加。</p>';
   $('#voice-pages').innerHTML=(voices.page?'<button id="voice-prev">上一页</button>':'')+(start+50<rows.length?'<button id="voice-next">下一页</button>':'');
   aiClick('[data-voice-edit]',b=>voiceEditor(Number(b.dataset.voiceEdit)));
   if($('#voice-prev'))$('#voice-prev').onclick=()=>{voices.page--;render();};
@@ -67,9 +68,10 @@ function voiceList(){
   const count=voiceImportCandidates(input);voiceList();notice('已导入 '+count+' 个未启用候选，费用类别仍需核对；已有声音保持不变。');
  });
  $('#voice-batch').onclick=voiceBatch;
+ $('#voice-direct').onclick=voiceDirectPublication;
  $('#voice-history').onclick=()=>voiceHistory();
  $('#voice-discard').onclick=()=>{if(confirm('放弃本机未发布修改，重新读取最新目录？')){sessionStorage.removeItem(voiceStorage());ai.dirty=false;openVoiceCatalog();}};
- $('#voice-save').onclick=voiceSaveDraft;render();
+ $('#voice-save').onclick=()=>voiceSaveDraft();render();
  if($('#voice-rebase'))$('#voice-rebase').onclick=voiceRebase;
 }
 function voiceField(v,key,label,type='text',extra=''){
@@ -79,7 +81,7 @@ function voiceField(v,key,label,type='text',extra=''){
 function voiceChecks(v,key,options){return Object.entries(options).map(([value,label])=>'<label class="prompt-check"><input type="checkbox" name="'+key+'" value="'+value+'" '+(v[key].includes(value)?'checked':'')+' '+(key==='styles'&&value==='natural'?'disabled':'')+'>'+label+'</label>').join('');}
 function voiceEditor(index,newVoice=false){
  aiNavigate('voice-editor');const v=voices.edit.voices[index],proof=voiceProof(v),writable=voices.data.writesEnabled;
- aiFrame(v.name||'新音色','能力变更需要重新验证。声音说明和排序的修改不会重新消耗合成字符。',
+ aiFrame(v.name||'新音色','能力变更后需要重新验证或由管理员确认。名称和排序不影响已有确认。',
   '<form class="card prompt-form" id="voice-form"><fieldset '+(!writable?'disabled':'')+'><legend>展示与调用</legend>'+
   voiceField(v,'id','稳定音色 ID','text','required pattern="(?:[A-Za-z0-9_]|-){1,128}" '+(!newVoice&&voices.data.current?.voices.some(old=>old.id===v.id)?'readonly':''))+
   voiceField(v,'name','名称','text','required maxlength="80"')+voiceField(v,'description','说明','textarea','maxlength="500"')+
@@ -88,14 +90,14 @@ function voiceEditor(index,newVoice=false){
   voiceField(v,'previewURL','官方示例音频 HTTPS 地址','url','maxlength="2048" pattern="https://.+"')+
   voiceField(v,'probeText','验证与个性化试听短句','textarea','required')+'<p class="muted">最多 180 个 UTF-8 字节。使用公开短句，不填私人手记。</p></fieldset>'+
   '<fieldset '+(!writable?'disabled':'')+'><legend>需要验证的能力</legend><div class="voice-checks">'+voiceChecks(v,'styles',voiceStyles)+'</div><div class="voice-checks">'+voiceChecks(v,'dialects',voiceDialects)+'</div><label class="prompt-check"><input type="checkbox" name="supportsPitch" '+(v.supportsPitch?'checked':'')+'>支持音调调整</label></fieldset>'+
-  '<p class="muted" id="voice-proof">'+(proof?'验证完成于 '+formatTime(proof.verifiedAt)+'，共 '+proof.cases+' 项。':'尚无匹配当前能力的验证记录。')+'</p>'+
+  '<p class="muted" id="voice-proof">'+(proof?'验证完成于 '+formatTime(proof.verifiedAt)+'，共 '+proof.cases+' 项。':voiceApproved(v)?'管理员已确认开放，尚未合成验证。':'尚无匹配当前能力的验证记录。')+'</p>'+
   '<div class="ai-actions"><button type="button" id="voice-official-preview" '+(!v.previewURL?'disabled':'')+'>试听官方示例</button><button type="button" id="voice-probe" data-ai-work '+(!writable||!voices.data.probesEnabled?'disabled':'')+'>验证并试听（消耗字符）</button><button type="button" id="voice-probe-check" class="hidden" data-ai-work>检查上次验证结果</button></div><div id="voice-audio"></div>'+
   '<fieldset '+(!writable?'disabled':'')+'><legend>开放范围</legend><label class="prompt-check"><input type="checkbox" name="enabled" '+(v.enabled?'checked':'')+'>向 App 开放这个声音</label><button type="button" id="voice-default" '+(!v.enabled||v.id===voices.edit.defaultVoiceID?'disabled':'')+'>'+(v.id===voices.edit.defaultVoiceID?'当前默认声音':'设为默认声音')+'</button><p class="muted">发布时会再次校验费用、验证结果和默认声音。</p></fieldset><div class="ai-foot"><button type="submit">返回音色目录</button><button type="button" class="quiet" id="voice-remove" '+(!writable?'disabled':'')+'>从草稿移除</button></div></form>',voiceList);
  const form=$('#voice-form');
  function changed(event){
   const el=event.target;if(!el.name||el.disabled)return;
   v[el.name]=el.name==='languages'?[...new Set(el.value.split(/[,，\s]+/).filter(Boolean))]:el.name==='styles'||el.name==='dialects'?[...form.querySelectorAll('[name="'+el.name+'"]:checked')].map(e=>e.value):el.type==='checkbox'?el.checked:el.type==='number'?Number(el.value):el.value;
-  voicePersist();$('#voice-proof').textContent=voiceProof(v)?'当前能力已验证。':'能力待验证，发布前需完成验证。';
+  voicePersist();$('#voice-proof').textContent=voiceProof(v)?'当前能力已验证。':voiceApproved(v)?'管理员已确认开放，尚未合成验证。':'发布前需要合成验证或管理员确认。';
   $('#voice-default').disabled=!v.enabled||!v.id||v.id===voices.edit.defaultVoiceID;
   $('#voice-official-preview').disabled=!v.previewURL;
  }
@@ -147,25 +149,32 @@ async function voiceCommand(action,body){
  const command=saved?.identity===identity?saved:{identity,key:uuid()};sessionStorage.setItem(slot,JSON.stringify(command));
  const result=await api(voiceBase+'/'+action,{method:'POST',csrfRequired:true,idempotencyKey:command.key,body});sessionStorage.removeItem(slot);return result;
 }
-function voiceSaveDraft(){return aiWork(async generation=>{const draft=await voiceCommand('drafts',voices.edit);if(generation!==ai.generation)return;draft.voices.forEach(voiceRememberProof);voiceReview(draft);});}
-function voiceBlockers(draft){
+function voiceSaveDraft(skipSynthesisVerification=false){return aiWork(async generation=>{const draft=await voiceCommand('drafts',voices.edit);if(generation!==ai.generation)return;draft.voices.forEach(voiceRememberProof);voiceReview(draft,skipSynthesisVerification);});}
+function voiceDirectPublication(){
+ const candidates=voices.edit.voices.filter(v=>['unreviewed','standard'].includes(v.billingClass));
+ if(!candidates.length||!confirm('确认这 '+candidates.length+' 个候选均为标准公共音色，并跳过付费合成验证？下一步将预览变更，发布仍需通行密钥确认。'))return;
+ candidates.forEach(v=>{v.billingClass='standard';v.enabled=true;});
+ if(!candidates.some(v=>v.id===voices.edit.defaultVoiceID))voices.edit.defaultVoiceID=candidates.sort((a,b)=>a.rank-b.rank)[0].id;
+ voicePersist();return voiceSaveDraft(true);
+}
+function voiceBlockers(draft,skipSynthesisVerification=false){
  const enabled=draft.voices.filter(v=>v.enabled),reasons=[];
  if(!enabled.length)reasons.push('至少启用一个声音');
  if(!enabled.some(v=>v.id===draft.defaultVoiceID))reasons.push('默认声音必须已启用');
- for(const v of enabled)if(v.billingClass!=='standard'||!voiceProof(v))reasons.push(v.name+'：需要标准计费及有效验证');
+ for(const v of enabled)if(v.billingClass!=='standard'||(!skipSynthesisVerification&&!voiceApproved(v)))reasons.push(v.name+'：需要标准计费及合成验证或管理员确认');
  return reasons;
 }
-function voiceReview(draft){
+function voiceReview(draft,skipSynthesisVerification=false){
  aiNavigate('voice-review');
  const before=voices.data.current?.voices||[],old=new Map(before.map(v=>[v.id,v])),after=new Map(draft.voices.map(v=>[v.id,v])),changes=[];
  const summaries=v=>v?JSON.stringify(voiceConfiguration(v)):'未配置';
  for(const id of new Set([...old.keys(),...after.keys()]))if(summaries(old.get(id))!==summaries(after.get(id)))changes.push({id,before:old.get(id),after:after.get(id)});
- const blockers=voiceBlockers(draft);
+ const blockers=voiceBlockers(draft,skipSynthesisVerification);
  aiFrame('确认音色目录变更','发布后 App 最多约四小时刷新；服务端立即执行停用限制。',
-  '<div class="card"><p>默认声音：'+aiEscape(voices.data.current?.defaultVoiceID||'未设置')+' → '+aiEscape(draft.defaultVoiceID||'未设置')+'</p><p>启用声音：'+before.filter(v=>v.enabled).length+' → '+draft.voices.filter(v=>v.enabled).length+'</p>'+blockers.map(r=>'<p class="notice error">'+aiEscape(r)+'</p>').join('')+'</div><div class="prompt-diff">'+changes.map(c=>'<article class="card"><h3>'+aiEscape(c.after?.name||c.before?.name||c.id)+'</h3><div class="prompt-two"><div><small>当前发布版</small>'+voiceSummary(c.before)+'</div><div><small>候选版本</small>'+voiceSummary(c.after)+'</div></div></article>').join('')+'</div><div class="ai-foot"><button id="voice-edit-again">继续编辑</button><button id="voice-publish" class="primary" data-ai-work '+(blockers.length?'disabled':'')+'>通行密钥确认并发布</button></div>',voiceList);
+  '<div class="card">'+(skipSynthesisVerification?'<p class="notice" id="voice-direct-notice">管理员确认直接开放：跳过付费合成验证，不会生成试听费用。未验证的声音会如实保留未合成验证状态。</p>':'')+'<p>默认声音：'+aiEscape(voices.data.current?.defaultVoiceID||'未设置')+' → '+aiEscape(draft.defaultVoiceID||'未设置')+'</p><p>启用声音：'+before.filter(v=>v.enabled).length+' → '+draft.voices.filter(v=>v.enabled).length+'</p>'+blockers.map(r=>'<p class="notice error">'+aiEscape(r)+'</p>').join('')+'</div><div class="prompt-diff">'+changes.map(c=>'<article class="card"><h3>'+aiEscape(c.after?.name||c.before?.name||c.id)+'</h3><div class="prompt-two"><div><small>当前发布版</small>'+voiceSummary(c.before)+'</div><div><small>候选版本</small>'+voiceSummary(c.after)+'</div></div></article>').join('')+'</div><div class="ai-foot"><button id="voice-edit-again">继续编辑</button><button id="voice-publish" class="primary" data-ai-work '+(blockers.length?'disabled':'')+'>通行密钥确认并发布</button></div>',voiceList);
  $('#voice-edit-again').onclick=voiceList;
  $('#voice-publish').onclick=()=>aiWork(async generation=>{
-  await reauthenticate();await voiceCommand('publish',{revision:draft.version,baseVersion:draft.baseVersion});
+  await reauthenticate();await voiceCommand('publish',{revision:draft.version,baseVersion:draft.baseVersion,...(skipSynthesisVerification?{skipSynthesisVerification:true}:{})});
   sessionStorage.removeItem(voiceStorage());ai.dirty=false;if(generation!==ai.generation)return;
   await openVoiceCatalog();notice('音色目录已发布。');
  });

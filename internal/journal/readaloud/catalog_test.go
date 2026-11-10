@@ -147,3 +147,40 @@ func TestPublicLanguageSamplesAreBoundedAndAcceptedByProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestAdministratorApprovalDoesNotForgeSynthesisEvidenceOrAllowCostChanges(t *testing.T) {
+	voice := draftVoice()
+	voice.Enabled = true
+	voice.ApprovedPolicySHA256 = voice.policyHash()
+	catalog := Catalog{Version: uuid.NewString(), DefaultVoiceID: voice.ID, Voices: []Voice{voice}}
+	if voice.IsVerified() || !voice.IsApproved() || !voice.Allows(validSynthesis()) || catalog.ValidatePublication() != nil {
+		t.Fatal("manual approval did not permit publication independently of synthesis evidence")
+	}
+	public, err := catalog.Public()
+	if err != nil || len(public.Voices) != 1 {
+		t.Fatal("approved voice unavailable to app", err)
+	}
+	raw, _ := json.Marshal(public)
+	if strings.Contains(string(raw), "approvedPolicySHA256") {
+		t.Fatal("internal approval leaked into public contract")
+	}
+	voice.Name = "新的展示名称"
+	if !voice.IsApproved() {
+		t.Fatal("presentation edit invalidated approval")
+	}
+	for _, mutate := range []func(*Voice){
+		func(v *Voice) { v.Styles = append(v.Styles, "storytelling") },
+		func(v *Voice) { v.Languages = append(v.Languages, "fr") },
+		func(v *Voice) { v.ProbeText = "另一句公开短句。" },
+		func(v *Voice) { v.ResourceID = "another-resource" },
+		func(v *Voice) { v.BillingClass = "premium"; v.ApprovedPolicySHA256 = v.policyHash() },
+		func(v *Voice) { v.BillingClass = "voice-slot"; v.ApprovedPolicySHA256 = v.policyHash() },
+		func(v *Voice) { v.BillingClass = "unreviewed"; v.ApprovedPolicySHA256 = v.policyHash() },
+	} {
+		changed := voice
+		mutate(&changed)
+		if changed.IsApproved() || changed.Allows(validSynthesis()) {
+			t.Fatal("approval survived capability or cost changes")
+		}
+	}
+}
