@@ -70,6 +70,12 @@ services:
       TRUSTED_CLIENT_IP_HEADER: X-Real-IP
     volumes:
       - ./secrets:/secrets:ro
+      - &journal-tts-key
+        type: bind
+        source: ${JOURNAL_TTS_API_KEY_HOST_FILE:-/dev/null}
+        target: /run/journal-read-aloud/api-key.txt
+        read_only: true
+        bind: {create_host_path: false}
     expose:
       - "8080"
     ports:
@@ -121,6 +127,7 @@ services:
       ADMIN_ORIGIN: "https://${ADMIN_DOMAIN}"
     volumes:
       - ./secrets:/secrets:ro
+      - *journal-tts-key
     expose:
       - "8082"
     ports:

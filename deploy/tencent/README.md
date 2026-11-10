@@ -57,8 +57,22 @@ Secrets:
 - `JOURNAL_APP_STORE_PRIVATE_KEY`
 - `HEALTH_APP_STORE_CONNECT_PRIVATE_KEY`
 - `JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY`
+- `JOURNAL_TTS_API_KEY`：正式语音服务的 API Key，仅供 Journal 朗读凭据文件使用，不复用开发环境凭据。
 
 四个 Apple Secret 必须保存完整 PEM/P8 内容。工作流在临时 Runner 生成权限为 600 的文件，经 SSH 上传到 `/opt/tellyouwhat/backend`。服务器的密钥目录权限为 750、密钥文件权限为 640，所属组为容器的非 root GID `65532`；部署用户需要执行 `sudo -n chgrp 65532` 的权限。环境文件保持 600。任何真实密钥都不能提交到 Git、写入镜像或输出到日志。
+
+Journal 云端朗读由 `JOURNAL_TTS_ENABLED=true` 启用，并明确配置每订阅周期的
+`JOURNAL_TTS_MONTHLY_CHARACTERS` 和每日试听的 `JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS`。
+音色管理另需 `JOURNAL_TTS_WRITES_ENABLED=true`，真实验证受
+`JOURNAL_TTS_PROBE_DAILY_CHARACTERS` 和已有项目费用保护共同限制。
+部署器将受保护 Secret 写为 `.journal-read-aloud/<版本>.txt`，所有者为 UID 65532、权限 0600，
+只读挂载给 gateway 和 admin；配置自动记录主机与容器路径，不把密钥值写进运行环境。
+版本文件保留给活动与回滚配置，不作为缓存删除；失败、取消和重试清理本次暂存副本。
+未启用时挂载 `/dev/null`，原有服务无需新增凭据。缺失凭据、混用开发路径或额度无效会拒绝发布。
+
+目录必须在正式后台通过真实合成验证后发布，测试环境的目录与验证证据不自动写入正式数据库。
+`/readyz` 成功不代表朗读可用：启用后还须确认公开音色目录返回 200、实际试听有完整音频、
+连续朗读及订阅／字符额度校验正确。音色验证和发布保留管理员通行密钥确认。
 
 ## 4. CI/CD flow
 

@@ -65,6 +65,7 @@ jobs:
           JOURNAL_MARKETING_KEY: ${{ secrets.JOURNAL_APP_STORE_CONNECT_PRIVATE_KEY }}
           PLATFORM_OPERATIONS_WRITES_ENABLED: ${{ vars.PLATFORM_OPERATIONS_WRITES_ENABLED }}
           ARK_SERVICE_CREDENTIALS: ${{ secrets.ARK_MANAGEMENT_CREDENTIALS_JSON }}
+          JOURNAL_TTS_API_KEY: ${{ secrets.JOURNAL_TTS_API_KEY }}
         run: |
           install -d -m 700 "$RUNNER_TEMP/tellyouwhat-secrets"
           printf '%s\n' "$PRODUCTION_ENV_FILE" > "$RUNNER_TEMP/.env.production"
@@ -79,6 +80,7 @@ jobs:
           for key in "$RUNNER_TEMP"/tellyouwhat-secrets/*.p8; do openssl pkey -in "$key" -noout; done
           python3 deploy/tencent/platform_configuration.py "$RUNNER_TEMP/.env.production"
           python3 deploy/tencent/ark_credentials.py materialize --output "$RUNNER_TEMP/ark-management.json"
+          python3 deploy/tencent/read_aloud_credentials.py materialize --output "$RUNNER_TEMP/journal-tts-api-key.txt"
       - name: Select public verification targets
         id: public_targets
         run: |
@@ -122,6 +124,9 @@ jobs:
           if test -f "$RUNNER_TEMP/ark-management.json"; then
             scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/ark-management.json" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/ark-management.json"
           fi
+          if test -f "$RUNNER_TEMP/journal-tts-api-key.txt"; then
+            scp -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$RUNNER_TEMP/journal-tts-api-key.txt" "$DEPLOY_USER@$DEPLOY_HOST:$remote_stage/journal-tts-api-key.txt"
+          fi
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$remote_stage" <<'REMOTE'
           set -euo pipefail
           stage="$1"
@@ -135,6 +140,7 @@ jobs:
           sudo -n chmod 2750 "$backend_dir/secrets"
           python3 "$stage/deploy/tencent/operations_guard.py" --backend-dir "$backend_dir" --bundle "$stage"
           python3 "$stage/deploy/tencent/ark_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
+          python3 "$stage/deploy/tencent/read_aloud_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
           python3 "$stage/deploy/tencent/ops_albums.py" --backend-dir "$backend_dir" --bundle "$stage"
           REMOTE
       - name: Deploy and verify internal services
@@ -171,4 +177,14 @@ jobs:
           DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
         run: |
           ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" bash /opt/tellyouwhat/backend/deploy/tencent/install-operations.sh
+      - name: Clean temporary Journal TTS credential
+        if: always()
+        env:
+          DEPLOY_HOST: ${{ vars.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ vars.PRODUCTION_USER }}
+        run: |
+          rm -f "$RUNNER_TEMP/journal-tts-api-key.txt"
+          if [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] && test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -f ~/.ssh/tellyouwhat-production; then
+            ssh -i ~/.ssh/tellyouwhat-production -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "rm -f '/opt/tellyouwhat/backend/.incoming-$GITHUB_SHA/journal-tts-api-key.txt'"
+          fi
 
