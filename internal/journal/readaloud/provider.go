@@ -52,6 +52,7 @@ type Synthesis struct {
 	Style     string
 	Dialect   string
 	Language  string
+	OnTimings func([]Timing) error `json:"-"`
 }
 
 type SynthesisUsage struct {
@@ -117,6 +118,16 @@ func (provider *Provider) Synthesize(ctx context.Context, input Synthesis, emit 
 	if provider == nil || !input.Valid() || emit == nil {
 		return result, ErrInput
 	}
+	if input.OnTimings != nil && (!supportsSubtitles(input)) {
+		return provider.synthesizePhrases(ctx, input, emit)
+	}
+	return provider.synthesize(ctx, input, emit)
+}
+
+func (provider *Provider) synthesize(ctx context.Context, input Synthesis, emit func([]byte) error) (result SynthesisUsage, err error) {
+	if provider == nil || !input.Valid() || emit == nil {
+		return result, ErrInput
+	}
 	additions := map[string]any{"post_process": map[string]int{"pitch": input.Pitch}}
 	if input.Dialect != "" {
 		additions["explicit_dialect"] = input.Dialect
@@ -133,7 +144,7 @@ func (provider *Provider) Synthesize(ctx context.Context, input Synthesis, emit 
 	extra, _ := json.Marshal(additions)
 	body, _ := json.Marshal(map[string]any{"req_params": map[string]any{
 		"text": input.Text, "speaker": input.VoiceID, "additions": string(extra),
-		"audio_params": map[string]any{"format": "pcm", "sample_rate": SampleRate, "speech_rate": 0},
+		"audio_params": map[string]any{"format": "pcm", "sample_rate": SampleRate, "speech_rate": 0, "enable_subtitle": input.OnTimings != nil},
 	}})
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -160,11 +171,13 @@ func (provider *Provider) Synthesize(ctx context.Context, input Synthesis, emit 
 		return result, &ProviderError{Status: response.StatusCode, LogID: result.LogID}
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, int64(MaximumAudioBytes*2)))
+	var subtitles []subtitle
 	for {
 		var frame struct {
-			Code  *int   `json:"code"`
-			Data  []byte `json:"data"`
-			Usage *struct {
+			Code     *int      `json:"code"`
+			Data     []byte    `json:"data"`
+			Sentence *subtitle `json:"sentence"`
+			Usage    *struct {
 				TextWords *int `json:"text_words"`
 			} `json:"usage"`
 		}
@@ -179,6 +192,14 @@ func (provider *Provider) Synthesize(ctx context.Context, input Synthesis, emit 
 		}
 		switch *frame.Code {
 		case 0, 20_000_000:
+			if input.OnTimings != nil && frame.Sentence != nil && len(subtitles) < MaximumTextBytes {
+				subtitles = append(subtitles, *frame.Sentence)
+				if timings := alignedTimings(input.Text, subtitles); len(timings) > 0 {
+					if err := input.OnTimings(timings); err != nil {
+						return result, err
+					}
+				}
+			}
 			if len(frame.Data) > 0 {
 				if len(frame.Data) > MaximumAudioBytes-result.AudioBytes {
 					return result, ErrIncomplete

@@ -19,20 +19,21 @@ import (
 var ErrCatalog = errors.New("invalid read-aloud voice catalog")
 
 type Voice struct {
-	ID            string             `json:"id"`
-	Name          string             `json:"name"`
-	Description   string             `json:"description"`
-	Languages     []string           `json:"languages"`
-	Styles        []string           `json:"styles"`
-	Dialects      []string           `json:"dialects"`
-	SupportsPitch bool               `json:"supportsPitch"`
-	PreviewURL    string             `json:"previewURL,omitempty"`
-	ResourceID    string             `json:"resourceID"`
-	BillingClass  string             `json:"billingClass"`
-	Enabled       bool               `json:"enabled"`
-	Rank          int                `json:"rank"`
-	ProbeText     string             `json:"probeText"`
-	Verification  *VoiceVerification `json:"verification,omitempty"`
+	ID                   string             `json:"id"`
+	Name                 string             `json:"name"`
+	Description          string             `json:"description"`
+	Languages            []string           `json:"languages"`
+	Styles               []string           `json:"styles"`
+	Dialects             []string           `json:"dialects"`
+	SupportsPitch        bool               `json:"supportsPitch"`
+	PreviewURL           string             `json:"previewURL,omitempty"`
+	ResourceID           string             `json:"resourceID"`
+	BillingClass         string             `json:"billingClass"`
+	Enabled              bool               `json:"enabled"`
+	Rank                 int                `json:"rank"`
+	ProbeText            string             `json:"probeText"`
+	Verification         *VoiceVerification `json:"verification,omitempty"`
+	ApprovedPolicySHA256 string             `json:"approvedPolicySHA256,omitempty"`
 }
 
 // Verification is written by the synthesis probe, never accepted as an admin
@@ -157,8 +158,13 @@ func (voice Voice) IsVerified() bool {
 		v.Cases == len(voice.probes()) && v.PolicySHA256 == voice.policyHash() && err == nil && len(audioHash) == sha256.Size
 }
 
+// Administrator approval permits publication without claiming synthesis evidence.
+func (voice Voice) IsApproved() bool {
+	return voice.IsVerified() || (voice.Validate() == nil && voice.BillingClass == "standard" && voice.ApprovedPolicySHA256 == voice.policyHash())
+}
+
 func (voice Voice) Allows(input Synthesis) bool {
-	return voice.Enabled && voice.IsVerified() && voice.ID == input.VoiceID &&
+	return voice.Enabled && voice.IsApproved() && voice.ID == input.VoiceID &&
 		(input.Pitch == 0 || voice.SupportsPitch) && slices.Contains(voice.Styles, input.Style) &&
 		(input.Dialect == "" || slices.Contains(voice.Dialects, input.Dialect)) &&
 		(input.Language == "" || slices.Contains(voice.Languages, input.Language))
@@ -179,7 +185,7 @@ func (catalog Catalog) ValidatePublication() error {
 		}
 		seen[voice.ID] = true
 		if voice.Enabled {
-			if !voice.IsVerified() {
+			if !voice.IsApproved() {
 				return ErrCatalog
 			}
 			if voice.ID == catalog.DefaultVoiceID {

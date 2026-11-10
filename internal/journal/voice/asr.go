@@ -52,6 +52,7 @@ type asrConnection struct {
 	utterances    streamUtteranceWindow
 	observeTrace  func([]StreamTrace)
 	traces        []StreamTrace
+	readTimeout   time.Duration
 }
 
 // Protocol source: https://www.volcengine.com/docs/6561/1354869
@@ -108,7 +109,7 @@ func (a ASR) Open(ctx context.Context, words []string) (SpeechConnection, error)
 		ws.Close()
 		return nil, err
 	}
-	return &asrConnection{ws: ws, observeSchema: a.Config.ObserveSchema, observeTrace: a.Config.ObserveTrace}, nil
+	return &asrConnection{ws: ws, readTimeout: 30 * time.Second, observeSchema: a.Config.ObserveSchema, observeTrace: a.Config.ObserveTrace}, nil
 }
 func asrPacket(kind byte, final bool, payload []byte) []byte {
 	flags := byte(0)
@@ -127,11 +128,15 @@ func asrPacket(kind byte, final bool, payload []byte) []byte {
 }
 func (c *asrConnection) Send(pcm []byte, final bool) error {
 	c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return websocket.Message.Send(c.ws, asrPacket(2, final, pcm))
+	if err := websocket.Message.Send(c.ws, asrPacket(2, final, pcm)); err != nil {
+		return err
+	}
+	// Quiet audio is active input even when the provider emits no transcript.
+	return c.ws.SetReadDeadline(time.Now().Add(c.readTimeout))
 }
 func (c *asrConnection) Close() error { return c.ws.Close() }
 func (c *asrConnection) Receive() (Transcript, error) {
-	c.ws.SetReadDeadline(time.Now().Add(30 * time.Second))
+	c.ws.SetReadDeadline(time.Now().Add(c.readTimeout))
 	var packet []byte
 	if err := websocket.Message.Receive(c.ws, &packet); err != nil {
 		return Transcript{}, err

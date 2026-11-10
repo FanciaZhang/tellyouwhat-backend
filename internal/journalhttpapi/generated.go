@@ -165,6 +165,7 @@ const (
 	Audio     ReadAloudEventKind = "audio"
 	Heartbeat ReadAloudEventKind = "heartbeat"
 	State     ReadAloudEventKind = "state"
+	Timing    ReadAloudEventKind = "timing"
 )
 
 // Valid indicates whether the value is a known member of the ReadAloudEventKind enum.
@@ -175,6 +176,8 @@ func (e ReadAloudEventKind) Valid() bool {
 	case Heartbeat:
 		return true
 	case State:
+		return true
+	case Timing:
 		return true
 	default:
 		return false
@@ -391,6 +394,39 @@ func (e TagType) Valid() bool {
 	}
 }
 
+// Defines values for VoiceOrganizationTaskState.
+const (
+	VoiceOrganizationTaskStateCancelled VoiceOrganizationTaskState = "cancelled"
+	VoiceOrganizationTaskStateExpired   VoiceOrganizationTaskState = "expired"
+	VoiceOrganizationTaskStateFailed    VoiceOrganizationTaskState = "failed"
+	VoiceOrganizationTaskStateQueued    VoiceOrganizationTaskState = "queued"
+	VoiceOrganizationTaskStateRunning   VoiceOrganizationTaskState = "running"
+	VoiceOrganizationTaskStateSucceeded VoiceOrganizationTaskState = "succeeded"
+	VoiceOrganizationTaskStateUncertain VoiceOrganizationTaskState = "uncertain"
+)
+
+// Valid indicates whether the value is a known member of the VoiceOrganizationTaskState enum.
+func (e VoiceOrganizationTaskState) Valid() bool {
+	switch e {
+	case VoiceOrganizationTaskStateCancelled:
+		return true
+	case VoiceOrganizationTaskStateExpired:
+		return true
+	case VoiceOrganizationTaskStateFailed:
+		return true
+	case VoiceOrganizationTaskStateQueued:
+		return true
+	case VoiceOrganizationTaskStateRunning:
+		return true
+	case VoiceOrganizationTaskStateSucceeded:
+		return true
+	case VoiceOrganizationTaskStateUncertain:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetJournalReadAloudAllowanceParamsPurpose.
 const (
 	GetJournalReadAloudAllowanceParamsPurposeJournal GetJournalReadAloudAllowanceParamsPurpose = "journal"
@@ -592,6 +628,9 @@ type ReadAloudEvent struct {
 	Sequence  int                `json:"sequence"`
 	Session   *ReadAloudSession  `json:"session,omitempty"`
 	SessionID openapi_types.UUID `json:"sessionID"`
+
+	// Timings Complete replacement snapshot of text positions on the PCM playback clock; replayed on reconnect without advancing sequence.
+	Timings *[]ReadAloudTiming `json:"timings,omitempty"`
 }
 
 // ReadAloudEventKind defines model for ReadAloudEvent.Kind.
@@ -650,6 +689,14 @@ type ReadAloudSynthesisRequestPurpose string
 
 // ReadAloudSynthesisRequestStyle defines model for ReadAloudSynthesisRequest.Style.
 type ReadAloudSynthesisRequestStyle string
+
+// ReadAloudTiming defines model for ReadAloudTiming.
+type ReadAloudTiming struct {
+	EndMilliseconds   int `json:"endMilliseconds"`
+	StartMilliseconds int `json:"startMilliseconds"`
+	Utf16Length       int `json:"utf16Length"`
+	Utf16Location     int `json:"utf16Location"`
+}
 
 // ReadAloudVoice defines model for ReadAloudVoice.
 type ReadAloudVoice struct {
@@ -716,6 +763,36 @@ type Tag struct {
 
 // TagType defines model for Tag.Type.
 type TagType string
+
+// VoiceOrganizationRequest defines model for VoiceOrganizationRequest.
+type VoiceOrganizationRequest struct {
+	InputSHA256 string `json:"inputSHA256"`
+
+	// Plan Base64 JSON journal-voice-organization-v1 source plan. Strictly validated before encrypted storage; contains no audio or provider settings.
+	Plan      []byte             `json:"plan"`
+	RequestID openapi_types.UUID `json:"requestID"`
+}
+
+// VoiceOrganizationRevision defines model for VoiceOrganizationRevision.
+type VoiceOrganizationRevision struct {
+	Revision int64 `json:"revision"`
+}
+
+// VoiceOrganizationTask defines model for VoiceOrganizationTask.
+type VoiceOrganizationTask struct {
+	ExpiresAt   time.Time          `json:"expiresAt"`
+	Id          openapi_types.UUID `json:"id"`
+	InputSHA256 string             `json:"inputSHA256"`
+	Problem     *string            `json:"problem,omitempty"`
+
+	// Result Base64 JSON array of validated final PolishRevision values, bound to inputSHA256. Present only after the entire plan succeeds.
+	Result   *[]byte                    `json:"result,omitempty"`
+	Revision int64                      `json:"revision"`
+	State    VoiceOrganizationTaskState `json:"state"`
+}
+
+// VoiceOrganizationTaskState defines model for VoiceOrganizationTask.State.
+type VoiceOrganizationTaskState string
 
 // VoiceSessionRequest defines model for VoiceSessionRequest.
 type VoiceSessionRequest struct {
@@ -845,6 +922,26 @@ type GetJournalReadAloudVoicesParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
+// CreateJournalVoiceOrganizationParams defines parameters for CreateJournalVoiceOrganization.
+type CreateJournalVoiceOrganizationParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// GetJournalVoiceOrganizationParams defines parameters for GetJournalVoiceOrganization.
+type GetJournalVoiceOrganizationParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// CancelJournalVoiceOrganizationParams defines parameters for CancelJournalVoiceOrganization.
+type CancelJournalVoiceOrganizationParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
+// RetryJournalVoiceOrganizationParams defines parameters for RetryJournalVoiceOrganization.
+type RetryJournalVoiceOrganizationParams struct {
+	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
+}
+
 // GetJournalRecordingParams defines parameters for GetJournalRecording.
 type GetJournalRecordingParams struct {
 	XTellyouwhatRequestID RequestIDHeader `json:"X-Tellyouwhat-Request-ID"`
@@ -904,6 +1001,15 @@ type OrganizeJournalJSONRequestBody = OrganizeRequest
 // CreateJournalReadAloudSynthesisJSONRequestBody defines body for CreateJournalReadAloudSynthesis for application/json ContentType.
 type CreateJournalReadAloudSynthesisJSONRequestBody = ReadAloudSynthesisRequest
 
+// CreateJournalVoiceOrganizationJSONRequestBody defines body for CreateJournalVoiceOrganization for application/json ContentType.
+type CreateJournalVoiceOrganizationJSONRequestBody = VoiceOrganizationRequest
+
+// CancelJournalVoiceOrganizationJSONRequestBody defines body for CancelJournalVoiceOrganization for application/json ContentType.
+type CancelJournalVoiceOrganizationJSONRequestBody = VoiceOrganizationRevision
+
+// RetryJournalVoiceOrganizationJSONRequestBody defines body for RetryJournalVoiceOrganization for application/json ContentType.
+type RetryJournalVoiceOrganizationJSONRequestBody = VoiceOrganizationRevision
+
 // PreviewJournalRecordingJSONRequestBody defines body for PreviewJournalRecording for application/json ContentType.
 type PreviewJournalRecordingJSONRequestBody PreviewJournalRecordingJSONBody
 
@@ -951,6 +1057,18 @@ type ServerInterface interface {
 	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
 	// (GET /v1/journal/read-aloud/voices)
 	GetJournalReadAloudVoices(c *gin.Context, params GetJournalReadAloudVoicesParams)
+
+	// (POST /v1/journal/voice/organizations)
+	CreateJournalVoiceOrganization(c *gin.Context, params CreateJournalVoiceOrganizationParams)
+
+	// (GET /v1/journal/voice/organizations/{taskID})
+	GetJournalVoiceOrganization(c *gin.Context, taskID openapi_types.UUID, params GetJournalVoiceOrganizationParams)
+
+	// (POST /v1/journal/voice/organizations/{taskID}/cancel)
+	CancelJournalVoiceOrganization(c *gin.Context, taskID openapi_types.UUID, params CancelJournalVoiceOrganizationParams)
+
+	// (POST /v1/journal/voice/organizations/{taskID}/retry)
+	RetryJournalVoiceOrganization(c *gin.Context, taskID openapi_types.UUID, params RetryJournalVoiceOrganizationParams)
 	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
 	// (GET /v1/journal/voice/recordings/{recordingID})
 	GetJournalRecording(c *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams)
@@ -1569,6 +1687,205 @@ func (siw *ServerInterfaceWrapper) GetJournalReadAloudVoices(c *gin.Context) {
 	siw.Handler.GetJournalReadAloudVoices(c, params)
 }
 
+// CreateJournalVoiceOrganization operation middleware
+func (siw *ServerInterfaceWrapper) CreateJournalVoiceOrganization(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateJournalVoiceOrganizationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateJournalVoiceOrganization(c, params)
+}
+
+// GetJournalVoiceOrganization operation middleware
+func (siw *ServerInterfaceWrapper) GetJournalVoiceOrganization(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "taskID" -------------
+	var taskID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskID", c.Param("taskID"), &taskID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter taskID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetJournalVoiceOrganizationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetJournalVoiceOrganization(c, taskID, params)
+}
+
+// CancelJournalVoiceOrganization operation middleware
+func (siw *ServerInterfaceWrapper) CancelJournalVoiceOrganization(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "taskID" -------------
+	var taskID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskID", c.Param("taskID"), &taskID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter taskID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelJournalVoiceOrganizationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelJournalVoiceOrganization(c, taskID, params)
+}
+
+// RetryJournalVoiceOrganization operation middleware
+func (siw *ServerInterfaceWrapper) RetryJournalVoiceOrganization(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "taskID" -------------
+	var taskID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskID", c.Param("taskID"), &taskID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter taskID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryJournalVoiceOrganizationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "X-Tellyouwhat-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tellyouwhat-Request-ID")]; found {
+		var XTellyouwhatRequestID RequestIDHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Tellyouwhat-Request-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tellyouwhat-Request-ID", valueList[0], &XTellyouwhatRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Tellyouwhat-Request-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XTellyouwhatRequestID = XTellyouwhatRequestID
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter X-Tellyouwhat-Request-ID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryJournalVoiceOrganization(c, taskID, params)
+}
+
 // GetJournalRecording operation middleware
 func (siw *ServerInterfaceWrapper) GetJournalRecording(c *gin.Context) {
 
@@ -1986,6 +2303,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/v1/journal/voice/organizations", wrapper.CreateJournalVoiceOrganization)
+	router.GET(options.BaseURL+"/v1/journal/voice/organizations/:taskID", wrapper.GetJournalVoiceOrganization)
+	router.POST(options.BaseURL+"/v1/journal/voice/organizations/:taskID/retry", wrapper.RetryJournalVoiceOrganization)
+	router.POST(options.BaseURL+"/v1/journal/voice/organizations/:taskID/cancel", wrapper.CancelJournalVoiceOrganization)
 	router.POST(options.BaseURL+"/v1/journal/read-aloud/syntheses", wrapper.CreateJournalReadAloudSynthesis)
 	router.DELETE(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.CancelJournalReadAloudSynthesis)
 	router.GET(options.BaseURL+"/v1/journal/read-aloud/syntheses/:synthesisID", wrapper.GetJournalReadAloudSynthesis)
@@ -2674,6 +2995,168 @@ func (response GetJournalReadAloudVoicesdefaultJSONResponse) VisitGetJournalRead
 	return err
 }
 
+type CreateJournalVoiceOrganizationRequestObject struct {
+	Params CreateJournalVoiceOrganizationParams
+	Body   *CreateJournalVoiceOrganizationJSONRequestBody
+}
+
+type CreateJournalVoiceOrganizationResponseObject interface {
+	VisitCreateJournalVoiceOrganizationResponse(w http.ResponseWriter) error
+}
+
+type CreateJournalVoiceOrganization200JSONResponse VoiceOrganizationTask
+
+func (response CreateJournalVoiceOrganization200JSONResponse) VisitCreateJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateJournalVoiceOrganizationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateJournalVoiceOrganizationdefaultJSONResponse) VisitCreateJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalVoiceOrganizationRequestObject struct {
+	TaskID openapi_types.UUID `json:"taskID"`
+	Params GetJournalVoiceOrganizationParams
+}
+
+type GetJournalVoiceOrganizationResponseObject interface {
+	VisitGetJournalVoiceOrganizationResponse(w http.ResponseWriter) error
+}
+
+type GetJournalVoiceOrganization200JSONResponse VoiceOrganizationTask
+
+func (response GetJournalVoiceOrganization200JSONResponse) VisitGetJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJournalVoiceOrganizationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetJournalVoiceOrganizationdefaultJSONResponse) VisitGetJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalVoiceOrganizationRequestObject struct {
+	TaskID openapi_types.UUID `json:"taskID"`
+	Params CancelJournalVoiceOrganizationParams
+	Body   *CancelJournalVoiceOrganizationJSONRequestBody
+}
+
+type CancelJournalVoiceOrganizationResponseObject interface {
+	VisitCancelJournalVoiceOrganizationResponse(w http.ResponseWriter) error
+}
+
+type CancelJournalVoiceOrganization200JSONResponse VoiceOrganizationTask
+
+func (response CancelJournalVoiceOrganization200JSONResponse) VisitCancelJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelJournalVoiceOrganizationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CancelJournalVoiceOrganizationdefaultJSONResponse) VisitCancelJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalVoiceOrganizationRequestObject struct {
+	TaskID openapi_types.UUID `json:"taskID"`
+	Params RetryJournalVoiceOrganizationParams
+	Body   *RetryJournalVoiceOrganizationJSONRequestBody
+}
+
+type RetryJournalVoiceOrganizationResponseObject interface {
+	VisitRetryJournalVoiceOrganizationResponse(w http.ResponseWriter) error
+}
+
+type RetryJournalVoiceOrganization200JSONResponse VoiceOrganizationTask
+
+func (response RetryJournalVoiceOrganization200JSONResponse) VisitRetryJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryJournalVoiceOrganizationdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response RetryJournalVoiceOrganizationdefaultJSONResponse) VisitRetryJournalVoiceOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetJournalRecordingRequestObject struct {
 	RecordingID openapi_types.UUID `json:"recordingID"`
 	Params      GetJournalRecordingParams
@@ -3109,6 +3592,18 @@ type StrictServerInterface interface {
 	// GetJournalReadAloudVoices Public verified voice metadata, excluding credentials and provider configuration.
 	// (GET /v1/journal/read-aloud/voices)
 	GetJournalReadAloudVoices(ctx context.Context, request GetJournalReadAloudVoicesRequestObject) (GetJournalReadAloudVoicesResponseObject, error)
+
+	// (POST /v1/journal/voice/organizations)
+	CreateJournalVoiceOrganization(ctx context.Context, request CreateJournalVoiceOrganizationRequestObject) (CreateJournalVoiceOrganizationResponseObject, error)
+
+	// (GET /v1/journal/voice/organizations/{taskID})
+	GetJournalVoiceOrganization(ctx context.Context, request GetJournalVoiceOrganizationRequestObject) (GetJournalVoiceOrganizationResponseObject, error)
+
+	// (POST /v1/journal/voice/organizations/{taskID}/cancel)
+	CancelJournalVoiceOrganization(ctx context.Context, request CancelJournalVoiceOrganizationRequestObject) (CancelJournalVoiceOrganizationResponseObject, error)
+
+	// (POST /v1/journal/voice/organizations/{taskID}/retry)
+	RetryJournalVoiceOrganization(ctx context.Context, request RetryJournalVoiceOrganizationRequestObject) (RetryJournalVoiceOrganizationResponseObject, error)
 	// GetJournalRecording Authenticated whole-recording processing; see docs/journal/recording-analysis-validation.md.
 	// (GET /v1/journal/voice/recordings/{recordingID})
 	GetJournalRecording(ctx context.Context, request GetJournalRecordingRequestObject) (GetJournalRecordingResponseObject, error)
@@ -3545,6 +4040,134 @@ func (sh *strictHandler) GetJournalReadAloudVoices(ctx *gin.Context, params GetJ
 	}
 }
 
+// CreateJournalVoiceOrganization operation middleware
+func (sh *strictHandler) CreateJournalVoiceOrganization(ctx *gin.Context, params CreateJournalVoiceOrganizationParams) {
+	var request CreateJournalVoiceOrganizationRequestObject
+
+	request.Params = params
+
+	var body CreateJournalVoiceOrganizationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateJournalVoiceOrganization(ctx, request.(CreateJournalVoiceOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateJournalVoiceOrganization")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateJournalVoiceOrganizationResponseObject); ok {
+		if err := validResponse.VisitCreateJournalVoiceOrganizationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJournalVoiceOrganization operation middleware
+func (sh *strictHandler) GetJournalVoiceOrganization(ctx *gin.Context, taskID openapi_types.UUID, params GetJournalVoiceOrganizationParams) {
+	var request GetJournalVoiceOrganizationRequestObject
+
+	request.TaskID = taskID
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJournalVoiceOrganization(ctx, request.(GetJournalVoiceOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJournalVoiceOrganization")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetJournalVoiceOrganizationResponseObject); ok {
+		if err := validResponse.VisitGetJournalVoiceOrganizationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelJournalVoiceOrganization operation middleware
+func (sh *strictHandler) CancelJournalVoiceOrganization(ctx *gin.Context, taskID openapi_types.UUID, params CancelJournalVoiceOrganizationParams) {
+	var request CancelJournalVoiceOrganizationRequestObject
+
+	request.TaskID = taskID
+	request.Params = params
+
+	var body CancelJournalVoiceOrganizationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelJournalVoiceOrganization(ctx, request.(CancelJournalVoiceOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelJournalVoiceOrganization")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CancelJournalVoiceOrganizationResponseObject); ok {
+		if err := validResponse.VisitCancelJournalVoiceOrganizationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryJournalVoiceOrganization operation middleware
+func (sh *strictHandler) RetryJournalVoiceOrganization(ctx *gin.Context, taskID openapi_types.UUID, params RetryJournalVoiceOrganizationParams) {
+	var request RetryJournalVoiceOrganizationRequestObject
+
+	request.TaskID = taskID
+	request.Params = params
+
+	var body RetryJournalVoiceOrganizationJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryJournalVoiceOrganization(ctx, request.(RetryJournalVoiceOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryJournalVoiceOrganization")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(RetryJournalVoiceOrganizationResponseObject); ok {
+		if err := validResponse.VisitRetryJournalVoiceOrganizationResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetJournalRecording operation middleware
 func (sh *strictHandler) GetJournalRecording(ctx *gin.Context, recordingID openapi_types.UUID, params GetJournalRecordingParams) {
 	var request GetJournalRecordingRequestObject
@@ -3786,91 +4409,101 @@ func (sh *strictHandler) GetJournalWritingStyles(ctx *gin.Context, params GetJou
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

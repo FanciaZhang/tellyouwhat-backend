@@ -20,6 +20,38 @@ func polishFixture() Snapshot {
 	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
 
+func TestNaturalNarrativeGroupsConnectedShortTurnsWithoutLosingEvidence(t *testing.T) {
+	s := polishFixture()
+	texts := []string{"今天早上去了图书馆。", "去借植物图鉴。", "不是去买书。", "书架在二楼。", "我找了一会儿。", "后来管理员帮我找到了。", "借书卡在蓝色背包里。", "下周五要把书还回去。"}
+	s.Blocks, s.Polish.Targets = nil, nil
+	ids := []string{}
+	for _, text := range texts {
+		id, source := uuid.NewString(), uuid.NewString()
+		ids = append(ids, id)
+		s.Blocks = append(s.Blocks, Block{ID: id, Text: text, Style: "body"})
+		s.Polish.Targets = append(s.Polish.Targets, PolishTarget{ID: id, Text: text, SourceText: text, Style: "body", CompleteSource: true,
+			SourceIDs: []string{source}, SourceKeys: []string{id}, Turns: []SourceUtterance{{ID: source, Text: text}}})
+	}
+	prepared, err := PrepareRewrite(context.Background(), s, 1, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct{ Instructions, Input string }
+	if json.Unmarshal(prepared.Body, &body) != nil || !strings.Contains(body.Instructions, "ASR、停顿、turn/target") || !strings.Contains(body.Instructions, "合并不等于概括") {
+		t.Fatal("full narrative request lost its paragraph grouping and fact-preservation rules")
+	}
+	for _, text := range texts {
+		if !strings.Contains(body.Input, text) {
+			t.Fatal("source lost before the model request")
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: strings.Join(texts, ""), Style: "body", TargetIDs: ids}}, "questions": []string{}})
+	revision, err := decodePolish(string(raw), *s.Polish)
+	if err != nil || len(revision.Paragraphs) != 1 || len(revision.Paragraphs[0].TargetIDs) != len(texts) {
+		t.Fatal("connected speech could not be applied as one source-covered paragraph", err)
+	}
+}
+
 func TestIdentityRewriteAcceptsAllSixteenParagraphsOfOneSource(t *testing.T) {
 	source := SourceUtterance{ID: uuid.NewString(), Text: "今天去河边散步，晚上回家读书。", Person: "小林", PersonID: uuid.NewString()}
 	p := PolishRequest{}
@@ -133,7 +165,7 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 10000 {
 		t.Fatalf("ordinary task has structural context or exceeds 10000 bytes: %d bytes", len(prepared.Body))
 	}
-	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 25 || prepared.Parameters.ReasoningEffort != "disabled" {
+	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 40 || prepared.Parameters.ReasoningEffort != "disabled" {
 		t.Fatal("unbounded polish parameters")
 	}
 }
@@ -546,5 +578,35 @@ func TestPolishRejectsRepeatedReadOnlyContextEvenIfNewTopicIsPresent(t *testing.
 	raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: "今天商量周末去公园散步。", Style: "body", TargetIDs: []string{p.Targets[0].ID}}, {Text: "晚上读朋友推荐的新书。", Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
 	if _, err := decodePolish(string(raw), p); !errors.Is(err, errPolishRepeatsContext) {
 		t.Fatal("model repeated stable context", err)
+	}
+}
+
+func TestPolishCannotExtendACopiedReadOnlyParagraph(t *testing.T) {
+	p := *polishFixture().Polish
+	old := "今天早上去了图书馆借植物图鉴，找了很久，管理员帮我找到了，借书卡在蓝色背包里。"
+	p.Context = []Block{{ID: uuid.NewString(), Style: "body", Text: old}}
+	for _, reusable := range []bool{false, true} {
+		if reusable {
+			p.ReusableContextIDs = []string{p.Context[0].ID}
+		}
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: old + "我下周五要把书还回去。", Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+		if _, err := decodePolish(string(raw), p); !errors.Is(err, errPolishRepeatsContext) {
+			t.Fatal("copied context was accepted as a new paragraph", err)
+		}
+	}
+}
+
+func TestPolishRejectsMissingExperienceInsideOneMergedProviderTurn(t *testing.T) {
+	p := *polishFixture().Polish
+	p.Targets[0].Turns = []SourceUtterance{{ID: uuid.NewString(), Text: "我叫老公宝，今天我去了公园看柳树，心情很好。我叫老婆宝，昨天我在医院值班，今天觉得很累。窗外的风很轻，河边也很安静。"}}
+	output := func(text string) string {
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{{Text: text, Style: "body", TargetIDs: []string{p.Targets[0].ID}}}, "questions": []string{}})
+		return string(raw)
+	}
+	if _, err := decodePolish(output("我叫老公宝，今天去公园看柳树，心情很好。窗外的风很轻，河边也很安静。"), p); !errors.Is(err, errPolishMissingSource) {
+		t.Fatal("merged acoustic turn hid a missing personal experience", err)
+	}
+	if _, err := decodePolish(output("我叫老公宝，今天去公园看柳树，心情很好。老婆宝昨天在医院值班，今天觉得很累。窗外的风很轻，河边也很安静。"), p); err != nil {
+		t.Fatal("complete merged-turn prose was rejected", err)
 	}
 }

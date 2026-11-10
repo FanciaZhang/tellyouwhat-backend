@@ -267,7 +267,7 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 	quotaFailure := func() {
 		emit(Event{Type: "error", Code: "voice_quota_exhausted", SegmentID: segment, RemainingMilliseconds: remaining})
 	}
-	maxEnd := minTime(time.Now().Add(31*time.Minute), claim.Identity.ExpiresAt)
+	maxEnd := voiceSessionDeadline(time.Now(), claim.Identity.ExpiresAt)
 	launch := func() {
 		if running || awaitingRevision >= 0 || awaitingPolishID != "" || awaitingIdentity != "" || !dirty || len(snapshot.Blocks) == 0 || !hasWork() {
 			return
@@ -651,6 +651,13 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 					wireUtterances[i].Definite = false
 				}
 			}
+			// Word timing is final source evidence; repeating it in every
+			// cumulative draft makes long recordings increasingly expensive.
+			if !v.Final {
+				for i := range wireUtterances {
+					wireUtterances[i].Words = nil
+				}
+			}
 			kind := "transcript"
 			if v.Final {
 				if !recognitionClosing || segment != "" || recognitionBytes == 0 {
@@ -742,14 +749,14 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						emit(Event{Type: "identity_error", Code: "voice_identity_unavailable", Identity: &IdentityRevision{Request: *runningIdentity,
 							Assignments: []IdentityAssignment{}, NarratorEvidenceIDs: []string{}, Commands: []IdentityCommand{}}})
 					} else {
-						emit(Event{Type: "rewrite_error", Code: "voice_rewrite_unavailable"})
+						emit(Event{Type: "rewrite_error", Code: rewriteClientCode(result.err)})
 					}
 					waitingForPolishRetry = true
 					// Keep ASR and audio receipts alive. The client owns the independent
 					// bounded polish retry/pause state, persisted with the visible body.
 					dirty = false
 				} else {
-					failWithCause("voice_rewrite_unavailable", "rewrite_result", result.err)
+					failWithCause(rewriteClientCode(result.err), "rewrite_result", result.err)
 					dirty = true
 					if finishing {
 						return
@@ -794,6 +801,11 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		}
 	}
 }
+func voiceSessionDeadline(start, identityExpiry time.Time) time.Time {
+	// Audio remains capped at 30 minutes; upload, reconnect and final organization need their own headroom.
+	return minTime(start.Add(time.Duration(SessionMilliseconds)*time.Millisecond+10*time.Minute), identityExpiry)
+}
+
 func minTime(a, b time.Time) time.Time {
 	if a.Before(b) {
 		return a

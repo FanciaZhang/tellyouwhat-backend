@@ -205,6 +205,9 @@ func captureRawRequestBody() gin.HandlerFunc {
 }
 
 func requestBodyLimit(method, path string) int64 {
+	if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/voice/organizations/") && (strings.HasSuffix(path, "/retry") || strings.HasSuffix(path, "/cancel")) {
+		return 1024
+	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/voice/recordings/") {
 		if strings.HasSuffix(path, "/preview") {
 			return 1 << 20
@@ -214,6 +217,8 @@ func requestBodyLimit(method, path string) int64 {
 		}
 	}
 	switch method + " " + path {
+	case "POST /v1/journal/voice/organizations":
+		return 3 << 20
 	case "POST /v1/journal/illustrations":
 		return 34_000_000
 	case "POST /v2/birthday/assist":

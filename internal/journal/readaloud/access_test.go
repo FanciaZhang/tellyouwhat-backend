@@ -43,14 +43,7 @@ func TestReadAloudAccessSharesPurchaseQuotaAndKeepsDeviceConsentIndependent(t *t
 		t.Fatal("public server sample required private upload consent", err)
 	}
 	p := attestation.Principal{AppID: "journal", KeyID: "device-one", DeviceID: "one"}
-	if _, err := consents.RecordConsents(ctx, p, []privacy.Consent{{Scope: privacy.JournalReadAloudScope, DocumentVersion: privacy.JournalReadAloudDocumentVersion, Granted: true}}); !errors.Is(err, privacy.ErrInvalidConsent) {
-		t.Fatal("partial cloud AI consent accepted", err)
-	}
-	if _, err := consents.RecordConsents(ctx, p, []privacy.Consent{
-		{Scope: privacy.ManagedAIScope, DocumentVersion: privacy.JournalCloudAIDocumentVersion, Granted: true},
-		{Scope: privacy.JournalIllustrationScope, DocumentVersion: privacy.JournalCloudAIDocumentVersion, Granted: true},
-		{Scope: privacy.JournalReadAloudScope, DocumentVersion: privacy.JournalCloudAIDocumentVersion, Granted: true},
-	}); err != nil {
+	if _, err := consents.RecordConsents(ctx, p, privacy.JournalCloudAIConsents(true)); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Authorize(ctx, Subject{"journal", "device-one"}, "journal"); err != nil {

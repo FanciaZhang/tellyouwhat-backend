@@ -43,6 +43,7 @@ import (
 	journalservice "github.com/tellyouwhat/backend/internal/journal/service"
 	"github.com/tellyouwhat/backend/internal/journal/simulatortest"
 	"github.com/tellyouwhat/backend/internal/journal/voice"
+	"github.com/tellyouwhat/backend/internal/journal/voicestore"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"github.com/tellyouwhat/backend/internal/media"
 	"github.com/tellyouwhat/backend/internal/observability"
@@ -79,6 +80,7 @@ type sharedStorage struct {
 type appStorage struct {
 	voiceCatalog               *readaloud.CatalogStore
 	images                     *illustrationstore.Store
+	voiceOrganizations         *voicestore.Store
 	background                 *sync.WaitGroup
 	prompts                    *promptconfig.Cache
 	operations                 platformops.Reader
@@ -351,6 +353,9 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 			capabilityUses: capability.NewMemoryUseStore(), media: media.NewMemoryRegistry(),
 			usage: usage.NewMemoryRecorder(), privacy: privacy.NewMemoryRepository(), voiceStore: voice.NewMemoryStore(),
 		}
+		if appConfig.Registry.ID == appregistry.Journal {
+			storage.privacy = mysqlstore.NewJournalPrivacyRepository(shared.database, storage.images.Withdraw)
+		}
 		if appConfig.Registry.ID == appregistry.Health {
 			freeLimiter := quota.NewMemoryLimiter(appConfig.FreeRecognitionQuota)
 			storage.freeRecognitionLimiter = freeLimiter
@@ -367,21 +372,19 @@ func storageForApp(platform config.PlatformConfig, shared sharedStorage, appConf
 	}
 	jobRepository := mysqlstore.NewJobRepository(shared.database, shared.cipher, appID)
 	storage := appStorage{
-		images:            &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
-		voiceCatalog:      &readaloud.CatalogStore{DB: shared.database},
-		operations:        ops,
-		executionPolicies: aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
-		attemptPrices:     (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
-		attemptModels:     (airollout.Store{DB: shared.database}).RecordModel(arkEndpoints(appConfig.Ark)),
-		nonces:            redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
+		images:             &illustrationstore.Store{Database: shared.database, Cipher: shared.cipher},
+		voiceOrganizations: &voicestore.Store{Database: shared.database, Cipher: shared.cipher},
+		voiceCatalog:       &readaloud.CatalogStore{DB: shared.database},
+		operations:         ops,
+		executionPolicies:  aiconfig.Resolver{Store: aiconfig.MySQLStore{DB: shared.database}},
+		attemptPrices:      (airollout.Store{DB: shared.database}).Reservation(arkEndpoints(appConfig.Ark)),
+		attemptModels:      (airollout.Store{DB: shared.database}).RecordModel(arkEndpoints(appConfig.Ark)),
+		nonces:             redisstore.NewNonceStore(shared.redis, appID), keys: mysqlstore.NewKeyRepository(shared.database, appID),
 		entitlements: mysqlstore.NewEntitlementRepository(shared.database, appID), jobs: jobRepository,
 		outbox: jobRepository, limiter: limiter, quotaReader: limiter, reconciler: limiter,
 		capabilityUses: redisstore.NewCapabilityUseStore(shared.redis, appID),
 		media:          mysqlstore.NewMediaRepository(shared.database, appID), usage: mysqlstore.NewUsageRepository(shared.database, appID),
 		privacy: mysqlstore.NewPrivacyRepository(shared.database, appID), privacyCache: redisstore.NewPrivacyCleaner(shared.redis, appID),
-	}
-	if appConfig.Registry.ID == appregistry.Journal {
-		storage.privacy = mysqlstore.NewJournalPrivacyRepository(shared.database, storage.images.Withdraw)
 	}
 	if appConfig.Registry.ID == appregistry.Health {
 		freeLimiter := redisstore.NewQuotaLimiter(shared.redis, appConfig.FreeRecognitionQuota, appID)
@@ -447,6 +450,9 @@ func buildAppHandler(
 		runRecordingRetention(ctx, store, storage.background, logger)
 	}
 	var speechConfig *readAloudConfig
+	if app.ID == appregistry.Journal && storage.voiceOrganizations != nil {
+		storage.privacyCache = &journalVoiceOrganizationPrivacy{store: storage.voiceOrganizations, next: storage.privacyCache}
+	}
 	var speechPrivacy *readAloudPrivacy
 	if app.ID == appregistry.Journal {
 		var err error
@@ -621,6 +627,63 @@ func buildAppHandler(
 			}
 			if storage.prompts != nil {
 				rewriter = voice.ConfiguredRewriter{Next: rewriter, Config: storage.prompts}
+			}
+			if storage.voiceOrganizations != nil {
+				if storage.background == nil || costController == nil || storage.prompts == nil {
+					return nil, errors.New("voice organization requires managed durable storage, policy and budget")
+				}
+				if err := storage.voiceOrganizations.Ready(ctx); err != nil {
+					return nil, errors.New("voice organization schema unavailable")
+				}
+				organization := &voice.OrganizationService{Store: storage.voiceOrganizations, Model: rewriter, Prompts: storage.prompts, Now: time.Now}
+				organization.Authorize = func(ctx context.Context, owner string) bool {
+					principal := attestation.Principal{AppID: "journal", KeyID: owner}
+					allowed, err := entitlementChecker.HasManagedSubscription(ctx, principal)
+					if err != nil || !allowed {
+						return false
+					}
+					allowed, err = privacyService.HasRequiredConsents(ctx, principal, []string{privacy.ManagedAIScope})
+					return err == nil && allowed && platformops.Check(ctx, storage.operations, "journal", "journal.voice.rewrite") == nil
+				}
+				organization.Admit = func(ctx context.Context, job voice.OrganizationJob, snapshot voice.Snapshot) (func(voice.RewriteResult, error), error) {
+					p := job.Principal
+					fast, err := voice.PrepareRewrite(ctx, snapshot, 0, appConfig.VoiceModel)
+					if err != nil {
+						return nil, err
+					}
+					snapshot.Organization = false
+					full, err := voice.PrepareRewrite(ctx, snapshot, 0, appConfig.VoiceModel)
+					if err != nil {
+						return nil, err
+					}
+					estimated := len(fast.Body) + len(full.Body) + fast.Parameters.MaxOutputTokens + full.Parameters.MaxOutputTokens
+					account := p.TransactionID
+					if account == "" {
+						account = p.KeyID
+					}
+					lease, err := storage.limiter.Acquire(ctx, quota.Identity{DeviceID: p.DeviceID, TransactionID: account, IP: job.IP}, contracts.Operation("journal.voice"), estimated, "", time.Now())
+					if err != nil {
+						return nil, err
+					}
+					return func(result voice.RewriteResult, callErr error) {
+						actual := result.InputTokens + result.OutputTokens
+						if callErr != nil && actual == 0 {
+							actual = estimated
+						}
+						lease.Release(actual)
+					}, nil
+				}
+				organization.Usage = func(ctx context.Context, owner, id string, result voice.RewriteResult) {
+					if simulatortest.IsKey(owner) {
+						return
+					}
+					if err := storage.usage.Record(ctx, usage.Record{RequestID: id, KeyID: owner, Operation: contracts.Operation("journal.voice"), InputTokens: result.InputTokens, OutputTokens: result.OutputTokens, OccurredAt: time.Now()}); err != nil {
+						voiceLogger.Error("voice organization usage record failed")
+					}
+				}
+				dependencies.JournalVoiceOrganizations = organization
+				storage.background.Add(1)
+				go func() { defer storage.background.Done(); organization.Run(ctx) }()
 			}
 			if appConfig.JournalRecording != nil && appConfig.JournalRecording.Enabled {
 				if recordingPrivacy == nil || costController == nil {

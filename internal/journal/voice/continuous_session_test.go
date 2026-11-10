@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -184,5 +185,39 @@ func TestFailedRecognitionKeepsIndependentAudioAcknowledgement(t *testing.T) {
 	receipt, err := store.Receipt(context.Background(), owner, session, segment)
 	if err != nil || receipt == nil || receipt.Milliseconds != 200 {
 		t.Fatal("recognition failure erased audio acknowledgement", receipt, err)
+	}
+}
+
+func TestInterimSpeechAvoidsRepeatedWordPayloadAndFinalKeepsOriginalTiming(t *testing.T) {
+	speech := newContinuousTestSpeech()
+	service := &Service{Store: NewMemoryStore(), Speech: speech, Secret: make([]byte, 32)}
+	ws := voiceLifecycleSocket(t, service, Identity{Owner: "timed-source", Anchor: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, uuid.NewString())
+	snapshot := Snapshot{DictationMode: true, Blocks: []Block{{ID: uuid.NewString(), Style: "body"}}}
+	websocket.JSON.Send(ws, Frame{Type: "snapshot", Snapshot: &snapshot})
+	recognition, segment := uuid.NewString(), uuid.NewString()
+	websocket.JSON.Send(ws, Frame{Type: "audio", SegmentID: segment, RecognitionID: recognition, PCM: make([]byte, 6400), Final: true})
+	voiceLifecycleUntil(t, ws, "receipt")
+	turn := StreamUtterance{Text: "今天在河边散步。", StartMilliseconds: 0, EndMilliseconds: 200, Definite: true, Speaker: "2"}
+	for range 500 {
+		turn.Words = append(turn.Words, StreamWord{Text: "散步", StartMilliseconds: 0, EndMilliseconds: 200})
+	}
+	transcript := Transcript{Text: turn.Text, Stable: turn.Text, Utterances: []StreamUtterance{turn}}
+	speech.conn.result <- transcript
+	draft := voiceLifecycleUntil(t, ws, "transcript")
+	if len(draft.Utterances) != 1 || draft.Utterances[0].Speaker != "2" || len(draft.Utterances[0].Words) != 0 {
+		t.Fatal("interim sentence evidence was lost or word history was repeated")
+	}
+	websocket.JSON.Send(ws, Frame{Type: "recognition_finish", RecognitionID: recognition})
+	<-speech.finalInput
+	transcript.Final = true
+	speech.conn.result <- transcript
+	final := voiceLifecycleUntil(t, ws, "recognition_completed")
+	if len(final.Utterances) != 1 || len(final.Utterances[0].Words) != 500 || final.Utterances[0].ID != draft.Utterances[0].ID || len(transcript.Utterances[0].Words) != 500 {
+		t.Fatal("final word timing or stable source identity changed")
+	}
+	a, _ := json.Marshal(draft)
+	b, _ := json.Marshal(final)
+	if len(a)*3 >= len(b) {
+		t.Fatal("interim payload still grows with the complete word history", len(a), len(b))
 	}
 }

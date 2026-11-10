@@ -11,6 +11,7 @@ public enum JournalAPIBodyLimits {
     public static let imageJSON = 34_000_000
     public static let ordinaryResponse = 1_048_576
     public static let voiceCatalog = 32 * 1024 * 1024
+    public static let voiceOrganization = 8 * 1024 * 1024
 
     public static func isReadAloudStream(method: String, path: String, operationID: String) -> Bool {
         let route = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0]
@@ -23,14 +24,23 @@ public enum JournalAPIBodyLimits {
     }
 
     public static func request(method: String, path: String, operationID: String, fallback: Int) -> Int {
-        method == "POST" && path == "/v1/journal/illustrations"
+        if method == "POST" && path == "/v1/journal/voice/organizations"
+            && operationID == Operations.CreateJournalVoiceOrganization.id { return 3 * 1024 * 1024 }
+        return method == "POST" && path == "/v1/journal/illustrations"
             && operationID == Operations.CreateJournalIllustration.id ? imageJSON : fallback
     }
 
     public static func response(method: String, path: String, operationID: String, status: Int) -> Int {
+        if status == 200 && method == "POST" && path == "/v1/journal/voice/organizations"
+            && operationID == Operations.CreateJournalVoiceOrganization.id { return voiceOrganization }
         if status == 200 && method == "GET" && path == "/v1/journal/read-aloud/voices"
             && operationID == Operations.GetJournalReadAloudVoices.id { return voiceCatalog }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        if status == 200, method == "GET", operationID == Operations.GetJournalVoiceOrganization.id,
+           parts.count == 6, parts[0].isEmpty, parts[1] == "v1", parts[2] == "journal", parts[3] == "voice",
+           parts[4] == "organizations", let id = UUID(uuidString: String(parts[5])), id.uuidString.lowercased() == parts[5] {
+            return voiceOrganization
+        }
         guard status == 200, method == "GET", operationID == Operations.GetJournalIllustrationResult.id,
               parts.count == 6, parts[0].isEmpty, parts[1] == "v1", parts[2] == "journal",
               parts[3] == "illustrations", parts[5] == "result",

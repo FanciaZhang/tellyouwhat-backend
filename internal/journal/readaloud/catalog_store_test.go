@@ -29,6 +29,74 @@ func anotherMutation(m aiconfig.Mutation) aiconfig.Mutation {
 	return m
 }
 
+func TestMySQLVoiceCatalogExplicitManualPublicationPersistsApprovalWithoutProbe(t *testing.T) {
+	store, m, now := catalogTestStore(t)
+	ctx := context.Background()
+	v := draftVoice()
+	v.Enabled = true
+	input := CatalogDraft{DefaultVoiceID: v.ID, Voices: []VoiceConfiguration{Configuration(v)}}
+	draft, err := store.Draft(ctx, input, m, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publication := CatalogPublication{Revision: draft.Version}
+	if _, err := store.Publish(ctx, publication, anotherMutation(m), now); !errors.Is(err, ErrCatalog) {
+		t.Fatal("ordinary publication skipped synthesis verification", err)
+	}
+	publication.SkipSynthesisVerification = true
+	m = anotherMutation(m)
+	if _, err := store.Publish(ctx, publication, m, now); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := store.Publish(ctx, publication, m, now); err != nil || replay.PublishedAt == nil {
+		t.Fatal("manual publication not idempotent", err)
+	}
+	changed := publication
+	changed.SkipSynthesisVerification = false
+	if _, err := store.Publish(ctx, changed, m, now); !errors.Is(err, ErrCatalogConflict) {
+		t.Fatal("approval policy change reused mutation key", err)
+	}
+	current, err := store.Current(ctx)
+	if err != nil || !current.Voices[0].IsApproved() || current.Voices[0].IsVerified() || current.Voices[0].Verification != nil {
+		t.Fatal("approval not durably stored independently of probe evidence", err)
+	}
+	var proofs, audits int
+	if err := store.DB.QueryRow(`SELECT COUNT(*) FROM journal_voice_verifications`).Scan(&proofs); err != nil || proofs != 0 {
+		t.Fatal("manual publication manufactured a probe", proofs, err)
+	}
+	if err := store.DB.QueryRow(`SELECT COUNT(*) FROM admin_audit_events WHERE action='read_aloud.catalog.publish'`).Scan(&audits); err != nil || audits != 1 {
+		t.Fatal("manual publication missing audit or duplicated on replay", audits, err)
+	}
+	input.BaseVersion = current.Version
+	input.Voices[0].Name = "新的展示名称"
+	draft, err = store.Draft(ctx, input, anotherMutation(m), now)
+	if err != nil || !draft.Voices[0].IsApproved() || draft.Voices[0].IsVerified() {
+		t.Fatal("presentation edit lost administrator approval", err)
+	}
+	if _, err := store.Publish(ctx, CatalogPublication{Revision: draft.Version, BaseVersion: input.BaseVersion}, anotherMutation(m), now); err != nil {
+		t.Fatal("presentation edit required renewed approval", err)
+	}
+	input.BaseVersion = draft.Version
+	input.Voices[0].Dialects = append(input.Voices[0].Dialects, "beijing")
+	draft, err = store.Draft(ctx, input, anotherMutation(m), now)
+	if err != nil || draft.Voices[0].IsApproved() {
+		t.Fatal("capability change retained approval", err)
+	}
+	if _, err := store.Publish(ctx, CatalogPublication{Revision: draft.Version, BaseVersion: input.BaseVersion}, anotherMutation(m), now); !errors.Is(err, ErrCatalog) {
+		t.Fatal("capability change published without approval", err)
+	}
+	for _, billing := range []string{"unreviewed", "premium", "voice-slot", "unavailable"} {
+		input.Voices[0].BillingClass = billing
+		draft, err := store.Draft(ctx, input, anotherMutation(m), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Publish(ctx, CatalogPublication{Revision: draft.Version, BaseVersion: input.BaseVersion, SkipSynthesisVerification: true}, anotherMutation(m), now); !errors.Is(err, ErrCatalog) {
+			t.Fatal("manual approval bypassed standard billing restriction", billing, err)
+		}
+	}
+}
+
 func TestMySQLVoiceCatalogPublicationRollbackAndImmutableHistory(t *testing.T) {
 	store, m, now := catalogTestStore(t)
 	ctx := context.Background()

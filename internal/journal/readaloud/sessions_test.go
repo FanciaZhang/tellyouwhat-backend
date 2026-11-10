@@ -87,6 +87,7 @@ type sessionCatalog struct{ value CatalogRevision }
 func (c sessionCatalog) Current(context.Context) (CatalogRevision, error) { return c.value, nil }
 
 type sessionProvider struct {
+	timings      []Timing
 	calls        atomic.Int32
 	started      chan struct{}
 	release      chan struct{}
@@ -98,6 +99,11 @@ type sessionProvider struct {
 
 func (p *sessionProvider) Synthesize(ctx context.Context, input Synthesis, emit func([]byte) error) (SynthesisUsage, error) {
 	p.calls.Add(1)
+	if len(p.timings) > 0 {
+		if err := input.OnTimings(p.timings); err != nil {
+			return SynthesisUsage{}, err
+		}
+	}
 	p.textMu.Lock()
 	p.text = input.Text
 	p.textMu.Unlock()
@@ -282,6 +288,8 @@ func TestReadAloudSessionsBoundOwnersAndRetainDurableIdentityAfterExpiry(t *test
 	}
 	close(f.provider.release)
 	waitSession(t, f.s, f.grant.Subject, f.command.RequestID, "succeeded")
+	// Drain canceled prefetch workers before comparing the provider call count.
+	f.s.jobs.Wait()
 	f.clock.Add(int64(4 * time.Minute))
 	if _, _, _, err := f.s.Read(ctx, f.grant.Subject, f.command.RequestID, 0); err != ErrAudioUnavailable {
 		t.Fatal("expired audio retained", err)
@@ -463,5 +471,28 @@ func TestReadAloudSessionsRecheckVoiceBeforePaidCall(t *testing.T) {
 	row, err := f.ledger.Get(context.Background(), f.grant.Subject, f.command.RequestID)
 	if err != nil || f.provider.calls.Load() != 0 || !row.UsageKnown || row.ActualCharacters != 0 || info.Problem != "voice_changed" {
 		t.Fatal("disabled voice started a paid call", row, info, err)
+	}
+}
+
+func TestSessionTimingSnapshotsResumeWithoutChangingPCMCursor(t *testing.T) {
+	f := newSessionFixture(t)
+	f.provider.timings = []Timing{{0, 100, 0, 1}, {110, 200, 1, 1}}
+	info, err := f.s.Create(t.Context(), f.grant, f.command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.provider.started
+	first, frames, _, err := f.s.Read(t.Context(), f.grant.Subject, info.ID, 0)
+	if err != nil || first.TimingRevision != 1 || len(first.Timings) != 2 || len(frames) != 1 {
+		t.Fatalf("timing snapshot unavailable: %+v %v", first, err)
+	}
+	first.Timings[0].UTF16Location = 500
+	resumed, frames, _, err := f.s.Read(t.Context(), f.grant.Subject, info.ID, 2)
+	if err != nil || resumed.Timings[0].UTF16Location != 0 || len(frames) != 0 || resumed.LastSequence != 2 {
+		t.Fatalf("reconnect changed source/cursor: %+v %v", resumed, err)
+	}
+	f.s.Cancel(t.Context(), f.grant.Subject, info.ID)
+	if _, _, _, err := f.s.Read(t.Context(), f.grant.Subject, info.ID, 2); err != ErrAudioUnavailable {
+		t.Fatal("cancel retained timing/audio buffer")
 	}
 }

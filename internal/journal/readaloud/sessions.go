@@ -50,6 +50,8 @@ type SessionInfo struct {
 	BufferAvailable bool      `json:"bufferAvailable"`
 	ExpiresAt       time.Time `json:"expiresAt"`
 	Problem         string    `json:"problem,omitempty"`
+	Timings         []Timing  `json:"-"`
+	TimingRevision  int       `json:"-"`
 }
 type AudioFrame struct {
 	Sequence int    `json:"sequence"`
@@ -132,6 +134,7 @@ func (s *SessionService) removeLocked(id string, session *audioSession) {
 	clear(session.pcm)
 	s.bytes -= session.info.AudioBytes
 	session.pcm = nil
+	session.info.Timings = nil
 	session.info.AudioBytes = 0
 	session.info.LastSequence = 0
 	session.info.BufferAvailable = false
@@ -306,6 +309,22 @@ func (s *SessionService) run(ctx context.Context, grant Grant, command SessionCo
 			return SynthesisUsage{UsageKnown: true}, ErrVoiceChanged
 		}
 		written := 0
+		input.OnTimings = func(timings []Timing) error {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if ctx.Err() != nil || s.sessions[item.info.ID] != item {
+				return context.Canceled
+			}
+			if !validTimings(timings, utf16Length(input.Text)) {
+				return ErrIncomplete
+			}
+			if !slices.Equal(item.info.Timings, timings) {
+				item.info.Timings = slices.Clone(timings)
+				item.info.TimingRevision++
+				s.signalLocked(item)
+			}
+			return nil
+		}
 		usage, err := s.provider.Synthesize(ctx, input, func(data []byte) error {
 			if e := emit(data); e != nil {
 				return e
@@ -435,7 +454,9 @@ func (s *SessionService) Read(ctx context.Context, subject Subject, id string, a
 		frames = append(frames, AudioFrame{Sequence: end, Offset: offset, PCM: slices.Clone(item.pcm[offset:end])})
 		offset = end
 	}
-	return item.info, frames, item.changed, nil
+	info := item.info
+	info.Timings = slices.Clone(info.Timings)
+	return info, frames, item.changed, nil
 }
 func (s *SessionService) Cancel(ctx context.Context, subject Subject, id string) (SessionInfo, error) {
 	s.mu.Lock()

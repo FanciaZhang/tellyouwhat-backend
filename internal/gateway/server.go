@@ -144,6 +144,7 @@ type Dependencies struct {
 	ReadAloudAccess            ReadAloudAccess
 	ReadAloudCatalog           ReadAloudCatalogReader
 	JournalRecordings          *recordinghttp.Handler
+	JournalVoiceOrganizations  *voice.OrganizationService
 	JournalIllustrations       *illustration.Service
 	BirthdayAssistant          birthday.Assistant
 	Operations                 platformops.Reader
@@ -191,6 +192,7 @@ type Server struct {
 	readAloudStreams           chan struct{}
 	readAloudCatalog           ReadAloudCatalogReader
 	journalRecordings          *recordinghttp.Handler
+	journalVoiceOrganizations  *voice.OrganizationService
 	journalIllustrations       *illustration.Service
 	birthdayAssistant          birthday.Assistant
 	operations                 platformops.Reader
@@ -260,17 +262,18 @@ func New(dependencies Dependencies) *Server {
 	server := &Server{
 		readAloudSimulatorAuthenticator: dependencies.ReadAloudSimulatorAuthenticator,
 
-		readAloudSessions:    dependencies.ReadAloudSessions,
-		readAloudAccess:      dependencies.ReadAloudAccess,
-		readAloudStreams:     make(chan struct{}, 64),
-		readAloudCatalog:     dependencies.ReadAloudCatalog,
-		journalIllustrations: dependencies.JournalIllustrations,
-		journalRecordings:    dependencies.JournalRecordings,
-		birthdayAssistant:    dependencies.BirthdayAssistant,
-		operations:           dependencies.Operations,
-		executionPolicies:    dependencies.ExecutionPolicies,
-		promptConfig:         dependencies.PromptConfig,
-		voice:                dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
+		readAloudSessions:         dependencies.ReadAloudSessions,
+		readAloudAccess:           dependencies.ReadAloudAccess,
+		readAloudStreams:          make(chan struct{}, 64),
+		readAloudCatalog:          dependencies.ReadAloudCatalog,
+		journalIllustrations:      dependencies.JournalIllustrations,
+		journalRecordings:         dependencies.JournalRecordings,
+		journalVoiceOrganizations: dependencies.JournalVoiceOrganizations,
+		birthdayAssistant:         dependencies.BirthdayAssistant,
+		operations:                dependencies.Operations,
+		executionPolicies:         dependencies.ExecutionPolicies,
+		promptConfig:              dependencies.PromptConfig,
+		voice:                     dependencies.Voice, voiceEntitlements: dependencies.VoiceEntitlements,
 		app:                        dependencies.App,
 		authenticator:              dependencies.Authenticator,
 		entitlements:               dependencies.Entitlements,

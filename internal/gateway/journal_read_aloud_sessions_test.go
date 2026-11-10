@@ -121,6 +121,11 @@ func (w *speechFlushRecorder) Flush() {
 
 func (p *speechHTTPProvider) Synthesize(ctx context.Context, in readaloud.Synthesis, emit func([]byte) error) (readaloud.SynthesisUsage, error) {
 	p.calls.Add(1)
+	if in.OnTimings != nil {
+		if err := in.OnTimings([]readaloud.Timing{{StartMilliseconds: 0, EndMilliseconds: 1, UTF16Location: 0, UTF16Length: 1}, {StartMilliseconds: 1, EndMilliseconds: 2, UTF16Location: 1, UTF16Length: 1}}); err != nil {
+			return readaloud.SynthesisUsage{}, err
+		}
+	}
 	if err := emit([]byte{1, 2}); err != nil {
 		return readaloud.SynthesisUsage{}, err
 	}
@@ -359,7 +364,7 @@ func runReadAloudHTTPAccounting(t *testing.T, simulatorIdentity bool) {
 	decode := func(text string) ([]byte, int) {
 		t.Helper()
 		pcm := []byte{}
-		terminal := 0
+		terminal, timings := 0, 0
 		for _, block := range strings.Split(text, "\n\n") {
 			for _, line := range strings.Split(block, "\n") {
 				if !strings.HasPrefix(line, "data: ") {
@@ -368,6 +373,12 @@ func runReadAloudHTTPAccounting(t *testing.T, simulatorIdentity bool) {
 				var event journalhttpapi.ReadAloudEvent
 				if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
 					t.Fatal(err)
+				}
+				if event.Kind == "timing" {
+					timings++
+					if event.Timings == nil || len(*event.Timings) != 2 || event.Sequence < 0 || event.Pcm != nil {
+						t.Fatal("invalid timing snapshot", event)
+					}
 				}
 				if event.Pcm != nil {
 					pcm = append(pcm, (*event.Pcm)...)
@@ -379,6 +390,9 @@ func runReadAloudHTTPAccounting(t *testing.T, simulatorIdentity bool) {
 					}
 				}
 			}
+		}
+		if timings != 1 {
+			t.Fatalf("expected timing snapshot on initial stream and reconnect, got %d", timings)
 		}
 		return pcm, terminal
 	}

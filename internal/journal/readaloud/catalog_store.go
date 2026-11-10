@@ -49,8 +49,9 @@ type CatalogDraft struct {
 	Voices         []VoiceConfiguration `json:"voices"`
 }
 type CatalogPublication struct {
-	BaseVersion string `json:"baseVersion"`
-	Revision    string `json:"revision"`
+	BaseVersion               string `json:"baseVersion"`
+	Revision                  string `json:"revision"`
+	SkipSynthesisVerification bool   `json:"skipSynthesisVerification,omitempty"`
 }
 type CatalogRevision struct {
 	Catalog
@@ -236,6 +237,18 @@ func (s CatalogStore) Draft(ctx context.Context, input CatalogDraft, m aiconfig.
 			return CatalogRevision{}, ErrCatalogConflict
 		}
 		r := CatalogRevision{Catalog: Catalog{Version: uuid.NewString(), DefaultVoiceID: input.DefaultVoiceID, Voices: []Voice{}}, BaseVersion: current, CreatedBy: m.Actor, CreatedAt: now.UTC().Truncate(time.Microsecond)}
+		approvals := map[string]string{}
+		if current != "" {
+			published, err := catalogRevision(tx.QueryRowContext(ctx, `SELECT document,published_at FROM journal_voice_catalog_revisions WHERE id=?`, current))
+			if err != nil {
+				return r, err
+			}
+			for _, voice := range published.Voices {
+				if voice.IsApproved() {
+					approvals[voice.policyHash()] = voice.ApprovedPolicySHA256
+				}
+			}
+		}
 		seen := map[string]bool{}
 		for _, configuration := range input.Voices {
 			v := configuration.Voice()
@@ -243,6 +256,7 @@ func (s CatalogStore) Draft(ctx context.Context, input CatalogDraft, m aiconfig.
 				return r, ErrCatalog
 			}
 			seen[v.ID] = true
+			v.ApprovedPolicySHA256 = approvals[v.policyHash()]
 			var proof []byte
 			err := tx.QueryRowContext(ctx, `SELECT document FROM journal_voice_verifications WHERE policy_sha256=?`, v.policyHash()).Scan(&proof)
 			if err == nil {
@@ -280,11 +294,23 @@ func (s CatalogStore) Publish(ctx context.Context, input CatalogPublication, m a
 		if r.BaseVersion != current || r.PublishedAt != nil {
 			return r, ErrCatalogConflict
 		}
+		if input.SkipSynthesisVerification {
+			for i := range r.Voices {
+				voice := &r.Voices[i]
+				if voice.Enabled && voice.Validate() == nil && voice.BillingClass == "standard" && !voice.IsVerified() {
+					voice.ApprovedPolicySHA256 = voice.policyHash()
+				}
+			}
+		}
 		if err := r.ValidatePublication(); err != nil {
 			return r, err
 		}
 		published := now.UTC().Truncate(time.Microsecond)
-		if _, err := tx.ExecContext(ctx, `UPDATE journal_voice_catalog_revisions SET published_at=? WHERE id=?`, published, r.Version); err != nil {
+		raw, err := json.Marshal(r)
+		if err != nil {
+			return r, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE journal_voice_catalog_revisions SET document=?,published_at=? WHERE id=?`, raw, published, r.Version); err != nil {
 			return r, err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE journal_voice_catalog_current SET revision_id=? WHERE singleton_id=1`, r.Version); err != nil {
