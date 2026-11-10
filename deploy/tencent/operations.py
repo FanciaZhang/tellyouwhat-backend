@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -20,8 +21,16 @@ def main():
     parser.add_argument("--backup-dir", default=os.getenv("TELLYOUWHAT_BACKUP_DIR"))
     parser.add_argument("--environment-file", default=os.getenv("TELLYOUWHAT_ENV_FILE"))
     parser.add_argument("--backup", help="backup filename used only by an isolated restore drill")
+    parser.add_argument('--albums-checkpoint', nargs=3, action='append', metavar=('ENVIRONMENT', 'FILE', 'SHA256'),
+                        help='apply an independently pinned Albums deletion checkpoint during isolated restore')
+    parser.add_argument('--verify-albums-checkpoint-source', action='store_true',
+                        help='compare selected checkpoints around Albums replay and again after the shared SQL drill')
     parser.add_argument("--owner", choices=OWNERS)
     args = parser.parse_args()
+    if args.albums_checkpoint and args.operation != 'restore':
+        parser.error('--albums-checkpoint is only supported by restore')
+    if args.verify_albums_checkpoint_source and (args.operation != 'restore' or not args.albums_checkpoint):
+        parser.error('--verify-albums-checkpoint-source requires restore and --albums-checkpoint')
     os.umask(0o077)
     try:
         runtime = Runtime(args.backend_dir, args.backup_dir, args.environment_file)
@@ -54,7 +63,14 @@ def operate(runtime, args):
     if args.operation == "backup":
         return create_backup(runtime)
     if args.operation == "restore":
-        return restore_drill(runtime, args.backup)
+        checkpoints = {}
+        for environment, path, digest in getattr(args, 'albums_checkpoint', None) or []:
+            if (environment not in ('development', 'production') or environment in checkpoints
+                    or not path or not re.fullmatch('[a-f0-9]{64}', digest)):
+                raise OperationError('invalid or duplicate Albums checkpoint selection')
+            checkpoints[environment] = (path, digest)
+        return restore_drill(runtime, args.backup, albums_checkpoints=checkpoints or None,
+                             verify_checkpoint_source=getattr(args, 'verify_albums_checkpoint_source', False))
     if args.operation == "providers":
         output = runtime.execute("providers", runtime.compose("run", "--rm", "--no-deps", "--entrypoint", "/servicecheck",
                                  "gateway", "--models"), timeout=600)

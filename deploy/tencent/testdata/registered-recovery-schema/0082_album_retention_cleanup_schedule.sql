@@ -1,0 +1,5 @@
+-- Nullable scheduling state does not authorize erasure; Apple proof is checked separately.
+SET @retention_ddl = IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='album_storage_accounts' AND column_name='retention_cleanup_after'), 'SELECT 1', 'ALTER TABLE album_storage_accounts ADD COLUMN retention_cleanup_after DATETIME(6) NULL, ADD COLUMN retention_cleanup_token CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL, ADD COLUMN retention_cleanup_until DATETIME(6) NULL, ADD COLUMN retention_cleanup_cursor VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NULL, ADD KEY album_retention_cleanup_due(retention_cleanup_after,retention_cleanup_until), ADD CONSTRAINT album_retention_cleanup_lease CHECK((retention_cleanup_token IS NULL AND retention_cleanup_until IS NULL) OR (retention_cleanup_token IS NOT NULL AND retention_cleanup_until IS NOT NULL))');
+PREPARE retention_statement FROM @retention_ddl;
+EXECUTE retention_statement;
+DEALLOCATE PREPARE retention_statement;

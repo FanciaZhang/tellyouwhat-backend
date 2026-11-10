@@ -18,6 +18,11 @@ OVERLAY_SHA256 = 'e7c7dda5dfdafb8d0af14d64d35a2a973019ce5ae096b7c48fcc93b5301a79
 ROLLBACK_OVERLAY_SHA256 = '57038263f918d602a7b21cf72838f77fdb79a683a003585b998fe6ac420980a7'
 PRODUCT_MIGRATION = 'migrations/0073_album_development_subscription_products.sql'
 COPY_MIGRATION = 'migrations/0074_album_system_copy_locators.sql'
+SCHEMA_MIGRATIONS = (PRODUCT_MIGRATION, COPY_MIGRATION,
+    'migrations/0075_album_content_corrections.sql', 'migrations/0076_album_asset_favorites.sql',
+    'migrations/0077_album_collections.sql', 'migrations/0078_album_asset_deletion_ledger.sql',
+    'migrations/0080_album_photo_multipart.sql', 'migrations/0081_album_photo_completion_fence.sql',
+    'migrations/0082_album_retention_cleanup_schedule.sql', 'migrations/0083_album_record_erasure_schedule.sql')
 FILES = {OVERLAY: 32768, 'albums.env': 32768}
 REGISTRY = {'ALBUM_API_HOST': HOST, 'ALBUM_APPLE_BUNDLE_ID': 'cn.tellyouwhat.albums.dev',
             'ALBUM_APPLE_TEAM_ID': 'T6DD96HY2B'}
@@ -114,12 +119,16 @@ def _worker_logs(raw):
             continue
 
 
-def start_worker(runtime, folder, *, recovering=False):
+def stop_worker(runtime, *, recovering=False):
     name = PROJECT + '-albumworker-1'
     runtime.execute('platform-test-album-worker-stop', ['docker', 'stop', '--time', '40', name], timeout=60)
     stopped = json.loads(runtime.execute('platform-test-album-worker-stopped', ['docker', 'inspect', name]))[0]['State']
     if stopped.get('Running') or (not recovering and (stopped.get('OOMKilled') or stopped.get('ExitCode') != 0)):
         raise OperationError('Albums worker did not drain cleanly; restore its previous selection')
+
+
+def start_worker(runtime, folder, *, recovering=False):
+    stop_worker(runtime, recovering=recovering)
     if worker_selected(folder):
         command = worker_command(folder, 'up', '-d', '--no-build', '--no-deps', 'albumworker')
     else:
@@ -268,10 +277,11 @@ def schema_plan(runtime, folder, state):
     base = hashes(runtime.root / '.albums-development/releases' / source)
     candidate = hashes(folder)
     extension = state.get('album_schema_extensions', {})
-    reviewed = {name: ADDITIONS[name] for name in (PRODUCT_MIGRATION, COPY_MIGRATION)}
-    prefixes = [{}, {PRODUCT_MIGRATION: reviewed[PRODUCT_MIGRATION]}, reviewed]
+    reviewed = {name: ADDITIONS[name] for name in SCHEMA_MIGRATIONS}
+    prefixes = [dict(list(reviewed.items())[:count]) for count in range(len(reviewed) + 1)]
+    included = {name for name in reviewed if name in candidate}
     if (not base or any(name in base for name in reviewed) or any(candidate.get(k) != v for k, v in base.items())
-            or extension not in prefixes or COPY_MIGRATION in candidate and PRODUCT_MIGRATION not in candidate):
+            or extension not in prefixes or included not in [set(prefix) for prefix in prefixes]):
         raise OperationError('Albums schema differs from its registered base or reviewed extension')
     target = dict(extension)
     steps = [dict(target)]

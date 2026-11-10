@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ops_common import OperationError, Runtime
@@ -13,6 +14,15 @@ class RuntimeLockTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / ".env.production").write_text("")
         self.runtime = Runtime(self.root, self.root)
+
+    def test_execute_only_inherits_explicit_creator_leases(self):
+        result = SimpleNamespace(returncode=0, stdout=b"synthetic result")
+        with patch("ops_common.subprocess.run", return_value=result) as run:
+            self.assertEqual(self.runtime.execute("controlled", ["controlled"]), b"synthetic result")
+            self.assertNotIn("pass_fds", run.call_args.kwargs)
+            self.runtime._child_pass_fds = (101,)
+            self.runtime.execute("controlled", ["controlled"])
+            self.assertEqual(run.call_args.kwargs["pass_fds"], (101,))
 
     def test_lock_waits_for_temporary_contention(self):
         with patch("ops_common.fcntl.flock", side_effect=[BlockingIOError(), None]) as flock, \

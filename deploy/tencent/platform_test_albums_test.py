@@ -215,6 +215,54 @@ class AlbumsSharedGatewayRuntimeTests(unittest.TestCase):
                 with self.assertRaises(OperationError):
                     albums.schema_plan(runtime, folder, {'album_schema_extensions': copied_extension})
 
+            registered = Path(__file__).resolve().parent / 'testdata/registered-recovery-schema'
+            metadata = {name: ((registered / Path(name).name) if (registered / Path(name).name).is_file() else (overlay.parent / name)).read_bytes() for name in albums.SCHEMA_MIGRATIONS}
+            receipts = [(name, hashlib.sha256(body).hexdigest()) for name, body in metadata.items()]
+            all_names = [baseline] + [Path(name).name for name in metadata]
+            archive(folder, {**base, **metadata})
+            for recorded in range(len(receipts) + 1):
+                state = {'album_schema_extensions': dict(receipts[:recorded])}
+                for applied in range(len(receipts) + 1):
+                    runtime.execute.return_value = ('\n'.join(all_names[:applied + 1]) + '\n').encode()
+                    with self.subTest(recorded=recorded, applied=applied):
+                        if applied < recorded:
+                            with self.assertRaises(OperationError):
+                                albums.schema_plan(runtime, folder, state)
+                        else:
+                            names, extension, pending = albums.schema_plan(runtime, folder, state)
+                            self.assertEqual(names, all_names)
+                            self.assertEqual(extension, dict(receipts))
+                            self.assertEqual(pending, applied != len(receipts))
+
+            runtime.execute.return_value = ('\n'.join(all_names) + '\n').encode()
+            for name in albums.SCHEMA_MIGRATIONS[2:]:
+                with self.subTest(tampered=name):
+                    archive(folder, {**base, **metadata, name: metadata[name] + b'\n-- changed'})
+                    runtime.execute.reset_mock()
+                    with self.assertRaises(OperationError):
+                        albums.schema_plan(runtime, folder, {})
+                    runtime.execute.assert_not_called()
+            for name in albums.SCHEMA_MIGRATIONS[:-1]:
+                with self.subTest(missing=name):
+                    archive(folder, {**base, **{k: v for k, v in metadata.items() if k != name}})
+                    runtime.execute.reset_mock()
+                    with self.assertRaises(OperationError):
+                        albums.schema_plan(runtime, folder, {})
+                    runtime.execute.assert_not_called()
+
+            archive(folder, {**base, **metadata})
+            gapped = dict(receipts); del gapped[albums.SCHEMA_MIGRATIONS[2]]
+            runtime.execute.reset_mock()
+            with self.assertRaises(OperationError):
+                albums.schema_plan(runtime, folder, {'album_schema_extensions': gapped})
+            runtime.execute.assert_not_called()
+            runtime.execute.return_value = ('\n'.join([n for n in all_names if n != Path(albums.SCHEMA_MIGRATIONS[2]).name]) + '\n').encode()
+            with self.assertRaises(OperationError):
+                albums.schema_plan(runtime, folder, {})
+            archive(folder, base)
+            runtime.execute.return_value = ('\n'.join(all_names) + '\n').encode()
+            self.assertFalse(albums.schema_plan(runtime, folder, {'album_schema_extensions': dict(receipts)})[2])
+
     def test_actual_connections_and_read_only_secret_mount_are_required(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)

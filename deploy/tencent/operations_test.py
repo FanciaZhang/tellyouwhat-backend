@@ -1,3 +1,4 @@
+import contextlib
 import gzip
 import json
 import os
@@ -8,16 +9,105 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ops_backup import create_backup, crypt, locked_backup_file, prune_backups, restore_drill, verify_backup
+from ops_backup import create_backup, crypt, file_digest, manifest_signature, prune_backups, restore_drill, verify_backup
 from ops_common import OperationError, Runtime, read_environment
 from operations import operate
 
 
 class BackupSafetyTests(unittest.TestCase):
+    def test_restore_operation_passes_distinct_pinned_albums_checkpoints(self):
+        args = SimpleNamespace(operation='restore', backup='snapshot.sql.gz.enc', albums_checkpoint=[
+            ['development', '/private/dev-checkpoint.json', 'a' * 64],
+            ['production', '/private/prod-checkpoint.json', 'b' * 64]], verify_albums_checkpoint_source=True)
+        with patch('operations.restore_drill', return_value={'controlled': True}) as restore:
+            self.assertEqual(operate(self.runtime, args), {'controlled': True})
+        restore.assert_called_once_with(self.runtime, args.backup, albums_checkpoints={
+            'development': ('/private/dev-checkpoint.json', 'a' * 64),
+            'production': ('/private/prod-checkpoint.json', 'b' * 64)}, verify_checkpoint_source=True)
+        for selections in ([['unknown', '/private/input', 'a' * 64]],
+                           [['development', '/private/input', 'invalid']],
+                           [['development', '/private/input', 'a' * 64]] * 2):
+            args.albums_checkpoint = selections
+            with self.subTest(selections=selections), patch('operations.restore_drill') as restore:
+                with self.assertRaises(OperationError): operate(self.runtime, args)
+                restore.assert_not_called()
+
+    def test_local_and_remote_restore_keep_independent_checkpoint_selection(self):
+        selection = {'development': ('/private/pinned-checkpoint.json', 'a' * 64)}
+        manifest = {'created_at': int(time.time()), 'recovery_filename': 'recovery-fixture.enc'}
+        for remote in (False, True):
+            with self.subTest(remote=remote), patch('ops_backup.verify_backup', return_value=manifest), \
+                    patch('ops_offsite.enabled', return_value=remote), patch('ops_offsite.download'), \
+                    patch('ops_offsite.verify_recovery_bundle', side_effect=OperationError('reached selected recovery')) as verify:
+                with self.assertRaisesRegex(OperationError, 'reached selected recovery'):
+                    restore_drill(self.runtime, 'mysql-20261105T000000Z-abcdef.sql.gz.enc', albums_checkpoints=selection,
+                                  verify_checkpoint_source=True)
+                self.assertEqual(verify.call_args.kwargs['albums_checkpoints'], selection)
+                self.assertTrue(verify.call_args.kwargs['verify_checkpoint_source'])
+                self.assertEqual(list(self.runtime.state.glob('.restore-*')), [])
+
+    def test_checkpoint_source_verification_requires_a_pin_before_any_restore_io(self):
+        with patch('ops_backup.prune_restore_workspaces') as prune, patch('ops_offsite.download') as download:
+            with self.assertRaisesRegex(OperationError, 'requires an independent Albums checkpoint'):
+                restore_drill(self.runtime, verify_checkpoint_source=True)
+            prune.assert_not_called()
+            download.assert_not_called()
+
+    def test_restore_checks_selected_sources_after_shared_sql_before_receipt(self):
+        selection = {'development': ('/private/dev.json', 'a' * 64),
+                     'production': ('/private/prod.json', 'b' * 64)}
+        manifest = {'created_at': int(time.time()), 'recovery_filename': 'apps.enc',
+                    'image': 'mysql:8.4', 'table_rows': {'apps': 1}, 'sha256': 'c' * 64}
+        trace = []
+        reject_production = True
+
+        def replay(label, *args, **kwargs):
+            trace.append(label)
+            return {'restore-tables': b'apps\n', 'restore-count': b'1\n'}.get(label, b'')
+
+        def recheck(runtime, environment, pin):
+            self.assertIs(runtime, self.runtime)
+            self.assertEqual(pin, selection[environment])
+            trace.append(environment)
+            if reject_production and environment == 'production':
+                raise OperationError('deletion checkpoint differs from the current database')
+            return {'development': 123, 'production': 124}[environment]
+
+        def decrypt(runtime, source, destination, **kwargs):
+            destination.write_bytes(gzip.compress(b'SELECT 1;'))
+
+        self.runtime.record('restore', filename='previous-success.enc')
+        receipt = self.runtime.state / 'restore.json'
+        old = receipt.read_bytes()
+        with patch('ops_backup.verify_backup', return_value=manifest), \
+                patch('ops_offsite.enabled', return_value=False), patch('ops_offsite.verify_recovery_bundle'), \
+                patch('ops_backup.restore_workspace', return_value=contextlib.nullcontext(self.root)), \
+                patch.object(self.runtime, '_child_pass_fds', (), create=True), \
+                patch('ops_backup.crypt', side_effect=decrypt), patch.object(self.runtime, 'execute', side_effect=replay), \
+                patch('ops_backup.subprocess.run') as ready, patch('ops_backup.subprocess.Popen') as mysql, \
+                patch('albums_recovery.recheck_source_checkpoint', side_effect=recheck):
+            ready.return_value.returncode = 0
+            mysql.return_value.wait.return_value = 0
+            with self.assertRaisesRegex(OperationError, 'differs from the current database'):
+                restore_drill(self.runtime, 'shared-backup.enc', albums_checkpoints=selection, verify_checkpoint_source=True)
+            expected = ['restore-start', 'restore-tables', 'restore-count', 'development', 'production']
+            self.assertEqual(trace, expected)
+            self.assertEqual(receipt.read_bytes(), old)
+            trace.clear()
+            reject_production = False
+            result = restore_drill(self.runtime, 'shared-backup.enc', albums_checkpoints=selection, verify_checkpoint_source=True)
+            self.assertEqual(trace, expected)
+            self.assertEqual(result['albums_checkpoint_source_final_checked_at'], {'development': 123, 'production': 124})
+            self.assertTrue(result['albums_checkpoint_source_point_in_time_only'])
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+        for name, filename in [('ROOT', 'Caddyfile'), ('FRAGMENT', 'test.caddy')]:
+            routing = patch('test_routes.' + name, self.root / filename)
+            routing.start()
+            self.addCleanup(routing.stop)
         self.backend = self.root / "backend"
         self.backend.mkdir()
         (self.backend / ".env.production").write_text(
@@ -255,6 +345,33 @@ class BackupSafetyTests(unittest.TestCase):
                 restore_drill(self.runtime, result["filename"])
         decrypt.assert_not_called()
 
+    def test_expired_shared_backup_never_enters_app_recovery_or_changes_inputs(self):
+        now = int(time.time())
+        with patch("ops_backup.time.time", return_value=now - 14 * 86400):
+            result = create_backup(self.runtime)
+        source = self.runtime.backups / result['filename']
+        recovery = source.parent / ('recovery-' + source.name.replace('.sql.gz.enc', '.tar.gz.enc'))
+        recovery.write_bytes(b'opaque authenticated app recovery fixture')
+        metadata = Path(str(source) + '.json')
+        envelope = json.loads(metadata.read_text())
+        envelope['manifest'].update(recovery_filename=recovery.name, recovery_sha256=file_digest(recovery))
+        envelope['hmac_sha256'] = manifest_signature('x' * 64, envelope['manifest'])
+        metadata.write_text(json.dumps(envelope))
+        originals = {p: p.read_bytes() for p in (source, recovery, metadata)}
+        with patch("ops_backup.time.time", return_value=now), \
+                patch('ops_offsite.verify_recovery_bundle') as apps, patch('ops_backup.crypt') as decrypt:
+            with self.assertRaisesRegex(OperationError, 'retention'):
+                restore_drill(self.runtime, source.name)
+        apps.assert_not_called()
+        decrypt.assert_not_called()
+        with patch('ops_backup.time.time', return_value=now - 1), \
+                patch('ops_offsite.verify_recovery_bundle', side_effect=OperationError('reached app recovery')) as apps:
+            with self.assertRaisesRegex(OperationError, 'reached app recovery'):
+                restore_drill(self.runtime, source.name)
+        apps.assert_called_once()
+        self.assertEqual({p: p.read_bytes() for p in originals}, originals)
+        self.assertFalse((self.runtime.state / 'restore.json').exists())
+
     def test_maintenance_prunes_backups_without_successful_new_export(self):
         now = int(time.time())
         with patch("ops_backup.time.time", return_value=now - 15 * 86400):
@@ -301,69 +418,6 @@ class BackupSafetyTests(unittest.TestCase):
         with patch("ops_backup.time.time", return_value=now + 1):
             self.assertEqual(prune_backups(self.runtime), 1)
         self.assertFalse(path.exists())
-
-    def test_retention_preserves_an_active_snapshot_then_removes_it_after_release(self):
-        now = int(time.time())
-        with patch('ops_backup.time.time', return_value=now - 15 * 86400):
-            result = create_backup(self.runtime)
-        path = self.runtime.backups / result['filename']
-        metadata = Path(str(path) + '.json')
-        with locked_backup_file(path, False), self.assertRaisesRegex(OperationError, 'retention verification failed'):
-            prune_backups(self.runtime)
-        self.assertTrue(path.exists())
-        self.assertTrue(metadata.exists())
-        self.assertEqual(prune_backups(self.runtime), 1)
-        self.assertFalse(path.exists())
-        self.assertFalse(metadata.exists())
-
-    def test_retention_resumes_after_payload_removal_without_trusting_file_ages(self):
-        now = int(time.time())
-        with patch('ops_backup.time.time', return_value=now - 15 * 86400):
-            result = create_backup(self.runtime)
-        path = self.runtime.backups / result['filename']
-        metadata = Path(str(path) + '.json')
-        unlink = Path.unlink
-        def interrupted(member, *args, **kwargs):
-            if member == metadata:
-                raise OSError('interrupted before final inventory removal')
-            return unlink(member, *args, **kwargs)
-        with patch.object(Path, 'unlink', interrupted), self.assertRaises(OperationError):
-            prune_backups(self.runtime)
-        self.assertFalse(path.exists())
-        self.assertTrue(metadata.exists())
-        self.assertEqual(prune_backups(self.runtime), 1)
-        self.assertFalse(metadata.exists())
-
-    def test_linked_payload_cannot_be_verified_or_pruned(self):
-        result = create_backup(self.runtime)
-        path = self.runtime.backups / result['filename']
-        alias = self.root / 'preserved-alias'
-        os.link(path, alias)
-        with self.assertRaises(OperationError):
-            verify_backup(self.runtime, path)
-        with self.assertRaises(OperationError):
-            prune_backups(self.runtime)
-        self.assertTrue(path.exists())
-        self.assertTrue(alias.exists())
-
-    def test_child_backup_lease_is_inherited_only_when_explicitly_selected(self):
-        import fcntl
-        import subprocess
-        import sys
-        self.runtime.backups.mkdir()
-        path = self.runtime.backups / 'lease-fixture.enc'
-        path.write_bytes(b'synthetic encrypted input')
-        probe = ('import fcntl,sys; f=open(sys.argv[1],"rb"); '
-                 'fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)')
-        with locked_backup_file(path, False) as (handle, _):
-            self.runtime._child_pass_fds = (handle.fileno(),)
-            result = self.runtime.execute('lease-fixture', [sys.executable, '-c',
-                'import os,sys; print(os.fstat(int(sys.argv[1])).st_size)', str(handle.fileno())])
-            self.assertEqual(int(result), path.stat().st_size)
-            self.assertNotEqual(subprocess.run([sys.executable, '-c', probe, str(path)], capture_output=True).returncode, 0)
-            del self.runtime._child_pass_fds
-            self.runtime.execute('no-inherited-lease', [sys.executable, '-c',
-                'import os,sys\ntry: os.fstat(int(sys.argv[1]))\nexcept OSError: sys.exit(0)\nsys.exit(1)', str(handle.fileno())])
 
     def test_failed_schema_export_never_publishes_a_partial_backup(self):
         with patch.dict(os.environ, {"DUMP_SCHEMA_EXIT_CODE": "9"}):

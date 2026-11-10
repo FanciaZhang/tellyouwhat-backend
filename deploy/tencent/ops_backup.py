@@ -88,10 +88,168 @@ def require_backup_capacity(runtime):
 
 
 def prune_backup_temporaries(runtime):
+    prune_restore_workspaces(runtime)
     for path in runtime.backups.iterdir():
         if (re.fullmatch(r'\.(backup|recovery)-[A-Za-z0-9_-]{6,}', path.name) and path.is_dir()
                 and not path.is_symlink() and path.stat().st_mtime < time.time() - 48 * 3600):
             shutil.rmtree(path)
+
+
+def _restore_workspace_owner(runtime, folder, kind, reference, *, snapshot=None, ledger=None):
+    from ops_cos import valid_filename
+    if (kind not in ('download', 'sql', 'albums-sql') or not isinstance(reference, str)
+            or not re.fullmatch(r'\.restore-' + kind + r'-[a-z0-9_]{8}', folder.name)):
+        raise OperationError('invalid restore workspace owner')
+    if kind == 'download':
+        if not valid_filename(reference) or not reference.endswith('.sql.gz.enc'):
+            raise OperationError('invalid restore download selection')
+        names = (reference, reference + '.json', 'recovery-' + reference.replace('.sql.gz.enc', '.tar.gz.enc'))
+    else:
+        if not re.fullmatch(r'tellyouwhat-restore-[0-9a-f]{16}', reference):
+            raise OperationError('invalid restore container selection')
+        names = ('snapshot.sql.gz', 'restore.stderr')
+    if kind == 'albums-sql':
+        if (not isinstance(snapshot, str) or not re.fullmatch(r'albums-[a-f0-9]{32}\.sql\.gz\.enc', snapshot)
+                or not isinstance(ledger, str) or not re.fullmatch(r'albums-deletions-[a-f0-9]{32}\.json', ledger)):
+            raise OperationError('invalid Albums restore selection')
+        names = (snapshot, snapshot + '.json', ledger, 'snapshot.sql.gz', 'snapshot.sql',
+                 'restored.sql', 'restore.stderr', 'client.cnf', 'backup.env')
+    elif snapshot is not None or ledger is not None:
+        raise OperationError('unexpected restore selection')
+    owner = {'scope': 'shared-restore-workspace-v1', 'database': runtime.config['MYSQL_DATABASE'],
+            'directory': folder.name, 'kind': kind, 'reference': reference}
+    if kind == 'albums-sql':
+        owner.update(snapshot=snapshot, ledger=ledger)
+    return owner, names
+
+
+def _close_restore_container(runtime, owner):
+    name = owner['reference']
+    command = ['docker', 'ps', '-aq', '--no-trunc', '--filter', 'name=' + name]
+    ids = runtime.execute('restore-workspace-list', command, timeout=30).decode().split()
+    if not ids:
+        return
+    if len(ids) != 1 or not re.fullmatch(r'[0-9a-f]{64}', ids[0]):
+        raise OperationError('restore container inventory is ambiguous; retained')
+    items = json.loads(runtime.execute('restore-workspace-inspect', ['docker', 'inspect', ids[0]], timeout=30))
+    if not isinstance(items, list) or len(items) != 1:
+        raise OperationError('invalid restore container inventory; retained')
+    item = items[0]
+    labels = item.get('Config', {}).get('Labels') or {}
+    if (item.get('Name') != '/' + name or item.get('Id') != ids[0]
+            or labels.get('cn.tellyouwhat.operation') != 'restore-drill'
+            or labels.get('cn.tellyouwhat.restore-workspace') != owner['directory']):
+        raise OperationError('restore container ownership differs; retained')
+    runtime.execute('restore-workspace-cleanup', ['docker', 'rm', '--force', ids[0]], timeout=30)
+    if runtime.execute('restore-workspace-list', command, timeout=30).strip():
+        raise OperationError('restore container termination is not confirmed; retained')
+
+
+def _remove_restore_workspace(runtime, folder):
+    folder = Path(folder)
+    info = folder.lstat()
+    if (folder.parent != runtime.state or not re.fullmatch(r'\.restore-(download|sql|albums-sql)-[a-z0-9_]{8}', folder.name)
+            or not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077
+            or info.st_uid != runtime.state.stat().st_uid):
+        raise OperationError('invalid restore workspace; retained')
+    if not any(folder.iterdir()):
+        folder.rmdir()
+        return
+    with contextlib.ExitStack() as leases:
+        directory = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        leases.callback(os.close, directory)
+        opened_directory = os.fstat(directory)
+        if (opened_directory.st_dev, opened_directory.st_ino) != (info.st_dev, info.st_ino):
+            raise OperationError('restore workspace changed; retained')
+        metadata = folder / 'owner.json'
+        handle, before = leases.enter_context(locked_backup_file(metadata, True))
+        if before.st_size > 4096:
+            raise OperationError('oversized restore workspace owner; retained')
+        envelope = json.loads(handle.read(4097))
+        owner = envelope['owner']
+        expected, names = _restore_workspace_owner(runtime, folder, owner['kind'], owner['reference'],
+                                                    snapshot=owner.get('snapshot'), ledger=owner.get('ledger'))
+        if (set(envelope) != {'owner', 'hmac_sha256'} or owner != expected
+                or not hmac.compare_digest(manifest_signature(backup_secret(runtime), owner), envelope['hmac_sha256'])):
+            raise OperationError('restore workspace authentication failed; retained')
+        files = {metadata: (handle, before)}
+        for path in folder.iterdir():
+            if path == metadata:
+                continue
+            if path.name not in names:
+                raise OperationError('unknown restore workspace file; retained')
+            files[path] = leases.enter_context(locked_backup_file(path, True))
+        for path, (_, current) in files.items():
+            if current.st_uid != info.st_uid or current.st_mode & 0o077:
+                raise OperationError('restore workspace file is not private; retained')
+        if owner['kind'] in ('sql', 'albums-sql'):
+            _close_restore_container(runtime, owner)
+        current_directory = folder.lstat()
+        if (current_directory.st_dev, current_directory.st_ino) != (info.st_dev, info.st_ino):
+            raise OperationError('restore workspace changed; retained')
+        if (set(folder.iterdir()) != set(files)
+                or any(not _same_backup_file(p, h, previous) for p, (h, previous) in files.items())):
+            raise OperationError('restore workspace files changed; retained')
+        for path in sorted(files, key=lambda p: p == metadata):
+            current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+            previous = files[path][1]
+            if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns) != (previous.st_dev, previous.st_ino, previous.st_size, previous.st_mtime_ns, previous.st_ctime_ns):
+                raise OperationError('restore workspace file changed; retained')
+            if path == metadata:
+                if set(os.listdir(directory)) != {'owner.json'}:
+                    raise OperationError('late restore workspace file; retained')
+                os.fsync(directory)
+            os.unlink(path.name, dir_fd=directory)
+        os.fsync(directory)
+        current_directory = folder.lstat()
+        if (current_directory.st_dev, current_directory.st_ino) != (info.st_dev, info.st_ino):
+            raise OperationError('restore workspace changed; retained')
+        folder.rmdir()
+
+
+def prune_restore_workspaces(runtime):
+    if runtime.state.is_symlink():
+        raise OperationError('restore workspace parent is a symlink; retained')
+    with runtime.lock('restore-workspaces'):
+        for folder in sorted(runtime.state.glob('.restore-*')):
+            try:
+                _remove_restore_workspace(runtime, folder)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                raise OperationError('restore workspace cleanup failed; retained for review or retry') from error
+
+
+@contextlib.contextmanager
+def restore_workspace(runtime, kind, reference, *, snapshot=None, ledger=None):
+    if kind not in ('download', 'sql', 'albums-sql') or runtime.state.is_symlink():
+        raise OperationError('invalid restore workspace selection')
+    _restore_workspace_owner(runtime, runtime.state / ('.restore-' + kind + '-00000000'), kind, reference,
+                             snapshot=snapshot, ledger=ledger)
+    with runtime.lock('restore-workspaces'):
+        folder = Path(tempfile.mkdtemp(prefix='.restore-' + kind + '-', dir=runtime.state))
+        lease = None
+        try:
+            owner, _ = _restore_workspace_owner(runtime, folder, kind, reference, snapshot=snapshot, ledger=ledger)
+            atomic_json(folder / 'owner.json', {'owner': owner, 'hmac_sha256': manifest_signature(backup_secret(runtime), owner)})
+            lease = (folder / 'owner.json').open('rb')
+            fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BaseException:
+            if lease is not None:
+                lease.close()
+            if not any(folder.iterdir()):
+                folder.rmdir()
+            raise
+    inherited = getattr(runtime, '_child_pass_fds', ())
+    runtime._child_pass_fds = (*inherited, lease.fileno())
+    try:
+        yield folder
+    finally:
+        runtime._child_pass_fds = inherited
+        lease.close()
+        with runtime.lock('restore-workspaces'):
+            try:
+                _remove_restore_workspace(runtime, folder)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                raise OperationError('restore workspace cleanup failed; retained for review or retry') from error
 
 
 def backup_secret(runtime):
@@ -391,12 +549,17 @@ def verify_backup(runtime, path):
         return manifest
 
 
-def restore_drill(runtime, filename=None, *, source_directory=None):
+def restore_drill(runtime, filename=None, *, source_directory=None, albums_checkpoints=None, verify_checkpoint_source=False):
+    if verify_checkpoint_source and not albums_checkpoints:
+        raise OperationError('source verification requires an independent Albums checkpoint')
+    if source_directory is None:
+        prune_restore_workspaces(runtime)
     if source_directory is None and ops_offsite.enabled(runtime):
         filename = filename or json.loads((runtime.state / "backup.json").read_text())["filename"]
-        with tempfile.TemporaryDirectory(prefix="cos-restore-", dir=runtime.state) as directory:
+        with restore_workspace(runtime, 'download', filename) as directory:
             ops_offsite.download(runtime, filename, directory)
-            result = restore_drill(runtime, filename, source_directory=Path(directory))
+            result = restore_drill(runtime, filename, source_directory=Path(directory), albums_checkpoints=albums_checkpoints,
+                                   verify_checkpoint_source=verify_checkpoint_source)
         return runtime.record("restore", **{k: v for k, v in result.items() if k not in ("operation", "completed_at")}, source="cos")
     if filename:
         if Path(filename).name != filename:
@@ -408,60 +571,73 @@ def restore_drill(runtime, filename=None, *, source_directory=None):
         except (OSError, KeyError, ValueError) as error:
             raise OperationError("a successful backup is required before a restore drill") from error
     manifest = verify_backup(runtime, source)
-    if manifest.get("recovery_filename"):
-        ops_offsite.verify_recovery_bundle(runtime, source, manifest)
     if manifest["created_at"] <= time.time() - BACKUP_RETENTION_SECONDS:
         raise OperationError("backup is outside the retention period")
+    if manifest.get("recovery_filename"):
+        ops_offsite.verify_recovery_bundle(runtime, source, manifest, albums_checkpoints=albums_checkpoints,
+                                           verify_checkpoint_source=verify_checkpoint_source)
+    elif albums_checkpoints:
+        raise OperationError('selected Albums checkpoints require an application recovery bundle')
     container = "tellyouwhat-restore-" + secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     database = "tellyouwhat_restore_test"
-    with tempfile.TemporaryDirectory(prefix="restore-", dir=runtime.state) as directory:
+    with restore_workspace(runtime, 'sql', container) as directory:
         compressed = Path(directory) / "snapshot.sql.gz"
+        compressed.touch(mode=0o600)
         crypt(runtime, source, compressed, decrypt=True)
-        try:
-            runtime.execute("restore-start", ["docker", "run", "--detach", "--rm", "--name", container,
-                            "--label", "cn.tellyouwhat.operation=restore-drill", "--network", "none",
-                            "--memory", "768m", "--pids-limit", "256",
-                            "--tmpfs", "/var/lib/mysql:rw,noexec,nosuid,size=768m",
-                            "--env", "MYSQL_ROOT_PASSWORD", "--env", "MYSQL_DATABASE", manifest["image"],
-                            "--innodb-buffer-pool-size=128M", "--performance-schema=OFF"],
-                            env={"MYSQL_ROOT_PASSWORD": password, "MYSQL_DATABASE": database}, timeout=180)
-            sql = ["docker", "exec", "--env", "MYSQL_PWD", "--interactive", container,
-                   "mysql", "--user=root", "--batch", "--skip-column-names", "--database=" + database]
-            child_env = os.environ.copy()
-            child_env["MYSQL_PWD"] = password
-            for attempt in range(90):
-                ready = subprocess.run(sql + ["--execute=SELECT 1"], capture_output=True, env=child_env, timeout=10)
-                if ready.returncode == 0:
-                    break
-                time.sleep(2)
-            else:
-                raise OperationError("isolated restore database did not become ready")
-            with (Path(directory) / "restore.stderr").open("wb") as diagnostic:
-                process = subprocess.Popen(sql, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                           stderr=diagnostic, env=child_env)
-                try:
-                    with gzip.open(compressed, "rb") as source_stream:
-                        for block in iter(lambda: source_stream.read(1024 * 1024), b""):
-                            process.stdin.write(block)
-                    process.stdin.close()
-                    returncode = process.wait(timeout=900)
-                finally:
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait()
-            if returncode:
-                raise OperationError(f"isolated database restore failed (exit {returncode})")
-            table_names = runtime.execute("restore-tables", sql + [
-                "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"],
-                env={"MYSQL_PWD": password}).decode().splitlines()
-            if set(table_names) != set(manifest["table_rows"]):
-                raise OperationError("restored database tables differ from the snapshot")
-            for table, count in manifest["table_rows"].items():
-                actual = runtime.execute("restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"],
-                                         env={"MYSQL_PWD": password}).decode().strip()
-                if int(actual) != count:
-                    raise OperationError("restored row counts differ from the snapshot")
-        finally:
-            runtime.execute("restore-cleanup", ["docker", "rm", "--force", container], timeout=60)
-    return runtime.record("restore", filename=source.name, sha256=manifest["sha256"], tables=len(manifest["table_rows"]))
+        runtime.execute("restore-start", ["docker", "run", "--detach", "--rm", "--name", container,
+                        "--label", "cn.tellyouwhat.operation=restore-drill",
+                        "--label", "cn.tellyouwhat.restore-workspace=" + directory.name, "--network", "none",
+                        "--memory", "768m", "--pids-limit", "256",
+                        "--tmpfs", "/var/lib/mysql:rw,noexec,nosuid,size=768m",
+                        "--env", "MYSQL_ROOT_PASSWORD", "--env", "MYSQL_DATABASE", manifest["image"],
+                        "--innodb-buffer-pool-size=128M", "--performance-schema=OFF"],
+                        env={"MYSQL_ROOT_PASSWORD": password, "MYSQL_DATABASE": database}, timeout=180)
+        sql = ["docker", "exec", "--env", "MYSQL_PWD", "--interactive", container,
+               "mysql", "--user=root", "--batch", "--skip-column-names", "--database=" + database]
+        child_env = os.environ.copy()
+        child_env["MYSQL_PWD"] = password
+        for attempt in range(90):
+            ready = subprocess.run(sql + ["--execute=SELECT 1"], capture_output=True, env=child_env, timeout=10,
+                                   pass_fds=runtime._child_pass_fds)
+            if ready.returncode == 0:
+                break
+            time.sleep(2)
+        else:
+            raise OperationError("isolated restore database did not become ready")
+        diagnostic_path = Path(directory) / "restore.stderr"
+        diagnostic_path.touch(mode=0o600)
+        with diagnostic_path.open("wb") as diagnostic:
+            process = subprocess.Popen(sql, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                       stderr=diagnostic, env=child_env, pass_fds=runtime._child_pass_fds)
+            try:
+                with gzip.open(compressed, "rb") as source_stream:
+                    for block in iter(lambda: source_stream.read(1024 * 1024), b""):
+                        process.stdin.write(block)
+                process.stdin.close()
+                returncode = process.wait(timeout=900)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+        if returncode:
+            raise OperationError(f"isolated database restore failed (exit {returncode})")
+        table_names = runtime.execute("restore-tables", sql + [
+            "--execute=SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"],
+            env={"MYSQL_PWD": password}).decode().splitlines()
+        if set(table_names) != set(manifest["table_rows"]):
+            raise OperationError("restored database tables differ from the snapshot")
+        for table, count in manifest["table_rows"].items():
+            actual = runtime.execute("restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"],
+                                     env={"MYSQL_PWD": password}).decode().strip()
+            if int(actual) != count:
+                raise OperationError("restored row counts differ from the snapshot")
+    source_checks = {}
+    if verify_checkpoint_source:
+        from albums_recovery import recheck_source_checkpoint
+        source_checks['albums_checkpoint_source_final_checked_at'] = {
+            environment: recheck_source_checkpoint(runtime, environment, pin)
+            for environment, pin in sorted(albums_checkpoints.items())}
+        source_checks['albums_checkpoint_source_checks'] = {environment: pin[1] for environment, pin in albums_checkpoints.items()}
+        source_checks['albums_checkpoint_source_point_in_time_only'] = True
+    return runtime.record("restore", filename=source.name, sha256=manifest["sha256"], tables=len(manifest["table_rows"]), **source_checks)

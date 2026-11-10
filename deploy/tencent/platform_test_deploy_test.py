@@ -3,6 +3,10 @@ import base64
 import copy
 import io
 import json
+import os
+import signal
+import subprocess
+import sys
 import shutil
 from pathlib import Path
 import tarfile
@@ -31,12 +35,28 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.runtime = Mock(root=self.root, state=self.root / '.operations', config={})
         self.runtime.state.mkdir()
         scripts = self.root / 'deploy/tencent'
-        scripts.mkdir(parents=True)
+        scripts.mkdir(parents=True, mode=0o755)
+        scripts.parent.chmod(0o755)
         for path in Path(__file__).resolve().parent.glob('*.py'):
             if not path.name.endswith('_test.py'):
                 shutil.copy2(path, scripts / path.name)
-        (scripts.parent / 'albums').mkdir()
-        shutil.copy2(Path(__file__).resolve().parent.parent / 'albums/backup.py', scripts.parent / 'albums/backup.py')
+        (scripts.parent / 'albums').mkdir(mode=0o755)
+        for name in ('backup.py', 'deletion_ledger.py', 'asset_deletion_ledger.py', 'collection_deletion_ledger.py'):
+            shutil.copy2(Path(__file__).resolve().parent.parent / 'albums' / name, scripts.parent / 'albums' / name)
+        (self.root / 'migrations').mkdir(mode=0o755)
+        for name in ('0077_album_collections.sql', '0078_album_asset_deletion_ledger.sql'):
+            shutil.copy2(Path(__file__).resolve().parent / 'testdata/registered-recovery-schema' / name, self.root / 'migrations' / name)
+        producer = self.root.parent / 'registered-producer'
+        shutil.copytree(self.root / 'deploy', producer / 'deploy')
+        (producer / 'migrations').mkdir()
+        fixtures = Path(__file__).resolve().parent / 'testdata/registered-recovery-schema'
+        for name in ('0077_album_collections.sql', '0078_album_asset_deletion_ledger.sql'):
+            shutil.copy2(fixtures / name, producer / 'migrations' / name)
+        # Exercise the independently registered producer without adding its SQL to production migrations.
+        producer_file = patch.object(dev, '__file__', str(producer / 'deploy/tencent/platform_test_deploy.py'))
+        producer_file.start(); self.addCleanup(producer_file.stop)
+        producer_imports = patch.dict(os.environ, {'PYTHONPATH': str(producer / 'deploy/tencent') + os.pathsep + os.environ.get('PYTHONPATH', '')})
+        producer_imports.start(); self.addCleanup(producer_imports.stop)
         (self.runtime.state / 'blue-green.json').write_text('{"phase":"STABLE","current":{"path":"production"}}')
         for name in ('operations', 'deployment'):
             (self.runtime.state / (name + '.lock')).touch(mode=0o600)
@@ -95,7 +115,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
 
     def add_illustration_migration(self, contents=None, name='0065_journal_illustration_jobs.sql'):
         if contents is None:
-            contents = (Path(__file__).resolve().parents[2] / 'migrations' / name).read_bytes()
+            fixture = Path(__file__).resolve().parent / 'testdata/registered-recovery-schema' / name
+            contents = (fixture if fixture.is_file() else Path(__file__).resolve().parents[2] / 'migrations' / name).read_bytes()
         with tarfile.open(self.folder / 'source.tar', 'a') as archive:
             item = tarfile.TarInfo('migrations/' + name)
             item.size = len(contents)
@@ -140,6 +161,65 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         for p in self.folder.iterdir():
             p.chmod(0o600)
 
+    def recovery_sql_fixture(self):
+        data = {}
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            for name in ('0077_album_collections.sql', '0078_album_asset_deletion_ledger.sql'):
+                path = 'migrations/' + name
+                content = (self.root / path).read_bytes()
+                entry = tarfile.TarInfo(path); entry.size = len(content)
+                archive.addfile(entry, io.BytesIO(content))
+                data[path] = content
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        return data
+
+    def test_recovery_sql_inputs_install_and_rollback_with_their_helpers(self):
+        data = self.recovery_sql_fixture()
+        for name in data:
+            (self.root / name).unlink()
+        (self.root / 'migrations').rmdir()
+        replace = Path.replace
+        def interrupted(path, destination):
+            if Path(destination).name == '0078_album_asset_deletion_ledger.sql':
+                raise OSError('controlled SQL input install failure')
+            return replace(path, destination)
+        with patch.object(Path, 'replace', interrupted), self.assertRaisesRegex(OSError, 'SQL input install failure'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('partial SQL input installation admitted')
+        self.assertFalse((self.root / 'migrations').exists())
+        for error in (RuntimeError, KeyboardInterrupt):
+            with self.assertRaisesRegex(error, 'activation failed'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    for name, content in data.items():
+                        self.assertEqual((self.root / name).read_bytes(), content)
+                    raise error('activation failed')
+            self.assertFalse((self.root / 'migrations').exists())
+        with dev.test_operations_transition(self.runtime, self.source):
+            pass
+        for name, content in data.items():
+            self.assertEqual((self.root / name).read_bytes(), content)
+        self.runtime.execute.assert_not_called()
+
+    def test_recovery_sql_inputs_reject_drift_and_symlinks(self):
+        data = self.recovery_sql_fixture()
+        installed = self.root / next(iter(data))
+        installed.write_bytes(b'-- unrelated installed SQL\n')
+        with self.assertRaisesRegex(OperationError, 'rollback source'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('unregistered SQL replaced')
+        self.assertEqual(installed.read_bytes(), b'-- unrelated installed SQL\n')
+        installed.unlink()
+        original = self.root.parent / 'sql-original'
+        original.write_bytes(data[next(iter(data))])
+        installed.symlink_to(original)
+        with self.assertRaisesRegex(OperationError, 'operator owned'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('symlinked recovery input accepted')
+        self.assertTrue(installed.is_symlink())
+        self.assertEqual(original.read_bytes(), data[next(iter(data))])
+
     def test_test_only_operations_update_rolls_back_and_rejects_drift(self):
         name = 'platform_test_journal.py'
         installed = self.root / 'deploy/tencent' / name
@@ -164,8 +244,41 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                 self.fail('accepted changed operations')
         self.assertEqual(installed.read_bytes(), b'# unexpected drift\n')
 
+    def test_shared_test_ownership_update_is_pinned_and_restored_after_failure(self):
+        name = 'ops_common.py'
+        current = (Path(__file__).parent / name).read_bytes()
+        old = current.replace(
+            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')):\n",
+            b"        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):\n")
+        start = old.index(b"    candidate = source / 'deploy/tencent'\n")
+        end = old.index(b"    for script in (source / 'deploy/tencent').iterdir():\n", start)
+        old = old[:start] + old[end:]
+        self.assertEqual(hashlib.sha256(old).hexdigest(), 'f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc')
+        installed = self.root / 'deploy/tencent' / name
+        installed.write_bytes(old)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo('deploy/tencent/' + name); entry.size = len(old)
+            archive.addfile(entry, io.BytesIO(old))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertEqual(installed.read_bytes(), current)
+                raise RuntimeError('activation failed')
+        self.assertEqual(installed.read_bytes(), old)
+        installed.write_bytes(old + b'\n# unreviewed drift')
+        with self.assertRaisesRegex(OperationError, 'registered-test ownership protection'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('accepted unreviewed shared operations')
+        installed.write_bytes(old)
+        with dev.test_operations_transition(self.runtime, self.source):
+            self.assertEqual(installed.read_bytes(), current)
+        self.assertEqual(installed.read_bytes(), current)
+
     def test_development_backup_helpers_are_source_bound_and_restored_after_failure(self):
-        names = ['tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'albums/backup.py']
+        names = ['tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'tencent/albums_recovery.py', 'albums/backup.py',
+                 'albums/deletion_ledger.py', 'albums/asset_deletion_ledger.py', 'albums/collection_deletion_ledger.py']
         for index, name in enumerate(names):
             original = ('# registered snapshot implementation ' + str(index)).encode()
             installed = self.root / 'deploy' / name
@@ -193,7 +306,9 @@ class PlatformTestBootstrapTests(unittest.TestCase):
     def test_first_development_snapshot_install_is_removed_after_failure(self):
         installed = self.root / 'deploy/albums/backup.py'
         original = installed.read_bytes()
-        installed.unlink(); installed.parent.rmdir()
+        for name in ('backup.py', 'deletion_ledger.py', 'asset_deletion_ledger.py', 'collection_deletion_ledger.py'):
+            (installed.parent / name).unlink()
+        installed.parent.rmdir()
         with tarfile.open(self.folder / 'source.tar', 'a') as archive:
             entry = tarfile.TarInfo('deploy/albums/backup.py'); entry.size = len(original)
             archive.addfile(entry, io.BytesIO(original))
@@ -206,16 +321,36 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                 raise RuntimeError('activation failed')
         self.assertFalse(installed.parent.exists())
 
-    def test_new_admin_helper_is_removed_when_first_activation_fails(self):
-        installed = self.root / 'deploy/tencent/platform_test_admin.py'
-        installed.unlink()
+    def test_new_collection_checkpoint_helper_rolls_back_and_drift_is_preserved(self):
+        installed = self.root / 'deploy/albums/collection_deletion_ledger.py'
+        current = installed.read_bytes(); installed.unlink()
         state = self.runtime.state / 'platform-test.json'
         state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
         with self.assertRaisesRegex(RuntimeError, 'activation failed'):
             with dev.test_operations_transition(self.runtime, self.source):
-                self.assertTrue(installed.is_file())
+                self.assertEqual(installed.read_bytes(), current)
                 raise RuntimeError('activation failed')
         self.assertFalse(installed.exists())
+        installed.write_bytes(b'# unexpected collection helper drift')
+        installed.chmod(0o644)
+        with self.assertRaisesRegex(OperationError, 'rollback source'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.fail('unregistered collection helper replaced')
+        self.assertEqual(installed.read_bytes(), b'# unexpected collection helper drift')
+
+    def test_new_admin_helper_is_removed_when_first_activation_fails(self):
+        for name in ('platform_test_admin.py', 'albums_recovery.py'):
+            installed = self.root / 'deploy/tencent' / name
+            original = installed.read_bytes()
+            installed.unlink()
+            state = self.runtime.state / 'platform-test.json'
+            state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'activation failed'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    self.assertTrue(installed.is_file())
+                    raise RuntimeError('activation failed')
+            self.assertFalse(installed.exists())
+            installed.write_bytes(original)
 
     def test_shared_backup_update_does_not_replace_current_production_recovery(self):
         name = 'ops_backup.py'
@@ -241,6 +376,189 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'outside the reviewed'):
             with dev.test_operations_transition(self.runtime, self.source):
                 self.fail('accepted an unrelated shared backup change')
+
+    def shared_backup_fixture(self):
+        originals, targets, reviewed = {}, {}, {}
+        source = Path(dev.__file__).resolve().parent.parent
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            for name in dev.SHARED_BACKUP_UPGRADE:
+                original = ('# registered recovery member ' + name + '\n').encode()
+                current = (source / name).read_bytes()
+                (self.root / 'deploy' / name).write_bytes(original)
+                entry = tarfile.TarInfo('deploy/' + name); entry.size = len(original)
+                archive.addfile(entry, io.BytesIO(original))
+                originals[name], targets[name] = original, current
+                reviewed[name] = (hashlib.sha256(original).hexdigest(), hashlib.sha256(current).hexdigest())
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        return originals, targets, reviewed
+
+    def test_reviewed_shared_backup_targets_match_current_source(self):
+        for name, (_, digest) in dev.SHARED_BACKUP_UPGRADE.items():
+            self.assertEqual(hashlib.sha256((Path(dev.__file__).resolve().parent.parent / name).read_bytes()).hexdigest(), digest)
+
+    def test_shared_backup_upgrade_rolls_back_every_member_and_reclaims_failed_write(self):
+        originals, targets, reviewed = self.shared_backup_fixture()
+        replace = Path.replace; failed = False
+        def interrupted(path, destination):
+            nonlocal failed
+            if Path(destination).name == 'ops_cos.py' and not failed:
+                failed = True
+                raise OSError('controlled shared member install failure')
+            return replace(path, destination)
+        with patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed):
+            with patch.object(Path, 'replace', interrupted), self.assertRaisesRegex(OSError, 'controlled shared member'):
+                with dev.test_operations_transition(self.runtime, self.source): self.fail('partial installation admitted')
+            for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+            self.assertEqual(list((self.root / 'deploy/tencent').glob('.*.transition')), [])
+            for error in (RuntimeError, KeyboardInterrupt):
+                with self.assertRaisesRegex(error, 'candidate rejected'):
+                    with dev.test_operations_transition(self.runtime, self.source):
+                        for name, data in targets.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+                        raise error('candidate rejected')
+                for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+            with dev.test_operations_transition(self.runtime, self.source): pass
+            for name, data in targets.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+
+    def test_shared_backup_upgrade_preserves_replaced_pending_input(self):
+        originals, _, reviewed = self.shared_backup_fixture()
+        replace = Path.replace
+        saved = self.root / 'pending-created-by-producer'
+        def substituted(path, destination):
+            if Path(destination).name == 'ops_backup.py':
+                path.rename(saved)
+                path.write_bytes(b'# independent pending code')
+                path.chmod(0o600)
+                raise OSError('controlled pending replacement')
+            return replace(path, destination)
+        with patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed), patch.object(Path, 'replace', substituted), self.assertRaises((OperationError, FileExistsError)):
+            with dev.test_operations_transition(self.runtime, self.source): self.fail('replaced pending code accepted')
+        pending = self.root / 'deploy/tencent/.ops_backup.py.transition'
+        self.assertEqual(pending.read_bytes(), b'# independent pending code')
+        self.assertTrue(saved.is_file())
+        for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+
+    def test_shared_backup_upgrade_rejects_drift_and_unregistered_baseline(self):
+        originals, _, reviewed = self.shared_backup_fixture()
+        for name, original in originals.items():
+            path = self.root / 'deploy' / name; path.write_bytes(original + b'# unreviewed drift')
+            with self.subTest(name=name), patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed), self.assertRaises(OperationError):
+                with dev.test_operations_transition(self.runtime, self.source): self.fail('unreviewed member installed')
+            self.assertEqual(path.read_bytes(), original + b'# unreviewed drift')
+            path.write_bytes(original)
+        wrong = dict(reviewed); name = next(iter(wrong)); wrong[name] = ('0' * 64, wrong[name][1])
+        (self.root / 'deploy' / name).write_bytes((Path(dev.__file__).resolve().parent.parent / name).read_bytes())
+        with patch.object(dev, 'SHARED_BACKUP_UPGRADE', wrong), self.assertRaisesRegex(OperationError, 'baseline'):
+            with dev.test_operations_transition(self.runtime, self.source): self.fail('unregistered rollback accepted')
+        for other, data in originals.items():
+            if other != name: self.assertEqual((self.root / 'deploy' / other).read_bytes(), data)
+
+    def test_shared_upgrade_uses_the_target_bytes_that_passed_digest_validation(self):
+        _, targets, reviewed = self.shared_backup_fixture()
+        name = next(iter(targets)); source = Path(dev.__file__).resolve().parent.parent / name
+        read = Path.read_bytes; seen = 0
+        def changed_after_check(path):
+            nonlocal seen
+            if path == source:
+                seen += 1
+                if seen > 1: return b'# target changed after digest validation'
+            return read(path)
+        with patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed), patch.object(Path, 'read_bytes', changed_after_check):
+            with dev.test_operations_transition(self.runtime, self.source):
+                for member, data in targets.items(): self.assertEqual((self.root / 'deploy' / member).read_bytes(), data)
+
+    def test_shared_upgrade_preserves_installed_drift_after_selection(self):
+        _, _, reviewed = self.shared_backup_fixture()
+        name = next(iter(reviewed)); installed = self.root / 'deploy' / name
+        selection = dev.selection
+        def changed_after_check(*args):
+            result = selection(*args)
+            installed.write_bytes(b'# independent installed code changed after selection')
+            return result
+        with patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed), patch.object(dev, 'selection', side_effect=changed_after_check), self.assertRaisesRegex(OperationError, 'baseline'):
+            with dev.test_operations_transition(self.runtime, self.source): self.fail('post-selection drift replaced')
+        self.assertEqual(installed.read_bytes(), b'# independent installed code changed after selection')
+
+    def test_killed_shared_upgrade_resumes_exact_members_and_can_restore_registered_baseline(self):
+        originals, targets, reviewed = self.shared_backup_fixture()
+        code = r"""
+import json,os,signal,sys
+from pathlib import Path
+from types import SimpleNamespace
+import platform_test_deploy as dev
+root,revision,pairs,stop=sys.argv[1:]
+dev.SHARED_BACKUP_UPGRADE=json.loads(pairs)
+r=SimpleNamespace(root=Path(root),state=Path(root)/'.operations')
+original=Path.replace;count=0
+def replace(path,destination):
+    global count
+    result=original(path,destination)
+    if 'tencent/' + Path(destination).name in dev.SHARED_BACKUP_UPGRADE:
+        count+=1
+        if count==int(stop):os.kill(os.getpid(),signal.SIGKILL)
+    return result
+Path.replace=replace
+with dev.test_operations_transition(r,revision):pass
+"""
+        for count in range(1, len(reviewed)):
+            for name, data in originals.items(): (self.root / 'deploy' / name).write_bytes(data)
+            result = subprocess.run([sys.executable, '-c', code, str(self.root), self.source, json.dumps(reviewed), str(count)], capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+            self.assertEqual(sum((self.root / 'deploy' / name).read_bytes() == data for name, data in targets.items()), count)
+            with patch.object(dev, 'SHARED_BACKUP_UPGRADE', reviewed), self.assertRaisesRegex(RuntimeError, 'candidate rejected'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    for name, data in targets.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+                    raise RuntimeError('candidate rejected')
+            for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+            self.assertEqual(list((self.root / 'deploy/tencent').glob('.*.transition')), [])
+
+    @unittest.skipUnless(os.environ.get('PLATFORM_TEST_REGISTERED_SOURCE_TAR'), 'explicit authenticated running-source fixture required')
+    def test_shared_backup_upgrade_matches_registered_running_source_bytes(self):
+        originals = {}
+        source = Path(dev.__file__).resolve().parent.parent
+        collection = self.root / 'deploy/albums/collection_deletion_ledger.py'; collection.unlink()
+        with tarfile.open(os.environ['PLATFORM_TEST_REGISTERED_SOURCE_TAR']) as registered, tarfile.open(self.folder / 'source.tar', 'a') as selected:
+            for name in dict.fromkeys((*dev.SHARED_BACKUP_UPGRADE, 'tencent/operations.py')):
+                member = registered.getmember('deploy/' + name)
+                self.assertTrue(member.isfile()); self.assertLessEqual(member.size, 131072)
+                data = registered.extractfile(member).read()
+                if name in dev.SHARED_BACKUP_UPGRADE:
+                    digest, _ = dev.SHARED_BACKUP_UPGRADE[name]
+                    self.assertIn(hashlib.sha256(data).hexdigest(), (digest, *dev.SHARED_BACKUP_INTERMEDIATE.get(name, ())))
+                originals[name] = data
+                (self.root / 'deploy' / name).write_bytes(data)
+                entry = tarfile.TarInfo('deploy/' + name); entry.size = len(data)
+                selected.addfile(entry, io.BytesIO(data))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        sentinel = self.root / 'preserved-business-input'; sentinel.write_bytes(b'preserved synthetic business data')
+        for resumed in (False, True):
+            if resumed:
+                name = next(iter(originals)); (self.root / 'deploy' / name).write_bytes((source / name).read_bytes())
+            with self.assertRaisesRegex(RuntimeError, 'candidate rejected'):
+                with dev.test_operations_transition(self.runtime, self.source):
+                    for name in originals: self.assertEqual((self.root / 'deploy' / name).read_bytes(), (source / name).read_bytes())
+                    self.assertEqual(collection.read_bytes(), (source / 'albums/collection_deletion_ledger.py').read_bytes())
+                    with patch.object(dev.recording, 'available', return_value=True):
+                        dev.require_installed_operations(self.runtime, self.folder)
+                    raise RuntimeError('candidate rejected')
+            for name, data in originals.items(): self.assertEqual((self.root / 'deploy' / name).read_bytes(), data)
+            self.assertFalse(collection.exists())
+        with dev.test_operations_transition(self.runtime, self.source): pass
+        for name in originals: self.assertEqual((self.root / 'deploy' / name).read_bytes(), (source / name).read_bytes())
+        self.assertTrue(collection.is_file())
+        self.assertEqual(sentinel.read_bytes(), b'preserved synthetic business data')
+        self.assertEqual(list((self.root / 'deploy/tencent').glob('.*.transition')), [])
+
+    def test_required_operations_include_cos_and_collection_recovery_dependencies(self):
+        for name in ('tencent/ops_cos.py', 'albums/collection_deletion_ledger.py'):
+            path = self.root / 'deploy' / name; original = path.read_bytes()
+            path.write_bytes(original + b'\n# unreviewed dependency')
+            with self.subTest(name=name), patch.object(dev.recording, 'available', return_value=True), self.assertRaises(OperationError):
+                dev.require_installed_operations(self.runtime, self.folder)
+            path.write_bytes(original)
 
     def test_storekit_configuration_is_sandbox_only_and_app_specific(self):
         app = {'PLATFORM_APPS': 'health,journal,birthday,albums',
@@ -880,6 +1198,36 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
             plan(self.old_folder, self.folder)
 
+    def test_album_attestation_registry_upgrade_requires_exact_reviewed_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        name = '0079_platform_albums_app_attest.sql'
+        self.add_illustration_migration(name=name)
+        self.assertEqual(plan(self.old_folder, self.folder)[1], ['0001_example.sql', name])
+        self.write_archive()
+        self.add_illustration_migration(b"DELETE FROM apps WHERE app_id='health';", name=name)
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+
+    def test_main_consent_history_insertion_is_exact_and_does_not_admit_other_backfills(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        last = '0078_album_asset_deletion_ledger.sql'
+        name = '0066_privacy_consent_scopes.sql'
+        self.add_illustration_migration(name=last)
+        shutil.copyfile(self.folder / 'source.tar', self.old_folder / 'source.tar')
+        self.add_illustration_migration(name=name)
+        before, after = plan(self.old_folder, self.folder)
+        self.assertEqual(before, ['0001_example.sql', last])
+        self.assertEqual(after, ['0001_example.sql', name, last])
+        for backfill, contents in ((name, b'ALTER TABLE privacy_consents DROP CHECK privacy_consents_scope_chk;'),
+                                   ('0072_health_guardian_consent_scope.sql', None)):
+            with self.subTest(backfill=backfill):
+                shutil.copyfile(self.old_folder / 'source.tar', self.folder / 'source.tar')
+                self.add_illustration_migration(contents, name=backfill)
+                with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+                    plan(self.old_folder, self.folder)
+
     def test_guardian_consent_migration_requires_exact_reviewed_sql(self):
         from platform_test_schema import plan
         self.prepare_update()
@@ -895,6 +1243,21 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         from platform_test_schema import plan
         self.prepare_update()
         for name in READ_ALOUD_MIGRATIONS:
+            with self.subTest(name=name):
+                self.write_archive()
+                self.add_illustration_migration(name=name)
+                self.assertEqual(plan(self.old_folder, self.folder)[1], ['0001_example.sql', name])
+                self.write_archive()
+                self.add_illustration_migration(b'CREATE TABLE unreviewed (id INT);', name=name)
+                with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+                    plan(self.old_folder, self.folder)
+
+    def test_album_metadata_migrations_require_each_exact_reviewed_sql(self):
+        from platform_test_schema import plan
+        from platform_test_albums import SCHEMA_MIGRATIONS
+        self.prepare_update()
+        for path in SCHEMA_MIGRATIONS[2:]:
+            name = Path(path).name
             with self.subTest(name=name):
                 self.write_archive()
                 self.add_illustration_migration(name=name)
@@ -1232,6 +1595,150 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.runtime.execute.side_effect = lambda label, command, **kw: (b'[{"State":{"Running":false,"ExitCode":0}}]'
             if label == 'platform-test-album-worker-stopped' else execute(label, command, **kw))
 
+    def prepare_photo_writer_migration(self):
+        self.enable_album_media()
+        # The running worker already uses the shared, scoped media recipe.
+        for name in (dev.albums.WORKER_COMPOSE, 'album-worker.env'):
+            shutil.copyfile(self.folder / name, self.old_folder / name)
+        with tarfile.open(self.old_folder / 'source.tar', 'a') as archive:
+            data = (self.old_folder / dev.albums.WORKER_COMPOSE).read_bytes()
+            entry = tarfile.TarInfo(dev.albums.WORKER_COMPOSE); entry.size = len(data)
+            archive.addfile(entry, io.BytesIO(data))
+        old_compose = dev.read_environment(self.old_folder / 'compose.env')
+        old_compose['PLATFORM_ALBUM_WORKER_ENV_FILE'] = str(self.old_folder / 'album-worker.env')
+        (self.old_folder / 'compose.env').write_text(''.join(k + '=' + v + '\n' for k,v in old_compose.items()))
+        old_files = {name: hashlib.sha256((self.old_folder / name).read_bytes()).hexdigest()
+                     for name in dev.selection_files(self.old_folder)}
+        (self.old_folder / 'selection.json').write_text(json.dumps({'source': self.old_source, 'files': old_files}))
+        for p in self.old_folder.iterdir(): p.chmod(0o600)
+        self.previous['files'] = old_files
+        dev.atomic_json(self.runtime.state / 'platform-test.json', self.previous)
+        names = [Path(name).name for name in dev.albums.SCHEMA_MIGRATIONS]
+        for name in names: self.add_illustration_migration(name=name)
+        self.photo_shared_migrated = self.photo_album_migrated = False
+        self.photo_failure = None
+        execute = self.runtime.execute.side_effect
+        def migration(label, command, **kwargs):
+            if label == self.photo_failure:
+                self.photo_failure = None
+                raise OperationError('controlled photo transition failure')
+            if label.startswith('platform-test-photo-transition-'):
+                service = label.removeprefix('platform-test-photo-transition-')
+                project = dev.albums.PROJECT if service == 'albumworker' else dev.PROJECT
+                self.assertEqual(command, ['docker', 'inspect', project + '-' + service + '-1'])
+                return json.dumps([{'Config': {'Image': dev.PROJECT + '-' + service + ':' + self.old_source,
+                    'Labels': {'com.docker.compose.project': project}}}]).encode()
+            if label == 'platform-test-album-worker-stop':
+                state = json.loads((self.runtime.state / 'platform-test.json').read_text())
+                if not self.photo_shared_migrated:
+                    self.assertEqual(state['album_worker_transition']['source'], self.source)
+            if label == 'platform-test-update-migrate': self.photo_shared_migrated = True
+            if label == 'platform-test-update-album-migrate': self.photo_album_migrated = True
+            if label == 'platform-test-update-schema':
+                return ((str(1 + len(names)) + '\t' + names[-1] if self.photo_shared_migrated
+                         else '1\t0001_example.sql') + '\n').encode()
+            if label in ('platform-test-migration-names', 'platform-test-album-schema'):
+                done = self.photo_shared_migrated if label.endswith('names') else self.photo_album_migrated
+                return ('0001_example.sql\n' + (''.join(name + '\n' for name in names) if done else '')).encode()
+            return execute(label, command, **kwargs)
+        self.runtime.execute.side_effect = migration
+
+    def photo_update(self):
+        with patch.object(dev.albums, 'verify_gateway'), patch.object(dev.albums, 'verify_worker'):
+            return self.update(albums_backup=True)
+
+    def test_photo_migrations_wait_for_old_writer_exit_before_either_database(self):
+        self.prepare_photo_writer_migration()
+        result = self.photo_update()
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        stopped = labels.index('platform-test-album-worker-stopped')
+        self.assertLess(labels.index('platform-test-build-albumworker'), stopped)
+        for name in ('migrate', 'album-migrate'):
+            self.assertLess(stopped, labels.index('platform-test-update-' + name))
+        self.assertNotIn('album_worker_transition', result)
+        self.assertNotIn('album_worker_transition', result['previous'])
+
+    def test_photo_migration_failure_restores_old_worker_and_keeps_forward_schema(self):
+        self.prepare_photo_writer_migration()
+        self.photo_failure = 'platform-test-update-album-migrate'
+        with self.assertRaisesRegex(OperationError, 'controlled photo transition failure'):
+            self.photo_update()
+        state = json.loads((self.runtime.state / 'platform-test.json').read_text())
+        self.assertEqual(state['source'], self.old_source)
+        self.assertEqual(state['latest_migration'], Path(dev.albums.SCHEMA_MIGRATIONS[-1]).name)
+        self.assertNotIn('album_worker_transition', state)
+        commands = [c.args[1] for c in self.runtime.execute.call_args_list]
+        self.assertFalse(any('down' in c or '--volumes' in c or 'mysql' in c and 'up' in c for c in commands))
+
+    def test_photo_drain_failure_does_not_start_any_migration(self):
+        self.prepare_photo_writer_migration()
+        self.photo_failure = 'platform-test-album-worker-stop'
+        with self.assertRaisesRegex(OperationError, 'controlled photo transition failure'):
+            self.photo_update()
+        self.assertFalse(self.photo_shared_migrated or self.photo_album_migrated)
+        self.assertNotIn('album_worker_transition', json.loads((self.runtime.state / 'platform-test.json').read_text()))
+
+    def test_photo_failed_recovery_retains_checkpoint_and_resumes_forward_schema(self):
+        self.prepare_photo_writer_migration()
+        self.photo_failure = 'platform-test-update-album-migrate'
+        with patch.object(dev, 'rollback_update', side_effect=OperationError('recovery unavailable')):
+            with self.assertRaisesRegex(OperationError, 'recovery unavailable'):
+                self.photo_update()
+        path = self.runtime.state / 'platform-test.json'
+        state = json.loads(path.read_text())
+        self.assertIn('album_worker_transition', state)
+        self.assertEqual(state['latest_migration'], Path(dev.albums.SCHEMA_MIGRATIONS[-1]).name)
+        self.runtime.execute.reset_mock()
+        self.photo_update()
+        self.assertNotIn('album_worker_transition', json.loads(path.read_text()))
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-rollback'), labels.index('platform-test-update-album-migrate'))
+        self.assertNotIn('platform-test-update-migrate', labels)
+
+    @unittest.skipUnless(hasattr(os, 'fork'), 'POSIX process kill required')
+    def test_photo_writer_sigkill_is_recovered_before_new_backup_or_migration(self):
+        self.prepare_photo_writer_migration()
+        execute = self.runtime.execute.side_effect
+        pid = os.fork()
+        if pid == 0:
+            def killed(label, command, **kwargs):
+                if label == 'platform-test-update-migrate': os.kill(os.getpid(), signal.SIGKILL)
+                return execute(label, command, **kwargs)
+            self.runtime.execute.side_effect = killed
+            try: self.photo_update()
+            finally: os._exit(93)
+        _, status = os.waitpid(pid, 0)
+        self.assertTrue(os.WIFSIGNALED(status))
+        self.assertEqual(os.WTERMSIG(status), signal.SIGKILL)
+        self.assertIn('album_worker_transition', json.loads((self.runtime.state / 'platform-test.json').read_text()))
+        self.runtime.execute.reset_mock()
+        self.photo_update()
+        labels = [c.args[0] for c in self.runtime.execute.call_args_list]
+        self.assertLess(labels.index('platform-test-update-rollback'), labels.index('platform-test-update-schema'))
+        self.assertLess(labels.index('platform-test-update-rollback'), labels.index('platform-test-update-migrate'))
+
+    def test_photo_recovery_rejects_changed_target_without_stopping_processes(self):
+        self.prepare_photo_writer_migration()
+        state = {**self.previous, 'album_worker_transition': {'source': 'f' * 40, 'files': {}}}
+        dev.atomic_json(self.runtime.state / 'platform-test.json', state)
+        with self.assertRaisesRegex(OperationError, 'does not match the interrupted'):
+            self.photo_update()
+        self.assertFalse(any('stop' in c.args[1] or 'up' in c.args[1] for c in self.runtime.execute.call_args_list))
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), state)
+
+    def test_photo_recovery_rejects_foreign_worker_and_retains_checkpoint(self):
+        self.prepare_photo_writer_migration()
+        record = json.loads((self.folder / 'selection.json').read_text())
+        state = {**self.previous, 'album_worker_transition': {'source': self.source, 'files': record['files']}}
+        dev.atomic_json(self.runtime.state / 'platform-test.json', state)
+        execute = self.runtime.execute.side_effect
+        self.runtime.execute.side_effect = lambda label, command, **kw: (b'[{"Config":{"Image":"foreign"}}]'
+            if label == 'platform-test-photo-transition-albumworker' else execute(label, command, **kw))
+        with self.assertRaisesRegex(OperationError, 'unrelated process'):
+            self.photo_update()
+        self.assertFalse(any('stop' in c.args[1] or 'up' in c.args[1] for c in self.runtime.execute.call_args_list))
+        self.assertEqual(json.loads((self.runtime.state / 'platform-test.json').read_text()), state)
+
     def test_media_activation_requires_backup_and_registers_matched_image(self):
         self.enable_album_media()
         self.assertIn('albumworker', dev.image_services(self.folder))
@@ -1321,7 +1828,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             path = scripts / name
             expected = path.read_bytes()
             path.write_bytes(b'old operations version')
-            with self.subTest(name=name), self.assertRaisesRegex(OperationError, 'matched scheduled operations'):
+            error = 'reviewed recovery-helper transition' if name == 'operations.py' else 'matched scheduled operations'
+            with self.subTest(name=name), self.assertRaisesRegex(OperationError, error):
                 self.activate()
             path.write_bytes(expected)
         self.runtime.execute.assert_not_called()

@@ -2,6 +2,8 @@
 """Encrypted Albums snapshots and quarantined, disposable MySQL restore drills."""
 import argparse
 import copy
+import contextlib
+import fcntl
 import gzip
 import hashlib
 import hmac
@@ -17,7 +19,7 @@ import tempfile
 import tarfile
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tencent"))
+sys.path.append(str(Path(__file__).resolve().parents[1] / "tencent"))
 from ops_common import OperationError, Runtime as OperationsRuntime, atomic_json, read_environment
 from ops_backup import backup_secret, crypt, file_digest, manifest_signature
 
@@ -32,8 +34,8 @@ class Runtime(OperationsRuntime):
 SCOPE = "albums-quarantined-v1"
 RETENTION = 14 * 86400
 TABLES = tuple("""album_account_deletions album_account_object_purges album_accounts
-album_apple_grants album_apple_identity_state album_asset_lifecycle album_asset_operations
-album_asset_versions album_cloud_subscriptions album_deletion_apple_jobs
+album_apple_grants album_apple_identity_state album_asset_deletion_ledger album_asset_favorites album_asset_lifecycle album_asset_operations
+album_collections album_collection_members album_asset_versions album_cloud_subscriptions album_content_corrections album_deletion_apple_jobs
 album_deletion_subscription_jobs album_deletion_ledger album_deletion_video_jobs album_derived_cleanups
 album_derived_finalizations album_library_changes album_live_pair_multiparts album_live_pairs
 album_login_challenges album_multipart_completions album_multipart_intents album_object_purges
@@ -42,8 +44,14 @@ album_retention_deliveries album_retention_reminders album_recovery_state album_
 album_share_links album_storage_accounts album_subscription_notifications album_uploads
 album_system_copy_locators album_video_jobs""".split())
 TABLES = tuple(sorted(TABLES))
-# Retained pre-0074 snapshots remain authenticated and restorable.
-PRE_COPY_TABLES = tuple(t for t in TABLES if t != "album_system_copy_locators")
+# Retained snapshots remain authenticated and restorable before isolated migration.
+PRE_ASSET_DELETION_TABLES = tuple(t for t in TABLES if t != "album_asset_deletion_ledger")
+PRE_COLLECTION_TABLES = tuple(t for t in PRE_ASSET_DELETION_TABLES if t not in ("album_collections", "album_collection_members"))
+PRE_FAVORITE_TABLES = tuple(t for t in PRE_COLLECTION_TABLES if t != "album_asset_favorites")
+PRE_CORRECTION_TABLES = tuple(t for t in PRE_FAVORITE_TABLES if t != "album_content_corrections")
+PRE_COPY_TABLES = tuple(t for t in PRE_CORRECTION_TABLES if t != "album_system_copy_locators")
+TABLE_INVENTORIES = (TABLES, PRE_ASSET_DELETION_TABLES, PRE_COLLECTION_TABLES,
+                     PRE_FAVORITE_TABLES, PRE_CORRECTION_TABLES, PRE_COPY_TABLES)
 QUARANTINE = """
 START TRANSACTION;
 UPDATE album_accounts SET state='disabled' WHERE state='active';
@@ -53,6 +61,111 @@ UPDATE album_push_registrations SET state='disabled',token_sha256=NULL,encrypted
  token_nonce=NULL,registered_at=NULL,request_id=NULL,request_sha256=NULL;
 COMMIT;
 """
+
+
+STAGING_SCOPE = "albums-offsite-staging-v1"
+
+
+def _remove_staging(runtime, folder):
+    if folder.parent.resolve() != runtime.backups.resolve() or not re.fullmatch(r"\.albums-(?:offsite|receipt)-[a-z0-9_]{8}", folder.name):
+        raise OperationError("offsite staging path rejected")
+    info = folder.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077
+            or info.st_uid != runtime.backups.stat().st_uid):
+        raise OperationError("invalid offsite staging directory")
+    if not any(folder.iterdir()):
+        folder.rmdir()
+        return
+    with contextlib.ExitStack() as handles:
+        directory = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        handles.callback(os.close, directory)
+        opened_dir = os.fstat(directory)
+        if (opened_dir.st_dev, opened_dir.st_ino) != (info.st_dev, info.st_ino):
+            raise OperationError("offsite staging directory changed; preserved")
+        with os.fdopen(os.open("owner.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory), "rb") as source:
+            meta = os.fstat(source.fileno())
+            if not stat.S_ISREG(meta.st_mode) or meta.st_mode & 0o077 or meta.st_nlink != 1 or meta.st_size > 4096:
+                raise OperationError("invalid offsite staging owner")
+            envelope = json.loads(source.read(4097))
+        owner = envelope["owner"]
+        if (not hmac.compare_digest(manifest_signature(backup_secret(runtime), owner), envelope["hmac_sha256"])
+                or owner["scope"] != STAGING_SCOPE or owner["database"] != runtime.config["MYSQL_DATABASE"]
+                or owner["directory"] != folder.name or not isinstance(owner["files"], list)
+                or len(owner["files"]) > 5
+                or any(not isinstance(n, str) or not re.fullmatch(r"(?:bundle\.(?:tar|enc)|receipt\.json|albums-[0-9a-f]{32}\.sql\.gz\.enc(?:\.json)?|albums-deletions-[0-9a-f]{32}\.json)", n) for n in owner["files"])):
+            raise OperationError("offsite staging ownership rejected")
+        if len(set(owner["files"])) != len(owner["files"]):
+            raise OperationError("duplicate offsite staging inputs")
+        files = []
+        for name in os.listdir(directory):
+            if name not in owner["files"] and name != "owner.json":
+                raise OperationError("unknown offsite staging content preserved")
+            handle = handles.enter_context(os.fdopen(os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory), "rb"))
+            opened = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_mode & 0o077 or opened.st_nlink != 1 or opened.st_uid != info.st_uid):
+                raise OperationError("invalid offsite staging file preserved")
+            if name == "owner.json" and (opened.st_dev, opened.st_ino, opened.st_ctime_ns) != (meta.st_dev, meta.st_ino, meta.st_ctime_ns):
+                raise OperationError("offsite staging owner changed; preserved")
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise OperationError("offsite staging is still in use; retry later") from error
+            files.append((name, opened))
+        # Acquire every input before removing any; Go holds a shared lock while reading.
+        for name, opened in sorted(files, key=lambda item: item[0] == "owner.json"):
+            current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns) != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns):
+                raise OperationError("offsite staging file changed; preserved")
+            os.unlink(name, dir_fd=directory)
+        current_dir = folder.lstat()
+        if (current_dir.st_dev, current_dir.st_ino) != (info.st_dev, info.st_ino):
+            raise OperationError("offsite staging directory changed; preserved")
+        folder.rmdir()
+
+
+def cleanup_staging(runtime):
+    for pattern in (".albums-offsite-*", ".albums-receipt-*"):
+        for folder in runtime.backups.glob(pattern):
+            if not re.fullmatch(r"\.albums-(?:offsite|receipt)-[a-z0-9_]{8}", folder.name):
+                raise OperationError("unknown offsite staging name preserved")
+            try:
+                _remove_staging(runtime, folder)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise OperationError("offsite staging cleanup failed; files preserved for retry") from error
+
+
+@contextlib.contextmanager
+def staging(runtime, kind, names, *, destination=None):
+    if destination is not None:
+        destination = Path(destination)
+        if (kind != "offsite" or destination.parent.resolve() != runtime.backups.resolve()
+                or not re.fullmatch(r"albums-recovered-[a-z0-9_]{8}", destination.name)
+                or destination.exists() or destination.is_symlink()):
+            raise OperationError("recovered backup destination rejected")
+    transferred = False
+    folder = Path(tempfile.mkdtemp(prefix=".albums-" + kind + "-", dir=runtime.backups))
+    owner = dict(scope=STAGING_SCOPE, database=runtime.config["MYSQL_DATABASE"], directory=folder.name, files=list(names))
+    if destination is not None:
+        owner["destination"] = destination.name
+    inherited = getattr(runtime, "_child_pass_fds", ())
+    lease = None
+    try:
+        atomic_json(folder / "owner.json", dict(owner=owner, hmac_sha256=manifest_signature(backup_secret(runtime), owner)))
+        lease = (folder / "owner.json").open("rb")
+        fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        runtime._child_pass_fds = (*inherited, lease.fileno())
+        yield folder
+        if destination is not None:
+            if destination.exists() or destination.is_symlink():
+                raise OperationError("recovered backup destination changed; preserved")
+            folder.rename(destination)
+            transferred = True
+    finally:
+        runtime._child_pass_fds = inherited
+        if lease is not None:
+            lease.close()
+        if not transferred:
+            _remove_staging(runtime, folder)
 
 
 def configure(runtime):
@@ -79,21 +192,24 @@ def connection(runtime):
     return args + ["--user=" + runtime.config["MYSQL_USER"]]
 
 
-def verify(runtime, path):
+def _snapshot_manifest(runtime, path):
     database = configure(runtime)
     path = Path(path)
     if path.parent.resolve() != runtime.backups.resolve() or not re.fullmatch(r"albums-[0-9a-f]{32}\.sql\.gz\.enc", path.name):
         raise OperationError("invalid Albums backup path")
     manifest_path = Path(str(path) + ".json")
     try:
-        if path.is_symlink() or manifest_path.is_symlink() or manifest_path.stat().st_size > 65536:
+        info = manifest_path.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1
+                or info.st_uid != runtime.backups.stat().st_uid or info.st_size > 65536):
             raise OperationError("invalid Albums backup files")
         envelope = json.loads(manifest_path.read_text())
         m = envelope["manifest"]
         if not hmac.compare_digest(manifest_signature(backup_secret(runtime), m), envelope["hmac_sha256"]):
             raise OperationError("Albums backup authentication failed")
         if (m["scope"] != SCOPE or m["database"] != database or m["filename"] != path.name
-                or m["sha256"] != file_digest(path) or set(m["table_rows"]) not in (set(TABLES), set(PRE_COPY_TABLES))
+                or not isinstance(m["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", m["sha256"])
+                or set(m["table_rows"]) not in [set(tables) for tables in TABLE_INVENTORIES]
                 or set(m["table_sha256"]) != set(m["table_rows"])
                 or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in m["table_sha256"].values())
                 or any(type(n) is not int or n < 0 for n in m["table_rows"].values())
@@ -104,8 +220,49 @@ def verify(runtime, path):
         raise OperationError("Albums backup is missing or invalid") from error
 
 
+def verify(runtime, path):
+    m = _snapshot_manifest(runtime, path)
+    try:
+        info = Path(path).lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1
+                or info.st_uid != runtime.backups.stat().st_uid or m["sha256"] != file_digest(path)):
+            raise OperationError("Albums backup metadata or content mismatch")
+    except OSError as error:
+        raise OperationError("Albums backup is missing or invalid") from error
+    return m
+
+
+def _remove_recovered_owner(runtime, folder, names):
+    path = folder / "owner.json"
+    try:
+        if {p.name for p in folder.iterdir()} != {*names, "owner.json"}:
+            raise OperationError("unexpected recovered backup handoff files; preserved")
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1
+                    or info.st_uid != folder.stat().st_uid or not 0 < info.st_size <= 4096):
+                raise OperationError("invalid recovered backup owner; preserved")
+            fcntl.flock(source, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            envelope = json.loads(source.read(4097))
+            owner = envelope["owner"]
+            if (set(envelope) != {"owner", "hmac_sha256"}
+                    or set(owner) != {"scope", "database", "directory", "files", "destination"}
+                    or not hmac.compare_digest(manifest_signature(backup_secret(runtime), owner), envelope["hmac_sha256"])
+                    or owner["scope"] != STAGING_SCOPE or owner["database"] != runtime.config["MYSQL_DATABASE"]
+                    or not re.fullmatch(r"\.albums-offsite-[a-z0-9_]{8}", owner["directory"])
+                    or owner["destination"] != folder.name or not isinstance(owner["files"], list)
+                    or len(owner["files"]) != 5 or set(owner["files"]) != {*names, "bundle.enc", "bundle.tar"}):
+                raise OperationError("recovered backup handoff authentication failed; preserved")
+            current = path.lstat()
+            if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns) != (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns):
+                raise OperationError("recovered backup owner changed; preserved")
+            path.unlink()
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise OperationError("recovered backup owner unavailable or active; preserved for retry") from error
+
+
 def prune_recovered(runtime, cutoff):
-    from deletion_ledger import verify as verify_ledger
+    from deletion_ledger import verify_cleanup_checkpoint as verify_ledger
     removed = 0
     for folder in sorted(runtime.backups.glob("albums-recovered-*")):
         if (not re.fullmatch(r"albums-recovered-[a-z0-9_]{8}", folder.name)
@@ -125,12 +282,17 @@ def prune_recovered(runtime, cutoff):
         if not receipt.exists():
             snapshots = [p for p in paths if re.fullmatch(r"albums-[0-9a-f]{32}\.sql\.gz\.enc", p.name)]
             ledgers = [p for p in paths if re.fullmatch(r"albums-deletions-[0-9a-f]{32}\.json", p.name)]
-            if len(snapshots) != 1 or len(ledgers) != 1 or set(paths) != {snapshots[0], Path(str(snapshots[0]) + ".json"), ledgers[0]}:
+            owner = folder / "owner.json"
+            contents = [p for p in paths if p != owner]
+            if len(snapshots) != 1 or len(ledgers) != 1 or set(contents) != {snapshots[0], Path(str(snapshots[0]) + ".json"), ledgers[0]}:
                 raise OperationError("unexpected recovered backup files; preserved for review")
             stage = copy.copy(runtime)
             stage.backups = folder
             m = verify(stage, snapshots[0])
             verify_ledger(stage, ledgers[0], file_digest(ledgers[0]), m["created_at"])
+            if owner in paths:
+                _remove_recovered_owner(runtime, folder, [p.name for p in contents])
+                paths = contents
             if m["created_at"] > cutoff:
                 continue
             plan = {"scope": "albums-recovered-expiry-v1", "database": runtime.config["MYSQL_DATABASE"],
@@ -165,26 +327,43 @@ def prune_recovered(runtime, cutoff):
 
 def prune(runtime):
     configure(runtime)
+    cleanup_staging(runtime)
     cutoff = time.time() - RETENTION
     removed = prune_recovered(runtime, cutoff)
-    for path in sorted(runtime.backups.glob("albums-*.sql.gz.enc")):
-        m = verify(runtime, path)
+    paths = set(runtime.backups.glob("albums-*.sql.gz.enc"))
+    paths.update(Path(str(p).removesuffix(".json")) for p in runtime.backups.glob("albums-*.sql.gz.enc.json"))
+    for path in sorted(paths):
+        present = path.exists() or path.is_symlink()
+        m = verify(runtime, path) if present else _snapshot_manifest(runtime, path)
+        if not present and m["created_at"] > cutoff:
+            raise OperationError("unexpired Albums backup ciphertext is missing; manifest preserved")
         if m["created_at"] <= cutoff:
-            path.unlink()
+            if present:
+                path.unlink()
+            # Delete last: the authenticated manifest also permits interrupted expiry to resume.
             Path(str(path) + ".json").unlink()
             removed += 1
-    return removed
+    from deletion_ledger import prune_expired
+    return removed + prune_expired(runtime, cutoff)
 
 
 def create(runtime, binaries):
+    from deletion_ledger import ACTIVE_SOURCE_QUERY, check_active_source
+
     database = configure(runtime)
-    prune(runtime)
     credentials = {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")}
     sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + database,
            "--batch", "--skip-column-names"]
-    inventory = runtime.execute("albums-backup-inventory", sql + ["--execute=SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND LEFT(TABLE_NAME,6)='album_' ORDER BY TABLE_NAME"], env=credentials).decode().splitlines()
-    if inventory != [table + "\tInnoDB" for table in TABLES]:
+    inventory_query = "SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND LEFT(TABLE_NAME,6)='album_' ORDER BY TABLE_NAME"
+    source_and_tables = runtime.execute("albums-backup-inventory", sql + [
+        "--execute=" + ACTIVE_SOURCE_QUERY + ";" + inventory_query], env=credentials).decode().splitlines()
+    check_active_source(runtime, source_and_tables[:1])
+    inventory = source_and_tables[1:]
+    tables = next((tables for tables in TABLE_INVENTORIES
+                   if inventory == [table + "\tInnoDB" for table in tables]), None)
+    if tables is None:
         raise OperationError("Albums schema inventory differs; review coverage before backup")
+    prune(runtime)
     counts = {}
     digests = {}
     with tempfile.TemporaryDirectory(prefix=".albums-backup-", dir=runtime.backups) as directory:
@@ -194,11 +373,12 @@ def create(runtime, binaries):
         encrypted = folder / "snapshot.enc"
         command = [str(binaries / "mysqldump"), "--no-defaults", *connection(runtime), "--single-transaction", "--quick",
                    "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
-                   "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4", database, *TABLES]
+                   "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4", database, *tables]
         env = dict(os.environ, **credentials)
         with raw.open("xb") as output, (folder / "export.stderr").open("xb") as errors:
             os.chmod(raw, 0o600)
-            result = subprocess.run(command, stdout=output, stderr=errors, env=env, timeout=900)
+            result = subprocess.run(command, stdout=output, stderr=errors, env=env, timeout=900,
+                                    pass_fds=getattr(runtime, "_child_pass_fds", ()))
         if result.returncode:
             raise OperationError("Albums export failed; no backup published")
         with raw.open("rb") as source, gzip.open(compressed, "wb") as target:
@@ -207,7 +387,7 @@ def create(runtime, binaries):
                 inserted = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
                 if created:
                     table = created[1].decode()
-                    if table not in TABLES or table in counts:
+                    if table not in tables or table in counts:
                         raise OperationError("unexpected Albums export schema")
                     counts[table] = 0
                     digests[table] = hashlib.sha256()
@@ -215,11 +395,17 @@ def create(runtime, binaries):
                     table = inserted[1].decode()
                     if table not in counts:
                         raise OperationError("unexpected Albums export data")
+                    # The earlier SELECT and mysqldump use different snapshots.
+                    if table == "album_recovery_state" and line.rstrip(b"\r\n") != (
+                            b"INSERT INTO `album_recovery_state` (`singleton_id`, `quarantined`, `quarantined_at`) VALUES (1,0,NULL);"):
+                        raise OperationError("Albums export did not capture an active source database")
                     counts[table] += 1
                     digests[table].update(line)
                 target.write(line)
-        if set(counts) != set(TABLES):
+        if set(counts) != set(tables):
             raise OperationError("incomplete Albums export")
+        if counts["album_recovery_state"] != 1:
+            raise OperationError("Albums export did not capture an active source database")
         crypt(runtime, compressed, encrypted)
         filename = "albums-" + secrets.token_hex(16) + ".sql.gz.enc"
         m = {"scope": SCOPE, "created_at": int(time.time()), "database": database, "filename": filename,
@@ -232,29 +418,87 @@ def create(runtime, binaries):
     return runtime.record("albums-backup", filename=filename, sha256=m["sha256"], tables=len(counts))
 
 
+def prepare_restore_sql(runtime, source_path, folder):
+    compressed = folder / "snapshot.sql.gz"
+    raw = folder / "snapshot.sql"
+    crypt(runtime, source_path, compressed, decrypt=True)
+    total = 0
+    with gzip.open(compressed, "rb") as source, raw.open("xb") as output:
+        os.chmod(raw, 0o600)
+        while block := source.read(1024 * 1024):
+            total += len(block)
+            if total > 32 * 1024 ** 3:
+                raise OperationError("Albums restore exceeds the 32 GiB drill limit")
+            output.write(block)
+    return raw
+
+
+def restore_database(runtime, sql, dump_command, m, raw, folder, diagnostic, checkpoint):
+    entries = None if checkpoint is None else checkpoint["entries"]
+    assets = [] if checkpoint is None else checkpoint["assets"]
+    collections = [] if checkpoint is None else checkpoint["collections"]
+    runtime.execute("albums-restore-create", sql + ["--execute=CREATE DATABASE albums_restore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"])
+    sql += ["--database=albums_restore_test"]
+    with raw.open("rb") as source:
+        restored = subprocess.run(sql, stdin=source, stdout=subprocess.DEVNULL, stderr=diagnostic, timeout=900, pass_fds=getattr(runtime, "_child_pass_fds", ()))
+    if restored.returncode:
+        raise OperationError("isolated Albums restore failed")
+    for table, count in m["table_rows"].items():
+        actual = runtime.execute("albums-restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"]).decode().strip()
+        if int(actual) != count:
+            raise OperationError("Albums restored row count mismatch")
+    # Compare exported row bytes too, including JSON and binary fields.
+    restored_dump = folder / "restored.sql"
+    command = [*dump_command,
+               "--single-transaction", "--quick", "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
+               "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4",
+               "--no-create-info", "albums_restore_test", *sorted(m["table_rows"])]
+    with restored_dump.open("xb") as output:
+        os.chmod(restored_dump, 0o600)
+        compared = subprocess.run(command, stdout=output, stderr=diagnostic, timeout=900, pass_fds=getattr(runtime, "_child_pass_fds", ()))
+    if compared.returncode:
+        raise OperationError("Albums restored content export failed")
+    hashes = {table: hashlib.sha256() for table in m["table_rows"]}
+    with restored_dump.open("rb") as source:
+        for line in source:
+            row = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
+            if row:
+                hashes[row[1].decode()].update(line)
+    if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in m["table_rows"]):
+        raise OperationError("Albums restored content differs from snapshot")
+    runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
+    if entries is not None:
+        from asset_deletion_ledger import restore_fences as restore_asset_fences
+        restore_asset_fences(runtime, sql, assets)
+        from deletion_ledger import restore_fences
+        restore_fences(runtime, sql, entries)
+        from collection_deletion_ledger import restore_fences as restore_collection_fences
+        restore_collection_fences(runtime, sql, collections)
+        restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
+        unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at OR s.subscription_checked_revision IS NOT NULL OR s.subscription_checked_at IS NOT NULL"]).decode().strip()
+        if restored_intents != str(len(entries)) or unblocked != "0":
+            raise OperationError("restored deletion intent or storage fence mismatch")
+    runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
+    exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT IF((SELECT COUNT(*) FROM album_recovery_state WHERE singleton_id=1 AND quarantined=TRUE AND quarantined_at IS NOT NULL)=1,0,1)+(SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
+    if exposed != "0":
+        raise OperationError("Albums restore quarantine failed")
+
+
 def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
     m = verify(runtime, runtime.backups / filename)
     if m["created_at"] <= time.time() - RETENTION:
         raise OperationError("Albums backup is outside retention")
     entries = None
+    assets, collections = [], []
     if ledger_path is not None or ledger_digest is not None:
-        from deletion_ledger import verify as verify_ledger
-        entries = verify_ledger(runtime, ledger_path, ledger_digest, m["created_at"])
+        from deletion_ledger import verify_checkpoint
+        checkpoint = verify_checkpoint(runtime, ledger_path, ledger_digest, m["created_at"])
+        entries, assets, collections = checkpoint["entries"], checkpoint["assets"], checkpoint["collections"]
     # No live restore target is accepted. Only this newly created, socket-only
     # server receives SQL; quarantine never substitutes for a deletion ledger.
     with tempfile.TemporaryDirectory(prefix="albums-restore-", dir=runtime.state) as directory:
         folder = Path(directory)
-        compressed = folder / "snapshot.sql.gz"
-        raw = folder / "snapshot.sql"
-        crypt(runtime, runtime.backups / filename, compressed, decrypt=True)
-        total = 0
-        with gzip.open(compressed, "rb") as source, raw.open("xb") as output:
-            os.chmod(raw, 0o600)
-            while block := source.read(1024 * 1024):
-                total += len(block)
-                if total > 32 * 1024 ** 3:
-                    raise OperationError("Albums restore exceeds the 32 GiB drill limit")
-                output.write(block)
+        raw = prepare_restore_sql(runtime, runtime.backups / filename, folder)
         data = folder / "data"
         data.mkdir(mode=0o700)
         sock = folder / "mysql.sock"
@@ -274,46 +518,9 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                     time.sleep(0.1)
                 else:
                     raise OperationError("isolated Albums database startup timed out")
-                runtime.execute("albums-restore-create", sql + ["--execute=CREATE DATABASE albums_restore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"])
-                sql += ["--database=albums_restore_test"]
-                with raw.open("rb") as source:
-                    restored = subprocess.run(sql, stdin=source, stdout=subprocess.DEVNULL, stderr=diagnostic, timeout=900)
-                if restored.returncode:
-                    raise OperationError("isolated Albums restore failed")
-                for table, count in m["table_rows"].items():
-                    actual = runtime.execute("albums-restore-count", sql + ["--execute=SELECT COUNT(*) FROM `" + table + "`"]).decode().strip()
-                    if int(actual) != count:
-                        raise OperationError("Albums restored row count mismatch")
-                # Compare exported row bytes too, including JSON and binary fields.
-                restored_dump = folder / "restored.sql"
-                command = [str(binaries / "mysqldump"), "--no-defaults", "--protocol=socket", "--socket=" + str(sock), "--user=root",
-                           "--single-transaction", "--quick", "--hex-blob", "--no-tablespaces", "--set-gtid-purged=OFF", "--column-statistics=0",
-                           "--skip-extended-insert", "--complete-insert", "--order-by-primary", "--skip-comments", "--default-character-set=utf8mb4",
-                           "--no-create-info", "albums_restore_test", *sorted(m["table_rows"])]
-                with restored_dump.open("xb") as output:
-                    compared = subprocess.run(command, stdout=output, stderr=diagnostic, timeout=900)
-                if compared.returncode:
-                    raise OperationError("Albums restored content export failed")
-                hashes = {table: hashlib.sha256() for table in m["table_rows"]}
-                with restored_dump.open("rb") as source:
-                    for line in source:
-                        row = re.match(rb"INSERT INTO `([A-Za-z0-9_]+)`", line)
-                        if row:
-                            hashes[row[1].decode()].update(line)
-                if any(hashes[t].hexdigest() != m["table_sha256"][t] for t in m["table_rows"]):
-                    raise OperationError("Albums restored content differs from snapshot")
-                runtime.execute("albums-restore-fence", sql + ["--execute=UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1"])
-                if entries is not None:
-                    from deletion_ledger import restore_fences
-                    restore_fences(runtime, sql, entries)
-                    restored_intents = runtime.execute("albums-restore-ledger-count", sql + ["--execute=SELECT COUNT(*) FROM album_deletion_ledger"]).decode().strip()
-                    unblocked = runtime.execute("albums-restore-ledger-fences", sql + ["--execute=SELECT COUNT(*) FROM album_accounts a JOIN album_deletion_ledger l ON l.account_id=a.account_id LEFT JOIN album_storage_accounts s ON s.owner_id=a.account_id WHERE a.state<>'deleting' OR s.deletion_requested_at IS NULL OR s.deletion_requested_at<>l.requested_at OR s.subscription_checked_revision IS NOT NULL OR s.subscription_checked_at IS NOT NULL"]).decode().strip()
-                    if restored_intents != str(len(entries)) or unblocked != "0":
-                        raise OperationError("restored deletion intent or storage fence mismatch")
-                runtime.execute("albums-restore-quarantine", sql, input=QUARANTINE.encode())
-                exposed = runtime.execute("albums-restore-check", sql + ["--execute=SELECT IF((SELECT COUNT(*) FROM album_recovery_state WHERE singleton_id=1 AND quarantined=TRUE AND quarantined_at IS NOT NULL)=1,0,1)+(SELECT COUNT(*) FROM album_accounts WHERE state='active')+(SELECT COUNT(*) FROM album_sessions WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_share_links WHERE revoked_at IS NULL)+(SELECT COUNT(*) FROM album_push_registrations WHERE state<>'disabled')"]).decode().strip()
-                if exposed != "0":
-                    raise OperationError("Albums restore quarantine failed")
+                dump_command = [str(binaries / "mysqldump"), "--no-defaults", "--protocol=socket", "--socket=" + str(sock), "--user=root"]
+                restore_database(runtime, sql, dump_command, m, raw, folder, diagnostic,
+                                 checkpoint if entries is not None else None)
             finally:
                 if server.poll() is None:
                     server.terminate()
@@ -322,12 +529,12 @@ def drill(runtime, binaries, filename, ledger_path=None, ledger_digest=None):
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=10)
-    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(m["table_rows"]), quarantined=True, recovery_quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, disposable_database_removed=True)
+    return runtime.record("albums-restore-drill", filename=filename, sha256=m["sha256"], tables=len(m["table_rows"]), quarantined=True, recovery_quarantined=True, deletion_ledger_applied=entries is not None, deletion_intents=len(entries) if entries is not None else 0, asset_deletion_intents=len(assets), collection_deletion_intents=len(collections), quota_reconciliation_required=bool(assets), disposable_database_removed=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "publish", "fetch", "publish-receipt", "expire-offsite"])
+    parser.add_argument("operation", choices=["backup", "drill", "prune", "ledger", "check-ledger", "check-offsite-ledger", "publish", "fetch", "publish-receipt", "expire-offsite", "prune-offsite", "audit-offsite"])
     parser.add_argument("--backend-dir", required=True)
     parser.add_argument("--environment-file", required=True)
     parser.add_argument("--backup-dir", required=True)
@@ -348,10 +555,20 @@ def main():
             binaries = Path(args.mysql_bin_dir)
             if args.operation == "backup": result = create(runtime, binaries)
             elif args.operation == "prune": result = {"removed": prune(runtime)}
-            elif args.operation == "ledger":
-                from deletion_ledger import publish
+            elif args.operation in ("ledger", "check-ledger", "check-offsite-ledger"):
+                from deletion_ledger import publish, verify_current
                 sql = [str(binaries / "mysql"), "--no-defaults", *connection(runtime), "--database=" + runtime.config["MYSQL_DATABASE"], "--batch", "--skip-column-names"]
-                result = publish(runtime, sql, {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")})
+                credentials = {"MYSQL_PWD": runtime.config.get("MYSQL_PASSWORD", "")}
+                if args.operation == "ledger":
+                    result = publish(runtime, sql, credentials)
+                elif args.operation == "check-ledger":
+                    result = verify_current(runtime, sql, credentials, args.deletion_ledger, args.deletion_ledger_sha256)
+                else:
+                    from offsite import check_ledger
+                    if (not all((args.receipt, args.receipt_sha256, args.transfer_bin, args.cos_config))
+                            or any(value is not None for value in (args.backup, args.deletion_ledger, args.deletion_ledger_sha256))):
+                        raise OperationError("check-offsite-ledger requires only a pinned receipt and COS transfer settings")
+                    result = check_ledger(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256, sql, credentials)
             elif args.operation == "publish":
                 from offsite import publish
                 if not args.backup: raise OperationError("publish requires a backup filename")
@@ -365,6 +582,14 @@ def main():
             elif args.operation == "expire-offsite":
                 from offsite import expire
                 result = expire(runtime, args.transfer_bin, args.cos_config, args.receipt, args.receipt_sha256)
+            elif args.operation == "prune-offsite":
+                from offsite import prune_expired
+                if any(value is not None for value in (args.receipt, args.receipt_sha256, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)):
+                    raise OperationError("prune-offsite refuses single-backup selectors; use expire-offsite instead")
+                result = prune_expired(runtime, args.transfer_bin, args.cos_config)
+            elif args.operation == "audit-offsite":
+                from offsite import audit
+                result = audit(runtime, args.transfer_bin, args.cos_config)
             elif not args.backup: raise OperationError("drill requires a backup filename")
             else: result = drill(runtime, binaries, args.backup, args.deletion_ledger, args.deletion_ledger_sha256)
         print(json.dumps({"passed": True, **result}, sort_keys=True))

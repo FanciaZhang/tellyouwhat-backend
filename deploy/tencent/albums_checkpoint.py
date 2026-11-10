@@ -1,7 +1,6 @@
 """Reuse Albums' full snapshot and deletion fences with an environment-specific read account."""
 
 import importlib.util
-import json
 import os
 from pathlib import Path
 import re
@@ -25,12 +24,16 @@ def database_scope(environment):
     return DATABASES[environment]
 
 
-def wrapper(name, environment='development'):
+def mysql_container(environment):
     database_scope(environment)
+    return 'tellyouwhat-albums-' + environment + '-mysql-1'
+
+
+def wrapper(name, environment='development'):
     if name not in ('mysql', 'mysqldump'):
         raise OperationError('unknown Albums backup client')
     return ('#!/bin/sh\nset -eu\nexec docker exec --env MYSQL_PWD '
-            'tellyouwhat-albums-' + environment + '-mysql-1 ' + name + ' "$@"\n').encode()
+            + mysql_container(environment) + ' ' + name + ' "$@"\n').encode()
 
 
 def private(path, maximum):
@@ -40,7 +43,7 @@ def private(path, maximum):
     return path.read_bytes()
 
 
-def checkpoint(runtime, folder, environment='development'):
+def backup_settings(runtime, environment='development'):
     database, user = database_scope(environment)
     app = runtime.root.parent / ('albums-' + environment)
     settings = app / 'backup.env'
@@ -53,6 +56,13 @@ def checkpoint(runtime, folder, environment='development'):
             or any(not re.fullmatch('[a-f0-9]{64}', config.get(k, '')) for k in ('MYSQL_PASSWORD', 'ALBUM_BACKUP_ENCRYPTION_KEY'))
             or config['MYSQL_PASSWORD'] == config['ALBUM_BACKUP_ENCRYPTION_KEY']):
         raise OperationError('Albums checkpoint database/key isolation is invalid')
+    return app, config
+
+
+def checkpoint(runtime, folder, environment='development'):
+    app, config = backup_settings(runtime, environment)
+    settings = app / 'backup.env'
+    database = config['MYSQL_DATABASE']
     for name in ('backups', 'operations', 'backup-bin'):
         path = app / name
         path.mkdir(mode=0o700, exist_ok=True)
@@ -67,61 +77,63 @@ def checkpoint(runtime, folder, environment='development'):
         modules = {}
         implementations = {}
         with tarfile.open(folder / 'source.tar') as archive:
-            for name in ('backup', 'deletion_ledger'):
-                member = archive.getmember('deploy/albums/' + name + '.py')
-                if not member.isfile() or not 0 < member.size < 65536:
-                    raise OperationError('Albums snapshot implementation is unavailable')
-                path = Path(temporary) / (name + '.py')
-                content = archive.extractfile(member).read()
-                if environment == 'development' and name == 'backup':
-                    # Test schema can advance independently of the original data-service recipe.
-                    implementation = Path(__file__).resolve().parent.parent / 'albums/backup.py'
+            for name in ('backup', 'deletion_ledger', 'asset_deletion_ledger', 'collection_deletion_ledger'):
+                if environment == 'development':
+                    # Schema and all checkpoint modules advance together, outside the old data-service recipe.
+                    implementation = Path(__file__).resolve().parent.parent / 'albums' / (name + '.py')
                     if (implementation.is_symlink() or not implementation.is_file()
                             or implementation.stat().st_uid != os.getuid() or implementation.stat().st_mode & 0o022
                             or not 0 < implementation.stat().st_size < 65536):
                         raise OperationError('Albums development snapshot implementation is unsafe')
                     content = implementation.read_bytes()
+                else:
+                    try:
+                        member = archive.getmember('deploy/albums/' + name + '.py')
+                    except KeyError as error:
+                        if name == 'collection_deletion_ledger':
+                            continue  # Production recovery uses its selected source's module set.
+                        raise OperationError('Albums snapshot implementation is unavailable') from error
+                    if not member.isfile() or not 0 < member.size < 65536:
+                        raise OperationError('Albums snapshot implementation is unavailable')
+                    content = archive.extractfile(member).read()
                 implementations['checkpoint/' + name + '.py'] = content
-                path.write_bytes(content)
-                spec = importlib.util.spec_from_file_location('albums_checkpoint_' + name, path)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                modules[name] = module
+        for label, content in implementations.items():
+            name = Path(label).stem
+            path = Path(temporary) / (name + '.py')
+            path.write_bytes(content)
+            spec = importlib.util.spec_from_file_location('albums_checkpoint_' + name, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            modules[name] = module
         backup = modules['backup']
         child = backup.Runtime(runtime.root, app / 'backups', settings)
         child.state = app / 'operations'
         backup.configure(child)
         # The existing snapshot library imports its sibling by its original module name.
         missing = object()
-        previous = sys.modules.get('deletion_ledger', missing)
-        sys.modules['deletion_ledger'] = modules['deletion_ledger']
+        previous = {name: sys.modules.get(name, missing) for name in ('deletion_ledger', 'asset_deletion_ledger', 'collection_deletion_ledger') if name in modules}
+        sys.modules.update({name: modules[name] for name in previous})
         try:
-            snapshot = backup.create(child, binaries)
-            sql = [str(binaries / 'mysql'), '--no-defaults', *backup.connection(child),
-                   '--database=' + database, '--batch', '--skip-column-names']
-            ledger = modules['deletion_ledger'].publish(child, sql, {'MYSQL_PWD': config['MYSQL_PASSWORD']})
-            manifest = backup.verify(child, child.backups / snapshot['filename'])
-            modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
-            names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
-            result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
-            if environment == 'development':
-                result.update(implementations)
-            for old in child.backups.glob('albums-deletions-*.json'):
-                if old.name == ledger['filename']:
-                    continue
-                if not re.fullmatch(r'albums-deletions-[a-f0-9]{32}\.json', old.name):
-                    raise OperationError('unexpected local Albums deletion checkpoint')
-                data = private(old, 32 * 1024**2)
-                modules['deletion_ledger'].verify(child, old, backup.file_digest(old), 0)
-                if json.loads(data)['payload']['exported_at'] <= time.time() - backup.RETENTION:
-                    old.unlink()
+            with child.lock():
+                snapshot = backup.create(child, binaries)
+                sql = [str(binaries / 'mysql'), '--no-defaults', *backup.connection(child),
+                       '--database=' + database, '--batch', '--skip-column-names']
+                ledger = modules['deletion_ledger'].publish(child, sql, {'MYSQL_PWD': config['MYSQL_PASSWORD']})
+                manifest = backup.verify(child, child.backups / snapshot['filename'])
+                modules['deletion_ledger'].verify(child, child.backups / ledger['filename'], ledger['sha256'], manifest['created_at'])
+                names = [snapshot['filename'], snapshot['filename'] + '.json', ledger['filename']]
+                result = {'checkpoint/' + name: private(child.backups / name, 32 * 1024**2) for name in names}
+                if environment == 'development':
+                    result.update(implementations)
+                modules['deletion_ledger'].prune_expired(child, int(time.time()) - backup.RETENTION)
         except ImportError as error:
             raise OperationError('Albums checkpoint implementation has an unavailable dependency') from error
         finally:
-            if previous is missing:
-                sys.modules.pop('deletion_ledger', None)
-            else:
-                sys.modules['deletion_ledger'] = previous
+            for name, module in previous.items():
+                if module is missing:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
     # Keep the independent decryption key in its separate local escrow, outside this bundle.
     result['backup.env'] = ''.join(k + '=' + v + '\n' for k, v in config.items() if k != 'ALBUM_BACKUP_ENCRYPTION_KEY').encode()
     return result

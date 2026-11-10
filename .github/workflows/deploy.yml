@@ -133,6 +133,7 @@ jobs:
           chmod 755 "$stage/deploy/tencent/"*.sh
           sudo -n chgrp 65532 "$backend_dir/secrets" "$stage/secrets" "$stage/secrets/"*.p8
           sudo -n chmod 2750 "$backend_dir/secrets"
+          python3 "$stage/deploy/tencent/operations_guard.py" --backend-dir "$backend_dir" --bundle "$stage"
           python3 "$stage/deploy/tencent/ark_credentials.py" install --stage "$stage" --backend-dir "$backend_dir"
           python3 "$stage/deploy/tencent/ops_albums.py" --backend-dir "$backend_dir" --bundle "$stage"
           REMOTE

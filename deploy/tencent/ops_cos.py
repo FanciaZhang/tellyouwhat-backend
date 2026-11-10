@@ -18,6 +18,15 @@ def validate_bucket(client, bucket, prefix):
     owner = acl.get("Owner", {}).get("ID")
     if not owner or any(g.get("Grantee", {}).get("ID") != owner for g in acl.get("Grant", [])):
         raise OperationError("backup bucket must grant access only through its owner's private IAM policy")
+    # Age expiration can retain old versions; this transport requires a never-versioned bucket.
+    versioning = client.get_bucket_versioning(Bucket=bucket)
+    if not isinstance(versioning, dict) or len(versioning) != 1:
+        raise OperationError("backup bucket requires a verified never-versioned configuration")
+    name, value = next(iter(versioning.items()))
+    empty = value is None or isinstance(value, str) and not value.strip()
+    if (not isinstance(name, str) or not empty
+            or not (name == "VersioningConfiguration" or re.fullmatch(r"\{[^{}]+\}VersioningConfiguration", name))):
+        raise OperationError("backup bucket requires a verified never-versioned configuration")
     rules = client.get_bucket_lifecycle(Bucket=bucket).get("Rule", [])
     enabled = [r for r in rules if r.get("Status") == "Enabled"]
     if len(enabled) != 1:
@@ -69,8 +78,17 @@ def _transfer(client, bucket, prefix, action, paths, sources):
         if action == "upload":
             if any(not _same_backup_file(p, handle, before) for p, (handle, before, _) in sources.items()):
                 raise OperationError('backup input changed before publication')
-            client.put_object(Bucket=bucket, Key=prefix + path.name, Body=sources[path][0], EnableMD5=True,
-                              ServerSideEncryption="AES256", ContentType="application/octet-stream")
+            try:
+                # The pinned SDK passes custom headers through Metadata.
+                client.put_object(Bucket=bucket, Key=prefix + path.name, Body=sources[path][0], EnableMD5=True,
+                                  ServerSideEncryption="AES256", ContentType="application/octet-stream",
+                                  Metadata={"x-cos-forbid-overwrite": "true"})
+            except Exception as error:
+                status = getattr(error, 'get_status_code', None)
+                code = getattr(error, 'get_error_code', None)
+                if not (status and code and status() == 409 and code() == 'FileAlreadyExists'):
+                    raise
+                # A retry can keep the existing object only if the readback below matches.
         elif path.exists():
             raise OperationError("download destination must be a new file")
         digest = hashlib.sha256()

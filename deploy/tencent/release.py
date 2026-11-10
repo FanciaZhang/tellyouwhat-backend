@@ -189,6 +189,8 @@ def require_automation_compatibility(current, target):
 
 
 def deploy(runtime, tag, registry, acceptance, bundle, attempts, strategy="blue-green", source_run="", confirmation=""):
+    from operations_guard import verify as verify_operations
+    verify_operations(runtime, Path(bundle).resolve() if bundle else runtime.root)
     if strategy not in ("blue-green", "disruptive"):
         raise OperationError("unsupported release strategy")
     source = Path(bundle).resolve() if bundle else runtime.root

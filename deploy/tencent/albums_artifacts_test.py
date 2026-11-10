@@ -91,13 +91,13 @@ class AlbumsDevelopmentRecoveryTests(unittest.TestCase):
                 artifacts.verify_recovery(archive, bad, self.environment)
         self.assertTrue(all(p.stat().st_mode & 0o077 == 0 for p in (self.base / 'output').rglob('*') if p.is_file()))
 
-    def test_development_checkpoint_implementation_pair_is_authenticated_and_required_together(self):
+    def test_development_checkpoint_implementations_are_authenticated_and_required_together(self):
         if self.environment != 'development':
             return
         self.prepare()
         manifest = self.backup()
         output = self.base / 'output'
-        for name in ['backup.py', 'deletion_ledger.py']:
+        for name in ['backup.py', 'deletion_ledger.py', 'asset_deletion_ledger.py', 'collection_deletion_ledger.py']:
             content = ('# synthetic ' + name).encode()
             self.private(output / 'checkpoint' / name, content)
             manifest['checkpoint/' + name] = hashlib.sha256(content).hexdigest()
@@ -106,7 +106,7 @@ class AlbumsDevelopmentRecoveryTests(unittest.TestCase):
             archive.add(output, arcname='recovery/' + self.label)
         with tarfile.open(path) as archive:
             artifacts.verify_recovery(archive, manifest, self.environment)
-            for name in ['checkpoint/backup.py', 'checkpoint/deletion_ledger.py']:
+            for name in ['checkpoint/backup.py', 'checkpoint/deletion_ledger.py', 'checkpoint/asset_deletion_ledger.py', 'checkpoint/collection_deletion_ledger.py']:
                 partial = dict(manifest); partial.pop(name)
                 with self.assertRaisesRegex(OperationError, 'incomplete'):
                     artifacts.verify_recovery(archive, partial, self.environment)

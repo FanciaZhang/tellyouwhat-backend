@@ -1,0 +1,50 @@
+{
+  "source": "732a5f1e333c75aae4a6f3137755a9427cbe73e1",
+  "purpose": "Synthetic tests of the independently registered recovery schema. These SQL files are not Go migrations and are never applied to production by this release.",
+  "files": [
+    {
+      "file": "0067_journal_illustration_consent_scope.sql",
+      "sha256": "8e1ba4642191b15c8a5efe7891e6c445679ff38d9b49799bfce613baafff22cf"
+    },
+    {
+      "file": "0070_journal_read_aloud_consent.sql",
+      "sha256": "4b26bac5e6ef50e28c2284c888e077fb2fe7bff3ccef358daef4fd3a4e2e0a95"
+    },
+    {
+      "file": "0075_album_content_corrections.sql",
+      "sha256": "3c34d6cfdd03073c7ebbd41ed71edd48efdf76c303e6e96c8bfd20fded2dd63a"
+    },
+    {
+      "file": "0076_album_asset_favorites.sql",
+      "sha256": "cd91317981f8d7215c06dc3af33c97cb3d6338a87ed620427e6dd43bfbbe32ff"
+    },
+    {
+      "file": "0077_album_collections.sql",
+      "sha256": "9a374139003cac4b9912f4be75c4f3542676dc5434479574f9835a07d825bdd4"
+    },
+    {
+      "file": "0078_album_asset_deletion_ledger.sql",
+      "sha256": "ea23c6d57ad6c0929713049119a99ebc83cda71eb514d113469ee9efec23d194"
+    },
+    {
+      "file": "0079_platform_albums_app_attest.sql",
+      "sha256": "0aba31a0fd1e12eefff8952950a52af2d54918861dda5faf8a6174dade5104ab"
+    },
+    {
+      "file": "0080_album_photo_multipart.sql",
+      "sha256": "b69af44ed45c2c2916266eb3d7c100e633a1fea07a4fd2a074f2a7d1b5c90fcc"
+    },
+    {
+      "file": "0081_album_photo_completion_fence.sql",
+      "sha256": "454ee51c7ed85cb4b5ed9297503468512d8cc268cb1a7fe61acb271eb5342bcd"
+    },
+    {
+      "file": "0082_album_retention_cleanup_schedule.sql",
+      "sha256": "7a62b38df7e4bc94e0dd67aa08bbd6714d34931546f1e9c30f5c4f6ad1e71eb1"
+    },
+    {
+      "file": "0083_album_record_erasure_schedule.sql",
+      "sha256": "536b576e4c0fc94c387aa288a0c550cee86068a3d1f39e552ad2c7f77326ecb1"
+    }
+  ]
+}

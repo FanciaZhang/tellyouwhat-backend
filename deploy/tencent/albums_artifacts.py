@@ -9,6 +9,7 @@ import tempfile
 
 from ops_common import OperationError, read_environment
 from albums_checkpoint import checkpoint, database_scope
+from albums_recovery import verify_runtime_recovery
 
 FILES = ('source.tar', 'compose.albums-test.yaml', 'runtime.env', 'compose.env', 'selection.json')
 PRODUCTION_FILES = tuple('compose.albums-production.yaml' if name == 'compose.albums-test.yaml' else name for name in FILES)
@@ -131,7 +132,7 @@ def verify_recovery(archive, manifest, environment='development'):
     optional = {'secrets/' + name for name in OPTIONAL_KEYS} if environment == 'production' else set()
     if environment == 'production' and any(name.startswith('previous/') for name in manifest):
         expected.update('previous/' + name for name in required_files)
-    implementation = {'checkpoint/backup.py', 'checkpoint/deletion_ledger.py'}
+    implementation = {'checkpoint/backup.py', 'checkpoint/deletion_ledger.py', 'checkpoint/asset_deletion_ledger.py', 'checkpoint/collection_deletion_ledger.py'}
     if environment == 'development' and implementation & set(manifest):
         expected.update(implementation)
     extra = set(manifest) - expected - optional

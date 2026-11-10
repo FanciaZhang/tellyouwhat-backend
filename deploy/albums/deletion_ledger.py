@@ -3,17 +3,23 @@ import datetime
 import hmac
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import secrets
+import stat
 import time
 import uuid
 
 from ops_common import OperationError, atomic_json
 from ops_backup import backup_secret, file_digest, manifest_signature
 
-SCOPE = "albums-deletion-ledger-v1"
+SCOPE = "albums-deletion-ledger-v3"
+PRE_COLLECTION_SCOPE = "albums-deletion-ledger-v2"
+LEGACY_SCOPE = "albums-deletion-ledger-v1"
 MAX_RECORDS = 100000
+ACTIVE_SOURCE_QUERY = ("SELECT DATABASE(),COUNT(*) FROM album_recovery_state "
+                       "WHERE singleton_id=1 AND quarantined=FALSE AND quarantined_at IS NULL")
 
 
 def validate(entries):
@@ -40,41 +46,188 @@ def validate(entries):
     return entries
 
 
+def check_active_source(runtime, rows):
+    if rows != [runtime.config["MYSQL_DATABASE"] + "\t1"]:
+        raise OperationError("Albums backup requires the configured active source database")
+
+
+def current(runtime, sql, credentials):
+    import asset_deletion_ledger as asset_ledger
+    import collection_deletion_ledger as collection_ledger
+    queries = {
+        "source": ACTIVE_SOURCE_QUERY,
+        "entries": "SELECT account_id,request_id,LOWER(HEX(authorizing_session_sha256)),DATE_FORMAT(requested_at,'%Y-%m-%dT%H:%i:%s.%fZ') FROM album_deletion_ledger UNION ALL SELECT 'invalid','','','' WHERE EXISTS (SELECT 1 FROM album_account_deletions d LEFT JOIN album_deletion_ledger l ON l.account_id=d.account_id WHERE l.account_id IS NULL OR l.request_id<>d.request_id OR l.authorizing_session_sha256<>d.authorizing_session_sha256 OR l.requested_at<>d.requested_at) ORDER BY account_id LIMIT 100001",
+        "assets": asset_ledger.export_query(runtime, sql, credentials),
+        "collections": collection_ledger.export_query(runtime, sql, credentials),
+    }
+    # All datasets share one MVCC view, even if account erasure removes collection
+    # tombstones between reads. No write locks or application pause are required.
+    script = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;\n"
+    for name, query in queries.items():
+        script += "SELECT '__albums_" + name + "__';\n" + (query + ";\n" if query else "")
+    data = runtime.execute("albums-deletion-ledger-export", sql + ["--execute=" + script + "COMMIT;"], env=credentials)
+    sections = {name: [] for name in queries}
+    expected = iter(queries)
+    section = None
+    try:
+        if len(data) > 64 * 1024 * 1024:
+            raise ValueError("oversized checkpoint")
+        for line in data.decode().splitlines():
+            if line.startswith("__albums_"):
+                section = next(expected)
+                if line != "__albums_" + section + "__":
+                    raise ValueError("unordered checkpoint sections")
+            elif section is None:
+                raise ValueError("missing checkpoint section")
+            else:
+                sections[section].append(line)
+        if next(expected, None) is not None:
+            raise ValueError("incomplete checkpoint sections")
+        check_active_source(runtime, sections["source"])
+        entries = validate([line.split("\t") for line in sections["entries"]])
+        assets = asset_ledger.parse_export("\n".join(sections["assets"]).encode())
+        collections = collection_ledger.parse_export("\n".join(sections["collections"]).encode())
+    except (ValueError, UnicodeError, StopIteration) as error:
+        raise OperationError("invalid consistent deletion export") from error
+    if len(entries) + len(assets) + len(collections) > MAX_RECORDS:
+        raise OperationError("combined deletion checkpoint exceeds limit")
+    return dict(entries=entries, assets=assets, collections=collections)
+
+
 def publish(runtime, sql, credentials):
-    # Full snapshots avoid missing a transaction that commits behind an allocated
-    # sequence watermark. Publication is not proof that an offsite copy exists.
+    # Publication is local evidence, not proof that an offsite copy exists.
     exported_at = int(time.time())
-    data = runtime.execute("albums-deletion-ledger-export", sql + ["--execute=SELECT account_id,request_id,LOWER(HEX(authorizing_session_sha256)),DATE_FORMAT(requested_at,'%Y-%m-%dT%H:%i:%s.%fZ') FROM album_deletion_ledger UNION ALL SELECT 'invalid','','','' WHERE EXISTS (SELECT 1 FROM album_account_deletions d LEFT JOIN album_deletion_ledger l ON l.account_id=d.account_id WHERE l.account_id IS NULL OR l.request_id<>d.request_id OR l.authorizing_session_sha256<>d.authorizing_session_sha256 OR l.requested_at<>d.requested_at) ORDER BY account_id LIMIT 100001"], env=credentials)
-    entries = validate([line.split("\t") for line in data.decode().splitlines()])
-    payload = {"scope": SCOPE, "database": runtime.config["MYSQL_DATABASE"], "exported_at": exported_at, "entries": entries}
+    rows = current(runtime, sql, credentials)
+    payload = {"scope": SCOPE, "database": runtime.config["MYSQL_DATABASE"], "exported_at": exported_at, **rows}
     filename = "albums-deletions-" + secrets.token_hex(16) + ".json"
     path = runtime.backups / filename
     atomic_json(path, {"payload": payload, "hmac_sha256": manifest_signature(backup_secret(runtime), payload)})
-    return runtime.record("albums-deletion-ledger", filename=filename, sha256=file_digest(path), records=len(entries), offsite=False)
+    return runtime.record("albums-deletion-ledger", filename=filename, sha256=file_digest(path), records=len(rows["entries"]), asset_records=len(rows["assets"]), collection_records=len(rows["collections"]), offsite=False)
 
 
-def verify(runtime, path, digest, minimum_time):
-    if not path or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise OperationError("recovery requires an explicitly pinned deletion ledger")
+def require_current(runtime, sql, credentials, checkpoint):
+    rows = current(runtime, sql, credentials)
+    if any(checkpoint[name] != rows[name] for name in rows):
+        raise OperationError("deletion checkpoint differs from the current database; export a new checkpoint")
+    return rows
+
+
+def verify_current(runtime, sql, credentials, path, digest):
+    rows = require_current(runtime, sql, credentials, verify_checkpoint(runtime, path, digest, 0))
+    return runtime.record("albums-deletion-ledger-check", filename=Path(path).name, sha256=digest,
+                          records=len(rows["entries"]), asset_records=len(rows["assets"]),
+                          collection_records=len(rows["collections"]), consistent_database_snapshot=True,
+                          point_in_time_only=True, authorizes_erasure_or_recovery=False)
+
+
+def _read_checkpoint(runtime, path, digest, minimum_time, preserve_legacy=False):
     path = Path(path)
     try:
-        if path.is_symlink() or path.stat().st_mode & 0o077 or path.stat().st_size > 64 * 1024 * 1024:
-            raise OperationError("deletion ledger file is not private or bounded")
-        with path.open("rb") as source:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_nlink != 1
+                    or info.st_size > 64 * 1024 * 1024):
+                raise OperationError("deletion ledger file is not private or bounded")
             data = source.read(64 * 1024 * 1024 + 1)
-        if len(data) > 64 * 1024 * 1024 or not hmac.compare_digest(hashlib.sha256(data).hexdigest(), digest):
+        if (len(data) > 64 * 1024 * 1024
+                or digest is not None and not hmac.compare_digest(hashlib.sha256(data).hexdigest(), digest)):
             raise OperationError("deletion ledger checkpoint mismatch")
         envelope = json.loads(data)
         p = envelope["payload"]
         if not hmac.compare_digest(manifest_signature(backup_secret(runtime), p), envelope["hmac_sha256"]):
             raise OperationError("deletion ledger authentication failed")
-        if (p["scope"] != SCOPE or p["database"] != runtime.config["MYSQL_DATABASE"]
-                or type(p["exported_at"]) is not int or p["exported_at"] < minimum_time
+        legacy = p.get("scope") if preserve_legacy and isinstance(p, dict) and p.get("scope") in (LEGACY_SCOPE, PRE_COLLECTION_SCOPE) else None
+        fields = {"scope", "database", "exported_at", "entries"}
+        if legacy != LEGACY_SCOPE:
+            fields.add("assets")
+        if legacy is None:
+            fields.add("collections")
+        if (set(envelope) != {"payload", "hmac_sha256"} or set(p) != fields
+                or p["scope"] != (legacy or SCOPE) or p["database"] != runtime.config["MYSQL_DATABASE"]
+                or type(p["exported_at"]) is not int or p["exported_at"] <= 0 or p["exported_at"] < minimum_time
                 or p["exported_at"] > time.time() + 300):
             raise OperationError("deletion ledger scope or snapshot order mismatch")
-        return validate(p["entries"])
+        validate(p["entries"])
+        if "assets" in p:
+            from asset_deletion_ledger import validate as validate_assets
+            validate_assets(p["assets"])
+        if "collections" in p:
+            from collection_deletion_ledger import validate as validate_collections
+            validate_collections(p["collections"])
+        if len(p["entries"]) + len(p.get("assets", [])) + len(p.get("collections", [])) > MAX_RECORDS:
+            raise OperationError("combined deletion checkpoint exceeds limit")
+        return p, info
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise OperationError("invalid deletion ledger checkpoint") from error
+
+
+def verify(runtime, path, digest, minimum_time):
+    return verify_checkpoint(runtime, path, digest, minimum_time)["entries"]
+
+
+def verify_checkpoint(runtime, path, digest, minimum_time):
+    if not path or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise OperationError("recovery requires an explicitly pinned deletion ledger")
+    return _read_checkpoint(runtime, path, digest, minimum_time)[0]
+
+
+def merge_recovery_checkpoints(earlier, later):
+    import asset_deletion_ledger as assets
+    import collection_deletion_ledger as collections
+    if (earlier['scope'] != SCOPE or later['scope'] != SCOPE or earlier['database'] != later['database']
+            or later['exported_at'] < earlier['exported_at']):
+        raise OperationError('independent deletion checkpoint scope or order mismatch')
+    result = dict(later)
+    for name, validate_rows in (('entries', validate), ('assets', assets.validate), ('collections', collections.validate)):
+        merged = {}
+        for row in (*validate_rows(earlier[name]), *validate_rows(later[name])):
+            key = tuple(row[:1] if name == 'entries' else row[:2])
+            value = row[:5] + [sorted(row[5])] if name == 'assets' else row[:]
+            if key in merged and merged[key] != value:
+                raise OperationError('conflicting independent deletion checkpoint records')
+            merged[key] = value
+        # A newer export may have retired old receipts; keep both authenticated fences.
+        result[name] = validate_rows([merged[key] for key in sorted(merged)])
+    if sum(len(result[name]) for name in ('entries', 'assets', 'collections')) > MAX_RECORDS:
+        raise OperationError('combined deletion checkpoint exceeds limit')
+    return result
+
+
+def verify_cleanup_checkpoint(runtime, path, digest, minimum_time):
+    # Prior asset-complete copies keep their original cleanup policy, never restore authority.
+    if not path or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise OperationError("cleanup requires an explicitly pinned deletion ledger")
+    payload = _read_checkpoint(runtime, path, digest, minimum_time, preserve_legacy=True)[0]
+    if payload["scope"] == LEGACY_SCOPE:
+        raise OperationError("account-only legacy checkpoint is preserved for review")
+    return payload
+
+
+def prune_expired(runtime, cutoff):
+    # The caller holds the shared operations lock used by export, publication and recovery.
+    removed = 0
+    for path in sorted(runtime.backups.glob("albums-deletions-*.json")):
+        if not re.fullmatch(r"albums-deletions-[0-9a-f]{32}\.json", path.name):
+            raise OperationError("unrecognized deletion checkpoint; preserved for review")
+        payload, before = _read_checkpoint(runtime, path, None, 0, preserve_legacy=True)
+        if before.st_uid != runtime.backups.stat().st_uid:
+            raise OperationError("deletion checkpoint has a different owner; preserved for review")
+        # Account-only receipts retain the existing manual-review boundary.
+        if payload["scope"] == LEGACY_SCOPE:
+            continue
+        if payload["exported_at"] > cutoff or any(
+                datetime.datetime.strptime(row[3], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc).timestamp() > cutoff
+                for row in payload["entries"]) or any(
+                datetime.datetime.strptime(row[4], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc).timestamp() > cutoff
+                for row in payload["assets"] + payload.get("collections", [])):
+            continue
+        after = path.lstat()
+        if any(getattr(before, field) != getattr(after, field) for field in
+               ("st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_size", "st_mtime_ns", "st_ctime_ns")):
+            raise OperationError("deletion checkpoint changed during cleanup; preserved for review")
+        path.unlink()
+        removed += 1
+    return removed
 
 
 def restore_fences(runtime, sql, entries):
