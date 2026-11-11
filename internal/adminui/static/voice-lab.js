@@ -67,7 +67,7 @@ function voiceLabRender() {
           <label>写作风格<select id="lab-style" data-lab-lock>${styles.filter(s=>s.enabled||s.id===voiceLab.style).map(s=>`<option value="${aiEscape(s.id)}" ${s.id===style.id?'selected':''}>${aiEscape(s.name)}</option>`).join('')}</select></label>
           <details><summary>风格提示词</summary><label>当前风格的要求<textarea id="lab-style-prompt" rows="6" maxlength="16000" data-lab-lock>${aiEscape(style.prompt)}</textarea></label></details>
           <details><summary>转写设置</summary><label>热词（每行一个）<textarea id="lab-words" rows="3" data-lab-lock placeholder="人名、地名或容易识别错的词">${aiEscape(voiceLab.words||'')}</textarea></label><label class="prompt-check"><input id="lab-punctuation" type="checkbox" ${v.automaticPunctuation?'checked':''} data-lab-lock>自动标点</label><label class="prompt-check"><input id="lab-numbers" type="checkbox" ${v.normalizeNumbers?'checked':''} data-lab-lock>数字规范化</label></details>
-          <details><summary>整理模型与参数</summary>${promptParameters('journal.voice.parameters','最终成稿')}</details>
+          <details><summary>整理模型与参数</summary>${promptParameters('journal.voice.parameters','最终成稿',voiceLab.config)}</details>
         </form>
         <button id="lab-reset" class="quiet" data-lab-lock>载入当前发布配置</button>
       </section>

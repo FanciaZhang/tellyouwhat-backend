@@ -62,6 +62,7 @@ type Config struct {
 	Delivery                *offerdelivery.Store
 	Evaluations             *prompteval.Store
 	EvaluationSpeechPrice   costcontrol.DurationPrice
+	ConfiguredPromptModels  map[string]costcontrol.TokenPrice
 	Billing                 *cloudbilling.Cache
 	Operations              *platformops.Store
 	Prompts                 *promptconfig.Store

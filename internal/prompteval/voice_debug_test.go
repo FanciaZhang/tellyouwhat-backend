@@ -136,6 +136,10 @@ func TestMySQLVoiceDebugBudgetQueueRecoveryAndGateIsolation(t *testing.T) {
 	if _, err = s.Command(ctx, uuid.NewString(), mutation.Key, now); !errors.Is(err, ErrNotFound) {
 		t.Fatal("command lookup escaped its actor", err)
 	}
+	var legacyClaimable int
+	if err = s.DB.QueryRow(`SELECT COUNT(*) FROM prompt_eval_items i JOIN prompt_eval_runs r ON r.id=i.run_id WHERE i.status='pending' AND r.status IN ('pending','running')`).Scan(&legacyClaimable); err != nil || legacyClaimable != 0 {
+		t.Fatal("older worker can claim an unsupported debug job", legacyClaimable, err)
+	}
 	claim, err := s.Claim(ctx, now)
 	if err != nil {
 		t.Fatal(err)
