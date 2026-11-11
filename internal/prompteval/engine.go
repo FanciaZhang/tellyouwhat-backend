@@ -18,6 +18,7 @@ import (
 )
 
 type Engine struct {
+	Speech         voice.Speech
 	Images         illustration.ImageGenerator
 	ImageCostNanos int64
 	Store          Store
@@ -110,7 +111,7 @@ func (e *Engine) Process(parent context.Context, claim Claim) {
 				complete = false
 			}
 		}
-		if complete && sample.Kind == "illustration_image" {
+		if complete && (sample.Kind == "illustration_image" || claim.Run.Plan.Mode == VoiceDebugMode) {
 			result.Judgment.Status = "not_applicable"
 		} else if complete {
 			result.Judgment = e.judge(ctx, controller, claim.Run.Plan, sample, result.Outputs)
@@ -153,18 +154,32 @@ func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller
 			out.Structured, _ = json.Marshal(map[string]any{"width": value.Width, "height": value.Height, "mime": value.MIME})
 			out.Text = "图片已生成；请检查画面是否符合描述。"
 		}
-	} else if sample.Kind == "voice" {
+	} else if sample.Kind == "voice" || sample.Kind == "voice_transcription" {
 		snapshot := *sample.Voice
 		if len(sample.Audio) > 0 {
-			speech := voice.NewBudgetedSpeech(voice.ASR{Config: e.ASR}, controller, "journal", e.SpeechPrice)
+			next := e.Speech
+			if next == nil {
+				next = voice.ASR{Config: e.ASR}
+			}
+			speech := voice.NewBudgetedSpeech(next, controller, "journal", e.SpeechPrice)
 			transcript, err := transcribe(ctx, speech, sample.Audio, snapshot.Words)
+			out.SpeechMilliseconds = (len(sample.Audio) + 31) / 32
+			out.SpeechCostNanos, _ = e.SpeechPrice.Cost(out.SpeechMilliseconds)
 			if err != nil {
 				out.Error = errorCode(err)
+				out.Milliseconds = time.Since(started).Milliseconds()
 				return out
 			}
 			snapshot.Transcript += transcript
-			out.SpeechMilliseconds = (len(sample.Audio) + 31) / 32
-			out.SpeechCostNanos, _ = e.SpeechPrice.Cost(out.SpeechMilliseconds)
+		}
+		out.Transcript = snapshot.Transcript
+		if sample.Kind == "voice_transcription" {
+			out.Request = transcriptionRequest(candidate.Revision, sample)
+			out.Model = e.ASR.ResourceID
+			out.Text = snapshot.Transcript
+			out.Milliseconds = time.Since(started).Milliseconds()
+			out.Checks = append(out.Checks, CheckResult{Name: "语音转写完成", Passed: true, Detail: "使用 App 的 ASR 配置与热词"})
+			return out
 		}
 		prepared, err := voice.PrepareRewrite(ctx, snapshot, 1, "")
 		if err != nil {
@@ -174,12 +189,18 @@ func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller
 		out.Request, parameters = prepared.Body, prepared.Parameters
 		model := voice.NewBudgetedRewriter(voice.ArkRewriter{BaseURL: e.Provider.BaseURL, APIKey: e.Provider.APIKey}, controller, "journal", e.Price)
 		value, err := model.Rewrite(ctx, snapshot, 1)
+		out.Diagnostics = &value.Diagnostics
 		callErr = err
 		if err != nil {
 			out.DiagnosticOutput = value.OutputText
 		}
 		out.Model, out.InputTokens, out.OutputTokens = value.Model, value.InputTokens, value.OutputTokens
-		if err == nil {
+		if err == nil && value.Polish != nil {
+			out.Structured, _ = json.Marshal(value.Polish)
+			for _, paragraph := range value.Polish.Paragraphs {
+				out.Text += paragraph.Text + "\n\n"
+			}
+		} else if err == nil {
 			blocks, callErr = voice.ApplyRevision(snapshot, value.Revision)
 			out.Structured, _ = json.Marshal(value.Revision)
 			for _, b := range blocks {

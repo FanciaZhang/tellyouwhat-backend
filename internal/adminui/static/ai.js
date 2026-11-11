@@ -10,7 +10,7 @@ const aiModelText = m => m?.Name ? `${m.Name} · ${m.ModelVersion}` : "模型尚
 const aiEndpointID = row => row.endpointID || row.endpoint?.Id;
 const aiAffected = id => ai.rows.filter(r=>aiEndpointID(r)===id).map(r=>aiLabels[r.operation]||r.operation).join("、") || "暂无当前绑定";
 const aiActive = r => r && r.RollingGray<100 && !(r.Status==="Reverted" && r.RollingGray===0);
-function stopAI(){clearTimeout(ai.poll);if(typeof voiceStopPreview==='function')voiceStopPreview();ai.generation++;}
+function stopAI(){clearTimeout(ai.poll);if(typeof voiceLabStopCapture==='function')voiceLabStopCapture(true);if(typeof voiceStopPreview==='function')voiceStopPreview();ai.generation++;}
 function aiNavigate(screen){stopAI();ai.screen=screen;aiView().setAttribute("aria-busy","false");}
 function aiClick(selector,callback){aiView().querySelectorAll(selector).forEach(el=>el.onclick=()=>callback(el));}
 function aiError(error){
