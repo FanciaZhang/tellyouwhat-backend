@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ func (s *Server) promptsAccess(c *gin.Context, write, reauth bool) (adminauth.Au
 		writeFailure(c.Writer, 503, "prompts_unavailable", "提示词管理尚未配置")
 		return auth, false
 	}
-	if write && !s.promptWritesEnabled() {
+	if write && !s.promptWritesEnabled("journal") {
 		writeFailure(c.Writer, 503, "writes_disabled", "管理写操作尚未启用")
 		return auth, false
 	}
@@ -57,7 +58,14 @@ func (s *Server) GetPromptConfig(c *gin.Context, params adminhttpapi.GetPromptCo
 		attempt, success, err := cache.Status()
 		sync = map[string]any{"lastAttempt": attempt, "lastSuccess": success, "stale": err != nil}
 	}
-	writeJSON(c.Writer, 200, map[string]any{"current": r, "writesEnabled": s.promptWritesEnabled(), "scopes": promptconfig.Scopes(), "refreshSeconds": 60, "sync": sync})
+	models := []string{}
+	if s.config.AI == nil {
+		for id := range s.config.ConfiguredPromptModels {
+			models = append(models, id)
+		}
+		slices.Sort(models)
+	}
+	writeJSON(c.Writer, 200, map[string]any{"current": r, "writesEnabled": s.promptWritesEnabled(params.Scope), "modelCatalogAvailable": s.config.AI != nil, "configuredModels": models, "scopes": promptconfig.Scopes(), "refreshSeconds": 60, "sync": sync})
 }
 func (s *Server) ListPromptHistory(c *gin.Context, params adminhttpapi.ListPromptHistoryParams) {
 	if _, ok := s.promptsAccess(c, false, false); !ok {
@@ -81,6 +89,10 @@ func (s *Server) CreatePromptDraft(c *gin.Context, _ adminhttpapi.CreatePromptDr
 	}
 	var input promptconfig.DraftInput
 	if !operationsBody(c, &input) {
+		return
+	}
+	if !s.promptWritesEnabled(input.Scope) {
+		writeFailure(c.Writer, 503, "writes_disabled", "此环境未开放这个功能的提示词管理")
 		return
 	}
 	m, ok := aiMutation(c, auth.User.ID)
@@ -182,7 +194,7 @@ func (s *Server) GetPromptRevision(c *gin.Context, revision string) {
 			}
 		}
 	}
-	canPublish := len(blockers) == 0 && r.PublishedAt == nil && r.BaseVersion == current.ID && s.promptWritesEnabled()
+	canPublish := len(blockers) == 0 && r.PublishedAt == nil && r.BaseVersion == current.ID && s.promptWritesEnabled(r.Scope)
 	expires := s.now().Add(5 * time.Minute)
 	token := ""
 	if canPublish {
@@ -200,6 +212,10 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 		PreviewToken string `json:"previewToken"`
 	}
 	if !operationsBody(c, &input) {
+		return
+	}
+	if !s.promptWritesEnabled(input.Scope) {
+		writeFailure(c.Writer, 503, "writes_disabled", "此环境未开放这个功能的提示词管理")
 		return
 	}
 	m, ok := aiMutation(c, auth.User.ID)
@@ -258,4 +274,9 @@ func (s *Server) PublishPromptConfig(c *gin.Context, _ adminhttpapi.PublishPromp
 	writeJSON(c.Writer, 200, r)
 }
 
-func (s *Server) promptWritesEnabled() bool { return s.config.AI != nil && s.config.AI.WritesEnabled }
+func (s *Server) promptWritesEnabled(scope string) bool {
+	if s.config.AI != nil {
+		return s.config.AI.WritesEnabled
+	}
+	return s.config.Environment == "development" && scope == "journal" && s.config.WritesEnabled && len(s.config.ConfiguredPromptModels) > 0
+}

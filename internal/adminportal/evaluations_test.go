@@ -191,6 +191,21 @@ func TestEvaluationHTTPPreviewReplayAndPublicationGate(t *testing.T) {
 	if publication.CanPublish || len(publication.Blockers) == 0 {
 		t.Fatal("quick trial bypassed publication quality gate")
 	}
+	// The isolated test admin has no cloud-management credential.
+	s.config.AI = nil
+	s.config.Environment = "development"
+	s.config.WritesEnabled = true
+	s.config.ConfiguredPromptModels = map[string]costcontrol.TokenPrice{"ep-test": *preview.Plan.Candidates[0].Revision.Policy.Journal.Voice.Parameters.Price}
+	configuredDraft := promptconfig.DraftInput{Scope: "journal", BaseVersion: current.ID, Policy: policy}
+	check(call("POST", "/api/v1/ai/prompts/drafts", configuredDraft, true, true, uuid.NewString()), 200)
+	configuredDraft.Policy = promptconfig.Policy{}
+	configuredDraft.Scope = "health:meal_text_capture"
+	check(call("POST", "/api/v1/ai/prompts/drafts", configuredDraft, true, true, uuid.NewString()), 503)
+	res = call("GET", "/api/v1/ai/prompts?scope=journal", nil, true, false, "")
+	check(res, 200)
+	if !bytes.Contains(res.Body.Bytes(), []byte(`"modelCatalogAvailable":false`)) || !bytes.Contains(res.Body.Bytes(), []byte(`"writesEnabled":true`)) {
+		t.Fatal("configured-only prompt capability not advertised")
+	}
 }
 
 type evalInventory struct{}

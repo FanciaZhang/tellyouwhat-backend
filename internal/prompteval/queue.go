@@ -32,7 +32,7 @@ func (s Store) Claim(ctx context.Context, now time.Time) (Claim, error) {
 	}
 	var id string
 	var index int
-	err = tx.QueryRowContext(ctx, `SELECT i.run_id,i.item_index FROM prompt_eval_items i JOIN prompt_eval_runs r ON r.id=i.run_id WHERE i.status='pending' AND r.status IN ('pending','running') AND r.expires_at>? ORDER BY r.created_at,i.item_index LIMIT 1 FOR UPDATE`, now).Scan(&id, &index)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,i.item_index FROM prompt_eval_items i JOIN prompt_eval_runs r ON r.id=i.run_id WHERE i.status IN ('pending','pending_debug') AND r.status IN ('pending','running') AND r.expires_at>? ORDER BY r.created_at,i.item_index LIMIT 1 FOR UPDATE`, now).Scan(&id, &index)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Claim{}, ErrNotFound
 	}
@@ -120,10 +120,10 @@ func (s Store) Recover(ctx context.Context, now time.Time) error {
 	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_runs SET status='cancelled' WHERE expires_at<=? AND status IN ('pending','running')`, now); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_items i JOIN prompt_eval_runs r ON r.id=i.run_id SET i.status='cancelled' WHERE i.status='pending' AND r.status='cancelled'`); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_items i JOIN prompt_eval_runs r ON r.id=i.run_id SET i.status='cancelled' WHERE i.status IN ('pending','pending_debug') AND r.status='cancelled'`); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_runs r SET status=IF(EXISTS(SELECT 1 FROM prompt_eval_items i WHERE i.run_id=r.id AND i.status IN ('failed','interrupted')),'completed_with_failures','completed') WHERE r.status IN ('pending','running') AND NOT EXISTS(SELECT 1 FROM prompt_eval_items i WHERE i.run_id=r.id AND i.status IN ('pending','running'))`); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_runs r SET status=IF(EXISTS(SELECT 1 FROM prompt_eval_items i WHERE i.run_id=r.id AND i.status IN ('failed','interrupted')),'completed_with_failures','completed') WHERE r.status IN ('pending','running') AND NOT EXISTS(SELECT 1 FROM prompt_eval_items i WHERE i.run_id=r.id AND i.status IN ('pending','pending_debug','running'))`); err != nil {
 		return err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT h.run_id FROM prompt_eval_budget_holds h LEFT JOIN prompt_eval_runs r ON h.run_id=r.id WHERE (r.id IS NULL OR r.status NOT IN ('pending','running')) AND h.remaining_nanos>0`)

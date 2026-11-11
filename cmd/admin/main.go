@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tellyouwhat/backend/internal/cloudbilling"
+	"github.com/tellyouwhat/backend/internal/costcontrol"
 	"github.com/tellyouwhat/backend/internal/lifecycle"
 	"log/slog"
 	"net/http"
@@ -165,6 +166,12 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	evaluations := prompteval.Store{DB: database, Cipher: evaluationCipher, Limits: evaluationCost.Limits}
+	configuredModels := map[string]costcontrol.TokenPrice{}
+	if journal := configuration.promptDefaults["journal"].Journal; journal != nil {
+		for _, p := range []promptconfig.Parameters{journal.Organize.Lite, journal.Organize.Pro, journal.Voice.Parameters} {
+			configuredModels[p.Model] = evaluationCost.JournalArk
+		}
+	}
 	deliveryStore := &offerdelivery.Store{DB: database, Cipher: evaluationCipher}
 	for appID, manager := range offerClients {
 		source, ok := manager.(offerdelivery.ReportSource)
@@ -207,7 +214,8 @@ func run(logger *slog.Logger) error {
 		VoiceDiscovery: voiceDiscovery, VoiceProbe: voiceProbe,
 		VoiceWritesEnabled: strings.EqualFold(os.Getenv("JOURNAL_TTS_WRITES_ENABLED"), "true"),
 		AI:                 ai, Evaluations: &evaluations, EvaluationSpeechPrice: evaluationCost.JournalSpeech,
-		Prompts: &prompts, PromptCache: promptCache,
+		ConfiguredPromptModels: configuredModels,
+		Prompts:                &prompts, PromptCache: promptCache,
 		Billing:                 bills,
 		Operations:              &ops,
 		OperationsWritesEnabled: strings.EqualFold(os.Getenv("PLATFORM_OPERATIONS_WRITES_ENABLED"), "true"),
