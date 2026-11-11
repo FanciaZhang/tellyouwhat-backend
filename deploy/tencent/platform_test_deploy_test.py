@@ -34,6 +34,8 @@ class PlatformTestBootstrapTests(unittest.TestCase):
             parent.chmod(0o700)
         self.runtime = Mock(root=self.root, state=self.root / '.operations', config={})
         self.runtime.state.mkdir()
+        imports = patch.dict(os.environ, {'PYTHONPATH': str(Path(__file__).resolve().parent) + os.pathsep + os.environ.get('PYTHONPATH', '')})
+        imports.start(); self.addCleanup(imports.stop)
         scripts = self.root / 'deploy/tencent'
         scripts.mkdir(parents=True, mode=0o755)
         scripts.parent.chmod(0o755)

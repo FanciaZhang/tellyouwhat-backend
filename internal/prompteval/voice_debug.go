@@ -39,7 +39,7 @@ func PrepareVoiceDebug(samples []Sample, candidate Candidate, speechPrice costco
 			if len(sample.Audio) > 0 || sample.Voice.Polish == nil || sample.Voice.Polish.Paused || sample.Voice.Polish.Lightweight || len(sample.Voice.Polish.Targets) == 0 {
 				return p, ErrInvalid
 			}
-			prepared, prepareErr := voice.PrepareRewrite(ctx, *sample.Voice, 1, "")
+			prepared, prepareErr := voice.PrepareRewrite(ctx, sample.voiceSnapshot(), 1, "")
 			if prepareErr != nil || prepared.Parameters.Price == nil {
 				return p, ErrInvalid
 			}
@@ -62,4 +62,11 @@ func transcriptionRequest(revision promptconfig.Revision, sample Sample) json.Ra
 	settings := revision.Policy.Journal.Voice
 	raw, _ := json.Marshal(map[string]any{"stage": "transcription", "milliseconds": (len(sample.Audio) + 31) / 32, "format": "PCM16", "sampleRate": 16000, "channels": 1, "words": sample.Voice.Words, "automaticPunctuation": settings.AutomaticPunctuation, "normalizeNumbers": settings.NormalizeNumbers})
 	return raw
+}
+
+// Reconstruct the server-owned finalization context after encrypted queue decoding.
+func (s Sample) voiceSnapshot() voice.Snapshot {
+	snapshot := *s.Voice
+	snapshot.Organization = snapshot.Polish != nil && !snapshot.Polish.Lightweight
+	return snapshot
 }

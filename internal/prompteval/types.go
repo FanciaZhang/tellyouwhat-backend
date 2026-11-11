@@ -218,7 +218,7 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 				p.MaximumCalls++
 				continue
 			} else if s.Kind == "voice" {
-				v, err := voice.PrepareRewrite(ctx, *s.Voice, 1, "")
+				v, err := voice.PrepareRewrite(ctx, s.voiceSnapshot(), 1, "")
 				if err != nil {
 					return p, err
 				}

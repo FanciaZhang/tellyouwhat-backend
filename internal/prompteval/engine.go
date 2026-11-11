@@ -155,7 +155,7 @@ func (e *Engine) execute(ctx context.Context, controller *costcontrol.Controller
 			out.Text = "图片已生成；请检查画面是否符合描述。"
 		}
 	} else if sample.Kind == "voice" || sample.Kind == "voice_transcription" {
-		snapshot := *sample.Voice
+		snapshot := sample.voiceSnapshot()
 		if len(sample.Audio) > 0 {
 			next := e.Speech
 			if next == nil {
