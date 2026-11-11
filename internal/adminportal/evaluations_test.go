@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"github.com/tellyouwhat/backend/internal/arkcontrol"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/journal/voice"
 	"github.com/tellyouwhat/backend/internal/prompteval"
 	"github.com/tellyouwhat/backend/internal/storage/mysqlstore"
 	"net/http"
@@ -158,6 +159,52 @@ func TestEvaluationHTTPPreviewReplayAndPublicationGate(t *testing.T) {
 	_ = json.Unmarshal(res.Body.Bytes(), &publication)
 	if publication.CanPublish || len(publication.Blockers) == 0 {
 		t.Fatal("untested draft can publish")
+	}
+	// Voice debugging shares auth, CSRF, signed previews and the durable paid queue.
+	audio := prompteval.Sample{ID: uuid.NewString(), Name: "Synthetic voice lab", Kind: "voice_transcription", VoiceDebug: true, Voice: &voice.Snapshot{Words: []string{"小林"}}, Audio: make([]byte, 32000)}
+	check(call("POST", root+"/samples", audio, true, true, ""), 200)
+	quick := map[string]any{"mode": prompteval.VoiceDebugMode, "sampleIDs": []string{audio.ID}, "candidates": []any{map[string]any{"revision": draft.ID, "label": "调试草稿"}}}
+	check(call("POST", root+"/preview", quick, false, true, ""), 401)
+	check(call("POST", root+"/preview", quick, true, false, ""), 403)
+	repo.user.Role = adminauth.RoleOperator
+	check(call("POST", root+"/preview", quick, true, true, ""), 403)
+	repo.user.Role = adminauth.RoleAdmin
+	res = call("POST", root+"/preview", quick, true, true, "")
+	check(res, 200)
+	_ = json.Unmarshal(res.Body.Bytes(), &preview)
+	if preview.Plan.Mode != prompteval.VoiceDebugMode || preview.Plan.MaximumCalls != 1 || len(preview.Plan.Samples[0].Audio) > 0 {
+		t.Fatal("quick preview adds a judge or returns private audio")
+	}
+	quick["previewToken"] = preview.Token
+	quickKey := uuid.NewString()
+	check(call("POST", root+"/runs", quick, true, true, quickKey), 200)
+	check(call("POST", root+"/runs", quick, true, true, quickKey), 200)
+	check(call("GET", root+"/commands/"+quickKey, nil, false, false, ""), 401)
+	check(call("GET", root+"/commands/"+quickKey, nil, true, false, ""), 200)
+	check(call("GET", root+"/commands/"+uuid.NewString(), nil, true, false, ""), 404)
+	quick["mode"] = "invalid"
+	delete(quick, "previewToken")
+	check(call("POST", root+"/preview", quick, true, true, ""), 422)
+	res = call("GET", "/api/v1/ai/prompts/revisions/"+draft.ID, nil, true, false, "")
+	check(res, 200)
+	_ = json.Unmarshal(res.Body.Bytes(), &publication)
+	if publication.CanPublish || len(publication.Blockers) == 0 {
+		t.Fatal("quick trial bypassed publication quality gate")
+	}
+	// The isolated test admin has no cloud-management credential.
+	s.config.AI = nil
+	s.config.Environment = "development"
+	s.config.WritesEnabled = true
+	s.config.ConfiguredPromptModels = map[string]costcontrol.TokenPrice{"ep-test": *preview.Plan.Candidates[0].Revision.Policy.Journal.Voice.Parameters.Price}
+	configuredDraft := promptconfig.DraftInput{Scope: "journal", BaseVersion: current.ID, Policy: policy}
+	check(call("POST", "/api/v1/ai/prompts/drafts", configuredDraft, true, true, uuid.NewString()), 200)
+	configuredDraft.Policy = promptconfig.Policy{}
+	configuredDraft.Scope = "health:meal_text_capture"
+	check(call("POST", "/api/v1/ai/prompts/drafts", configuredDraft, true, true, uuid.NewString()), 503)
+	res = call("GET", "/api/v1/ai/prompts?scope=journal", nil, true, false, "")
+	check(res, 200)
+	if !bytes.Contains(res.Body.Bytes(), []byte(`"modelCatalogAvailable":false`)) || !bytes.Contains(res.Body.Bytes(), []byte(`"writesEnabled":true`)) {
+		t.Fatal("configured-only prompt capability not advertised")
 	}
 }
 

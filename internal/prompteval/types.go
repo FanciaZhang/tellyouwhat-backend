@@ -29,6 +29,7 @@ var ErrConflict = errors.New("evaluation command conflict")
 var ErrNotFound = errors.New("evaluation not found")
 
 type Sample struct {
+	VoiceDebug   bool                     `json:"voiceDebug,omitempty"`
 	Illustration *illustration.Brief      `json:"illustration,omitempty"`
 	ID           string                   `json:"id"`
 	Name         string                   `json:"name"`
@@ -57,8 +58,11 @@ func (s Sample) Validate() error {
 		if s.Illustration == nil || s.Illustration.Validate() != nil || s.Organize != nil || s.Voice != nil || len(s.Audio) > 0 {
 			return ErrInvalid
 		}
-	case "voice":
+	case "voice", "voice_transcription":
 		if s.Illustration != nil || s.Voice == nil || s.Voice.Validate() != nil || s.Organize != nil || len(s.Audio) > voice.MaxSegmentBytes || len(s.Audio)%2 != 0 {
+			return ErrInvalid
+		}
+		if s.Kind == "voice_transcription" && (!s.VoiceDebug || len(s.Audio) == 0 || s.Voice.Polish != nil || s.Voice.Transcript != "" || len(s.Voice.Blocks) > 0) {
 			return ErrInvalid
 		}
 	default:
@@ -102,6 +106,7 @@ type Candidate struct {
 	Label          string                `json:"label"`
 }
 type Plan struct {
+	Mode          string                  `json:"mode,omitempty"`
 	Samples       []Sample                `json:"samples"`
 	Candidates    []Candidate             `json:"candidates"`
 	Judge         promptconfig.Parameters `json:"judge"`
@@ -111,24 +116,26 @@ type Plan struct {
 	Requests      []json.RawMessage       `json:"requests"`
 }
 type Output struct {
-	RawStructured      json.RawMessage `json:"rawStructured,omitempty"`
-	Image              []byte          `json:"image,omitempty"`
-	ImageMIME          string          `json:"imageMIME,omitempty"`
-	DiagnosticOutput   string          `json:"diagnosticOutput,omitempty"`
-	SpeechCostNanos    int64           `json:"speechCostNanos"`
-	SpeechMilliseconds int             `json:"speechMilliseconds"`
-	Candidate          int             `json:"candidate"`
-	ConfigVersion      string          `json:"configVersion"`
-	Model              string          `json:"model"`
-	InputTokens        int             `json:"inputTokens"`
-	OutputTokens       int             `json:"outputTokens"`
-	CostNanos          int64           `json:"costNanos"`
-	Milliseconds       int64           `json:"milliseconds"`
-	Request            json.RawMessage `json:"request"`
-	Structured         json.RawMessage `json:"structured,omitempty"`
-	Text               string          `json:"text"`
-	Checks             []CheckResult   `json:"checks"`
-	Error              string          `json:"error,omitempty"`
+	Transcript         string                    `json:"transcript,omitempty"`
+	Diagnostics        *voice.RewriteDiagnostics `json:"diagnostics,omitempty"`
+	RawStructured      json.RawMessage           `json:"rawStructured,omitempty"`
+	Image              []byte                    `json:"image,omitempty"`
+	ImageMIME          string                    `json:"imageMIME,omitempty"`
+	DiagnosticOutput   string                    `json:"diagnosticOutput,omitempty"`
+	SpeechCostNanos    int64                     `json:"speechCostNanos"`
+	SpeechMilliseconds int                       `json:"speechMilliseconds"`
+	Candidate          int                       `json:"candidate"`
+	ConfigVersion      string                    `json:"configVersion"`
+	Model              string                    `json:"model"`
+	InputTokens        int                       `json:"inputTokens"`
+	OutputTokens       int                       `json:"outputTokens"`
+	CostNanos          int64                     `json:"costNanos"`
+	Milliseconds       int64                     `json:"milliseconds"`
+	Request            json.RawMessage           `json:"request"`
+	Structured         json.RawMessage           `json:"structured,omitempty"`
+	Text               string                    `json:"text"`
+	Checks             []CheckResult             `json:"checks"`
+	Error              string                    `json:"error,omitempty"`
 }
 type CheckResult struct {
 	Name   string `json:"name"`
@@ -185,7 +192,7 @@ func Prepare(samples []Sample, candidates []Candidate, judge promptconfig.Parame
 	}
 	seen := map[string]bool{}
 	for _, s := range samples {
-		if s.Validate() != nil || seen[s.ID] {
+		if s.Validate() != nil || s.VoiceDebug || s.Kind == "voice_transcription" || seen[s.ID] {
 			return p, ErrInvalid
 		}
 		seen[s.ID] = true

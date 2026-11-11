@@ -82,7 +82,7 @@ func (s Store) PublicationBlockers(ctx context.Context, r promptconfig.Revision,
 }
 
 func requiredQualityCoverage(samples []Sample) []string {
-	for _, required := range RequiredQualitySamples() {
+	for _, required := range append(RequiredQualitySamples(), FinalizationSample()) {
 		found := false
 		expected, _ := json.Marshal(required)
 		for _, sample := range samples {

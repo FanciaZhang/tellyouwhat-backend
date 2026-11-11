@@ -72,7 +72,7 @@ func (s Store) SaveSample(ctx context.Context, value Sample, actor string, now t
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO prompt_eval_samples(id,payload,nonce,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?)`, value.ID, raw, nonce, actor, now, now.Add(Retention))
+	_, err = tx.ExecContext(ctx, `INSERT INTO prompt_eval_samples(id,payload,nonce,created_by,created_at,expires_at,voice_debug) VALUES(?,?,?,?,?,?,?)`, value.ID, raw, nonce, actor, now, now.Add(Retention), value.VoiceDebug)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s Store) SaveSample(ctx context.Context, value Sample, actor string, now t
 }
 
 func (s Store) Samples(ctx context.Context, now time.Time) ([]Sample, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id,payload,nonce FROM prompt_eval_samples WHERE expires_at>? ORDER BY created_at DESC LIMIT 200`, now)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,payload,nonce FROM prompt_eval_samples WHERE expires_at>? AND voice_debug=FALSE ORDER BY created_at DESC LIMIT 200`, now)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +111,19 @@ func (s Store) DeleteSample(ctx context.Context, id string) error {
 func (s Store) Start(ctx context.Context, plan Plan, m aiconfig.Mutation, now time.Time) (Run, error) {
 	return s.StartInput(ctx, plan, m, plan, now)
 }
+
+func (s Store) Command(ctx context.Context, actor, key string, now time.Time) (Run, error) {
+	var id string
+	err := s.DB.QueryRowContext(ctx, `SELECT id FROM prompt_eval_runs WHERE actor_id=? AND idempotency_key=? AND expires_at>?`, actor, key, now).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Run{}, ErrNotFound
+	}
+	if err != nil {
+		return Run{}, err
+	}
+	return s.Get(ctx, id, now)
+}
+
 func (s Store) StartInput(ctx context.Context, plan Plan, m aiconfig.Mutation, submitted any, now time.Time) (Run, error) {
 	if !aiconfig.ValidMutation(m) || plan.ReservedNanos <= 0 || len(plan.Samples) == 0 || len(plan.Samples) > 20 || len(plan.Candidates) == 0 || len(plan.Candidates) > 2 {
 		return Run{}, ErrInvalid
@@ -144,7 +157,12 @@ func (s Store) StartInput(ctx context.Context, plan Plan, m aiconfig.Mutation, s
 	run := Run{ID: uuid.NewString(), Status: "pending", CreatedAt: now, ExpiresAt: now.Add(Retention), Plan: plan, Items: []Item{}}
 	revisionIDs := []string{}
 	for _, c := range plan.Candidates {
-		revisionIDs = append(revisionIDs, c.Revision.ID)
+		id := c.Revision.ID
+		// Quick experiments neither satisfy nor supersede the publication gate.
+		if plan.Mode == VoiceDebugMode {
+			id = VoiceDebugMode + ":" + id
+		}
+		revisionIDs = append(revisionIDs, id)
 	}
 	revisionJSON, _ := json.Marshal(revisionIDs)
 	raw, nonce, err := s.seal(run.ID, plan)
@@ -168,7 +186,12 @@ func (s Store) StartInput(ctx context.Context, plan Plan, m aiconfig.Mutation, s
 		return Run{}, err
 	}
 	for index := range plan.Samples {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO prompt_eval_items(run_id,item_index,status) VALUES(?,?,'pending')`, run.ID, index); err != nil {
+		status := "pending"
+		if plan.Mode == VoiceDebugMode {
+			// Earlier workers must never execute a debug-only sample after rollback.
+			status = "pending_debug"
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO prompt_eval_items(run_id,item_index,status) VALUES(?,?,?)`, run.ID, index, status); err != nil {
 			return Run{}, err
 		}
 		run.Items = append(run.Items, Item{Index: index, Status: "pending"})
@@ -201,6 +224,9 @@ func (s Store) Get(ctx context.Context, id string, now time.Time) (Run, error) {
 		var item Item
 		if err = rows.Scan(&item.Index, &item.Status); err != nil {
 			return r, err
+		}
+		if item.Status == "pending_debug" {
+			item.Status = "pending"
 		}
 		r.Items = append(r.Items, item)
 	}
@@ -235,7 +261,7 @@ func (s Store) Cancel(ctx context.Context, id string, now time.Time) error {
 	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_runs SET status='cancelled' WHERE id=? AND status IN ('pending','running')`, id); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_items SET status='cancelled' WHERE run_id=? AND status='pending'`, id); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE prompt_eval_items SET status='cancelled' WHERE run_id=? AND status IN ('pending','pending_debug')`, id); err != nil {
 		return err
 	}
 	if err = releaseHold(ctx, tx, id, now); err != nil {
@@ -336,6 +362,9 @@ func (s Store) Result(ctx context.Context, id string, index int, now time.Time) 
 	}
 	if err != nil {
 		return item, err
+	}
+	if item.Status == "pending_debug" {
+		item.Status = "pending"
 	}
 	if len(raw) > 0 {
 		item.Result = &ItemResult{}

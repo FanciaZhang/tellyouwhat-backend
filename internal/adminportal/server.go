@@ -62,6 +62,7 @@ type Config struct {
 	Delivery                *offerdelivery.Store
 	Evaluations             *prompteval.Store
 	EvaluationSpeechPrice   costcontrol.DurationPrice
+	ConfiguredPromptModels  map[string]costcontrol.TokenPrice
 	Billing                 *cloudbilling.Cache
 	Operations              *platformops.Store
 	Prompts                 *promptconfig.Store
@@ -317,7 +318,7 @@ func (server *Server) securityAndRateLimit() gin.HandlerFunc {
 		writer.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob: https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
-		writer.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		writer.Header().Set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=()")
 		if !server.limiter.allow(request) {
 			writer.Header().Set("Retry-After", "60")
 			writeFailure(writer, http.StatusTooManyRequests, "rate_limited", "请求过于频繁，请稍后重试")

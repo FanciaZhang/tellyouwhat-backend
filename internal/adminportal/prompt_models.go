@@ -21,7 +21,19 @@ func (s *Server) resolvePromptModels(ctx context.Context, p *promptconfig.Policy
 		return nil
 	}
 	if s.config.AI == nil {
-		return arkcontrol.ErrUnavailable
+		if s.config.Environment != "development" {
+			return arkcontrol.ErrUnavailable
+		}
+		// Isolated admins can tune the models already admitted in server configuration
+		// without receiving account-wide cloud management credentials.
+		for _, params := range []*promptconfig.Parameters{&p.Journal.Organize.Lite, &p.Journal.Organize.Pro, &p.Journal.Voice.Parameters} {
+			price, ok := s.config.ConfiguredPromptModels[params.Model]
+			if !ok || !price.Valid() {
+				return promptconfig.ErrInvalid
+			}
+			params.FoundationModel, params.ModelVersion, params.Price = "", "", &price
+		}
+		return nil
 	}
 	inventory, ok := s.config.AI.Inventory.(PromptModelInventory)
 	if !ok {

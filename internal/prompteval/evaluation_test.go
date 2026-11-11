@@ -291,7 +291,7 @@ func TestMySQLFailedOutputDiagnosticsAreEncrypted(t *testing.T) {
 
 func TestPublicationRequiresUneditedQualitySamplesAndImageBudget(t *testing.T) {
 	samples := Builtins()
-	if len(samples) != 20 || len(requiredQualityCoverage(samples)) != 0 {
+	if len(samples) != 21 || len(requiredQualityCoverage(samples)) != 0 {
 		t.Fatal("fixed coverage missing")
 	}
 	for _, sample := range samples {
@@ -348,7 +348,7 @@ func TestRawBookFailureCannotBecomePassingEvaluationAfterCuration(t *testing.T) 
 func TestMySQLFixedQualityPublicationGateRejectsRawFailure(t *testing.T) {
 	s, m := testStore(t)
 	p := testPlan(t)
-	samples := append(RequiredQualitySamples(), Builtins()[2])
+	samples := append(RequiredQualitySamples(), Builtins()[2], FinalizationSample())
 	var err error
 	p, err = Prepare(samples, p.Candidates, p.Judge, costcontrol.DurationPrice{NanosPerHour: 4500000000})
 	if err != nil {
@@ -379,13 +379,37 @@ func TestMySQLFixedQualityPublicationGateRejectsRawFailure(t *testing.T) {
 		if err != nil || (len(blockers) > 0) != fail {
 			t.Fatal("publication gate", fail, blockers, err)
 		}
+		if !fail {
+			quickSample := FinalizationSample()
+			quickSample.ID, quickSample.VoiceDebug = uuid.NewString(), true
+			quick, err := PrepareVoiceDebug([]Sample{quickSample}, p.Candidates[0], costcontrol.DurationPrice{NanosPerHour: 4500000000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Key = uuid.NewString()
+			run, err := s.Start(context.Background(), quick, m, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			blockers, err = s.PublicationBlockers(context.Background(), p.Candidates[0].Revision, time.Now())
+			if err != nil || len(blockers) != 0 {
+				t.Fatal("quick experiment superseded a valid publication evaluation", blockers, err)
+			}
+			if err = s.Cancel(context.Background(), run.ID, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 
 func TestRequiredPublicationSelectionFitsWithExtrasAndSatisfiesGate(t *testing.T) {
 	ids := RequiredPublicationSampleIDs()
-	if len(ids) != 13 {
-		t.Fatalf("expected 13 required cases, got %d", len(ids))
+	if len(ids) != 14 {
+		t.Fatalf("expected 14 required cases, got %d", len(ids))
+	}
+	defaults := RequiredPublicationSamples()
+	if len(defaults) != len(ids) || len(defaults) > 20 || len(requiredQualityCoverage(defaults)) != 0 {
+		t.Fatal("CLI default must fit one batch and exercise finalization")
 	}
 	selected := []Sample{}
 	kinds := map[string]bool{}

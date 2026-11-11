@@ -18,6 +18,7 @@ import (
 )
 
 type evaluationInput struct {
+	Mode       string   `json:"mode,omitempty"`
 	SampleIDs  []string `json:"sampleIDs"`
 	Candidates []struct {
 		Revision      string                   `json:"revision"`
@@ -124,7 +125,7 @@ func (s *Server) DeleteEvaluationSample(c *gin.Context, id uuid.UUID, _ adminhtt
 }
 func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.Plan, error) {
 	var empty prompteval.Plan
-	if len(in.SampleIDs) < 1 || len(in.SampleIDs) > 20 || len(in.Candidates) < 1 || len(in.Candidates) > 2 {
+	if len(in.SampleIDs) < 1 || len(in.SampleIDs) > 20 || len(in.Candidates) < 1 || len(in.Candidates) > 2 || (in.Mode != "" && in.Mode != prompteval.VoiceDebugMode) {
 		return empty, prompteval.ErrInvalid
 	}
 	samples := []prompteval.Sample{}
@@ -164,6 +165,12 @@ func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.
 			}{source, r.Policy})
 		}
 		candidates = append(candidates, prompteval.Candidate{Revision: r, Label: v.Label, SourceRevision: source})
+	}
+	if in.Mode == prompteval.VoiceDebugMode {
+		if len(candidates) != 1 {
+			return empty, prompteval.ErrInvalid
+		}
+		return prompteval.PrepareVoiceDebug(samples, candidates[0], s.config.EvaluationSpeechPrice)
 	}
 	current, err := s.config.Prompts.Current(c.Request.Context(), "journal")
 	if err != nil {
@@ -295,6 +302,20 @@ func (s *Server) ListEvaluationRuns(c *gin.Context) {
 	}
 	writeJSON(c.Writer, 200, map[string]any{"runs": v})
 }
+
+func (s *Server) GetEvaluationCommand(c *gin.Context, command uuid.UUID) {
+	a, ok := s.evaluationAccess(c, false)
+	if !ok {
+		return
+	}
+	run, err := s.config.Evaluations.Command(c.Request.Context(), a.User.ID, command.String(), s.now())
+	if err != nil {
+		evaluationFailure(c, err)
+		return
+	}
+	writeJSON(c.Writer, 200, evaluationRunView(run))
+}
+
 func (s *Server) GetEvaluationRun(c *gin.Context, id uuid.UUID) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
