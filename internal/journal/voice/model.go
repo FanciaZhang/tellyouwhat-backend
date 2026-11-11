@@ -464,6 +464,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		}
 		request.compactNarrative = s.Organization && simpleNarrative(s)
 		body, parameters = preparePolish(ctx, request, style, s.Words, parameters)
+		if !request.Lightweight && strings.TrimSpace(settings.Voice.PolishPrompt) != "" {
+			body["instructions"] = body["instructions"].(string) + "\n成稿附加要求（遵守原文依据和输出协议）：\n" + settings.Voice.PolishPrompt
+		}
 	}
 	parameters.Apply(body)
 	payload, _ := json.Marshal(body)

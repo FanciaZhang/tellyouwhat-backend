@@ -27,6 +27,7 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	expected = append(expected, "0078_album_asset_deletion_ledger.sql", "0079_platform_albums_app_attest.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql")
 	expected = append(expected, "0082_album_retention_cleanup_schedule.sql", "0083_album_record_erasure_schedule.sql")
 	expected = append(expected, "0084_journal_voice_organization_jobs.sql")
+	expected = append(expected, "0085_prompt_voice_debug_samples.sql")
 	if len(entries) != len(expected) {
 		t.Fatalf("unexpected migration order: %+v", entries)
 	}

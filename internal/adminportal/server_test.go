@@ -30,6 +30,21 @@ func TestReadinessChecksDependenciesWhileHealthRemainsLive(t *testing.T) {
 	}
 }
 
+func TestVoiceWorkbenchMicrophoneIsSameOriginOnly(t *testing.T) {
+	server := &Server{limiter: newRateLimiter(time.Now)}
+	router := gin.New()
+	router.Use(server.securityAndRateLimit())
+	router.GET("/", func(c *gin.Context) { c.Status(200) })
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest("GET", "/", nil))
+	if response.Header().Get("Permissions-Policy") != "camera=(), microphone=(self), geolocation=(), payment=()" {
+		t.Fatal("microphone policy does not allow the authorized workbench")
+	}
+	if !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatal("workbench can be embedded by another origin")
+	}
+}
+
 func TestGeneratedAdminRouterOwnsServiceRoutes(t *testing.T) {
 	t.Parallel()
 	router := gin.New()

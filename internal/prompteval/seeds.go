@@ -31,21 +31,37 @@ func Builtins() []Sample {
 
 	snapshot := voice.Snapshot{WritingStyle: voice.StyleNatural, Revision: 1, Blocks: []voice.Block{{ID: "30000000-0000-4000-8000-000000000003", Text: ""}}, Transcript: "", EditedBlockIDs: []string{}, MediaOnlyBlockIDs: []string{}, ManualEdits: []voice.ManualEdit{}, Words: []string{"小林"}}
 	out = append(out, Sample{ID: "10000000-0000-4000-8000-000000000008", Name: "语音识别与整理 · 合成音频", Kind: "voice", Voice: &snapshot, Audio: append([]byte{}, riverAudio...), Expected: []Check{{Kind: "contains", Text: "河边"}, {Kind: "contains", Text: "热茶"}}})
-	return append(out, RequiredQualitySamples()...)
+	out = append(out, RequiredQualitySamples()...)
+	return append(out, FinalizationSample())
 }
 
-// The fixed quality set covers Lite, Pro and illustrations; one voice case completes publication coverage.
+// The fixed set exercises both voice editing and the App's final journal path.
 func RequiredPublicationSampleIDs() []string {
 	ids := []string{}
-	for _, sample := range RequiredQualitySamples() {
+	for _, sample := range RequiredPublicationSamples() {
 		ids = append(ids, sample.ID)
 	}
+	return ids
+}
+
+func RequiredPublicationSamples() []Sample {
+	samples := append(RequiredQualitySamples(), FinalizationSample())
 	for _, sample := range Builtins() {
 		if sample.Kind == "voice" {
-			return append(ids, sample.ID)
+			return append(samples, sample)
 		}
 	}
-	return ids
+	return samples
+}
+
+func FinalizationSample() Sample {
+	text := "今天下班后，我和小林去河边散步，买了一杯热茶。"
+	id, source := "30000000-0000-4000-8000-000000000120", "30000000-0000-4000-8000-000000000121"
+	narrator := &voice.Narrator{PersonID: "30000000-0000-4000-8000-000000000122", Name: "我"}
+	snapshot := voice.Snapshot{WritingStyle: voice.StyleNatural, DictationMode: true, Narrator: narrator, Transcript: text,
+		Blocks: []voice.Block{{ID: id, Text: text, Style: "body"}},
+		Polish: &voice.PolishRequest{Narrator: narrator, Targets: []voice.PolishTarget{{ID: id, Text: text, SourceText: text, Style: "body", CompleteSource: true, SourceIDs: []string{source}, Turns: []voice.SourceUtterance{{ID: source, Text: text, PersonID: narrator.PersonID, Person: "我"}}}}}}
+	return Sample{ID: "10000000-0000-4000-8000-000000000120", Name: "语音最终成稿 · 保留原文事实", Kind: "voice", Voice: &snapshot, Expected: []Check{{Kind: "contains", Text: "小林"}, {Kind: "contains", Text: "河边"}, {Kind: "contains", Text: "热茶"}}}
 }
 
 // These immutable synthetic cases are mandatory for publication; edited copies do not satisfy coverage.

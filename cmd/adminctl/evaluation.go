@@ -78,7 +78,9 @@ func syntheticEvaluation(ctx context.Context, db *sql.DB, args []string) error {
 		sampleSelection = args[3]
 	}
 	samples := prompteval.Builtins()
-	if sampleSelection != "" {
+	if sampleSelection == "" {
+		samples = prompteval.RequiredPublicationSamples()
+	} else {
 		selected := []prompteval.Sample{}
 		for _, id := range strings.Split(sampleSelection, ",") {
 			found := false
