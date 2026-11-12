@@ -91,6 +91,27 @@ func (a RecordingASR) SubmitFile(ctx context.Context, taskID, path string) error
 	}
 	return a.submitAudio(ctx, taskID, io.LimitReader(file, info.Size()), info.Size())
 }
+
+// SubmitPCM reuses the recording-import transport while reading bounded encrypted chunks.
+func (a RecordingASR) SubmitPCM(ctx context.Context, taskID string, pcm io.Reader, size int) error {
+	if uuid.Validate(taskID) != nil || size < 2 || size > 1800*32000 || size%2 != 0 {
+		return ErrInvalid
+	}
+	header := make([]byte, 44)
+	copy(header, "RIFF")
+	binary.LittleEndian.PutUint32(header[4:], uint32(size+36))
+	copy(header[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(header[16:], 16)
+	binary.LittleEndian.PutUint16(header[20:], 1)
+	binary.LittleEndian.PutUint16(header[22:], 1)
+	binary.LittleEndian.PutUint32(header[24:], 16000)
+	binary.LittleEndian.PutUint32(header[28:], 32000)
+	binary.LittleEndian.PutUint16(header[32:], 2)
+	binary.LittleEndian.PutUint16(header[34:], 16)
+	copy(header[36:], "data")
+	binary.LittleEndian.PutUint32(header[40:], uint32(size))
+	return a.submitAudio(ctx, taskID, io.MultiReader(bytes.NewReader(header), io.LimitReader(pcm, int64(size))), int64(size+44))
+}
 func (a RecordingASR) submitAudio(ctx context.Context, taskID string, audio io.Reader, audioLength int64) error {
 	// Stream base64 into the HTTP request instead of holding both 58 MB PCM
 	// and its 77 MB JSON copy in the private service's 192 MB memory limit.

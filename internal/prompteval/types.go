@@ -4,6 +4,7 @@ package prompteval
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ var ErrConflict = errors.New("evaluation command conflict")
 var ErrNotFound = errors.New("evaluation not found")
 
 type Sample struct {
+	Recording    *RecordingInput          `json:"recording,omitempty"`
 	VoiceDebug   bool                     `json:"voiceDebug,omitempty"`
 	Illustration *illustration.Brief      `json:"illustration,omitempty"`
 	ID           string                   `json:"id"`
@@ -49,6 +51,9 @@ func (s Sample) Validate() error {
 	if uuid.Validate(s.ID) != nil || strings.TrimSpace(s.Name) == "" || len(s.Name) > 200 || len(s.Expected) > 30 {
 		return ErrInvalid
 	}
+	if s.Kind != "voice_recording" && s.Recording != nil {
+		return ErrInvalid
+	}
 	switch s.Kind {
 	case "organize_lite", "organize_pro", "illustration_scene":
 		if s.Illustration != nil || s.Organize == nil || s.Organize.Validate() != nil || s.Voice != nil || len(s.Audio) > 0 {
@@ -57,6 +62,24 @@ func (s Sample) Validate() error {
 	case "illustration_image":
 		if s.Illustration == nil || s.Illustration.Validate() != nil || s.Organize != nil || s.Voice != nil || len(s.Audio) > 0 {
 			return ErrInvalid
+		}
+	case "voice_recording":
+		if !s.VoiceDebug || s.Recording == nil || s.Voice != nil || s.Organize != nil || s.Illustration != nil || len(s.Audio) != 0 || len(s.Expected) != 0 {
+			return ErrInvalid
+		}
+		r := s.Recording
+		if len(r.Chunks) < 1 || len(r.Chunks) > 120 || r.Bytes < 2 || r.Bytes > 1800*32000 || r.Bytes%2 != 0 || len(r.SHA256) != 64 {
+			return ErrInvalid
+		}
+		if _, err := hex.DecodeString(r.SHA256); err != nil {
+			return ErrInvalid
+		}
+		seen := map[string]bool{}
+		for _, id := range r.Chunks {
+			if uuid.Validate(id) != nil || seen[id] {
+				return ErrInvalid
+			}
+			seen[id] = true
 		}
 	case "voice", "voice_transcription":
 		if s.Illustration != nil || s.Voice == nil || s.Voice.Validate() != nil || s.Organize != nil || len(s.Audio) > voice.MaxSegmentBytes || len(s.Audio)%2 != 0 {
@@ -116,6 +139,7 @@ type Plan struct {
 	Requests      []json.RawMessage       `json:"requests"`
 }
 type Output struct {
+	RecordingTaskID    string                    `json:"recordingTaskID,omitempty"`
 	Transcript         string                    `json:"transcript,omitempty"`
 	Diagnostics        *voice.RewriteDiagnostics `json:"diagnostics,omitempty"`
 	RawStructured      json.RawMessage           `json:"rawStructured,omitempty"`
@@ -177,6 +201,7 @@ type Item struct {
 	Result *ItemResult `json:"result,omitempty"`
 }
 type Run struct {
+	Mode      string    `json:"mode,omitempty"`
 	ID        string    `json:"id"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`

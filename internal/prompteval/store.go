@@ -56,8 +56,12 @@ func (s Store) SaveSample(ctx context.Context, value Sample, actor string, now t
 		return err
 	}
 	var previous, previousNonce []byte
-	err = tx.QueryRowContext(ctx, `SELECT payload,nonce FROM prompt_eval_samples WHERE id=?`, value.ID).Scan(&previous, &previousNonce)
+	var previousActor string
+	err = tx.QueryRowContext(ctx, `SELECT payload,nonce,created_by FROM prompt_eval_samples WHERE id=?`, value.ID).Scan(&previous, &previousNonce, &previousActor)
 	if err == nil {
+		if previousActor != actor {
+			return ErrConflict
+		}
 		var existing Sample
 		if err = s.open(value.ID, previous, previousNonce, &existing); err != nil {
 			return err
@@ -195,6 +199,11 @@ func (s Store) StartInput(ctx context.Context, plan Plan, m aiconfig.Mutation, s
 			return Run{}, err
 		}
 		run.Items = append(run.Items, Item{Index: index, Status: "pending"})
+		if sample := plan.Samples[index]; sample.Recording != nil {
+			if err = s.freezeRecording(ctx, tx, run.ID, index, *sample.Recording); err != nil {
+				return Run{}, err
+			}
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO admin_audit_events(admin_user_id,request_id,action,target_type,target_id,outcome,metadata_json,created_at) VALUES(?,?,'prompts.evaluate','evaluation',?,'succeeded','{}',?)`, m.Actor, m.RequestID, run.ID, now); err != nil {
 		return Run{}, err
@@ -202,9 +211,12 @@ func (s Store) StartInput(ctx context.Context, plan Plan, m aiconfig.Mutation, s
 	return run, tx.Commit()
 }
 func (s Store) Get(ctx context.Context, id string, now time.Time) (Run, error) {
+	return s.GetForActor(ctx, id, "", now)
+}
+func (s Store) GetForActor(ctx context.Context, id, actor string, now time.Time) (Run, error) {
 	var r Run
 	var raw, nonce []byte
-	err := s.DB.QueryRowContext(ctx, `SELECT id,status,created_at,expires_at,payload,nonce FROM prompt_eval_runs WHERE id=? AND expires_at>?`, id, now).Scan(&r.ID, &r.Status, &r.CreatedAt, &r.ExpiresAt, &raw, &nonce)
+	err := s.DB.QueryRowContext(ctx, `SELECT id,status,created_at,expires_at,payload,nonce FROM prompt_eval_runs WHERE id=? AND expires_at>? AND (?='' OR actor_id=?)`, id, now, actor, actor).Scan(&r.ID, &r.Status, &r.CreatedAt, &r.ExpiresAt, &raw, &nonce)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -233,7 +245,10 @@ func (s Store) Get(ctx context.Context, id string, now time.Time) (Run, error) {
 	return r, rows.Err()
 }
 func (s Store) List(ctx context.Context, now time.Time) ([]Run, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id,status,created_at,expires_at FROM prompt_eval_runs WHERE expires_at>? ORDER BY created_at DESC LIMIT 50`, now)
+	return s.ListForActor(ctx, "", now)
+}
+func (s Store) ListForActor(ctx context.Context, actor string, now time.Time) ([]Run, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,status,created_at,expires_at,JSON_SEARCH(candidate_revisions,'one','voice_debug:%') IS NOT NULL FROM prompt_eval_runs WHERE expires_at>? AND (?='' OR actor_id=?) ORDER BY created_at DESC LIMIT 50`, now, actor, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -241,8 +256,12 @@ func (s Store) List(ctx context.Context, now time.Time) ([]Run, error) {
 	out := []Run{}
 	for rows.Next() {
 		var r Run
-		if err = rows.Scan(&r.ID, &r.Status, &r.CreatedAt, &r.ExpiresAt); err != nil {
+		var debug bool
+		if err = rows.Scan(&r.ID, &r.Status, &r.CreatedAt, &r.ExpiresAt, &debug); err != nil {
 			return nil, err
+		}
+		if debug {
+			r.Mode = VoiceDebugMode
 		}
 		out = append(out, r)
 	}
@@ -341,9 +360,12 @@ func (b BatchBudget) RecordOutcome(ctx context.Context, id string, o costcontrol
 }
 
 func (s Store) Sample(ctx context.Context, id string, now time.Time) (Sample, error) {
+	return s.SampleForActor(ctx, id, "", now)
+}
+func (s Store) SampleForActor(ctx context.Context, id, actor string, now time.Time) (Sample, error) {
 	var value Sample
 	var raw, nonce []byte
-	err := s.DB.QueryRowContext(ctx, `SELECT payload,nonce FROM prompt_eval_samples WHERE id=? AND expires_at>?`, id, now).Scan(&raw, &nonce)
+	err := s.DB.QueryRowContext(ctx, `SELECT payload,nonce FROM prompt_eval_samples WHERE id=? AND expires_at>? AND (?='' OR created_by=?)`, id, now, actor, actor).Scan(&raw, &nonce)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, ErrNotFound
 	}

@@ -1188,6 +1188,21 @@ with dev.test_operations_transition(r,revision):pass
         with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
             plan(self.old_folder, self.folder)
 
+    def test_voice_recording_upgrade_requires_exact_reviewed_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        self.add_illustration_migration(name='0085_prompt_voice_debug_samples.sql')
+        shutil.copy2(self.folder / 'source.tar', self.old_folder / 'source.tar')
+        name = '0086_prompt_recording_inputs.sql'
+        self.add_illustration_migration(name=name)
+        before, after = plan(self.old_folder, self.folder)
+        self.assertEqual(after, before + [name])
+        self.write_archive()
+        self.add_illustration_migration(name='0085_prompt_voice_debug_samples.sql')
+        self.add_illustration_migration(b'DELETE FROM prompt_eval_samples;', name=name)
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+
     def test_album_attestation_registry_upgrade_requires_exact_reviewed_sql(self):
         from platform_test_schema import plan
         self.prepare_update()
