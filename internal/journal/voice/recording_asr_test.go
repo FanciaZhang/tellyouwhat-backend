@@ -198,6 +198,14 @@ func TestRecordingSubmissionStreamsCanonicalAudioAndFlags(t *testing.T) {
 	if err := a.SubmitFile(context.Background(), recordingTask, path); err != nil {
 		t.Fatal(err)
 	}
+	if err := a.SubmitPCM(context.Background(), recordingTask, bytes.NewReader(pcm), len(pcm)); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := a.SubmitPCM(cancelled, recordingTask, bytes.NewReader(pcm), len(pcm)); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled PCM stream accepted", err)
+	}
 	// Validation reads the real file length, not just the claimed WAV header.
 	if err := os.WriteFile(path, wav[:len(wav)-2], 0600); err != nil {
 		t.Fatal(err)

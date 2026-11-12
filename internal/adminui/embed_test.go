@@ -23,10 +23,10 @@ func TestHandlerServesLoginAndSetupShell(t *testing.T) {
 
 func TestVoiceWorkbenchScriptIsShippedWithAdminShell(t *testing.T) {
 	handler := testRouter()
-	for _, path := range []string{"/", "/voice-lab.js"} {
+	for _, path := range []string{"/", "/voice-lab.js", "/voice-lab-drafts.js"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
-		if response.Code != 200 || !strings.Contains(response.Body.String(), map[string]string{"/": `/voice-lab.js`, "/voice-lab.js": "openVoiceLab"}[path]) {
+		if response.Code != 200 || !strings.Contains(response.Body.String(), map[string]string{"/": `/voice-lab.js`, "/voice-lab.js": "openVoiceLab", "/voice-lab-drafts.js": "voiceDrafts"}[path]) {
 			t.Fatal("workbench asset missing from compiled admin", path, response.Code)
 		}
 	}

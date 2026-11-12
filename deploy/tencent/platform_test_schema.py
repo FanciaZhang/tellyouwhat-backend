@@ -9,6 +9,7 @@ from ops_common import OperationError
 
 # Exact reviewed changes preserve existing data and the previous API. Do not infer safety from SQL keywords.
 ADDITIONS = {'migrations/0085_prompt_voice_debug_samples.sql': '5792d54a5ce8ef99890028cbfea44a8077dc5201957b66989972b766404d88c2',
+             'migrations/0086_prompt_recording_inputs.sql': 'bcc6040a222f62c25cc5b25910d13ebc419ae78704390f79c359d54243694f30',
              'migrations/0066_privacy_consent_scopes.sql': 'd9c4daee552a498e258166107dbce5a79b4da91e3aa84abe7ffd204dd0b05068',
              'migrations/0065_journal_illustration_jobs.sql':
              '7788905018d96b960c109bad7a810fdfa503486c47975dbc59287811437c5ca6',

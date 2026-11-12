@@ -27,6 +27,13 @@ func TestRolePolicySeparatesGlobalAdministrationFromAssignedApps(t *testing.T) {
 		operator.Allows(PermissionAIConfigManage, "health") || operator.Allows(PermissionUsersManage, "") || operator.Allows(PermissionAuditReadAll, "") {
 		t.Fatal("operator permission escaped its assigned app or role")
 	}
+	if operator.Allows(PermissionVoiceDebug, "journal") {
+		t.Fatal("unassigned operator received Journal debugging")
+	}
+	operator.AppIDs = append(operator.AppIDs, "journal")
+	if !operator.Allows(PermissionVoiceDebug, "journal") || operator.Allows(PermissionVoiceDebug, "health") || operator.Allows(PermissionAIConfigManage, "journal") {
+		t.Fatal("Journal debugging changed publishing permissions or escaped its scope")
+	}
 	operator.Status = UserStatusDisabled
 	if operator.Allows(PermissionPortalRead, "") || operator.Allows(PermissionOfferRead, "health") {
 		t.Fatal("disabled operator retained permissions")

@@ -31,6 +31,12 @@ func PrepareVoiceDebug(samples []Sample, candidate Candidate, speechPrice costco
 		var err error
 		var raw json.RawMessage
 		switch sample.Kind {
+		case "voice_recording":
+			if len(samples) != 1 {
+				return p, ErrInvalid
+			}
+			cost, err = speechPrice.Cost((sample.Recording.Bytes + 31) / 32)
+			raw, _ = json.Marshal(map[string]any{"stage": "recording_transcription", "resourceID": "volc.seedasr.auc", "milliseconds": (sample.Recording.Bytes + 31) / 32, "sha256": sample.Recording.SHA256})
 		case "voice_transcription":
 			// BudgetedSpeech admits one full billing window before sending audio.
 			cost, err = speechPrice.Cost(voice.MaxSegmentBytes / 32)
