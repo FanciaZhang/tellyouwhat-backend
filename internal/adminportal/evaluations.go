@@ -28,7 +28,7 @@ type evaluationInput struct {
 }
 
 func (s *Server) evaluationAccess(c *gin.Context, write bool) (adminauth.Authenticated, bool) {
-	a, ok := s.promptsAccess(c, write, false)
+	a, ok := s.voiceDebugAccess(c, write)
 	if !ok {
 		return a, false
 	}
@@ -62,9 +62,12 @@ func (s *Server) evaluationSample(c *gin.Context, id string) (prompteval.Sample,
 	if v, ok := builtinSample(id); ok {
 		return v, nil
 	}
-	return s.config.Evaluations.Sample(c.Request.Context(), id, s.now())
+	return s.config.Evaluations.SampleForActor(c.Request.Context(), id, voiceDebugOwner(c), s.now())
 }
 func (s *Server) ListEvaluationSamples(c *gin.Context) {
+	if _, ok := s.promptsAccess(c, false, false); !ok {
+		return
+	}
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
@@ -99,6 +102,22 @@ func (s *Server) SaveEvaluationSample(c *gin.Context, _ adminhttpapi.SaveEvaluat
 	if !operationsBody(c, &v) {
 		return
 	}
+	if voiceDebugOwner(c) != "" && (!v.VoiceDebug || (v.Kind != "voice" && v.Kind != "voice_transcription" && v.Kind != "voice_recording")) {
+		evaluationFailure(c, prompteval.ErrInvalid)
+		return
+	}
+	if v.Kind == "voice_recording" {
+		if v.Recording == nil {
+			evaluationFailure(c, prompteval.ErrInvalid)
+			return
+		}
+		manifest, err := s.config.Evaluations.RecordingInput(c.Request.Context(), v.Recording.Chunks, voiceDebugOwner(c), s.now())
+		if err != nil {
+			evaluationFailure(c, err)
+			return
+		}
+		v.Recording = &manifest
+	}
 	if _, ok := builtinSample(v.ID); ok {
 		evaluationFailure(c, prompteval.ErrInvalid)
 		return
@@ -117,6 +136,10 @@ func (s *Server) DeleteEvaluationSample(c *gin.Context, id uuid.UUID, _ adminhtt
 		evaluationFailure(c, prompteval.ErrInvalid)
 		return
 	}
+	if _, err := s.evaluationSample(c, id.String()); err != nil {
+		evaluationFailure(c, err)
+		return
+	}
 	if err := s.config.Evaluations.DeleteSample(c.Request.Context(), id.String()); err != nil {
 		evaluationFailure(c, err)
 		return
@@ -125,6 +148,9 @@ func (s *Server) DeleteEvaluationSample(c *gin.Context, id uuid.UUID, _ adminhtt
 }
 func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.Plan, error) {
 	var empty prompteval.Plan
+	if voiceDebugOwner(c) != "" && in.Mode != prompteval.VoiceDebugMode {
+		return empty, prompteval.ErrInvalid
+	}
 	if len(in.SampleIDs) < 1 || len(in.SampleIDs) > 20 || len(in.Candidates) < 1 || len(in.Candidates) > 2 || (in.Mode != "" && in.Mode != prompteval.VoiceDebugMode) {
 		return empty, prompteval.ErrInvalid
 	}
@@ -142,10 +168,18 @@ func (s *Server) evaluationPlan(c *gin.Context, in evaluationInput) (prompteval.
 		if err != nil {
 			return empty, err
 		}
+		if owner := voiceDebugOwner(c); owner != "" {
+			if (!s.voiceDebugModelsAllowed(c, r.Policy)) || (r.PublishedAt == nil && r.CreatedBy != owner) {
+				return empty, prompteval.ErrInvalid
+			}
+		}
 		if r.Scope != "journal" || len(v.Label) > 100 {
 			return empty, prompteval.ErrInvalid
 		}
 		source := ""
+		if voiceDebugOwner(c) != "" && v.ModelOverride != nil {
+			return empty, prompteval.ErrInvalid
+		}
 		if v.ModelOverride != nil {
 			if v.ModelOverride.Validate() != nil {
 				return empty, prompteval.ErrInvalid
@@ -295,7 +329,7 @@ func (s *Server) ListEvaluationRuns(c *gin.Context) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	v, err := s.config.Evaluations.List(c.Request.Context(), s.now())
+	v, err := s.config.Evaluations.ListForActor(c.Request.Context(), voiceDebugOwner(c), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -320,7 +354,7 @@ func (s *Server) GetEvaluationRun(c *gin.Context, id uuid.UUID) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
 		return
 	}
-	v, err := s.config.Evaluations.Get(c.Request.Context(), id.String(), s.now())
+	v, err := s.config.Evaluations.GetForActor(c.Request.Context(), id.String(), voiceDebugOwner(c), s.now())
 	if err != nil {
 		evaluationFailure(c, err)
 		return
@@ -329,6 +363,10 @@ func (s *Server) GetEvaluationRun(c *gin.Context, id uuid.UUID) {
 }
 func (s *Server) GetEvaluationItem(c *gin.Context, id uuid.UUID, item int) {
 	if _, ok := s.evaluationAccess(c, false); !ok {
+		return
+	}
+	if _, err := s.config.Evaluations.GetForActor(c.Request.Context(), id.String(), voiceDebugOwner(c), s.now()); err != nil {
+		evaluationFailure(c, err)
 		return
 	}
 	v, err := s.config.Evaluations.Result(c.Request.Context(), id.String(), item, s.now())
@@ -340,6 +378,10 @@ func (s *Server) GetEvaluationItem(c *gin.Context, id uuid.UUID, item int) {
 }
 func (s *Server) CancelEvaluation(c *gin.Context, id uuid.UUID, _ adminhttpapi.CancelEvaluationParams) {
 	if _, ok := s.evaluationAccess(c, true); !ok {
+		return
+	}
+	if _, err := s.config.Evaluations.GetForActor(c.Request.Context(), id.String(), voiceDebugOwner(c), s.now()); err != nil {
+		evaluationFailure(c, err)
 		return
 	}
 	err := s.config.Evaluations.Cancel(c.Request.Context(), id.String(), s.now())

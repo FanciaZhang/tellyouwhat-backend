@@ -155,9 +155,9 @@ async function loadSession() {
     $("#account-name").textContent = state.user.displayName;
     $("#account-role").textContent = roleLabels[state.user.role] || state.user.role;
     $("#people-tab").classList.toggle("hidden", state.user.role !== "admin");
-    $("#ai-tab").classList.toggle("hidden", state.user.role !== "admin");
     $("#platform-tab").classList.toggle("hidden", state.user.role !== "admin");
     await loadApps();
+    $("#ai-tab").classList.toggle("hidden", state.user.role !== "admin" && !state.apps.some(a=>a.id==="journal"));
     await loadOffers();
     return true;
   } catch (error) {
@@ -434,6 +434,7 @@ async function loadAudit() {
 }
 
 async function showSection(name) {
+  if(name!=="ai")document.body.classList.remove("voice-lab-active");
   if(name!=="ai" && typeof ai!=="undefined" && ai.dirty){
     if(!confirm("放弃尚未发布的参数修改？"))return;
     ai.dirty=false;

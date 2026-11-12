@@ -48,7 +48,10 @@ func (s *Server) GetPromptConfig(c *gin.Context, params adminhttpapi.GetPromptCo
 	if _, ok := s.promptsAccess(c, false, false); !ok {
 		return
 	}
-	r, err := s.config.Prompts.Current(c.Request.Context(), params.Scope)
+	s.promptConfigView(c, params.Scope)
+}
+func (s *Server) promptConfigView(c *gin.Context, scope string) {
+	r, err := s.config.Prompts.Current(c.Request.Context(), scope)
 	if err != nil {
 		promptsFailure(c, err)
 		return
@@ -59,13 +62,31 @@ func (s *Server) GetPromptConfig(c *gin.Context, params adminhttpapi.GetPromptCo
 		sync = map[string]any{"lastAttempt": attempt, "lastSuccess": success, "stale": err != nil}
 	}
 	models := []string{}
-	if s.config.AI == nil {
+	names := map[string]string{}
+	if r.Policy.Journal != nil {
+		for _, pair := range []struct {
+			p    promptconfig.Parameters
+			name string
+		}{{r.Policy.Journal.Organize.Lite, "轻量整理模型"}, {r.Policy.Journal.Organize.Pro, "深度整理模型"}, {r.Policy.Journal.Voice.Parameters, "语音成稿模型"}} {
+			label := pair.name
+			if pair.p.FoundationModel != "" {
+				label += "（" + pair.p.FoundationModel + "）"
+			}
+			names[pair.p.Model] = label
+		}
+	}
+	if s.config.AI == nil || voiceDebugOwner(c) != "" {
 		for id := range s.config.ConfiguredPromptModels {
 			models = append(models, id)
 		}
+		for id := range names {
+			if !slices.Contains(models, id) {
+				models = append(models, id)
+			}
+		}
 		slices.Sort(models)
 	}
-	writeJSON(c.Writer, 200, map[string]any{"current": r, "writesEnabled": s.promptWritesEnabled(params.Scope), "modelCatalogAvailable": s.config.AI != nil, "configuredModels": models, "scopes": promptconfig.Scopes(), "refreshSeconds": 60, "sync": sync})
+	writeJSON(c.Writer, 200, map[string]any{"current": r, "writesEnabled": s.promptWritesEnabled(scope), "modelCatalogAvailable": s.config.AI != nil && voiceDebugOwner(c) == "", "canPublish": voiceDebugOwner(c) == "", "configuredModels": models, "modelNames": names, "scopes": promptconfig.Scopes(), "refreshSeconds": 60, "sync": sync})
 }
 func (s *Server) ListPromptHistory(c *gin.Context, params adminhttpapi.ListPromptHistoryParams) {
 	if _, ok := s.promptsAccess(c, false, false); !ok {
@@ -87,8 +108,15 @@ func (s *Server) CreatePromptDraft(c *gin.Context, _ adminhttpapi.CreatePromptDr
 	if !ok {
 		return
 	}
+	s.createPromptDraft(c, auth, false)
+}
+func (s *Server) createPromptDraft(c *gin.Context, auth adminauth.Authenticated, debug bool) {
 	var input promptconfig.DraftInput
 	if !operationsBody(c, &input) {
+		return
+	}
+	if debug && input.Scope != "journal" {
+		promptsFailure(c, promptconfig.ErrInvalid)
 		return
 	}
 	if !s.promptWritesEnabled(input.Scope) {
@@ -104,6 +132,10 @@ func (s *Server) CreatePromptDraft(c *gin.Context, _ adminhttpapi.CreatePromptDr
 		return
 	} else if replay != nil {
 		writeJSON(c.Writer, 200, replay)
+		return
+	}
+	if debug && auth.User.Role != adminauth.RoleAdmin && !s.voiceDebugModelsAllowed(c, input.Policy) {
+		promptsFailure(c, promptconfig.ErrInvalid)
 		return
 	}
 	if input.Policy.Validate(input.Scope) != nil {

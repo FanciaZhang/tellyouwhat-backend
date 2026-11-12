@@ -39,6 +39,7 @@ const (
 	PermissionUsersManage       Permission = "users.manage"
 	PermissionAuditReadAll      Permission = "audit.read.all"
 	PermissionAIConfigManage    Permission = "ai_config.manage"
+	PermissionVoiceDebug        Permission = "journal.voice_debug"
 	PermissionOperationsManage  Permission = "operations.manage"
 )
 
@@ -74,6 +75,8 @@ func (user User) Allows(permission Permission, appID string) bool {
 		return appID == "" || user.CanAccessApp(appID)
 	case PermissionOfferRead, PermissionOfferManage, PermissionOfferCodeDownload, PermissionMetricsRead:
 		return user.CanAccessApp(appID)
+	case PermissionVoiceDebug:
+		return appID == "journal" && user.CanAccessApp(appID)
 	case PermissionUsersManage, PermissionAuditReadAll, PermissionAIConfigManage, PermissionOperationsManage:
 		return user.Role == RoleAdmin
 	default:

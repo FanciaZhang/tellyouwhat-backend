@@ -18,14 +18,15 @@ import (
 )
 
 type Engine struct {
-	Speech         voice.Speech
-	Images         illustration.ImageGenerator
-	ImageCostNanos int64
-	Store          Store
-	Provider       provider.Config
-	ASR            voice.ASRConfig
-	Price          costcontrol.TokenPrice
-	SpeechPrice    costcontrol.DurationPrice
+	RecordingSpeech RecordingSpeech
+	Speech          voice.Speech
+	Images          illustration.ImageGenerator
+	ImageCostNanos  int64
+	Store           Store
+	Provider        provider.Config
+	ASR             voice.ASRConfig
+	Price           costcontrol.TokenPrice
+	SpeechPrice     costcontrol.DurationPrice
 }
 
 func (e *Engine) Run(ctx context.Context) {
@@ -97,10 +98,20 @@ func (e *Engine) Process(parent context.Context, claim Claim) {
 			break
 		}
 		frozen := promptconfig.WithRevision(ctx, candidate.Revision)
-		output := e.execute(frozen, controller, sample, candidate, i)
+		var output Output
+		if sample.Kind == "voice_recording" {
+			output = e.executeRecording(frozen, controller, claim, sample, i, func(out Output) error {
+				snapshot := result
+				snapshot.Outputs = append(append([]Output{}, result.Outputs...), out)
+				return e.Store.SaveResult(ctx, claim, snapshot, false)
+			})
+		} else {
+			output = e.execute(frozen, controller, sample, candidate, i)
+		}
 		result.Outputs = append(result.Outputs, output)
 		if err = e.Store.SaveResult(ctx, claim, result, false); err != nil {
 			cancel()
+			e.finish(claim, result)
 			return
 		}
 	}

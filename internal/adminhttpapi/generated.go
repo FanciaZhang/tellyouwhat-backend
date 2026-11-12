@@ -132,6 +132,7 @@ const (
 	EvaluationSampleKindOrganizeLite       EvaluationSampleKind = "organize_lite"
 	EvaluationSampleKindOrganizePro        EvaluationSampleKind = "organize_pro"
 	EvaluationSampleKindVoice              EvaluationSampleKind = "voice"
+	EvaluationSampleKindVoiceRecording     EvaluationSampleKind = "voice_recording"
 	EvaluationSampleKindVoiceTranscription EvaluationSampleKind = "voice_transcription"
 )
 
@@ -147,6 +148,8 @@ func (e EvaluationSampleKind) Valid() bool {
 	case EvaluationSampleKindOrganizePro:
 		return true
 	case EvaluationSampleKindVoice:
+		return true
+	case EvaluationSampleKindVoiceRecording:
 		return true
 	case EvaluationSampleKindVoiceTranscription:
 		return true
@@ -675,6 +678,11 @@ type EvaluationSample struct {
 		RequestID        openapi_types.UUID                      `json:"requestID"`
 		Title            string                                  `json:"title"`
 	} `json:"organize,omitempty"`
+	Recording *struct {
+		Bytes  *int                 `json:"bytes,omitempty"`
+		Chunks []openapi_types.UUID `json:"chunks"`
+		Sha256 *string              `json:"sha256,omitempty"`
+	} `json:"recording,omitempty"`
 	Voice *struct {
 		Blocks []struct {
 			Id    string  `json:"id"`
@@ -1130,6 +1138,11 @@ type CancelEvaluationParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
 }
 
+// ReconcileVoiceRecordingParams defines parameters for ReconcileVoiceRecording.
+type ReconcileVoiceRecordingParams struct {
+	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
 // SaveEvaluationSampleParams defines parameters for SaveEvaluationSample.
 type SaveEvaluationSampleParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
@@ -1189,6 +1202,15 @@ type SubmitAIRollingCommandParams struct {
 // CreateAIRollingPreviewParams defines parameters for CreateAIRollingPreview.
 type CreateAIRollingPreviewParams struct {
 	XAdminCSRF *CSRFToken `json:"X-Admin-CSRF,omitempty"`
+}
+
+// CreateVoiceDebugDraftJSONBody defines parameters for CreateVoiceDebugDraft.
+type CreateVoiceDebugDraftJSONBody map[string]interface{}
+
+// CreateVoiceDebugDraftParams defines parameters for CreateVoiceDebugDraft.
+type CreateVoiceDebugDraftParams struct {
+	XAdminCSRF     *CSRFToken      `json:"X-Admin-CSRF,omitempty"`
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // CreateOfferParams defines parameters for CreateOffer.
@@ -1401,6 +1423,9 @@ type SubmitAIRollingCommandJSONRequestBody = AIRollingSubmission
 // CreateAIRollingPreviewJSONRequestBody defines body for CreateAIRollingPreview for application/json ContentType.
 type CreateAIRollingPreviewJSONRequestBody = AIRollingInput
 
+// CreateVoiceDebugDraftJSONRequestBody defines body for CreateVoiceDebugDraft for application/json ContentType.
+type CreateVoiceDebugDraftJSONRequestBody CreateVoiceDebugDraftJSONBody
+
 // CreateOfferJSONRequestBody defines body for CreateOffer for application/json ContentType.
 type CreateOfferJSONRequestBody = CreateOfferRequest
 
@@ -1509,6 +1534,9 @@ type ServerInterface interface {
 	// (GET /api/v1/ai/evaluations/runs/{run}/items/{item})
 	GetEvaluationItem(c *gin.Context, run openapi_types.UUID, item int)
 
+	// (POST /api/v1/ai/evaluations/runs/{run}/items/{item}/reconcile-recording)
+	ReconcileVoiceRecording(c *gin.Context, run openapi_types.UUID, item int, params ReconcileVoiceRecordingParams)
+
 	// (GET /api/v1/ai/evaluations/samples)
 	ListEvaluationSamples(c *gin.Context)
 
@@ -1562,6 +1590,12 @@ type ServerInterface interface {
 
 	// (POST /api/v1/ai/rolling/preview)
 	CreateAIRollingPreview(c *gin.Context, params CreateAIRollingPreviewParams)
+
+	// (GET /api/v1/ai/voice-debug/config)
+	GetVoiceDebugConfig(c *gin.Context)
+
+	// (POST /api/v1/ai/voice-debug/drafts)
+	CreateVoiceDebugDraft(c *gin.Context, params CreateVoiceDebugDraftParams)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(c *gin.Context)
@@ -2264,6 +2298,64 @@ func (siw *ServerInterfaceWrapper) GetEvaluationItem(c *gin.Context) {
 	siw.Handler.GetEvaluationItem(c, run, item)
 }
 
+// ReconcileVoiceRecording operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileVoiceRecording(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "run" -------------
+	var run openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run", c.Param("run"), &run, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "item" -------------
+	var item int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item", c.Param("item"), &item, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter item: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReconcileVoiceRecordingParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReconcileVoiceRecording(c, run, item, params)
+}
+
 // ListEvaluationSamples operation middleware
 func (siw *ServerInterfaceWrapper) ListEvaluationSamples(c *gin.Context) {
 
@@ -2932,6 +3024,78 @@ func (siw *ServerInterfaceWrapper) CreateAIRollingPreview(c *gin.Context) {
 	}
 
 	siw.Handler.CreateAIRollingPreview(c, params)
+}
+
+// GetVoiceDebugConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetVoiceDebugConfig(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetVoiceDebugConfig(c)
+}
+
+// CreateVoiceDebugDraft operation middleware
+func (siw *ServerInterfaceWrapper) CreateVoiceDebugDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateVoiceDebugDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for X-Admin-CSRF, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter X-Admin-CSRF: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.XAdminCSRF = &XAdminCSRF
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateVoiceDebugDraft(c, params)
 }
 
 // ListAdminApps operation middleware
@@ -4932,6 +5096,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/v1/ai/evaluations/runs/:run", wrapper.GetEvaluationRun)
 	router.GET(options.BaseURL+"/api/v1/ai/evaluations/runs/:run/items/:item", wrapper.GetEvaluationItem)
 	router.POST(options.BaseURL+"/api/v1/ai/evaluations/runs/:run/cancel", wrapper.CancelEvaluation)
+	router.POST(options.BaseURL+"/api/v1/ai/evaluations/runs/:run/items/:item/reconcile-recording", wrapper.ReconcileVoiceRecording)
+	router.GET(options.BaseURL+"/api/v1/ai/voice-debug/config", wrapper.GetVoiceDebugConfig)
+	router.POST(options.BaseURL+"/api/v1/ai/voice-debug/drafts", wrapper.CreateVoiceDebugDraft)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts", wrapper.GetPromptConfig)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts/history", wrapper.ListPromptHistory)
 	router.GET(options.BaseURL+"/api/v1/ai/prompts/revisions/:revision", wrapper.GetPromptRevision)
@@ -5534,6 +5701,47 @@ type GetEvaluationItemdefaultJSONResponse struct {
 }
 
 func (response GetEvaluationItemdefaultJSONResponse) VisitGetEvaluationItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileVoiceRecordingRequestObject struct {
+	Run    openapi_types.UUID `json:"run"`
+	Item   int                `json:"item"`
+	Params ReconcileVoiceRecordingParams
+}
+
+type ReconcileVoiceRecordingResponseObject interface {
+	VisitReconcileVoiceRecordingResponse(w http.ResponseWriter) error
+}
+
+type ReconcileVoiceRecording200JSONResponse struct{ OKJSONResponse }
+
+func (response ReconcileVoiceRecording200JSONResponse) VisitReconcileVoiceRecordingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileVoiceRecordingdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response ReconcileVoiceRecordingdefaultJSONResponse) VisitReconcileVoiceRecordingResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6285,6 +6493,84 @@ type CreateAIRollingPreviewdefaultJSONResponse struct {
 }
 
 func (response CreateAIRollingPreviewdefaultJSONResponse) VisitCreateAIRollingPreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVoiceDebugConfigRequestObject struct {
+}
+
+type GetVoiceDebugConfigResponseObject interface {
+	VisitGetVoiceDebugConfigResponse(w http.ResponseWriter) error
+}
+
+type GetVoiceDebugConfig200JSONResponse struct{ OKJSONResponse }
+
+func (response GetVoiceDebugConfig200JSONResponse) VisitGetVoiceDebugConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVoiceDebugConfigdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response GetVoiceDebugConfigdefaultJSONResponse) VisitGetVoiceDebugConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateVoiceDebugDraftRequestObject struct {
+	Params CreateVoiceDebugDraftParams
+	Body   *CreateVoiceDebugDraftJSONRequestBody
+}
+
+type CreateVoiceDebugDraftResponseObject interface {
+	VisitCreateVoiceDebugDraftResponse(w http.ResponseWriter) error
+}
+
+type CreateVoiceDebugDraft200JSONResponse struct{ OKJSONResponse }
+
+func (response CreateVoiceDebugDraft200JSONResponse) VisitCreateVoiceDebugDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateVoiceDebugDraftdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response CreateVoiceDebugDraftdefaultJSONResponse) VisitCreateVoiceDebugDraftResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8093,6 +8379,9 @@ type StrictServerInterface interface {
 	// (GET /api/v1/ai/evaluations/runs/{run}/items/{item})
 	GetEvaluationItem(ctx context.Context, request GetEvaluationItemRequestObject) (GetEvaluationItemResponseObject, error)
 
+	// (POST /api/v1/ai/evaluations/runs/{run}/items/{item}/reconcile-recording)
+	ReconcileVoiceRecording(ctx context.Context, request ReconcileVoiceRecordingRequestObject) (ReconcileVoiceRecordingResponseObject, error)
+
 	// (GET /api/v1/ai/evaluations/samples)
 	ListEvaluationSamples(ctx context.Context, request ListEvaluationSamplesRequestObject) (ListEvaluationSamplesResponseObject, error)
 
@@ -8146,6 +8435,12 @@ type StrictServerInterface interface {
 
 	// (POST /api/v1/ai/rolling/preview)
 	CreateAIRollingPreview(ctx context.Context, request CreateAIRollingPreviewRequestObject) (CreateAIRollingPreviewResponseObject, error)
+
+	// (GET /api/v1/ai/voice-debug/config)
+	GetVoiceDebugConfig(ctx context.Context, request GetVoiceDebugConfigRequestObject) (GetVoiceDebugConfigResponseObject, error)
+
+	// (POST /api/v1/ai/voice-debug/drafts)
+	CreateVoiceDebugDraft(ctx context.Context, request CreateVoiceDebugDraftRequestObject) (CreateVoiceDebugDraftResponseObject, error)
 
 	// (GET /api/v1/apps)
 	ListAdminApps(ctx context.Context, request ListAdminAppsRequestObject) (ListAdminAppsResponseObject, error)
@@ -8728,6 +9023,34 @@ func (sh *strictHandler) GetEvaluationItem(ctx *gin.Context, run openapi_types.U
 	}
 }
 
+// ReconcileVoiceRecording operation middleware
+func (sh *strictHandler) ReconcileVoiceRecording(ctx *gin.Context, run openapi_types.UUID, item int, params ReconcileVoiceRecordingParams) {
+	var request ReconcileVoiceRecordingRequestObject
+
+	request.Run = run
+	request.Item = item
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReconcileVoiceRecording(ctx, request.(ReconcileVoiceRecordingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReconcileVoiceRecording")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(ReconcileVoiceRecordingResponseObject); ok {
+		if err := validResponse.VisitReconcileVoiceRecordingResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListEvaluationSamples operation middleware
 func (sh *strictHandler) ListEvaluationSamples(ctx *gin.Context) {
 	var request ListEvaluationSamplesRequestObject
@@ -9235,6 +9558,63 @@ func (sh *strictHandler) CreateAIRollingPreview(ctx *gin.Context, params CreateA
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateAIRollingPreviewResponseObject); ok {
 		if err := validResponse.VisitCreateAIRollingPreviewResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVoiceDebugConfig operation middleware
+func (sh *strictHandler) GetVoiceDebugConfig(ctx *gin.Context) {
+	var request GetVoiceDebugConfigRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVoiceDebugConfig(ctx, request.(GetVoiceDebugConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVoiceDebugConfig")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetVoiceDebugConfigResponseObject); ok {
+		if err := validResponse.VisitGetVoiceDebugConfigResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateVoiceDebugDraft operation middleware
+func (sh *strictHandler) CreateVoiceDebugDraft(ctx *gin.Context, params CreateVoiceDebugDraftParams) {
+	var request CreateVoiceDebugDraftRequestObject
+
+	request.Params = params
+
+	var body CreateVoiceDebugDraftJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(ctx, err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateVoiceDebugDraft(ctx, request.(CreateVoiceDebugDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateVoiceDebugDraft")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(CreateVoiceDebugDraftResponseObject); ok {
+		if err := validResponse.VisitCreateVoiceDebugDraftResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {
@@ -10538,112 +10918,114 @@ func (sh *strictHandler) GetAdminReadiness(ctx *gin.Context) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
