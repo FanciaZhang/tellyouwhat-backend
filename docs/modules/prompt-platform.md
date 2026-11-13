@@ -112,3 +112,22 @@ go test ./internal/adminportal -run '^TestLiveVoiceDebugBrowser$' -count=1 -time
 有完整时间证据的来源按录音时间处理；缺少时间证据时保留输入顺序，不猜测，也不跨越手动段落和媒体分隔的 section。
 首次处理且原话完整、均属已确认作者、正文不超过 3000 字并且最多 128 个目标的 section，会在一个受限请求中处理；仍保留各原始目标和来源身份。其余情形使用原有可恢复分批流程。普通公开整理请求仍保持原来的大小限制。
 协议、来源映射和模型请求成功不代表语义质量通过；须另外检查立场时间、推测归属及整理后的完整正文。
+
+### 成稿语义保真回归
+
+共享成稿 Prompt 区分能力/条件与意愿、已确认字形与不同同音对象，以及他人告知与相邻推测。完整作者口述先输出七类简短事实摘录，再生成正文；这些摘录仍只供模型核对，不是可靠性评分或新的事实来源。归属不明保留独立表达，字形不明不猜常用名字，泛指态度与具体感受不自动改写成时间上的立场变化。
+
+`TestLivePolishFidelity` 使用九个合成场景、真实配置的模型和现有 `PrepareRewrite` / `ArkRewriter`。它显式开启真实调用，单次本地保守预算上限为 2 元；这不是供应商账单。证据目录须事先创建在源码外，保存实际请求、正文、疑问、模型诊断和断言结果，不保存密钥。默认 CI 跳过真实调用。
+
+```sh
+JOURNAL_POLISH_FIDELITY_LIVE=1 \
+JOURNAL_POLISH_FIDELITY_POLICY='<private published-revision JSON>' \
+JOURNAL_POLISH_FIDELITY_EVIDENCE='<absolute private evidence directory>' \
+JOURNAL_ARK_BASE_URL='<configured service URL>' \
+JOURNAL_ARK_API_KEY='<private provider key>' \
+go test ./internal/journal/voice -run '^TestLivePolishFidelity$' -count=1 -timeout=10m
+```
+
+正则断言只辅助定位，不代替全文人工复核。长文另用已获授权的原始转写回放，冻结来源顺序和配置；不得把私人录音、转写或纠正答案加入仓库夹具。Prompt 候选通过、后端部署、重新识别音频和手机应用结果分别验收。
+
+2026-11-13 本地候选：九个合成场景各运行两次，授权的三段既有转写组成长文运行两次，真实模型断言及全文复核通过。旧版与候选的长文请求输入、模型配置和其余请求参数完全相同，只替换 Prompt。相关八个 Go 包测试通过；本轮没有重新识别音频、部署后端或验收手机。
