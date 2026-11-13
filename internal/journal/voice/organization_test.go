@@ -11,46 +11,33 @@ import (
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
-func TestCompactNarrativeUsesApprovedFinalModelWithoutLosingSemantics(t *testing.T) {
-	s := comparisonSnapshot([]string{"预算280元，钱还没付，明天可能去图书馆。"}, false)
-	s.Organization = true
+func TestOrganizationUsesTheSameGroundedFinalizationAsWorkbench(t *testing.T) {
+	s := comparisonSnapshot([]string{"周三，啊，周五去图书馆。还没付款，不是已经付款。"}, false)
 	ctx := promptconfig.WithRevision(t.Context(), promptconfig.Revision{Policy: promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]})
-	compact, err := PrepareRewrite(ctx, s, 1, "")
+	normal, err := PrepareRewrite(ctx, s, 1, "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	s.Organization = true
+	organized, err := PrepareRewrite(ctx, s, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(normal.Body) != string(organized.Body) {
+		t.Fatal("mobile organization silently replaced the validated finalization prompt")
 	}
 	var body map[string]any
-	_ = json.Unmarshal(compact.Body, &body)
-	if body["model"] != "voice" || !strings.Contains(body["instructions"].(string), "否定") || strings.Contains(body["instructions"].(string), "attributionKey") {
-		t.Fatal("plain final narrative is not compact and faithful")
+	if json.Unmarshal(organized.Body, &body) != nil {
+		t.Fatal("invalid request")
 	}
-	s.Organization = false
-	full, err := PrepareRewrite(ctx, s, 1, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(compact.Body) >= len(full.Body)*3/4 {
-		t.Fatal("plain request did not meaningfully shrink")
-	}
-	if s.Polish.Lightweight {
-		t.Fatal("final narrative must not be marked as provisional live cleanup")
-	}
-	for _, mutate := range []func(*Snapshot){
-		func(s *Snapshot) { s.Polish.Targets[0].Turns[0].PersonID = uuid.NewString() },
-		func(s *Snapshot) { s.Polish.Targets[0].IdentityCorrection = true },
-		func(s *Snapshot) { s.Polish.Targets[0].Turns[0].Text = "第一点是价格，第二点是距离。" },
-	} {
-		s := comparisonSnapshot([]string{"今天去河边。"}, false)
-		s.Organization = true
-		mutate(&s)
-		prepared, err := PrepareRewrite(ctx, s, 1, "")
-		if err != nil {
-			t.Fatal(err)
+	instructions := body["instructions"].(string)
+	for _, rule := range []string{"最后明确确认", "还没付款", "他人告知", "checks"} {
+		if !strings.Contains(instructions, rule) {
+			t.Fatalf("missing finalization rule: %s", rule)
 		}
-		_ = json.Unmarshal(prepared.Body, &body)
-		if body["model"] != "voice" {
-			t.Fatal("complex or unconfirmed material reached the fast route")
-		}
+	}
+	if body["text"].(map[string]any)["format"].(map[string]any)["name"] != "journal_voice_narrative_v37" {
+		t.Fatal("mobile request used an obsolete narrative schema")
 	}
 }
 
@@ -66,20 +53,141 @@ func (m *organizationFallbackRewriter) Rewrite(_ context.Context, s Snapshot, _ 
 	}
 	return RewriteResult{Polish: &PolishRevision{}}, nil
 }
-func TestCompactFinalFallbackDoesNotRepeatUncertainTransport(t *testing.T) {
+func TestOrganizationDoesNotRepeatTheSameRejectedPrompt(t *testing.T) {
 	for _, stage := range []string{"validate_polish_missing_source", "http_transport"} {
 		m := &organizationFallbackRewriter{stage: stage}
 		s := comparisonSnapshot([]string{"还没有付款。"}, false)
 		s.Organization = true
 		ctx := promptconfig.WithRevision(t.Context(), promptconfig.Revision{Policy: promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]})
 		_, _ = (ConfiguredRewriter{Next: m}).Rewrite(ctx, s, 1)
-		expected := 1
-		if strings.HasPrefix(stage, "validate_polish") {
-			expected = 2
-		}
-		if len(m.calls) != expected {
+		if len(m.calls) != 1 {
 			t.Fatalf("%s attempts=%d", stage, len(m.calls))
 		}
+	}
+}
+
+func TestOrganizationUsesAudioChronologyInsteadOfOldParagraphPositions(t *testing.T) {
+	s := comparisonSnapshot([]string{"最后下山回家。", "先到山脚等日出。", "然后沿着山路登顶。"}, false)
+	for i, start := range []int{2000, 0, 1000} {
+		s.Polish.Targets[i].Turns[0].StartMilliseconds = start
+		s.Polish.Targets[i].Turns[0].EndMilliseconds = start + 900
+	}
+	before, _ := json.Marshal(s)
+	fragments := organizationFragments(s)
+	for i, expected := range []string{"先到山脚等日出。", "然后沿着山路登顶。", "最后下山回家。"} {
+		if fragments[i].Target.SourceText != expected {
+			t.Fatalf("fragment %d: %s", i, fragments[i].Target.SourceText)
+		}
+	}
+	after, _ := json.Marshal(s)
+	if string(before) != string(after) {
+		t.Fatal("chronological preparation changed the saved document")
+	}
+	plan := OrganizationPlan{Version: OrganizationVersion, Sections: []Snapshot{s}}
+	state := OrganizationState{}
+	work, err := state.Work(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paragraphs := []PolishParagraph{}
+	for _, target := range work.Snapshot.Polish.Targets {
+		paragraphs = append(paragraphs, PolishParagraph{Text: target.SourceText, Style: "body", TargetIDs: []string{target.ID}})
+	}
+	if err := state.Advance(plan, work, &PolishRevision{Paragraphs: paragraphs}); err != nil {
+		t.Fatal(err)
+	}
+	for i, original := range []int{1, 2, 0} {
+		if len(state.Results[0].Paragraphs[i].TargetIDs) != 1 || state.Results[0].Paragraphs[i].TargetIDs[0] != s.Polish.Targets[original].ID {
+			t.Fatal("ordering detached prose from its original source")
+		}
+	}
+}
+
+func TestOrganizationPreservesProvidedOrderWithoutUnambiguousTiming(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		s := comparisonSnapshot([]string{"先描述眼前。", "再回忆过去。"}, false)
+		if mixed {
+			s.Polish.Targets[0].Turns[0].StartMilliseconds = 2000
+			s.Polish.Targets[0].Turns[0].EndMilliseconds = 3000
+		}
+		fragments := organizationFragments(s)
+		if fragments[0].Target.SourceText != "先描述眼前。" || fragments[1].Target.SourceText != "再回忆过去。" {
+			t.Fatal("invented chronology for untimed source")
+		}
+	}
+}
+
+func TestFinalNarrativeEndingUsesAudioTimeAfterParagraphMoves(t *testing.T) {
+	s := comparisonSnapshot([]string{"最后我决定按时归还图书。", "先去图书馆寻找图鉴。", "随后管理员帮我找到了图鉴。"}, false)
+	paragraphs := []PolishParagraph{}
+	for i, start := range []int{2000, 0, 1000} {
+		s.Polish.Targets[i].Turns[0].StartMilliseconds = start
+		s.Polish.Targets[i].Turns[0].EndMilliseconds = start + 900
+		paragraphs = append(paragraphs, PolishParagraph{Text: s.Polish.Targets[i].SourceText, Style: "body", TargetIDs: []string{s.Polish.Targets[i].ID}})
+	}
+	preservePolishEnding(*s.Polish, nil, paragraphs)
+	if paragraphs[len(paragraphs)-1].Text != "最后我决定按时归还图书。" {
+		t.Fatal("old paragraph position replaced the actual closing thought")
+	}
+}
+
+func TestCompleteTimedNarrativeSeesWholeSourceInOneBoundedCall(t *testing.T) {
+	texts := make([]string, 40)
+	for i := range texts {
+		texts[i] = "今天去图书馆借植物图鉴。"
+	}
+	s := comparisonSnapshot(texts, false)
+	for i := range s.Polish.Targets {
+		s.Polish.Targets[i].Turns[0].StartMilliseconds = i * 1000
+		s.Polish.Targets[i].Turns[0].EndMilliseconds = i*1000 + 900
+	}
+	s.Polish.Targets[0], s.Polish.Targets[39] = s.Polish.Targets[39], s.Polish.Targets[0]
+	plan := OrganizationPlan{Version: OrganizationVersion, Sections: []Snapshot{s}}
+	if err := plan.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	work, err := (OrganizationState{}).Work(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !work.Snapshot.Polish.wholeNarrative || len(work.Snapshot.Polish.Targets) != 40 || work.Next != len(organizationFragments(s)) {
+		t.Fatal("short complete source was fragmented into isolated rewrites")
+	}
+	if work.Snapshot.Polish.Targets[0].Turns[0].StartMilliseconds != 0 {
+		t.Fatal("whole source did not follow audio chronology")
+	}
+	ordinary := *work.Snapshot.Polish
+	ordinary.wholeNarrative = false
+	if ordinary.Validate() == nil {
+		t.Fatal("ordinary public polish accepted an oversized request")
+	}
+	ctx := promptconfig.WithRevision(t.Context(), promptconfig.Revision{Policy: promptconfig.Defaults("lite", "pro", "voice", 90)["journal"]})
+	prepared, err := PrepareRewrite(ctx, work.Snapshot, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if json.Unmarshal(prepared.Body, &body) != nil {
+		t.Fatal("invalid request")
+	}
+	if prepared.Parameters.MaxOutputTokens > 8192 || prepared.TimeoutSeconds > 90 {
+		t.Fatal("whole source has an unbounded output or timeout")
+	}
+	state := OrganizationState{}
+	paragraph := PolishParagraph{Text: strings.Join(texts, ""), Style: "body", TargetIDs: []string{}}
+	for _, target := range work.Snapshot.Polish.Targets {
+		paragraph.TargetIDs = append(paragraph.TargetIDs, target.ID)
+	}
+	raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{paragraph}, "questions": []string{}, "omissions": []PolishOmission{}, "illustrationSuggestion": nil, "checks": []string{}})
+	decoded, err := decodePolish(string(raw), *work.Snapshot.Polish)
+	if err != nil {
+		t.Fatal("valid whole-source references could not be decoded", err)
+	}
+	if err := state.Advance(plan, work, decoded); err != nil {
+		t.Fatal(err)
+	}
+	if state.Section != 1 || len(state.Results[0].Paragraphs[0].TargetIDs) != 40 {
+		t.Fatal("whole pass lost original target references")
 	}
 }
 

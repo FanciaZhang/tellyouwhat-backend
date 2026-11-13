@@ -73,6 +73,14 @@ IndexedDB 按登录用户保存原音频、手动校对文本、规则、结果�
 
 最终成稿使用 `voice.PrepareRewrite` / `ArkRewriter` 的 `PolishRequest` 路径和同一响应校验，按有界文本窗口与前文组织段落。`journal.voice.polishPrompt` 为最终成稿的附加要求，空值沿用默认规则；它与风格 Prompt 进入同一个真实请求。轻量纠错、语音编辑仍使用原有规则。结果可展开实际请求、模型、token、耗时、成本估算、原始失败输出与校验阶段。
 
+终稿按阅读重心分段，不再强制将同一经历合成一大段；连续改口保留最终确认值，否定、猜测及他人话语范围分别保留。请求中全部来源已标为作者本人时使用精简身份规则；未知和其他说话人继续使用完整身份约束。
+
+完整作者原话的内部模型 Schema 为 `journal_voice_narrative_v37`：同一次调用先生成最多八条、每条至多 160 字的 `checks` 保真要点，再生成正文。该元数据不进入 App 响应，也不能代替正文的来源覆盖和漏文校验；公开语音协议及响应结构不变。此路径的有效输出上限为 4096 token，默认温度为 0，已发布配置中的显式温度仍优先；单作者超时保持 40 秒，关闭深度思考。配置若给出更低的 token 或超时上限仍取较低值。轻量实时路径不使用保真提纲，不增加调用。
+
+关闭配图建议时只提供 `null` Schema，不发送场景生成指令。完整、纯正文、作者身份确定且没有只读上下文的稿件，可以把唯一匹配原话最后实质分句的现有收尾段落放回末尾；无法精确匹配、匹配多处、含列表或有受保护上下文时保留模型顺序，不猜测重排。文字及来源 ID 不变。
+
+词面防漏检查容纳有限的修饰插入及句尾短事实重述，仍拦截未体现的来源、目标或整段经历。它是粗漏文保护，不能证明语义、否定或归属全部正确。实际评估需分别保留原始转写、作者确认的校对、原始模型输出与服务端应用结果；作者澄清不应被计作 ASR 或模型独立识别成功。
+
 快速试跑采用 `mode=voice_debug`，每项一个候选，不额外调用 AI 评分，也不能代替发布必测的 14 项完整评测。费用预览过期时须重新预览并确认，不直接重发旧请求。开始请求复用幂等键；`GET /api/v1/ai/evaluations/commands/{command}` 仅查询当前账号原提交。切换、取消或新建任务后，旧响应不能覆盖新任务的状态。
 
 上线需成套升级 Admin 与 Worker，并应用 `0085_prompt_voice_debug_samples.sql` 和 `0086_prompt_recording_inputs.sql`；不能只替换静态页面。0086 只添加调试录音输入表，不改动 App 用户数据，已加入测试部署的精确迁移哈希白名单。调试样本不会挤占发布样本库的 200 条列表。旧 Worker 不认领快速任务的待执行状态；回滚不自动重试付费调用。
@@ -97,3 +105,29 @@ go test ./internal/adminportal -run '^TestLiveVoiceDebugBrowser$' -count=1 -time
 ```
 
 私有配置 JSON 使用 `JOURNAL_VOICE_ASR_API_KEY`（或已有 AppKey/AccessKey）、`JOURNAL_ARK_BASE_URL`、`JOURNAL_ARK_API_KEY`、`JOURNAL_ARK_LITE_MODEL_ID`、`JOURNAL_ARK_PRO_MODEL_ID` 及可选 `JOURNAL_VOICE_MODEL_ID`。真实测试只使用仓库自带合成音频；不得把用户录音变为夹具。费用预览、实际供应商通过、浏览器正确应用和用户验收分别记录。
+
+### 手机录音重新整理的顺序与完整上下文
+
+整篇录音任务与工作台共用最终成稿规则，不再使用另一个简化 Prompt 覆盖它。
+有完整时间证据的来源按录音时间处理；缺少时间证据时保留输入顺序，不猜测，也不跨越手动段落和媒体分隔的 section。
+首次处理且原话完整、均属已确认作者、正文不超过 3000 字并且最多 128 个目标的 section，会在一个受限请求中处理；仍保留各原始目标和来源身份。其余情形使用原有可恢复分批流程。普通公开整理请求仍保持原来的大小限制。
+协议、来源映射和模型请求成功不代表语义质量通过；须另外检查立场时间、推测归属及整理后的完整正文。
+
+### 成稿语义保真回归
+
+共享成稿 Prompt 区分能力/条件与意愿、已确认字形与不同同音对象，以及他人告知与相邻推测。完整作者口述先输出七类简短事实摘录，再生成正文；这些摘录仍只供模型核对，不是可靠性评分或新的事实来源。归属不明保留独立表达，字形不明不猜常用名字，泛指态度与具体感受不自动改写成时间上的立场变化。
+
+`TestLivePolishFidelity` 使用九个合成场景、真实配置的模型和现有 `PrepareRewrite` / `ArkRewriter`。它显式开启真实调用，单次本地保守预算上限为 2 元；这不是供应商账单。证据目录须事先创建在源码外，保存实际请求、正文、疑问、模型诊断和断言结果，不保存密钥。默认 CI 跳过真实调用。
+
+```sh
+JOURNAL_POLISH_FIDELITY_LIVE=1 \
+JOURNAL_POLISH_FIDELITY_POLICY='<private published-revision JSON>' \
+JOURNAL_POLISH_FIDELITY_EVIDENCE='<absolute private evidence directory>' \
+JOURNAL_ARK_BASE_URL='<configured service URL>' \
+JOURNAL_ARK_API_KEY='<private provider key>' \
+go test ./internal/journal/voice -run '^TestLivePolishFidelity$' -count=1 -timeout=10m
+```
+
+正则断言只辅助定位，不代替全文人工复核。长文另用已获授权的原始转写回放，冻结来源顺序和配置；不得把私人录音、转写或纠正答案加入仓库夹具。Prompt 候选通过、后端部署、重新识别音频和手机应用结果分别验收。
+
+2026-11-13 本地候选：九个合成场景各运行两次，授权的三段既有转写组成长文运行两次，真实模型断言及全文复核通过。旧版与候选的长文请求输入、模型配置和其余请求参数完全相同，只替换 Prompt。相关八个 Go 包测试通过；本轮没有重新识别音频、部署后端或验收手机。
