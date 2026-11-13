@@ -103,3 +103,22 @@ go test ./internal/adminportal -run '^TestLiveVoiceDebugBrowser$' -count=1 -time
 ```
 
 私有配置 JSON 使用 `JOURNAL_VOICE_ASR_API_KEY`（或已有 AppKey/AccessKey）、`JOURNAL_ARK_BASE_URL`、`JOURNAL_ARK_API_KEY`、`JOURNAL_ARK_LITE_MODEL_ID`、`JOURNAL_ARK_PRO_MODEL_ID` 及可选 `JOURNAL_VOICE_MODEL_ID`。真实测试只使用仓库自带合成音频；不得把用户录音变为夹具。费用预览、实际供应商通过、浏览器正确应用和用户验收分别记录。
+
+### 成稿语义保真回归
+
+共享成稿 Prompt 区分能力/条件与意愿、已确认字形与不同同音对象，以及他人告知与相邻推测。完整作者口述先输出七类简短事实摘录，再生成正文；这些摘录仍只供模型核对，不是可靠性评分或新的事实来源。归属不明保留独立表达，字形不明不猜常用名字，泛指态度与具体感受不自动改写成时间上的立场变化。
+
+`TestLivePolishFidelity` 使用九个合成场景、真实配置的模型和现有 `PrepareRewrite` / `ArkRewriter`。它显式开启真实调用，单次本地保守预算上限为 2 元；这不是供应商账单。证据目录须事先创建在源码外，保存实际请求、正文、疑问、模型诊断和断言结果，不保存密钥。默认 CI 跳过真实调用。
+
+```sh
+JOURNAL_POLISH_FIDELITY_LIVE=1 \
+JOURNAL_POLISH_FIDELITY_POLICY='<private published-revision JSON>' \
+JOURNAL_POLISH_FIDELITY_EVIDENCE='<absolute private evidence directory>' \
+JOURNAL_ARK_BASE_URL='<configured service URL>' \
+JOURNAL_ARK_API_KEY='<private provider key>' \
+go test ./internal/journal/voice -run '^TestLivePolishFidelity$' -count=1 -timeout=10m
+```
+
+正则断言只辅助定位，不代替全文人工复核。长文另用已获授权的原始转写回放，冻结来源顺序和配置；不得把私人录音、转写或纠正答案加入仓库夹具。Prompt 候选通过、后端部署、重新识别音频和手机应用结果分别验收。
+
+2026-11-13 本地候选：九个合成场景各运行两次，授权的三段既有转写组成长文运行两次，真实模型断言及全文复核通过。旧版与候选的长文请求输入、模型配置和其余请求参数完全相同，只替换 Prompt。相关八个 Go 包测试通过；本轮没有重新识别音频、部署后端或验收手机。
