@@ -178,7 +178,12 @@ func TestCompleteTimedNarrativeSeesWholeSourceInOneBoundedCall(t *testing.T) {
 	for _, target := range work.Snapshot.Polish.Targets {
 		paragraph.TargetIDs = append(paragraph.TargetIDs, target.ID)
 	}
-	if err := state.Advance(plan, work, &PolishRevision{Paragraphs: []PolishParagraph{paragraph}}); err != nil {
+	raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{paragraph}, "questions": []string{}, "omissions": []PolishOmission{}, "illustrationSuggestion": nil, "checks": []string{}})
+	decoded, err := decodePolish(string(raw), *work.Snapshot.Polish)
+	if err != nil {
+		t.Fatal("valid whole-source references could not be decoded", err)
+	}
+	if err := state.Advance(plan, work, decoded); err != nil {
 		t.Fatal(err)
 	}
 	if state.Section != 1 || len(state.Results[0].Paragraphs[0].TargetIDs) != 40 {

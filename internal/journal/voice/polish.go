@@ -416,6 +416,10 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 }
 
 func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
+	targetLimit := maxPolishParagraphs
+	if request.wholeNarrative {
+		targetLimit = len(request.Targets)
+	}
 	var output struct {
 		Checks                 []string                          `json:"checks"`
 		Omissions              []PolishOmission                  `json:"omissions"`
@@ -488,7 +492,7 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 				}
 			}
 		}
-		if !validPolishStyle(paragraph.Style) || len(paragraph.TargetIDs) == 0 || len(paragraph.TargetIDs) > maxPolishParagraphs || strings.TrimSpace(paragraph.Text) == "" {
+		if !validPolishStyle(paragraph.Style) || len(paragraph.TargetIDs) == 0 || len(paragraph.TargetIDs) > targetLimit || strings.TrimSpace(paragraph.Text) == "" {
 			return nil, ErrInvalid
 		}
 		local := map[string]bool{}
