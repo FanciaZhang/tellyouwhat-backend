@@ -34,7 +34,7 @@ type PolishSelectionContext struct {
 	Omissions []PolishOmission `json:"omissions"`
 }
 type PolishRequest struct {
-	compactNarrative               bool
+	wholeNarrative                 bool
 	ReusableContextIDs             []string                `json:"reusableContextIDs,omitempty"`
 	Deferred                       bool                    `json:"deferred,omitempty"`
 	Lightweight                    bool                    `json:"lightweight,omitempty"`
@@ -97,7 +97,11 @@ func (p PolishRequest) Validate() error {
 	if err := validateNarrator(p.Narrator); err != nil {
 		return err
 	}
-	if len(p.Targets) > maxPolishParagraphs || len(p.Context) > 2 {
+	targetLimit := maxPolishParagraphs
+	if p.wholeNarrative {
+		targetLimit = 128
+	}
+	if len(p.Targets) > targetLimit || len(p.Context) > 2 {
 		return ErrInvalid
 	}
 	ids := map[string]bool{}
@@ -342,6 +346,9 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 		ids = append(ids, target.ID)
 	}
 	item := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"targetIDs", "text", "style"}, "properties": map[string]any{"targetIDs": map[string]any{"type": "array", "minItems": 1, "maxItems": maxPolishParagraphs, "items": map[string]any{"type": "string", "enum": ids}}, "text": map[string]string{"type": "string"}, "style": map[string]any{"type": "string", "enum": []string{"body", "heading1", "heading2", "heading3", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}}}}
+	if p.wholeNarrative {
+		item["properties"].(map[string]any)["targetIDs"].(map[string]any)["maxItems"] = len(ids)
+	}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"paragraphs", "questions"}, "properties": map[string]any{"paragraphs": map[string]any{"type": "array", "maxItems": maxPolishParagraphs, "items": item}, "questions": map[string]any{"type": "array", "maxItems": 8, "items": map[string]string{"type": "string"}}}}
 	schema["required"] = []string{"paragraphs", "questions", "illustrationSuggestion"}
 	scenePrompt := "\n本次不生成配图建议，illustrationSuggestion 必须为 null。"
@@ -388,6 +395,9 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 	tokenLimit, timeout, effort := 2048, 40, "disabled"
 	if fullAuthorDraft {
 		tokenLimit = 4096
+		if p.wholeNarrative {
+			tokenLimit, timeout = 8192, 90
+		}
 		if parameters.Temperature == nil {
 			stable := 0.0
 			parameters.Temperature = &stable
@@ -678,6 +688,9 @@ func polishSources(request PolishRequest) []SourceUtterance {
 				seen[turn.ID] = true
 			}
 		}
+	}
+	if !slices.ContainsFunc(sources, func(source SourceUtterance) bool { return source.EndMilliseconds <= source.StartMilliseconds }) {
+		slices.SortStableFunc(sources, func(a, b SourceUtterance) int { return cmp.Compare(a.StartMilliseconds, b.StartMilliseconds) })
 	}
 	return sources
 }
