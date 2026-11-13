@@ -30,3 +30,34 @@ func TestPolishSchemaCannotDiscardConfirmedAuthorAsNoise(t *testing.T) {
 		t.Fatal("unknown background material lost its valid disposition choices")
 	}
 }
+
+func TestFullAuthorDraftPreparesBoundedFactsBeforeProse(t *testing.T) {
+	p := *comparisonSnapshot([]string{"今天去图书馆还书。"}, false).Polish
+	parameters := promptconfig.Parameters{Model: "fixture", ReasoningEffort: "disabled", MaxOutputTokens: 12000, TimeoutSeconds: 90}
+	for _, complete := range []bool{true, false} {
+		p.Targets[0].CompleteSource = complete
+		body, effective := preparePolish(context.Background(), p, promptconfig.Style{}, nil, parameters)
+		properties := body["text"].(map[string]any)["format"].(map[string]any)["schema"].(map[string]any)["properties"].(map[string]any)
+		_, hasChecks := properties["checks"]
+		if hasChecks != complete || effective.TimeoutSeconds != 40 || effective.ReasoningEffort != "disabled" {
+			t.Fatal("full-draft checks changed an incomplete or latency-sensitive request", effective)
+		}
+		wantTokens := 2048
+		if complete {
+			wantTokens = 4096
+			if effective.Temperature == nil || *effective.Temperature != 0 {
+				t.Fatal("full-draft default sampling is not stable")
+			}
+		}
+		if effective.MaxOutputTokens != wantTokens {
+			t.Fatal("fact scaffold and prose budget differ from the effective request", effective)
+		}
+	}
+	p.Targets[0].CompleteSource = true
+	configured := 0.6
+	parameters.Temperature = &configured
+	_, effective := preparePolish(context.Background(), p, promptconfig.Style{}, nil, parameters)
+	if *effective.Temperature != configured {
+		t.Fatal("explicit operator sampling was overwritten")
+	}
+}

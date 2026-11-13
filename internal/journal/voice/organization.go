@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -197,6 +198,14 @@ func organizationFragments(section Snapshot) []organizationFragment {
 			}
 		}
 	}
+	// Generated paragraph positions are not the recording's chronology.
+	if !slices.ContainsFunc(fragments, func(f organizationFragment) bool {
+		return len(f.Target.Turns) != 1 || f.Target.Turns[0].EndMilliseconds <= f.Target.Turns[0].StartMilliseconds
+	}) {
+		slices.SortStableFunc(fragments, func(a, b organizationFragment) int {
+			return cmp.Compare(a.Target.Turns[0].StartMilliseconds, b.Target.Turns[0].StartMilliseconds)
+		})
+	}
 	return fragments
 }
 
@@ -232,6 +241,42 @@ func (s OrganizationState) Work(p OrganizationPlan) (OrganizationWork, error) {
 func (s OrganizationState) work(section Snapshot, fragments []organizationFragment) (OrganizationWork, error) {
 	if s.Next < 0 || s.Next >= len(fragments) {
 		return OrganizationWork{}, ErrInvalid
+	}
+	// Short complete narratives need their beginning and ending in the same call.
+	if s.Next == 0 && section.Polish.Narrator != nil && len(section.Polish.Targets) <= 128 && section.Polish.SelectionContext == nil {
+		request := *section.Polish
+		sources := polishSources(request)
+		characters := 0
+		for _, source := range sources {
+			characters += utf8.RuneCountInString(source.Text)
+		}
+		complete := characters > 0 && characters <= 3000 && !slices.ContainsFunc(request.Targets, func(t PolishTarget) bool {
+			return !t.CompleteSource || t.Style != "body" || len(t.Turns) == 0 || len(t.Turns) > 12 || len(t.SourceIDs) > 12
+		}) && !slices.ContainsFunc(sources, func(u SourceUtterance) bool {
+			return u.PersonID != request.Narrator.PersonID || u.EndMilliseconds <= u.StartMilliseconds
+		})
+		if complete {
+			request.wholeNarrative = true
+			request.Targets = slices.Clone(request.Targets)
+			start := func(t PolishTarget) int {
+				n := SessionMilliseconds
+				for _, u := range t.Turns {
+					n = min(n, u.StartMilliseconds)
+				}
+				return n
+			}
+			slices.SortStableFunc(request.Targets, func(a, b PolishTarget) int { return cmp.Compare(start(a), start(b)) })
+			work := OrganizationWork{Snapshot: section, Next: len(fragments), mapping: map[string][]string{}, fragments: fragments}
+			work.Snapshot.Organization, work.Snapshot.Polish = true, &request
+			work.Snapshot.Blocks = slices.Clone(request.Context)
+			for _, t := range request.Targets {
+				work.mapping[t.ID] = []string{t.ID}
+				work.Snapshot.Blocks = append(work.Snapshot.Blocks, Block{ID: t.ID, Text: t.Text, Style: t.Style})
+			}
+			if err := work.Snapshot.Validate(); err == nil {
+				return work, nil
+			}
+		}
 	}
 	request := PolishRequest{Narrator: section.Polish.Narrator, Context: slices.Clone(section.Polish.Context), SelectionContext: section.Polish.SelectionContext}
 	work := OrganizationWork{mapping: map[string][]string{}}
