@@ -52,6 +52,26 @@ func TestNaturalNarrativeGroupsConnectedShortTurnsWithoutLosingEvidence(t *testi
 	}
 }
 
+func TestFinalizationNarratorRulesRequireConfirmedAuthorOnly(t *testing.T) {
+	for _, mode := range []string{"author", "other", "unknown"} {
+		snapshot := comparisonSnapshot([]string{"我今天去了图书馆。", "我妈说她今天去公园散步。"}, mode == "other")
+		if mode == "unknown" {
+			snapshot.Polish.Targets[1].Turns[0].PersonID = ""
+		}
+		prepared, err := PrepareRewrite(context.Background(), snapshot, 1, "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct{ Instructions, Input string }
+		if json.Unmarshal(prepared.Body, &body) != nil || !strings.Contains(body.Input, "我妈说她今天去公园散步") {
+			t.Fatal("quoted other people's actions were lost from author speech")
+		}
+		if strings.Contains(body.Instructions, "unknown 的每个 id 独立") != (mode != "author") {
+			t.Fatal("unknown or other speakers lost their full identity constraints", mode)
+		}
+	}
+}
+
 func TestIdentityRewriteAcceptsAllSixteenParagraphsOfOneSource(t *testing.T) {
 	source := SourceUtterance{ID: uuid.NewString(), Text: "今天去河边散步，晚上回家读书。", Person: "小林", PersonID: uuid.NewString()}
 	p := PolishRequest{}
@@ -161,7 +181,7 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Actor and distinct disfluency constraints add a bounded instruction cost;
-	// preserve the 2,048-token/25-second limits and exclude structural payloads.
+	// preserve the ordinary 2,048-token/40-second limits and exclude structural payloads.
 	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 10000 {
 		t.Fatalf("ordinary task has structural context or exceeds 10000 bytes: %d bytes", len(prepared.Body))
 	}
@@ -169,6 +189,7 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 		t.Fatal("unbounded polish parameters")
 	}
 }
+
 func TestPolishBaselineIsServerOwnedAndUnknownParagraphsAreRejected(t *testing.T) {
 	s := polishFixture()
 	target := s.Polish.Targets[0]
@@ -553,6 +574,101 @@ func TestPolishAnchorsAllowDeduplicationParaphraseAndShortTurns(t *testing.T) {
 	}
 	if polishRetainsSourceAnchors([]SourceUtterance{{Text: "好。"}}, []PolishParagraph{{Text: "。"}}) {
 		t.Fatal("punctuation accepted as substantive grounding")
+	}
+}
+
+func TestPolishAcceptsDeduplicatedCameraNarrative(t *testing.T) {
+	author := uuid.NewString()
+	source := SourceUtterance{ID: uuid.NewString(), PersonID: author, Text: "昨天，啊，不是昨天，是今天早上去取修好的相机。师傅说换了快门。以后应该能再用几年。我妈说先用着吧。我一共付了三百，三百五吧，啊，对，是三百五十元。买回来已经四年了。还没去旅行，不是已经去了。我说这事说两遍了，今天是取相机。心里还是有点不踏实。"}
+	target := PolishTarget{ID: uuid.NewString(), Style: "body", CompleteSource: true, SourceIDs: []string{source.ID}, Turns: []SourceUtterance{source}}
+	request := PolishRequest{Narrator: &Narrator{PersonID: author, Name: "我"}, Targets: []PolishTarget{target}}
+	paragraphs := []PolishParagraph{
+		{Style: "body", TargetIDs: []string{target.ID}, Text: "今天早上去取修好的相机。师傅说换了快门，以后应该能再用几年。我一共付了三百五十元。"},
+		{Style: "body", TargetIDs: []string{target.ID}, Text: "这台相机买回来已经四年了，我还没带着它去旅行。我妈说先用着吧。"},
+		{Style: "body", TargetIDs: []string{target.ID}, Text: "虽然已经取回来了，我心里还是有点不踏实。"},
+	}
+	encode := func(prose []PolishParagraph) string {
+		raw, err := json.Marshal(map[string]any{"paragraphs": prose, "questions": []string{}, "omissions": []PolishOmission{{SourceID: source.ID, Text: "我说这事说两遍了，今天是取相机。", Reason: "speechDisfluency"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	if revision, err := decodePolish(encode(paragraphs), request); err != nil || len(revision.Paragraphs) != 3 || len(revision.Omissions) != 0 {
+		t.Fatal("normal deduplication must retain the original source and its prose", err)
+	}
+	if _, err := decodePolish(encode(paragraphs[1:]), request); !errors.Is(err, errPolishMissingSource) {
+		t.Fatal("removing the actual retrieval, repair and payment must still fail", err)
+	}
+}
+
+func TestPolishCannotGroundALongExperienceWithOneRepeatedPhrase(t *testing.T) {
+	sources := []SourceUtterance{{Text: "这次的事情我一直说不太清楚，主要是取相机。"}}
+	if polishRetainsSourceAnchors(sources, []PolishParagraph{{Text: "取相机。"}}) {
+		t.Fatal("overlapping pairs inside one short phrase cannot prove coverage of the whole source")
+	}
+}
+
+func TestDraftChecksCannotReplaceMissingProseOrEscapeToApp(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{"今天上午去图书馆还书。晚上给朋友修好了漏水的水龙头。"}, false)
+	request := *snapshot.Polish
+	encode := func(text string, checks []string) string {
+		raw, _ := json.Marshal(map[string]any{"checks": checks, "paragraphs": []PolishParagraph{{Style: "body", TargetIDs: []string{request.Targets[0].ID}, Text: text}}, "questions": []string{}})
+		return string(raw)
+	}
+	checks := []string{"上午还书，晚上修好了朋友漏水的水龙头。"}
+	if _, err := decodePolish(encode("今天上午去图书馆还书。", checks), request); !errors.Is(err, errPolishMissingSource) {
+		t.Fatal("fact checklist was accepted instead of missing manuscript content", err)
+	}
+	prose := request.Targets[0].Turns[0].Text
+	revision, err := decodePolish(encode(prose, checks), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appJSON, _ := json.Marshal(revision)
+	if strings.Contains(string(appJSON), `"checks"`) {
+		t.Fatal("provider-only fact scaffold escaped into the App contract")
+	}
+	if _, err := decodePolish(encode(prose, []string{strings.Repeat("字", 161)}), request); err == nil {
+		t.Fatal("unbounded fact checklist was accepted")
+	}
+}
+
+func TestClosingClauseMovesOnlyWithinACompleteUnambiguousPlainDraft(t *testing.T) {
+	for _, mode := range []string{"complete", "lightweight", "context", "unknown", "incomplete", "list", "ambiguous", "paraphrased", "not-terminal"} {
+		snapshot := comparisonSnapshot([]string{"今天去公园散步。", "我也想早点休息了，或许他已经熟悉这里了吧。嗯。"}, false)
+		request := *snapshot.Polish
+		closing := PolishParagraph{Text: "我也想早点休息了，或许它已经熟悉这里了。", Style: "body", TargetIDs: []string{request.Targets[1].ID}}
+		body := PolishParagraph{Text: "今天去公园散步。", Style: "body", TargetIDs: []string{request.Targets[0].ID}}
+		paragraphs := []PolishParagraph{closing, body}
+		switch mode {
+		case "lightweight":
+			request.Lightweight = true
+		case "context":
+			request.Context = []Block{{ID: uuid.NewString(), Text: "原来的正文。", Style: "body"}}
+		case "unknown":
+			request.Targets[1].Turns[0].PersonID = ""
+		case "incomplete":
+			request.Targets[1].CompleteSource = false
+		case "list":
+			paragraphs[1].Style = "orderedListItem"
+		case "ambiguous":
+			paragraphs = []PolishParagraph{closing, closing, body}
+		case "paraphrased":
+			paragraphs[0].Text = "它已经适应了新环境。"
+		case "not-terminal":
+			paragraphs[0].Text += "还有别的内容。"
+		}
+		before, _ := json.Marshal(paragraphs)
+		preservePolishEnding(request, nil, paragraphs)
+		after, _ := json.Marshal(paragraphs)
+		if mode == "complete" {
+			if paragraphs[0].Text != body.Text || paragraphs[1].Text != closing.Text || !slices.Equal(paragraphs[1].TargetIDs, closing.TargetIDs) {
+				t.Fatal("closing prose or provenance changed instead of moving intact")
+			}
+		} else if string(before) != string(after) {
+			t.Fatal("uncertain or protected document order changed", mode)
+		}
 	}
 }
 

@@ -56,6 +56,13 @@ func TestNarrativeAdviceRespectsSnapshotPreferenceAndPreservesPolishOnBadScene(t
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var input struct {
 					Input string `json:"input"`
+					Text  struct {
+						Format struct {
+							Schema struct {
+								Properties map[string]json.RawMessage `json:"properties"`
+							} `json:"schema"`
+						} `json:"format"`
+					} `json:"text"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 					t.Error(err)
@@ -65,6 +72,9 @@ func TestNarrativeAdviceRespectsSnapshotPreferenceAndPreservesPolishOnBadScene(t
 				}
 				if err := json.Unmarshal([]byte(input.Input), &material); err != nil || material.Enabled != tc.enabled {
 					t.Error("narrative preference not supplied")
+				}
+				if !tc.enabled && string(input.Text.Format.Schema.Properties["illustrationSuggestion"]) != `{"type":"null"}` {
+					t.Error("disabled illustrations must be excluded by the generation schema")
 				}
 				output, _ := json.Marshal(map[string]any{"paragraphs": []any{map[string]any{"text": "河边的小狗。", "style": "body", "targetIDs": []string{snapshot.Polish.Targets[0].ID}}}, "questions": []any{}, "illustrationSuggestion": tc.scene})
 				_ = json.NewEncoder(w).Encode(map[string]any{"status": "completed", "output": []any{map[string]any{"content": []any{map[string]any{"type": "output_text", "text": string(output)}}}}})
