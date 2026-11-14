@@ -63,11 +63,29 @@ func rewriteDiagnostics(result RewriteResult, err error) RewriteDiagnostics {
 }
 
 func rewriteClientCode(err error) string {
+	if code := serviceClientCode(err); code != "" {
+		return code
+	}
 	var failure *rewriteDiagnosticError
 	if errors.As(err, &failure) && failure.clientCode != "" {
 		return failure.clientCode
 	}
 	return "voice_rewrite_unavailable"
+}
+
+func serviceClientCode(err error) string {
+	switch {
+	case errors.Is(err, costcontrol.ErrBudgetExceeded):
+		return "voice_service_budget_exhausted"
+	case errors.Is(err, costcontrol.ErrProtectionActive), errors.Is(err, costcontrol.ErrPaused):
+		return "voice_service_protected"
+	case errors.Is(err, costcontrol.ErrConfigurationConflict), errors.Is(err, costcontrol.ErrInvalidAttempt):
+		return "voice_service_configuration_error"
+	case errors.Is(err, costcontrol.ErrConcurrencyExceeded):
+		return "voice_session_busy"
+	default:
+		return ""
+	}
 }
 
 type rewriteTrace struct {
