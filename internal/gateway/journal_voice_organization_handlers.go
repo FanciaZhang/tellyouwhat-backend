@@ -79,7 +79,7 @@ func (s *Server) CreateJournalVoiceOrganization(ctx context.Context, r journalht
 	if r.Body == nil || r.Body.RequestID != id || id == uuid.Nil {
 		return deny(organizationFailure(voice.ErrInvalid, id.String()))
 	}
-	job, err := s.journalVoiceOrganizations.Create(ctx, p, id.String(), r.Body.InputSHA256, r.Body.Plan, s.ipResolver(strictGinContext(ctx).Request))
+	job, err := s.journalVoiceOrganizations.Create(apiRequestContext(ctx), p, id.String(), r.Body.InputSHA256, r.Body.Plan, s.ipResolver(strictGinContext(ctx).Request))
 	if err != nil {
 		return deny(organizationFailure(err, id.String()))
 	}
@@ -101,7 +101,7 @@ func (s *Server) GetJournalVoiceOrganization(ctx context.Context, r journalhttpa
 	if f != nil {
 		return deny(f)
 	}
-	job, err := s.journalVoiceOrganizations.Get(ctx, p.KeyID, r.TaskID.String())
+	job, err := s.journalVoiceOrganizations.Get(apiRequestContext(ctx), p.KeyID, r.TaskID.String())
 	if err != nil {
 		return deny(organizationFailure(err, id.String()))
 	}
@@ -126,7 +126,7 @@ func (s *Server) RetryJournalVoiceOrganization(ctx context.Context, r journalhtt
 	if r.Body == nil || r.Body.Revision < 1 {
 		return deny(organizationFailure(voice.ErrInvalid, id.String()))
 	}
-	job, err := s.journalVoiceOrganizations.Retry(ctx, p.KeyID, r.TaskID.String(), uint64(r.Body.Revision))
+	job, err := s.journalVoiceOrganizations.Retry(apiRequestContext(ctx), p.KeyID, r.TaskID.String(), uint64(r.Body.Revision))
 	if err != nil {
 		return deny(organizationFailure(err, id.String()))
 	}
@@ -150,7 +150,7 @@ func (s *Server) CancelJournalVoiceOrganization(ctx context.Context, r journalht
 	if r.Body == nil || r.Body.Revision < 1 {
 		return deny(organizationFailure(voice.ErrInvalid, id.String()))
 	}
-	job, err := s.journalVoiceOrganizations.Cancel(ctx, p, r.TaskID.String(), uint64(r.Body.Revision))
+	job, err := s.journalVoiceOrganizations.Cancel(apiRequestContext(ctx), p, r.TaskID.String(), uint64(r.Body.Revision))
 	if err != nil {
 		return deny(organizationFailure(err, id.String()))
 	}

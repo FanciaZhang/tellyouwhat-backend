@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-15",
+  "stage": "local_source_integration_verified",
+  "productionBase": "def5bedbae6a1fc8ee990d5a53ab929c42cb2c75",
+  "sharedTestReference": "31ed4cba393410d4d35b945c0618db5de2a7344e",
+  "portedJournalCommits": [
+    "ec70397d",
+    "dd22d297",
+    "465f0b8f",
+    "8c3d7c01",
+    "b8c95d34",
+    "af0a6197",
+    "31ed4cba"
+  ],
+  "capabilities": [
+    "durable voice organization jobs",
+    "read-aloud timing positions",
+    "illustration cleanup on consent withdrawal",
+    "recording chronology and full narrative context",
+    "consistent narrative references",
+    "actionable clarification choices",
+    "nonretryable budget denials"
+  ],
+  "integrationRepairs": [
+    "Use the request context rather than the pooled Gin wrapper for database cancellation.",
+    "Restore organization context after encrypted prompt-workbench queue decoding.",
+    "Use the existing test migration identity 0084 instead of conflicting branch identity 0075.",
+    "Update contract and embedded migration inventories."
+  ],
+  "testSourceParity": {
+    "paths": [
+      "internal/voice",
+      "internal/readaloud",
+      "internal/illustration",
+      "internal/illustrationstore",
+      "internal/voicestore",
+      "internal/prompteval",
+      "internal/journalhttpapi",
+      "Contracts/HTTP/JournalAPI"
+    ],
+    "byteIdentical": true
+  },
+  "verification": {
+    "fullGoSuite": {
+      "passed": true,
+      "database": "isolated MySQL 8.4",
+      "cache": "isolated Redis",
+      "initialWholePackageTimeout": "internal/albums exceeded the default 10 minute package timeout without an assertion failure.",
+      "targetedRetry": "internal/albums passed with a 30 minute package timeout against unchanged source.",
+      "initialSummary": {
+        "exit": 1,
+        "passed": 2759,
+        "skipped": 50,
+        "failed": [
+          {
+            "package": "github.com/tellyouwhat/backend/internal/albums",
+            "test": null
+          }
+        ]
+      },
+      "albumsRetrySummary": {
+        "exit": 0,
+        "passedEvents": 1388,
+        "skipped": 3,
+        "failed": []
+      }
+    },
+    "focusedRace": {
+      "exit": 0,
+      "passedEvents": 61,
+      "skipped": 1,
+      "failed": []
+    },
+    "canonicalContractComposition": {
+      "exit": 0,
+      "matches": true,
+      "generatedSHA256": "9b4f269a9eda941af5f194ca44a7468acd9bf7a78f543927d71dfd56a02b454b",
+      "trackedSHA256": "9b4f269a9eda941af5f194ca44a7468acd9bf7a78f543927d71dfd56a02b454b"
+    },
+    "generatedGoContract": {
+      "exit": 0,
+      "matches": true,
+      "generatedSHA256": "89cdd58e20c4b09be0df5fba971040c944aed45c5b2fdffb223f707661a68d1f",
+      "trackedSHA256": "89cdd58e20c4b09be0df5fba971040c944aed45c5b2fdffb223f707661a68d1f"
+    },
+    "swiftJournalAPITransportTestsPassed": 8,
+    "appAndBackendJournalPublicContractAndSwiftFacadeByteIdentical": true
+  },
+  "sourceSHA256": {
+    "internal/gateway/strict_common.go": "bbff5d5a5e247d690f41201d36999fe8bc12388009f8ad03c9e74f7fd37d6c9f",
+    "internal/gateway/strict_common_test.go": "23126734d4a100f04715c017f96aeeb8dc973145846df18a63c2dbc8e6a6011d",
+    "internal/gateway/journal_illustration_handlers.go": "3ec3d5185964369199c8283532de4c22773281a24e8e741d6790263df508f0d9",
+    "internal/gateway/journal_voice_organization_handlers.go": "683ec2f0aff0e6387fdaf3031c4850c3b5f6911dc9517eda07ecdf8212d41d50",
+    "internal/prompteval/engine.go": "e37475705af95e87b5a72d3eaab69ce80df97ddba7da343af089b56a8ad5a617",
+    "internal/prompteval/types.go": "e652fea0fda9d7938c7fff02e120f0e906df07b5267fadfabd8fa2d7ecb7d3cd",
+    "internal/prompteval/voice_debug.go": "3d5549594562dc49a2e214a4e61d2671f27e261870ed894f95a939ad5c0c4ae0",
+    "internal/prompteval/voice_debug_test.go": "07b7d51e900698c2a49ace82c0f8ffc0105b5d6280c5bf789497b0ab5aa304d1",
+    "migrations/0084_journal_voice_organization_jobs.sql": "26fed8215a2ed95c813ed6f5f7a48641d8ca245ec836be13949ea7faa33a4e25"
+  },
+  "externalEvidence": "Documents/JournalAppFixes/2026-11-14-integration",
+  "delivery": {
+    "pushed": false,
+    "deployed": false,
+    "productionDatabaseChanged": false,
+    "otherAppTestSnapshotMerged": false
+  },
+  "limits": [
+    "Source integration does not promote the shared-test environment into production.",
+    "Existing production database upgrade and physical-device journeys have not been performed in this task.",
+    "Provider quality and user acceptance remain separate from unit and contract checks."
+  ]
+}

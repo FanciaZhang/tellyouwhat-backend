@@ -33,7 +33,7 @@ func TestVoiceDebugReservesActualProductionCallsWithoutJudge(t *testing.T) {
 	if err != nil || plan.Mode != VoiceDebugMode || plan.MaximumCalls != 1 || len(plan.Requests) != 1 {
 		t.Fatal(plan, err)
 	}
-	prepared, err := voice.PrepareRewrite(promptconfig.WithRevision(context.Background(), candidate.Revision), *sample.Voice, 1, "")
+	prepared, err := voice.PrepareRewrite(promptconfig.WithRevision(context.Background(), candidate.Revision), sample.voiceSnapshot(), 1, "")
 	want, _ := prepared.Parameters.Price.Cost(len(prepared.Body)+1024, prepared.Parameters.MaxOutputTokens)
 	if err != nil || !bytes.Equal(prepared.Body, plan.Requests[0]) || plan.ReservedNanos != want {
 		t.Fatal("preview/cost diverged from app finalization", err)
