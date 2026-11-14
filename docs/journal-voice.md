@@ -376,3 +376,10 @@ The native client binds each received edit to a stable manuscript block before d
 The next `PolishRequest.confirmedDetails` carries at most 32 confirmed facts from the same journal. Final prose, lightweight cleanup and durable organization all receive them. Facts are data, not new source speech or executable instructions. Durable continuation protects paragraphs carrying unanswered choices. If later prose makes an old proposal ambiguous, retain the prose and omit the unsafe proposal instead of failing the whole recording.
 
 Client and backend must be delivered together for the new choices to be generated. This source change alone does not publish prompt configuration, deploy a service or update installed apps.
+
+
+### Test deployment with Ad Hoc 46 (2026-11-14)
+
+The managed shared-test publisher activated `af0a61972607ef92bfb00331641e62b467a8b9f9`, retaining `903eb84e11305856fbc494d170e53271221410fe` as the registered rollback selection. Only Journal build 46 was appended to runtime admission; schema, deployment recipes, provider configuration and other app credentials were preserved. Source/archive image labels, five public test HTTPS readiness endpoints, authenticated before/after offsite recovery and scoped artifact cleanup passed. Production source and three active production processes were unchanged.
+
+The paired Debug / Ad Hoc 1.0 (46) uses App source `4e2e2ecb3fd7cf37aa70aafa0317b9dc62865b87`. The final signed IPA, main/share identities, previous registered devices and full HTTPS download digest were checked. The delivered source matches the prior focused tests and actual-provider synthetic App acceptance. No new phone installation, App Attest acceptance, private-recording replay, TestFlight distribution or user acceptance is claimed. Private installation capabilities are not committed. See [delivery evidence](evidence/journal-clarifications-adhoc46-2026-11-14.json).
