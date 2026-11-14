@@ -229,6 +229,9 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 		if errors.Is(err, quota.ErrInvalidIdentity) {
 			job.State = "failed"
 		}
+		if code := serviceClientCode(err); code != "" && code != "voice_session_busy" {
+			job.State, job.Problem = "failed", code
+		}
 		return s.Store.Save(ctx, job, previous)
 	}
 	if settle == nil {
@@ -257,7 +260,7 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 	current.LeaseUntil = time.Time{}
 	current.AvailableAt = s.Now()
 	if callErr != nil {
-		current.State, current.Problem = "failed", "voice_rewrite_unavailable"
+		current.State, current.Problem = "failed", rewriteClientCode(callErr)
 		if errors.Is(callErr, costcontrol.ErrConcurrencyExceeded) {
 			current.State = "queued"
 			current.AvailableAt = s.Now().Add(3 * time.Second)

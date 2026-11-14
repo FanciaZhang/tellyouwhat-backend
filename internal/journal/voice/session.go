@@ -215,6 +215,9 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 		return websocket.JSON.Send(ws, e) == nil
 	}
 	failWithCause := func(code, stage string, cause error) {
+		if serviceCode := serviceClientCode(cause); serviceCode != "" {
+			code = serviceCode
+		}
 		if s.Logger != nil {
 			s.Logger.WarnContext(ctx, "journal voice stream failure",
 				"voice_trace_id", voiceTraceID,
@@ -749,6 +752,10 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 				)
 			}
 			if result.err != nil {
+				if code := serviceClientCode(result.err); code != "" && code != "voice_session_busy" {
+					failWithCause(code, "rewrite_result", result.err)
+					return
+				}
 				if snapshot.DictationMode {
 					if runningIdentity != nil {
 						emit(Event{Type: "identity_error", Code: "voice_identity_unavailable", Identity: &IdentityRevision{Request: *runningIdentity,
