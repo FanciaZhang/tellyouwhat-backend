@@ -466,6 +466,10 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		if !request.Lightweight && strings.TrimSpace(settings.Voice.PolishPrompt) != "" {
 			body["instructions"] = body["instructions"].(string) + "\n成稿附加要求（遵守原文依据和输出协议）：\n" + settings.Voice.PolishPrompt
 		}
+		if !request.Lightweight {
+			body["instructions"] = body["instructions"].(string) + clarificationInstructions
+		}
+
 	}
 	parameters.Apply(body)
 	payload, _ := json.Marshal(body)

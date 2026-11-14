@@ -82,6 +82,9 @@ func TestLivePolishFidelity(t *testing.T) {
 					text += p.Text + "\n"
 				}
 				questions = result.Polish.Questions
+				for _, question := range result.Polish.Clarifications {
+					questions = append(questions, question.Question)
+				}
 			}
 			checks := map[string]bool{}
 			for _, p := range sample.Required {

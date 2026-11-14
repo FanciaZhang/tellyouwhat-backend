@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tellyouwhat/backend/internal/costcontrol"
+	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
 // Opt-in loopback acceptance gives the App a bounded operator credential for
@@ -26,6 +28,7 @@ func TestConfiguredImportedAudioAppHarness(t *testing.T) {
 		t.Skip("explicit synthetic App and real-provider acceptance only")
 	}
 	var config struct {
+		Revision                   *promptconfig.Revision
 		Provider                   map[string]string
 		Token, ReadyPath, StopPath string
 		MaxCostNanos               int64
@@ -52,12 +55,13 @@ func TestConfiguredImportedAudioAppHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := &Service{
-		Store: NewMemoryStore(), Secret: secret,
+		Logger: slog.Default(),
+		Store:  NewMemoryStore(), Secret: secret,
 		Speech: NewBudgetedSpeech(ASR{Config: ASRConfig{
 			URL: p["JOURNAL_VOICE_ASR_URL"], ResourceID: p["JOURNAL_VOICE_ASR_RESOURCE_ID"], StreamInsights: true,
 			APIKey: p["JOURNAL_VOICE_ASR_API_KEY"], AppKey: p["JOURNAL_VOICE_ASR_APP_KEY"], AccessKey: p["JOURNAL_VOICE_ASR_ACCESS_KEY"],
 		}}, budget, "journal-import-acceptance", costcontrol.DurationPrice{NanosPerHour: 4_500_000_000}),
-		Model: NewBudgetedRewriter(ArkRewriter{BaseURL: p["JOURNAL_ARK_BASE_URL"], APIKey: p["JOURNAL_ARK_API_KEY"], Model: p["JOURNAL_VOICE_MODEL"]},
+		Model: NewBudgetedRewriter(ArkRewriter{BaseURL: p["JOURNAL_ARK_BASE_URL"], APIKey: p["JOURNAL_ARK_API_KEY"], Model: p["JOURNAL_VOICE_MODEL"], Logger: slog.Default()},
 			budget, "journal-import-acceptance", costcontrol.TokenPrice{InputNanosPerMillionTokens: 9_600_000_000, OutputNanosPerMillionTokens: 48_000_000_000}),
 	}
 	owner := "synthetic-import-" + uuid.NewString()
@@ -88,6 +92,9 @@ func TestConfiguredImportedAudioAppHarness(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(ticket)
 	})
 	mux.HandleFunc("GET /v1/journal/voice/sessions/{session}/stream", func(w http.ResponseWriter, r *http.Request) {
+		if config.Revision != nil {
+			r = r.WithContext(promptconfig.WithRevision(r.Context(), *config.Revision))
+		}
 		service.Serve(w, r, r.PathValue("session"))
 	})
 	server := httptest.NewServer(mux)

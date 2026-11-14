@@ -36,7 +36,7 @@ func TestOrganizationUsesTheSameGroundedFinalizationAsWorkbench(t *testing.T) {
 			t.Fatalf("missing finalization rule: %s", rule)
 		}
 	}
-	if body["text"].(map[string]any)["format"].(map[string]any)["name"] != "journal_voice_narrative_v37" {
+	if body["text"].(map[string]any)["format"].(map[string]any)["name"] != "journal_voice_narrative_v38" {
 		t.Fatal("mobile request used an obsolete narrative schema")
 	}
 }
