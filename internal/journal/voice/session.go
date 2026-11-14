@@ -736,7 +736,12 @@ func (s *Service) run(ws *websocket.Conn, claim ticketClaim, fence string) {
 						}
 						return 0
 					}(),
-					"question_count", len(result.value.Revision.Questions),
+					"question_count", func() int {
+						if result.value.Polish != nil {
+							return len(result.value.Polish.Questions) + len(result.value.Polish.Clarifications)
+						}
+						return len(result.value.Revision.Questions)
+					}(),
 					"emotion_count", len(result.value.Revision.Emotions),
 					"has_overall_emotion", result.value.Revision.OverallEmotion != "",
 					"error_class", errorClass(result.err),

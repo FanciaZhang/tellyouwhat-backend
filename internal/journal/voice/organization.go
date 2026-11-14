@@ -23,12 +23,13 @@ type OrganizationPlan struct {
 }
 
 type OrganizationState struct {
-	Section    int
-	Next       int
-	Results    []PolishRevision
-	Paragraphs []PolishParagraph
-	Questions  []string
-	Omitted    map[string][]PolishOmission
+	Section        int
+	Next           int
+	Results        []PolishRevision
+	Paragraphs     []PolishParagraph
+	Questions      []string
+	Clarifications []Clarification
+	Omitted        map[string][]PolishOmission
 }
 
 type organizationFragment struct {
@@ -278,11 +279,19 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 			}
 		}
 	}
-	request := PolishRequest{Narrator: section.Polish.Narrator, Context: slices.Clone(section.Polish.Context), SelectionContext: section.Polish.SelectionContext}
+	request := PolishRequest{ConfirmedDetails: slices.Clone(section.Polish.ConfirmedDetails), Narrator: section.Polish.Narrator, Context: slices.Clone(section.Polish.Context), SelectionContext: section.Polish.SelectionContext}
 	work := OrganizationWork{mapping: map[string][]string{}}
 	// Keep only bounded, already validated prose editable for continuation.
 	for i := len(s.Paragraphs) - 1; i >= 0 && work.retained < 2; i-- {
 		paragraph := s.Paragraphs[i]
+		// Keep unanswered choices executable while later audio is organized.
+		if slices.ContainsFunc(s.Clarifications, func(q Clarification) bool {
+			return slices.ContainsFunc(q.Choices, func(c ClarificationChoice) bool {
+				return slices.ContainsFunc(c.Edits, func(e ClarificationEdit) bool { return len(clarificationRanges(e.Anchor, paragraph.Text)) > 0 })
+			})
+		}) {
+			break
+		}
 		if utf8.RuneCountInString(paragraph.Text) > 600 {
 			break
 		}
@@ -325,6 +334,7 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 func (s *OrganizationState) Advance(plan OrganizationPlan, work OrganizationWork, result *PolishRevision) error {
 	copy := *s
 	copy.Omitted, copy.Questions, copy.Results = maps.Clone(s.Omitted), slices.Clone(s.Questions), slices.Clone(s.Results)
+	copy.Clarifications = slices.Clone(s.Clarifications)
 	if err := copy.advance(plan, work, result); err != nil {
 		return err
 	}
@@ -361,6 +371,14 @@ func (s *OrganizationState) advance(plan OrganizationPlan, work OrganizationWork
 	for _, o := range result.Omissions {
 		s.Omitted[o.SourceID] = append(slices.Clone(s.Omitted[o.SourceID]), o)
 	}
+	if err := validateClarifications(result); err != nil {
+		return err
+	}
+	for _, q := range result.Clarifications {
+		if len(s.Clarifications) < 8 {
+			s.Clarifications = append(s.Clarifications, q)
+		}
+	}
 	for _, q := range result.Questions {
 		if len(s.Questions) < 8 && !slices.Contains(s.Questions, q) {
 			s.Questions = append(s.Questions, q)
@@ -370,6 +388,15 @@ func (s *OrganizationState) advance(plan OrganizationPlan, work OrganizationWork
 	section := plan.Sections[s.Section]
 	if s.Next == len(organizationFragments(section)) {
 		revision := PolishRevision{ID: uuid.NewString(), Targets: section.Polish.Targets, Paragraphs: append([]PolishParagraph{}, s.Paragraphs...), Questions: append([]string{}, s.Questions...), Narrator: section.Polish.Narrator, IllustrationSuggestion: result.IllustrationSuggestion, Omissions: []PolishOmission{}}
+		// Separate windows can introduce the same quote later in a long
+		// source. Keep the prose; never publish a choice that no longer binds.
+		for _, q := range s.Clarifications {
+			candidate := revision
+			candidate.Clarifications = []Clarification{q}
+			if validateClarifications(&candidate) == nil {
+				revision.Clarifications = append(revision.Clarifications, q)
+			}
+		}
 		sources := polishSources(*section.Polish)
 		for _, source := range sources {
 			omitted := s.Omitted[source.ID]
@@ -400,6 +427,7 @@ func (s *OrganizationState) advance(plan OrganizationPlan, work OrganizationWork
 		s.Next = 0
 		s.Paragraphs = nil
 		s.Questions = nil
+		s.Clarifications = nil
 		s.Omitted = nil
 	}
 	return nil

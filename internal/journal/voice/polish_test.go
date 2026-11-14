@@ -180,10 +180,10 @@ func TestPolishRequestUsesSmallSchemaAndEffectiveBudgetLimits(t *testing.T) {
 	if err = json.Unmarshal(prepared.Body, &body); err != nil {
 		t.Fatal(err)
 	}
-	// Actor and distinct disfluency constraints add a bounded instruction cost;
-	// preserve the ordinary 2,048-token/40-second limits and exclude structural payloads.
-	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 10000 {
-		t.Fatalf("ordinary task has structural context or exceeds 10000 bytes: %d bytes", len(prepared.Body))
+	// Source-scoped answer choices add a bounded schema and instruction cost;
+	// keep the 2,048-token/40-second execution limits and exclude structural payloads.
+	if strings.Contains(string(prepared.Body), "diagramCreations") || strings.Contains(string(prepared.Body), "semanticState") || len(prepared.Body) > 14000 {
+		t.Fatalf("ordinary task has structural context or exceeds 14000 bytes: %d bytes", len(prepared.Body))
 	}
 	if body["max_output_tokens"].(float64) > 2048 || prepared.TimeoutSeconds > 40 || prepared.Parameters.ReasoningEffort != "disabled" {
 		t.Fatal("unbounded polish parameters")
