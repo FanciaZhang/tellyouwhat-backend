@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	platformcontracts "github.com/tellyouwhat/backend/internal/contracts"
@@ -30,6 +31,13 @@ const (
 // the fixed structured-output allowance used by both quota and cash controls.
 func ReservationTokens(input OrganizeRequest) int {
 	value := len(input.Title) + len(input.Body) + OutputReservationTokens
+	if input.PostOrganization {
+		output := 256
+		if input.IllustrationSuggestionsEnabled {
+			output = 2048
+		}
+		return len(input.Title) + len(input.Body) + output
+	}
 	for _, tag := range input.ExistingTags {
 		value += len(tag)
 	}
@@ -45,6 +53,8 @@ func ReservationTokens(input OrganizeRequest) int {
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type OrganizeRequest struct {
+	PostOrganization               bool          `json:"-"` // selected only by the lifecycle endpoint
+	GenerateTitle                  bool          `json:"-"`
 	IllustrationSuggestionsEnabled bool          `json:"-"` // set only by the dedicated scene handler
 	RequestID                      string        `json:"requestID"`
 	ContractVersion                string        `json:"contractVersion"`
@@ -87,6 +97,7 @@ type Quota struct {
 }
 
 type OrganizeResponse struct {
+	SuggestedTitle              *string                      `json:"suggestedTitle,omitempty"`
 	IllustrationSuggestion      *IllustrationSuggestion      `json:"illustrationSuggestion"`
 	RequestID                   string                       `json:"requestID"`
 	ContentHash                 string                       `json:"contentHash"`
@@ -157,6 +168,7 @@ func (r OrganizeResponse) Validate(bookIDs map[string]bool) error {
 		return errors.New("quota is invalid")
 	}
 	return (ModelResult{
+		SuggestedTitle:              r.SuggestedTitle,
 		Tags:                        r.Tags,
 		ExistingBookRecommendations: r.ExistingBookRecommendations,
 		NewBookSuggestions:          r.NewBookSuggestions,
@@ -164,6 +176,9 @@ func (r OrganizeResponse) Validate(bookIDs map[string]bool) error {
 }
 
 func (r ModelResult) Validate(bookIDs map[string]bool) error {
+	if r.SuggestedTitle != nil && !ValidEntryTitle(*r.SuggestedTitle) {
+		return errors.New("invalid entry title")
+	}
 	if len(r.Tags) > 8 || len(r.ExistingBookRecommendations) > 3 || len(r.NewBookSuggestions) > 2 {
 		return errors.New("model result exceeds item limits")
 	}
@@ -226,6 +241,7 @@ func validExplanation(value string) bool {
 }
 
 type ModelResult struct {
+	SuggestedTitle              *string                      `json:"title,omitempty"`
 	IllustrationSuggestion      *IllustrationSuggestion      `json:"illustrationSuggestion"`
 	Tags                        []Tag                        `json:"tags"`
 	ExistingBookRecommendations []ExistingBookRecommendation `json:"existingBookRecommendations"`
@@ -271,4 +287,21 @@ func ResponseSchema() map[string]any {
 			"newBookSuggestions":          map[string]any{"type": "array", "maxItems": 2, "items": newBookItem},
 		},
 	}
+}
+
+func ValidEntryTitle(title string) bool {
+	if strings.TrimSpace(title) != title || title == "" || utf8.RuneCountInString(title) > MaxTitleRunes {
+		return false
+	}
+	weight := 0
+	for _, char := range title {
+		if unicode.IsControl(char) || char == '\u2028' || char == '\u2029' {
+			return false
+		}
+		weight++
+		if char > 0x7f {
+			weight++
+		}
+	}
+	return weight <= 120
 }

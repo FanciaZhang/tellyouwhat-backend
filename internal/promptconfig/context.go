@@ -30,3 +30,10 @@ func ScenePrompt(ctx context.Context) string {
 	}
 	return IllustrationSuggestionPrompt
 }
+
+func TitlePrompt(ctx context.Context) string {
+	if r, ok := FromContext(ctx); ok && r.Policy.Journal != nil && r.Policy.Journal.EntryTitlePrompt != "" {
+		return r.Policy.Journal.EntryTitlePrompt
+	}
+	return EntryTitlePrompt
+}

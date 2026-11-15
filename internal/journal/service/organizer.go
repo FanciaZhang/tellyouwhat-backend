@@ -33,7 +33,7 @@ func (s Organizer) Organize(ctx context.Context, request contracts.OrganizeReque
 		s.LiteMaxBooks = r.Policy.Journal.Organize.LiteMaxBooks
 		s.LiteMaxTags = r.Policy.Journal.Organize.LiteMaxTags
 	}
-	pro := utf8.RuneCountInString(request.Body) > s.LiteMaxCharacters || len(request.Books) > s.LiteMaxBooks || len(request.ExistingTags) > s.LiteMaxTags
+	pro := request.PostOrganization && request.GenerateTitle || utf8.RuneCountInString(request.Body) > s.LiteMaxCharacters || len(request.Books) > s.LiteMaxBooks || len(request.ExistingTags) > s.LiteMaxTags
 	result, err := s.Model.Organize(ctx, request, pro)
 	if err == nil || pro || !errors.Is(err, provider.ErrInvalidResult) {
 		return result, err

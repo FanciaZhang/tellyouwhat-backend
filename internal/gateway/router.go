@@ -239,7 +239,7 @@ func requestBodyLimit(method, path string) int64 {
 		return 64 << 10
 	case "POST /v1/ai/requests", "POST /v1/ai/streams", "POST /v1/ai/job-capabilities", "POST /v1/ai/jobs":
 		return contracts.DefaultBodyLimit
-	case "POST /v1/journal/organization", "POST /v1/journal/illustration-suggestions":
+	case "POST /v1/journal/organization", "POST /v1/journal/post-organization":
 		return journalcontracts.MaxBodyBytes
 	default:
 		if method == http.MethodPost && strings.HasPrefix(path, "/v1/journal/illustrations/") && strings.HasSuffix(path, "/cancel") {

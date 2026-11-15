@@ -718,10 +718,11 @@ paths:
           "$ref": "#/components/responses/ServiceUnavailable"
         default:
           "$ref": "#/components/responses/Error"
-  "/v1/journal/illustration-suggestions":
+  "/v1/journal/post-organization":
     post:
-      operationId: suggestJournalIllustration
+      operationId: postOrganizeJournal
       tags: [Journal, AI]
+      summary: Derive title and illustration advice from the completed manuscript in one AI call.
       security:
         - AppAttestKeyID: []
           AppAttestAssertion: []
@@ -734,13 +735,13 @@ paths:
         required: true
         content:
           application/json:
-            schema: {"$ref": "#/components/schemas/IllustrationSuggestionRequest"}
+            schema: {"$ref": "#/components/schemas/PostOrganizationRequest"}
       responses:
         '200':
-          description: Optional scene grounded in the supplied journal text.
+          description: Derived metadata only; the manuscript remains unchanged.
           content:
             application/json:
-              schema: {"$ref": "#/components/schemas/IllustrationSuggestionResponse"}
+              schema: {"$ref": "#/components/schemas/PostOrganizationResponse"}
         default:
           "$ref": "#/components/responses/Error"
   "/v1/journal/illustrations":
@@ -1556,24 +1557,27 @@ components:
           minimum: 0
         available:
           type: boolean
-    IllustrationSuggestionRequest:
+    PostOrganizationRequest:
       type: object
       additionalProperties: false
-      required: [requestID, contentHash, title, body]
+      required: [requestID, contentHash, title, body, generateTitle, illustrationSuggestionsEnabled]
       properties:
         requestID: {type: string, format: uuid}
         contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
         title: {type: string, maxLength: 120}
         body: {type: string, minLength: 1, maxLength: 60000}
-    IllustrationSuggestionResponse:
+        generateTitle: {type: boolean}
+        illustrationSuggestionsEnabled: {type: boolean}
+    PostOrganizationResponse:
       type: object
       additionalProperties: false
       required: [requestID, contentHash, analysisVersion, quota]
       properties:
         requestID: {type: string, format: uuid}
         contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        title: {type: string, minLength: 1, maxLength: 120}
+        illustrationSuggestion: {"$ref": "#/components/schemas/IllustrationSuggestion"}
         analysisVersion: {type: string, minLength: 1, maxLength: 128}
-        suggestion: {"$ref": "#/components/schemas/IllustrationSuggestion"}
         quota: {"$ref": "#/components/schemas/OrganizeQuota"}
     IllustrationRequest:
       type: object

@@ -1479,7 +1479,7 @@ func (value recordingQuota) PrepareJob(ctx context.Context, identity quotaapi.Id
 	return err
 }
 
-func TestJournalSceneEndpointIsTypedAndRetainsConsentGate(t *testing.T) {
+func TestJournalPostOrganizationEndpointIsTypedAndRetainsConsentGate(t *testing.T) {
 	for _, consent := range []bool{false, true} {
 		limiter := quotaapi.NewMemoryLimiter(quotaapi.Limits{DailyTokensPerTransaction: 1000000, MonthlyTokensPerTransaction: 2000000})
 		organizer := &fakeJournalOrganizer{result: journalprovider.Result{InputTokens: 10, OutputTokens: 5}}
@@ -1488,21 +1488,21 @@ func TestJournalSceneEndpointIsTypedAndRetainsConsentGate(t *testing.T) {
 			Authenticator: fakeAuthenticator{appID: "journal"}, Entitlements: fakeEntitlements{allowed: true}, Quota: limiter, QuotaReader: limiter, Usage: usage.NewMemoryRecorder(), Media: newFakeMediaAuthorizer(), JournalOrganizer: organizer, JournalAnalysisVersion: "test",
 			Consent: fakeConsentGate{granted: consent}, RequiredConsentScopes: []string{privacy.ManagedAIScope}, Privacy: &fakePrivacyManager{}, Readiness: ReadinessFunc(func(context.Context) error { return nil }),
 		})
-		body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"河边","body":"小狗在河边散步。"}`
+		body := `{"requestID":"19be2f9e-bd92-4699-b561-e3816092114c","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"河边","body":"小狗在河边散步。","generateTitle":true,"illustrationSuggestionsEnabled":true}`
 		response := httptest.NewRecorder()
-		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/illustration-suggestions", body))
+		server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/post-organization", body))
 		if !consent {
 			if response.Code != 403 || organizer.calls != 0 {
 				t.Fatalf("consent bypass: %d", response.Code)
 			}
 			continue
 		}
-		if response.Code != 200 || !organizer.request.IllustrationSuggestionsEnabled || strings.Contains(response.Body.String(), `"tags"`) {
+		if response.Code != 200 || !organizer.request.IllustrationSuggestionsEnabled || !organizer.request.GenerateTitle || !organizer.request.PostOrganization || strings.Contains(response.Body.String(), `"tags"`) {
 			t.Fatalf("mixed scene response: %d %s", response.Code, response.Body)
 		}
 		for _, field := range []string{`"prompt":"override"`, `"model":"override"`, `"books":[]`} {
 			response = httptest.NewRecorder()
-			server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/illustration-suggestions", strings.TrimSuffix(body, "}")+","+field+"}"))
+			server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, "/v1/journal/post-organization", strings.TrimSuffix(body, "}")+","+field+"}"))
 			if response.Code != 422 || organizer.calls != 1 {
 				t.Fatalf("accepted unrelated field %s: %d", field, response.Code)
 			}

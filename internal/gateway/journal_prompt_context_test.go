@@ -26,7 +26,7 @@ func (o *frozenJournalOrganizer) Organize(ctx context.Context, _ journalcontract
 }
 
 func TestJournalAnalysisPreservesHTTPRequestWithPublishedPrompt(t *testing.T) {
-	for _, path := range []string{"/v1/journal/organization", "/v1/journal/illustration-suggestions"} {
+	for _, path := range []string{"/v1/journal/organization", "/v1/journal/post-organization"} {
 		t.Run(path, func(t *testing.T) {
 			cache := promptconfig.NewJournalCache(catalogFixture{})
 			if err := cache.Refresh(context.Background(), time.Now()); err != nil {
@@ -47,7 +47,8 @@ func TestJournalAnalysisPreservesHTTPRequestWithPublishedPrompt(t *testing.T) {
 				body["rejectedTagNames"] = []string{}
 				body["books"] = []any{}
 			}
-			raw, _ := json.Marshal(body)
+			if path == "/v1/journal/post-organization" { body["generateTitle"]=true; body["illustrationSuggestionsEnabled"]=true }
+            raw, _ := json.Marshal(body)
 			response := httptest.NewRecorder()
 			server.Router().ServeHTTP(response, authorizedRequest(http.MethodPost, path, string(raw)))
 			if response.Code != http.StatusOK || organizer.revision != "catalog-1" {

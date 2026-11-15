@@ -56,6 +56,11 @@ func (s *Server) promptConfigView(c *gin.Context, scope string) {
 		promptsFailure(c, err)
 		return
 	}
+	if r.Policy.Journal != nil && r.Policy.Journal.EntryTitlePrompt == "" {
+		journal := *r.Policy.Journal
+		journal.EntryTitlePrompt = promptconfig.EntryTitlePrompt
+		r.Policy.Journal = &journal
+	}
 	var sync any
 	if cache := s.config.PromptCache; cache != nil {
 		attempt, success, err := cache.Status()

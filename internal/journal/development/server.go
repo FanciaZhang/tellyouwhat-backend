@@ -115,7 +115,7 @@ func New(c Config) (http.Handler, error) {
 		recording := c.Recording != nil && recordinghttp.Route(r)
 		image := illustrationRoute(r)
 		allowed := stream || recording || image || (r.Method == http.MethodGet && r.URL.Path == "/v1/ai/quota") ||
-			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/journal/organization" || r.URL.Path == "/v1/journal/illustration-suggestions"))
+			(r.Method == http.MethodPost && (r.URL.Path == "/v1/privacy/consents" || r.URL.Path == "/v1/journal/voice/sessions" || r.URL.Path == "/v1/journal/organization" || r.URL.Path == "/v1/journal/post-organization"))
 		if !allowed {
 			g.Abort()
 			deny(w, 404, "not_found")
