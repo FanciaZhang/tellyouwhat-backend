@@ -88,6 +88,7 @@ type Style struct {
 	Prompt      string `json:"prompt"`
 }
 type Journal struct {
+	EntryTitlePrompt             string   `json:"entryTitlePrompt,omitempty"`
 	IllustrationSuggestionPrompt string   `json:"illustrationSuggestionPrompt"`
 	IllustrationGenerationPrompt string   `json:"illustrationGenerationPrompt"`
 	Organize                     Organize `json:"organize"`
@@ -134,7 +135,7 @@ func (p Policy) Validate(scope string) error {
 		return nil
 	}
 	j := p.Journal
-	if j == nil || p.SystemPrompt != "" || !validText(j.IllustrationSuggestionPrompt, 16000, true) || !validText(j.IllustrationGenerationPrompt, 4000, true) || !validText(j.Organize.Prompt, 64000, true) || !validText(j.Voice.Prompt, 64000, true) || !validText(j.Voice.PolishPrompt, 16000, false) || j.Organize.Lite.Validate() != nil || j.Organize.Pro.Validate() != nil || j.Voice.Parameters.Validate() != nil {
+	if j == nil || p.SystemPrompt != "" || !validText(j.EntryTitlePrompt, 16000, false) || !validText(j.IllustrationSuggestionPrompt, 16000, true) || !validText(j.IllustrationGenerationPrompt, 4000, true) || !validText(j.Organize.Prompt, 64000, true) || !validText(j.Voice.Prompt, 64000, true) || !validText(j.Voice.PolishPrompt, 16000, false) || j.Organize.Lite.Validate() != nil || j.Organize.Pro.Validate() != nil || j.Voice.Parameters.Validate() != nil {
 		return ErrInvalid
 	}
 	if j.Organize.LiteMaxCharacters < 1 || j.Organize.LiteMaxCharacters > 60000 || j.Organize.LiteMaxBooks < 0 || j.Organize.LiteMaxBooks > 1000 || j.Organize.LiteMaxTags < 0 || j.Organize.LiteMaxTags > 1000 || len(j.Styles) < 1 || len(j.Styles) > 100 {

@@ -37,3 +37,14 @@ func TestLongBodyStartsPro(t *testing.T) {
 		t.Fatalf("calls=%v", m.calls)
 	}
 }
+
+func TestPostOrganizationTitlesStartWithConfiguredProAndUseOneCall(t *testing.T) {
+	for _, title := range []bool{false, true} {
+		model := &fake{}
+		s := Organizer{Model: model, LiteMaxCharacters: 2000, LiteMaxBooks: 20, LiteMaxTags: 100}
+		_, err := s.Organize(context.Background(), contracts.OrganizeRequest{Body: "短正文", PostOrganization: true, GenerateTitle: title, IllustrationSuggestionsEnabled: true})
+		if err != nil || len(model.calls) != 1 || model.calls[0] != title {
+			t.Fatalf("title=%t calls=%v error=%v", title, model.calls, err)
+		}
+	}
+}

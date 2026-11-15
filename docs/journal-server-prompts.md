@@ -7,12 +7,12 @@ Birthday contracts and business behavior are outside this change.
 | Endpoint | Responsibility | Instruction owner |
 | --- | --- | --- |
 | `POST /v1/journal/organization` | Tags and book recommendations | Published Journal organize policy |
-| `POST /v1/journal/illustration-suggestions` | Optional scene grounded in body text | Published Journal illustration suggestion policy |
+| `POST /v1/journal/post-organization` | Optional title and scene from the completed manuscript | Published Journal title and illustration suggestion policies |
 | `POST /v1/journal/illustrations` | Image job from a confirmed brief | Published Journal illustration generation policy |
 | Journal voice session API | Existing voice workflow | Existing Journal voice policy and schemas |
 
 Organization no longer includes an illustration switch or illustration result.
-The scene endpoint has no books, caller instructions or model selector. Internally
+The post-organization endpoint has no books, caller instructions or model selector. Internally
 the two text operations reuse authentication, consent, entitlement, quota and usage
 enforcement under the existing Journal organize accounting budget; this is not a
 public generic AI endpoint. Voice behavior and protocol version are unchanged.
@@ -46,3 +46,25 @@ checks. No new policy was published during this refactor.
 
 Evidence is retained outside source control in
 `~/Documents/JournalAppAcceptance/server-prompts-20261013/`.
+
+## Post-organization hook
+
+`POST /v1/journal/post-organization` receives the completed manuscript and explicit
+`generateTitle` / `illustrationSuggestionsEnabled` switches. One bounded model
+request returns the typed `title` and `illustrationSuggestion` result. It does not
+rewrite prose, extract tags or recommend books. Intermediate voice cleanup does
+not invoke this hook. The route shares Journal analysis authentication, consent,
+subscription, quota, cost controls and frozen model configuration.
+
+The title policy is editable as `journal.entryTitlePrompt` on the existing
+organization configuration page. It permits extraction, light editing, concrete
+summary and grounded abstract titles. Authored voice, factual uncertainty and one
+clear focus take priority over ornament. Clients protect manual titles, including
+explicitly cleared titles, and reject stale manuscripts before applying metadata.
+
+Research: [Day One title suggestions](https://dayoneapp.com/guides/labs/ai-entry-title-suggestions/)
+and [UCI Writing Center title approaches](https://bpb-us-w2.wpmucdn.com/wp.ovptl.uci.edu/dist/6/48/files/2024/04/Writing-strong-titles-handout-a45a872d46b82050.pdf).
+These support content-based, genre-sensitive titles; the automatic single-title
+behavior and conservative overwrite rules are Journal product choices.
+
+Title-producing post-organization requests use the configured Pro model in one call; scene-only requests keep the ordinary bounded analysis routing.

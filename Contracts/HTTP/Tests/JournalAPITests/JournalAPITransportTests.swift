@@ -88,8 +88,8 @@ struct JournalAPITransportTests {
         #expect(body["prompt"] == nil && body["instructions"] == nil && body["model"] == nil)
     }
 
-    @Test("scene suggestion has its own route and no book context")
-    func illustrationSuggestionRequestIsSeparate() async throws {
+    @Test("post-organization combines requested metadata without book context")
+    func postOrganizationRequestCombinesDerivedMetadata() async throws {
         let id = UUID().uuidString.lowercased()
         let hash = String(repeating: "a", count: 64)
         let recorder = RequestRecorder()
@@ -98,12 +98,12 @@ struct JournalAPITransportTests {
             return .init(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")],
                 body: .data(Data(#"{"requestID":"\#(id)","contentHash":"\#(hash)","analysisVersion":"test","quota":{"dailyTokensRemaining":1,"monthlyTokensRemaining":1,"available":true}}"#.utf8)))
         })
-        _ = try await client.suggestJournalIllustration(headers: .init(xTellyouwhatRequestID: id),
-            body: .json(.init(requestID: id, contentHash: hash, title: "河边", body: "小狗在河边散步。")))
+        _ = try await client.postOrganizeJournal(headers: .init(xTellyouwhatRequestID: id),
+            body: .json(.init(requestID: id, contentHash: hash, title: "河边", body: "小狗在河边散步。", generateTitle: true, illustrationSuggestionsEnabled: true)))
         let request = try #require(await recorder.request)
         let body = try #require(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
-        #expect(request.path == "/v1/journal/illustration-suggestions")
-        #expect(Set(body.keys) == ["requestID", "contentHash", "title", "body"])
+        #expect(request.path == "/v1/journal/post-organization")
+        #expect(Set(body.keys) == ["requestID", "contentHash", "title", "body", "generateTitle", "illustrationSuggestionsEnabled"])
     }
 
     @Test("generated activation request has no compatibility body")

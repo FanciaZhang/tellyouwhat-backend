@@ -42,28 +42,35 @@ func (server *Server) OrganizeJournal(ctx context.Context, request journalhttpap
 	return journalhttpapi.OrganizeJournal200JSONResponse(output), nil
 }
 
-func (server *Server) SuggestJournalIllustration(ctx context.Context, request journalhttpapi.SuggestJournalIllustrationRequestObject) (journalhttpapi.SuggestJournalIllustrationResponseObject, error) {
+func (server *Server) PostOrganizeJournal(ctx context.Context, request journalhttpapi.PostOrganizeJournalRequestObject) (journalhttpapi.PostOrganizeJournalResponseObject, error) {
 	id := request.Params.XTellyouwhatRequestID
-	input := journalcontracts.OrganizeRequest{ContractVersion: journalcontracts.ContractVersion, IllustrationSuggestionsEnabled: true}
+	input := journalcontracts.OrganizeRequest{ContractVersion: journalcontracts.ContractVersion, PostOrganization: true}
 	if request.Body != nil {
 		input.RequestID = request.Body.RequestID.String()
 		input.ContentHash = request.Body.ContentHash
 		input.Title = request.Body.Title
 		input.Body = request.Body.Body
+		input.GenerateTitle = request.Body.GenerateTitle
+		input.IllustrationSuggestionsEnabled = request.Body.IllustrationSuggestionsEnabled
 	}
-	if input.RequestID != id.String() || input.Validate() != nil {
-		failure := newAPIFailure(422, "contract_violation", "invalid illustration suggestion material", id.String())
-		return journalhttpapi.SuggestJournalIllustrationdefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	if input.RequestID != id.String() || input.Validate() != nil || (!input.GenerateTitle && !input.IllustrationSuggestionsEnabled) {
+		f := newAPIFailure(422, "contract_violation", "invalid post-organization material", id.String())
+		return journalhttpapi.PostOrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(f), StatusCode: f.status}, nil
 	}
-	response, failure := server.executeJournalAnalysis(ctx, input, id)
-	if failure != nil {
-		return journalhttpapi.SuggestJournalIllustrationdefaultJSONResponse{Body: journalErrorResponse(failure), StatusCode: failure.status}, nil
+	response, f := server.executeJournalAnalysis(ctx, input, id)
+	if f != nil {
+		return journalhttpapi.PostOrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(f), StatusCode: f.status}, nil
 	}
-	output := journalhttpapi.IllustrationSuggestionResponse{RequestID: id, ContentHash: response.ContentHash, AnalysisVersion: response.AnalysisVersion, Quota: journalhttpapi.OrganizeQuota{DailyTokensRemaining: response.Quota.DailyTokensRemaining, MonthlyTokensRemaining: response.Quota.MonthlyTokensRemaining, Available: response.Quota.Available}}
+	if response.SuggestedTitle != nil && (!input.GenerateTitle || !journalcontracts.ValidEntryTitle(*response.SuggestedTitle)) ||
+		!input.IllustrationSuggestionsEnabled && response.IllustrationSuggestion != nil {
+		f := newAPIFailure(502, "invalid_model_result", "invalid post-organization result", id.String())
+		return journalhttpapi.PostOrganizeJournaldefaultJSONResponse{Body: journalErrorResponse(f), StatusCode: f.status}, nil
+	}
+	output := journalhttpapi.PostOrganizeJournal200JSONResponse{RequestID: id, ContentHash: response.ContentHash, Title: response.SuggestedTitle, AnalysisVersion: response.AnalysisVersion, Quota: journalhttpapi.OrganizeQuota{DailyTokensRemaining: response.Quota.DailyTokensRemaining, MonthlyTokensRemaining: response.Quota.MonthlyTokensRemaining, Available: response.Quota.Available}}
 	if scene := response.IllustrationSuggestion; scene.Valid() {
-		output.Suggestion = &journalhttpapi.IllustrationSuggestion{Summary: scene.Summary, Subject: scene.Subject, Setting: scene.Setting, Composition: scene.Composition, Style: scene.Style, SourceQuotes: scene.SourceQuotes, Reason: scene.Reason}
+		output.IllustrationSuggestion = &journalhttpapi.IllustrationSuggestion{Summary: scene.Summary, Subject: scene.Subject, Setting: scene.Setting, Composition: scene.Composition, Style: scene.Style, SourceQuotes: scene.SourceQuotes, Reason: scene.Reason}
 	}
-	return journalhttpapi.SuggestJournalIllustration200JSONResponse(output), nil
+	return output, nil
 }
 
 // Share authentication, entitlement, consent and quota enforcement, not a public
@@ -161,6 +168,7 @@ func (server *Server) executeJournalAnalysis(ctx context.Context, input journalc
 		Tags:                        result.Value.Tags,
 		ExistingBookRecommendations: result.Value.ExistingBookRecommendations,
 		NewBookSuggestions:          result.Value.NewBookSuggestions,
+		SuggestedTitle:              result.Value.SuggestedTitle,
 		IllustrationSuggestion:      result.Value.IllustrationSuggestion,
 		Quota: journalcontracts.Quota{
 			DailyTokensRemaining:   max(0, snapshot.DailyLimit-snapshot.DailyUsed),
