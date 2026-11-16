@@ -1222,6 +1222,57 @@ with dev.test_operations_transition(r,revision):pass
         with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
             plan(self.old_folder, self.folder)
 
+    def test_registered_consent_history_accepts_only_reviewed_revisions(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        names = ('0067_journal_illustration_consent_scope.sql', '0070_journal_read_aloud_consent.sql')
+        guardian = '0072_health_guardian_consent_scope.sql'
+        fixtures = Path(__file__).resolve().parent / 'testdata/registered-recovery-schema'
+        current = Path(__file__).resolve().parents[2] / 'migrations'
+
+        def write(folder, values):
+            with tarfile.open(folder / 'source.tar', 'w') as archive:
+                for name, data in values.items():
+                    item = tarfile.TarInfo('migrations/' + name)
+                    item.size = len(data)
+                    archive.addfile(item, io.BytesIO(data))
+
+        old = {name: (fixtures / name).read_bytes() for name in names}
+        new = {name: (current / name).read_bytes() for name in names}
+        old[guardian] = new[guardian] = (current / guardian).read_bytes()
+        write(self.old_folder, old)
+        write(self.folder, new)
+        self.assertEqual(plan(self.old_folder, self.folder), (sorted(old), sorted(new)))
+
+        for name in names:
+            with self.subTest(unreviewed=name):
+                write(self.folder, {**new, name: new[name] + b'-- unreviewed'})
+                with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+                    plan(self.old_folder, self.folder)
+                write(self.old_folder, {**old, name: old[name] + b'-- unreviewed'})
+                write(self.folder, new)
+                with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+                    plan(self.old_folder, self.folder)
+                write(self.old_folder, old)
+        write(self.old_folder, new)
+        write(self.folder, old)
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+        write(self.old_folder, {name: data for name, data in old.items() if name != guardian})
+        write(self.folder, {name: data for name, data in new.items() if name != guardian})
+        with self.assertRaisesRegex(OperationError, 'unreviewed database schemas'):
+            plan(self.old_folder, self.folder)
+
+    def test_new_consent_migrations_accept_the_reviewed_current_sql(self):
+        from platform_test_schema import plan
+        self.prepare_update()
+        for name in ('0067_journal_illustration_consent_scope.sql', '0070_journal_read_aloud_consent.sql'):
+            with self.subTest(name=name):
+                self.write_archive()
+                current = Path(__file__).resolve().parents[2] / 'migrations' / name
+                self.add_illustration_migration(current.read_bytes(), name=name)
+                self.assertEqual(plan(self.old_folder, self.folder)[1], ['0001_example.sql', name])
+
     def test_voice_recording_upgrade_requires_exact_reviewed_sql(self):
         from platform_test_schema import plan
         self.prepare_update()

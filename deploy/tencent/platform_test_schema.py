@@ -33,6 +33,16 @@ ADDITIONS = {'migrations/0085_prompt_voice_debug_samples.sql': '5792d54a5ce8ef99
              'migrations/0082_album_retention_cleanup_schedule.sql': '7a62b38df7e4bc94e0dd67aa08bbd6714d34931546f1e9c30f5c4f6ad1e71eb1',
              'migrations/0083_album_record_erasure_schedule.sql': '536b576e4c0fc94c387aa288a0c550cee86068a3d1f39e552ad2c7f77326ecb1'}
 
+# These revisions preserve the later, already-applied guardian and Journal scopes on replay.
+CONSENT_REVISIONS = {
+    'migrations/0067_journal_illustration_consent_scope.sql': (
+        '8e1ba4642191b15c8a5efe7891e6c445679ff38d9b49799bfce613baafff22cf',
+        '8e3c69abe8d8d93be346f10fb4b1baeec2c532a20f7e2aef467631553e4db7c1'),
+    'migrations/0070_journal_read_aloud_consent.sql': (
+        '4b26bac5e6ef50e28c2284c888e077fb2fe7bff3ccef358daef4fd3a4e2e0a95',
+        '6b99f5815d58d2817d663789f7157e2a52a86004c81141d7ccd34e2c0c19ab53'),
+}
+
 
 def hashes(folder):
     with tarfile.open(folder / 'source.tar') as archive:
@@ -45,8 +55,12 @@ def hashes(folder):
 def plan(before, after):
     old, new = hashes(before), hashes(after)
     additions = {k: v for k, v in new.items() if k not in old}
-    if (not old or any(new.get(k) != v for k, v in old.items())
-            or any(ADDITIONS.get(k) != v or (k <= max(old) and k != 'migrations/0066_privacy_consent_scopes.sql')
+    revisions = {k: (v, new.get(k)) for k, v in old.items() if new.get(k) != v}
+    guardian = 'migrations/0072_health_guardian_consent_scope.sql'
+    if (not old or any(CONSENT_REVISIONS.get(k) != v for k, v in revisions.items())
+            or (revisions and old.get(guardian) != ADDITIONS[guardian])
+            or any(v not in (ADDITIONS.get(k), CONSENT_REVISIONS.get(k, (None, None))[1])
+                   or (k <= max(old) and k != 'migrations/0066_privacy_consent_scopes.sql')
                    for k, v in additions.items())):
         raise OperationError('unreviewed database schemas cannot be migrated or rolled back')
     return sorted(Path(k).name for k in old), sorted(Path(k).name for k in new)
