@@ -2,6 +2,8 @@
 
 Only Health has published users and requires backward-compatible App/API upgrades. Albums, Journal and Birthday migrate directly to the target environment and contract; do not add adapters or keep old test routes solely for earlier development builds. This does not authorize deleting existing data, backups or uncommitted source.
 
+For shared-backend delivery, follow `~/.codex/skills/tellyouwhat-app-architecture/references/delivery.md`. When an authorized release does not specify an environment, deliver and verify the same target source in both platform test and production; an explicitly limited request takes precedence. Check each environment's actual active version, enabled routes, backup and cleanup independently: production CI or a green test suite does not deploy or verify platform test. Report any environment still pending or blocked.
+
 For `/opt/tellyouwhat` on the shared production host, the producer owns cleanup of its disposable artifacts. Do not deploy through an unregistered ad hoc Docker/SSH command.
 
 Run artifact registration and its deployment wrapper as the owner of `/opt/tellyouwhat/backend` (`ubuntu` on the current host). Do not run them through `sudo root`: private registration files must remain readable by scheduled operations. Restrict any required sudo use to the individual privileged action inside the producer.
