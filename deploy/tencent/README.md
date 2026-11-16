@@ -63,6 +63,7 @@ Secrets:
 
 Journal 云端朗读由 `JOURNAL_TTS_ENABLED=true` 启用，并明确配置每订阅周期的
 `JOURNAL_TTS_MONTHLY_CHARACTERS` 和每日试听的 `JOURNAL_TTS_PREVIEW_DAILY_CHARACTERS`。
+production Environment 可用同名变量 `JOURNAL_TTS_MONTHLY_CHARACTERS` 覆盖受保护环境文件中的每周期额度；留空时沿用环境文件。配置变更在下次正式发布后生效，已用额度不重置。
 音色管理另需 `JOURNAL_TTS_WRITES_ENABLED=true`，真实验证受
 `JOURNAL_TTS_PROBE_DAILY_CHARACTERS` 和已有项目费用保护共同限制。
 部署器将受保护 Secret 写为 `.journal-read-aloud/<版本>.txt`，所有者为 UID 65532、权限 0600，
