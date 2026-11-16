@@ -214,9 +214,13 @@ func (m ModelResult) Validate(r Request) error {
 	for _, e := range r.Evidence {
 		sources[e.ID] = true
 	}
+	proposalIDs := map[string]bool{}
+	for _, p := range m.Proposals {
+		proposalIDs[p.ID] = true
+	}
 	proposals := map[string]bool{}
 	for _, p := range m.Proposals {
-		if p.ID == "" || proposals[p.ID] || p.Title == "" || p.Reason == "" || p.Tradeoff == "" || p.Alternative == "" || p.BudgetNote == "" || len(p.Actions) < 1 || len(p.Actions) > 5 || len(p.Preparations) > 5 {
+		if p.ID == "" || proposals[p.ID] || p.Title == "" || p.Reason == "" || p.Tradeoff == "" || p.Alternative == "" || proposalIDs[strings.TrimSpace(p.Alternative)] || p.BudgetNote == "" || len(p.Actions) < 1 || len(p.Actions) > 5 || len(p.Preparations) > 5 {
 			return ErrInvalid
 		}
 		proposals[p.ID] = true

@@ -136,3 +136,18 @@ func TestProviderUsesServerPromptAndValidatesActualHTTPOutput(t *testing.T) {
 		t.Fatalf("provider roundtrip: %v", err)
 	}
 }
+
+func TestAlternativeCannotBeAnInternalProposalReference(t *testing.T) {
+	r, m := sampleRequest(), sampleResult()
+	second := m.Proposals[0]
+	second.ID = "p2"
+	m.Proposals = append(m.Proposals, second)
+	m.Proposals[0].Alternative = " p2 "
+	if m.Validate(r) == nil {
+		t.Fatal("internal proposal reference shown as user-facing alternative")
+	}
+	m.Proposals[0].Alternative = "若不便通话，可发一段语音祝福"
+	if m.Validate(r) != nil {
+		t.Fatal("readable alternative rejected")
+	}
+}
