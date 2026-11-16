@@ -269,19 +269,33 @@ func TestRecordingRetryFindsLateAcceptedTaskWithoutNewSubmission(t *testing.T) {
 
 func TestRecordingAcknowledgedTaskMissingIsNotResubmitted(t *testing.T) {
 	e, job := recordingExecutorFixture(t, 1)
+	submits, queries := 0, 0
 	e.Provider = recordingProviderStub{
-		submit: func(context.Context, string, string) error { return nil },
+		submit: func(context.Context, string, string) error { submits++; return nil },
 		query: func(context.Context, string, int) (RecordingAnalysis, error) {
+			queries++
 			return RecordingAnalysis{}, ErrRecordingTaskMissing
 		},
 	}
 	job, _ = e.Process(context.Background(), "owner", job.ID)
+	if _, err := e.Process(context.Background(), "owner", job.ID); !errors.Is(err, ErrRecordingTaskMissing) {
+		t.Fatal("must allow propagation before declaring task lost", err)
+	}
 	e.Store.now = func() time.Time { return job.UpdatedAt.Add(time.Hour) }
 	got, err := e.Process(context.Background(), "owner", job.ID)
-	if !errors.Is(err, ErrRecordingTaskMissing) || got.State != RecordingProcessing {
+	if err != nil || got.State != RecordingFailed || got.ErrorCode != "analysis_task_missing" || got.ProviderTaskID != job.ProviderTaskID {
 		t.Fatal(got, err)
 	}
 	if _, err = e.Retry(context.Background(), "owner", job.ID, got.Revision); !errors.Is(err, ErrInvalid) {
 		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		current, err := e.Process(context.Background(), "owner", job.ID)
+		if err != nil || current.State != RecordingFailed {
+			t.Fatal(current, err)
+		}
+	}
+	if submits != 1 || queries != 2 {
+		t.Fatal("terminal task must not be resubmitted or polled", submits, queries)
 	}
 }
