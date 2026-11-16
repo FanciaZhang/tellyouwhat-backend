@@ -32,9 +32,21 @@ func RunIsolatedTest(ctx context.Context, database *sql.DB) error {
 	return run(ctx, database, fmt.Sprintf("tellyouwhat_test_migrations_%x", digest[:16]), false)
 }
 
-// RunAlbumDevelopmentProducts applies only the reviewed Albums development updates.
-func RunAlbumDevelopmentProducts(ctx context.Context, database *sql.DB) error {
+// RunAlbumDevelopmentMetadata applies only the reviewed Albums development extensions.
+func RunAlbumDevelopmentMetadata(ctx context.Context, database *sql.DB) error {
 	return run(ctx, database, migrationLockName, true)
+}
+
+func albumDevelopmentMigration(name string) bool {
+	switch name {
+	case "0073_album_development_subscription_products.sql", "0074_album_system_copy_locators.sql",
+		"0075_album_content_corrections.sql", "0076_album_asset_favorites.sql",
+		"0077_album_collections.sql", "0078_album_asset_deletion_ledger.sql", "0080_album_photo_multipart.sql",
+		"0081_album_photo_completion_fence.sql", "0082_album_retention_cleanup_schedule.sql", "0083_album_record_erasure_schedule.sql":
+		return true
+	default:
+		return false
+	}
 }
 
 func run(ctx context.Context, database *sql.DB, lockName string, albumProductsOnly bool) error {
@@ -112,7 +124,7 @@ func run(ctx context.Context, database *sql.DB, lockName string, albumProductsOn
 			continue
 		}
 		name := entry.Name()
-		if albumProductsOnly && name != "0073_album_development_subscription_products.sql" && name != "0074_album_system_copy_locators.sql" {
+		if albumProductsOnly && !albumDevelopmentMigration(name) {
 			continue
 		}
 		if applied[name] {

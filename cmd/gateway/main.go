@@ -186,13 +186,21 @@ func run(logger *slog.Logger) error {
 				return err
 			}
 			startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+			var albumRegistryRows int
+			if queryErr := shared.database.QueryRowContext(startup, `SELECT COUNT(*) FROM apps WHERE app_id='albums'`).Scan(&albumRegistryRows); queryErr != nil || albumRegistryRows != 1 {
+				cancel()
+				return errors.New("album App Attest requires the shared platform registry migration")
+			}
 			albumGateway, err = albums.NewGateway(startup, albumConfig, nil)
 			cancel()
 			if err != nil {
 				return fmt.Errorf("build app albums: %w", err)
 			}
 			defer albumGateway.Close()
-			routers[appregistry.Albums] = albumGateway
+			nonces := redisstore.NewNonceStore(shared.redis, "albums")
+			keys := mysqlstore.NewKeyRepository(shared.database, "albums")
+			routers[appregistry.Albums] = newAlbumAttestedHandler(appConfig, nonces, keys, attestationRoots,
+				shared.readiness, albumGateway, albumGateway.GuardAttestationBootstrap)
 			continue
 		}
 		storage := storageForApp(platform, shared, appConfig)

@@ -342,7 +342,7 @@ func TestMySQLRetentionDispatchRuntimeUsesAPNSAdapter(t *testing.T) {
 	}
 	sender.now = func() time.Time { return f.clock }
 	f.d.sender = sender
-	gateway := &Gateway{}
+	gateway := &Gateway{db: f.d.repository.db}
 	gateway.startRetentionDispatch(context.Background(), f.d)
 	t.Cleanup(func() { gateway.BeginDrain(); gateway.subscriptionWorkers.Wait() })
 	select {

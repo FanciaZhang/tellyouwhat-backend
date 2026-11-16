@@ -52,9 +52,8 @@ func validSystemCopyKind(kind string, media AssetKind) bool {
 
 // Serialize with trash, retention, quarantine and account deletion. Mapping sync
 // remains available during the export period without requiring an active plan.
-func (r *MySQLUploads) systemCopyTransaction(ctx context.Context, owner, version string, now time.Time,
-	action func(*sql.Tx, AssetVersion) error) error {
-	if !validOwner(owner) || !validOwner(version) || now.IsZero() {
+func (r *MySQLUploads) readableAccountTransaction(ctx context.Context, owner string, now time.Time, action func(*sql.Tx) error) error {
+	if !validOwner(owner) || now.IsZero() {
 		return ErrInvalidManifest
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -71,25 +70,34 @@ func (r *MySQLUploads) systemCopyTransaction(ctx context.Context, owner, version
 	} else if _, err = lockAccount(ctx, tx, owner); err != nil {
 		return err
 	}
-	if err = requireVisibleVersion(ctx, tx, owner, version); err != nil {
-		return err
-	}
-	v, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, owner, version))
-	if err != nil {
-		return err
-	}
-	if err = validateReadableVersion(v, owner, version); err != nil {
-		return err
-	}
-	if err = action(tx, v); err != nil {
+	if err = action(tx); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
+func (r *MySQLUploads) readableVersionTransaction(ctx context.Context, owner, version string, now time.Time, action func(*sql.Tx, AssetVersion) error) error {
+	if !validOwner(version) {
+		return ErrInvalidManifest
+	}
+	return r.readableAccountTransaction(ctx, owner, now, func(tx *sql.Tx) error {
+		if err := requireVisibleVersion(ctx, tx, owner, version); err != nil {
+			return err
+		}
+		v, err := scanAssetVersion(tx.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM album_asset_versions WHERE owner_id=? AND version_id=?`, owner, version))
+		if err != nil {
+			return err
+		}
+		if err = validateReadableVersion(v, owner, version); err != nil {
+			return err
+		}
+		return action(tx, v)
+	})
+}
+
 func (r *MySQLUploads) SystemCopies(ctx context.Context, owner, version string, now time.Time) (SystemCopyList, error) {
 	result := SystemCopyList{VersionID: version, Copies: []SystemCopy{}}
-	err := r.systemCopyTransaction(ctx, owner, version, now, func(tx *sql.Tx, v AssetVersion) error {
+	err := r.readableVersionTransaction(ctx, owner, version, now, func(tx *sql.Tx, v AssetVersion) error {
 		result.ManifestDigest = v.ManifestDigest
 		rows, err := tx.QueryContext(ctx, `SELECT locator_id,copy_kind,cloud_identifier FROM album_system_copy_locators WHERE owner_id=? AND version_id=? ORDER BY locator_id LIMIT 33`, owner, version)
 		if err != nil {
@@ -116,7 +124,7 @@ func (r *MySQLUploads) RememberSystemCopy(ctx context.Context, owner, version st
 	if !validSystemCloudIdentifier(input.SystemCloudIdentifier) || !validSHA256(input.ManifestDigest) || input.ManifestDigest != strings.ToLower(input.ManifestDigest) {
 		return SystemCopy{}, ErrInvalidManifest
 	}
-	err := r.systemCopyTransaction(ctx, owner, version, now, func(tx *sql.Tx, v AssetVersion) error {
+	err := r.readableVersionTransaction(ctx, owner, version, now, func(tx *sql.Tx, v AssetVersion) error {
 		if input.ManifestDigest != v.ManifestDigest {
 			return ErrConflict
 		}
@@ -150,7 +158,7 @@ func (r *MySQLUploads) ForgetSystemCopy(ctx context.Context, owner, version, loc
 	if !validSHA256(locator) || locator != strings.ToLower(locator) {
 		return ErrInvalidManifest
 	}
-	return r.systemCopyTransaction(ctx, owner, version, now, func(tx *sql.Tx, _ AssetVersion) error {
+	return r.readableVersionTransaction(ctx, owner, version, now, func(tx *sql.Tx, _ AssetVersion) error {
 		_, err := tx.ExecContext(ctx, `DELETE FROM album_system_copy_locators WHERE owner_id=? AND version_id=? AND locator_id=?`, owner, version, locator)
 		return err
 	})

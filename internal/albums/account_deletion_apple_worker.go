@@ -18,7 +18,7 @@ func (g *Gateway) startAppleDeletion(parent context.Context, accounts *MySQLAcco
 	go func() {
 		defer g.subscriptionWorkers.Done()
 		for ctx.Err() == nil {
-			if !runGatewayBatch(ctx, func() {
+			if !g.runBackgroundBatch(ctx, func() {
 				batch, err := accounts.runAppleDeletionBatch(ctx, exchanger.revokeRefreshCredential, batchSize, time.Now)
 				if ctx.Err() != nil {
 					return

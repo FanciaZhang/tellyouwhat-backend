@@ -268,13 +268,13 @@ func (r *MySQLUploads) activeShare(ctx context.Context, id string, digest [32]by
 	}
 	return row, tx.Commit()
 }
-func (r *MySQLUploads) claimShare(ctx context.Context, snapshot shareRow, digest [32]byte, candidate shareClaimRow, now time.Time) (shareClaimRow, error) {
+func (r *MySQLUploads) claimShare(ctx context.Context, snapshot shareRow, digest [32]byte, candidate shareClaimRow, clock func() time.Time) (shareClaimRow, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return shareClaimRow{}, err
 	}
 	defer tx.Rollback()
-	until, err := r.shareRetentionInTransaction(ctx, tx, snapshot.Owner, now)
+	until, err := r.shareRetentionInTransaction(ctx, tx, snapshot.Owner, candidate.Created)
 	if err != nil {
 		return shareClaimRow{}, err
 	}
@@ -282,7 +282,8 @@ func (r *MySQLUploads) claimShare(ctx context.Context, snapshot shareRow, digest
 	if err != nil {
 		return shareClaimRow{}, err
 	}
-	row, err = validateActiveShare(row, digest, now, until)
+	// Time spent waiting for the account and link locks counts against the link lifetime.
+	row, err = validateActiveShare(row, digest, clock().UTC(), until)
 	if err != nil {
 		return shareClaimRow{}, err
 	}
@@ -290,6 +291,10 @@ func (r *MySQLUploads) claimShare(ctx context.Context, snapshot shareRow, digest
 		return shareClaimRow{}, ErrShareNotAvailable
 	}
 	previous, err := scanShareClaim(tx.QueryRowContext(ctx, `SELECT `+shareClaimColumns+` FROM album_share_claims WHERE share_id=? AND request_id=? FOR UPDATE`, row.ID, candidate.Request))
+	now := clock().UTC()
+	if !now.Before(row.Expiry) {
+		return shareClaimRow{}, ErrShareNotAvailable
+	}
 	if err == nil {
 		if !now.Before(previous.Expiry) {
 			return shareClaimRow{}, ErrShareClaimExpired
@@ -303,16 +308,17 @@ func (r *MySQLUploads) claimShare(ctx context.Context, snapshot shareRow, digest
 	if row.Claims >= row.MaxClaims {
 		return shareClaimRow{}, ErrShareLimit
 	}
-	candidate.Expiry = minTime(candidate.Expiry, row.Expiry)
-	if !now.Before(candidate.Expiry) {
-		return shareClaimRow{}, ErrShareNotAvailable
-	}
+	candidate.Created = now.Truncate(time.Millisecond)
+	candidate.Expiry = minTime(candidate.Created.Add(shareClaimLifetime), row.Expiry)
 	_, err = tx.ExecContext(ctx, `INSERT INTO album_share_claims(claim_id,share_id,request_id,key_id,token_digest,created_at,expires_at) VALUES(?,?,?,?,?,?,?)`, candidate.ID, candidate.Share, candidate.Request, candidate.KeyID, candidate.TokenDigest[:], candidate.Created.UTC(), candidate.Expiry.UTC())
 	if err != nil {
 		return shareClaimRow{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE album_share_links SET claimed_count=claimed_count+1 WHERE share_id=?`, row.ID); err != nil {
 		return shareClaimRow{}, err
+	}
+	if !clock().UTC().Before(candidate.Expiry) {
+		return shareClaimRow{}, ErrShareNotAvailable
 	}
 	return candidate, tx.Commit()
 }
@@ -370,7 +376,7 @@ func (r *MySQLUploads) withShareClaim(ctx context.Context, id string, digest [32
 	if err := validateReadableVersion(version, row.Owner, row.Version); err != nil {
 		return ErrShareNotAvailable
 	}
-	if err := authorize(row, version, minTime(claim.Expiry, row.Expiry)); err != nil {
+	if err := authorize(row, version, claim.Expiry); err != nil {
 		return err
 	}
 	return tx.Commit()

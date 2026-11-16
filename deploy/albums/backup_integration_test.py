@@ -303,7 +303,7 @@ INSERT INTO album_object_purges(owner_id,asset_id,revision,trash_expires_at,targ
                     self.assertEqual(deletion_ledger.verify_checkpoint(runtime, runtime.backups / legacy_checkpoint['filename'], legacy_checkpoint['sha256'], 0)['assets'], legacy_rows)
                     before_result = backup.drill(runtime, binaries, before_corrections['filename'], runtime.backups / legacy_checkpoint['filename'], legacy_checkpoint['sha256'])
                     self.assertEqual(before_result['tables'], len(backup.PRE_CORRECTION_TABLES))
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0075_album_content_corrections.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0075_album_content_corrections.sql').read_bytes(), check=True, capture_output=True)
                     subprocess.run(sql, input=b"""
 INSERT INTO album_content_corrections(owner_id,version_id,revision,request_id,correction_json,updated_at)
 VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',1,
@@ -311,10 +311,10 @@ VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000
 """, check=True, capture_output=True)
                     correction_snapshot = backup.create(runtime, binaries)
                     self.assertEqual(backup.drill(runtime, binaries, correction_snapshot['filename'])['tables'], len(backup.PRE_FAVORITE_TABLES))
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0076_album_asset_favorites.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0076_album_asset_favorites.sql').read_bytes(), check=True, capture_output=True)
                     favorite_snapshot = backup.create(runtime, binaries)
                     self.assertEqual(backup.drill(runtime, binaries, favorite_snapshot['filename'])['tables'], len(backup.PRE_COLLECTION_TABLES))
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0077_album_collections.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0077_album_collections.sql').read_bytes(), check=True, capture_output=True)
                     subprocess.run(sql,input=b"""
 INSERT INTO album_collections(owner_id,collection_id,revision,request_id,name,deleted,updated_at)
 VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000020',1,'00000000-0000-0000-0000-000000000021','owned group',FALSE,UTC_TIMESTAMP(6)),
@@ -325,7 +325,7 @@ VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000
 """,check=True,capture_output=True)
                     before_asset_fences = backup.create(runtime, binaries)
                     self.assertEqual(backup.drill(runtime, binaries, before_asset_fences['filename'])['tables'], len(backup.PRE_ASSET_DELETION_TABLES))
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0078_album_asset_deletion_ledger.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0078_album_asset_deletion_ledger.sql').read_bytes(), check=True, capture_output=True)
                     self.assertEqual(asset_deletion_ledger.export(runtime, sql + ['--batch', '--skip-column-names'], {}), legacy_rows)
                     subprocess.run(sql, input=b"INSERT INTO schema_migrations(name) VALUES('0078_album_asset_deletion_ledger.sql');", check=True, capture_output=True)
                     # Independent fence survives even when its account and media rows are absent.
@@ -337,14 +337,14 @@ VALUES ('10000000-0000-4000-8000-000000000009','purged-backup-asset',3,'retentio
 INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,object_version,created_at,updated_at)
 VALUES ('00000000-0000-0000-0000-000000000030','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',REPEAT('b',64),'grid_jpeg_v1',1,REPEAT('f',64),1,1,'legacy-photo-version',UTC_TIMESTAMP(6),UTC_TIMESTAMP(6));
 """, check=True, capture_output=True)
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0080_album_photo_multipart.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0080_album_photo_multipart.sql').read_bytes(), check=True, capture_output=True)
                     subprocess.run(sql, input=b"""
 INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,created_at,updated_at,multipart,provider_upload_id)
 VALUES ('00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',REPEAT('b',64),'daily_jpeg_v1',2,REPEAT('e',64),1,1,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),TRUE,'known-photo-session');
 """, check=True, capture_output=True)
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0081_album_photo_completion_fence.sql').read_bytes(), check=True, capture_output=True)
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0082_album_retention_cleanup_schedule.sql').read_bytes(), check=True, capture_output=True)
-                    subprocess.run(sql, input=(Path(__file__).resolve().parents[1] / 'tencent/testdata/registered-recovery-schema/0083_album_record_erasure_schedule.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0081_album_photo_completion_fence.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0082_album_retention_cleanup_schedule.sql').read_bytes(), check=True, capture_output=True)
+                    subprocess.run(sql, input=(migrations / '0083_album_record_erasure_schedule.sql').read_bytes(), check=True, capture_output=True)
                     subprocess.run(sql, input=b"UPDATE album_storage_accounts SET retention_cleanup_after='2026-11-04',retention_cleanup_token='00000000-0000-4000-8000-000000000099',retention_cleanup_until='2026-11-05',retention_cleanup_cursor='unresolved-media' WHERE owner_id='00000000-0000-0000-0000-000000000001';", check=True, capture_output=True)
                     subprocess.run(sql, input=b"""
 INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,created_at,updated_at,multipart,provider_upload_id,multipart_phase,retirement_started_at,object_version)

@@ -74,7 +74,8 @@ def selection(runtime, source):
             raise OperationError('unsafe Albums production source archive')
         names = {m.name for m in members if m.isfile()}
         if not {'Dockerfile', 'go.mod', 'go.sum', 'cmd/albumworker/main.go', 'cmd/migrate/main.go',
-                'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py', 'compose.albums-production.yaml'} <= names:
+                'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py',
+                'deploy/albums/asset_deletion_ledger.py', 'compose.albums-production.yaml'} <= names:
             raise OperationError('Albums production source is incomplete')
         if archive.extractfile('compose.albums-production.yaml').read() != files['compose.albums-production.yaml']:
             raise OperationError('Albums Compose descriptor differs from its selected source')

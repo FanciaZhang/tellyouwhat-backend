@@ -20,6 +20,7 @@ import (
 // identity-cipher, or free-quota fallback. Secret files are server-only.
 type GatewayConfig struct {
 	TrashEnabled             bool
+	TrashErasureEnabled      bool
 	Worker                   WorkerConfig
 	Environment              string
 	APIHost                  string
@@ -131,6 +132,13 @@ func LoadGatewayConfig(getenv func(string) string) (GatewayConfig, error) {
 		c.TrashEnabled = true
 	default:
 		return GatewayConfig{}, errors.New("invalid ALBUM_TRASH_ENABLED")
+	}
+	switch strings.TrimSpace(getenv("ALBUM_TRASH_ERASURE_ENABLED")) {
+	case "", "false":
+	case "true":
+		c.TrashErasureEnabled = true
+	default:
+		return GatewayConfig{}, errors.New("invalid ALBUM_TRASH_ERASURE_ENABLED")
 	}
 	c.PushEnvironment = strings.TrimSpace(getenv("ALBUM_PUSH_ENVIRONMENT"))
 	if c.PushEnvironment != "" && c.PushEnvironment != "development" && c.PushEnvironment != "production" {

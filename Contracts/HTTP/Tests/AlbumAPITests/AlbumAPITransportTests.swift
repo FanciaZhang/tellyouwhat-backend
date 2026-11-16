@@ -4,6 +4,52 @@ import Testing
 
 @Suite("Album generated control API")
 struct AlbumAPITransportTests {
+    @Test("manual corrections preserve explicit reset, version binding and cursor without OCR")
+    func contentCorrections() async throws {
+        let recorder = AlbumRequestRecorder()
+        let body = try JSONSerialization.data(withJSONObject: ["versionID": Self.uploadID, "manifestDigest": String(repeating: "a", count: 64),
+            "revision": 1, "sequence": 7, "included": [String](), "excluded": [String](), "updatedAt": "2026-11-01T00:00:00Z"])
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            let data = URLComponents(string: request.path)?.path == "/v1/albums/content-corrections" ? Data((#"{"corrections":[],"nextSequence":7,"hasMore":false}"#).utf8) : body
+            return AlbumAPIHTTPResponse(statusCode: 200, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(data))
+        })
+        let saved = try await client.saveAlbumContentCorrection(path: .init(versionID: Self.uploadID), body: .json(.init(
+            requestID: Self.uploadID, expectedRevision: 0, manifestDigest: String(repeating: "a", count: 64), included: [], excluded: [])))
+        guard case .ok(let response) = saved else { Issue.record("Correction was not decoded"); return }
+        let value = try response.body.json
+        #expect(value.revision == 1 && value.sequence == 7 && value.included.isEmpty && value.excluded.isEmpty)
+        let write = try #require(await recorder.last)
+        #expect(write.method == "PUT" && write.path == "/v1/albums/library/versions/\(Self.uploadID)/content-correction")
+        let json = try #require(JSONSerialization.jsonObject(with: write.body) as? [String: Any])
+        #expect(Set(json.keys) == ["requestID", "expectedRevision", "manifestDigest", "included", "excluded"])
+        #expect(json["included"] as? [String] == [] && json["excluded"] as? [String] == [])
+        _ = try await client.getAlbumContentCorrection(path: .init(versionID: Self.uploadID))
+        let get = try #require(await recorder.last)
+        #expect(get.method == "GET" && get.body.isEmpty && get.path == write.path)
+        let page = try await client.listAlbumContentCorrections(query: .init(after: 7, limit: 1))
+        guard case .ok(let result) = page else { Issue.record("Correction feed was not decoded"); return }
+        #expect(try result.body.json.nextSequence == 7)
+        let request = try #require(await recorder.last)
+        let url = try #require(URLComponents(string: request.path))
+        #expect(request.body.isEmpty && url.path == "/v1/albums/content-corrections")
+        #expect(url.queryItems?.contains { $0.name == "after" && $0.value == "7" } == true)
+    }
+
+    @Test("correction conflicts do not become successful resets or automatic retries")
+    func contentCorrectionConflict() async throws {
+        let recorder = AlbumRequestRecorder()
+        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: AlbumAPITransport { request in
+            await recorder.record(request)
+            return AlbumAPIHTTPResponse(statusCode: 409, headers: [.init(name: "Content-Type", value: "application/json")], body: .data(Data(#"{"code":"upload_conflict"}"#.utf8)))
+        })
+        let response = try await client.saveAlbumContentCorrection(path: .init(versionID: Self.uploadID), body: .json(.init(
+            requestID: Self.uploadID, expectedRevision: 4, manifestDigest: String(repeating: "a", count: 64), included: [.dogs], excluded: [.cats])))
+        guard case .conflict(let value) = response else { Issue.record("Conflict lost"); return }
+        #expect(try value.body.json.code == "upload_conflict")
+        #expect(await recorder.count == 1)
+    }
+
     @Test("subscription response preserves purchase binding separately from media account identity")
     func subscriptionIdentity() async throws {
         let token = "c541c2c4-9a23-5f20-a493-a201b6123d90"
@@ -335,22 +381,6 @@ struct AlbumAPITransportTests {
         #expect(decoded.metadata?.location?.altitude == nil)
         let legacy = try JSONDecoder().decode(Components.Schemas.Manifest.self, from: Self.manifestJSON)
         #expect(legacy.resources[0].descriptor == nil)
-    }
-
-    @Test("generated grant path carries no owner or client proof")
-    func uploadGrant() async throws {
-        let recorder = AlbumRequestRecorder()
-        let transport = AlbumAPITransport { request in
-            await recorder.record(request)
-            return AlbumAPIHTTPResponse(statusCode: 200,
-                headers: [.init(name: "Content-Type", value: "application/json")],
-                body: .data(Data(#"{"grants":[{"resourceID":"photo","url":"https://storage.example/staging","headers":{"Content-Length":"23"},"expiresAt":"2026-10-11T02:00:00Z"}]}"#.utf8)))
-        }
-        let client = Client(serverURL: URL(string: "https://albums.example")!, transport: transport)
-        _ = try await client.authorizeAlbumUploadResources(path: .init(id: Self.uploadID))
-        let request = try #require(await recorder.last)
-        #expect(request.path == "/v1/albums/uploads/\(Self.uploadID)/grants")
-        #expect(request.body.isEmpty)
     }
 
     @Test("create serializes manifest without client authority fields")

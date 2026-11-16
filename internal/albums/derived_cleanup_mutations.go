@@ -99,6 +99,9 @@ func (r *MySQLUploads) StoreDerivedCleanupPlan(ctx context.Context, expected Der
 		if !cleanupPhotoMatches(c, p) || !p.RetiredAt.IsZero() {
 			return DerivedCleanup{}, ErrConflict
 		}
+		if p.Spec.Multipart && p.MultipartPhase == "ready" {
+			return DerivedCleanup{}, ErrDerivedPending
+		}
 		if c.KeepVersion != "" {
 			for _, object := range plan.Versions {
 				if object.VersionID == c.KeepVersion && object.SizeBytes != p.Spec.SizeBytes {
@@ -113,10 +116,14 @@ func (r *MySQLUploads) StoreDerivedCleanupPlan(ctx context.Context, expected Der
 					committed = true
 				}
 			}
-			if !committed {
+			if p.Spec.Multipart && p.MultipartPhase == "aborted" {
+				if p.RetirementStartedAt.IsZero() || committed {
+					return DerivedCleanup{}, ErrConflict
+				}
+			} else if !committed {
 				return DerivedCleanup{}, ErrConflict
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE album_photo_writes SET retirement_started_at=?,updated_at=? WHERE owner_id=? AND attempt_id=? AND object_version IS NULL`, now, now, c.OwnerID, c.ReferenceID); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE album_photo_writes SET retirement_started_at=COALESCE(retirement_started_at,?),updated_at=? WHERE owner_id=? AND attempt_id=? AND object_version IS NULL`, now, now, c.OwnerID, c.ReferenceID); err != nil {
 				return DerivedCleanup{}, err
 			}
 		}

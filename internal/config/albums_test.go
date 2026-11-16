@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/tellyouwhat/backend/internal/attestation"
 	"github.com/tellyouwhat/backend/internal/platform/appregistry"
 )
 
@@ -11,6 +12,7 @@ func TestFourAppConfigurationDoesNotLoadAlbumAPISecretsIntoWorker(t *testing.T) 
 	t.Setenv("ALBUM_APPLE_TEAM_ID", "ALBUMTEAM")
 	t.Setenv("ALBUM_APPLE_BUNDLE_ID", "")
 	t.Setenv("ALBUM_API_HOST", "")
+	t.Setenv("ALBUM_ALLOWED_APP_BUILDS", "9")
 	t.Setenv("ALBUM_APPLE_SIGN_IN_KEY_FILE", "/must-not-be-read-by-platform-config")
 	for _, environment := range []string{"development", "production"} {
 		t.Run(environment, func(t *testing.T) {
@@ -33,6 +35,14 @@ func TestFourAppConfigurationDoesNotLoadAlbumAPISecretsIntoWorker(t *testing.T) 
 			}
 			if err := album.Validate(environment); err != nil {
 				t.Fatal(err)
+			}
+			if album.AttestationEnvironment != attestation.EnvironmentProduction {
+				t.Fatal("album attestation environment must match distributed device builds")
+			}
+			bad := album
+			bad.AttestationEnvironment = attestation.EnvironmentDevelopment
+			if bad.Validate(environment) == nil {
+				t.Fatal("wrong attestation environment accepted")
 			}
 			if album.Registry.ManagedAIProductID != "" || len(album.ManagedAIProductIDs) != 0 || album.AppStore.PrivateKeyPath != "" {
 				t.Fatal("album received AI plans or signing material")

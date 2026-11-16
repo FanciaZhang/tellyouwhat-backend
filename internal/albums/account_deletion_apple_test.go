@@ -35,6 +35,64 @@ func assertAppleCredential(t *testing.T, f *pushFixture, g AccountLogin, retaine
 	}
 }
 
+func TestMySQLAppleDeletionStopsDuringRecoveryIsolation(t *testing.T) {
+	f := newPushFixture(t)
+	session, grant := f.login(t, "isolated", f.now)
+	deletion := acceptAppleDeletion(t, f, session.Token)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ref := appleDeletionJob{account: session.AccountID, request: deletion.RequestID, grant: grant.GrantID}
+	calls := 0
+	revoke := func(context.Context, string) error { calls++; return nil }
+	assertPending := func(attempts int, leased bool) {
+		t.Helper()
+		var gotAttempts int
+		var gotLease, acknowledged bool
+		if err := f.r.db.QueryRowContext(ctx, `SELECT attempts,lease_token IS NOT NULL,acknowledged_at IS NOT NULL FROM album_deletion_apple_jobs WHERE grant_id=?`, grant.GrantID).
+			Scan(&gotAttempts, &gotLease, &acknowledged); err != nil || gotAttempts != attempts || gotLease != leased || acknowledged {
+			t.Fatalf("pending job changed: attempts=%d leased=%t acknowledged=%t err=%v", gotAttempts, gotLease, acknowledged, err)
+		}
+		assertAppleCredential(t, f, grant, true)
+	}
+	changeState := func(statement string) {
+		t.Helper()
+		if _, err := f.r.db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, step := range []struct {
+		name, disable, restore string
+		want                   error
+	}{
+		{"quarantined", `UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6)`, `UPDATE album_recovery_state SET quarantined=FALSE,quarantined_at=NULL`, ErrRecoveryQuarantined},
+		{"missing row", `DELETE FROM album_recovery_state`, `INSERT INTO album_recovery_state(singleton_id,quarantined) VALUES(1,FALSE)`, sql.ErrNoRows},
+		{"missing table", `RENAME TABLE album_recovery_state TO album_hidden_recovery_state`, `RENAME TABLE album_hidden_recovery_state TO album_recovery_state`, nil},
+	} {
+		changeState(step.disable)
+		batch, err := f.accounts.runAppleDeletionBatch(ctx, revoke, 1, func() time.Time { return f.now })
+		if err == nil || step.want != nil && !errors.Is(err, step.want) || batch != (appleDeletionBatch{}) || calls != 0 {
+			t.Fatalf("%s admitted Apple revocation: batch=%+v calls=%d err=%v", step.name, batch, calls, err)
+		}
+		assertPending(0, false)
+		changeState(step.restore)
+	}
+	job, err := f.accounts.claimAppleDeletion(ctx, ref, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeState(`UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6)`)
+	if err := f.accounts.finishAppleDeletion(ctx, job, true, f.now.Add(time.Second)); !errors.Is(err, ErrRecoveryQuarantined) {
+		t.Fatal("already leased job acknowledged in quarantine", err)
+	}
+	assertPending(1, true)
+	changeState(`UPDATE album_recovery_state SET quarantined=FALSE,quarantined_at=NULL`)
+	batch, err := f.accounts.runAppleDeletionBatch(ctx, revoke, 1, func() time.Time { return f.now.Add(appleDeletionLease) })
+	if err != nil || batch.Acknowledged != 1 || calls != 1 {
+		t.Fatal("existing job did not resume after isolation", batch, calls, err)
+	}
+	assertAppleCredential(t, f, grant, false)
+}
+
 func TestMySQLAppleDeletionRetriesEveryGrantAndPreservesOtherAccount(t *testing.T) {
 	f := newPushFixture(t)
 	s, first := f.login(t, "delete", f.now)

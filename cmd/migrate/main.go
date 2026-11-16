@@ -12,7 +12,8 @@ import (
 )
 
 func main() {
-	albumProducts := flag.Bool("album-development-products", false, "apply only reviewed Albums development subscription and copy-locator updates")
+	// The flag name is stored in immutable registered Compose selections.
+	albumMetadata := flag.Bool("album-development-products", false, "apply only reviewed Albums development metadata migrations")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		log.Fatal("unexpected migration arguments")
@@ -29,8 +30,8 @@ func main() {
 	}
 	defer database.Close()
 	run := migrations.Run
-	if *albumProducts {
-		run = migrations.RunAlbumDevelopmentProducts
+	if *albumMetadata {
+		run = migrations.RunAlbumDevelopmentMetadata
 	}
 	if err := run(ctx, database); err != nil {
 		log.Fatal(err)

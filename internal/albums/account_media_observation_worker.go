@@ -30,7 +30,7 @@ func (w *AccountMediaObservationWorker) Check(ctx context.Context) error {
 		`SELECT d.media_quiesced_at,d.media_check_after,d.media_check_attempts,d.account_id,d.request_id,d.requested_at,s.deletion_requested_at FROM album_account_deletions d JOIN album_storage_accounts s ON s.owner_id=d.account_id LIMIT 0`,
 		`SELECT deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until,deletion_abort_id,deletion_aborted_at FROM album_multipart_intents LIMIT 0`,
 		`SELECT object_version,legacy,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_original_seals LIMIT 0`,
-		`SELECT deletion_object_version,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_photo_writes LIMIT 0`,
+		`SELECT deletion_object_version,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until,multipart_phase,provider_upload_id FROM album_photo_writes LIMIT 0`,
 		`SELECT account_id,request_id,job_id,acknowledged_at,available_at,lease_until,lease_token,attempts,provider_job_id,provider_succeeded FROM album_deletion_video_jobs LIMIT 0`,
 		`SELECT photo_copy_version,movie_copy_version,deletion_check_after,deletion_check_attempts,deletion_check_token,deletion_check_until FROM album_live_pairs LIMIT 0`,
 	} {

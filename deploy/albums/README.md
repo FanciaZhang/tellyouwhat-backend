@@ -114,6 +114,22 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 照片适配器的真实付费探针独立于普通测试：显式设置 `ALBUM_CI_PHOTO_PROBE=1` 和 `ALBUM_CI_PHOTO_DIRECTORY=<新建证据目录>`，运行 `go test -tags albums_live ./internal/albums -run '^TestLiveCOSPhotoAdapter$' -count=1 -v`。仅使用批准的本机测试凭据与固定开发桶，生成三类合成图并保存六个预览，不读取用户图库、不删除对象；写入结果未知时不自动重复 PUT。重复运行会增加对象和处理费用。处理响应可缺版本头，但固定版本请求及前后原件 HEAD 核对不可省略；最终验收记录见 `docs/evidence/albums-ci-photo-adapter-2026-10-13.json`。
 
+### 照片预览分片写入（2026-11-03，未部署）
+
+正常 worker 的照片预览、实况静态预览和视频封面改用同一分片流程。迁移 `0080` 保存写入方式和供应商会话 ID：先提交候选描述，首次初始化后提交会话 ID，才允许上传一个分片；合并前读取供应商分片清单，合并后按固定对象版本完整回读，核对 SHA-256、大小及尺寸，再原子结算额度。
+
+初始化回执丢失时只查找精确对象键的唯一会话，不再次初始化；上传或合并回执丢失时优先核对成品，再恢复原会话。缺失分片只接受与已记录候选完全一致的重新生成结果，沿用现有最多八次 worker 尝试。取消后可短暂保留已取得的会话观察，不能据此继续发送字节。未完成会话由持久任务持有，失败和重启不丢弃其记录或释放预留额度。旧普通 PUT 记录保持只读恢复，生产代码不再创建新的普通 PUT 预览。
+
+共享测试部署的专库迁移清单和迁移摘要已更新。升级先停止旧相册 worker，迁移后使用匹配的新版网关与 worker，禁止混跑旧预览写入程序；回退须另行验证协议，保留数据和会话记录。CAM 源码模板仅为 `albums/derivatives/*` 补充 `cos:UploadPart`，保留现有视频前缀；尚未绑定或验证实际云权限，部署前必须完成。此流程增加初始化、分片清单和合并请求；本地协议测试不能证明真实 COS、计费或性能。已完成真实本地 MySQL 的中断恢复、迁移重放、加密 SQL 备份恢复及受控 COS 协议检查；没有部署或实际云端写入。会话终止的真实云端行为、合并与终止竞态和最终备份擦除仍待验收，永久清理继续关闭。
+
+迁移 `0081` 补充合并/终止互斥证据。新任务从 `ready` 开始；SDK 在校验供应商分片后，必须先通过数据库进入 `completing` 才能发送合并请求。派生清理持有有效租约，并在相同账户锁下建立退休标记后，才可终止仍为 `ready` 的精确会话；确认 `NoSuchUpload` 后保存 `aborted`，完整版本清单没有意外对象才结算预留额度。终止回执丢失、租约过期或进程重开重试原会话；不能直接凭会话消失、对象 404 或超时结算。注销的写入停止检查可以消费这份已确认的终止证据；实际媒体清除仍走既有清单流程。
+
+旧分片记录迁为 `unknown`，保留字节、会话和对象版本，不伪造“从未合并”的证据。`unknown`、`completing` 只在取得已提交成品的正向证据后推进原有恢复/退休流程，空清单继续等待。普通 PUT 记录的恢复规则不变。本地真实 MySQL 并发、故障重试、注销和加密备份恢复已有定向覆盖；没有验证真实 COS 的终止/合并竞态，没有启用任何永久清理开关，也没有部署。升级需排空旧写入进程，不能混跑不记录合并阶段的 worker。
+
+真实分片门禁 `TestLiveCOSPhotoMultipartLifecycle` 仅使用现有开发桶及两份很小的合成 JPEG，不调用 CI、Apple 或业务订阅接口。需要同时显式设置 `ALBUM_CI_LIVE_PROBE=1`、`ALBUM_COS_COMPLETION_CLEANUP_PROBE=1`，并将 `ALBUM_CI_LIVE_DIRECTORY` 指向新的私有目录；使用 `go test -tags albums_live ./internal/albums -run '^TestLiveCOSPhotoMultipartLifecycle$' -count=1`。目录独占锁及持久意图防止同目录重跑，首个失败后停止后续场景。恢复已有意图改用 `ALBUM_COS_COMPLETION_RECOVER=1` 和 `^TestLiveCOSPhotoMultipartProbeRecovery$`，不再初始化或上传；它仅核对、终止本轮精确会话和清理已验证的合成版本。可能发出过合并请求时必须取得正向成品凭据，不能凭空清单删除状态记录。
+
+2026-11-03 实测：现有后端身份初始化返回 200，向 `albums/derivatives/` 上传分片返回 **403 AccessDenied**，因此新 worker 尚不具备部署条件。初轮探针清理复查混用了身份，已改用后端身份做终止及读取，清理身份仍仅负责版本清单与精确删除；定向测试覆盖身份分工。独立进程恢复取得真实 `404 NoSuchUpload`，随后核对本轮精确键的会话、对象版本均为空，无成品版本删除。原失败日志保留，不将正常上传门禁记为通过。CAM 模板中的 `UploadPart` 派生前缀尚待控制台核对、绑定与验收；在此之前不重跑正常写入探针、不部署新 worker，不扩大清理身份权限。
+
 实况真实探针位于 `internal/albums/cos_live_roundtrip_test.go`，同样仅在 `albums_live` 与 `ALBUM_CI_LIVE_PROBE=1` 下执行。`ALBUM_CI_LIVE_DIRECTORY` 指向 Xcode 管理运行目录内的合成素材目录：先用 App 的 `testPrepareRealCILiveSource` 生成配对原件，再单独运行 `TestLiveCOSLiveComponents`，随后由 `testAssembleRealCIComponents` 重建配对，最后单独运行 `TestLiveCOSLivePair` 并由 `testRealCanonicalCIPairSystemSaveAndRecovery` 验证系统保存。每次 Go 测试使用精确 `^名称$`，不要一次运行所有阶段；原生阶段显式设置 `ALBUMS_PHOTOKIT_FIXTURES=1` 和 `ALBUMS_CI_LIVE_PATH`。
 
 结果未知时不重跑写入阶段。已记录任务可通过 `TestLiveCOSLiveResume` 只读核验，成品下载签名过期可通过 `TestLiveCOSLiveRefreshReadGrants` 重新读回并签名；两者不新建媒体任务或对象。目录中的 `read-grants.json` 含短期授权 URL，保持私有且不复制到仓库证据。独立 `version.json` 是 App 测试所需的受控目录夹具，绑定本次资源 hash、timing 与 versionID，不代表服务器已发布完整备份。测试不删除云端对象，也不授权原件释放。
@@ -143,7 +159,7 @@ Apple 账户通知需要迁移 0040。升级前停止并排空全部旧版相册
 
 演练通过并在本机另存验证过的加密快照后，`promote_test_upgrade.py --source <演练镜像的完整提交> --run <同一演练>` 在包装器内执行切换，包装器检查地址改为 `http://127.0.0.1:18091/readyz`。它核对配置、密钥和候选镜像，停止旧写入后重新导出旧库；若与演练快照不一致则恢复旧服务并拒绝切换。数据未变时只修改 `/etc/caddy/albums-test.caddy` 的上游，验证配置、reload 后读取 Caddy 实际载入配置并检查公网。reload 开始前失败可恢复旧服务；reload 结果未知或之后失败时保留候选服务供向前修复，不自动回退数据库而丢失新写入。`promotion-started` 防止未知结果被重复执行。旧数据库卷和二进制仅作为旧快照恢复材料，不能在新服务已接受写入后直接切回。此工具仍不开放销售、媒体处理或物理删除。
 
-本次独立探针：`go run deploy/albums/appstore_probe.go request`（只允许一次 POST），随后 `go run deploy/albums/appstore_probe.go status`；固定相册 Sandbox、密钥 ID 与本次私有证据目录，不用于生产。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针私有文件边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
+通知探针须显式选择身份和新运行名：`go run deploy/albums/appstore_probe.go request development sandbox-notification-<label>`（只允许一次 POST），随后以同样身份和名称执行 `status`。`development` 固定为 `.dev` / ASC `6824089160`，记录保存在 `~/.config/tellyouwhat/albums-development/<运行名>`；`formal` 固定为正式 App / ASC `6822133304`，记录保存在 `albums-test` 下。两者都只访问 Apple Sandbox，不能指定 Production 或其他 App；原历史目录保留，不搬移或重写。重复查询状态不会再请求通知；遇到未知 POST 结果应保留记录排查，不能删除标记重试。Apple token 是不透明字符串。私钥、请求 token 与通知 JWS 只留在本机受限目录，仓库仅保存验签结果及摘要。探针边界检查：`go test deploy/albums/appstore_probe.go deploy/albums/appstore_probe_test.go`。
 
 ### 账户注销清单权限（2026-10-13，待确认保存）
 
@@ -205,7 +221,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 ### 相册加密快照与隔离恢复演练（未部署）
 
-通用 `deploy/tencent/ops_backup.py` 保持原控制数据白名单，不保存相册数据。新增 `deploy/albums/backup.py` 只导出经审核的 36 张 `album_*` 表，涵盖媒体索引、固定对象版本、账户关系、订阅、删除意图及未决写入。登录授权的加密字段、会话哈希等恢复所需状态也在加密快照内；明文运行配置、加密密钥和其他 App 表不进入快照。发现缺表、新增相册表或非 InnoDB 表时停止，不能静默丢失新业务数据。
+通用 `deploy/tencent/ops_backup.py` 保持原控制数据白名单，不保存相册数据。新增 `deploy/albums/backup.py` 只导出经审核的 38 张 `album_*` 表，涵盖媒体索引、固定对象版本、账户关系、订阅、删除意图及未决写入。登录授权的加密字段、会话哈希等恢复所需状态也在加密快照内；明文运行配置、加密密钥和其他 App 表不进入快照。发现缺表、新增相册表或非 InnoDB 表时停止，不能静默丢失新业务数据。
 
 使用单次 `mysqldump --single-transaction` 导出，复用现有 AES-256-CBC/PBKDF2 加密与 HMAC 清单认证，在解密前核对密文摘要、数据库、相册专用范围及生成时间。采用独立 `ALBUM_BACKUP_ENCRYPTION_KEY` 和 0700 目录，真实配置参照 `backup.env.example`，文件权限 0600；独立密钥和原有凭据加密密钥仍需另行异地托管。不会因共享服务切换部署版本而替换显式指定的相册数据库配置。共享控制备份拒绝导入相册范围快照。
 
@@ -213,7 +229,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 演练在新建私有临时目录启动仅有 Unix socket 的 MySQL，恢复后比较各表行数及按主键顺序重新导出的行内容 SHA-256，包括 JSON 和二进制字段；然后写入持久的数据库恢复隔离标记，并停用恢复出的活动账户、会话、分享和推送。删除中的账户保持 deleting。全过程不启动 API/worker、不更改源库，结束后停止临时 MySQL 并删除临时数据。演练解压上限 32 GiB，超过时失败，不截断。
 
-本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照，以及 `fetch` 生成的恢复目录（包含目录内的快照、清单和注销日志副本）。恢复目录沿用快照签名中的原生成时间，重新下载不能延长保留期；根目录独立注销日志及云端对象不在此清理范围。清理前核验完整文件清单与认证信息，签名清理回执支持中断后的剩余文件重试；未知文件、链接或内容变化会停止并保留现场。损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。加密恢复包的异地传输已实现但未部署，删除日志的独立异地发布与最新性证明、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
+本地快照按经过认证的生成时间保留 14 天，`backup` 前或显式 `prune` 清理到期快照，以及 `fetch` 生成的恢复目录（包含目录内的快照、清单和注销日志副本）。恢复目录沿用快照签名中的原生成时间，重新下载不能延长保留期。根目录 `albums-deletions-<32位随机值>.json` 独立检查点也进入同一 `prune`：签名、范围、数据库、结构和所有条目有效，且导出时间及所含请求时间均早于 14 天边界时才删除。文件时间戳不参与判断，较新的独立检查点保留；删除前再次核对文件身份、所有者、权限、大小与修改状态。读取不跟随符号链接，拒绝硬链接、目录、管道和超限文件；异常保留并报错。每个检查点只有一次原子解除文件链接，进程退出后通过既有操作锁重新扫描剩余文件，无需新增删除回执。恢复调用仍要求显式固定的摘要和不早于快照的检查点。在线数据库删除日志、云端加密包与发布回执不在这一文件清理范围，不构成完整账户擦除证明。清理前核验完整文件清单与认证信息，签名清理回执支持中断后的剩余文件重试；未知文件、链接或内容变化会停止并保留现场。根目录快照最后删除原签名清单；密文删除后中断，下次仍扫描遗留清单，核对身份、数据库、摘要格式与到期时间后继续清理。缺密文的未到期清单保留并报错，不能用于恢复；密文重新出现时必须重新核验完整内容。密文与清单均须为同一所有者的私有普通文件且无硬链接。损坏或签名异常的文件保留并报错，mtime 不能延长保留期。此期限是工具的本地快照策略，不能替代账户注销或媒体到期删除传播。加密恢复包的异地传输已实现但未部署，删除日志的独立异地发布与最新性证明、删除账户的快照消除、恢复后的线上接管和凭据恢复验收；隔离演练成功不等于灾备就绪，更不能用来开启永久清理或账户注销。
 
 验证见 `docs/evidence/albums-recovery-backup-2026-10-13.json`。
 
@@ -222,7 +238,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 `album_deletion_ledger` 与注销受理在同一事务写入，保存账户 ID、请求 ID、原受理凭据的哈希和 UTC 时间；不保存原始凭据、媒体或 Apple 身份。没有指向活动账户的外键，最终账户移除不能连带抹掉恢复所需的意图。迁移回填已有受理记录，启动缺表检查拒绝旧结构。所有旧相册 API 必须排空并协同升级，否则旧进程可能受理请求却不写日志。当前尚未执行最终账户移除。
 
-`backup.py ledger` 使用相同私有配置导出单独的、HMAC 认证的清单，返回文件名、SHA-256 和数量；这是本机文件，明确记录 `offsite=false`。导出检查所有现存受理记录均有一致日志，遗漏或冲突就失败。采用全量读取，避免把事务提交先后误当成自增序号的连续进度；上限 100,000 条，超过时拒绝截断。文件包含不可公开的关联标识及凭据哈希，0600 保存，不能作为公开分享文件；没有自动清理日志或其历史检查点。
+`backup.py ledger` 使用相同私有配置导出单独的、HMAC 认证的 v3 清单，同时包含账户注销意图、单项永久删除凭证和已删除相册的标记，返回文件名、SHA-256 和三类数量；这是本机文件，明确记录 `offsite=false`。导出检查现存受理记录、已完成单项清理与独立日志一致，遗漏或冲突就失败。采用全量读取，避免把事务提交先后误当成自增序号的连续进度；三类合计上限 100,000 条，单项所含版本合计也最多 100,000 条，超过时拒绝截断。文件包含不可公开的关联标识及凭据哈希，0600 保存，不能作为公开分享文件。在线日志不自动清理；本地检查点按上述认证后的 14 天规则处理，单项清理时间也必须到期。
 
 恢复演练可显式提供 `--deletion-ledger <private-file> --deletion-ledger-sha256 <expected-sha256>`。核对同一批文件字节的摘要、签名、数据库、范围、记录格式及快照时间顺序后，逐项比较快照内已有日志和受理记录；缺项、改写或冲突会中止。匹配记录在隔离恢复库中重建注销受理、账户状态和存储禁写时间，补齐 Apple/媒体任务及订阅改绑队列，并使旧改绑回执失效。之后再检查意图数量和禁写状态，全部恢复账户仍处于隔离停用状态。不会启动 API/worker 或执行真实删除。
 
@@ -237,7 +253,7 @@ Apple 的 [Set App Account Token](https://developer.apple.com/documentation/apps
 
 ### 加密恢复包的 COS 传输（未部署）
 
-`backup.py publish` 把已认证快照、快照清单和显式指定的删除清单复制核验后打包，再整体加密。删除清单不会以明文上传。`cmd/albumbackup` 复用现有 COS SDK，只处理 `albums/recovery/<随机ID>.enc`：先检查版本控制已启用，上传后按返回版本完整读回并比较字节数与 SHA-256，成功才写本机 HMAC 签名发布回执，再上传到同一桶、同一随机 ID 的 `.receipt.json` 对象并固定版本回读核验。两个对象均确认后才返回发布成功。ETag、上传成功响应或 HEAD 均不能代替回读。拒绝 HTTP 重定向，未知 PUT 结果不自动重试；失败可能留下未确认对象，不能记为可用备份。
+`backup.py publish` 把已认证快照、快照清单和显式指定的删除清单复制核验后打包，再整体加密。删除清单不会以明文上传。`cmd/albumbackup` 复用现有 COS SDK，只处理 `albums/recovery/<随机ID>.enc`：先检查版本控制已启用，上传后按返回版本完整读回并比较字节数与 SHA-256，成功才写本机 HMAC 签名发布回执，再上传到同一桶、同一随机 ID 的 `.receipt.json` 对象并固定版本回读核验。两个对象均确认后才返回发布成功。ETag、上传成功响应或 HEAD 均不能代替回读。拒绝 HTTP 重定向，未知写入结果不自动重试；新上传使用先持久化的分片会话；失败可能留下未确认对象，不能记为可用备份。
 
 构建 `go build -o <受管理输出目录>/albumbackup ./cmd/albumbackup`。使用单独的私有版本化备份桶和受限身份；配置格式见 `backup-cos.example.json`，真实文件 0600，密钥不得进入仓库。`cam-backup.policy.template.json` 仅为待填写模板，要求查询版本控制和备份前缀的读写，不含媒体读取、删除或桶管理权限；尚未创建或绑定这份策略。备份与媒体身份分开，不能把备份文件放进用户原件目录来绕过权限。
 
@@ -248,26 +264,78 @@ publish --backup <snapshot.enc> --deletion-ledger <private-ledger.json> --deleti
 fetch --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --transfer-bin <albumbackup> --cos-config <private-backup-cos.json>
 ```
 
-`fetch` 先认证固定摘要的回执，核对配置中的桶与地域，仅下载回执中的固定对象版本；再次验字节摘要后解密，只接受指定的三个普通文件，拒绝重复项、路径穿越和链接。不覆盖现有备份，输出到新的 0700 目录，各文件 0600。输出的快照、删除清单及摘要可用于现有 `drill`，恢复仍被隔离；不会启动服务。源快照超过 14 天时拒绝发布/下载。当前每个加密包最多 1 GiB，超限直接失败，扩大前须实现分片传输；不压缩或截断数据。
+`fetch` 先认证固定摘要的回执，核对配置中的桶与地域，仅下载回执中的固定对象版本；再次验字节摘要后解密，只接受指定的三个普通文件，拒绝重复项、路径穿越和链接。不覆盖现有备份，输出到新的 0700 目录，各文件 0600。输出的快照、删除清单及摘要可用于现有 `drill`，恢复仍被隔离；不会启动服务。源快照超过 14 天时拒绝发布/下载。当前每个加密包最多 1 GiB，超限直接失败，扩大前须复核传输预算和完整恢复验证；不压缩或截断数据。
 
 发布回执保存在本机及备份桶的 `albums/recovery/<同一随机ID>.receipt.json`，其中不含解密密钥或原始凭据。若回执上传失败，本机签名文件保留；使用 `publish-receipt --receipt <file> --receipt-sha256 <sha256>` 及同样的传输参数只重发回执，不重传备份包。失败或未知响应不宣称发布成功。灾后可从 COS 控制台取回该回执，计算文件摘要后交给 `fetch`；仍须通过独立密钥的 HMAC 认证。密钥须独立托管。回执锁定一次确认过的上传，不能证明故障发生时它仍存在，或内含最新注销清单。自动故障切换、最新检查点发现和按账户擦除仍未完成，也未验证真实 COS 权限与恢复往返。远端到期清理的实现与限制见下节。受控 COS HTTP 测试、真实 OpenSSL 加解密和隔离 MySQL 恢复证据见 `docs/evidence/albums-offsite-bundle-2026-10-13.json`。
 
 ### 云端恢复包到期清理（未部署）
 
-上传前先持久化带 HMAC 的本地发布意图（同一 `albums-offsite-<ID>.json` 文件，`publication_confirmed=false`、版本号为空），记录目的桶/地域、精确键及加密包摘要和长度，不保存 COS 密钥。必须先落盘成功再发 PUT，传输请求也锁定该目的地。只有固定版本读回校验成功才原子更新为已确认回执；未确认的文件不能用于 `fetch` 或 `publish-receipt`，也不是备份发布成功的证据。旧的已确认回执仍兼容。
+上传前先持久化带 HMAC 的本地发布意图（同一 `albums-offsite-<ID>.json` 文件，`publication_confirmed=false`、版本号为空），记录目的桶/地域、精确键及加密包摘要和长度，不保存 COS 密钥。必须先保存意图再初始化分片，并把 UploadID 持久化后才允许发送分片；传输请求锁定该目的地。只有固定版本读回校验成功才原子更新为已确认回执；未确认的文件不能用于 `fetch` 或 `publish-receipt`，也不是备份发布成功的证据。旧的已确认回执保留下载和到期清理能力，不改写或重新发布；需要新副本时发布新恢复包。
 
-PUT 响应丢失或随后确认记录写入失败时，本地意图保留。源快照到期后，可将该文件及其当前摘要交给 `expire-offsite`；工具检查实际版本，没有上传成功也必须列举确认为空。这个保护依赖本地签名文件尚存，不能覆盖本机及意图文件同时丢失的灾难；真实异地意图保护及全桶孤立对象核对仍待完成。
+上传/完成响应丢失或随后确认记录写入失败时，本地意图保留。源快照到期后，可将该文件及其当前摘要交给 `expire-offsite`；工具检查实际版本，没有上传成功也必须列举确认为空。这个保护依赖本地签名文件尚存，不能覆盖本机及意图文件同时丢失的灾难；真实异地意图保护及全量核对尚未验收；只读核对工具见下节。
 
 `expire-offsite --receipt <private-publication-receipt.json> --receipt-sha256 <sha256> --transfer-bin <albumbackup> --cos-config <private-expiry-cos.json>` 复用 `backup.py` 的私有配置及操作锁，必须指定已认证且源快照到期 14 天的发布回执。未到期、错误数据库或被修改的回执不能进入传输工具。操作只处理回执对应的一个恢复包及同名云端回执，不扫描媒体，不自动清除本地回执或独立注销日志。
 
-工具先完整分页列举这两个精确键的当前/历史版本和删除标记（最多 10 页、10000 个版本）；逐个固定版本下载，核对长度与 SHA-256 后才开始删除。陌生键、分页异常或内容差异会在删除前停止。删除始终携带小写 `versionId` 参数。末尾再次列举，只有完整结果为空才记录成功；未知删除响应、权限错误或清理期间出现新版本均报错，可使用同一签名回执重试。不同内容的历史版本保留并要求排查。验证下载会产生备份读取流量；当前 1 GiB 单包上限保持不变，单次所有版本核验总量超过 4 GiB 时在读取对象前停止，需另行评估处理成本。
+新分片记录先关闭并核对会话，随后完整分页列举这两个精确键的当前/历史版本和删除标记（最多 10 页、10000 个版本）；逐个固定版本下载，核对长度与 SHA-256 后才开始删除。陌生键、分页异常或内容差异会在删除前停止。删除始终携带小写 `versionId` 参数。末尾再次列举，只有完整结果为空才记录成功；未知删除响应、权限错误或清理期间出现新版本均报错，可使用同一签名回执重试。不同内容的历史版本保留并要求排查。验证下载会产生备份读取流量；当前 1 GiB 单包上限保持不变，单次所有版本核验总量超过 4 GiB 时在读取对象前停止，需另行评估处理成本。
 
-权限草案为 `cam-test-backup-expiry.policy.json`：仅指定备份桶恢复前缀的列版本、读取和删除；无上传、媒体访问或桶管理权限。应使用独立清理身份，不能给现有上传身份追加该策略。该备份策略仍为未启用草案；永久清理已于 2026-10-16 获用户授权，但当前备份实际封装于共享恢复包，须先完成独立清理范围和恢复保护验证。媒体清理身份已另行创建，未获共享备份访问权，未部署定时清理。新命令需要显式调用，普通 `backup`、`prune` 和 `fetch` 不会触发云端删除。
+权限草案为 `cam-test-backup-expiry.policy.json`：仅指定备份桶恢复前缀的列版本/分片、核对及终止会话、读取和指定非 null 版本删除；无上传、媒体访问或桶管理权限。应使用独立清理身份，不能给现有上传身份追加该策略。该备份策略仍为未启用草案；永久清理已于 2026-10-16 获用户授权，但当前备份实际封装于共享恢复包，须先完成独立清理范围和恢复保护验证。媒体清理身份已另行创建，未获共享备份访问权，未部署定时清理。新命令需要显式调用，普通 `backup`、`prune` 和 `fetch` 不会触发云端删除。
 
-依据：[COS 版本删除](https://intl.cloud.tencent.com/document/product/436/7743)、[列举版本](https://www.tencentcloud.com/document/product/436/31551)、[前缀及版本条件](https://cloud.tencent.com/document/product/436/71306)。清理回执只证明本次查询时该包的版本为空，不证明整个账户的所有历史数据已消除；丢失回执的孤立上传、其他包、独立删除日志和按账户擦除仍需处理。
+依据：[COS 版本删除](https://intl.cloud.tencent.com/document/product/436/7743)、[列举版本](https://www.tencentcloud.com/document/product/436/31551)、[前缀及版本条件](https://cloud.tencent.com/document/product/436/71306)。清理回执只证明本次查询时该包的版本为空，不证明整个账户的所有历史数据已消除；孤立上传清单见下节，其他包的清理、独立删除日志和按账户擦除仍需处理。
+
+### 批量清理到期恢复包（未部署）
+
+`backup.py prune-offsite --backend-dir <operations-root> --environment-file <private-albums-backup.env> --backup-dir <private-albums-vault> --transfer-bin <albumbackup> --cos-config <private-cleanup.json>` 在现有共享操作锁内，先认证本地全部发布意图，再逐个清理超过 14 天的恢复包。最多扫描 10,000 份；文件名必须与远端随机键一致，签名、数据库和目标桶/地域均需匹配。任一损坏、未知文件、目标不符或到期的旧普通 PUT 记录都在发出清理请求前停止整批操作。未到期记录仍需通过认证，但不会被清理。每批固定开始时的保留期边界，不把处理中刚到期的包加入本批。
+
+只处理 `cos-multipart-v1`，包括初始化或上传结果未知的意图；每项复用 `expire-offsite` 的会话关闭、固定版本字节核验及最终空版本/空分片检查。认证和摘要来自同一次有界读取，执行前再按摘要认证，文件变化即停止。中途失败或进程退出后重跑仍需重新核对前面已处理的包，不能只凭旧成功计数跳过。保留原签名回执、快照和删除检查点；它们各按原生命周期处理。传入单个包/回执选择参数（包括空值）会被拒绝，避免误把单项操作扩大为批量。
+
+该命令显式调用，不由普通 `backup`、本地 `prune` 或现有定时任务隐式启用。输出仅表示本次选中包的清理结果；未登记云对象、旧普通 PUT、在线删除日志和最终账户擦除仍需独立核对，`writers_quiescent` 与 `account_erasure_complete` 保持 false。真实 COS 权限、在途完成竞态及部署尚未验收，不能由本地受控测试替代。[实现与验证](../../docs/evidence/albums-offsite-prune-2026-11-01.json)。
+
+### 到期清理确认与后续核对（未部署）
+
+`expire-offsite` 与 `prune-offsite` 仅在 `cos-multipart-v1` 的版本和分片均核对为空后，写入 `albums-expired-<随机ID>.json`。确认文件由 `offsite.expire` 所有，0600 保存并以现有备份密钥做 HMAC，绑定原发布回执的准确摘要、数据库、桶、地域、对象键和清理时间。原发布回执、快照及删除检查点不改写。写入失败或取消不报成功，重试仍重新核对远端；确认已落盘但进程未返回报告时，下一进程可继续读取。旧普通 PUT 不产生这种分片清理确认。
+
+`audit-offsite` 认证全部确认后，仍重新列举完整版本和分片清单；只有两份键均不再出现才计入 `confirmed_expired_keys`，避免把已清理备份误报为丢失。对象、删除标记或分片重新出现时列入 `reappeared_expired_keys` 并保持未决。损坏、权限不符、链接、超限或找不到对应发布记录的确认，在远端请求前停止；批量清理也执行这项预检。确认存在时拒绝恢复或重新发布该包，即使本机时钟回退。确认不能代替新一轮云端查询，也不证明其他包或全部写入已收敛。
+
+确认是核验与重试所需的持久记录，不属于暂存缓存；与原发布回执成对保留，不由普通 `prune` 单独删除，最终账户擦除的元数据收尾仍未实现。读入口最多接受 10,000 份，异常保留供审核；本轮未接入备份调度或真实 COS，`writers_quiescent` 与 `account_erasure_complete` 仍为 false。[95 项受控检查与进程退出验证](../../docs/evidence/albums-expiry-confirmation-2026-11-01.json)。
+
+### 受控分片上传与暂存回收（未部署）
+
+新上传使用 `cos-multipart-v1`：包和回执各有独立会话，初始化响应不会携带媒体；只有会话写入 HMAC 发布记录后才上传 8 MiB 分片并完成。首次回执会话保存后文件摘要改变，失败重试须提供当前本机文件的摘要；后续回执重试复用同一 UploadID 和字节，不新建会话。Go 工具先查询并校验已存在的固定版本，能恢复完成响应丢失但对象已可见的结果；对象仍不可见或部分分片缺失时报错，不宣称保存成功。包上传失败后本地加密暂存仍会回收，意图保留供核对和到期清理；需要重发包时创建新的完整备份，不猜测旧密文字节。
+
+到期清理先读取这两个精确键的分片清单，包含初始化响应未知时遗留的会话。已知和发现的会话都必须终止，随后查询得到明确 `NoSuchUpload`，且分页分片清单为空，才进入原来的固定版本校验/删除。结束时再查版本及分片均为空才记录成功。权限不足、普通 404、仍存在的会话或未知响应都保留签名记录供重试；这仍不是全账户擦除或所有在途完成请求已经结束的证明。旧普通 PUT 的未决写入不被改标为已停止。
+
+相册暂存目录保存单独签名的创建者记录，仅列出复制的输入、归档和加密包。正常、异常及取消均回收；下次发布或现有 `prune` 核对并回收进程退出后留下的目录。创建者把共享文件锁显式传给 OpenSSL/上传子进程，子进程未退出就拒绝回收；Go 同时锁住实际读取的文件。回收先取得全部锁，按目录句柄检查文件身份后删除，所有权标记最后删除以支持中断续跑。未知、链接、非私有或被替换的文件保留报错；原快照、独立日志和发布意图不属于暂存。两个备份权限草案已改用分片权限，上传身份不包含普通 PUT、删除或终止分片，清理身份单独授权；2026-11-01 的准备阶段尚未绑定云权限或部署，实际云验证见下节。[协议、进程退出及隔离 MySQL 验证](../../docs/evidence/albums-backup-multipart-2026-11-01.json)。COS 协议依据：[完成分片](https://cloud.tencent.com/document/product/436/7742)、[终止分片](https://cloud.tencent.com/document/product/436/7740)。
+
+### 真实 COS 与隔离 MySQL 的联合验证入口
+
+`backup_integration_test.py` 默认只使用它创建的独立 Unix socket MySQL。显式设置 `ALBUM_BACKUP_COS_PROBE_DIR=<0700 专用目录>` 才会增加真实网络阶段：选取该夹具按当前 schema 新生成的快照和删除清单，实际发布、固定版本取回、逐表恢复核验并隔离，最后清理本次生成的合成对象对。拒绝其他数据库来源、TCP 命令和其他 App 的备份桶；写入和清理凭据必须指向同一相册测试备份桶。源数据库不会指向共享服务。
+
+目录中的 `probe.json` 必须为 0600，格式如下；凭据文件沿用 `backup-cos.example.json`，必须分别使用受限上传和清理身份。先在专用目录构建当前源码的 `albumbackup`，再提供其绝对路径。
+
+```json
+{"scope":"albums-synthetic-offsite-probe-v1","writer":"/absolute/private/writer.json","cleanup":"/absolute/private/cleanup.json","transfer":"/absolute/private/albumbackup"}
+```
+
+执行 `ALBUM_BACKUP_MYSQL_BIN=<mysql8.4-bin> ALBUM_BACKUP_COS_PROBE_DIR=<专用目录> PYTHONPATH=deploy/albums:deploy/tencent python3 -m unittest -v deploy.albums.backup_integration_test`。只有本次专用测试将时间推进到合成快照到期，立即验证其清理；这不代表观察过真实 14 天，也不适用于用户备份。清理基于本机签名记录，只处理本次随机对象键；仍不宣称账户已完全擦除或所有在途写入已停止。
+
+`report.json` 分开记录发布、下载、隔离恢复和对象清理。结果未知时保留本机备份、随机测试密钥、签名意图及受限诊断；同一目录拒绝再次发布，可通过 `offsite_probe.recover(<专用目录>)` 只重试原意图的清理。回收先检查活动暂存锁，不绕过仍在运行的上传进程。探针执行者负责在取证且确认测试资源清理后删除本轮生成的本地合成恢复输入和测试密钥，保留报告；不得顺带删除由外部路径提供的云凭据。普通备份命令、调度和默认测试不会启用该探针。入口与边界测试通过不代表真实 COS 已验收。
+
+2026-11-05 已完成一次真实 COS + 本机隔离 SQL 联合检查，42 表快照的发布、固定版本取回、恢复隔离及本次对象清理通过。恢复 scratch 复用夹具的短目录，云端恢复输入仍从持久探针目录读取，避免 macOS Unix socket 路径过长。首次失败、修复及边界见[实测记录](../../docs/albums-real-offsite-verification.md)；不代替在线恢复、最新异地删除检查点、完整注销或 App 订阅验收。
+
+同日另用新合成对象完成两身份的 16 项真实权限拒绝检查，全部为 403 / AccessDenied；同时验证活动分片、取消和进程中断后的按意图恢复、重复清理、租约及无关文件保护。入口仅在 `albums_live` 构建标签和显式私有目录下执行，不更改正常传输或云权限。配置、恢复语义及范围见[权限边界记录](../../docs/albums-backup-permission-boundaries.md)。
+
+### 云端历史备份核对命令
+
+`audit-offsite --transfer-bin <albumbackup> --cos-config <private-audit-cos.json>` 复用上述必填目录、私有相册环境文件及操作锁。先认证本机全部发布意图/回执，包括到期或未确认记录，再只读列举目标桶 `albums/recovery/` 的全部版本、删除标记及未完成分片会话。每种清单最多 10 页、10000 条；权限错误、异常键或分页不完整均停止，不输出部分成功。现有按单包删除仍限定原先两个精确键。
+
+结果保存在受限状态目录 `albums-offsite-audit.json`，列出未登记键、未确认发布、缺失的已确认版本/远端回执、额外包版本和包体积差异，以及完整原始清单。它只核对元数据，不下载正文、不终止上传、不删除任何本地或云端文件。`has_unresolved_items=false` 也不表示已擦除：两个清单不是原子快照，早先直接 PUT 可能稍后完成，始终返回 `writers_quiescent=false`、`account_erasure_complete=false`。已丢失的本机意图不会被重建或猜测认证；对应云对象列为未登记。恢复和到期清理仍分别要求原来的摘要固定、认证及时间条件。
+
+独立只读权限草案为 `cam-backup-audit.policy.template.json`，仅允许指定桶、URI 编码备份前缀下的 `cos:GetBucketObjectVersions` 和 `cos:ListMultipartUploads`；没有正文读取、上传、删除、分片终止或桶管理权限。模板未绑定到云身份，真实 CAM 权限及 COS 全量核对尚未验证。[COS 分片查询协议](https://cloud.tencent.com/document/product/436/7736)。本地协议、恢复与操作锁验证见 `docs/evidence/albums-offsite-inventory-2026-11-01.json`。完整注销仍需写入停止证明、最终数据库记录清理及真实端到端验收。
 
 
 备份资源核对（2026-10-13）：控制台显示现有 `tellyouwhat-backups-1251995834` 为广州、多 AZ，版本控制未开启，已有 `backups/` 目录。未修改该桶。已填写独立 `tellyouwhat-albums-backups-1251995834` 的私有、多 AZ、版本控制配置，但尚未提交；专用 `albums-test-backup` 身份及 `cam-test-backup.policy.json` 权限待用户确认后创建。此策略只含新桶的版本状态查询和 `albums/recovery/*` 的读写，不含删除、其他 App/媒体目录或桶管理。截图仅证明待提交配置，不能作为资源创建证据。签名回执的受控验证见 `docs/evidence/albums-offsite-receipt-2026-10-13.json`。
+
+2026-11-03 更新：已创建明确隔离测试环境的 `tellyouwhat-albums-backups-test-1251995834`，广州、多 AZ、私有、多版本及桶加密均在保存后核对。共享备份桶保持原有用途；未向新桶上传现有备份，也未配置自动桶到期删除。两份尚未绑定的测试备份策略已改为这个实际桶，仍只覆盖 `albums/recovery/*`：`albums-test-backup` 拟使用 `AlbumsTestBackup` 做受控分片上传和固定版本读回；`albums-test-backup-expiry` 拟使用 `AlbumsTestBackupExpiry` 做内容核验、分片关闭和指定非 null 版本清除。身份、策略保存/绑定及每身份一对长期密钥尚待操作时确认；不沿用共享备份身份。初次实测仅保存合成快照，密钥拟只保存到本机 `~/.config/tellyouwhat/albums-development/` 的 0600 配置。15 项策略/探针检查及 83 项含子用例的传输检查通过，真实新桶传输和权限边界尚未验收，不能开启自动清理。见[资源与权限准备回执](../../docs/evidence/albums-backup-access-preparation-2026-11-03.json)。
 
 
 ### 注销受理 HTTP 合约（保持关闭）
@@ -304,6 +372,10 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 迁移 0063 在独立删除日志增加 `records_erased_at`。媒体结算、访问凭据擦除、完整订阅核验及剩余数据检查通过后，同一事务移除在线账户和订阅记录并写入回执；核验超过一分钟会重新排队。独立删除日志和 Apple 撤销状态保留，故不能将此回执显示为全部数据已删除。重新授权后可创建新媒体账户并恢复同一稳定归属的订阅；旧登录及旧账户重试不能影响新账户。
 
+迁移 0083 为在线账户记录清理增加可空的重试时间。后台先为所选账户与请求保存一分钟后的下次尝试时间，再执行原有事务检查。等待证据或遇到错误的账户让出队列，其他符合条件的账户继续处理。时间随数据库保留，进程重启后继续生效。DDL 完成但未登记时可重跑，并保留已有调度。该字段只控制何时尝试，实际删除仍由原事务中的凭证、订阅和数据范围检查决定。[验收记录](../../docs/evidence/albums-record-erasure-retry-2026-11-05.json)。
+
+合成账户已通过正常注销 HTTP 入口、真实 COS 媒体清理和隔离 MySQL 在线记录回读。测试先持久保存新建资源的精确版本及分片 ID，删除响应丢失后重试同一版本，最终六个账户前缀为空。受控 Apple 撤销回执完成后，在线账户、访问记录与媒体索引均通过回读，其他账户会话保持有效。真实 Apple 撤销、订阅购买和历史备份最终擦除仍须独立验收。[联测记录](../../docs/evidence/albums-live-account-erasure-2026-11-05.json)。
+
 `ALBUM_ACCOUNT_RECORD_ERASURE_ENABLED=false` 是独立开关，启用还要求订阅核验与改绑开启。Gateway 启动检查新字段，注销 HTTP 入口仍关闭。历史备份清理、撤销状态最终清理、真实 Sandbox 与完整注销验收尚未完成；本次未部署。验证见 `docs/evidence/albums-account-record-erasure-2026-10-14.json`。
 
 
@@ -338,7 +410,7 @@ Gateway 保持未注入处理器，没有新增环境开关；当前请求返回
 
 统一日常备份另用 `albums_development_backup_test` 只读账户读取新库，固定客户端包装器只能进入开发 MySQL 容器。沿用本提交的 `backup.py` 与 `deletion_ledger.py` 生成完整相册 SQL、认证清单及删除账本；使用独立密钥加密，密钥留在单独受限配置及本机留存位置，不进入异地包。快照、账本、当前源码/配置、数据库配置和三份服务密钥一起随统一运维备份进入 COS，逐文件摘要由外层认证清单核验。统一任务、私有传输身份与存储生命周期复用已有运维设施，数据库账号、备份目录和内层加密密钥独立。实际运行、异地读回及隔离恢复演练仍须分别取证，代码存在不代表这些项目完成。
 
-旧 `configure_sandbox.py` / `appstore_probe.go` 针对正式相册 App 的历史 Sandbox 验证，不是 `.dev` 商品配置工具。配置脚本现在要求显式正式 `ALBUM_APPLE_BUNDLE_ID`，并拒绝测试域名，防止把固定正式 ASC ID 写入开发配置。开发身份不继承正式 ASC 商品；本次未注册新商品、未开启销售。production 订阅服务现已分别接收正式身份的 Production/Sandbox 交易与通知，仍需真实 TestFlight 购买、后台运行和跨环境注销验收，完整环境统一尚未完成。
+旧 `configure_sandbox.py` 针对正式相册 App 的历史 Sandbox 配置，要求显式正式 `ALBUM_APPLE_BUNDLE_ID` 并拒绝测试域名，防止把固定正式 ASC ID 写入开发配置。通知探针现按上文显式区分两套身份，但不配置商品。开发身份不继承正式 ASC 商品；本次未注册新商品、未开启销售。production 订阅服务现已分别接收正式身份的 Production/Sandbox 交易与通知，仍需真实 TestFlight 购买、后台运行和跨环境注销验收，完整环境统一尚未完成。
 
 
 ### 生产后端的 TestFlight 购买（本地实现，未部署）
@@ -391,6 +463,9 @@ The shared Tencent backup task now uses `deploy/tencent/albums_artifacts.py` and
 
 The resource bootstrap and backup-account provisioning are implemented in `release.py deploy --albums-resources` but have not run remotely. Real offsite restore verification and shared API activation/routing are still required. Do not run the Compose descriptor directly. See `docs/evidence/albums-production-recovery-2026-10-16.json`.
 
+2026-11-01：独立删除检查点的本地到期清理、操作锁和真实进程退出续跑已通过；受控 MySQL 导出→旧检查点清理→新检查点重放恢复通过。代码尚未部署，不代表云端历史包或完整注销已清理。[证据](../../docs/evidence/albums-ledger-retention-2026-11-01.json)。
+
+
 ### Production IAM and CI role validation (2026-10-16)
 
 Production identities and scoped COS policies are active. The initial synthetic transcode failed with `Get CAM UnauthorizedOperation`; that historical result remains in `docs/evidence/albums-production-iam-2026-10-16.json`.
@@ -400,3 +475,80 @@ After explicit user approval, production CI permissions were added with a 30-min
 The approved permissions were retained as version 2 without expiry and the probes repeated successfully. `AlbumsProductionCIMediaServiceValidation` (290105929) is bound to `CI_QCSRole` alongside the unchanged test policy. `AlbumsProductionCIMediaPassRoleValidation` (290105972) is bound only to `albums-production-backend`. Both console JSON documents match `cam-production-ci-service.policy.json` and `cam-media-role.policy.json`. No deletion or bucket-management permission was added. The Validation suffix is the original policy name, not a pending approval state.
 
 Evidence: `docs/evidence/albums-ci-production-validation-2026-10-16.json`, policy readback, screenshots and dated probe sources. Synthetic fixtures are retained under the recorded unique prefixes; cleanup was not performed. This verifies the tested CI boundaries, not every indirect input route: cross-bucket `Input.Url`, full Live Photo pairing, large media and concurrency remain untested. No production API was deployed or automatic processing enabled by this validation.
+
+
+### 手动分类纠正（迁移 0075，未部署）
+
+`album_content_corrections` 仅保存用户明确包含、排除的九类标签，按账户和不可变照片版本隔离。读取及写入复用图库账户、可见性、到期保留、注销与恢复隔离检查；不生成识别结果，不授予媒体下载、容量或订阅权益。请求携带来源清单摘要与预期修订号，冲突返回 409；当前相同请求幂等重放。清空写入空集合，供其他设备收到重置。账户锁串行化新序号的生成与提交；增量接口返回每个版本最新状态，不作为完整修改历史。
+
+新快照完整覆盖 38 表。已有 36 表、37 表快照仍按原清单认证并可离线隔离恢复，未知或缺项的集合拒绝；恢复后再按受控迁移流程升级，不能直接开放服务。版本永久清理和账户媒体清理通过外键级联移除分类纠正，最终账户擦除还检查有无遗留记录。iOS 业务同步、隐私告知和跨设备验收尚未接入。20 项 Go 顶层定向测试（含 24 项子用例）在真实隔离 MySQL/Redis 上通过竞态检查；49 项备份检查、21 项 Swift 生成客户端检查及两个服务入口编译通过。[验证记录](../../docs/evidence/albums-content-corrections-2026-11-01.json)。
+
+### 单项永久清理凭证（尚未启用调度）
+
+迁移 `0078` 增加独立于在线账户和媒体行的单项删除凭证，记录资产、最终修订、原因、时间及版本标识。凭证与元数据清理、配额退还同事务提交；写入失败保留原状态，完成请求重放也核对凭证。新备份包含该表，历史快照继续保留和验证。
+
+独立检查点现导出和认证这些凭证；恢复先核对快照原始摘要，再只在 `albums_restore_test` 隔离库补建凭证表并重放删除。旧凭证缺失或改写、更新的资产修订、无法覆盖的版本或上传记录均拒绝。成功时清除对应版本、任务、分享与收藏/分组成员，保留分组本身及其他账户数据，重建最终删除事件；重复执行收敛，事务失败整体回滚。不依据历史配额行退还容量，报告 `quota_reconciliation_required=true`，恢复库继续隔离。
+
+旧 v1 检查点缺少单项删除覆盖，保留待人工核对，不授权恢复；当前恢复须重新导出下节的 v3，不改写旧文件或把缺项当空集合。没有检查点的离线演练仍不能用于线上接管。此前 v2 的 103 项定向测试和真实 MySQL 当前、迁移前快照恢复、冲突与回滚检查通过；未部署、未调用 COS。到期结算调度继续关闭；真实写入收敛、云端历史副本、最新检查点证明、恢复配额核对及最终凭证清理仍待完成。[本轮验证](../../docs/evidence/albums-asset-checkpoint-replay-2026-11-01.json)。原子凭证验证见 `docs/evidence/albums-asset-deletion-ledger-2026-11-01.json`。
+
+共享平台检查点入口同步加载选定源码中的围栏模块；当前开发恢复包认证四份脚本，缺少任一份即拒绝。生产使用其冻结源码的模块集合，不向旧生产归档补入开发实现。创建快照、导出及到期清理共用相册操作锁；到期判断同时覆盖导出时间和所含记录时间。测试覆盖两环境、缺失模块、摘要篡改、导出失败后的模块恢复及打包校验；不代表服务器已升级。
+
+备份脚本保留相册目录的模块优先级，共享 Tencent 工具目录只补充依赖。新进程边界检查同时核对业务模块和测试模块路径；此前组合测试曾加载共享同名 `offsite_test`，不能将其通过记录算作相册离机备份验收。当前相册五组共 97 项及真实 MySQL 备份恢复通过，见 `docs/evidence/albums-backup-import-isolation-2026-11-01.json`。
+
+
+## 相册删除标记与旧快照恢复（v3 检查点）
+
+检查点从现有相册删除行导出账户、相册 ID、修订、请求 ID 和删除时间，不包含名称。先读取相册标记，再读取独立账户删除日志，避免账户收尾移除相册行后漏掉对应账户围栏。恢复仍只进入隔离、无网络的临时数据库；先重放账户/媒体围栏，再把对应相册恢复为名称为空的删除标记并移除成员关系。按账户和相册联合匹配，其他分组、原件、收藏及额度保持各自边界。重复执行不重建分组，较新的修订/成员、矛盾的删除标记或已知标记遗漏会停止；移除成员和写回删除标记在同一事务，失败回滚。
+
+v1/v2 检查点不能授权当前恢复；需用当前代码重新导出 v3，不改写旧文件。v2 保留原本经过认证的 14 天独立文件及恢复目录清理规则，未到期保留；v1 继续保留人工核对边界。当前开发恢复包一起认证四份检查点脚本，缺少任何一份即拒绝；生产仍使用其选定源码的模块集合，不把当前开发实现混入冻结的旧生产归档。
+
+本轮只补齐已删相册的恢复围栏，不启用六个月自动清理，不证明检查点实时最新、共享云写入收敛、历史备份最终擦除或完整账户注销。验证与范围见 [验收证据](../../docs/evidence/albums-collection-deletion-recovery-2026-11-02.json)。
+
+
+## 到期分组清理基础
+
+保留期限核验不再依赖媒体用量大于零；仅剩相册元数据的账户仍须重新核验所有已知 Apple 购买链。内部 `expireRetentionCollections` 在账户锁内重新检查有效期限、环境和订阅修订，每批最多 100 个分组；移除成员并清空名称，保留递增游标的删除标记供同步及 v3 恢复检查点使用。已有删除标记不改写。任一写入失败、提交前凭证过期或已续费，整批回滚；不修改原件和容量账本。
+
+此入口尚未接入调度，不启用六个月自动清理，也不代表媒体、历史备份及账户擦除已经完成。[验证与限制](../../docs/evidence/albums-expired-collections-2026-11-03.json)。
+
+## 恢复下载的文件交接
+
+异地恢复下载、解密和解包复用现有的签名暂存目录与文件租约；失败、取消或进程异常退出后，由后续备份维护回收已认证且无活动引用的中间文件。下载前检查空间，解密及解包文件从创建时即为私有。整包、快照及删除检查点均核验成功后，原子移动为恢复副本；交接后的副本继续按原来的 14 天规则保留，不因返回结果丢失而删除。交接确认未完成时，维护入口先认证目录、清单及活动锁再续跑；未知、被替换或仍在使用的文件保留并报错，不覆盖已有恢复目录。
+
+2026-11-03 本地验证：暂存及恢复 91 项通过；共享入口 38 项通过、1 项因缺少 Docker Compose 跳过；真实 Unix socket MySQL 的加密快照、受控对象传输及隔离恢复演练通过。四个阶段的 SIGKILL、取消、目录冲突、伪造确认和活动锁均有覆盖。原始日志及源码摘要保留于 `~/.config/tellyouwhat/albums-development/recovery-fetch-20261103-4z_2h7it/verification.json`。
+
+未部署、未访问真实 COS，不证明最新删除检查点、云写入收敛、完整账户擦除或线上接管；`recovery_ready` 和 `latest_checkpoint_proven` 仍为 false。
+
+## 2026-11-03 照片分片真实 COS 门禁
+
+用户批准后，实际 `AlbumsTestBackend`（289454608）由版本 2 更新为版本 3，只为现有后端身份增加开发桶 `albums/derivatives/*` 的 `cos:UploadPart`，保留版本 2。没有同步赋予模板中的其他权限，没有修改清理身份、角色或正式资源。
+
+源码 `9d46a8fd2f790d7fa0573b0300eea1ad30640906` 的 `TestLiveCOSPhotoMultipartLifecycle` 和独立进程 `TestLiveCOSPhotoMultipartProbeRecovery` 均以 race 检查通过：两份小型合成 JPEG 分别完成正常合并回读和合并前终止；首次清理精确移除一个本轮成品版本，恢复后会话和版本清单为空。恢复不重新初始化、上传或合并。原始 HTTP、两次清理及命令证据位于 `~/.config/tellyouwhat/albums-development/photo-multipart-authorized-20261103-mzypk0zo/verification.json`，原先 403 记录独立保留。
+
+这是实际对象存储协议和权限验证，不代表迁移 0080/0081、当前恢复脚本已部署，或 SQL 与真实 COS 的合并/终止竞态已验收；App 的真实购买及完整云端往返仍待验证，自动永久清理保持关闭。
+
+### 照片迁移前的 worker 排空
+
+共享测试发布器在跨越 0080/0081 时，先保存绑定旧版本和候选摘要的中断记录，再停止旧媒体 worker 并确认正常退出，随后才迁移任一数据库。必须选择与候选同源码的媒体 worker。失败恢复旧服务组合并保留前向 DDL；强杀后的重入先核对登记和实际进程，拒绝其他源码或无关容器，恢复成功后再继续。该路径不还原旧数据库或启用清理。
+
+2026-11-03：部署及直接备份/运维回归在 macOS、Linux 各 213 项通过，零失败、零跳过；含真实发布进程 SIGKILL 后的持久重入检查。Linux 的 257 个测试输入逐项匹配修复提交 `13b47b0`；登记旧归档和已安装摘要从服务器重新读回。Docker 为受控夹具，未执行服务切换或真实迁移。私有证据：`~/.config/tellyouwhat/albums-development/photo-writer-deploy-20261103-m1kllwa7/verification.json`。
+
+### 照片 SQL / COS 合并与终止交错
+
+`albums_live` 标签下的 `TestLiveCOSPhotoSQLCompletionRetirement` 使用本轮专属 Unix socket MySQL、两份 611 字节合成 JPEG 和真实 COS。终止先行时，实际 worker 完成 Abort 与完整清单核对，SQL 保留终止证据，预留归零，上传方没有发出 Complete。合并先获准时，worker 等待且保留预留；实际合并后刻意不保存写入方回执，新连接上的 worker 通过真实固定版本回读恢复记录，只结算一次，并保留成品版本。独立进程再恢复不发出上传或合并，最终会话及版本清单为空。
+
+协议和 SQL 定向检查含子测试 58 项通过；上述两种交错及独立恢复入口通过，race 开启，零失败、零跳过。worker 测试适配器将清单读取限定到本轮对象，拒绝版本删除和视频/CI 操作；最终精确成品清理由已有探针清理身份执行，没有改权限。原件元数据仅为隔离 SQL 夹具，不是完整备份或真实用户权益验收；没有访问私人媒体。首次专属库名称检查失败发生在上传前，运行器与 TestMain 的隔离冲突已修正并保留原日志。
+
+证据：`~/.config/tellyouwhat/albums-development/photo-sql-cos-20261103-amxn0hrm/verification.json`。测试临时数据库、缓存及进程均已清理；业务服务和迁移尚未升级，自动永久清理继续关闭。
+
+### 共享测试环境实际升级
+
+2026-11-03，受管发布已激活 `6ba3f5825eb847993d4230c2de1df68905950ba8` 的共享测试服务与相册 worker。共享库 84 条、相册库 74 条迁移，最新均为 0081；正式服务状态及 14 个受保护容器未变化。保留 `d64eefb` 的镜像和配置作为登记的前一组合，未执行实际回滚或整库恢复。
+
+第一候选准备期间，手记发布已推进测试基线；原候选被校验拒绝，没有执行相册迁移。重新核对其认证源码归档后，保留手记构建 36 的完整配置及 `ops_common.py` 对相册恢复脚本的归属保护，再以新基线冻结候选。1,321 个源文件逐项匹配提交，整合后的部署/备份检查在 macOS、Linux 各 213 项通过，零失败、零跳过。
+
+升级前备份已认证；升级后的新备份完成三个云端对象读回、清单认证及恢复包内容核验。四个测试域名就绪均为 200，相册四个未认证控制接口均为 401；网关和 worker 的实际镜像、配置及启动检查通过。发布器强制排空检查通过，但独立 Docker 事件查询未返回记录，没有单独取得退出与迁移时间戳证据。自动派生清理、账户媒体擦除仍关闭。
+
+证据：`~/.config/tellyouwhat/albums-development/photo-shared-upgrade-20261103-exggcst6/verification.json`。此记录证明服务升级和上述门禁，不替代真实手机 App Attest、登录、Sandbox 购买及完整媒体往返。
+
+2026-11-05 更新：`AlbumsTestBackup`（292686588）和 `AlbumsTestBackupExpiry`（292686755）已保存。`albums-test-backup`（用户 28011964）已完成创建，详情页显示仅编程访问、无用户组、仅直接关联写入策略；一对密钥已保存至本机约定的 0600 `backup-writer-cos.json`，未复制到服务器。该身份对独立测试备份桶的真实 `GetBucketVersioning` 返回 200 / Enabled，只证明本次版本状态读取。`albums-test-backup-expiry` 仍停在第二次图形验证码，清理密钥未保存；保存、取回、恢复及清理联合探针尚未运行，不启用自动清理或部署。详见[写入身份与只读验证回执](../../docs/evidence/albums-backup-writer-2026-11-05.json)。

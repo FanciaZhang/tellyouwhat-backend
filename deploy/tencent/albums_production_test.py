@@ -40,7 +40,8 @@ class AlbumsResourceTests(unittest.TestCase):
             atomic_text(path, ''.join(k + '=' + v + '\n' for k, v in values.items()))
         atomic_text(self.folder / 'compose.albums-production.yaml', 'services: {}\n')
         names = ['Dockerfile', 'go.mod', 'go.sum', 'cmd/albumworker/main.go', 'cmd/migrate/main.go',
-                 'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py', 'compose.albums-production.yaml', 'migrations/0001_fixture.sql']
+                 'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py',
+                 'deploy/albums/asset_deletion_ledger.py', 'compose.albums-production.yaml', 'migrations/0001_fixture.sql']
         with tarfile.open(self.folder / 'source.tar', 'w') as archive:
             for name in names:
                 data = b'services: {}\n' if name.endswith('.yaml') else b'fixture\n'

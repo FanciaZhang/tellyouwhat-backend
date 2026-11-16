@@ -39,6 +39,10 @@ func TestLoginLimitCanonicalAddressAndPrivacy(t *testing.T) {
 	if a == b {
 		t.Fatal("operations share budget")
 	}
+	catalogue, err := limiter.addressKey("library-lifecycle", "192.0.2.1")
+	if err != nil || catalogue == a || catalogue == b {
+		t.Fatal("catalogue operation unavailable or shares login budget", err)
+	}
 	for _, address := range []string{"", "not-an-ip", "fe80::1%en0", "192.0.2.1:1234"} {
 		if _, err := limiter.addressKey("login", address); err == nil {
 			t.Fatal("bad address accepted")
@@ -99,6 +103,19 @@ func TestRedisAlbumLoginLimitAcrossInstances(t *testing.T) {
 	group.Wait()
 	if accepted.Load() != 7 {
 		t.Fatalf("accepted %d of 30; expected 7", accepted.Load())
+	}
+	catalogueKey, err := limiter.addressKey("library-lifecycle", "192.0.2.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Del(context.Background(), catalogueKey)
+	for range 7 {
+		if delay, err := limiter.Check(ctx, "library-lifecycle", "192.0.2.1"); err != nil || delay != 0 {
+			t.Fatal("login saturation consumed catalogue budget", delay, err)
+		}
+	}
+	if delay, err := limiter.Check(ctx, "library-lifecycle", "192.0.2.1"); err != nil || delay <= 0 {
+		t.Fatal("catalogue did not enforce its own budget", delay, err)
 	}
 	ttl, err := client.PTTL(ctx, key).Result()
 	if err != nil || ttl <= 0 || ttl > time.Minute {

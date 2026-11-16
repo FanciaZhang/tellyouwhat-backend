@@ -11,7 +11,7 @@ import (
 func TestAlbumGatewayRejectsCrossEnvironmentAndIdentityBeforeConnecting(t *testing.T) {
 	for _, environment := range []string{"development", "production"} {
 		t.Run(environment, func(t *testing.T) {
-			platform := config.PlatformConfig{Environment: environment}
+			platform := config.PlatformConfig{Environment: environment, StorageMode: "mysql"}
 			album := albums.GatewayConfig{Environment: "production", APIHost: "api.albums.tellyouwhat.cn",
 				AppleCode: albums.AppleCodeConfig{TeamID: "TEAM", BundleID: "cn.tellyouwhat.albums"}}
 			if environment == "development" {
@@ -23,6 +23,11 @@ func TestAlbumGatewayRejectsCrossEnvironmentAndIdentityBeforeConnecting(t *testi
 				TeamID: album.AppleCode.TeamID, BundleID: album.AppleCode.BundleID}
 			if err := validateAlbumGatewayIdentity(platform, app, album); err != nil {
 				t.Fatal(err)
+			}
+			memory := platform
+			memory.StorageMode = "memory"
+			if validateAlbumGatewayIdentity(memory, app, album) == nil {
+				t.Fatal("ephemeral App Attest storage accepted")
 			}
 			for _, mutate := range []func(*albums.GatewayConfig){
 				func(c *albums.GatewayConfig) { c.Environment = "wrong" },

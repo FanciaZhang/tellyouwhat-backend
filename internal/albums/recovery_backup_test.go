@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,10 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	}
 	f := newSharingFixture(t)
 	f.create(t, "private-share-fixture", 2)
+	seedCollections(t, f.db, f.login.AccountID)
+	if _, err := f.repo.SaveAssetFavorite(context.Background(), f.login.AccountID, f.version.AssetID, AssetFavoriteInput{"10000000-0000-4000-8000-000000000097", 0, true}, *f.now); err != nil {
+		t.Fatal(err)
+	}
 	// Include a durable deletion intent, unfinished provider revocation and an
 	// immutable media version; no cloud request or real user content is involved.
 	cipher, err := mysqlstore.NewPayloadCipher(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{41}, 32)))
@@ -88,11 +93,11 @@ func TestMySQLAlbumsRecoveryEncryptedSnapshotAndQuarantinedDrill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(ciphertext), "private-share-fixture") || strings.Contains(string(ciphertext), "immutable-share-v1") {
+	if strings.Contains(string(ciphertext), "synthetic private collection") || strings.Contains(string(ciphertext), "private-share-fixture") || strings.Contains(string(ciphertext), "immutable-share-v1") {
 		t.Fatal("plaintext backup")
 	}
 	restored := run("drill", "--backup", filename)
-	if restored["quarantined"] != true || restored["recovery_quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != float64(36) {
+	if restored["quarantined"] != true || restored["recovery_quarantined"] != true || restored["disposable_database_removed"] != true || restored["tables"] != snapshot["tables"] {
 		t.Fatal("incomplete drill")
 	}
 	folders, _ := filepath.Glob(filepath.Join(root, ".operations", "albums-restore-*"))
@@ -141,17 +146,20 @@ def transfer(runtime,executable,credentials,operation,path,key,digest,size,**pin
     if operation=="put": shutil.copyfile(path,object_path)
     else: shutil.copyfile(object_path,path)
     assert file_digest(path)==digest and Path(path).stat().st_size==size
-    return dict(Key=key,SHA256=digest,Bytes=size,Version="fixture-version",Bucket="fixture-1250000000",Region="ap-guangzhou")
+    result=dict(Key=key,SHA256=digest,Bytes=size,Version="fixture-version",Bucket="fixture-1250000000",Region="ap-guangzhou")
+    result.update(pinned)
+    return result
 offsite.move=transfer
+offsite.initiate=lambda *args: "controlled-upload-session"
 with r.lock():
     receipt=offsite.publish(r,"controlled",credentials,sys.argv[5],sys.argv[6],sys.argv[7])
     recovered=offsite.fetch(r,"controlled","controlled",receipt["receipt"],receipt["receipt_sha256"])
     restored=Runtime(sys.argv[2],recovered["directory"],sys.argv[4]);configure(restored)
     result=drill(restored,Path(sys.argv[8]),recovered["snapshot"],recovered["deletion_ledger"],recovered["deletion_ledger_sha256"])
-    assert result["recovery_quarantined"] and result["deletion_intents"]==2 and result["tables"]==36
+    assert result["recovery_quarantined"] and result["deletion_intents"]==2 and result["tables"]==int(sys.argv[9])
 print(json.dumps(dict(passed=True,quarantined=True,live_cos=False)))
 `
-	offsiteOutput, offsiteErr := exec.Command("python3", "-c", offsiteRoundtrip, filepath.Dir(script), root, filepath.Join(root, "vault"), envPath, filename, ledgerPath, currentLedger["sha256"].(string), binaries).CombinedOutput()
+	offsiteOutput, offsiteErr := exec.Command("python3", "-c", offsiteRoundtrip, filepath.Dir(script), root, filepath.Join(root, "vault"), envPath, filename, ledgerPath, currentLedger["sha256"].(string), binaries, fmt.Sprint(snapshot["tables"])).CombinedOutput()
 	if offsiteErr != nil {
 		t.Fatalf("controlled encrypted offsite restore failed: %v %s", offsiteErr, offsiteOutput)
 	}

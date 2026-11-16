@@ -13,6 +13,10 @@ func (s *COSObjects) FindStagingMultipart(ctx context.Context, key string) (stri
 	if !multipartStagingKey(key) {
 		return "", ErrInvalidManifest
 	}
+	return s.findMultipart(ctx, key)
+}
+
+func (s *COSObjects) findMultipart(ctx context.Context, key string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	keyMarker, idMarker := "", ""

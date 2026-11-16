@@ -1,0 +1,37 @@
+{
+  "baseRunningTestSource": "732a5f1e333c75aae4a6f3137755a9427cbe73e1",
+  "journalImplementationSource": "c1b7964d029194864b4d15ec095c7d95b6a6a472",
+  "scope": [
+    "Journal voice finalization and recoverable organization jobs",
+    "Read-aloud text positions and bounded phrase fallback",
+    "Generated Journal HTTP contract and routing",
+    "Forward-only 0084 journal voice jobs migration"
+  ],
+  "preserved": [
+    "Every existing SQL migration, byte for byte",
+    "Albums App Attest gateway wrapper",
+    "Request-context forwarding and withdrawn-image protections",
+    "Other App configuration and data"
+  ],
+  "historicalSQLFilesUnchanged": 86,
+  "validation": {
+    "goAllPackages": "passed",
+    "targetedMySQLAndRace": "passed",
+    "deploymentTestsRun": 118,
+    "deploymentTestsSkipped": 5
+  },
+  "deployed": false,
+  "matchedAlreadyInstalledOperations": {
+    "file": "deploy/tencent/release.py",
+    "sha256": "eaeb00578e0712f078ef5645dd3c5af8dd8eaf44aed610861625af6326e8a38d",
+    "changes": [
+      "Existing TTS credential validation",
+      "Existing managed operations verification"
+    ],
+    "hostOperationsChanged": false,
+    "dependencies": {
+      "operations_guard.py": "746e7e5c1a432e196c9d2dd15491cc517dffcdc9c5d8532ae7301fe7d8f9cd59",
+      "read_aloud_credentials.py": "d417188f9e34a6704778297a1cc5846af372f711e054718ea9f2fe2fd0f17103"
+    }
+  }
+}

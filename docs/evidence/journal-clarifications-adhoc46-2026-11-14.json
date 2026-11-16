@@ -1,0 +1,77 @@
+{
+  "published": true,
+  "version": "1.0",
+  "build": "46",
+  "sourceCommit": "4e2e2ecb3fd7cf37aa70aafa0317b9dc62865b87",
+  "ipaSHA256": "a90d0fd4e566994d5ce190bddbc91d7dc6021e62f9017da9fe9af5fec9213079",
+  "downloadBytes": 80656001,
+  "downloadSeconds": 274.69,
+  "pageAndManifestVerified": true,
+  "rangeAndHEADVerified": true,
+  "privateResponseHeadersVerified": true,
+  "defaultTLSVerified": true,
+  "expiresAt": "2026-11-15T11:03:54.052483299Z",
+  "expiresAtBeijing": "2026-11-15 19:03",
+  "privateURLRedacted": true,
+  "originalPrivateRecordingUsed": false,
+  "userAcceptanceConfirmed": false,
+  "distribution": "Ad Hoc",
+  "configuration": "Debug",
+  "backend": "https://api-test.journal.tellyouwhat.cn",
+  "backendSource": "af0a61972607ef92bfb00331641e62b467a8b9f9",
+  "backendRollbackSource": "903eb84e11305856fbc494d170e53271221410fe",
+  "bundles": [
+    {
+      "bundleID": "cn.tellyouwhat.journalapp.dev",
+      "version": "1.0",
+      "build": "46",
+      "signatureValid": true,
+      "profile": "Ad Hoc",
+      "allPriorDevicesRegistered": true,
+      "appGroups": [
+        "group.cn.tellyouwhat.journalapp.dev",
+        "group.cn.tellyouwhat.mealmemories.dev"
+      ],
+      "keychainGroups": [
+        "T6DD96HY2B.cn.tellyouwhat.journalapp.dev"
+      ]
+    },
+    {
+      "bundleID": "cn.tellyouwhat.journalapp.dev.share",
+      "version": "1.0",
+      "build": "46",
+      "signatureValid": true,
+      "profile": "Ad Hoc",
+      "allPriorDevicesRegistered": true,
+      "appGroups": [
+        "group.cn.tellyouwhat.journalapp.dev"
+      ],
+      "keychainGroups": [
+        "T6DD96HY2B.cn.tellyouwhat.journalapp.dev.share"
+      ]
+    }
+  ],
+  "appSource": "4e2e2ecb3fd7cf37aa70aafa0317b9dc62865b87",
+  "authenticatedPreUpdateBackupVerified": true,
+  "authenticatedPostUpdateBackupVerified": true,
+  "publicTestHTTPS": {
+    "api-test.health.tellyouwhat.cn": true,
+    "api-test.journal.tellyouwhat.cn": true,
+    "api-test.birthday.tellyouwhat.cn": true,
+    "api-test.albums.tellyouwhat.cn": true,
+    "admin-test.tellyouwhat.cn": true
+  },
+  "backendCleanupPassed": true,
+  "productionUnchanged": true,
+  "onlyJournalBuild46Admitted": true,
+  "ownedUploadStagingRemoved": true,
+  "managedXcodeRunCompleted": true,
+  "priorVerifiedSourceInputsMatch": true,
+  "fullSuiteRunThisDelivery": false,
+  "phoneInstalledThisDelivery": false,
+  "realAppAttestThisDelivery": false,
+  "originalRecordingRetested": false,
+  "newTestFlightPublished": false,
+  "privateInstallationURLRedacted": true,
+  "evidenceDirectory": "/Users/harborzeng/Documents/JournalAppFixes/2026-11-14-voice-clarifications/delivery-adhoc46"
+}

@@ -18,6 +18,9 @@ type DerivedCleanupRepository interface {
 	AssetVersion(context.Context, string, string) (AssetVersion, error)
 	PhotoWriteByAttempt(context.Context, string, string) (PhotoWriteRecord, error)
 	CompletePhotoWrite(context.Context, PhotoWriteRecord, SealedObject, time.Time) (PhotoWriteRecord, error)
+	BindPhotoMultipart(context.Context, PhotoWriteRecord, string, time.Time) (PhotoWriteRecord, error)
+	FenceCleanupPhotoMultipart(context.Context, DerivedCleanup, PhotoWriteRecord, time.Time) (PhotoWriteRecord, error)
+	ConfirmCleanupPhotoMultipartAborted(context.Context, DerivedCleanup, PhotoWriteRecord, time.Time) (PhotoWriteRecord, error)
 	VideoJob(context.Context, string, string, VideoPreset) (VideoJob, error)
 	BindCleanupVideoSubmission(context.Context, DerivedCleanup, string, time.Time) (VideoJob, error)
 	RecoverCleanupVideo(context.Context, DerivedCleanup, VideoResult, time.Time) (VideoJob, error)
@@ -25,6 +28,8 @@ type DerivedCleanupRepository interface {
 type DerivedCleanupProvider interface {
 	DerivedCleanupStorage
 	VerifyVideoResult(context.Context, VideoJob) (VideoResult, error)
+	FindPhotoMultipart(context.Context, PhotoWriteSpec) (string, error)
+	AbortPhotoMultipart(context.Context, PhotoWriteRecord) error
 }
 type DerivedCleanupBatch struct{ Recovered, Retired, Pruned, Waiting, Failed, Contended int }
 type DerivedCleanupWorker struct {
@@ -52,7 +57,8 @@ func (w *DerivedCleanupWorker) currentLease(ctx context.Context, expected Derive
 	return nil
 }
 
-// No PUT, transcode POST, cancellation or original-key DELETE occurs here.
+// No PUT, transcode POST or original-key DELETE occurs here. Photo sessions
+// can be aborted only behind a durable fence excluding every Complete request.
 // Ambiguous provider states retain bounded escrow; only terminal observations
 // may be persisted as retirement plans before any version-specific delete.
 func (w *DerivedCleanupWorker) advance(ctx context.Context, c DerivedCleanup) (string, error) {
@@ -78,29 +84,44 @@ func (w *DerivedCleanupWorker) advance(ctx context.Context, c DerivedCleanup) (s
 		}
 		target = DerivedCleanupTarget{"photo", c.OwnerID, c.ReferenceID, string(p.Spec.Preset)}
 		if c.Plan == nil && c.KeepVersion == "" {
-			versions, err := w.storage.ListDerivedVersions(ctx, target)
-			if err != nil {
-				return "", err
-			}
-			receipt, invalidCommitted, err := w.storage.AssessPhotoCleanup(ctx, p, versions)
-			if err != nil {
-				return "", err
-			}
-			if receipt != nil {
-				if err := w.currentLease(ctx, c); err != nil {
+			if p.Spec.Multipart && (p.MultipartPhase == "ready" || p.MultipartPhase == "aborted") {
+				p, err = w.abortPhotoMultipart(ctx, c, p)
+				if err != nil {
 					return "", err
 				}
-				if _, err := w.repository.CompletePhotoWrite(ctx, p, *receipt, w.now().UTC()); err != nil {
+				versions, err := w.storage.ListDerivedVersions(ctx, target)
+				if err != nil {
 					return "", err
 				}
-				return "recovered", nil
-			}
-			if !invalidCommitted {
-				return "", ErrDerivedPending
-			}
-			c, err = w.repository.StoreDerivedCleanupPlan(ctx, c, DerivedCleanupPlan{Terminal: true, Versions: versions}, w.now().UTC())
-			if err != nil {
-				return "", err
+				c, err = w.repository.StoreDerivedCleanupPlan(ctx, c, DerivedCleanupPlan{Terminal: true, Versions: versions}, w.now().UTC())
+				if err != nil {
+					return "", err
+				}
+			} else {
+				versions, err := w.storage.ListDerivedVersions(ctx, target)
+				if err != nil {
+					return "", err
+				}
+				receipt, invalidCommitted, err := w.storage.AssessPhotoCleanup(ctx, p, versions)
+				if err != nil {
+					return "", err
+				}
+				if receipt != nil {
+					if err := w.currentLease(ctx, c); err != nil {
+						return "", err
+					}
+					if _, err := w.repository.CompletePhotoWrite(ctx, p, *receipt, w.now().UTC()); err != nil {
+						return "", err
+					}
+					return "recovered", nil
+				}
+				if !invalidCommitted {
+					return "", ErrDerivedPending
+				}
+				c, err = w.repository.StoreDerivedCleanupPlan(ctx, c, DerivedCleanupPlan{Terminal: true, Versions: versions}, w.now().UTC())
+				if err != nil {
+					return "", err
+				}
 			}
 		}
 	case "video":
@@ -197,6 +218,37 @@ func (w *DerivedCleanupWorker) advance(ctx context.Context, c DerivedCleanup) (s
 		return "pruned", nil
 	}
 	return "retired", nil
+}
+
+func (w *DerivedCleanupWorker) abortPhotoMultipart(ctx context.Context, c DerivedCleanup, p PhotoWriteRecord) (PhotoWriteRecord, error) {
+	if err := w.currentLease(ctx, c); err != nil {
+		return p, err
+	}
+	if p.MultipartID == "" {
+		id, err := w.storage.FindPhotoMultipart(ctx, p.Spec)
+		if err != nil {
+			return p, err
+		}
+		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		p, err = w.repository.BindPhotoMultipart(persist, p, id, w.now().UTC())
+		cancel()
+		if err != nil {
+			return p, err
+		}
+	}
+	p, err := w.repository.FenceCleanupPhotoMultipart(ctx, c, p, w.now().UTC())
+	if err != nil || p.MultipartPhase == "aborted" {
+		return p, err
+	}
+	if err := w.currentLease(ctx, c); err != nil {
+		return p, err
+	}
+	if err := w.storage.AbortPhotoMultipart(ctx, p); err != nil {
+		return p, err
+	}
+	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return w.repository.ConfirmCleanupPhotoMultipartAborted(persist, c, p, w.now().UTC())
 }
 
 func cleanupSnapshotMatches(c DerivedCleanup, observed []DerivedObjectVersion) error {

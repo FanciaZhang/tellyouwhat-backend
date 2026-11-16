@@ -13,11 +13,98 @@ import (
 	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
+func TestMultipartExpiryClosesKnownAndUncertainInitiationsBeforeVersionDeletion(t *testing.T) {
+	for _, mode := range []string{"ok", "abort-denied", "abort-wrong-error", "parts-still-present", "parts-denied", "listing-still-present", "unknown-initiation"} {
+		t.Run(mode, func(t *testing.T) {
+			c, r, data, _ := expiryFixture(t)
+			r.Protocol = multipartProtocol
+			r.UploadID = "known-bundle"
+			r.ReceiptUploadID = "known-receipt"
+			if mode == "unknown-initiation" {
+				r.UploadID = ""
+				r.ReceiptUploadID = ""
+			}
+			pending := map[string]string{"known-bundle": r.Key, "uncertain-init": r.Key, "known-receipt": strings.TrimSuffix(r.Key, ".enc") + ".receipt.json"}
+			deleted := false
+			closed := map[string]bool{}
+			tr := roundTrip(func(req *http.Request) (*http.Response, error) {
+				q := req.URL.Query()
+				id := q.Get("uploadId")
+				if q.Has("uploads") {
+					if q.Get("prefix") != strings.TrimSuffix(r.Key, ".enc") {
+						t.Fatal("cleanup widened scope")
+					}
+					more := false
+					p := uploadPage{Bucket: c.Bucket, Prefix: q.Get("prefix"), IsTruncated: &more}
+					for id, key := range pending {
+						p.Upload = append(p.Upload, struct{ Key, UploadId string }{key, id})
+					}
+					body, _ := xml.Marshal(p)
+					return response(req, 200, body, ""), nil
+				}
+				if id != "" {
+					if req.URL.Path != "/"+pending[id] && !closed[id] {
+						t.Fatal("unbound session target")
+					}
+					if req.Method == "DELETE" {
+						if mode == "abort-denied" {
+							return response(req, 403, []byte(`<Error><Code>AccessDenied</Code></Error>`), ""), nil
+						}
+						if mode == "abort-wrong-error" {
+							return response(req, 404, []byte(`<Error><Code>NoSuchKey</Code></Error>`), ""), nil
+						}
+						closed[id] = true
+						if mode != "listing-still-present" {
+							delete(pending, id)
+						}
+						return response(req, 204, nil, ""), nil
+					}
+					if mode == "parts-still-present" {
+						return response(req, 200, []byte(`<ListPartsResult/>`), ""), nil
+					}
+					if mode == "parts-denied" {
+						return response(req, 403, []byte(`<Error><Code>AccessDenied</Code></Error>`), ""), nil
+					}
+					return response(req, 404, []byte(`<Error><Code>NoSuchUpload</Code></Error>`), ""), nil
+				}
+				if len(pending) != 0 {
+					t.Fatal("read/deleted versions before all sessions closed")
+				}
+				if q.Has("versions") {
+					more := false
+					p := versionPage{Name: c.Bucket, Prefix: q.Get("prefix"), IsTruncated: &more}
+					if !deleted {
+						p.Version = []cos.ListVersionsResultVersion{{Key: r.Key, VersionId: "v1", Size: r.Bytes}}
+					}
+					return pageResponse(t, req, p), nil
+				}
+				if req.Method == "DELETE" {
+					if q.Get("versionId") != "v1" {
+						t.Fatal("unversioned delete")
+					}
+					deleted = true
+					return response(req, 204, nil, "v1"), nil
+				}
+				return response(req, 200, data, "v1"), nil
+			})
+			out, err := expire(context.Background(), c, r, tr)
+			if mode == "ok" || mode == "unknown-initiation" {
+				if err != nil || !out.Empty || !out.UploadsEmpty || out.SessionsClosed != 3 || !deleted {
+					t.Fatal(out, err)
+				}
+			} else if err == nil || deleted || out.Empty {
+				t.Fatal("unclosed sessions permitted deletion", out, err)
+			}
+		})
+	}
+}
+
 func expiryFixture(t *testing.T) (config, request, []byte, []byte) {
 	c, r, data := fixture(t)
 	receipt := []byte("controlled authenticated publication receipt")
 	h := sha256.Sum256(receipt)
 	r.Operation = "expire"
+	r.UploadID = ""
 	r.Path = ""
 	r.Bucket = c.Bucket
 	r.Region = c.Region

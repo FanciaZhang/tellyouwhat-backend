@@ -105,7 +105,7 @@ func (g *Gateway) startRetentionDispatch(parent context.Context, d *albumRetenti
 		for ctx.Err() == nil {
 			var found bool
 			var err error
-			if !runGatewayBatch(ctx, func() { found, err = d.dispatchOne(ctx) }) {
+			if !g.runBackgroundBatch(ctx, func() { found, err = d.dispatchOne(ctx) }) {
 				return
 			}
 			if err != nil && ctx.Err() == nil {

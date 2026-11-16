@@ -1,10 +1,7 @@
 package albums
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -12,15 +9,13 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
 var ErrPhotoWriteUncertain = errors.New("album photo write needs reconciliation")
 
-// PhotoWriteSpec must be durably recorded before starting a PUT. AttemptID is
-// unique to ONE PUT attempt, not a reusable worker lease or source version ID.
-// Persisting this small descriptor allows recovery without regenerating images.
+// PhotoWriteSpec is recorded before initiation. Its unique AttemptID owns one
+// multipart session; old direct-PUT records remain read-only recovery inputs.
+// This descriptor binds recovery to the exact original candidate.
 // It identifies a candidate only; publishing also needs source/manifest binding
 // and transactional quota accounting in the durable task repository.
 type PhotoWriteSpec struct {
@@ -31,6 +26,7 @@ type PhotoWriteSpec struct {
 	SHA256    string      `json:"sha256"`
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
+	Multipart bool        `json:"multipart,omitempty"`
 }
 
 func (spec PhotoWriteSpec) key() (string, error) {
@@ -41,40 +37,6 @@ func (spec PhotoWriteSpec) key() (string, error) {
 		return "", ErrInvalidManifest
 	}
 	return "albums/derivatives/" + spec.OwnerID + "/" + spec.AttemptID + "/" + string(spec.Preset), nil
-}
-
-// StorePhotoCandidateOnce does exactly one PUT, then reads that exact provider
-// version back. The caller must mark this attempt consumed BEFORE calling it.
-// After any error, only ReconcilePhotoCandidate is safe for this AttemptID:
-// versioned COS buckets ignore forbid-overwrite, and retrying a PUT can create
-// another billable version even if the previous response was merely lost.
-func (s *COSObjects) StorePhotoCandidateOnce(ctx context.Context, spec PhotoWriteSpec, candidate PhotoCandidate) (SealedObject, error) {
-	key, err := spec.key()
-	if err != nil {
-		return SealedObject{}, err
-	}
-	checked, err := inspectPhotoCandidate(candidate.Bytes, spec.Preset)
-	if err != nil || int64(len(checked.Bytes)) != spec.SizeBytes || checked.SHA256 != spec.SHA256 || checked.Width != spec.Width || checked.Height != spec.Height ||
-		candidate.SHA256 != checked.SHA256 || candidate.Width != checked.Width || candidate.Height != checked.Height || candidate.Format != checked.Format {
-		return SealedObject{}, ErrPhotoCandidate
-	}
-	if err := ctx.Err(); err != nil {
-		return SealedObject{}, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	checksum := md5.Sum(candidate.Bytes) // Transport checksum; SHA-256 is verified after GET.
-	response, err := s.client.Object.Put(ctx, key, bytes.NewReader(candidate.Bytes), &cos.ObjectPutOptions{
-		ACLHeaderOptions:       &cos.ACLHeaderOptions{XCosACL: "private"},
-		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: "image/" + checked.Format, ContentLength: spec.SizeBytes, ContentMD5: base64.StdEncoding.EncodeToString(checksum[:]), CacheControl: "private, max-age=31536000, immutable"},
-	})
-	if response != nil && response.Body != nil {
-		response.Body.Close()
-	}
-	if err != nil || response == nil || response.StatusCode != http.StatusOK || !concreteCOSVersion(response.Header.Get("x-cos-version-id")) {
-		return SealedObject{}, ErrPhotoWriteUncertain
-	}
-	return s.verifyPhotoWrite(ctx, spec, key, response.Header.Get("x-cos-version-id"))
 }
 
 // ReconcilePhotoCandidate performs only HEAD/GET, never PUT or DELETE. A 404
@@ -118,7 +80,7 @@ func (s *COSObjects) verifyPhotoWrite(ctx context.Context, spec PhotoWriteSpec, 
 	return SealedObject{ResourceID: string(spec.Preset), Key: key, VersionID: version, SizeBytes: spec.SizeBytes, SHA256: spec.SHA256}, nil
 }
 
-// A committed version is sufficient to observe a finished PUT for deletion,
+// A committed version is sufficient to observe a finished write for deletion,
 // including an invalid preview. No bytes are read or published by this query.
 func (s *COSObjects) observePhotoDeletion(ctx context.Context, spec PhotoWriteSpec) (string, error) {
 	key, err := spec.key()

@@ -98,6 +98,28 @@ subsequent logical-asset grouping, deletion/change handling and scoped media
 read authorization before they form the complete cloud gallery experience.
 
 
+Explicit manual content-category choices use
+`GET`/`PUT /v1/albums/library/versions/{versionID}/content-correction` and
+`GET /v1/albums/content-corrections?after=<sequence>&limit=<1...100>`.
+The session supplies ownership. PUT requires an immutable manifest digest,
+request UUID, expected revision, and disjoint `included`/`excluded` category
+arrays; no OCR, inferred labels, media, or client owner is accepted. A missing
+record reads as revision/sequence zero. Empty arrays persist an explicit reset.
+The current identical request replays without another revision; stale or changed
+requests return 409. Clients must resolve conflicts explicitly rather than retry
+with an updated revision and silently overwrite another device.
+
+The feed contains each version's latest explicit state, not edit history. Follow
+`nextSequence`; an edit during pagination may return a version again. Account
+locking orders allocation and commit, so committed edits cannot appear behind
+an already-returned cursor. Trashed-version choices remain in the owner feed
+for restoration, but per-version access requires visibility. Join with the
+current authorized catalogue before display, and process its purge events;
+permanent version removal cascades the correction row. Retention, account
+removal, and recovery quarantine fence these endpoints. This transport does not
+implement the iOS sync queue, user consent, or cross-device UI.
+
+
 `POST /v1/albums/library/versions/{versionID}/resources/{resourceID}/read-grant`
 is bodyless and accepts no query. It authorizes the authenticated account's
 published immutable resource for five minutes. The response binds asset,
@@ -106,3 +128,30 @@ SHA-256 to a signed COS GET. The app must validate those bindings, its configure
 storage host allowlist, the version query/response and downloaded bytes before
 restoring. Do not log or persist the signed URL. It is not a public share link,
 a download-count limit, immediate revocation mechanism, or deletion proof.
+
+
+Custom cloud collections use `GET /v1/albums/collections` and
+`GET /v1/albums/collection-members`, each with its own `after`/`limit` cursor.
+`GET`/`PUT /v1/albums/collections/{collectionID}` reads or changes a name or
+persists a deletion tombstone; `GET`/`PUT` on its `/members/{assetID}` changes
+one logical asset membership. Members must reference the same owner's active,
+verified backups. Removing a member or deleting a collection never deletes media.
+System PhotoKit albums remain a separate local/Apple-owned scope.
+
+Writes require an immutable request UUID and observed revision. Only the latest
+identical request replays; stale requests conflict. A deleted collection cannot
+be revived by a late rename or member request; recreate with a new UUID. Names
+are trimmed, contain no control characters and have 1–80 Unicode characters.
+Deletion requires an empty name. Explicit member removals remain in the feed;
+join both feeds with active collections and the authorized catalogue, including
+its asset purge events. A pagination-time edit can return the same entity again.
+Commit each feed page and its cursor atomically on the client.
+
+The endpoints reuse account locking, library rate limits, export-period access,
+quarantine and deletion fences. They do not grant media access or upload quota.
+Both tables participate in authenticated encrypted snapshots and account erasure;
+permanent asset erasure clears its memberships but retains other grouping data.
+Native durable sync/UI and the existing unfinished automatic retention scheduler
+(including collection metadata expiry) still need integration before enabling the
+complete feature. These backend operations alone do not establish reinstall or
+cross-device acceptance.

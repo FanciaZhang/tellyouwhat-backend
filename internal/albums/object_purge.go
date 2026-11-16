@@ -122,8 +122,8 @@ type objectPurgeStorage interface {
 	abortPurgeUpload(context.Context, string, purgeTarget, string) error
 }
 
-// Not scheduled yet: provider quiescence and backup deletion propagation must
-// be verified before activation.
+// The opt-in retention worker advances these persisted steps. Provider
+// quiescence and backup deletion propagation must be verified before activation.
 func (r *MySQLUploads) runObjectPurgeStep(ctx context.Context, owner, asset string, storage objectPurgeStorage, now func() time.Time) error {
 	if storage == nil || now == nil {
 		return ErrInvalidManifest

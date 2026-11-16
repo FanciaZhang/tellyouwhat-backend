@@ -57,7 +57,7 @@ func (g *Gateway) startSubscriptionWorkers(ctx context.Context, service *AlbumSu
 		go func() {
 			defer g.subscriptionWorkers.Done()
 			for ctx.Err() == nil {
-				if !runGatewayBatch(ctx, func() {
+				if !g.runBackgroundBatch(ctx, func() {
 					batch, err := service.runSubscriptionBindingBatch(ctx, repository, 10)
 					if ctx.Err() != nil {
 						return
@@ -106,7 +106,7 @@ func (g *Gateway) startSubscriptionWorkers(ctx context.Context, service *AlbumSu
 			for ctx.Err() == nil {
 				var found bool
 				var err error
-				if !runGatewayBatch(ctx, func() { found, err = service.refreshOne(ctx, repository) }) {
+				if !g.runBackgroundBatch(ctx, func() { found, err = service.refreshOne(ctx, repository) }) {
 					return
 				}
 				if found && err == nil {

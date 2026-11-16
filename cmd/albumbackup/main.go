@@ -14,12 +14,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
-const maximum = int64(1 << 30) // shortcut: use multipart uploads if encrypted bundles exceed 1 GiB.
+const maximum = int64(1 << 30) // shortcut: budget and validate larger recovery packages before increasing this limit.
 var rejected = errors.New("album backup transfer rejected")
 var keyPattern = regexp.MustCompile(`^albums/recovery/[0-9a-f]{32}(\.enc|\.receipt\.json)$`)
 var versionPattern = regexp.MustCompile(`^[A-Za-z0-9_.~-]+$`)
@@ -30,10 +31,13 @@ type request struct {
 	Bytes                                                 int64
 	ReceiptSHA256                                         string
 	ReceiptBytes                                          int64
+	UploadID, ReceiptUploadID                             string
+	Protocol                                              string
 }
 type receipt struct {
 	Key, Version, SHA256, Bucket, Region string
 	Bytes                                int64
+	UploadID                             string `json:",omitempty"`
 }
 
 func privateFile(path string) (*os.File, error) {
@@ -46,7 +50,7 @@ func privateFile(path string) (*os.File, error) {
 		return nil, rejected
 	}
 	opened, err := f.Stat()
-	if err != nil || !os.SameFile(info, opened) {
+	if err != nil || !os.SameFile(info, opened) || syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB) != nil {
 		f.Close()
 		return nil, rejected
 	}
@@ -69,9 +73,9 @@ func newClient(c config, transport http.RoundTripper) (*cos.Client, error) {
 }
 
 func transfer(ctx context.Context, c config, r request, transport http.RoundTripper) (receipt, error) {
-	out := receipt{Key: r.Key, Version: r.Version, SHA256: r.SHA256, Bytes: r.Bytes, Bucket: c.Bucket, Region: c.Region}
+	out := receipt{Key: r.Key, Version: r.Version, SHA256: r.SHA256, Bytes: r.Bytes, Bucket: c.Bucket, Region: c.Region, UploadID: r.UploadID}
 	if (r.Operation != "put" && r.Operation != "get") || !keyPattern.MatchString(r.Key) || r.Bytes <= 0 || r.Bytes > maximum || (strings.HasSuffix(r.Key, ".receipt.json") && r.Bytes > 65536) || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(r.SHA256) ||
-		(r.Bucket != "" && r.Bucket != c.Bucket) || (r.Region != "" && r.Region != c.Region) || (r.Operation == "put" && r.Version != "") || (r.Operation == "get" && (!validVersion(r.Version) || r.Bucket != c.Bucket || r.Region != c.Region)) {
+		(r.Bucket != "" && r.Bucket != c.Bucket) || (r.Region != "" && r.Region != c.Region) || r.Protocol != "" || r.ReceiptUploadID != "" || r.ReceiptBytes != 0 || r.ReceiptSHA256 != "" || (r.Operation == "put" && (r.Version != "" || !validUploadID(r.UploadID))) || (r.Operation == "get" && (r.UploadID != "" || !validVersion(r.Version) || r.Bucket != c.Bucket || r.Region != c.Region)) {
 		return receipt{}, rejected
 	}
 	client, err := newClient(c, transport)
@@ -92,17 +96,8 @@ func transfer(ctx context.Context, c config, r request, transport http.RoundTrip
 		if _, err = f.Seek(0, io.SeekStart); err != nil {
 			return receipt{}, rejected
 		}
-		state, resp, err := client.Bucket.GetVersioning(ctx)
-		closeResponse(resp)
-		if err != nil || state == nil || state.Status != "Enabled" {
-			return receipt{}, rejected
-		}
-		resp, err = client.Object.Put(ctx, r.Key, f, &cos.ObjectPutOptions{ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: "application/octet-stream", CacheControl: "no-store", ContentLength: r.Bytes}})
-		if resp != nil {
-			out.Version = resp.Header.Get("x-cos-version-id")
-		}
-		closeResponse(resp)
-		if err != nil || resp == nil || resp.StatusCode != http.StatusOK || !validVersion(out.Version) {
+		out.Version, err = multipartPut(ctx, client, c, r, f, transport)
+		if err != nil {
 			return receipt{}, rejected
 		}
 	}
@@ -185,6 +180,10 @@ func run() error {
 	var result any
 	if r.Operation == "expire" {
 		result, err = expire(ctx, c, r, nil)
+	} else if r.Operation == "inventory" {
+		result, err = auditInventory(ctx, c, r, nil)
+	} else if r.Operation == "initiate" {
+		result, err = initiate(ctx, c, r, nil)
 	} else {
 		result, err = transfer(ctx, c, r, nil)
 	}

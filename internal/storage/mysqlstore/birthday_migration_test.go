@@ -37,7 +37,7 @@ func TestBirthdayMigrationAllowsEnrollmentAndPreservesAppSettings(t *testing.T) 
 		}
 	}
 	var preserved int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM apps WHERE display_name = CONCAT(app_id, '-configured') AND enabled = FALSE`).Scan(&preserved); err != nil || preserved != 3 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM apps WHERE display_name = CONCAT(app_id, '-configured') AND enabled = FALSE`).Scan(&preserved); err != nil || preserved != 4 {
 		t.Fatalf("Migration changed existing app settings: count=%d err=%v", preserved, err)
 	}
 }

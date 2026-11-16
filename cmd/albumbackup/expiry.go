@@ -1,17 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/xml"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
@@ -25,6 +20,8 @@ type expiryResult struct {
 	Key, Bucket, Region string
 	VersionsRemoved     int
 	Empty               bool
+	SessionsClosed      int
+	UploadsEmpty        bool
 }
 type versionPage struct {
 	XMLName                                                                                               xml.Name `xml:"ListVersionsResult"`
@@ -37,8 +34,19 @@ type versionPage struct {
 
 func inventory(ctx context.Context, c config, key string, transport http.RoundTripper) ([]backupVersion, error) {
 	prefix := strings.TrimSuffix(key, ".enc")
-	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		Transport: &cos.AuthorizationTransport{SecretID: c.SecretID, SecretKey: c.SecretKey, Transport: transport}}
+	versions, err := listVersions(ctx, c, prefix, transport)
+	for _, v := range versions {
+		if v.key != key && v.key != prefix+".receipt.json" {
+			return nil, rejected
+		}
+	}
+	return versions, err
+}
+
+func listVersions(ctx context.Context, c config, prefix string, transport http.RoundTripper) ([]backupVersion, error) {
+	if prefix != recoveryPrefix && !regexp.MustCompile(`^albums/recovery/[0-9a-f]{32}$`).MatchString(prefix) {
+		return nil, rejected
+	}
 	marker, versionMarker := "", ""
 	seen := map[string]bool{}
 	var result []backupVersion
@@ -48,30 +56,14 @@ func inventory(ctx context.Context, c config, key string, transport http.RoundTr
 			query.Set("key-marker", marker)
 			query.Set("version-id-marker", versionMarker)
 		}
-		u := "https://" + c.Bucket + ".cos." + c.Region + ".myqcloud.com/?" + query.Encode()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return nil, rejected
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, rejected
-		}
-		data, readErr := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
-		resp.Body.Close()
-		if resp.StatusCode != 200 || readErr != nil || len(data) > 4<<20 {
-			return nil, rejected
-		}
 		var page versionPage
-		decoder := xml.NewDecoder(bytes.NewReader(data))
-		var extra any
-		if decoder.Decode(&page) != nil || decoder.Decode(&extra) != io.EOF || page.IsTruncated == nil || page.Name != c.Bucket || page.Prefix != prefix || page.KeyMarker != marker || page.VersionIdMarker != versionMarker || page.EncodingType != "" || page.Delimiter != "" || len(page.CommonPrefixes) != 0 || len(page.Version)+len(page.DeleteMarker) > 1000 {
+		if readInventoryPage(ctx, c, query, &page, transport) != nil || page.IsTruncated == nil || page.Name != c.Bucket || page.Prefix != prefix || page.KeyMarker != marker || page.VersionIdMarker != versionMarker || page.EncodingType != "" || page.Delimiter != "" || len(page.CommonPrefixes) != 0 || len(page.Version)+len(page.DeleteMarker) > 1000 {
 			return nil, rejected
 		}
 		pageIDs := map[string]bool{}
 		add := func(k, v string, size int64, deleted bool) bool {
 			id := k + "\x00" + v
-			if (k != key && k != prefix+".receipt.json") || !validVersion(v) || size < 0 || seen[id] || len(result) >= 10000 {
+			if !strings.HasPrefix(k, prefix) || !keyPattern.MatchString(k) || !validVersion(v) || size < 0 || seen[id] || len(result) >= 10000 {
 				return false
 			}
 			seen[id] = true
@@ -111,9 +103,18 @@ func expire(ctx context.Context, c config, r request, transport http.RoundTrippe
 	if r.Operation != "expire" || !keyPattern.MatchString(r.Key) || !strings.HasSuffix(r.Key, ".enc") || r.Path != "" || r.Version != "" || r.Bucket != c.Bucket || r.Region != c.Region || r.Bytes <= 0 || r.Bytes > maximum || r.ReceiptBytes <= 0 || r.ReceiptBytes > 65536 || !hashPattern.MatchString(r.SHA256) || !hashPattern.MatchString(r.ReceiptSHA256) {
 		return out, rejected
 	}
+	if r.Protocol != "" && r.Protocol != multipartProtocol || r.Protocol == "" && (r.UploadID != "" || r.ReceiptUploadID != "") || r.UploadID != "" && !validUploadID(r.UploadID) || r.ReceiptUploadID != "" && !validUploadID(r.ReceiptUploadID) {
+		return out, rejected
+	}
 	client, err := newClient(c, transport)
 	if err != nil {
 		return out, err
+	}
+	if r.Protocol == multipartProtocol {
+		out.SessionsClosed, err = closeBackupUploads(ctx, client, c, r, transport)
+		if err != nil {
+			return out, err
+		}
 	}
 	versions, err := inventory(ctx, c, r.Key, transport)
 	if err != nil {
@@ -142,15 +143,7 @@ func expire(ctx context.Context, c config, r request, transport http.RoundTrippe
 		if v.key != r.Key {
 			size, digest = r.ReceiptBytes, r.ReceiptSHA256
 		}
-		resp, err := client.Object.Get(ctx, v.key, nil, v.version)
-		if err != nil || resp == nil {
-			closeResponse(resp)
-			return out, rejected
-		}
-		hash := sha256.New()
-		n, readErr := io.Copy(hash, io.LimitReader(resp.Body, size+1))
-		closeResponse(resp)
-		if resp.StatusCode != http.StatusOK || resp.Header.Get("x-cos-version-id") != v.version || resp.ContentLength != size || readErr != nil || n != size || hex.EncodeToString(hash.Sum(nil)) != digest {
+		if verifyObject(ctx, client, v.key, v.version, digest, size) != nil {
 			return out, rejected
 		}
 	}
@@ -166,6 +159,13 @@ func expire(ctx context.Context, c config, r request, transport http.RoundTrippe
 	remaining, err := inventory(ctx, c, r.Key, transport)
 	if err != nil || len(remaining) != 0 {
 		return out, rejected
+	}
+	if r.Protocol == multipartProtocol {
+		uploads, err := listUploads(ctx, c, strings.TrimSuffix(r.Key, ".enc"), transport)
+		if err != nil || len(uploads) != 0 {
+			return out, rejected
+		}
+		out.UploadsEmpty = true
 	}
 	out.Empty = true
 	return out, nil

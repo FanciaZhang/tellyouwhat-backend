@@ -223,12 +223,13 @@ func loadPlatformApp(prefix string, defaults appDefaults, environment, commonTea
 		defaults.Host = strings.Replace(defaults.Host, "api.", "api-test.", 1)
 	}
 	if defaults.ID == appregistry.Albums {
-		return AppConfig{Registry: appregistry.App{
-			ID: defaults.ID, DisplayName: defaults.DisplayName,
-			Hosts:    []string{prefixedValue("ALBUM", "API_HOST", defaults.Host)},
-			TeamID:   prefixedValue("ALBUM", "APPLE_TEAM_ID", commonTeamID),
-			BundleID: prefixedValue("ALBUM", "APPLE_BUNDLE_ID", defaults.BundleID),
-		}}, nil
+		return AppConfig{AttestationEnvironment: attestation.Environment(prefixedValue("ALBUM", "APP_ATTEST_ENV", string(attestation.EnvironmentProduction))),
+			AllowedBuilds: splitSet(prefixedValue("ALBUM", "ALLOWED_APP_BUILDS", "")), Registry: appregistry.App{
+				ID: defaults.ID, DisplayName: defaults.DisplayName,
+				Hosts:    []string{prefixedValue("ALBUM", "API_HOST", defaults.Host)},
+				TeamID:   prefixedValue("ALBUM", "APPLE_TEAM_ID", commonTeamID),
+				BundleID: prefixedValue("ALBUM", "APPLE_BUNDLE_ID", defaults.BundleID),
+			}}, nil
 	}
 	attestationEnvironment := attestation.Environment(prefixedValue(prefix, "APP_ATTEST_ENV", string(attestation.EnvironmentProduction)))
 	defaultTimeout := 90
@@ -415,7 +416,10 @@ func (config AppConfig) Validate(environment string) error {
 		return err
 	}
 	if config.Registry.ID == appregistry.Albums {
-		// Album authentication and storage plans are validated by its API, not the AI worker.
+		if config.AttestationEnvironment != attestation.EnvironmentProduction {
+			return errors.New("albums requires production App Attest with its environment-specific Bundle ID")
+		}
+		// Account authentication and storage plans remain independent of AI commerce.
 		return nil
 	}
 	if len(config.ManagedAIProductIDs) == 0 {

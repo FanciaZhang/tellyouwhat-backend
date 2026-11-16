@@ -22,7 +22,10 @@ func TestEmbeddedMigrationsStartFromCleanMultiAppSchema(t *testing.T) {
 	expected = append(expected, "0067_journal_illustration_consent_scope.sql", "0068_journal_read_aloud_quota.sql", "0069_journal_voice_catalog.sql")
 	expected = append(expected, "0070_journal_read_aloud_consent.sql", "0071_journal_simulator_read_aloud_consents.sql")
 	expected = append(expected, "0072_health_guardian_consent_scope.sql")
-	expected = append(expected, "0073_album_development_subscription_products.sql", "0074_album_system_copy_locators.sql")
+	expected = append(expected, "0073_album_development_subscription_products.sql")
+	expected = append(expected, "0074_album_system_copy_locators.sql", "0075_album_content_corrections.sql", "0076_album_asset_favorites.sql", "0077_album_collections.sql")
+	expected = append(expected, "0078_album_asset_deletion_ledger.sql", "0079_platform_albums_app_attest.sql", "0080_album_photo_multipart.sql", "0081_album_photo_completion_fence.sql")
+	expected = append(expected, "0082_album_retention_cleanup_schedule.sql", "0083_album_record_erasure_schedule.sql")
 	expected = append(expected, "0084_journal_voice_organization_jobs.sql")
 	expected = append(expected, "0085_prompt_voice_debug_samples.sql", "0086_prompt_recording_inputs.sql")
 	if len(entries) != len(expected) {

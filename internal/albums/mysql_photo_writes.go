@@ -8,31 +8,34 @@ import (
 	"time"
 )
 
-// An empty ObjectVersion means the attempt is consumed, with no verified receipt.
-// It never authorizes another PUT, including after a process restart.
+// An empty ObjectVersion is unpublished. Direct attempts recover read-only;
+// multipart retries remain bound to the same provider session.
 type PhotoWriteRecord struct {
 	VersionID                      string
 	ManifestDigest                 string
 	Spec                           PhotoWriteSpec
 	ObjectVersion                  string
+	MultipartID                    string
+	MultipartPhase                 string
 	RetirementStartedAt, RetiredAt time.Time
 }
 
 func (r PhotoWriteRecord) Receipt() (SealedObject, error) {
 	key, err := r.Spec.key()
-	if err != nil || !concreteCOSVersion(r.ObjectVersion) || !r.RetirementStartedAt.IsZero() || !r.RetiredAt.IsZero() {
+	if err != nil || !concreteCOSVersion(r.ObjectVersion) || r.Spec.Multipart && (!validCOSMultipartID(r.MultipartID) || (r.MultipartPhase != "completing" && r.MultipartPhase != "unknown")) || !r.RetirementStartedAt.IsZero() || !r.RetiredAt.IsZero() {
 		return SealedObject{}, ErrPhotoWriteUncertain
 	}
 	return SealedObject{ResourceID: string(r.Spec.Preset), Key: key, VersionID: r.ObjectVersion, SizeBytes: r.Spec.SizeBytes, SHA256: r.Spec.SHA256}, nil
 }
 
-const photoWriteColumns = `version_id,manifest_digest,owner_id,attempt_id,preset,size_bytes,sha256,pixel_width,pixel_height,object_version,retirement_started_at,retired_at`
+const photoWriteColumns = `version_id,manifest_digest,owner_id,attempt_id,preset,size_bytes,sha256,pixel_width,pixel_height,object_version,retirement_started_at,retired_at,multipart,provider_upload_id,multipart_phase`
 
 func scanPhotoWrite(row rowScanner) (PhotoWriteRecord, error) {
 	var r PhotoWriteRecord
 	var version sql.NullString
+	var multipart sql.NullString
 	var retiring, retired sql.NullTime
-	err := row.Scan(&r.VersionID, &r.ManifestDigest, &r.Spec.OwnerID, &r.Spec.AttemptID, &r.Spec.Preset, &r.Spec.SizeBytes, &r.Spec.SHA256, &r.Spec.Width, &r.Spec.Height, &version, &retiring, &retired)
+	err := row.Scan(&r.VersionID, &r.ManifestDigest, &r.Spec.OwnerID, &r.Spec.AttemptID, &r.Spec.Preset, &r.Spec.SizeBytes, &r.Spec.SHA256, &r.Spec.Width, &r.Spec.Height, &version, &retiring, &retired, &r.Spec.Multipart, &multipart, &r.MultipartPhase)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, ErrNotFound
 	}
@@ -40,10 +43,29 @@ func scanPhotoWrite(row rowScanner) (PhotoWriteRecord, error) {
 		return r, err
 	}
 	r.ObjectVersion = version.String
+	r.MultipartID = multipart.String
 	r.RetirementStartedAt, r.RetiredAt = retiring.Time, retired.Time
 	digest, err := hex.DecodeString(r.ManifestDigest)
 	if _, specErr := r.Spec.key(); specErr != nil || !validOwner(r.VersionID) || err != nil || len(digest) != 32 || (version.Valid && !concreteCOSVersion(version.String)) ||
-		(retired.Valid && !retiring.Valid) || (version.Valid && retiring.Valid) {
+		(retired.Valid && !retiring.Valid) || (version.Valid && retiring.Valid) ||
+		(multipart.Valid && (!r.Spec.Multipart || !validCOSMultipartID(r.MultipartID))) || (r.Spec.Multipart && version.Valid && !multipart.Valid) {
+		return PhotoWriteRecord{}, ErrConflict
+	}
+	switch r.MultipartPhase {
+	case "unknown":
+	case "ready":
+		if !r.Spec.Multipart || version.Valid {
+			return PhotoWriteRecord{}, ErrConflict
+		}
+	case "completing":
+		if !r.Spec.Multipart || !multipart.Valid {
+			return PhotoWriteRecord{}, ErrConflict
+		}
+	case "aborted":
+		if !r.Spec.Multipart || !multipart.Valid || !retiring.Valid || version.Valid {
+			return PhotoWriteRecord{}, ErrConflict
+		}
+	default:
 		return PhotoWriteRecord{}, ErrConflict
 	}
 	return r, nil
@@ -55,9 +77,8 @@ func (r *MySQLUploads) PhotoWrite(ctx context.Context, owner, versionID string, 
 	return scanPhotoWrite(r.db.QueryRowContext(ctx, `SELECT `+photoWriteColumns+` FROM album_photo_writes WHERE owner_id=? AND version_id=? AND preset=?`, owner, versionID, preset))
 }
 
-// BeginPhotoWrite consumes this attempt in the database BEFORE its PUT. Only
-// the caller receiving fresh=true after a successful commit may issue the PUT.
-// An ambiguous DB commit returns no permission to write; reread and reconcile.
+// BeginPhotoWrite records intent before initiation. Only fresh=true permits a
+// new provider session; ambiguous commits must be reread before any mutation.
 func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest string, spec PhotoWriteSpec, now time.Time) (PhotoWriteRecord, bool, error) {
 	if _, err := spec.key(); err != nil || !validOwner(versionID) {
 		return PhotoWriteRecord{}, false, ErrInvalidManifest
@@ -92,11 +113,15 @@ func (r *MySQLUploads) BeginPhotoWrite(ctx context.Context, versionID, digest st
 		if allocated < 0 || allocated > u.DerivedBudget || spec.SizeBytes > u.DerivedBudget-allocated {
 			return u, ErrQuota
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, spec.AttemptID, spec.OwnerID, versionID, digest, spec.Preset, spec.SizeBytes, spec.SHA256, spec.Width, spec.Height, now, now)
+		phase := "unknown"
+		if spec.Multipart {
+			phase = "ready"
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO album_photo_writes(attempt_id,owner_id,version_id,manifest_digest,preset,size_bytes,sha256,pixel_width,pixel_height,created_at,updated_at,multipart,multipart_phase) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, spec.AttemptID, spec.OwnerID, versionID, digest, spec.Preset, spec.SizeBytes, spec.SHA256, spec.Width, spec.Height, now, now, spec.Multipart, phase)
 		if err != nil {
 			return u, err
 		}
-		record = PhotoWriteRecord{VersionID: versionID, ManifestDigest: digest, Spec: spec}
+		record = PhotoWriteRecord{VersionID: versionID, ManifestDigest: digest, Spec: spec, MultipartPhase: phase}
 		fresh = true
 		return u, nil
 	})
@@ -126,7 +151,7 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 	if err != nil {
 		return PhotoWriteRecord{}, err
 	}
-	if old.Spec != expected.Spec || old.ManifestDigest != expected.ManifestDigest {
+	if old.Spec != expected.Spec || old.ManifestDigest != expected.ManifestDigest || old.MultipartID != expected.MultipartID || old.Spec.Multipart && !validCOSMultipartID(old.MultipartID) {
 		return PhotoWriteRecord{}, ErrConflict
 	}
 	var observed sql.NullString
@@ -138,6 +163,9 @@ func (r *MySQLUploads) CompletePhotoWrite(ctx context.Context, expected PhotoWri
 	}
 	if !old.RetirementStartedAt.IsZero() || !old.RetiredAt.IsZero() {
 		return PhotoWriteRecord{}, ErrDerivedRetired
+	}
+	if old.Spec.Multipart && (old.MultipartPhase == "ready" || old.MultipartPhase == "aborted") {
+		return PhotoWriteRecord{}, ErrConflict
 	}
 	if old.ObjectVersion != "" {
 		if old.ObjectVersion != receipt.VersionID {

@@ -53,7 +53,7 @@ func requireAccountMediaQuiescence(ctx context.Context, tx *sql.Tx, owner, reque
 	}
 	// Retirement may have removed the observed PUT version already. Its durable
 	// terminal plan must still contain a committed object, not just a timestamp.
-	rows, err := tx.QueryContext(ctx, `SELECT p.object_version,p.deletion_object_version,p.retirement_started_at,c.plan_json
+	rows, err := tx.QueryContext(ctx, `SELECT p.object_version,p.deletion_object_version,p.retirement_started_at,c.plan_json,p.multipart,p.provider_upload_id,p.multipart_phase
 	 FROM album_photo_writes p LEFT JOIN album_derived_cleanups c
 	 ON c.owner_id=p.owner_id AND c.reference_id=p.attempt_id AND c.kind='photo'
 	 AND c.version_id=p.version_id AND c.manifest_digest=p.manifest_digest AND c.keep_version IS NULL AND c.reserve_bytes=p.size_bytes
@@ -65,11 +65,17 @@ func requireAccountMediaQuiescence(ctx context.Context, tx *sql.Tx, owner, reque
 	for rows.Next() {
 		var verified, observed sql.NullString
 		var retiring sql.NullTime
+		var multipart bool
+		var providerID sql.NullString
+		var phase string
 		var data []byte
-		if err = rows.Scan(&verified, &observed, &retiring, &data); err != nil {
+		if err = rows.Scan(&verified, &observed, &retiring, &data, &multipart, &providerID, &phase); err != nil {
 			return err
 		}
 		if concreteCOSVersion(verified.String) || concreteCOSVersion(observed.String) {
+			continue
+		}
+		if multipart && phase == "aborted" && retiring.Valid && validCOSMultipartID(providerID.String) {
 			continue
 		}
 		var plan DerivedCleanupPlan

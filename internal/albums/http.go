@@ -142,17 +142,6 @@ func (h *uploadHTTP) GetAlbumUpload(c *gin.Context, id albumhttpapi.UploadID) {
 	}
 	c.JSON(http.StatusOK, value)
 }
-func (h *uploadHTTP) AuthorizeAlbumUploadResources(c *gin.Context, id albumhttpapi.UploadID) {
-	if !emptyAlbumBody(c) {
-		return
-	}
-	value, err := h.service.Grants(c.Request.Context(), c.GetString("album.owner"), id.String())
-	if err != nil {
-		writeAlbumError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"grants": value})
-}
 func (h *uploadHTTP) SubmitAlbumUpload(c *gin.Context, id albumhttpapi.UploadID) {
 	if !emptyAlbumBody(c) {
 		return

@@ -9,6 +9,9 @@ import (
 )
 
 func validateAlbumGatewayIdentity(platform config.PlatformConfig, app appregistry.App, album albums.GatewayConfig) error {
+	if platform.StorageMode != "mysql" {
+		return errors.New("album App Attest requires shared MySQL and Redis storage")
+	}
 	environment := "production"
 	if platform.Environment == "development" {
 		environment = "test"

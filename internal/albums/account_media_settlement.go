@@ -97,6 +97,8 @@ func (r *MySQLUploads) settleAccountMediaPurge(ctx context.Context, owner, reque
 		`DELETE c FROM album_share_claims c JOIN album_share_links s ON s.share_id=c.share_id WHERE s.owner_id=?`,
 		`DELETE FROM album_share_links WHERE owner_id=?`,
 		`DELETE FROM album_object_purges WHERE owner_id=?`,
+		`DELETE FROM album_collection_members WHERE owner_id=?`,
+		`DELETE FROM album_collections WHERE owner_id=?`,
 		`DELETE FROM album_asset_operations WHERE owner_id=?`,
 		`DELETE FROM album_library_changes WHERE owner_id=?`,
 		`DELETE m FROM album_live_pair_multiparts m JOIN album_live_pairs p ON p.pair_upload_id=m.pair_upload_id WHERE p.owner_id=?`,

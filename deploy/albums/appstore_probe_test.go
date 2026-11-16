@@ -33,3 +33,37 @@ func TestProbePrivateFileRejectsPublicAndIndirectFiles(t *testing.T) {
 		t.Fatal("accepted publicly readable file")
 	}
 }
+
+func TestProbeIdentityRequiresExplicitSeparateAppAndState(t *testing.T) {
+	for _, test := range []struct {
+		profile, bundle, root string
+		id                    int64
+	}{
+		{"development", "cn.tellyouwhat.albums.dev", "albums-development", 6824089160},
+		{"formal", "cn.tellyouwhat.albums", "albums-test", 6822133304},
+	} {
+		bundle, id, root, err := probeIdentity(test.profile)
+		if err != nil || bundle != test.bundle || id != test.id || root != test.root {
+			t.Fatal("incorrect probe identity", test.profile, err)
+		}
+	}
+	if _, _, _, err := probeIdentity("production"); err == nil {
+		t.Fatal("unknown identity must not default to formal")
+	}
+}
+
+func TestProbeInvalidArgumentsStopBeforeCredentialsOrNetwork(t *testing.T) {
+	before := os.Args
+	t.Cleanup(func() { os.Args = before })
+	for _, args := range [][]string{
+		{"probe", "request"}, {"probe", "delete", "development", "sandbox-notification-valid"},
+		{"probe", "request", "other-app", "sandbox-notification-valid"},
+		{"probe", "request", "development", "../albums-test"},
+		{"probe", "request", "development", "sandbox-notification-../escape"},
+	} {
+		os.Args = args
+		if err := run(); err == nil {
+			t.Fatal("invalid probe arguments accepted")
+		}
+	}
+}

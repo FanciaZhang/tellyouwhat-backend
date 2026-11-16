@@ -56,21 +56,6 @@ func (h *uploadHTTP) CreateAlbumLivePair(c *gin.Context, version uuid.UUID) {
 	}
 	c.JSON(http.StatusCreated, u)
 }
-func (h *uploadHTTP) AuthorizeAlbumLivePairUpload(c *gin.Context, id uuid.UUID) {
-	if !emptyAlbumBody(c) {
-		return
-	}
-	if c.Request.URL.RawQuery != "" {
-		writeAlbumError(c, ErrInvalidManifest)
-		return
-	}
-	grants, err := h.service.LivePairGrants(c.Request.Context(), c.GetString("album.owner"), id.String())
-	if err != nil {
-		writeLivePairError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"grants": grants})
-}
 func (h *uploadHTTP) SubmitAlbumLivePair(c *gin.Context, id uuid.UUID) {
 	if !emptyAlbumBody(c) {
 		return

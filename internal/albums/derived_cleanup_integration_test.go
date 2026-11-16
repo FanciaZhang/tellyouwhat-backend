@@ -2,6 +2,7 @@ package albums
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tellyouwhat/backend/internal/testutil"
 )
 
 func derivedVideoIntent(t *testing.T, r *MySQLUploads, u Upload, target VideoJob, now time.Time, provider bool) VideoJob {
@@ -239,6 +241,71 @@ func cleanupTestWorker(t *testing.T, r *MySQLUploads, c DerivedCleanup, p *clean
 		t.Fatal(err)
 	}
 	return w
+}
+
+type observedCleanupProvider struct {
+	cleanupProviderFixture
+	inspections int
+}
+
+func (p *observedCleanupProvider) InspectVideoCleanup(ctx context.Context, job VideoJob) (VideoCleanupObservation, error) {
+	p.inspections++
+	return p.cleanupProviderFixture.InspectVideoCleanup(ctx, job)
+}
+
+func TestRunningMediaCleanupRejectsClaimsAfterRecoveryQuarantine(t *testing.T) {
+	db := testutil.MySQL(t)
+	u, target := videoJournalUpload(t, db)
+	r := NewMySQLUploads(db)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	j := derivedVideoIntent(t, r, u, target, now, true)
+	pending := closeVideoForCleanup(t, r, u, j, now)
+	p := &observedCleanupProvider{cleanupProviderFixture: cleanupProviderFixture{
+		versions:    []DerivedObjectVersion{{"unpublished-version", false, 100}},
+		observation: VideoCleanupObservation{j.ProviderJobID, true, false},
+	}}
+	w, err := NewDerivedCleanupWorker(r, p, 1, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := r.PendingDerivedCleanups(ctx, now, 1)
+	if err != nil || len(jobs) != 1 || jobs[0].ID != pending.ID {
+		t.Fatal("fixture did not queue an eligible cleanup", err)
+	}
+	for _, step := range []struct {
+		statement string
+		want      error
+	}{
+		{`UPDATE album_recovery_state SET quarantined=TRUE,quarantined_at=UTC_TIMESTAMP(6) WHERE singleton_id=1`, ErrRecoveryQuarantined},
+		{`DELETE FROM album_recovery_state WHERE singleton_id=1`, sql.ErrNoRows},
+		{`RENAME TABLE album_recovery_state TO album_hidden_recovery_state`, nil},
+	} {
+		if _, err := db.ExecContext(ctx, step.statement); err != nil {
+			t.Fatal(err)
+		}
+		b, err := w.RunOnce(ctx)
+		if err == nil || step.want != nil && !errors.Is(err, step.want) || b != (DerivedCleanupBatch{}) || p.inspections != 0 || len(p.deletes) != 0 {
+			t.Fatalf("cleanup ran without an active recovery marker: batch=%+v inspect=%d deletes=%d err=%v", b, p.inspections, len(p.deletes), err)
+		}
+		record, err := r.DerivedCleanup(ctx, pending.OwnerID, pending.ID)
+		if err != nil || record.State != pending.State || record.Attempts != pending.Attempts || record.LeaseToken != pending.LeaseToken || record.Plan != nil {
+			t.Fatal("rejected cleanup changed its durable claim", err)
+		}
+	}
+	// Restore only this disposable fixture's marker to prove normal admission.
+	for _, statement := range []string{
+		`RENAME TABLE album_hidden_recovery_state TO album_recovery_state`,
+		`INSERT INTO album_recovery_state(singleton_id) VALUES(1)`,
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b, err := w.RunOnce(ctx); err != nil || b.Retired != 1 || p.inspections != 1 || len(p.deletes) != 1 || p.deletes[0] != "unpublished-version" {
+		t.Fatalf("restored active fixture did not settle the original cleanup: batch=%+v inspect=%d deletes=%d err=%v", b, p.inspections, len(p.deletes), err)
+	}
 }
 
 func TestMySQLDerivedCleanupFailedVideoLostDeleteReopensAndRefundsOnce(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -36,9 +37,25 @@ func privateFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func probeIdentity(profile string) (string, int64, string, error) {
+	switch profile {
+	case "development":
+		return "cn.tellyouwhat.albums.dev", 6824089160, "albums-development", nil
+	case "formal":
+		return "cn.tellyouwhat.albums", 6822133304, "albums-test", nil
+	default:
+		return "", 0, "", errors.New("explicit development or formal Albums identity required")
+	}
+}
+
 func run() error {
-	if len(os.Args) != 2 || (os.Args[1] != "request" && os.Args[1] != "status") {
-		return errors.New("use request or status")
+	if len(os.Args) != 4 || (os.Args[1] != "request" && os.Args[1] != "status") ||
+		!regexp.MustCompile(`^sandbox-notification-[a-z0-9][a-z0-9-]{0,47}$`).MatchString(os.Args[3]) {
+		return errors.New("use request|status development|formal sandbox-notification-<label>")
+	}
+	bundleID, appID, stateRoot, err := probeIdentity(os.Args[2])
+	if err != nil {
+		return err
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -54,15 +71,20 @@ func run() error {
 		return errors.New("invalid probe signing key")
 	}
 	now := time.Now()
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{"iss": "1f4f7f07-26b1-4226-9518-5bd19f8440b8", "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "aud": "appstoreconnect-v1", "bid": "cn.tellyouwhat.albums"})
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{"iss": "1f4f7f07-26b1-4226-9518-5bd19f8440b8", "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "aud": "appstoreconnect-v1", "bid": bundleID})
 	token.Header["kid"] = "YTX5GYG2Z5"
 	bearer, err := token.SignedString(key)
 	if err != nil {
 		return errors.New("could not sign probe request")
 	}
-	directory := filepath.Join(root, "apple-notification-20261013")
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return err
+	directory := filepath.Join(home, ".config/tellyouwhat", stateRoot, os.Args[3])
+	if os.Args[1] == "request" {
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			return err
+		}
+	}
+	if info, err := os.Lstat(directory); err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return errors.New("probe directory must be private and not a symlink")
 	}
 	endpoint := "https://api.storekit-sandbox.apple.com/inApps/v1/notifications/test"
 	method := http.MethodPost
@@ -137,13 +159,13 @@ func run() error {
 	if !roots.AppendCertsFromPEM(rootsData) {
 		return errors.New("invalid Apple trust roots")
 	}
-	verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: roots, BundleID: "cn.tellyouwhat.albums", AppAppleID: 6822133304, Environment: "Sandbox"})
+	verifier := appstore.NewTransactionVerifier(appstore.VerifierConfig{Roots: roots, BundleID: bundleID, AppAppleID: appID, Environment: "Sandbox"})
 	verified, err := verifier.VerifyNotification(result.Signed)
 	if err != nil || verified.NotificationType != "TEST" {
 		return errors.New("Apple TEST signature or app binding invalid")
 	}
 	digest := sha256.Sum256([]byte(result.Signed))
-	evidence := map[string]any{"http_status": response.StatusCode, "notification_id": verified.NotificationUUID, "environment": verified.Environment, "type": verified.NotificationType, "signed_at": verified.SignedAt, "signed_payload_sha256": hex.EncodeToString(digest[:]), "attempts": result.Attempts}
+	evidence := map[string]any{"http_status": response.StatusCode, "bundle_id": bundleID, "app_apple_id": appID, "notification_id": verified.NotificationUUID, "environment": verified.Environment, "type": verified.NotificationType, "signed_at": verified.SignedAt, "signed_payload_sha256": hex.EncodeToString(digest[:]), "attempts": result.Attempts}
 	public, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		return err

@@ -134,6 +134,67 @@ func TestMySQLAccountQuiescencePhotoRequiresReceiptOrBoundRetirementProof(t *tes
 	}
 }
 
+func TestMySQLAccountQuiescencePhotoRequiresConfirmedMultipartAbort(t *testing.T) {
+	for _, phase := range []string{"ready", "completing", "unknown"} {
+		t.Run(phase, func(t *testing.T) {
+			f := newPushFixture(t)
+			u, candidate := photoJournalUpload(t, f.r.db)
+			r, ctx := NewMySQLUploads(f.r.db), context.Background()
+			spec := photoJournalSpec(u, candidate, PhotoGridPNG)
+			spec.Multipart = true
+			p, _, err := r.BeginPhotoWrite(ctx, u.ID, u.Digest, spec, f.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err = r.BindPhotoMultipart(ctx, p, "account-photo-session", f.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if phase != "ready" {
+				if _, err := r.db.Exec(`UPDATE album_photo_writes SET multipart_phase=? WHERE attempt_id=?`, phase, p.Spec.AttemptID); err != nil {
+					t.Fatal(err)
+				}
+				p.MultipartPhase = phase
+			}
+			if _, err := r.db.Exec(`UPDATE album_photo_jobs SET state='attention' WHERE owner_id=?`, u.OwnerID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.FinalizeDerivedBudget(ctx, DerivedVersionRef{u.OwnerID, u.ID}, f.now); err != nil {
+				t.Fatal(err)
+			}
+			c := derivedCleanupFor(t, r, u.OwnerID, "photo", spec.AttemptID)
+			c, err = r.ClaimDerivedCleanup(ctx, c.OwnerID, c.ID, uuid.NewString(), f.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deleteProtocolFixtureOwner(t, f, u.OwnerID)
+			var request string
+			if err := r.db.QueryRow(`SELECT request_id FROM album_account_deletions WHERE account_id=?`, u.OwnerID).Scan(&request); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.PreparePhotoMultipartCompletion(ctx, p, f.now); !errors.Is(err, ErrDerivedRetired) {
+				t.Fatal("deleting account admitted a completion", err)
+			}
+			assertAccountQuiescence(t, r, u.OwnerID, request, true)
+			p, err = r.FenceCleanupPhotoMultipart(ctx, c, p, f.now)
+			if phase != "ready" {
+				if !errors.Is(err, ErrDerivedPending) {
+					t.Fatal("unknown Complete was considered abortable", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertAccountQuiescence(t, r, u.OwnerID, request, true)
+			if _, err := r.ConfirmCleanupPhotoMultipartAborted(ctx, c, p, f.now); err != nil {
+				t.Fatal(err)
+			}
+			assertAccountQuiescence(t, r, u.OwnerID, request, false)
+		})
+	}
+}
+
 func TestMySQLAccountQuiescenceVideoRequiresMatchingTerminalJob(t *testing.T) {
 	for _, mode := range []string{"unsubmitted", "terminal", "missing-job", "wrong-provider"} {
 		t.Run(mode, func(t *testing.T) {

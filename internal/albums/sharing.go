@@ -68,8 +68,8 @@ type SharedResource struct {
 	SizeBytes  int64  `json:"sizeBytes"`
 }
 type ShareLookup struct {
-	Kind             string           `json:"kind"`
-	Resources        []SharedResource `json:"resources"`
+	Kind             AssetKind        `json:"kind,omitempty"`
+	Resources        []SharedResource `json:"resources,omitempty"`
 	ExpiresAt        time.Time        `json:"expiresAt"`
 	RequiresPassword bool             `json:"requiresPassword"`
 	RemainingClaims  int              `json:"remainingClaims"`
@@ -92,6 +92,11 @@ type SharedReadGrant struct {
 
 func (SharedReadGrant) String() string   { return "[redacted album shared read grant]" }
 func (SharedReadGrant) GoString() string { return "[redacted album shared read grant]" }
+
+type ShareDownloads struct {
+	Kind      AssetKind         `json:"kind"`
+	Resources []SharedReadGrant `json:"resources"`
+}
 
 type sharedOriginalAuthorizer interface {
 	AuthorizeSharedOriginalRead(context.Context, SealedObject, string, time.Time) (string, error)
@@ -354,10 +359,15 @@ func (s *ShareService) Lookup(ctx context.Context, token string) (ShareLookup, e
 		return ShareLookup{}, err
 	}
 	version, err := s.uploads.verifiedAssetVersion(ctx, row.Owner, row.Version)
-	if err != nil {
+	if err != nil || !s.now().UTC().Before(row.Expiry) {
 		return ShareLookup{}, ErrShareNotAvailable
 	}
-	return ShareLookup{Kind: string(version.Manifest.Kind), Resources: sharedResources(version), ExpiresAt: row.Expiry, RequiresPassword: len(row.Password) > 0, RemainingClaims: row.MaxClaims - row.Claims}, nil
+	result := ShareLookup{ExpiresAt: row.Expiry, RequiresPassword: len(row.Password) > 0, RemainingClaims: row.MaxClaims - row.Claims}
+	if !result.RequiresPassword {
+		result.Kind = version.Manifest.Kind
+		result.Resources = sharedResources(version)
+	}
+	return result, nil
 }
 func (s *ShareService) Claim(ctx context.Context, token, password, requestID string) (ShareClaim, error) {
 	if !validOwner(requestID) {
@@ -374,10 +384,9 @@ func (s *ShareService) Claim(ctx context.Context, token, password, requestID str
 	if err := s.verifyPassword(ctx, row.Password, password); err != nil {
 		return ShareClaim{}, err
 	}
-	now := s.now().UTC().Truncate(time.Millisecond)
-	candidate := shareClaimRow{ID: uuid.NewString(), Share: id, Request: requestID, KeyID: s.activeKeyID, Created: now, Expiry: now.Add(shareClaimLifetime)}
+	candidate := shareClaimRow{ID: uuid.NewString(), Share: id, Request: requestID, KeyID: s.activeKeyID, Created: s.now().UTC()}
 	candidate.TokenDigest = sha256.Sum256([]byte(sharedToken(candidate.ID, s.keys[candidate.KeyID], "claim", id, requestID)))
-	result, err := s.repository.claimShare(ctx, row, digest, candidate, now)
+	result, err := s.repository.claimShare(ctx, row, digest, candidate, s.now)
 	if err != nil {
 		return ShareClaim{}, err
 	}
@@ -392,35 +401,55 @@ func (s *ShareService) Claim(ctx context.Context, token, password, requestID str
 	}
 	return ShareClaim{Token: claimToken, ExpiresAt: result.Expiry}, nil
 }
-func (s *ShareService) ReadGrants(ctx context.Context, token string) ([]SharedReadGrant, error) {
+func (s *ShareService) ReadGrants(ctx context.Context, token string) (ShareDownloads, error) {
 	id, digest, err := parseSharedToken(token)
 	if err != nil {
-		return nil, err
+		return ShareDownloads{}, err
 	}
-	var grants []SharedReadGrant
-	err = s.repository.withShareClaim(ctx, id, digest, s.now().UTC(), func(row shareRow, version AssetVersion, deadline time.Time) error {
-		expiry := minTime(s.now().UTC().Add(5*time.Minute), deadline)
-		if !s.now().UTC().Before(expiry) {
+	var downloads ShareDownloads
+	var shareExpiry, claimExpiry, expiry time.Time
+	checkExpiry := func(now time.Time) error {
+		switch {
+		case !now.Before(shareExpiry):
 			return ErrShareNotAvailable
+		case !now.Before(claimExpiry):
+			return ErrShareClaimExpired
+		case !now.Before(expiry):
+			return ErrShareUnavailable
+		}
+		return nil
+	}
+	err = s.repository.withShareClaim(ctx, id, digest, s.now().UTC(), func(row shareRow, version AssetVersion, claimDeadline time.Time) error {
+		shareExpiry, claimExpiry = row.Expiry, claimDeadline
+		now := s.now().UTC()
+		expiry = minTime(now.Add(5*time.Minute), minTime(shareExpiry, claimExpiry))
+		if err := checkExpiry(now); err != nil {
+			return err
 		}
 		signer := s.uploads.objects.(sharedOriginalAuthorizer)
 		objects := map[string]SealedObject{}
 		for _, object := range version.Objects {
 			objects[object.ResourceID] = object
 		}
-		grants = make([]SharedReadGrant, 0, len(version.Manifest.Resources))
+		downloads = ShareDownloads{Kind: version.Manifest.Kind, Resources: make([]SharedReadGrant, 0, len(version.Manifest.Resources))}
 		for _, resource := range version.Manifest.Resources {
 			name := sharedFilename(resource)
 			signed, err := signer.AuthorizeSharedOriginalRead(ctx, objects[resource.ID], name, expiry)
 			if err != nil {
+				if expiryErr := checkExpiry(s.now().UTC()); expiryErr != nil {
+					return expiryErr
+				}
 				return ErrShareUnavailable
 			}
-			grants = append(grants, SharedReadGrant{SharedResource: SharedResource{resource.ID, string(resource.Role), name, resource.SizeBytes}, SHA256: strings.ToLower(resource.SHA256), ObjectVersionID: objects[resource.ID].VersionID, URL: signed, ExpiresAt: expiry})
+			downloads.Resources = append(downloads.Resources, SharedReadGrant{SharedResource: SharedResource{resource.ID, string(resource.Role), name, resource.SizeBytes}, SHA256: strings.ToLower(resource.SHA256), ObjectVersionID: objects[resource.ID].VersionID, URL: signed, ExpiresAt: expiry})
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return ShareDownloads{}, err
 	}
-	return grants, nil
+	if err := checkExpiry(s.now().UTC()); err != nil {
+		return ShareDownloads{}, err
+	}
+	return downloads, nil
 }

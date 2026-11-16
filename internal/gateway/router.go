@@ -27,12 +27,16 @@ const rawRequestBodyKey = "gateway.raw-request-body"
 var configureGinOnce sync.Once
 var openAPIPathParameter = regexp.MustCompile(`\{([^}/]+)\}`)
 
-func (server *Server) newHTTPRouter() *gin.Engine {
+func configureHTTPGin() {
 	configureGinOnce.Do(func() {
 		gin.SetMode(gin.ReleaseMode)
 		binding.EnableDecoderDisallowUnknownFields = true
 		binding.EnableDecoderUseNumber = true
 	})
+}
+
+func (server *Server) newHTTPRouter() *gin.Engine {
+	configureHTTPGin()
 
 	router := gin.New()
 	router.RedirectTrailingSlash = false
@@ -92,7 +96,11 @@ func (server *Server) newHTTPRouter() *gin.Engine {
 }
 
 func (server *Server) registerPlatformRoutes(router gin.IRouter) {
-	strict := platformhttpapi.NewStrictHandlerWithOptions(server, nil, platformhttpapi.StrictGinServerOptions{
+	platformhttpapi.RegisterHandlersWithOptions(router, server.platformStrictHandler(), platformhttpapi.GinServerOptions{ErrorHandler: parameterError})
+}
+
+func (server *Server) platformStrictHandler() platformhttpapi.ServerInterface {
+	return platformhttpapi.NewStrictHandlerWithOptions(server, nil, platformhttpapi.StrictGinServerOptions{
 		RequestErrorHandlerFunc: func(context *gin.Context, _ error) {
 			status := http.StatusUnprocessableEntity
 			code := "contract_violation"
@@ -107,7 +115,25 @@ func (server *Server) registerPlatformRoutes(router gin.IRouter) {
 		HandlerErrorFunc:         strictHandlerError,
 		ResponseErrorHandlerFunc: strictResponseError,
 	})
-	platformhttpapi.RegisterHandlersWithOptions(router, strict, platformhttpapi.GinServerOptions{ErrorHandler: parameterError})
+}
+
+// NewAttestationRouter exposes only platform enrollment, without AI or commerce routes.
+func NewAttestationRouter(enrollment Enrollment) http.Handler {
+	configureHTTPGin()
+	router := gin.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
+	router.Use(func(context *gin.Context) {
+		if !strings.HasPrefix(context.FullPath(), "/v1/attest/") {
+			context.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		context.Next()
+	})
+	router.Use(captureRawRequestBody())
+	server := &Server{enrollment: enrollment}
+	platformhttpapi.RegisterHandlersWithOptions(router, server.platformStrictHandler(), platformhttpapi.GinServerOptions{ErrorHandler: parameterError})
+	return router
 }
 
 func (server *Server) registerHealthRoutes(router gin.IRouter) {

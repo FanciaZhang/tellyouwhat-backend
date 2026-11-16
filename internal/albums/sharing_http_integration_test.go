@@ -140,8 +140,18 @@ func TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments(t *testing
 	if status != 200 || headers.Get("Cache-Control") != "no-store" || bytes.Contains(data, []byte(f.login.AccountID)) || bytes.Contains(data, []byte("albums/originals/")) {
 		t.Fatal("lookup leaked server-only metadata", status)
 	}
+	var preview map[string]json.RawMessage
+	if json.Unmarshal(data, &preview) != nil || len(preview) != 3 || string(preview["requiresPassword"]) != "true" ||
+		preview["expiresAt"] == nil || preview["remainingClaims"] == nil {
+		t.Fatal("password-protected lookup returned media metadata")
+	}
 	requestID := uuid.NewString()
 	claimInput := map[string]string{"token": token, "password": input.Password, "requestID": requestID}
+	wrongCode := map[string]string{"token": token, "password": "wrong", "requestID": requestID}
+	if status, _, data = send("POST", "/v1/albums/share-links/claims", "", "https://shares.example", wrongCode, nil); status != 422 ||
+		!bytes.Contains(data, []byte("share_password_rejected")) || bytes.Contains(data, []byte("回忆.jpeg")) {
+		t.Fatal("wrong code disclosed protected media", status)
+	}
 	status, _, data = send("POST", "/v1/albums/share-links/claims", "", "https://shares.example", claimInput, nil)
 	if status != 200 {
 		t.Fatal("claim", status)
@@ -162,10 +172,8 @@ func TestGatewayAlbumSharingRealSessionsRedisCORSAndPinnedAttachments(t *testing
 	if status != 200 {
 		t.Fatal("public read grants", status)
 	}
-	var result struct {
-		Resources []SharedReadGrant `json:"resources"`
-	}
-	if json.Unmarshal(data, &result) != nil || len(result.Resources) != 1 {
+	var result ShareDownloads
+	if json.Unmarshal(data, &result) != nil || result.Kind != Photo || len(result.Resources) != 1 {
 		t.Fatal("grants response")
 	}
 	grant := result.Resources[0]

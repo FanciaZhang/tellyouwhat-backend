@@ -17,6 +17,7 @@ import (
 type AlbumSubscriptionConfig struct {
 	RebindingEnabled                       bool
 	RecordErasureEnabled                   bool
+	RetentionErasureEnabled                bool
 	BundleID, Environment, IssuerID, KeyID string
 	AppAppleID                             int64
 	SandboxQuotaBytes                      int64
@@ -40,6 +41,13 @@ func albumStoreEnvironment(deployment string) string {
 }
 
 func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) (*AlbumSubscriptionConfig, error) {
+	retention := strings.TrimSpace(getenv("ALBUM_RETENTION_ERASURE_ENABLED"))
+	if retention != "" && retention != "false" && retention != "true" {
+		return nil, errors.New("invalid ALBUM_RETENTION_ERASURE_ENABLED")
+	}
+	if retention == "true" && (deployment != "production" || strings.TrimSpace(getenv("ALBUM_SUBSCRIPTIONS_ENABLED")) != "true") {
+		return nil, errors.New("album retention erasure requires production subscription verification")
+	}
 	rebinding := strings.TrimSpace(getenv("ALBUM_SUBSCRIPTION_REBINDING_ENABLED"))
 	if rebinding != "" && rebinding != "false" && rebinding != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTION_REBINDING_ENABLED")
@@ -61,7 +69,7 @@ func loadAlbumSubscriptionConfig(getenv func(string) string, deployment string) 
 	if enabled != "true" {
 		return nil, errors.New("invalid ALBUM_SUBSCRIPTIONS_ENABLED")
 	}
-	c := &AlbumSubscriptionConfig{BundleID: albumAudienceForDeployment(deployment), RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
+	c := &AlbumSubscriptionConfig{BundleID: albumAudienceForDeployment(deployment), RebindingEnabled: rebinding == "true", RecordErasureEnabled: erasure == "true", RetentionErasureEnabled: retention == "true", Environment: albumStoreEnvironment(deployment), IssuerID: strings.TrimSpace(getenv("ALBUM_APP_STORE_ISSUER_ID")), KeyID: strings.TrimSpace(getenv("ALBUM_APP_STORE_KEY_ID"))}
 	if deployment == "production" {
 		c.Environment = "Both"
 	}
@@ -118,6 +126,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 		}
 		productionConfig, sandboxConfig := *c, *c
 		productionConfig.Environment, sandboxConfig.Environment = "Production", "Sandbox"
+		sandboxConfig.RetentionErasureEnabled = false
 		sandboxRepository := *repository
 		sandboxRepository.billingEnvironment = "Sandbox"
 		sandboxRepository.productionSandboxQuota = c.SandboxQuotaBytes
@@ -135,6 +144,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 		return service, nil
 	}
 	if !validAlbumAudience(c.BundleID) || repository == nil || repository.billingEnvironment != c.Environment || c.Roots == nil || c.SigningKey == nil || (c.RecordErasureEnabled && !c.RebindingEnabled) ||
+		(c.RetentionErasureEnabled && c.Environment != "Production") ||
 		c.IssuerID == "" || c.KeyID == "" || (c.Environment == "Production" && c.AppAppleID <= 0) {
 		return nil, ErrSubscriptionUnavailable
 	}
@@ -170,6 +180,7 @@ func newConfiguredAlbumSubscriptions(repository *MySQLUploads, c *AlbumSubscript
 	if err == nil {
 		service.rebindingEnabled = c.RebindingEnabled
 		service.recordErasureEnabled = c.RecordErasureEnabled
+		service.retentionErasureEnabled = c.RetentionErasureEnabled
 	}
 	return service, err
 }

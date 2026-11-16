@@ -34,7 +34,7 @@ func (server *Server) GetReadiness(
 		failure := newAPIFailure(http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", "")
 		return platformhttpapi.GetReadiness503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
-	readinessContext, cancel := context.WithTimeout(ctx, 2*time.Second)
+	readinessContext, cancel := context.WithTimeout(apiRequestContext(ctx), 2*time.Second)
 	defer cancel()
 	if err := server.readiness.Ready(readinessContext); err != nil {
 		failure := newAPIFailure(http.StatusServiceUnavailable, "not_ready", "service dependencies are unavailable", "")
@@ -70,7 +70,7 @@ func (server *Server) GetManagedAIProduct(
 ) (platformhttpapi.GetManagedAIProductResponseObject, error) {
 	product := server.managedProduct
 	if server.operations != nil {
-		r, err := server.operations.Current(ctx)
+		r, err := server.operations.Current(apiRequestContext(ctx))
 		if err != nil {
 			failure := newAPIFailure(503, "operations_unavailable", "cloud configuration is unavailable", "")
 			return platformhttpapi.GetManagedAIProductdefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
@@ -102,7 +102,7 @@ func (server *Server) IssueAttestationChallenge(
 		failure := newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request body is required", "")
 		return platformhttpapi.IssueAttestationChallenge422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 	}
-	challenge, err := server.enrollment.IssueChallenge(ctx, request.Body.KeyID)
+	challenge, err := server.enrollment.IssueChallenge(apiRequestContext(ctx), request.Body.KeyID)
 	if err != nil {
 		strictGinContext(ctx).Set(observability.AuthenticationFailureStageContextKey, attestation.FailureStage(err))
 		if errors.Is(err, attestation.ErrUnavailable) {
@@ -130,7 +130,7 @@ func (server *Server) RegisterAttestationKey(
 		failure := newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request body is required", "")
 		return platformhttpapi.RegisterAttestationKey422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 	}
-	principal, err := server.enrollment.Register(ctx, attestation.RegistrationRequest{
+	principal, err := server.enrollment.Register(apiRequestContext(ctx), attestation.RegistrationRequest{
 		KeyID: request.Body.KeyID, Challenge: request.Body.Challenge,
 		Attestation: base64.StdEncoding.EncodeToString(request.Body.Attestation),
 		Build:       request.Body.Build, ActivationSecret: request.Body.ActivationSecret,
@@ -179,7 +179,7 @@ func (server *Server) ActivateDevelopmentEntitlement(
 	if failure != nil {
 		return platformhttpapi.ActivateDevelopmentEntitlementdefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
 	}
-	expiresAt, err := server.activator.Activate(ctx, principal, request.Params.XTellyouwhatDevActivation)
+	expiresAt, err := server.activator.Activate(apiRequestContext(ctx), principal, request.Params.XTellyouwhatDevActivation)
 	if err != nil {
 		if errors.Is(err, entitlement.ErrActivationDenied) {
 			failure = newAPIFailure(http.StatusForbidden, "activation_denied", "development entitlement activation denied", requestID.String())
@@ -208,7 +208,7 @@ func (server *Server) SynchronizeSubscriptionTransaction(
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "contract_violation", "request body is required", requestID.String())
 		return platformhttpapi.SynchronizeSubscriptionTransaction422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
 	}
-	expiresAt, err := server.productionEntitlement.Sync(ctx, principal, request.Body.SignedTransaction)
+	expiresAt, err := server.productionEntitlement.Sync(apiRequestContext(ctx), principal, request.Body.SignedTransaction)
 	if err != nil {
 		switch {
 		case errors.Is(err, entitlement.ErrSubscriptionBindingConflict):
@@ -237,7 +237,7 @@ func (server *Server) ProcessAppStoreNotification(
 		failure := newAPIFailure(http.StatusBadRequest, "invalid_notification_envelope", "notification envelope is invalid", "")
 		return platformhttpapi.ProcessAppStoreNotification400JSONResponse{BadRequestJSONResponse: platformhttpapi.BadRequestJSONResponse(failure.platformResponse())}, nil
 	}
-	if _, err := server.appStoreNotifications.Process(ctx, request.Body.SignedPayload); err != nil {
+	if _, err := server.appStoreNotifications.Process(apiRequestContext(ctx), request.Body.SignedPayload); err != nil {
 		if errors.Is(err, entitlement.ErrProductionSyncDenied) {
 			failure := newAPIFailure(http.StatusBadRequest, "notification_verification_failed", "notification verification failed", "")
 			return platformhttpapi.ProcessAppStoreNotification400JSONResponse{BadRequestJSONResponse: platformhttpapi.BadRequestJSONResponse(failure.platformResponse())}, nil
@@ -275,7 +275,7 @@ func (server *Server) RecordPrivacyConsents(
 			Scope: string(consent.Scope), DocumentVersion: consent.DocumentVersion, Granted: consent.Granted,
 		})
 	}
-	recordedAt, err := server.privacy.RecordConsents(ctx, principal, consents)
+	recordedAt, err := server.privacy.RecordConsents(apiRequestContext(ctx), principal, consents)
 	if errors.Is(err, privacy.ErrInvalidConsent) {
 		failure = newAPIFailure(http.StatusUnprocessableEntity, "invalid_consent", "consent scope or document version is invalid", requestID.String())
 		return platformhttpapi.RecordPrivacyConsents422JSONResponse{UnprocessableEntityJSONResponse: platformhttpapi.UnprocessableEntityJSONResponse(failure.platformResponse())}, nil
@@ -309,7 +309,7 @@ func (server *Server) DeletePrivacyData(
 		failure := newAPIFailure(http.StatusUnauthorized, "authentication_failed", "request authentication failed", requestID.String())
 		return platformhttpapi.DeletePrivacyDatadefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
 	}
-	completed, err := server.privacy.DeletionCompleted(ctx, receipt)
+	completed, err := server.privacy.DeletionCompleted(apiRequestContext(ctx), receipt)
 	if err != nil {
 		failure := newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be confirmed", requestID.String())
 		return platformhttpapi.DeletePrivacyData503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
@@ -320,7 +320,7 @@ func (server *Server) DeletePrivacyData(
 	principal, failure := server.apiAuthenticate(ctx, requestID)
 	if failure != nil {
 		// A concurrent copy may commit deletion after the first receipt lookup.
-		completed, err := server.privacy.DeletionCompleted(ctx, receipt)
+		completed, err := server.privacy.DeletionCompleted(apiRequestContext(ctx), receipt)
 		if err != nil {
 			failure = newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be confirmed", requestID.String())
 		} else if completed {
@@ -328,7 +328,7 @@ func (server *Server) DeletePrivacyData(
 		}
 		return platformhttpapi.DeletePrivacyDatadefaultJSONResponse{Body: failure.platformResponse(), StatusCode: failure.status}, nil
 	}
-	if err := server.privacy.DeletePrincipalWithReceipt(ctx, principal, receipt); err != nil {
+	if err := server.privacy.DeletePrincipalWithReceipt(apiRequestContext(ctx), principal, receipt); err != nil {
 		failure = newAPIFailure(http.StatusServiceUnavailable, "deletion_unavailable", "data deletion could not be completed", requestID.String())
 		return platformhttpapi.DeletePrivacyData503JSONResponse{ServiceUnavailableJSONResponse: platformhttpapi.ServiceUnavailableJSONResponse(failure.platformResponse())}, nil
 	}
@@ -383,7 +383,7 @@ func (server *Server) GetAIQuota(
 		MonthlyUsed: snapshot.MonthlyUsed, MonthlyLimit: snapshot.MonthlyLimit, MonthlyResetAt: snapshot.MonthlyResetAt,
 	}
 	if server.app.ID == appregistry.Health {
-		recognition, err := server.recognitionSessions.Snapshot(ctx, principal.DeviceID, recognitionquota.WindowSettings{
+		recognition, err := server.recognitionSessions.Snapshot(apiRequestContext(ctx), principal.DeviceID, recognitionquota.WindowSettings{
 			BusinessDayStartHour: startHour, TimeZoneIdentifier: timeZoneIdentifier,
 		}, server.now())
 		if err != nil {

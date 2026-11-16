@@ -32,7 +32,7 @@ func fixture(t *testing.T) (config, request, []byte) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(data)
-	return config{"backup-1250000000", "ap-guangzhou", "fixture-id", "fixture-key"}, request{Operation: "put", Path: p, Key: "albums/recovery/" + strings.Repeat("a", 32) + ".enc", SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data))}, data
+	return config{"backup-1250000000", "ap-guangzhou", "fixture-id", "fixture-key"}, request{Operation: "put", Path: p, Key: "albums/recovery/" + strings.Repeat("a", 32) + ".enc", UploadID: "upload-id", SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data))}, data
 }
 func TestVersionPinnedUploadAndFetch(t *testing.T) {
 	c, r, data := fixture(t)
@@ -59,6 +59,7 @@ func TestVersionPinnedUploadAndFetch(t *testing.T) {
 		}
 		return response(req, 200, data, "version-1"), nil
 	})
+	transport = multipartResponses(t, c, r, "version-1", transport)
 	receipt, err := transfer(context.Background(), c, r, transport)
 	if err != nil {
 		t.Fatal(err, calls)
@@ -67,6 +68,7 @@ func TestVersionPinnedUploadAndFetch(t *testing.T) {
 		t.Fatal("missing roundtrip proof")
 	}
 	r.Operation = "get"
+	r.UploadID = ""
 	r.Version = receipt.Version
 	r.Bucket = c.Bucket
 	r.Region = c.Region
@@ -132,6 +134,11 @@ func TestUploadRefusesUncertainOrUnverifiedPublication(t *testing.T) {
 				res.ContentLength = int64(len(data))
 				return res, nil
 			})
+			version := "version-1"
+			if mode == "null-version" {
+				version = "null"
+			}
+			tr = multipartResponses(t, c, r, version, tr)
 			if _, err := transfer(context.Background(), c, r, tr); err == nil {
 				t.Fatal("published without proof")
 			}
@@ -155,6 +162,7 @@ func TestTransferBoundariesAndFailedDownloadCleanup(t *testing.T) {
 		}
 	}
 	r.Operation = "get"
+	r.UploadID = ""
 	r.Version = "version-1"
 	r.Bucket = c.Bucket
 	r.Region = c.Region
@@ -198,6 +206,7 @@ func TestSignedReceiptTransferUsesSamePinnedVerification(t *testing.T) {
 		}
 		return response(req, 200, data, "receipt-version"), nil
 	})
+	tr = multipartResponses(t, c, r, "receipt-version", tr)
 	if _, err := transfer(context.Background(), c, r, tr); err != nil || reads != 1 {
 		t.Fatal("receipt not verified", err)
 	}

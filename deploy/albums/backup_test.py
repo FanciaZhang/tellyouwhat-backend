@@ -79,8 +79,7 @@ class AlbumsBackupSafetyTests(unittest.TestCase):
     def test_schema_coverage_is_complete_and_explicit(self):
         migrations = Path(__file__).resolve().parents[2] / "migrations"
         names = set()
-        registered = Path(__file__).resolve().parents[1] / "tencent/testdata/registered-recovery-schema"
-        for file in [*migrations.glob("*album*.sql"), *registered.glob("*album*.sql")]:
+        for file in migrations.glob("*album*.sql"):
             names.update(re.findall(r"CREATE TABLE (?:IF NOT EXISTS )?(album_\w+)", file.read_text()))
         self.assertEqual(set(TABLES), names)
         self.assertEqual(len(TABLES), len(set(TABLES)))

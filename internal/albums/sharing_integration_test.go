@@ -191,7 +191,7 @@ func TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery(t *testing.T) {
 		t.Fatal("secret exposed in site path or query")
 	}
 	info, err := f.service.Lookup(ctx, token)
-	if err != nil || !info.RequiresPassword || info.RemainingClaims != 2 || len(info.Resources) != 1 || info.Resources[0].Filename != "回忆.jpeg" {
+	if err != nil || !info.RequiresPassword || info.RemainingClaims != 2 || info.Kind != "" || len(info.Resources) != 0 {
 		t.Fatal("lookup metadata or counter", err)
 	}
 	request := uuid.NewString()
@@ -211,8 +211,9 @@ func TestMySQLAlbumSharingPasswordIdempotencyRestartAndRecovery(t *testing.T) {
 		t.Fatal("signing failure accepted", err)
 	}
 	f.signer.fail.Store(false)
-	grants, err := f.service.ReadGrants(ctx, claim.Token)
-	if err != nil || len(grants) != 1 || grants[0].ObjectVersionID != "immutable-share-v1" || grants[0].Filename != "回忆.jpeg" || grants[0].ExpiresAt.After(f.now.Add(5*time.Minute)) {
+	downloads, err := f.service.ReadGrants(ctx, claim.Token)
+	grants := downloads.Resources
+	if err != nil || downloads.Kind != Photo || len(grants) != 1 || grants[0].ObjectVersionID != "immutable-share-v1" || grants[0].Filename != "回忆.jpeg" || grants[0].ExpiresAt.After(f.now.Add(5*time.Minute)) {
 		t.Fatal("immutable resource grant", err)
 	}
 	if info, err = f.service.Lookup(ctx, token); err != nil || info.RemainingClaims != 1 {
@@ -282,8 +283,8 @@ func TestMySQLAlbumSharingLastClaimConcurrencyAndPoolBoundedGrants(t *testing.T)
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			grants, err := f.service.ReadGrants(ctx, claim.Token)
-			if err != nil || len(grants) != 1 {
+			downloads, err := f.service.ReadGrants(ctx, claim.Token)
+			if err != nil || len(downloads.Resources) != 1 {
 				t.Errorf("one-connection authorization blocked: %v", err)
 			}
 		}()
@@ -362,8 +363,8 @@ func TestMySQLAlbumSharingRevocationExpiryRetentionAndAccountState(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants, err := f.service.ReadGrants(ctx, current.Token)
-	if err != nil || !grants[0].ExpiresAt.Equal(clipped.ExpiresAt) {
+	downloads, err := f.service.ReadGrants(ctx, current.Token)
+	if err != nil || len(downloads.Resources) != 1 || !downloads.Resources[0].ExpiresAt.Equal(clipped.ExpiresAt) {
 		t.Fatal("grant outlived retention", err)
 	}
 	if _, err := f.db.ExecContext(ctx, `UPDATE album_accounts SET state='disabled' WHERE account_id=?`, f.login.AccountID); err != nil {
@@ -402,6 +403,171 @@ func TestMySQLAlbumSharingLeaseExpiryCannotBeReplayedForFree(t *testing.T) {
 	}
 	if _, err := f.service.Claim(ctx, token, "", uuid.NewString()); err != nil {
 		t.Fatal("new explicit authorization", err)
+	}
+}
+
+func TestMySQLAlbumSharingClaimExpiresWhileWaitingForAccountLock(t *testing.T) {
+	f := newSharingFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	link, token := f.create(t, "", 1)
+	var clock atomic.Value
+	clock.Store(link.ExpiresAt.Add(-time.Second))
+	beforeClaim, proceed := make(chan struct{}), make(chan struct{})
+	var clockReads atomic.Int32
+	f.service.now = func() time.Time {
+		now := clock.Load().(time.Time)
+		if clockReads.Add(1) == 2 {
+			close(beforeClaim)
+			select {
+			case <-proceed:
+			case <-ctx.Done():
+			}
+		}
+		return now
+	}
+	done := make(chan error, 1)
+	go func() { _, err := f.service.Claim(ctx, token, "", uuid.NewString()); done <- err }()
+	select {
+	case <-beforeClaim:
+	case <-ctx.Done():
+		t.Fatal("claim did not finish preflight")
+	}
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err = requireMediaAccount(ctx, tx, f.login.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	close(proceed)
+	poll := time.NewTicker(5 * time.Millisecond)
+	defer poll.Stop()
+	for f.db.Stats().InUse < 2 {
+		select {
+		case <-ctx.Done():
+			t.Fatal("claim did not acquire its database connection")
+		case err := <-done:
+			t.Fatal("claim finished without acquiring the held lock", err)
+		case <-poll.C:
+		}
+	}
+	clock.Store(link.ExpiresAt)
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; !errors.Is(err, ErrShareNotAvailable) {
+		t.Errorf("claim at the expiry boundary returned %v", err)
+	}
+	assertShareAllowanceUnspent(t, ctx, f.db, link.ID)
+}
+
+func TestMySQLAlbumSharingRollsBackClaimIfExpiryCrossesBeforeCommit(t *testing.T) {
+	f := newSharingFixture(t)
+	ctx := context.Background()
+	link, token := f.create(t, "", 1)
+	reads := 0
+	f.service.now = func() time.Time {
+		reads++
+		if reads == 5 { // The check after inserting the claim and incrementing the counter.
+			return link.ExpiresAt
+		}
+		return link.ExpiresAt.Add(-time.Second)
+	}
+	if _, err := f.service.Claim(ctx, token, "", uuid.NewString()); !errors.Is(err, ErrShareNotAvailable) {
+		t.Errorf("late claim returned %v", err)
+	}
+	assertShareAllowanceUnspent(t, ctx, f.db, link.ID)
+}
+
+func assertShareAllowanceUnspent(t *testing.T, ctx context.Context, db *sql.DB, id string) {
+	t.Helper()
+	var count, claims int
+	if err := db.QueryRowContext(ctx, `SELECT claimed_count,(SELECT COUNT(*) FROM album_share_claims WHERE share_id=?) FROM album_share_links WHERE share_id=?`, id, id).Scan(&count, &claims); err != nil || count != 0 || claims != 0 {
+		t.Fatalf("expired request changed the allowance: count=%d rows=%d error=%v", count, claims, err)
+	}
+}
+
+func TestMySQLAlbumSharingDiscardsGrantsIfSigningCrossesExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want error
+	}{
+		{"share", ErrShareNotAvailable},
+		{"claim", ErrShareClaimExpired},
+		{"download", ErrShareUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSharingFixture(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			link, token := f.create(t, "", 2)
+			if tc.name == "share" {
+				*f.now = link.ExpiresAt.Add(-2 * time.Second)
+			}
+			claim, err := f.service.Claim(ctx, token, "", uuid.NewString())
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, expiry := claim.ExpiresAt.Add(-time.Second), claim.ExpiresAt
+			if tc.name == "download" {
+				start, expiry = *f.now, f.now.Add(5*time.Minute)
+			}
+			var clock atomic.Value
+			clock.Store(start)
+			f.service.now = func() time.Time { return clock.Load().(time.Time) }
+			held, began := make(chan struct{}), make(chan struct{})
+			f.signer.hold, f.signer.began = held, began
+			done := make(chan error, 1)
+			go func() {
+				downloads, err := f.service.ReadGrants(ctx, claim.Token)
+				if len(downloads.Resources) != 0 || downloads.Kind != "" {
+					t.Error("returned an expired signed address")
+				}
+				done <- err
+			}()
+			select {
+			case <-began:
+			case <-ctx.Done():
+				t.Fatal("grant did not reach the signer")
+			}
+			clock.Store(expiry)
+			close(held)
+			if err = <-done; !errors.Is(err, tc.want) {
+				t.Fatalf("expired signing returned %v, want %v", err, tc.want)
+			}
+			if tc.name == "download" {
+				if fresh, err := f.service.ReadGrants(ctx, claim.Token); err != nil || len(fresh.Resources) != 1 {
+					t.Fatal("still-valid claim could not refresh the address", err)
+				}
+				if info, err := f.service.Lookup(ctx, token); err != nil || info.RemainingClaims != 1 {
+					t.Fatal("refresh changed the remaining claims", err)
+				}
+			}
+			if tc.name == "claim" {
+				if _, err := f.service.Claim(ctx, token, "", uuid.NewString()); err != nil {
+					t.Fatal("still-active share could not issue another claim", err)
+				}
+			}
+		})
+	}
+}
+
+func TestMySQLAlbumSharingLookupDoesNotReturnMetadataAfterExpiry(t *testing.T) {
+	f := newSharingFixture(t)
+	link, token := f.create(t, "", 1)
+	first := true
+	f.service.now = func() time.Time {
+		if first {
+			first = false
+			return link.ExpiresAt.Add(-time.Second)
+		}
+		return link.ExpiresAt
+	}
+	info, err := f.service.Lookup(context.Background(), token)
+	if !errors.Is(err, ErrShareNotAvailable) || len(info.Resources) != 0 {
+		t.Fatalf("lookup returned %d resource records at expiry: %v", len(info.Resources), err)
 	}
 }
 
@@ -446,8 +612,9 @@ func TestMySQLAlbumSharingLiveBundleRejectsIncompleteEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants, err := f.service.ReadGrants(ctx, claim.Token)
-	if err != nil || len(grants) != 2 || grants[0].Role != string(OriginalPhoto) || grants[1].Role != string(PairedVideo) {
+	downloads, err := f.service.ReadGrants(ctx, claim.Token)
+	grants := downloads.Resources
+	if err != nil || downloads.Kind != LivePhoto || len(grants) != 2 || grants[0].Role != string(OriginalPhoto) || grants[1].Role != string(PairedVideo) {
 		t.Fatal("one live claim did not cover full pair", err)
 	}
 	broken, _ := json.Marshal(objects[:1])

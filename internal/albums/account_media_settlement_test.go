@@ -32,7 +32,7 @@ func readyAccountMediaSettlement(t *testing.T, f sharingFixture, request string)
 func mediaSettlementCounts(t *testing.T, db *sql.DB, owner string) map[string]int {
 	t.Helper()
 	queries := map[string]string{}
-	for _, table := range []string{"album_system_copy_locators", "album_share_links", "album_object_purges", "album_asset_operations", "album_library_changes", "album_live_pairs", "album_derived_cleanups", "album_derived_finalizations", "album_photo_jobs", "album_photo_writes", "album_video_jobs", "album_uploads", "album_asset_versions", "album_asset_lifecycle"} {
+	for _, table := range []string{"album_collections", "album_collection_members", "album_asset_favorites", "album_content_corrections", "album_system_copy_locators", "album_share_links", "album_object_purges", "album_asset_operations", "album_library_changes", "album_live_pairs", "album_derived_cleanups", "album_derived_finalizations", "album_photo_jobs", "album_photo_writes", "album_video_jobs", "album_uploads", "album_asset_versions", "album_asset_lifecycle"} {
 		queries[table] = `SELECT COUNT(*) FROM ` + table + ` WHERE owner_id=?`
 	}
 	queries["album_share_claims"] = `SELECT COUNT(*) FROM album_share_claims c JOIN album_share_links s ON s.share_id=c.share_id WHERE s.owner_id=?`
@@ -119,6 +119,12 @@ func TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved(t *testin
 			foreign, _ := photoJournalUpload(t, f.db)
 			seedSystemCopyHints(t, f.db, f.login.AccountID)
 			seedSystemCopyHints(t, f.db, foreign.OwnerID)
+			seedContentCorrections(t, f.db, f.login.AccountID)
+			seedAssetFavorites(t, f.db, f.login.AccountID)
+			seedCollections(t, f.db, f.login.AccountID)
+			seedContentCorrections(t, f.db, foreign.OwnerID)
+			seedAssetFavorites(t, f.db, foreign.OwnerID)
+			seedCollections(t, f.db, foreign.OwnerID)
 			before := mediaSettlementCounts(t, f.db, foreign.OwnerID)
 			foreignUsed, foreignReserved := photoJournalBalance(t, f.db, foreign.OwnerID)
 			own := mediaSettlementCounts(t, f.db, f.login.AccountID)
@@ -164,6 +170,7 @@ func TestMySQLAccountMediaSettlementAllMediaAndForeignAccountPreserved(t *testin
 func TestMySQLAccountMediaSettlementSharesReplayAndTransactionRollback(t *testing.T) {
 	f := newSharingFixture(t)
 	ctx := context.Background()
+	seedContentCorrections(t, f.db, f.login.AccountID)
 	_, token := f.create(t, "", 2)
 	if _, err := f.service.Claim(ctx, token, "", uuid.NewString()); err != nil {
 		t.Fatal(err)

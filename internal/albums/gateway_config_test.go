@@ -52,6 +52,23 @@ func gatewayEnvironment(t *testing.T) map[string]string {
 	return values
 }
 
+func TestGatewayTrashErasureRequiresExplicitFlag(t *testing.T) {
+	values := gatewayEnvironment(t)
+	for _, flag := range []string{"", "false", "true", "yes"} {
+		values["ALBUM_TRASH_ERASURE_ENABLED"] = flag
+		config, err := LoadGatewayConfig(func(k string) string { return values[k] })
+		if flag == "yes" {
+			if err == nil {
+				t.Fatal("invalid trash erasure flag accepted")
+			}
+			continue
+		}
+		if err != nil || config.TrashErasureEnabled != (flag == "true") || config.TrashEnabled {
+			t.Fatal("trash cleanup flag or independent user-action gate changed", flag, err)
+		}
+	}
+}
+
 func TestGatewayConfigurationRejectsSharedStorageAndUnsafeCredentials(t *testing.T) {
 	values := gatewayEnvironment(t)
 	config, err := LoadGatewayConfig(func(k string) string { return values[k] })

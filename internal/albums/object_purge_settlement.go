@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// No scheduler calls this yet. Complete object removal still needs provider
-// quiescence and backup deletion propagation before production activation.
+// The opt-in retention worker settles observed removals. Provider quiescence
+// and backup deletion propagation remain prerequisites for activation.
 func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset string, storage objectPurgeStorage, now func() time.Time) (int64, error) {
 	if storage == nil || now == nil {
 		return 0, ErrInvalidManifest
@@ -53,7 +53,9 @@ func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset strin
 	}
 	if p.State == "completed" {
 		var refund int64
-		if err := tx.QueryRowContext(ctx, `SELECT refunded_bytes FROM album_object_purges WHERE owner_id=? AND asset_id=?`, owner, asset).Scan(&refund); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT p.refunded_bytes FROM album_object_purges p JOIN album_asset_deletion_ledger l
+ ON l.owner_id=p.owner_id AND l.asset_id=p.asset_id AND l.final_revision=p.revision+1 AND l.reason=p.reason AND l.purged_at=p.completed_at
+ WHERE p.owner_id=? AND p.asset_id=?`, owner, asset).Scan(&refund); err != nil {
 			return 0, err
 		}
 		return refund, tx.Commit()
@@ -86,6 +88,39 @@ func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset strin
 	if refund <= 0 || balance.used < refund {
 		return 0, ErrQuota
 	}
+	rows, err := tx.QueryContext(ctx, `SELECT version_id FROM album_asset_versions WHERE owner_id=? AND asset_id=? ORDER BY version_id LIMIT 1001`, owner, asset)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if !validOwner(id) {
+			rows.Close()
+			return 0, ErrConflict
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 || len(ids) > 1000 {
+		return 0, ErrConflict
+	}
+	versions, err := json.Marshal(ids)
+	if err != nil {
+		return 0, err
+	}
+	// The final receipt, metadata removal and refund commit together; never overwrite a fence.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO album_asset_deletion_ledger(owner_id,asset_id,final_revision,reason,purged_at,version_ids) VALUES(?,?,?,?,?,?)`, owner, asset, a.Revision+1, p.Reason, clock, versions); err != nil {
+		return 0, err
+	}
 	// Remove old active events with their manifests, retaining only opaque IDs
 	// and a final revision so old cursors and fresh installations converge.
 	if _, err = tx.ExecContext(ctx, `DELETE FROM album_library_changes WHERE owner_id=? AND asset_id=?`, owner, asset); err != nil {
@@ -113,6 +148,11 @@ func (r *MySQLUploads) settleObjectPurge(ctx context.Context, owner, asset strin
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM album_asset_versions WHERE owner_id=? AND asset_id=?`, owner, asset); err != nil {
 		return 0, err
+	}
+	for _, table := range []string{"album_asset_favorites", "album_collection_members"} {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE owner_id=? AND asset_id=?`, owner, asset); err != nil {
+			return 0, err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM album_asset_operations WHERE owner_id=? AND asset_id=?`, owner, asset); err != nil {
 		return 0, err

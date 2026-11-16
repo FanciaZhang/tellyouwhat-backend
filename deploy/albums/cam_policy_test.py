@@ -6,6 +6,14 @@ import unittest
 
 
 class CIMediaPolicyTests(unittest.TestCase):
+    def test_backup_audit_template_is_read_only_and_namespace_scoped(self):
+        policy = json.loads(Path(__file__).with_name("cam-backup-audit.policy.template.json").read_text())
+        self.assertEqual(policy, {"version": "2.0", "statement": [
+            {"effect": "allow", "action": ["cos:GetBucketObjectVersions", "cos:ListMultipartUploads"],
+             "resource": ["qcs::cos:<REGION>:uid/<APPID>:<BACKUP_BUCKET>/*"],
+             "condition": {"string_like": {"cos:prefix": ["albums%2Frecovery%2F*"]}}}
+        ]})
+
     def test_cleanup_identities_are_separate_and_require_concrete_versions(self):
         for environment, bucket in (("test", "tellyouwhat-albums-1251995834"),
                                     ("production", "tellyouwhat-albums-production-1251995834")):
@@ -100,10 +108,25 @@ class CIMediaPolicyTests(unittest.TestCase):
 
     def test_backup_identity_has_only_dedicated_recovery_access(self):
         policy = json.loads(Path(__file__).with_name("cam-test-backup.policy.json").read_text())
-        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-1251995834/"
+        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/"
         self.assertEqual(policy, {"version": "2.0", "statement": [
             {"effect": "allow", "action": ["cos:GetBucketVersioning"], "resource": [base + "*"]},
-            {"effect": "allow", "action": ["cos:PutObject", "cos:GetObject"], "resource": [base + "albums/recovery/*"]},
+            {"effect": "allow", "action": ["cos:GetBucketObjectVersions"], "resource": [base + "*"],
+             "condition": {"string_like": {"cos:prefix": ["albums%2Frecovery%2F*"]}}},
+            {"effect": "allow", "action": ["cos:InitiateMultipartUpload", "cos:UploadPart", "cos:CompleteMultipartUpload", "cos:GetObject"], "resource": [base + "albums/recovery/*"]},
+        ]})
+
+    def test_backup_cleanup_has_separate_session_and_version_permissions(self):
+        policy = json.loads(Path(__file__).with_name("cam-test-backup-expiry.policy.json").read_text())
+        base = "qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-backups-test-1251995834/"
+        self.assertEqual(policy, {"version":"2.0","statement":[
+            {"effect":"allow","action":["cos:GetBucketObjectVersions","cos:ListMultipartUploads"],"resource":[base+"*"],
+             "condition":{"string_like":{"cos:prefix":["albums%2Frecovery%2F*"]}}},
+            {"effect":"allow","action":["cos:GetObject","cos:AbortMultipartUpload","cos:ListParts"],"resource":[base+"albums/recovery/*"]},
+            {"effect":"allow","action":["cos:DeleteObject"],"resource":[base+"albums/recovery/*"],
+             "condition":{"string_not_equal":{"cos:versionid":""}}},
+            {"effect":"deny","action":["cos:DeleteObject"],"resource":[base+"albums/recovery/*"],
+             "condition":{"string_equal":{"cos:versionid":"null"}}},
         ]})
 
     def test_pass_role_names_only_the_reviewed_service_role(self):
@@ -113,11 +136,17 @@ class CIMediaPolicyTests(unittest.TestCase):
             "resource": ["qcs::cam::uin/757772438:roleName/CI_QCSRole"],
         }]})
 
-    def test_backend_upload_part_is_limited_to_video_previews(self):
-        policy = json.loads(Path(__file__).with_name("cam-backend.policy.json").read_text())
-        matches = [entry for entry in policy["statement"] if "cos:UploadPart" in entry["action"]]
-        self.assertEqual(matches, [{"effect": "allow", "action": ["cos:UploadPart"],
-            "resource": ["qcs::cos:ap-guangzhou:uid/1251995834:tellyouwhat-albums-1251995834/albums/video-previews/*"]}])
+    def test_backend_upload_part_is_limited_to_image_and_video_previews(self):
+        for filename, bucket in (("cam-backend.policy.json", "tellyouwhat-albums-1251995834"),
+                                 ("cam-production-backend.policy.json", "tellyouwhat-albums-production-1251995834")):
+            policy = json.loads(Path(__file__).with_name(filename).read_text())
+            matches = [entry for entry in policy["statement"] if "cos:UploadPart" in entry["action"]]
+            base = "qcs::cos:ap-guangzhou:uid/1251995834:" + bucket + "/albums/"
+            self.assertEqual(matches, [{"effect": "allow", "action": ["cos:UploadPart"],
+                "resource": [base + "video-previews/*", base + "derivatives/*"]}])
+            for area in ("staging", "originals", "live-pairs", "derivatives-other", "video-previews-other"):
+                self.assertFalse(any(fnmatch.fnmatchcase(base + area + "/owner/item/resource", pattern)
+                                     for entry in matches for pattern in entry["resource"]))
 
 
     def test_backend_version_inventory_requires_a_media_prefix(self):
