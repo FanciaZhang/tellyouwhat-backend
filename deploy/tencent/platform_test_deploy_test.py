@@ -248,7 +248,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         name = 'ops_common.py'
         current = (Path(__file__).parent / name).read_bytes()
         old = current.replace(
-            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_media.py', 'albums_recovery.py')):\n",
+            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')):\n",
             b"        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):\n")
         start = old.index(b"    candidate = source / 'deploy/tencent'\n")
         end = old.index(b"    for script in (source / 'deploy/tencent').iterdir():\n", start)

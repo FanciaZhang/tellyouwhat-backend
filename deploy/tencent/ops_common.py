@@ -28,7 +28,7 @@ def install_operations(source, root):
         offsite = target / 'ops_offsite.py'
         if not offsite.is_file() or offsite.read_bytes() != (candidate / 'ops_offsite.py').read_bytes():
             # Shared callers cannot advance while their test-owned validators lag.
-            for name in ('tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'tencent/albums_media.py', 'tencent/albums_recovery.py',
+            for name in ('tencent/albums_checkpoint.py', 'tencent/albums_artifacts.py', 'tencent/albums_recovery.py',
                          'albums/backup.py', 'albums/deletion_ledger.py', 'albums/asset_deletion_ledger.py',
                          'albums/collection_deletion_ledger.py'):
                 installed, expected = root / 'deploy' / name, source / 'deploy' / name
@@ -42,7 +42,7 @@ def install_operations(source, root):
         destination = target / script.name
         # Registered test producers own their validators independently of production releases.
         if registered_test and (script.name.startswith('platform_test_')
-                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_media.py', 'albums_recovery.py')):
+                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')):
             continue
         if script.is_symlink() or destination.is_symlink() or not script.is_file():
             raise OperationError('operations scripts must be regular files')

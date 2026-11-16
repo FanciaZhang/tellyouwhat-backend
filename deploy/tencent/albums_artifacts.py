@@ -16,6 +16,67 @@ PRODUCTION_FILES = tuple('compose.albums-production.yaml' if name == 'compose.al
 OPTIONAL_KEYS = ('album-app-store.p8', 'apple-app-store-roots.pem', 'album-apns.p8',
                  'share-key.base64', 'share-previous-key.base64')
 KEYS = ('apple-sign-in.p8', 'credential-key.base64', 'login-limit-key.base64')
+FLAGS = ('ALBUM_PHOTO_PROCESSING_ENABLED', 'ALBUM_VIDEO_PROCESSING_ENABLED')
+MEDIA_FILES = ('manifest.json', 'before.yaml', 'after.yaml', 'before-state.json')
+
+
+def overlay(enabled):
+    value = 'true' if enabled else 'false'
+    return ('services:\n  albumworker:\n    environment:\n' +
+            ''.join('      ' + key + ': "' + value + '"\n' for key in FLAGS)).encode()
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def private(runtime, path, maximum=32768):
+    if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
+            or path.stat().st_mode & 0o077 or not 0 < path.stat().st_size <= maximum):
+        raise OperationError('media configuration must be bounded, private and operator owned')
+    return path.read_bytes()
+
+
+def media_folder(runtime, run):
+    if not re.fullmatch('[a-f0-9]{32}', run or ''):
+        raise OperationError('invalid media configuration run')
+    path = runtime.root / '.albums-development/media' / run
+    for parent in (path, path.parent, path.parent.parent):
+        if (parent.is_symlink() or not parent.is_dir() or parent.stat().st_uid != runtime.root.stat().st_uid
+                or parent.stat().st_mode & 0o077):
+            raise OperationError('media configuration directory must be private')
+    return path
+
+
+def validate_media(data, state):
+    record = json.loads(data['manifest.json'])
+    before = json.loads(data['before-state.json'])
+    media = state.get('media')
+    if (not isinstance(media, dict) or set(media) != {'run', 'manifestSHA256'}
+            or media['manifestSHA256'] != digest(data['manifest.json'])
+            or record.get('run') != media['run'] or not re.fullmatch('[a-f0-9]{32}', media['run'])
+            or record.get('stateSHA256') != digest(data['before-state.json'])
+            or 'media' in before or state != {**before, 'media': media}
+            or record.get('source') != state.get('source')
+            or not re.fullmatch('[a-f0-9]{40}', record.get('source', ''))
+            or not re.fullmatch('sha256:[a-f0-9]{64}', record.get('imageID', ''))
+            or data['before.yaml'] != overlay(False) or data['after.yaml'] != overlay(True)
+            or record.get('overlays') != {name: digest(data[name]) for name in ('before.yaml', 'after.yaml')}):
+        raise OperationError('media recovery selection is invalid')
+    return record
+
+
+def recovery_files(runtime, state):
+    if 'media' not in state:
+        return {}
+    if not isinstance(state['media'], dict):
+        raise OperationError('invalid media recovery metadata')
+    folder = media_folder(runtime, state['media'].get('run'))
+    data = {name: private(runtime, folder / name) for name in MEDIA_FILES}
+    validate_media(data, state)
+    return {'media/' + name: value for name, value in data.items()}
+
+
 
 
 def production_keys(app):
@@ -85,7 +146,6 @@ def backup_configuration(runtime, destination, environment='development'):
              'database.env': runtime.root.parent / label / 'database.env'}
     data = {'current/' + name: content for name, content in selected_files(runtime, folder, source, required_files).items()}
     if environment == 'development':
-        from albums_media import recovery_files
         data.update(recovery_files(runtime, state))
     previous = owner.get('previous')
     if environment == 'production' and previous and previous.get('source') != source:
@@ -134,7 +194,6 @@ def verify_recovery(archive, manifest, environment='development'):
                 *('current/' + name for name in required_files), *('secrets/' + name for name in KEYS)}
     optional = {'secrets/' + name for name in OPTIONAL_KEYS} if environment == 'production' else set()
     if environment == 'development':
-        from albums_media import MEDIA_FILES, validate_media
         def authenticated_media_file(name):
             member = archive.getmember('recovery/albums-development/' + name)
             if not member.isfile() or not 0 < member.size <= 32768 or name not in manifest:

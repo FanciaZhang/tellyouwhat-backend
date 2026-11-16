@@ -554,10 +554,9 @@ def test_operations_transition(runtime, update_from):
     common = 'deploy/tencent/ops_common.py'
     if (installed / common).read_bytes() != (source / common).read_bytes():
         reviewed = ('f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc',
-                    '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760',
-                    '64779e74fa99c2c41a804c9c9803c8914ce0f0592386200d718494c653779d24')
+                    '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760')
         before, after = (hashlib.sha256((folder / common).read_bytes()).hexdigest() for folder in (installed, source))
-        if before not in reviewed or after != '723770cdf6347cd3ac028925a0b52edabf21770b22c90ba2562a12fe33a0f1cd':
+        if before not in reviewed or after != '64779e74fa99c2c41a804c9c9803c8914ce0f0592386200d718494c653779d24':
             raise OperationError('shared operations update is outside the reviewed registered-test ownership protection')
         changed[common] = (source / common).read_bytes()
     if not changed:

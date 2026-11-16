@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -301,14 +302,16 @@ class MediaRecoveryTests(albums_artifacts_test.AlbumsDevelopmentRecoveryTests):
             self.private(folder / name, value)
         state['media'] = {'run': run, 'manifestSHA256': media.digest(data['manifest.json'])}
         self.private(path, json.dumps(state).encode())
-        manifest = self.backup()
+        with patch.dict(sys.modules, {'albums_media': None}):
+            manifest = self.backup()
         for name, value in data.items():
             self.assertEqual(manifest['media/' + name], media.digest(value))
         archive_path = self.base / 'backup.tar'
         with tarfile.open(archive_path, 'w') as archive:
             archive.add(self.base / 'output', arcname='recovery/albums-development')
         with tarfile.open(archive_path) as archive:
-            verify_recovery(archive, manifest)
+            with patch.dict(sys.modules, {'albums_media': None}):
+                verify_recovery(archive, manifest)
             incomplete = dict(manifest)
             incomplete.pop('media/before.yaml')
             with self.assertRaisesRegex(OperationError, 'incomplete'):
