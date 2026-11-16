@@ -20,6 +20,27 @@ func polishFixture() Snapshot {
 	return Snapshot{DictationMode: true, WritingStyle: StyleDocumentary, Blocks: []Block{{ID: id, Text: "今天，嗯，去了河边。", Style: "body"}}, Polish: &PolishRequest{Targets: []PolishTarget{{Style: "body", ID: id, Text: "今天，嗯，去了河边。", SourceText: "今天，嗯，去了河边。", SourceIDs: []string{uuid.NewString()}}}, Context: []Block{}}}
 }
 
+func TestSelfCorrectionInstructionsApplyAcrossWritingStyles(t *testing.T) {
+	for _, style := range []WritingStyle{StyleNatural, StyleLively, StyleDaybook, StyleEssay, StyleDocumentary} {
+		t.Run(string(style), func(t *testing.T) {
+			snapshot := polishFixture()
+			snapshot.WritingStyle = style
+			prepared, err := PrepareRewrite(context.Background(), snapshot, 1, "fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var body struct{ Instructions string }
+			if err := json.Unmarshal(prepared.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(body.Instructions, "当场自我更正不另写改口过程") ||
+				!strings.Contains(body.Instructions, "用户明确讲述的改口经历或反应则按原意保留") {
+				t.Fatal("writing style lost the self-correction and explicitly narrated-event rules")
+			}
+		})
+	}
+}
+
 func TestNaturalNarrativeGroupsConnectedShortTurnsWithoutLosingEvidence(t *testing.T) {
 	s := polishFixture()
 	texts := []string{"今天早上去了图书馆。", "去借植物图鉴。", "不是去买书。", "书架在二楼。", "我找了一会儿。", "后来管理员帮我找到了。", "借书卡在蓝色背包里。", "下周五要把书还回去。"}
