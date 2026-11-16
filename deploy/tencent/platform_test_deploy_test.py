@@ -248,7 +248,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         name = 'ops_common.py'
         current = (Path(__file__).parent / name).read_bytes()
         old = current.replace(
-            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')):\n",
+            b"        if registered_test and (script.name.startswith('platform_test_')\n                                or script.name in ('test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_media.py', 'albums_recovery.py')):\n",
             b"        if registered_test and (script.name.startswith('platform_test_') or script.name == 'test_routes.py'):\n")
         start = old.index(b"    candidate = source / 'deploy/tencent'\n")
         end = old.index(b"    for script in (source / 'deploy/tencent').iterdir():\n", start)
@@ -339,7 +339,7 @@ class PlatformTestBootstrapTests(unittest.TestCase):
         self.assertEqual(installed.read_bytes(), b'# unexpected collection helper drift')
 
     def test_new_admin_helper_is_removed_when_first_activation_fails(self):
-        for name in ('platform_test_admin.py', 'albums_recovery.py'):
+        for name in ('platform_test_admin.py', 'albums_media.py', 'albums_recovery.py'):
             installed = self.root / 'deploy/tencent' / name
             original = installed.read_bytes()
             installed.unlink()
@@ -351,6 +351,30 @@ class PlatformTestBootstrapTests(unittest.TestCase):
                     raise RuntimeError('activation failed')
             self.assertFalse(installed.exists())
             installed.write_bytes(original)
+
+    def test_media_recovery_helper_is_installed_before_its_caller_and_rolled_back(self):
+        helper = self.root / 'deploy/tencent/albums_media.py'
+        caller = self.root / 'deploy/tencent/albums_artifacts.py'
+        helper.unlink()
+        original = b'# registered backup without media recovery\n'
+        caller.write_bytes(original)
+        with tarfile.open(self.folder / 'source.tar', 'a') as archive:
+            entry = tarfile.TarInfo('deploy/tencent/albums_artifacts.py'); entry.size = len(original)
+            archive.addfile(entry, io.BytesIO(original))
+        self.save()
+        state = self.runtime.state / 'platform-test.json'
+        state.write_text(json.dumps({'source': self.source})); state.chmod(0o600)
+        replace = Path.replace
+        def check_order(path, destination):
+            if Path(destination) == caller:
+                self.assertTrue(helper.is_file())
+            return replace(path, destination)
+        with patch.object(Path, 'replace', check_order), self.assertRaisesRegex(RuntimeError, 'activation failed'):
+            with dev.test_operations_transition(self.runtime, self.source):
+                self.assertNotEqual(caller.read_bytes(), original)
+                raise RuntimeError('activation failed')
+        self.assertFalse(helper.exists())
+        self.assertEqual(caller.read_bytes(), original)
 
     def test_shared_backup_update_does_not_replace_current_production_recovery(self):
         name = 'ops_backup.py'

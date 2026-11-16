@@ -313,7 +313,7 @@ def require_installed_operations(runtime, folder):
     for name in ('operations.py', 'ops_common.py', 'ops_backup.py', 'ops_offsite.py', 'ops_cos.py', 'ops_recording.py', 'ops_albums.py', 'release.py', 'test_routes.py', 'platform_test_deploy.py',
                  'platform_test_artifacts.py', 'platform_test_maintenance.py', 'platform_test_storage.py',
                  'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_admin.py', 'platform_test_schema.py',
-                 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py', '../albums/backup.py',
+                 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_media.py', 'albums_recovery.py', '../albums/backup.py',
                  '../albums/deletion_ledger.py', '../albums/asset_deletion_ledger.py', '../albums/collection_deletion_ledger.py'):
         path = installed / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_uid != runtime.root.stat().st_uid
@@ -510,7 +510,7 @@ def test_operations_transition(runtime, update_from):
     recovery_sql = ('migrations/0077_album_collections.sql', 'migrations/0078_album_asset_deletion_ledger.sql')
     names = tuple('deploy/tencent/' + name for name in (
         'platform_test_deploy.py', 'platform_test_journal.py', 'platform_test_albums.py', 'platform_test_schema.py',
-        'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_recovery.py')) + (
+        'platform_test_artifacts.py', 'platform_test_admin.py', 'test_routes.py', 'albums_checkpoint.py', 'albums_artifacts.py', 'albums_media.py', 'albums_recovery.py')) + (
             'deploy/albums/backup.py', 'deploy/albums/deletion_ledger.py', 'deploy/albums/asset_deletion_ledger.py',
             'deploy/albums/collection_deletion_ledger.py') + recovery_sql
     source, installed = Path(__file__).resolve().parents[2], runtime.root
@@ -554,9 +554,10 @@ def test_operations_transition(runtime, update_from):
     common = 'deploy/tencent/ops_common.py'
     if (installed / common).read_bytes() != (source / common).read_bytes():
         reviewed = ('f40f082086541ecf459d4e7558dd63440cc09de4c82c68daf65603d764a5eedc',
-                    '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760')
+                    '99d57f833caec50508a8f0ddde4432f67fedada5465564ec4103511b2974f760',
+                    '64779e74fa99c2c41a804c9c9803c8914ce0f0592386200d718494c653779d24')
         before, after = (hashlib.sha256((folder / common).read_bytes()).hexdigest() for folder in (installed, source))
-        if before not in reviewed or after != '64779e74fa99c2c41a804c9c9803c8914ce0f0592386200d718494c653779d24':
+        if before not in reviewed or after != '723770cdf6347cd3ac028925a0b52edabf21770b22c90ba2562a12fe33a0f1cd':
             raise OperationError('shared operations update is outside the reviewed registered-test ownership protection')
         changed[common] = (source / common).read_bytes()
     if not changed:
@@ -583,7 +584,7 @@ def test_operations_transition(runtime, update_from):
                         raise OperationError('registered Albums snapshot implementation is unavailable')
                 originals[name] = None
                 continue
-            if name in ('deploy/tencent/platform_test_admin.py', 'deploy/tencent/albums_recovery.py') and not path.exists() and not path.is_symlink():
+            if name in ('deploy/tencent/platform_test_admin.py', 'deploy/tencent/albums_media.py', 'deploy/tencent/albums_recovery.py') and not path.exists() and not path.is_symlink():
                 try:
                     archive.getmember(name)
                 except KeyError:
@@ -611,7 +612,7 @@ def test_operations_transition(runtime, update_from):
     created_directories = []
     def replace(files):
         # Install imported modules first; remove new modules last on rollback.
-        for name in sorted(files, key=lambda name: (files[name] is None, name != 'deploy/tencent/platform_test_admin.py')):
+        for name in sorted(files, key=lambda name: (files[name] is None, name not in ('deploy/tencent/platform_test_admin.py', 'deploy/tencent/albums_media.py'))):
             data = files[name]
             target = installed / name
             if data is None:
