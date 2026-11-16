@@ -72,6 +72,24 @@ class AlbumsDevelopmentRecoveryTests(unittest.TestCase):
         self.assertEqual(artifacts.backup_configuration(self.runtime, self.base / 'output', self.environment), {})
         self.runtime.execute.assert_not_called()
 
+    def test_development_recovery_authenticates_and_bounds_state_before_parsing(self):
+        if self.environment != 'development':
+            return
+        self.prepare()
+        manifest = self.backup()
+        output = self.base / 'output'
+        for fault, content in (('tampered', b'{}'), ('oversized', b' ' * 32769), ('invalid', b'[]')):
+            with self.subTest(fault=fault):
+                (output / 'state.json').write_bytes(content)
+                candidate = dict(manifest)
+                if fault != 'tampered':
+                    candidate['state.json'] = hashlib.sha256(content).hexdigest()
+                archive_path = self.base / (fault + '.tar')
+                with tarfile.open(archive_path, 'w') as archive:
+                    archive.add(output, arcname='recovery/' + self.label)
+                with tarfile.open(archive_path) as archive, self.assertRaises(OperationError):
+                    artifacts.verify_recovery(archive, candidate, self.environment)
+
     def test_selected_configuration_and_keys_are_verified_after_archive_roundtrip(self):
         self.prepare()
         manifest = self.backup()

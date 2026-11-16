@@ -135,10 +135,20 @@ def verify_recovery(archive, manifest, environment='development'):
     optional = {'secrets/' + name for name in OPTIONAL_KEYS} if environment == 'production' else set()
     if environment == 'development':
         from albums_media import MEDIA_FILES, validate_media
+        def authenticated_media_file(name):
+            member = archive.getmember('recovery/albums-development/' + name)
+            if not member.isfile() or not 0 < member.size <= 32768 or name not in manifest:
+                raise OperationError('Albums media recovery files are incomplete or invalid')
+            content = archive.extractfile(member).read()
+            if hashlib.sha256(content).hexdigest() != manifest[name]:
+                raise OperationError('Albums media recovery content verification failed')
+            return content
         try:
-            state = json.load(archive.extractfile('recovery/albums-development/state.json'))
+            state = json.loads(authenticated_media_file('state.json'))
+            if not isinstance(state, dict):
+                raise OperationError('Albums recovery state is invalid')
             if 'media' in state:
-                data = {name: archive.extractfile('recovery/albums-development/media/' + name).read() for name in MEDIA_FILES}
+                data = {name: authenticated_media_file('media/' + name) for name in MEDIA_FILES}
                 validate_media(data, state)
                 expected.update('media/' + name for name in MEDIA_FILES)
         except (KeyError, ValueError, TypeError, AttributeError) as error:

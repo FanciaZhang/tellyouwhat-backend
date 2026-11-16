@@ -71,6 +71,7 @@ class AlbumsRuntimeRecoveryTests(unittest.TestCase):
         files = {name: b'authenticated configuration fixture' for name in
                  ('state.json', 'owner.json', 'database.env', *('current/' + n for n in artifacts.FILES),
                   *('secrets/' + n for n in artifacts.KEYS))}
+        files['state.json'] = json.dumps({'source': 'a' * 40, 'release': 'fixture'}).encode()
         if self.environment == 'production':
             files.pop('current/compose.albums-test.yaml')
             files['current/compose.albums-production.yaml'] = b'fixture'
