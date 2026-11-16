@@ -1,0 +1,13 @@
+{
+  "state": "planned",
+  "previousTestSource": "197eb56ddcf28ae1d8a8994631999fbc657120b1",
+  "onlyAddedBuild": {
+    "HEALTH_ALLOWED_APP_BUILDS": "16"
+  },
+  "appSource": "d5a69c01872e0545f4a8ff7456a14df1fea404e7",
+  "version": "1.6.0",
+  "runtimeCodeChanges": false,
+  "migrations": false,
+  "productionChanges": false,
+  "purpose": "Install the development subscription and transactional backup fixes on the registered iPhone"
+}

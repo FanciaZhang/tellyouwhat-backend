@@ -1,0 +1,9 @@
+{
+  "state": "planned-test-build-admission",
+  "application": "Birthday",
+  "bundle_id": "cn.tellyouwhat.birthday.dev",
+  "build": "7",
+  "scope": "Append build 7 to Birthday test enrollment; preserve all other configuration, data and credentials.",
+  "business_code_changes": false,
+  "production_deployment_requested": false
+}
