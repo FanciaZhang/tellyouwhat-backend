@@ -64,4 +64,8 @@ func TestCompactTableRequestIsBoundedAndDoesNotInterceptMixedOperations(t *testi
 	if compactTableCommand(s) {
 		t.Fatal("mixed operations intercepted")
 	}
+	s.PendingUtterances[0].Text = "请把这些做成表格，第一列表头是商品，第一个值是苹果。"
+	if compactTableCommand(s) {
+		t.Fatal("a command with newly dictated cells must keep current-source evidence")
+	}
 }

@@ -7,8 +7,9 @@ import (
 )
 
 type ParagraphFragment struct {
-	Text  string `json:"text"`
-	Style string `json:"style"`
+	Text            string `json:"text"`
+	Style           string `json:"style"`
+	ParagraphPreset string `json:"paragraphPreset,omitempty"`
 }
 
 type ParagraphCommand struct {
@@ -141,7 +142,8 @@ func validateParagraphs(r Revision, s Snapshot, touched map[string]bool) error {
 			}
 			joined := ""
 			for _, part := range c.Fragments {
-				if strings.TrimSpace(part.Text) == "" || strings.ContainsAny(part.Text, "\r\n") || !validBlockStyle(part.Style) || part.Style == "" {
+				if strings.TrimSpace(part.Text) == "" || strings.ContainsAny(part.Text, "\r\n") || !validBlockStyle(part.Style) || part.Style == "" ||
+					(part.ParagraphPreset != "" && (part.ParagraphPreset != "excerpt" || part.Style != "body")) {
 					return ErrInvalid
 				}
 				joined += part.Text

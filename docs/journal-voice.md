@@ -34,6 +34,15 @@ A paused ordinary `snapshot.polish` cancels only its in-flight model request;
 ASR and audio receipts continue. A canceled result does not count as a rewrite
 failure. Explicit structural commands keep their separate processing budget.
 
+Spoken text color and reading guides use `formatCommands` with `mark`
+`foregroundColor` (a named editor color in `value`) or `ruby` (a reading
+in `value`). `excerpt` applies the native paragraph preset. To excerpt a
+sentence within a paragraph, a `reflow` can set `paragraphPreset` to
+`excerpt` on a body fragment. Reflow still requires the exact original text.
+New tables can cite cells dictated by row or by column across multiple
+current utterances. Instruction and data retain distinct source fragments
+and the app previews the table before insertion.
+
 In v31, `snapshot.identity` resolves people before ordinary prose. It carries a
 SHA-256 fingerprint, bounded original turns, known speaker/person names and
 explicit-claim flags, and the current narrator. The model returns `identity`

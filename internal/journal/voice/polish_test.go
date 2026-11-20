@@ -41,6 +41,24 @@ func TestSelfCorrectionInstructionsApplyAcrossWritingStyles(t *testing.T) {
 	}
 }
 
+func TestPolishCanKeepOnlyTheCorrectedDogColor(t *testing.T) {
+	s := comparisonSnapshot([]string{"我买了一只白色的小狗。", "不对，买的是只棕色的小狗。"}, false)
+	ids := []string{s.Polish.Targets[0].ID, s.Polish.Targets[1].ID}
+	for _, corrected := range []string{"我买了只棕色的小狗。", "我买了只小狗，是棕色的。"} {
+		raw, err := json.Marshal(map[string]any{
+			"paragraphs": []PolishParagraph{{Text: corrected, TargetIDs: ids, Style: "body"}},
+			"questions":  []string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision, err := decodePolish(string(raw), *s.Polish)
+		if err != nil || len(revision.Paragraphs) != 1 || revision.Paragraphs[0].Text != corrected {
+			t.Fatalf("%s: %v", corrected, err)
+		}
+	}
+}
+
 func TestNaturalNarrativeGroupsConnectedShortTurnsWithoutLosingEvidence(t *testing.T) {
 	s := polishFixture()
 	texts := []string{"今天早上去了图书馆。", "去借植物图鉴。", "不是去买书。", "书架在二楼。", "我找了一会儿。", "后来管理员帮我找到了。", "借书卡在蓝色背包里。", "下周五要把书还回去。"}

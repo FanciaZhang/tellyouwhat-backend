@@ -446,7 +446,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		}
 		body["input"] = string(input)
 		body["instructions"] = incrementalRewriteInstructions + narratorInstructions + diagramRewriteInstructions + incrementalSelfCorrectionInstructions + structuralCommandInstructions + promptconfig.ScenePrompt(ctx) + "\n本次写作风格：" + style.Prompt
-		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v25", "strict": true, "schema": voiceRevisionSchema()}}
+		body["text"] = map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_incremental_v26", "strict": true, "schema": voiceRevisionSchema()}}
 	}
 	if compactTableCommand(s) {
 		body["instructions"] = compactTableInstructions + narratorInstructions
@@ -737,12 +737,13 @@ func voiceRevisionSchema() map[string]any {
 		},
 	)
 	formatCommand := object(
-		[]string{"id", "blockID", "anchor", "sourceID", "instruction", "mark", "enabled"},
+		[]string{"id", "blockID", "anchor", "sourceID", "instruction", "mark", "enabled", "value"},
 		map[string]any{
 			"id": stringField, "blockID": stringField, "sourceID": stringField, "instruction": stringField,
 			"anchor":  object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
-			"mark":    map[string]any{"type": "string", "enum": []string{"bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage", "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"}},
+			"mark":    map[string]any{"type": "string", "enum": []string{"bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage", "foregroundColor", "ruby", "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem", "excerpt"}},
 			"enabled": map[string]string{"type": "boolean"},
+			"value":   map[string]any{"type": []string{"string", "null"}},
 		},
 	)
 	formatResolution := object(
@@ -769,9 +770,12 @@ func voiceRevisionSchema() map[string]any {
 	})
 	paragraphCommand := object([]string{"id", "kind", "blockIDs", "anchor", "edge", "separator", "componentsToSecond", "sourceID", "instruction", "fragments"}, map[string]any{
 		"id": stringField, "kind": map[string]any{"type": "string", "enum": []string{"split", "merge", "reflow"}}, "blockIDs": stringArray(),
-		"fragments": map[string]any{"type": "array", "items": object([]string{"text", "style"}, map[string]any{"text": stringField, "style": map[string]any{"type": "string", "enum": blockStyles}})},
-		"anchor":    object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
-		"edge":      map[string]any{"type": "string", "enum": []string{"", "before", "after"}}, "separator": map[string]any{"type": "string", "enum": []string{"", " "}},
+		"fragments": map[string]any{"type": "array", "items": object([]string{"text", "style", "paragraphPreset"}, map[string]any{
+			"text": stringField, "style": map[string]any{"type": "string", "enum": blockStyles},
+			"paragraphPreset": map[string]any{"type": []string{"string", "null"}, "enum": []any{"excerpt", nil}},
+		})},
+		"anchor": object([]string{"quote", "prefix", "suffix"}, map[string]any{"quote": stringField, "prefix": stringField, "suffix": stringField}),
+		"edge":   map[string]any{"type": "string", "enum": []string{"", "before", "after"}}, "separator": map[string]any{"type": "string", "enum": []string{"", " "}},
 		"componentsToSecond": stringArray(), "sourceID": stringField, "instruction": stringField,
 	})
 	tableSource := object([]string{"sourceID", "anchor"}, map[string]any{
@@ -896,6 +900,10 @@ func voiceRevisionSchema() map[string]any {
 }
 
 const structuralCommandInstructions = `
+“这句是标题”“把这句当标题”“这句话是引用/摘句”均是明确的排版请求。就近使用唯一可定位的原句。整段使用 formatCommands，未指定级别的标题用 heading1；引用和摘句用 excerpt，enabled=true。若指定句只是已有段落的一部分，用 reflow 原样切开，仅给目标句设置 heading1 或 body 加 paragraphPreset="excerpt"；其余片段保留正文，paragraphPreset=null。如果同一条新口述里先讲正文、后指定样式，给目标句自己的 blockEdit，再引用它执行整段格式；指令不能进入 blockEdit.text。若是转述别人曾说的排版指令，保留叙述，不执行。
+“把‘白色’改成粗体”使用 bold；“把‘白色’改成红色”使用 foregroundColor，value="red"。也支持 orange/yellow/green/blue/purple/pink/gray，文字颜色与荧光笔是不同效果。用户要求“给这两个字注音”时，用 ruby，enabled=true，anchor.quote 只包含实际要注音的字词，value 为结合原文语义得到的带声调拼音或日语假名。只有对字词、语言或多音字的读音无法确定才用 questions 请求确认，不把猜测写成注音。其他 mark 或移除文字颜色时 value=null。
+“用一二三给我整理清楚”“按1、2、3排一下”“都是列表，用一二三有序列表”同样明确要求有序列表，独立事项依照原话顺序各占一项，不需要逐字说出“列表”。引导句、结语仍是正文。若当前新口述同时含多项数据和列表指令，直接给每项独立 orderedListItem blockEdit 与实际内容依据，操作性结语放入 context；不得把编号或命令复制进正文。
+“给我画/做/建一个表格”是明确的新建请求，即使未说“整理成表格”。按行口述时，把明确指定为表头的第一行作为 columns，后续每行放到对应列。按列口述时，用用户说的列名作 columns，把各列第 n 个值对齐为第 n 个数据行；每个单元格引用实际所在的口述片段，即使列分别在不同 pendingUtterances。遗漏用 pending；明确只要表头的空表用一行 pending。列名、行列序号、报数提示和建表话语不生成普通正文。创建请求的 instruction 只摘录创建命令，数据原话放在同表 blockID 的 content 段；未使用的结构提示用 context。独立的日记叙述仍保留。
 已有正文包含多个事项，而用户要求整理为列表时，使用 paragraphCommands 的 reflow，一条命令对应一个已有块。不要用 blockEdits 或 passages 伪造新口述。blockIDs 为该块的单个 id，anchor 三个字段与 edge/separator 均为空，componentsToSecond 为 []。fragments 按原文顺序逐段给出 text/style；text 必须完整逐字切分目标块，所有 text 拼接必须恰等于原文，标点空格也保留。引导句用 body，每个独立事项分别用 unorderedListItem 或 orderedListItem；不能把所有事项放一个列表项。即使“苹果、香蕉、橙子”这样的短枚举，明确要求整理成无序列表后，也要拆成三个 fragments，formatCommands 为 []；不要只给整段设列表样式。客户端负责去除列表项边缘的分隔顿号和逗号，并保留可撤销的原文。sourcePartitions 将指令关联原 blockID，passages 为 []。split/merge 的 fragments 为 []。单段改标题且不拆分时仍用 formatCommands。
 创建表格的行列以及新时间线事件的 id 只需在本次结果中唯一，可用短标签；服务端为新对象分配身份。所有现有 id/sourceID 逐字照抄，绝不改写。时间精度为 minute 时 period 必须为空字符串，minute 使用当天分钟数（下午三点为900）；period 精度时 minute=null。新时间线没有明确相对时间表达时 afterEventID=null，正常时间顺序不需要补这个字段。不需要更新语义人物或提纲时，原样保留输入 semanticState。
 `

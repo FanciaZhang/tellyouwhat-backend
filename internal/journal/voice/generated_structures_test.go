@@ -57,7 +57,7 @@ func TestReflowExactTextAndInstructionProvenance(t *testing.T) {
 	r.BlockEdits = nil
 	r.Passages = nil
 	r.ParagraphCommands = []ParagraphCommand{{ID: uuid.NewString(), Kind: "reflow", BlockIDs: []string{s.Blocks[0].ID}, SourceID: s.PendingUtterances[0].ID, Instruction: s.PendingUtterances[0].Text,
-		Fragments: []ParagraphFragment{{"周末出门打算带几样东西：", "body"}, {"水杯、", "unorderedListItem"}, {"雨伞、", "unorderedListItem"}, {"充电宝。", "unorderedListItem"}}}}
+		Fragments: []ParagraphFragment{{Text: "周末出门打算带几样东西：", Style: "body"}, {Text: "水杯、", Style: "unorderedListItem"}, {Text: "雨伞、", Style: "unorderedListItem"}, {Text: "充电宝。", Style: "unorderedListItem"}}}}
 	r.SourcePartitions[0].Segments[0].BlockIDs = []string{s.Blocks[0].ID}
 	if err := r.Validate(s); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestReflowExactTextAndInstructionProvenance(t *testing.T) {
 }
 
 func TestReflowRestoresOnlyBoundarySeparators(t *testing.T) {
-	parts := []ParagraphFragment{{"准备：", "body"}, {"水杯", "unorderedListItem"}, {"雨伞", "unorderedListItem"}}
+	parts := []ParagraphFragment{{Text: "准备：", Style: "body"}, {Text: "水杯", Style: "unorderedListItem"}, {Text: "雨伞", Style: "unorderedListItem"}}
 	text := "准备：水杯、雨伞。"
 	got := restoreReflowSeparators(text, parts)
 	if got[1].Text != "水杯、" || got[2].Text != "雨伞。" {
@@ -88,7 +88,7 @@ func TestReflowRestoresOnlyBoundarySeparators(t *testing.T) {
 }
 
 func TestReflowNeverCreatesPunctuationOnlyParagraphs(t *testing.T) {
-	parts := []ParagraphFragment{{"准备：", "body"}, {"水杯", "unorderedListItem"}, {"、", "body"}, {"雨伞。", "unorderedListItem"}}
+	parts := []ParagraphFragment{{Text: "准备：", Style: "body"}, {Text: "水杯", Style: "unorderedListItem"}, {Text: "、", Style: "body"}, {Text: "雨伞。", Style: "unorderedListItem"}}
 	got := coalesceReflowSeparators(parts)
 	if len(got) != 3 || got[1].Text != "水杯、" || got[1].Style != "unorderedListItem" {
 		t.Fatal(got)

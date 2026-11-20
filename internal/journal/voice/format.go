@@ -1,7 +1,10 @@
 package voice
 
 import (
+	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -143,6 +146,31 @@ type FormatCommand struct {
 	Instruction string     `json:"instruction"`
 	Mark        string     `json:"mark"`
 	Enabled     bool       `json:"enabled"`
+	Value       string     `json:"value,omitempty"`
+}
+
+var spokenNumberedLayout = regexp.MustCompile(`(?:按|用)\s*[一1][、,，.．\s]*[二2][、,，.．\s]*[三3][^。！？!?\n]{0,24}(?:整理|编号|列表|排(?:版|一下|清楚)|列(?:出|一下|清楚))`)
+
+func (c FormatCommand) validValue() bool {
+	switch c.Mark {
+	case "foregroundColor":
+		if !c.Enabled {
+			return c.Value == ""
+		}
+		switch c.Value {
+		case "red", "orange", "yellow", "green", "blue", "purple", "pink", "gray":
+			return true
+		}
+		return false
+	case "ruby":
+		return c.Enabled && strings.TrimSpace(c.Value) == c.Value && utf8.RuneCountInString(c.Value) <= 100 &&
+			len(utf16.Encode([]rune(c.Value))) <= 100 && strings.ContainsFunc(c.Value, unicode.IsLetter) &&
+			!strings.ContainsFunc(c.Value, func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsMark(r) && !strings.ContainsRune(" '’-·", r)
+			})
+	default:
+		return c.Value == ""
+	}
 }
 
 type FormatCandidate struct {
@@ -176,7 +204,7 @@ func validFormatMark(mark string) bool {
 		return true
 	}
 	switch mark {
-	case "bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage":
+	case "bold", "italic", "underline", "strikethrough", "yellow", "blue", "sage", "foregroundColor", "ruby":
 		return true
 	default:
 		return false
@@ -185,7 +213,7 @@ func validFormatMark(mark string) bool {
 
 func paragraphFormatMark(mark string) bool {
 	switch mark {
-	case "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem":
+	case "heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem", "excerpt":
 		return true
 	default:
 		return false

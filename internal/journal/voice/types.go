@@ -876,7 +876,7 @@ func (r Revision) validateIncremental(s Snapshot) error {
 	commandIDs := map[string]bool{}
 	for _, command := range r.FormatCommands {
 		if !validID(command.ID) || commandIDs[command.ID] || !known[command.BlockID] ||
-			!sources[command.SourceID] || !validFormatMark(command.Mark) ||
+			!sources[command.SourceID] || !validFormatMark(command.Mark) || !command.validValue() ||
 			command.Anchor.Quote == "" || utf8.RuneCountInString(command.Anchor.Quote) > 6000 ||
 			utf8.RuneCountInString(command.Anchor.Prefix) > 80 || utf8.RuneCountInString(command.Anchor.Suffix) > 80 ||
 			command.Instruction == "" || utf8.RuneCountInString(command.Instruction) > 500 {
@@ -892,8 +892,10 @@ func (r Revision) validateIncremental(s Snapshot) error {
 			return ErrInvalid
 		}
 		if (command.Mark == "orderedListItem" || command.Mark == "unorderedListItem") &&
-			strings.Contains(command.Anchor.Quote, "、") && strings.Contains(command.Instruction, "整理") &&
-			strings.Contains(command.Instruction, "列表") && !strings.Contains(command.Instruction, "列表项") {
+			strings.Contains(command.Anchor.Quote, "、") &&
+			(spokenNumberedLayout.MatchString(command.Instruction) ||
+				strings.Contains(command.Instruction, "整理") && strings.Contains(command.Instruction, "列表")) &&
+			!strings.Contains(command.Instruction, "列表项") {
 			// An explicit multi-item reflow cannot be satisfied by marking the
 			// whole enumeration as a single item. Require a paragraph proposal.
 			return ErrInvalid

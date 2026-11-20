@@ -220,7 +220,7 @@ func TestParagraphFormatRequiresExactWholeBlock(t *testing.T) {
 	block, source := uuid.NewString(), uuid.NewString()
 	s := Snapshot{Revision: 2, Blocks: []Block{{ID: block, Text: "隐私保护", Style: "body"}},
 		EditedBlockIDs: []string{block}, PendingUtterances: []SourceUtterance{{ID: source, Text: "这段作为二级标题"}}}
-	for _, mark := range []string{"heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem"} {
+	for _, mark := range []string{"heading1", "heading2", "heading3", "body", "orderedListItem", "unorderedListItem", "checklistItem", "completedChecklistItem", "excerpt"} {
 		if !allowed[mark] {
 			t.Fatalf("paragraph style missing from model schema: %s", mark)
 		}
@@ -256,6 +256,11 @@ func TestExplicitEnumerationReflowCannotBeSatisfiedByOneListStyleCommand(t *test
 	if err := r.Validate(s); err == nil {
 		t.Fatal("multiple items incorrectly accepted as a single styled paragraph")
 	}
+	s.PendingUtterances[0].Text = "用1、2、3给我整理清楚。"
+	r.FormatCommands[0].Instruction = s.PendingUtterances[0].Text
+	if err := r.Validate(s); err == nil {
+		t.Fatal("numbered reflow incorrectly accepted as a single styled paragraph")
+	}
 	s.PendingUtterances[0].Text = "把整段设为一个列表项。"
 	r.FormatCommands[0].Instruction = s.PendingUtterances[0].Text
 	if err := r.Validate(s); err != nil {
@@ -267,5 +272,23 @@ func TestExplicitEnumerationReflowCannotBeSatisfiedByOneListStyleCommand(t *test
 	r.FormatCommands[0].Instruction = instruction
 	if err := r.Validate(s); err != nil {
 		t.Fatal("one item needs no reflow", err)
+	}
+}
+
+func TestSpokenTextColorAndReadingGuideValues(t *testing.T) {
+	for _, tc := range []struct {
+		mark, value string
+		enabled, ok bool
+	}{
+		{"foregroundColor", "red", true, true}, {"foregroundColor", "", false, true},
+		{"foregroundColor", "#FF0000", true, false}, {"foregroundColor", "red", false, false},
+		{"ruby", "liàn yàn", true, true}, {"ruby", "こもれび", true, true},
+		{"ruby", "", true, false}, {"ruby", "pīn）", true, false}, {"ruby", "pīn", false, false},
+		{"bold", "", true, true}, {"bold", "red", true, false},
+	} {
+		cmd := FormatCommand{Mark: tc.mark, Value: tc.value, Enabled: tc.enabled}
+		if cmd.validValue() != tc.ok {
+			t.Errorf("unexpected validation: %+v", tc)
+		}
 	}
 }
