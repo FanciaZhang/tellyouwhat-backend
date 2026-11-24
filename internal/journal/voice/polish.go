@@ -36,6 +36,7 @@ type PolishSelectionContext struct {
 type PolishRequest struct {
 	ConfirmedDetails               []string `json:"confirmedDetails,omitempty"`
 	wholeNarrative                 bool
+	durableOrganization            bool
 	ReusableContextIDs             []string                `json:"reusableContextIDs,omitempty"`
 	Deferred                       bool                    `json:"deferred,omitempty"`
 	Lightweight                    bool                    `json:"lightweight,omitempty"`
@@ -419,6 +420,9 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 		// Multiple attributed speakers need a larger bounded prose budget.
 		tokenLimit, timeout, effort = 4096, 90, "disabled"
 	}
+	if p.durableOrganization && len(p.Targets) > 8 {
+		tokenLimit, timeout = max(tokenLimit, 4096), max(timeout, 60)
+	}
 	parameters.MaxOutputTokens = min(parameters.MaxOutputTokens, tokenLimit)
 	parameters.TimeoutSeconds = min(parameters.TimeoutSeconds, timeout)
 	parameters.ReasoningEffort = effort
@@ -437,6 +441,14 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 		Questions              []Clarification                   `json:"questions"`
 		IllustrationSuggestion *contracts.IllustrationSuggestion `json:"illustrationSuggestion"`
 	}
+	if request.durableOrganization {
+		text = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), "\ufeff"))
+		fence, narrative, found := strings.Cut(text, "\n")
+		if found && (strings.EqualFold(strings.TrimSpace(fence), "```json") || strings.TrimSpace(fence) == "```") &&
+			strings.HasSuffix(narrative, "\n```") {
+			text = strings.TrimSpace(strings.TrimSuffix(narrative, "\n```"))
+		}
+	}
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&output); err != nil {
@@ -444,6 +456,9 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, ErrInvalid
+	}
+	if request.durableOrganization && output.Questions == nil {
+		output.Questions = []Clarification{}
 	}
 	if output.Paragraphs == nil || output.Questions == nil || len(output.Paragraphs) > maxPolishParagraphs || len(output.Questions) > 8 || len(output.Omissions) > 192 {
 		return nil, ErrInvalid
@@ -506,13 +521,19 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 			return nil, ErrInvalid
 		}
 		local := map[string]bool{}
+		targetIDs := make([]string, 0, len(paragraph.TargetIDs))
 		for _, id := range paragraph.TargetIDs {
+			if local[id] && request.durableOrganization {
+				continue
+			}
 			if local[id] || !slices.ContainsFunc(request.Targets, func(t PolishTarget) bool { return t.ID == id }) {
 				return nil, ErrInvalid
 			}
 			local[id] = true
 			seen[id] = true
+			targetIDs = append(targetIDs, id)
 		}
+		paragraph.TargetIDs = targetIDs
 		characters += utf8.RuneCountInString(paragraph.Text)
 		if characters > 6000 {
 			return nil, ErrInvalid

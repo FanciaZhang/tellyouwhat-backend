@@ -77,6 +77,7 @@ func (s *OrganizationService) Create(ctx context.Context, principal attestation.
 	}
 	now := s.Now()
 	job := OrganizationJob{Principal: principal, IP: ip, ID: id, OwnerID: owner, Digest: digest, State: "queued", Revision: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), AvailableAt: now, Plan: &plan}
+	job.Progress.TotalFragments = plan.fragmentCount()
 	if s.Prompts != nil {
 		policy, err := s.Prompts.Current("journal")
 		if err != nil {
@@ -125,6 +126,7 @@ func (s *OrganizationService) Retry(ctx context.Context, owner, id string, revis
 	job.Revision++
 	job.State = "queued"
 	job.Problem = ""
+	job.Progress.InvalidResultRetries = 0
 	job.LeaseUntil = time.Time{}
 	job.AvailableAt = s.Now()
 	return job, s.Store.Save(ctx, job, previous)
@@ -259,27 +261,45 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 	current.Revision++
 	current.LeaseUntil = time.Time{}
 	current.AvailableAt = s.Now()
-	if callErr != nil {
+	var invalidResult, completedBatch bool
+	switch {
+	case callErr == nil:
+		invalidResult = current.Progress.Advance(*current.Plan, work, result.Polish) != nil
+		completedBatch = !invalidResult
+	case result.Diagnostics.Stage == "http_transport" || result.Diagnostics.Stage == "read_http_response" || ctx.Err() != nil:
+		current.State, current.Problem = "uncertain", "voice_rewrite_interrupted"
+	case errors.Is(callErr, costcontrol.ErrConcurrencyExceeded):
+		current.State, current.Problem = "queued", rewriteClientCode(callErr)
+		current.AvailableAt = s.Now().Add(3 * time.Second)
+	case strings.HasPrefix(result.Diagnostics.Stage, "validate_polish"),
+		result.Diagnostics.Stage == "provider_completion_status" && result.Diagnostics.ProviderStatus == "incomplete":
+		invalidResult = true
+	default:
 		current.State, current.Problem = "failed", rewriteClientCode(callErr)
-		if errors.Is(callErr, costcontrol.ErrConcurrencyExceeded) {
+	}
+	if invalidResult {
+		current.Problem = "voice_rewrite_invalid_result"
+		if current.Progress.InvalidResultRetries == 0 {
+			current.Progress.InvalidResultRetries++
 			current.State = "queued"
-			current.AvailableAt = s.Now().Add(3 * time.Second)
+			current.AvailableAt = s.Now().Add(time.Second)
+		} else if current.Progress.Advance(*current.Plan, work, work.preservingSource()) == nil {
+			current.Progress.PreservedSource = true
+			completedBatch = true
+		} else {
+			current.State = "failed"
 		}
-		if strings.HasPrefix(result.Diagnostics.Stage, "validate_polish") {
-			current.Problem = "voice_rewrite_invalid_result"
-		}
-		if result.Diagnostics.Stage == "http_transport" || result.Diagnostics.Stage == "read_provider_response" || ctx.Err() != nil {
-			current.State = "uncertain"
-			current.Problem = "voice_rewrite_interrupted"
-		}
-	} else if err := current.Progress.Advance(*current.Plan, work, result.Polish); err != nil {
-		current.State, current.Problem = "failed", "voice_rewrite_invalid_result"
-	} else if current.Progress.Section == len(current.Plan.Sections) {
-		current.State, current.Problem = "succeeded", ""
-		current.Plan = nil
-		current.Policy = nil
-	} else {
+	}
+	if completedBatch {
 		current.State, current.Problem = "queued", ""
+		if current.Progress.Section == len(current.Plan.Sections) {
+			current.State = "succeeded"
+			if current.Progress.PreservedSource {
+				current.Problem = "voice_organization_preserved_source"
+			}
+			current.Plan = nil
+			current.Policy = nil
+		}
 	}
 	// Deployment draining keeps this root context alive through settlement.
 	return s.Store.Save(ctx, current, claimed)

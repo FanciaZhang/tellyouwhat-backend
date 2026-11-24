@@ -23,13 +23,17 @@ type OrganizationPlan struct {
 }
 
 type OrganizationState struct {
-	Section        int
-	Next           int
-	Results        []PolishRevision
-	Paragraphs     []PolishParagraph
-	Questions      []string
-	Clarifications []Clarification
-	Omitted        map[string][]PolishOmission
+	Section              int
+	Next                 int
+	Results              []PolishRevision
+	Paragraphs           []PolishParagraph
+	Questions            []string
+	Clarifications       []Clarification
+	Omitted              map[string][]PolishOmission
+	InvalidResultRetries int
+	PreservedSource      bool
+	CompletedFragments   int
+	TotalFragments       int
 }
 
 type organizationFragment struct {
@@ -126,6 +130,14 @@ func (p OrganizationPlan) Validate() error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func (p OrganizationPlan) fragmentCount() int {
+	count := 0
+	for _, section := range p.Sections {
+		count += len(organizationFragments(section))
+	}
+	return count
 }
 
 func organizationFragments(section Snapshot) []organizationFragment {
@@ -244,7 +256,8 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 		return OrganizationWork{}, ErrInvalid
 	}
 	// Short complete narratives need their beginning and ending in the same call.
-	if s.Next == 0 && section.Polish.Narrator != nil && len(section.Polish.Targets) <= 128 && section.Polish.SelectionContext == nil {
+	recovering := s.InvalidResultRetries > 0
+	if !recovering && s.Next == 0 && section.Polish.Narrator != nil && len(section.Polish.Targets) <= 128 && section.Polish.SelectionContext == nil {
 		request := *section.Polish
 		sources := polishSources(request)
 		characters := 0
@@ -281,8 +294,20 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 	}
 	request := PolishRequest{ConfirmedDetails: slices.Clone(section.Polish.ConfirmedDetails), Narrator: section.Polish.Narrator, Context: slices.Clone(section.Polish.Context), SelectionContext: section.Polish.SelectionContext}
 	work := OrganizationWork{mapping: map[string][]string{}}
+	characterLimit, targetLimit := 900, 8
+	if recovering {
+		// A rejected window retries from the same cursor without asking the
+		// model to reproduce previously validated prose.
+		request.Context, request.SelectionContext = nil, nil
+		targetLimit = 4
+	} else if request.Narrator != nil && !slices.ContainsFunc(fragments, func(fragment organizationFragment) bool {
+		target := fragment.Target
+		return target.Style != "body" || !target.CompleteSource || len(target.Turns) != 1 || target.Turns[0].PersonID != request.Narrator.PersonID
+	}) {
+		characterLimit, targetLimit = 1600, 12
+	}
 	// Keep only bounded, already validated prose editable for continuation.
-	for i := len(s.Paragraphs) - 1; i >= 0 && work.retained < 2; i-- {
+	for i := len(s.Paragraphs) - 1; !recovering && i >= 0 && work.retained < 2; i-- {
 		paragraph := s.Paragraphs[i]
 		// Keep unanswered choices executable while later audio is organized.
 		if slices.ContainsFunc(s.Clarifications, func(q Clarification) bool {
@@ -305,7 +330,7 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 		f := fragments[i]
 		n := utf8.RuneCountInString(f.Target.SourceText) + utf8.RuneCountInString(f.Target.RetainedText)
 		duplicate := slices.ContainsFunc(f.Target.SourceIDs, func(id string) bool { return seen[id] })
-		if len(work.fragments) > 0 && (characters+n > 900 || len(request.Targets) >= 8 || duplicate) {
+		if len(work.fragments) > 0 && (characters+n > characterLimit || len(request.Targets) >= targetLimit || duplicate) {
 			break
 		}
 		request.Targets = append(request.Targets, f.Target)
@@ -331,6 +356,21 @@ func (s OrganizationState) work(section Snapshot, fragments []organizationFragme
 	return work, nil
 }
 
+func (w OrganizationWork) preservingSource() *PolishRevision {
+	var paragraphs []PolishParagraph
+	for _, fragment := range w.fragments {
+		t := fragment.Target
+		text := t.SourceText
+		if text == "" {
+			text = t.RetainedText
+		}
+		if strings.TrimSpace(text) != "" {
+			paragraphs = append(paragraphs, PolishParagraph{Text: text, Style: t.Style, TargetIDs: []string{t.ID}})
+		}
+	}
+	return &PolishRevision{Paragraphs: paragraphs}
+}
+
 func (s *OrganizationState) Advance(plan OrganizationPlan, work OrganizationWork, result *PolishRevision) error {
 	copy := *s
 	copy.Omitted, copy.Questions, copy.Results = maps.Clone(s.Omitted), slices.Clone(s.Questions), slices.Clone(s.Results)
@@ -338,6 +378,8 @@ func (s *OrganizationState) Advance(plan OrganizationPlan, work OrganizationWork
 	if err := copy.advance(plan, work, result); err != nil {
 		return err
 	}
+	copy.InvalidResultRetries = 0
+	copy.CompletedFragments += work.Next - s.Next
 	*s = copy
 	return nil
 }

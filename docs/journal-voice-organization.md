@@ -10,6 +10,8 @@ Plans are bounded to 2 MiB, 256 sections, 1024 original targets and 60000 unique
 
 Short, complete, identity-confirmed narratives can be organized in one request after sorting their original utterances by recording time. Other content uses bounded batches while preserving source identity and manual boundaries. The former compact-prompt path was removed when chronology handling changed; its old latency observations do not establish current end-to-end performance.
 
+Long batches of complete, identity-confirmed prose can include up to 12 fragments and 1,600 characters of new source. A finished model response that fails validation retries once in a smaller window from the same cursor. If validation fails again, the worker retains that window's original transcription and organizes the rest. The optional response progress reports saved fragments rather than elapsed time. A completed job reports when it retained any original fragments.
+
 Payloads and results expire 24 hours after creation. Maintenance and expired-task reads remove encrypted payloads, including failures and cancellations. Metadata tombstones expire seven days later. Owner erasure deletes the task rows; compare-and-swap updates cannot recreate erased or cancelled tasks. The task table is included in operational queue metrics and patrol.
 
 Verification uses an isolated MySQL instance, deterministic provider fixtures for logic, and explicitly enabled synthetic audio/text against the configured providers for capability checks. The loopback candidate uses an expiring operator grant and a cumulative cost ledger; it does not manufacture an Apple purchase or prove production deployment. Deployment and RC delivery remain separate authorized steps.

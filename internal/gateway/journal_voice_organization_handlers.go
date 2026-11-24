@@ -109,6 +109,12 @@ func (s *Server) GetJournalVoiceOrganization(ctx context.Context, r journalhttpa
 	if err != nil {
 		return deny(organizationFailure(err, id.String()))
 	}
+	if r.Params.XTellyouwhatVoiceProgress != nil && *r.Params.XTellyouwhatVoiceProgress && job.Progress.TotalFragments > 0 {
+		body.Progress = &journalhttpapi.VoiceOrganizationProgress{
+			CompletedFragments: job.Progress.CompletedFragments,
+			TotalFragments:     job.Progress.TotalFragments,
+		}
+	}
 	strictGinContext(ctx).Header("Cache-Control", "no-store")
 	return journalhttpapi.GetJournalVoiceOrganization200JSONResponse(body), nil
 }

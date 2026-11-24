@@ -192,6 +192,56 @@ func TestMySQLVoiceOrganizationRunsAfterClientDisconnectAndResumesSavedBatches(t
 	t.Fatal("organization did not finish")
 }
 
+func TestMySQLVoiceOrganizationRetriesRejectedWorkAndPreservesOnlyThatWindow(t *testing.T) {
+	store, service, owner, job := fixture(t, 20)
+	ctx := t.Context()
+	clock := service.Now()
+	service.Now = func() time.Time { return clock }
+	original := service.Model
+	var targets []int
+	completed := 0
+	service.Model = rewriteFunc(func(ctx context.Context, s voice.Snapshot) (voice.RewriteResult, error) {
+		targets = append(targets, len(s.Polish.Targets))
+		if len(targets) <= 2 {
+			return voice.RewriteResult{Diagnostics: voice.RewriteDiagnostics{Stage: "validate_polish_missing_source"}}, voice.ErrInvalid
+		}
+		return original.Rewrite(ctx, s, 0)
+	})
+	for range 10 {
+		if err := service.Process(ctx, owner.KeyID, job.ID); err != nil {
+			t.Fatal(err)
+		}
+		current, err := store.Get(ctx, owner.KeyID, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(targets) == 1 && (current.State != "queued" || current.Progress.Next != 0 || current.Progress.InvalidResultRetries != 1) {
+			t.Fatalf("rejection failed to schedule the same cursor: %s", current.State)
+		}
+		if current.Progress.TotalFragments != 20 || current.Progress.CompletedFragments < completed ||
+			current.Progress.CompletedFragments > current.Progress.TotalFragments || len(targets) == 1 && current.Progress.CompletedFragments != 0 {
+			t.Fatal("checkpoint progress is inaccurate", current.Progress.CompletedFragments, current.Progress.TotalFragments)
+		}
+		completed = current.Progress.CompletedFragments
+		if current.State == "succeeded" {
+			if current.Problem != "voice_organization_preserved_source" || len(targets) < 3 || targets[0] != 12 || targets[1] != 4 {
+				t.Fatalf("unexpected recovery window sizes %v and result %s", targets, current.Problem)
+			}
+			result := current.Progress.Results[0]
+			var text strings.Builder
+			for _, paragraph := range result.Paragraphs {
+				text.WriteString(paragraph.Text)
+			}
+			if len(result.Targets) != 20 || strings.Count(text.String(), "private source") != 20 || completed != 20 {
+				t.Fatal("recovery repeated or discarded source")
+			}
+			return
+		}
+		clock = clock.Add(2 * time.Second)
+	}
+	t.Fatal("rejected batch blocked later organization")
+}
+
 func TestMySQLVoiceOrganizationCancellationDeletionAndUncertainRetry(t *testing.T) {
 	store, service, p, job := fixture(t, 1)
 	started, release := make(chan struct{}), make(chan struct{})

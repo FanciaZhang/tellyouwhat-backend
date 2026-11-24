@@ -207,7 +207,7 @@ func TestOrganizationPlanContinuesAcrossBatchesAndKeepsOriginalProvenance(t *tes
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(work.Snapshot.Polish.Targets) > 8 {
+		if len(work.Snapshot.Polish.Targets) > 12 {
 			t.Fatal("unbounded work")
 		}
 		paragraphs := []PolishParagraph{}
@@ -233,7 +233,7 @@ func TestOrganizationPlanContinuesAcrossBatchesAndKeepsOriginalProvenance(t *tes
 			t.Fatal("no progress")
 		}
 	}
-	if calls < 4 || len(state.Results) != 1 {
+	if calls != 3 || len(state.Results) != 1 {
 		t.Fatal("bounded sequence did not finish")
 	}
 	result := state.Results[0]
@@ -245,6 +245,27 @@ func TestOrganizationPlanContinuesAcrossBatchesAndKeepsOriginalProvenance(t *tes
 	}
 	if result.Targets[0].ID != p.Sections[0].Polish.Targets[0].ID {
 		t.Fatal("model-local IDs leaked into the manuscript")
+	}
+}
+
+func TestOrganizationRecoversPresentationWithoutRelaxingSourceCoverage(t *testing.T) {
+	s := comparisonSnapshot([]string{"预算是280元，还没付款。", "我们周六去图书馆还书。"}, false)
+	request := *s.Polish
+	request.durableOrganization = true
+	first, second := request.Targets[0], request.Targets[1]
+	paragraph := PolishParagraph{Text: first.SourceText + second.SourceText, Style: "body",
+		TargetIDs: []string{first.ID, first.ID, second.ID}}
+	body := func(paragraph PolishParagraph) string {
+		raw, _ := json.Marshal(map[string]any{"paragraphs": []PolishParagraph{paragraph}, "questions": nil})
+		return "\ufeff```json\n" + string(raw) + "\n```"
+	}
+	revision, err := decodePolish(body(paragraph), request)
+	if err != nil || len(revision.Paragraphs) != 1 || len(revision.Paragraphs[0].TargetIDs) != 2 {
+		t.Fatalf("valid prose was rejected for presentation: %v", err)
+	}
+	paragraph.TargetIDs = []string{first.ID}
+	if _, err = decodePolish(body(paragraph), request); err == nil {
+		t.Fatal("missing source linkage was accepted")
 	}
 }
 

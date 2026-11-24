@@ -385,7 +385,13 @@ paths:
     get:
       operationId: getJournalVoiceOrganization
       tags: [Journal]
-      parameters: [{$ref: '#/components/parameters/RequestIDHeader'}, {name: taskID, in: path, required: true, schema: {type: string, format: uuid}}]
+      parameters:
+        - {$ref: '#/components/parameters/RequestIDHeader'}
+        - {name: taskID, in: path, required: true, schema: {type: string, format: uuid}}
+        - name: X-Tellyouwhat-Voice-Progress
+          in: header
+          description: Opt in to the persisted fragment counts.
+          schema: {type: boolean}
       security: [{AppAttestKeyID: [], AppAttestAssertion: [], AppAttestNonce: [], AppAttestTimestamp: [], AppAttestRequestID: []}]
       responses:
         '200':
@@ -1273,6 +1279,15 @@ components:
         expiresAt: {type: string, format: date-time}
         result: {type: string, format: byte, description: 'Base64 JSON array of validated final PolishRevision values, bound to inputSHA256. Present only after the entire plan succeeds.'}
         problem: {type: string, maxLength: 128}
+        progress: {$ref: '#/components/schemas/VoiceOrganizationProgress'}
+    VoiceOrganizationProgress:
+      type: object
+      additionalProperties: false
+      description: Counts from the persisted processing checkpoint, including any source fragments retained verbatim.
+      required: [completedFragments, totalFragments]
+      properties:
+        completedFragments: {type: integer, minimum: 0}
+        totalFragments: {type: integer, minimum: 1}
     ReadAloudSynthesisRequest: {"type": "object", "additionalProperties": false, "required": ["requestID", "purpose", "voiceID", "voiceRevision", "text", "pitch", "style", "dialect", "language", "consentVersion"], "properties": {"requestID": {"type": "string", "format": "uuid"}, "purpose": {"type": "string", "enum": ["journal", "preview"]}, "voiceID": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"}, "voiceRevision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "text": {"type": "string", "maxLength": 900, "description": "At most 900 UTF-8 bytes. Must be empty for preview; the server selects its public sample."}, "pitch": {"type": "integer", "minimum": -12, "maximum": 12}, "style": {"type": "string", "enum": ["natural", "calm", "storytelling"]}, "dialect": {"type": "string", "maxLength": 16}, "language": {"type": "string", "maxLength": 16}, "consentVersion": {"type": "string", "maxLength": 32}}}
     ReadAloudSession: {"type": "object", "additionalProperties": false, "required": ["id", "purpose", "state", "audioBytes", "lastSequence", "bufferAvailable", "expiresAt", "sampleRate", "channels", "encoding"], "properties": {"id": {"type": "string", "format": "uuid"}, "purpose": {"type": "string", "enum": ["journal", "preview"]}, "state": {"type": "string", "enum": ["preparing", "reserved", "running", "succeeded", "failed", "cancelled", "unknown"]}, "audioBytes": {"type": "integer", "minimum": 0, "maximum": 11520000}, "lastSequence": {"type": "integer", "minimum": 0, "maximum": 11520000, "description": "Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries."}, "bufferAvailable": {"type": "boolean"}, "expiresAt": {"type": "string", "format": "date-time"}, "sampleRate": {"type": "integer", "enum": [24000]}, "channels": {"type": "integer", "enum": [1]}, "encoding": {"type": "string", "enum": ["pcm_s16le"]}, "problem": {"type": "string", "maxLength": 64}}}
     ReadAloudEvent: {"type": "object", "additionalProperties": false, "required": ["kind", "sessionID", "sequence"], "properties": {"kind": {"type": "string", "enum": ["audio", "state", "heartbeat", "timing"]}, "sessionID": {"type": "string", "format": "uuid"}, "sequence": {"type": "integer", "minimum": 0, "maximum": 11520000, "description": "Exclusive PCM byte cursor, aligned to a 16-bit sample; independent of upstream frame boundaries."}, "offset": {"type": "integer", "minimum": 0, "maximum": 11520000}, "pcm": {"type": "string", "format": "byte"}, "session": {"$ref": "#/components/schemas/ReadAloudSession"}, "timings": {"type": "array", "minItems": 1, "maxItems": 900, "items": {"$ref": "#/components/schemas/ReadAloudTiming"}, "description": "Complete replacement snapshot of text positions on the PCM playback clock; replayed on reconnect without advancing sequence."}}}

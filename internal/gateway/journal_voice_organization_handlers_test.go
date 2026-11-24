@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,18 @@ func TestJournalVoiceOrganizationAdmissionAndOwnerBoundary(t *testing.T) {
 			}
 			if store.job.OwnerID != "valid-key" || response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("owner or cache boundary")
+			}
+			for _, showProgress := range []bool{false, true} {
+				status := authorizedRequest(http.MethodGet, "/v1/journal/voice/organizations/"+id, "")
+				if showProgress {
+					status.Header.Set("X-Tellyouwhat-Voice-Progress", "true")
+				}
+				response = httptest.NewRecorder()
+				server.Router().ServeHTTP(response, status)
+				if response.Code != 200 || strings.Contains(response.Body.String(), `"progress"`) != showProgress ||
+					showProgress && !strings.Contains(response.Body.String(), `"progress":{"completedFragments":0,"totalFragments":1}`) {
+					t.Fatalf("progress opt-in %v: %d %s", showProgress, response.Code, response.Body.String())
+				}
 			}
 			store.job.OwnerID = "other"
 			response = httptest.NewRecorder()
