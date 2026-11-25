@@ -540,7 +540,7 @@ components:
       properties:
         requestID: {type: string, format: uuid}
         inputSHA256: {type: string, pattern: '^[a-f0-9]{64}$'}
-        plan: {type: string, format: byte, maxLength: 2796204, description: 'Base64 JSON journal-voice-organization-v1 source plan. Strictly validated before encrypted storage; contains no audio or provider settings.'}
+        plan: {type: string, format: byte, maxLength: 2796204, description: 'Base64 JSON source plan. Version journal-voice-organization-v1 uses the legacy checkpointed rewrite. Version journal-voice-organization-v2 submits the recording and optional metadata context as one job. The plan contains no audio or provider settings.'}
     VoiceOrganizationRevision:
       type: object
       additionalProperties: false
@@ -557,13 +557,13 @@ components:
         state: {type: string, enum: [queued, running, succeeded, failed, uncertain, cancelled, expired]}
         revision: {type: integer, format: int64, minimum: 1}
         expiresAt: {type: string, format: date-time}
-        result: {type: string, format: byte, description: 'Base64 JSON array of validated final PolishRevision values, bound to inputSHA256. Present only after the entire plan succeeds.'}
+        result: {type: string, format: byte, description: 'Base64 JSON result bound to inputSHA256. Version v1 returns an array of validated revisions. Version v2 returns an object with version, revisions and metadata. Omitted targets keep their local source text.'}
         problem: {type: string, maxLength: 128}
         progress: {$ref: '#/components/schemas/VoiceOrganizationProgress'}
     VoiceOrganizationProgress:
       type: object
       additionalProperties: false
-      description: Counts from the persisted processing checkpoint, including any source fragments retained verbatim.
+      description: Legacy v1 counts from the persisted processing checkpoint. Whole-recording v2 tasks report state without fragment counts.
       required: [completedFragments, totalFragments]
       properties:
         completedFragments: {type: integer, minimum: 0}

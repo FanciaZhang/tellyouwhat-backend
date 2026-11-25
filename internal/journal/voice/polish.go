@@ -622,6 +622,11 @@ func decodePolish(text string, request PolishRequest) (*PolishRevision, error) {
 	if !polishRetainsSourceAnchors(grounding, retained) {
 		return nil, errPolishMissingSource
 	}
+	if request.Lightweight && slices.ContainsFunc(revision.Paragraphs, func(paragraph PolishParagraph) bool {
+		return !sameLightweightSpeaker(request.Targets, paragraph.TargetIDs)
+	}) {
+		return nil, polishInvalid("lightweight_speaker")
+	}
 	for _, question := range revision.Questions {
 		if utf8.RuneCountInString(question) > 300 {
 			return nil, ErrInvalid
@@ -980,6 +985,23 @@ func polishNeedsLexicalAnchor(text string) bool {
 
 func onlySpeechFillers(text string) bool {
 	return strings.TrimFunc(text, func(r rune) bool { return strings.ContainsRune("嗯啊呃唔额哦喔，。！？、,.!? \t\r\n", r) }) == ""
+}
+
+func sameLightweightSpeaker(targets []PolishTarget, ids []string) bool {
+	speakers := map[string]bool{}
+	for _, target := range targets {
+		if !slices.Contains(ids, target.ID) {
+			continue
+		}
+		for _, turn := range target.Turns {
+			speaker := turn.PersonID
+			if speaker == "" {
+				speaker = turn.Speaker
+			}
+			speakers[speaker] = true
+		}
+	}
+	return len(speakers) <= 1
 }
 func pendingPolish(p *PolishRequest) bool {
 	return p != nil && !p.Paused && !p.Deferred && len(p.Targets) > 0

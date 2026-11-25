@@ -651,12 +651,15 @@ func buildAppHandler(
 					if err != nil {
 						return nil, err
 					}
-					snapshot.Organization = false
-					full, err := voice.PrepareRewrite(ctx, snapshot, 0, appConfig.VoiceModel)
-					if err != nil {
-						return nil, err
+					estimated := len(fast.Body) + fast.Parameters.MaxOutputTokens
+					if job.Plan.Version == voice.OrganizationVersion {
+						snapshot.Organization = false
+						full, err := voice.PrepareRewrite(ctx, snapshot, 0, appConfig.VoiceModel)
+						if err != nil {
+							return nil, err
+						}
+						estimated += len(full.Body) + full.Parameters.MaxOutputTokens
 					}
-					estimated := len(fast.Body) + len(full.Body) + fast.Parameters.MaxOutputTokens + full.Parameters.MaxOutputTokens
 					account := p.TransactionID
 					if account == "" {
 						account = p.KeyID

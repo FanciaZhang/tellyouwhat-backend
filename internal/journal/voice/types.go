@@ -66,6 +66,8 @@ type Snapshot struct {
 	JourneySourceContext           []TableSource    `json:"journeySourceContext"`
 	JourneyContext                 []JourneyContext `json:"journeyContext"`
 	rewriteAcknowledged            string           // server-owned, never decoded from JSON
+	finalOrganization              *OrganizationPlan
+	finalRetry                     bool
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`

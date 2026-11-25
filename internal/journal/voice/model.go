@@ -19,6 +19,7 @@ import (
 )
 
 type RewriteResult struct {
+	FinalOrganization         *FinalOrganizationResult `json:"-"`
 	Identity                  *IdentityRevision
 	Polish                    *PolishRevision
 	OutputText                string `json:"-"`
@@ -254,6 +255,16 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 		}
 	}
 	result.OutputText = text
+	if s.finalOrganization != nil {
+		final, err := decodeFinalOrganization(text, *s.finalOrganization)
+		if err != nil {
+			return failedRewrite(result, "voice_rewrite_invalid_result", "validate_final_organization", err, started)
+		}
+		result.FinalOrganization = final
+		result.Diagnostics.Stage = "completed"
+		result.Diagnostics.Duration = time.Since(started)
+		return result, nil
+	}
 	if s.Identity != nil {
 		identity, err := decodeIdentity(text, *s.Identity)
 		if err != nil {
@@ -392,6 +403,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 	if settings == nil {
 		return PreparedRewrite{}, ErrInvalid
 	}
+	if s.finalOrganization != nil {
+		return prepareFinalOrganization(*s.finalOrganization, s.finalRetry, settings, version)
+	}
 	if err := s.Validate(); err != nil {
 		return PreparedRewrite{}, err
 	}
@@ -463,6 +477,9 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		request.illustrationSuggestionsEnabled = s.IllustrationSuggestionsEnabled && !request.Lightweight
 		if request.Lightweight {
 			parameters = settings.Organize.Lite
+			if settings.Voice.Lightweight != nil {
+				parameters = *settings.Voice.Lightweight
+			}
 		}
 		body, parameters = preparePolish(ctx, request, style, s.Words, parameters)
 		if !request.Lightweight && strings.TrimSpace(settings.Voice.PolishPrompt) != "" {

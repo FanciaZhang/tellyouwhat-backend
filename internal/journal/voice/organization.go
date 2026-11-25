@@ -13,13 +13,15 @@ import (
 )
 
 const OrganizationVersion = "journal-voice-organization-v1"
+const FinalOrganizationVersion = "journal-voice-organization-v2"
 const MaxOrganizationBytes = 2 * 1024 * 1024
 
 // Each section is separated by a manual or non-text block in the manuscript.
 // Models may combine speech within a section, never across those boundaries.
 type OrganizationPlan struct {
-	Version  string     `json:"version"`
-	Sections []Snapshot `json:"sections"`
+	Version  string                    `json:"version"`
+	Sections []Snapshot                `json:"sections"`
+	Metadata *FinalOrganizationContext `json:"metadata,omitempty"`
 }
 
 type OrganizationState struct {
@@ -34,6 +36,7 @@ type OrganizationState struct {
 	PreservedSource      bool
 	CompletedFragments   int
 	TotalFragments       int
+	FinalMetadata        *FinalOrganizationMetadata `json:",omitempty"`
 }
 
 type organizationFragment struct {
@@ -50,7 +53,9 @@ type OrganizationWork struct {
 }
 
 func (p OrganizationPlan) Validate() error {
-	if p.Version != OrganizationVersion || len(p.Sections) == 0 || len(p.Sections) > 256 {
+	final := p.Version == FinalOrganizationVersion
+	if (!final && p.Version != OrganizationVersion) || len(p.Sections) == 0 || len(p.Sections) > 256 ||
+		(!final && p.Metadata != nil) || (final && !p.Metadata.valid()) {
 		return ErrInvalid
 	}
 	raw, err := json.Marshal(p)
@@ -111,6 +116,9 @@ func (p OrganizationPlan) Validate() error {
 					count += utf8.RuneCountInString(u.Text)
 				}
 			}
+		}
+		if final {
+			continue
 		}
 		// Validate the same bounded requests that will actually reach a model.
 		state := OrganizationState{}
@@ -244,6 +252,9 @@ func splitOrganizationText(text string) []string {
 }
 
 func (s OrganizationState) Work(p OrganizationPlan) (OrganizationWork, error) {
+	if p.Version == FinalOrganizationVersion {
+		return OrganizationWork{Snapshot: Snapshot{finalOrganization: &p, finalRetry: s.InvalidResultRetries > 0}}, nil
+	}
 	if s.Section < 0 || s.Section >= len(p.Sections) {
 		return OrganizationWork{}, ErrInvalid
 	}

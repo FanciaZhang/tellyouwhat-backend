@@ -77,7 +77,9 @@ func (s *OrganizationService) Create(ctx context.Context, principal attestation.
 	}
 	now := s.Now()
 	job := OrganizationJob{Principal: principal, IP: ip, ID: id, OwnerID: owner, Digest: digest, State: "queued", Revision: 1, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), AvailableAt: now, Plan: &plan}
-	job.Progress.TotalFragments = plan.fragmentCount()
+	if plan.Version == OrganizationVersion {
+		job.Progress.TotalFragments = plan.fragmentCount()
+	}
 	if s.Prompts != nil {
 		policy, err := s.Prompts.Current("journal")
 		if err != nil {
@@ -116,7 +118,7 @@ func (s *OrganizationService) Retry(ctx context.Context, owner, id string, revis
 	if err != nil {
 		return job, err
 	}
-	if job.Revision != revision || job.Plan == nil || (job.State != "failed" && job.State != "uncertain") {
+	if job.Revision != revision || job.Plan == nil || job.Plan.Version == FinalOrganizationVersion || (job.State != "failed" && job.State != "uncertain") {
 		return OrganizationJob{}, ErrOrganizationConflict
 	}
 	if s.Authorize == nil || !s.Authorize(ctx, owner) {
@@ -261,10 +263,21 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 	current.Revision++
 	current.LeaseUntil = time.Time{}
 	current.AvailableAt = s.Now()
+	final := job.Plan.Version == FinalOrganizationVersion
 	var invalidResult, completedBatch bool
 	switch {
 	case callErr == nil:
-		invalidResult = current.Progress.Advance(*current.Plan, work, result.Polish) != nil
+		if final {
+			if value := result.FinalOrganization; value != nil && len(value.Revisions) > 0 && value.Version == FinalOrganizationVersion {
+				current.Progress.Results = value.Revisions
+				current.Progress.FinalMetadata = &value.Metadata
+				current.Progress.PreservedSource = value.PreservedSource
+			} else {
+				invalidResult = true
+			}
+		} else {
+			invalidResult = current.Progress.Advance(*current.Plan, work, result.Polish) != nil
+		}
 		completedBatch = !invalidResult
 	case result.Diagnostics.Stage == "http_transport" || result.Diagnostics.Stage == "read_http_response" || ctx.Err() != nil:
 		current.State, current.Problem = "uncertain", "voice_rewrite_interrupted"
@@ -272,6 +285,7 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 		current.State, current.Problem = "queued", rewriteClientCode(callErr)
 		current.AvailableAt = s.Now().Add(3 * time.Second)
 	case strings.HasPrefix(result.Diagnostics.Stage, "validate_polish"),
+		final && (result.Diagnostics.Stage == "validate_final_organization" || result.Diagnostics.Stage == "decode_provider_envelope" || result.Diagnostics.Stage == "response_too_large"),
 		result.Diagnostics.Stage == "provider_completion_status" && result.Diagnostics.ProviderStatus == "incomplete":
 		invalidResult = true
 	default:
@@ -283,6 +297,10 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 			current.Progress.InvalidResultRetries++
 			current.State = "queued"
 			current.AvailableAt = s.Now().Add(time.Second)
+		} else if final {
+			current.State = "failed"
+			current.Plan = nil
+			current.Policy = nil
 		} else if current.Progress.Advance(*current.Plan, work, work.preservingSource()) == nil {
 			current.Progress.PreservedSource = true
 			completedBatch = true
@@ -292,7 +310,7 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 	}
 	if completedBatch {
 		current.State, current.Problem = "queued", ""
-		if current.Progress.Section == len(current.Plan.Sections) {
+		if final || current.Progress.Section == len(current.Plan.Sections) {
 			current.State = "succeeded"
 			if current.Progress.PreservedSource {
 				current.Problem = "voice_organization_preserved_source"

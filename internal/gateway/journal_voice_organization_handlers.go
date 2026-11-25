@@ -57,7 +57,11 @@ func organizationResponse(job voice.OrganizationJob) (journalhttpapi.VoiceOrgani
 		result.Problem = &problem
 	}
 	if job.State == "succeeded" {
-		data, err := json.Marshal(job.Progress.Results)
+		var output any = job.Progress.Results
+		if metadata := job.Progress.FinalMetadata; metadata != nil {
+			output = voice.FinalOrganizationResult{Version: voice.FinalOrganizationVersion, Revisions: job.Progress.Results, Metadata: *metadata}
+		}
+		data, err := json.Marshal(output)
 		if err != nil {
 			return journalhttpapi.VoiceOrganizationTask{}, err
 		}
