@@ -47,6 +47,8 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 			t.Error("the request did not include both sections and all 46 source turns")
 		} else if input.Sources[0].Speaker == input.Sources[1].Speaker || input.Sources[1].Name != "妻子" {
 			t.Error("speaker names or distinctions were removed")
+		} else if input.Sources[0].ID != "S1" || input.Sections[0][0].ID != "T1" || !slices.Equal(input.Sections[0][0].Sources, []string{"S1"}) {
+			t.Error("source references and editable target IDs are not distinct")
 		}
 		groups := []finalOrganizationGroup{}
 		for i, turn := range turns {
@@ -56,7 +58,8 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 			if i == 2 {
 				turn = "这是没有来源的输出。"
 			}
-			groups = append(groups, finalOrganizationGroup{i + 1, i + 1, []PolishParagraph{{Text: turn, Style: "body"}}})
+			id := finalTargetID(i + 1)
+			groups = append(groups, finalOrganizationGroup{id, id, []PolishParagraph{{Text: turn, Style: "body"}}})
 		}
 		result, _ := json.Marshal(map[string]any{"groups": groups, "title": "河边的白鹭", "alternativeTitles": []any{true, "河边观察"},
 			"tags": "invalid optional field", "recommendedTags": []map[string]string{{"name": "白鹭", "type": "topic"}},
@@ -102,6 +105,30 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 		t.Fatalf("legacy windows=%d final requests=%d", legacyCalls, calls.Load())
 	}
 	t.Logf("46 synthetic turns, legacy model windows=%d, whole-recording requests=%d", legacyCalls, calls.Load())
+}
+
+func TestFinalOrganizationKeepsValidEditsWhenModelUsesSourceLabels(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{"早晨我们去河边观察白鹭。", "三只白鹭在浅滩上觅食。", "回程在图书馆还了画册。"}, false)
+	first := snapshot.Polish.Targets[0]
+	second := snapshot.Polish.Targets[1]
+	first.Turns = append(first.Turns, second.Turns...)
+	first.SourceIDs = append(first.SourceIDs, second.SourceIDs...)
+	snapshot.Polish.Targets = []PolishTarget{first, snapshot.Polish.Targets[2]}
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	if err := plan.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := decodeFinalOrganization(`{"groups":[
+		{"firstTarget":"S1","lastTarget":"S3","paragraphs":[{"text":"这是转写编号，不能当作正文目标。","style":"body"}]},
+		{"firstTarget":"T2","lastTarget":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
+		"title":"清晨沿河散步"}`, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.PreservedSource || len(result.Revisions) != 1 || len(result.Revisions[0].Targets) != 1 ||
+		result.Revisions[0].Targets[0].ID != snapshot.Polish.Targets[1].ID || result.Metadata.Title != "清晨沿河散步" {
+		t.Fatal("an invalid source reference replaced original text or discarded an independent edit")
+	}
 }
 
 func TestFinalOrganizationRetriesOnlyDefiniteInvalidResults(t *testing.T) {

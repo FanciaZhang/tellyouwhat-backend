@@ -258,6 +258,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	if s.finalOrganization != nil {
 		final, err := decodeFinalOrganization(text, *s.finalOrganization)
 		if err != nil {
+			result.Diagnostics.ValidationCode = polishValidationCode(err)
 			return failedRewrite(result, "voice_rewrite_invalid_result", "validate_final_organization", err, started)
 		}
 		result.FinalOrganization = final
