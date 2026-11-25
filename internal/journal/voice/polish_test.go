@@ -25,17 +25,26 @@ func TestSelfCorrectionInstructionsApplyAcrossWritingStyles(t *testing.T) {
 		t.Run(string(style), func(t *testing.T) {
 			snapshot := polishFixture()
 			snapshot.WritingStyle = style
-			prepared, err := PrepareRewrite(context.Background(), snapshot, 1, "fixture")
-			if err != nil {
-				t.Fatal(err)
-			}
-			var body struct{ Instructions string }
-			if err := json.Unmarshal(prepared.Body, &body); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(body.Instructions, "当场自我更正不另写改口过程") ||
-				!strings.Contains(body.Instructions, "用户明确讲述的改口经历或反应则按原意保留") {
-				t.Fatal("writing style lost the self-correction and explicitly narrated-event rules")
+			for _, lightweight := range []bool{false, true} {
+				snapshot.Polish.Lightweight = lightweight
+				prepared, err := PrepareRewrite(context.Background(), snapshot, 1, "fixture")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var body struct{ Instructions string }
+				if err := json.Unmarshal(prepared.Body, &body); err != nil {
+					t.Fatal(err)
+				}
+				for _, rule := range []string{
+					"把旧说法和仅用来否定它的句子一起省去",
+					"该段的 targetIDs 同时列出两段的 ID",
+					"有独立含义的否定",
+					"用户明确讲述的改口经历或反应则按原意保留",
+				} {
+					if !strings.Contains(body.Instructions, rule) {
+						t.Fatalf("lightweight=%t is missing the rule %q", lightweight, rule)
+					}
+				}
 			}
 		})
 	}
@@ -56,6 +65,56 @@ func TestPolishCanKeepOnlyTheCorrectedDogColor(t *testing.T) {
 		if err != nil || len(revision.Paragraphs) != 1 || revision.Paragraphs[0].Text != corrected {
 			t.Fatalf("%s: %v", corrected, err)
 		}
+	}
+}
+
+func TestPolishGroundsAnExplicitSplitCorrectionInItsConfirmedValue(t *testing.T) {
+	for _, example := range []struct {
+		name, before, after, text          string
+		otherSpeaker, reportsFiller, valid bool
+	}{
+		{"explicit correction", "不是中山公园。", "是植物园，闭馆前才到，我没进去。", "我去了植物园，闭馆前才到，没进去。", false, false, true},
+		{"correction mislabeled as filler", "不是中山公园。", "是植物园，闭馆前才到，我没进去。", "我到了植物园，但已经快闭馆了，没进去。", false, true, true},
+		{"confirmed negative", "不是已经付款。", "是还没付钱。", "我还没付钱。", false, false, true},
+		{"different speakers", "不是中山公园。", "是植物园，我没进去。", "我去了植物园，但没有进去。", true, false, false},
+		{"unconfirmed replacement", "不是中山公园。", "是植物园吗？", "我猜可能是植物园。", false, false, false},
+		{"independent negative", "我没有订酒店。", "是朋友推荐了植物园。", "朋友推荐了植物园。", false, false, false},
+		{"old turn also contains a fact", "不是中山公园，民宿也未预订。", "是植物园，我没进去。", "我去了植物园，但没有进去。", false, false, false},
+		{"missing confirmed value", "不是中山公园。", "是植物园，闭馆前才到，我没进去。", "闭馆前才到，我没进去。", false, false, false},
+	} {
+		t.Run(example.name, func(t *testing.T) {
+			snapshot := comparisonSnapshot([]string{example.before, example.after}, example.otherSpeaker)
+			ids := []string{snapshot.Polish.Targets[0].ID, snapshot.Polish.Targets[1].ID}
+			output := map[string]any{
+				"paragraphs": []PolishParagraph{{Text: example.text, TargetIDs: ids, Style: "body"}},
+				"questions":  []string{},
+			}
+			if example.reportsFiller {
+				output["omissions"] = []PolishOmission{{
+					SourceID: snapshot.Polish.Targets[0].Turns[0].ID,
+					Text:     example.before, Reason: "speechDisfluency",
+				}}
+			}
+			raw, err := json.Marshal(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, lightweight := range []bool{false, true} {
+				snapshot.Polish.Lightweight = lightweight
+				revision, err := decodePolish(string(raw), *snapshot.Polish)
+				if !example.valid {
+					if !errors.Is(err, errPolishMissingSource) {
+						t.Fatalf("lightweight=%t accepted missing evidence: %v", lightweight, err)
+					}
+					continue
+				}
+				if err != nil || len(revision.Paragraphs) != 1 || len(revision.Targets) != 2 || revision.Paragraphs[0].Text != example.text ||
+					!slices.Equal(revision.Paragraphs[0].TargetIDs, ids) || len(revision.Omissions) != 0 ||
+					revision.Targets[0].Turns[0].Text != example.before || revision.Targets[1].Turns[0].Text != example.after {
+					t.Fatalf("lightweight=%t did not preserve the correction and both source links: %v", lightweight, err)
+				}
+			}
+		})
 	}
 }
 
