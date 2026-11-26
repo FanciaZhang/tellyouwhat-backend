@@ -158,7 +158,7 @@ func TestFinalOrganizationRejectsMissingAndDuplicateGroups(t *testing.T) {
 		result, review, err := decodeFinalOrganization(fmt.Sprintf(`{"groups":[
 			{"target":%q,"paragraphs":[{"text":"早晨去河边看白鹭，三只白鹭在浅滩上觅食。","style":"body"}]},
 			{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
-			"title":"清晨沿河散步"}`, badID), plan, nil)
+			"title":"清晨沿河散步"}`, badID), plan, nil, false)
 		if result != nil || review == nil || review.Issues[0].Target != "T1" || polishValidationCode(err) != "final_output_missing_group" {
 			t.Fatalf("an invalid source reference must not publish an incomplete draft: %v", err)
 		}
@@ -178,7 +178,7 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 	result, _, err := decodeFinalOrganization(`{"groups":[
 		{"target":"T1","paragraphs":[{"text":"早晨去河边观察白鹭。","style":"body"}]},
 		{"target":"T2","paragraphs":[]},
-		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan, nil)
+		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan, nil, false)
 	if err != nil || len(result.Revisions) != 3 || result.PreservedSource {
 		t.Fatalf("the complete draft should omit an isolated filler block: %v", err)
 	}
@@ -187,6 +187,57 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 		SourceID: targets[1].Turns[0].ID, Text: targets[1].Turns[0].Text, Reason: "speechDisfluency",
 	}}) {
 		t.Fatal("the original source must remain linked to the omitted speech")
+	}
+}
+
+func TestFinalOrganizationChecksEvidenceWithinEachProtectedSection(t *testing.T) {
+	turns := make([]string, 11)
+	for i := range turns[:9] {
+		turns[i] = "午后我们沿着溪岸散步。"
+	}
+	turns[9] = "我们约了周五在文化馆练习合唱。"
+	turns[10] = "朋友提议周日把花盆搬到阳台。"
+	snapshot := comparisonSnapshot(turns, false)
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	const draft = `{"groups":[
+		{"target":"T1","paragraphs":[{"text":"午后我们沿着溪岸散步。","style":"body"}]},
+		{"target":"T2","paragraphs":[{"text":"我们约了周五在文化馆练习合唱。朋友提议周日把花盆搬到阳台。","style":"body"}]}]}`
+	result, _, err := decodeFinalOrganization(draft, plan, nil, false)
+	if err != nil || len(result.Revisions[0].Targets) != len(turns) {
+		t.Fatalf("a fact expressed in a neighboring group in the same section must count: %v", err)
+	}
+	first, second := snapshot, snapshot
+	first.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[:10]}
+	second.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[10:]}
+	plan.Sections = []Snapshot{first, second}
+	result, review, err := decodeFinalOrganization(draft, plan, nil, false)
+	if result != nil || review == nil || len(review.Issues) != 1 || review.Issues[0].Target != "T1" ||
+		!slices.Equal(review.Issues[0].Sources, []string{turns[9]}) || err == nil {
+		t.Fatal("success across a hand-edited boundary must not hide an omission")
+	}
+}
+
+func TestFinalOrganizationAcceptsReviewedParaphraseButRejectsMissingNarrative(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{
+		"天刚亮，我们就带着装备走到排练室签到。",
+		"后来我们把五把椅子摆成一排，接着又试了灯光。",
+		"外头非常冷。",
+	}, false)
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	const paraphrase = `{"groups":[{"target":"T1","paragraphs":[{"style":"body","text":"天刚亮，我们就带着装备走到排练室签到。我们把五把椅子摆成一排，然后试了灯光。街上的风吹得人直打哆嗦。"}]}]}`
+	result, review, err := decodeFinalOrganization(paraphrase, plan, nil, false)
+	if result != nil || review == nil || len(review.Issues) != 1 || review.Issues[0].Draft == "" ||
+		!slices.Equal(review.Issues[0].Sources, []string{"外头非常冷。"}) || err == nil {
+		t.Fatal("the automatic review must get the current draft and the ambiguous source phrase")
+	}
+	result, _, err = decodeFinalOrganization(paraphrase, plan, review, true)
+	if err != nil || result == nil || len(result.Revisions[0].Targets) != 3 {
+		t.Fatalf("the reviewed draft should allow a natural paraphrase: %v", err)
+	}
+	const incomplete = `{"groups":[{"target":"T1","paragraphs":[{"style":"body","text":"天刚亮，我们就带着装备走到排练室签到。"}]}]}`
+	result, _, err = decodeFinalOrganization(incomplete, plan, review, true)
+	if result != nil || err == nil {
+		t.Fatal("a repair that drops most recording facts must still fail")
 	}
 }
 

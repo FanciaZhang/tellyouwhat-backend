@@ -257,7 +257,7 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	}
 	result.OutputText = text
 	if s.finalOrganization != nil {
-		final, review, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalReview)
+		final, review, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalReview, s.finalRetry)
 		if err != nil {
 			result.finalOrganizationReview = review
 			result.Diagnostics.ValidationCode = polishValidationCode(err)

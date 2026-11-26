@@ -845,8 +845,15 @@ func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 	if len(sources) == 0 {
 		return nil
 	}
-	windows := map[string]bool{}
-	bridged := map[string]bool{}
+	return indexPolishAnchors(paragraphs).missing(sources, limit)
+}
+
+type polishAnchorIndex struct {
+	windows, bridged map[string]bool
+}
+
+func indexPolishAnchors(paragraphs []PolishParagraph) polishAnchorIndex {
+	index := polishAnchorIndex{windows: map[string]bool{}, bridged: map[string]bool{}}
 	for _, paragraph := range paragraphs {
 		text := polishCanonical(paragraph.Text)
 		// Natural rewriting inserts particles/adverbs (本周的工作, 脚突然崴了).
@@ -855,16 +862,20 @@ func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 		for a := 0; a < len(text); a++ {
 			for b := a + 1; b < min(a+5, len(text)); b++ {
 				for c := b + 1; c < min(a+6, len(text)); c++ {
-					bridged[string([]rune{text[a], text[b], text[c]})] = true
+					index.bridged[string([]rune{text[a], text[b], text[c]})] = true
 				}
 			}
 		}
 		for size := 1; size <= 3; size++ {
 			for start := 0; start+size <= len(text); start++ {
-				windows[string(text[start:start+size])] = true
+				index.windows[string(text[start:start+size])] = true
 			}
 		}
 	}
+	return index
+}
+
+func (index polishAnchorIndex) missing(sources []SourceUtterance, limit int) []string {
 	units := []string{}
 	for _, source := range sources {
 		units = append(units, source.Text)
@@ -876,46 +887,7 @@ func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 	}
 	var missing []string
 	for _, sentence := range units {
-		text := polishCanonical(sentence)
-		size := min(2, len(text))
-		if len(text) > 12 {
-			size = 3
-		}
-		found := map[string]bool{}
-		for start := 0; size > 0 && start+size <= len(text); start++ {
-			key := string(text[start : start+size])
-			if windows[key] {
-				found[key] = true
-			}
-		}
-		minimum := 1
-		if size == 3 {
-			minimum = 2
-		}
-		matched := len(found) >= minimum
-		if !matched && size == 3 {
-			found := map[string]bool{}
-			for start := 0; start+3 <= len(text); start++ {
-				key := string(text[start : start+3])
-				if bridged[key] {
-					found[key] = true
-				}
-			}
-			matched = len(found) >= 2
-			if !matched && len(found) == 1 && bridged[string(text[len(text)-3:])] {
-				// A repeated short fact can end a longer spoken restatement.
-				// Require its ending and separate pairs, not just a shared intro.
-				pairs, previous := 0, -2
-				for start := 0; start+2 <= len(text); start++ {
-					if start >= previous+2 && windows[string(text[start:start+2])] {
-						pairs++
-						previous = start
-					}
-				}
-				matched = pairs >= 2
-			}
-		}
-		if !matched && !slices.Contains(missing, sentence) {
+		if !index.matches(polishCanonical(sentence)) && !slices.Contains(missing, sentence) {
 			missing = append(missing, sentence)
 			if len(missing) == limit {
 				break
@@ -923,6 +895,51 @@ func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 		}
 	}
 	return missing
+}
+
+func (index polishAnchorIndex) matches(text []rune) bool {
+	size := min(2, len(text))
+	if len(text) > 12 {
+		size = 3
+	}
+	found := map[string]bool{}
+	for start := 0; size > 0 && start+size <= len(text); start++ {
+		key := string(text[start : start+size])
+		if index.windows[key] {
+			if size < 3 {
+				return true
+			}
+			found[key] = true
+		}
+	}
+	if len(found) >= 2 {
+		return true
+	}
+	if size < 3 {
+		return false
+	}
+	clear(found)
+	for start := 0; start+3 <= len(text); start++ {
+		key := string(text[start : start+3])
+		if index.bridged[key] {
+			found[key] = true
+		}
+	}
+	if len(found) >= 2 {
+		return true
+	}
+	if len(found) == 1 && index.bridged[string(text[len(text)-3:])] {
+		// A repeated short fact can end a longer spoken restatement.
+		pairs, previous := 0, -2
+		for start := 0; start+2 <= len(text); start++ {
+			if start >= previous+2 && index.windows[string(text[start:start+2])] {
+				pairs++
+				previous = start
+			}
+		}
+		return pairs >= 2
+	}
+	return false
 }
 
 func polishCanonical(text string) []rune {
