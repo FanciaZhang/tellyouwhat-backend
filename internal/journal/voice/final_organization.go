@@ -451,7 +451,7 @@ func finalSpeechOmissions(targets []PolishTarget) []PolishOmission {
 }
 
 var finalSpeechLeadIn = strings.NewReplacer("我看一下", "", "我先看看", "", "我看看", "", "我看", "", "还有一些", "", "然后", "")
-var finalRecordingRestart = regexp.MustCompile(`^(?:(?:(?:刚才|之前)?(?:这段|那段|有段话)?(?:没录上|没录到|没有录上)|(?:那|好)?(?:我?(?:重新说|重说)(?:一遍)?|我再说一遍)吧?)[，,：:]\s*)+`)
+var finalRecordingRestart = regexp.MustCompile(`^(?:(?:(?:刚才|之前)?(?:这段|那段|有一?段(?:话|录音)?)?(?:没录上|没录到|没有录上)|(?:那|好)?(?:我?(?:重新说|重说)(?:一遍)?|我再说一遍)吧?)[，,：:]\s*)+`)
 
 func finalNarrativeSpeech(text string) string {
 	sentences := polishSourceSentences(text)

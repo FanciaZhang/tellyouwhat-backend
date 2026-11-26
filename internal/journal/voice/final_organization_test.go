@@ -254,6 +254,19 @@ func TestFinalOrganizationFailedRepairNeverPublishesAcceptedGroups(t *testing.T)
 	}
 }
 
+func TestFinalOrganizationStripsRecordingRestartsWithoutDroppingNarrative(t *testing.T) {
+	for _, prefix := range []string{"之前有段话没录上，我重新说：", "刚才有一段没录上，我重新说："} {
+		const fact = "不过也不是非得周六出发。"
+		if got := finalNarrativeSpeech(prefix + fact); got != fact {
+			t.Fatalf("recording restart was retained: %q", got)
+		}
+	}
+	const event = "这场排练没录上，朋友晚点再发我一份。"
+	if got := finalNarrativeSpeech(event); got != event {
+		t.Fatalf("a fact about another recording was removed: %q", got)
+	}
+}
+
 func TestFinalOrganizationRetriesOnlyDefiniteInvalidResults(t *testing.T) {
 	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{comparisonSnapshot([]string{"下午去河边观察白鹭。"}, false)}, Metadata: &FinalOrganizationContext{}}
 	for _, uncertain := range []bool{false, true} {
