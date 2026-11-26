@@ -838,6 +838,13 @@ func polishLinksSplitCorrection(before, after SourceUtterance, targets []PolishT
 // quotations. Provider turns may merge several experiences; keep raw text when
 // a substantive sentence has no output anchor.
 func polishRetainsSourceAnchors(sources []SourceUtterance, paragraphs []PolishParagraph) bool {
+	return len(polishMissingSourceAnchors(sources, paragraphs, 1)) == 0
+}
+
+func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishParagraph, limit int) []string {
+	if len(sources) == 0 {
+		return nil
+	}
 	windows := map[string]bool{}
 	bridged := map[string]bool{}
 	for _, paragraph := range paragraphs {
@@ -867,6 +874,7 @@ func polishRetainsSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 			}
 		}
 	}
+	var missing []string
 	for _, sentence := range units {
 		text := polishCanonical(sentence)
 		size := min(2, len(text))
@@ -907,11 +915,14 @@ func polishRetainsSourceAnchors(sources []SourceUtterance, paragraphs []PolishPa
 				matched = pairs >= 2
 			}
 		}
-		if !matched {
-			return false
+		if !matched && !slices.Contains(missing, sentence) {
+			missing = append(missing, sentence)
+			if len(missing) == limit {
+				break
+			}
 		}
 	}
-	return true
+	return missing
 }
 
 func polishCanonical(text string) []rune {

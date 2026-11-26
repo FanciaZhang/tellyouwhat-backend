@@ -41,6 +41,7 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 		var raw string
 		var input struct {
 			Sections [][]finalOrganizationTarget
+			Repair   []finalOrganizationIssue
 		}
 		if json.Unmarshal(body["input"], &raw) != nil || json.Unmarshal([]byte(raw), &input) != nil ||
 			len(input.Sections) != 2 || len(input.Sections[0]) != 3 || len(input.Sections[1]) != 3 ||
@@ -52,9 +53,20 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 		if first.ID != "T1" || first.Sources[0].Speaker == first.Sources[1].Speaker || first.Sources[1].Name != "妻子" {
 			t.Error("speaker names or distinctions were removed")
 		}
+		if calls.Load() == 2 {
+			if len(input.Repair) != 1 || input.Repair[0].Target != "T2" || input.Repair[0].Reason != "unanchored_group" ||
+				!slices.Equal(input.Repair[0].Sources, turns[10:18]) {
+				t.Errorf("retry must identify only the rejected group and its missing evidence: %+v", input.Repair)
+			}
+		} else if len(input.Repair) != 0 {
+			t.Error("normal organization must request one complete draft")
+		}
 		groups := []finalOrganizationGroup{}
 		for _, section := range input.Sections {
 			for _, target := range section {
+				if calls.Load() == 2 && target.ID != "T2" {
+					continue
+				}
 				prose := []string{}
 				for _, source := range target.Sources {
 					if source.Text == turns[0] {
@@ -79,8 +91,17 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
 		t.Fatal(err)
 	}
-	if job := store.job; job.State != "queued" || job.Progress.InvalidResultRetries != 1 || len(job.Progress.Results) != 0 || job.Progress.FinalMetadata != nil {
+	if job := store.job; job.State != "queued" || job.Progress.InvalidResultRetries != 1 || len(job.Progress.Results) != 0 ||
+		job.Progress.FinalMetadata != nil || job.Progress.FinalReview == nil || len(job.Progress.FinalReview.Accepted) != 5 {
 		t.Fatal("an incomplete draft must be retried without publishing any text or suggestions")
+	}
+	progress, err := json.Marshal(store.job.Progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.job.Progress = OrganizationState{}
+	if err := json.Unmarshal(progress, &store.job.Progress); err != nil {
+		t.Fatal(err)
 	}
 	*now = now.Add(2 * time.Second)
 	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
@@ -91,7 +112,7 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 		t.Fatalf("calls=%d state=%s sections=%d err=%v", calls.Load(), status.State, len(status.Progress.Results), err)
 	}
 	first := status.Progress.Results[0]
-	if status.Problem != "" || len(first.Targets) != 23 || len(status.Progress.Results[1].Targets) != 23 ||
+	if status.Problem != "" || status.Progress.FinalReview != nil || len(first.Targets) != 23 || len(status.Progress.Results[1].Targets) != 23 ||
 		!strings.HasPrefix(first.Paragraphs[0].Text, "周五去图书馆。我还没有还书。") {
 		t.Fatal("the retried draft must replace every target and retain the confirmed correction")
 	}
@@ -134,18 +155,18 @@ func TestFinalOrganizationRejectsMissingAndDuplicateGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, badID := range []string{"S1", "T2"} {
-		result, err := decodeFinalOrganization(fmt.Sprintf(`{"groups":[
+		result, review, err := decodeFinalOrganization(fmt.Sprintf(`{"groups":[
 			{"target":%q,"paragraphs":[{"text":"早晨去河边看白鹭，三只白鹭在浅滩上觅食。","style":"body"}]},
 			{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
-			"title":"清晨沿河散步"}`, badID), plan)
-		if result != nil || polishValidationCode(err) != "final_output_unverified_group" {
+			"title":"清晨沿河散步"}`, badID), plan, nil)
+		if result != nil || review == nil || review.Issues[0].Target != "T1" || polishValidationCode(err) != "final_output_missing_group" {
 			t.Fatalf("an invalid source reference must not publish an incomplete draft: %v", err)
 		}
 	}
 }
 
 func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
-	snapshot := comparisonSnapshot([]string{"早晨去河边观察白鹭。", "嗯。对呀。刚才没录上。", "回程在图书馆还了画册。"}, false)
+	snapshot := comparisonSnapshot([]string{"早晨去河边观察白鹭。", "嗯。对呀。刚才没录上。啥意思？我看一下。为啥？然后还有一些，我看看，我看。好像。", "回程在图书馆还了画册。"}, false)
 	targets := snapshot.Polish.Targets
 	var sections []Snapshot
 	for _, target := range targets {
@@ -154,10 +175,10 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 		sections = append(sections, section)
 	}
 	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: sections, Metadata: &FinalOrganizationContext{}}
-	result, err := decodeFinalOrganization(`{"groups":[
+	result, _, err := decodeFinalOrganization(`{"groups":[
 		{"target":"T1","paragraphs":[{"text":"早晨去河边观察白鹭。","style":"body"}]},
 		{"target":"T2","paragraphs":[]},
-		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan)
+		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan, nil)
 	if err != nil || len(result.Revisions) != 3 || result.PreservedSource {
 		t.Fatalf("the complete draft should omit an isolated filler block: %v", err)
 	}
@@ -170,7 +191,7 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 }
 
 func TestFinalOrganizationKeepsSharedSourcesTogetherAndRewritesConversation(t *testing.T) {
-	turns := []string{"周六准备去东码头。", "对呀。", "船票还没买，预算每人六十元。", "嗯。", "刚才没录上，我重新说一遍。",
+	turns := []string{"周六准备去东码头。", "对呀。", "船票还没买，预算每人六十元。", "嗯。", "没录上，我去。刚才没录上，我重新说一遍。",
 		"海边风大，要带厚外套。", "倒也不是非得周六出发。"}
 	snapshot := comparisonSnapshot(turns, true)
 	targets := snapshot.Polish.Targets
@@ -192,7 +213,7 @@ func TestFinalOrganizationKeepsSharedSourcesTogetherAndRewritesConversation(t *t
 			t.Error("related turns and isolated filler must share one editable unit")
 		}
 		return `{"groups":[
-		  {"target":"T1","paragraphs":[{"text":"嗯。哼哼哼。","style":"body"},{"text":"我们准备周六到东码头，船票还没买，预算每人六十元。海边风大，要带厚外套。","style":"body"},{"text":"不过也不是非得周六出发。","style":"body"}]}
+		  {"target":"T1","paragraphs":[{"text":"嗯。哼哼哼。","style":"body"},{"text":"我们准备周六到东码头，船票还没买，预算每人六十元。海边风大，要带厚外套。","style":"body"},{"text":"之前有段话没录上，我重新说：不过也不是非得周六出发。","style":"body"}]}
 		],"title":"周末去码头"}`
 	})
 	service, store, _ := syntheticFinalWorker(t, plan, model)
@@ -204,8 +225,32 @@ func TestFinalOrganizationKeepsSharedSourcesTogetherAndRewritesConversation(t *t
 	}
 	result := store.job.Progress.Results[0]
 	if len(result.Targets) != len(turns) || len(result.Paragraphs) != 2 || len(result.Paragraphs[0].TargetIDs) != len(turns) ||
-		!strings.Contains(result.Paragraphs[1].Text, "不是非得周六") {
+		result.Paragraphs[1].Text != "不过也不是非得周六出发。" {
 		t.Fatal("the body should cover every original target and retain the substantive qualification")
+	}
+}
+
+func TestFinalOrganizationFailedRepairNeverPublishesAcceptedGroups(t *testing.T) {
+	source := comparisonSnapshot([]string{"早晨去河边观察白鹭。", "回程在图书馆还了画册。"}, false)
+	first, second := source, source
+	first.Polish = &PolishRequest{Targets: source.Polish.Targets[:1]}
+	second.Polish = &PolishRequest{Targets: source.Polish.Targets[1:]}
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{first, second}, Metadata: &FinalOrganizationContext{}}
+	var calls atomic.Int32
+	model := syntheticFinalModel(t, &calls, func(_ *http.Request, _ map[string]json.RawMessage) string {
+		return `{"groups":[{"target":"T1","paragraphs":[{"text":"早晨去河边观察白鹭。","style":"body"}]}]}`
+	})
+	service, store, now := syntheticFinalWorker(t, plan, model)
+	for range 3 {
+		if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(2 * time.Second)
+	}
+	job := store.job
+	if calls.Load() != 2 || job.State != "failed" || job.Problem != "voice_rewrite_invalid_result" ||
+		job.Progress.FinalReview != nil || len(job.Progress.Results) > 0 || job.Progress.FinalMetadata != nil || job.Plan != nil {
+		t.Fatal("an incomplete repair must leave the saved recording and manuscript untouched")
 	}
 }
 

@@ -68,6 +68,7 @@ type Snapshot struct {
 	rewriteAcknowledged            string           // server-owned, never decoded from JSON
 	finalOrganization              *OrganizationPlan
 	finalRetry                     bool
+	finalReview                    *finalOrganizationReview
 
 	RecordingContext    *RecordingContext     `json:"recordingContext,omitempty"`
 	WritingStyle        WritingStyle          `json:"writingStyle"`

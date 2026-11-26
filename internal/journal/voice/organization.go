@@ -37,6 +37,7 @@ type OrganizationState struct {
 	CompletedFragments   int
 	TotalFragments       int
 	FinalMetadata        *FinalOrganizationMetadata `json:",omitempty"`
+	FinalReview          *finalOrganizationReview   `json:",omitempty"`
 }
 
 type organizationFragment struct {
@@ -253,7 +254,7 @@ func splitOrganizationText(text string) []string {
 
 func (s OrganizationState) Work(p OrganizationPlan) (OrganizationWork, error) {
 	if p.Version == FinalOrganizationVersion {
-		return OrganizationWork{Snapshot: Snapshot{finalOrganization: &p, finalRetry: s.InvalidResultRetries > 0}}, nil
+		return OrganizationWork{Snapshot: Snapshot{finalOrganization: &p, finalRetry: s.InvalidResultRetries > 0, finalReview: s.FinalReview}}, nil
 	}
 	if s.Section < 0 || s.Section >= len(p.Sections) {
 		return OrganizationWork{}, ErrInvalid
