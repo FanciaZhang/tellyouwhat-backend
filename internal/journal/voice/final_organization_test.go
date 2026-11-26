@@ -17,7 +17,7 @@ import (
 	"github.com/tellyouwhat/backend/internal/promptconfig"
 )
 
-func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing.T) {
+func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T) {
 	turns := make([]string, 46)
 	for i := range turns {
 		turns[i] = fmt.Sprintf("第%d天，我们在河边观察到了白鹭。", i+1)
@@ -62,7 +62,7 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 					}
 					prose = append(prose, source.Text)
 				}
-				if target.ID == "T2" {
+				if target.ID == "T2" && calls.Load() == 1 {
 					prose = []string{"这是没有来源的输出。"}
 				}
 				groups = append(groups, finalOrganizationGroup{target.ID, []PolishParagraph{{Text: strings.Join(prose, ""), Style: "body"}}})
@@ -75,19 +75,25 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 				SourceQuotes: []string{"我们在河边观察到了白鹭"}}})
 		return string(result)
 	})
-	service, store, _ := syntheticFinalWorker(t, plan, model)
+	service, store, now := syntheticFinalWorker(t, plan, model)
+	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if job := store.job; job.State != "queued" || job.Progress.InvalidResultRetries != 1 || len(job.Progress.Results) != 0 || job.Progress.FinalMetadata != nil {
+		t.Fatal("an incomplete draft must be retried without publishing any text or suggestions")
+	}
+	*now = now.Add(2 * time.Second)
 	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
 		t.Fatal(err)
 	}
 	status, err := service.Get(t.Context(), store.job.OwnerID, store.job.ID)
-	if err != nil || calls.Load() != 1 || status.State != "succeeded" || status.Progress.TotalFragments != 0 || len(status.Progress.Results) != 2 {
+	if err != nil || calls.Load() != 2 || status.State != "succeeded" || status.Progress.TotalFragments != 0 || len(status.Progress.Results) != 2 {
 		t.Fatalf("calls=%d state=%s sections=%d err=%v", calls.Load(), status.State, len(status.Progress.Results), err)
 	}
 	first := status.Progress.Results[0]
-	if status.Problem != "voice_organization_preserved_source" || len(first.Targets) != 13 ||
-		slices.ContainsFunc(first.Targets, func(target PolishTarget) bool { return target.ID == left.Polish.Targets[10].ID }) ||
+	if status.Problem != "" || len(first.Targets) != 23 || len(status.Progress.Results[1].Targets) != 23 ||
 		!strings.HasPrefix(first.Paragraphs[0].Text, "周五去图书馆。我还没有还书。") {
-		t.Fatal("the invalid group replaced its local source or the valid correction was rejected")
+		t.Fatal("the retried draft must replace every target and retain the confirmed correction")
 	}
 	metadata := status.Progress.FinalMetadata
 	if metadata == nil || metadata.Title != "河边的白鹭" || !slices.Equal(metadata.AlternativeTitles, []string{"河边观察"}) || len(metadata.Tags) != 0 ||
@@ -114,7 +120,7 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 	t.Logf("46 synthetic turns, legacy model windows=%d, whole-recording requests=%d", legacyCalls, calls.Load())
 }
 
-func TestFinalOrganizationKeepsValidEditsWhenModelUsesSourceLabels(t *testing.T) {
+func TestFinalOrganizationRejectsMissingAndDuplicateGroups(t *testing.T) {
 	snapshot := comparisonSnapshot([]string{"早晨我们去河边观察白鹭。", "三只白鹭在浅滩上觅食。", "回程在图书馆还了画册。"}, false)
 	first := snapshot.Polish.Targets[0]
 	second := snapshot.Polish.Targets[1]
@@ -127,16 +133,39 @@ func TestFinalOrganizationKeepsValidEditsWhenModelUsesSourceLabels(t *testing.T)
 	if err := plan.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	result, err := decodeFinalOrganization(`{"groups":[
-		{"target":"S1","paragraphs":[{"text":"这是转写编号，不能当作正文目标。","style":"body"}]},
-		{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
-		"title":"清晨沿河散步"}`, plan)
-	if err != nil {
-		t.Fatal(err)
+	for _, badID := range []string{"S1", "T2"} {
+		result, err := decodeFinalOrganization(fmt.Sprintf(`{"groups":[
+			{"target":%q,"paragraphs":[{"text":"早晨去河边看白鹭，三只白鹭在浅滩上觅食。","style":"body"}]},
+			{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
+			"title":"清晨沿河散步"}`, badID), plan)
+		if result != nil || polishValidationCode(err) != "final_output_unverified_group" {
+			t.Fatalf("an invalid source reference must not publish an incomplete draft: %v", err)
+		}
 	}
-	if !result.PreservedSource || len(result.Revisions) != 1 || len(result.Revisions[0].Targets) != 1 ||
-		result.Revisions[0].Targets[0].ID != last.Polish.Targets[0].ID || result.Metadata.Title != "清晨沿河散步" {
-		t.Fatal("an invalid source reference replaced original text or discarded an independent edit")
+}
+
+func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
+	snapshot := comparisonSnapshot([]string{"早晨去河边观察白鹭。", "嗯。对呀。刚才没录上。", "回程在图书馆还了画册。"}, false)
+	targets := snapshot.Polish.Targets
+	var sections []Snapshot
+	for _, target := range targets {
+		section := snapshot
+		section.Polish = &PolishRequest{Targets: []PolishTarget{target}, Narrator: snapshot.Narrator}
+		sections = append(sections, section)
+	}
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: sections, Metadata: &FinalOrganizationContext{}}
+	result, err := decodeFinalOrganization(`{"groups":[
+		{"target":"T1","paragraphs":[{"text":"早晨去河边观察白鹭。","style":"body"}]},
+		{"target":"T2","paragraphs":[]},
+		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan)
+	if err != nil || len(result.Revisions) != 3 || result.PreservedSource {
+		t.Fatalf("the complete draft should omit an isolated filler block: %v", err)
+	}
+	blank := result.Revisions[1]
+	if len(blank.Targets) != 1 || len(blank.Paragraphs) != 0 || !slices.Equal(blank.Omissions, []PolishOmission{{
+		SourceID: targets[1].Turns[0].ID, Text: targets[1].Turns[0].Text, Reason: "speechDisfluency",
+	}}) {
+		t.Fatal("the original source must remain linked to the omitted speech")
 	}
 }
 
@@ -163,7 +192,7 @@ func TestFinalOrganizationKeepsSharedSourcesTogetherAndRewritesConversation(t *t
 			t.Error("related turns and isolated filler must share one editable unit")
 		}
 		return `{"groups":[
-		  {"target":"T1","paragraphs":[{"text":"我们准备周六到东码头，船票还没买，预算每人六十元。海边风大，要带厚外套。","style":"body"},{"text":"不过也不是非得周六出发。","style":"body"}]}
+		  {"target":"T1","paragraphs":[{"text":"嗯。哼哼哼。","style":"body"},{"text":"我们准备周六到东码头，船票还没买，预算每人六十元。海边风大，要带厚外套。","style":"body"},{"text":"不过也不是非得周六出发。","style":"body"}]}
 		],"title":"周末去码头"}`
 	})
 	service, store, _ := syntheticFinalWorker(t, plan, model)
