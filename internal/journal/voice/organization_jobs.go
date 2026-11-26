@@ -236,9 +236,6 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 		if code := serviceClientCode(err); code != "" && code != "voice_session_busy" {
 			job.State, job.Problem = "failed", code
 		}
-		if job.State == "failed" {
-			job.Progress.FinalReview = nil
-		}
 		return s.Store.Save(ctx, job, previous)
 	}
 	if settle == nil {
@@ -298,7 +295,6 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 		current.Problem = "voice_rewrite_invalid_result"
 		if current.Progress.InvalidResultRetries == 0 {
 			current.Progress.InvalidResultRetries++
-			current.Progress.FinalReview = result.finalOrganizationReview
 			current.State = "queued"
 			current.AvailableAt = s.Now().Add(time.Second)
 		} else if final {
@@ -322,9 +318,6 @@ func (s *OrganizationService) Process(ctx context.Context, owner, id string) err
 			current.Plan = nil
 			current.Policy = nil
 		}
-	}
-	if final && current.State != "queued" {
-		current.Progress.FinalReview = nil
 	}
 	// Deployment draining keeps this root context alive through settlement.
 	return s.Store.Save(ctx, current, claimed)

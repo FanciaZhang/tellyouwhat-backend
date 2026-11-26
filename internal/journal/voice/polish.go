@@ -838,14 +838,7 @@ func polishLinksSplitCorrection(before, after SourceUtterance, targets []PolishT
 // quotations. Provider turns may merge several experiences; keep raw text when
 // a substantive sentence has no output anchor.
 func polishRetainsSourceAnchors(sources []SourceUtterance, paragraphs []PolishParagraph) bool {
-	return len(polishMissingSourceAnchors(sources, paragraphs, 1)) == 0
-}
-
-func polishMissingSourceAnchors(sources []SourceUtterance, paragraphs []PolishParagraph, limit int) []string {
-	if len(sources) == 0 {
-		return nil
-	}
-	return indexPolishAnchors(paragraphs).missing(sources, limit)
+	return len(sources) == 0 || indexPolishAnchors(paragraphs).retains(sources)
 }
 
 type polishAnchorIndex struct {
@@ -875,26 +868,19 @@ func indexPolishAnchors(paragraphs []PolishParagraph) polishAnchorIndex {
 	return index
 }
 
-func (index polishAnchorIndex) missing(sources []SourceUtterance, limit int) []string {
-	units := []string{}
+func (index polishAnchorIndex) retains(sources []SourceUtterance) bool {
 	for _, source := range sources {
-		units = append(units, source.Text)
+		if !index.matches(polishCanonical(source.Text)) {
+			return false
+		}
 		for _, sentence := range polishSourceSentences(source.Text) {
-			if sentence != source.Text && len(polishCanonical(sentence)) > 12 && polishNeedsLexicalAnchor(sentence) {
-				units = append(units, sentence)
+			canonical := polishCanonical(sentence)
+			if sentence != source.Text && len(canonical) > 12 && polishNeedsLexicalAnchor(sentence) && !index.matches(canonical) {
+				return false
 			}
 		}
 	}
-	var missing []string
-	for _, sentence := range units {
-		if !index.matches(polishCanonical(sentence)) && !slices.Contains(missing, sentence) {
-			missing = append(missing, sentence)
-			if len(missing) == limit {
-				break
-			}
-		}
-	}
-	return missing
+	return true
 }
 
 func (index polishAnchorIndex) matches(text []rune) bool {

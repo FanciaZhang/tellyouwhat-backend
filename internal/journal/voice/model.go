@@ -20,7 +20,6 @@ import (
 
 type RewriteResult struct {
 	FinalOrganization         *FinalOrganizationResult `json:"-"`
-	finalOrganizationReview   *finalOrganizationReview
 	Identity                  *IdentityRevision
 	Polish                    *PolishRevision
 	OutputText                string `json:"-"`
@@ -257,9 +256,8 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	}
 	result.OutputText = text
 	if s.finalOrganization != nil {
-		final, review, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalReview, s.finalRetry)
+		final, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalRetry)
 		if err != nil {
-			result.finalOrganizationReview = review
 			result.Diagnostics.ValidationCode = polishValidationCode(err)
 			return failedRewrite(result, "voice_rewrite_invalid_result", "validate_final_organization", err, started)
 		}
@@ -407,7 +405,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		return PreparedRewrite{}, ErrInvalid
 	}
 	if s.finalOrganization != nil {
-		return prepareFinalOrganization(*s.finalOrganization, s.finalRetry, s.finalReview, settings, version)
+		return prepareFinalOrganization(*s.finalOrganization, s.finalRetry, settings, version)
 	}
 	if err := s.Validate(); err != nil {
 		return PreparedRewrite{}, err
