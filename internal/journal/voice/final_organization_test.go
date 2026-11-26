@@ -40,26 +40,33 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 		}
 		var raw string
 		var input struct {
-			Sources  []finalOrganizationSource
 			Sections [][]finalOrganizationTarget
 		}
-		if json.Unmarshal(body["input"], &raw) != nil || json.Unmarshal([]byte(raw), &input) != nil || len(input.Sources) != 46 || len(input.Sections) != 2 {
-			t.Error("the request did not include both sections and all 46 source turns")
-		} else if input.Sources[0].Speaker == input.Sources[1].Speaker || input.Sources[1].Name != "妻子" {
+		if json.Unmarshal(body["input"], &raw) != nil || json.Unmarshal([]byte(raw), &input) != nil ||
+			len(input.Sections) != 2 || len(input.Sections[0]) != 3 || len(input.Sections[1]) != 3 ||
+			len(input.Sections[0][0].Sources) != 10 || len(input.Sections[1][2].Sources) != 3 {
+			t.Error("the request did not include both sections with predefined editing groups")
+			return ""
+		}
+		first := input.Sections[0][0]
+		if first.ID != "T1" || first.Sources[0].Speaker == first.Sources[1].Speaker || first.Sources[1].Name != "妻子" {
 			t.Error("speaker names or distinctions were removed")
-		} else if input.Sources[0].ID != "S1" || input.Sections[0][0].ID != "T1" || !slices.Equal(input.Sections[0][0].Sources, []string{"S1"}) {
-			t.Error("source references and editable target IDs are not distinct")
 		}
 		groups := []finalOrganizationGroup{}
-		for i, turn := range turns {
-			if i == 0 {
-				turn = "周五去图书馆。我还没有还书。"
+		for _, section := range input.Sections {
+			for _, target := range section {
+				prose := []string{}
+				for _, source := range target.Sources {
+					if source.Text == turns[0] {
+						source.Text = "周五去图书馆。我还没有还书。"
+					}
+					prose = append(prose, source.Text)
+				}
+				if target.ID == "T2" {
+					prose = []string{"这是没有来源的输出。"}
+				}
+				groups = append(groups, finalOrganizationGroup{target.ID, []PolishParagraph{{Text: strings.Join(prose, ""), Style: "body"}}})
 			}
-			if i == 2 {
-				turn = "这是没有来源的输出。"
-			}
-			id := finalTargetID(i + 1)
-			groups = append(groups, finalOrganizationGroup{id, id, []PolishParagraph{{Text: turn, Style: "body"}}})
 		}
 		result, _ := json.Marshal(map[string]any{"groups": groups, "title": "河边的白鹭", "alternativeTitles": []any{true, "河边观察"},
 			"tags": "invalid optional field", "recommendedTags": []map[string]string{{"name": "白鹭", "type": "topic"}},
@@ -77,9 +84,9 @@ func TestFinalOrganizationSends46TurnsOnceAndKeepsRejectedGroupsLocal(t *testing
 		t.Fatalf("calls=%d state=%s sections=%d err=%v", calls.Load(), status.State, len(status.Progress.Results), err)
 	}
 	first := status.Progress.Results[0]
-	if status.Problem != "voice_organization_preserved_source" || len(first.Targets) != 22 ||
-		slices.ContainsFunc(first.Targets, func(target PolishTarget) bool { return target.ID == left.Polish.Targets[2].ID }) ||
-		first.Paragraphs[0].Text != "周五去图书馆。我还没有还书。" {
+	if status.Problem != "voice_organization_preserved_source" || len(first.Targets) != 13 ||
+		slices.ContainsFunc(first.Targets, func(target PolishTarget) bool { return target.ID == left.Polish.Targets[10].ID }) ||
+		!strings.HasPrefix(first.Paragraphs[0].Text, "周五去图书馆。我还没有还书。") {
 		t.Fatal("the invalid group replaced its local source or the valid correction was rejected")
 	}
 	metadata := status.Progress.FinalMetadata
@@ -113,21 +120,63 @@ func TestFinalOrganizationKeepsValidEditsWhenModelUsesSourceLabels(t *testing.T)
 	second := snapshot.Polish.Targets[1]
 	first.Turns = append(first.Turns, second.Turns...)
 	first.SourceIDs = append(first.SourceIDs, second.SourceIDs...)
-	snapshot.Polish.Targets = []PolishTarget{first, snapshot.Polish.Targets[2]}
-	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	last := snapshot
+	last.Polish = &PolishRequest{Targets: []PolishTarget{snapshot.Polish.Targets[2]}}
+	snapshot.Polish.Targets = []PolishTarget{first}
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot, last}, Metadata: &FinalOrganizationContext{}}
 	if err := plan.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	result, err := decodeFinalOrganization(`{"groups":[
-		{"firstTarget":"S1","lastTarget":"S3","paragraphs":[{"text":"这是转写编号，不能当作正文目标。","style":"body"}]},
-		{"firstTarget":"T2","lastTarget":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
+		{"target":"S1","paragraphs":[{"text":"这是转写编号，不能当作正文目标。","style":"body"}]},
+		{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
 		"title":"清晨沿河散步"}`, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.PreservedSource || len(result.Revisions) != 1 || len(result.Revisions[0].Targets) != 1 ||
-		result.Revisions[0].Targets[0].ID != snapshot.Polish.Targets[1].ID || result.Metadata.Title != "清晨沿河散步" {
+		result.Revisions[0].Targets[0].ID != last.Polish.Targets[0].ID || result.Metadata.Title != "清晨沿河散步" {
 		t.Fatal("an invalid source reference replaced original text or discarded an independent edit")
+	}
+}
+
+func TestFinalOrganizationKeepsSharedSourcesTogetherAndRewritesConversation(t *testing.T) {
+	turns := []string{"周六准备去东码头。", "对呀。", "船票还没买，预算每人六十元。", "嗯。", "刚才没录上，我重新说一遍。",
+		"海边风大，要带厚外套。", "倒也不是非得周六出发。"}
+	snapshot := comparisonSnapshot(turns, true)
+	targets := snapshot.Polish.Targets
+	targets[5].Turns = append(targets[5].Turns, targets[2].Turns...)
+	targets[5].SourceIDs = append(targets[5].SourceIDs, targets[2].SourceIDs...)
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	if err := plan.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	model := syntheticFinalModel(t, &calls, func(_ *http.Request, body map[string]json.RawMessage) string {
+		var raw string
+		var input struct {
+			Sections [][]finalOrganizationTarget
+		}
+		if json.Unmarshal(body["input"], &raw) != nil || json.Unmarshal([]byte(raw), &input) != nil ||
+			len(input.Sections) != 1 || len(input.Sections[0]) != 1 || input.Sections[0][0].ID != "T1" ||
+			len(input.Sections[0][0].Sources) != len(turns) {
+			t.Error("related turns and isolated filler must share one editable unit")
+		}
+		return `{"groups":[
+		  {"target":"T1","paragraphs":[{"text":"我们准备周六到东码头，船票还没买，预算每人六十元。海边风大，要带厚外套。","style":"body"},{"text":"不过也不是非得周六出发。","style":"body"}]}
+		],"title":"周末去码头"}`
+	})
+	service, store, _ := syntheticFinalWorker(t, plan, model)
+	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 || store.job.State != "succeeded" || store.job.Progress.PreservedSource || len(store.job.Progress.Results) != 1 {
+		t.Fatalf("calls=%d state=%s preserved=%t", calls.Load(), store.job.State, store.job.Progress.PreservedSource)
+	}
+	result := store.job.Progress.Results[0]
+	if len(result.Targets) != len(turns) || len(result.Paragraphs) != 2 || len(result.Paragraphs[0].TargetIDs) != len(turns) ||
+		!strings.Contains(result.Paragraphs[1].Text, "不是非得周六") {
+		t.Fatal("the body should cover every original target and retain the substantive qualification")
 	}
 }
 
