@@ -217,6 +217,54 @@ func TestFinalOrganizationChecksEvidenceWithinEachProtectedSection(t *testing.T)
 	}
 }
 
+func TestFinalOrganizationCoalescesRepeatedDraftAndRepairParagraphs(t *testing.T) {
+	turns := []string{
+		"上次我们在图书馆找到了那份修复过的旧地图。",
+		"我们还问了下次怎么预约借阅。",
+		"嗯。", "嗯。", "嗯。", "嗯。", "嗯。", "嗯。", "嗯。", "嗯。",
+		"那套地图是从旧馆搬过来的。",
+	}
+	snapshot := comparisonSnapshot(turns, false)
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	lastID := snapshot.Polish.Targets[10].ID
+	cached := &finalOrganizationReview{Accepted: map[int][]PolishParagraph{
+		2: {{Text: turns[0] + turns[10], Style: "body", TargetIDs: []string{lastID}}},
+	}}
+	const complete = "我们上次在图书馆找到了那份修复过的旧地图。那套地图是从旧馆搬过来的。我们还问了下次怎么预约借阅。"
+	body := fmt.Sprintf(`{"groups":[{"target":"T1","paragraphs":[{"style":"body","text":%q}]}]}`, complete)
+	result, _, err := decodeFinalOrganization(body, plan, cached, true)
+	if err != nil || result == nil || len(result.Revisions) != 1 {
+		t.Fatalf("could not combine the recording draft: %v", err)
+	}
+	revision := result.Revisions[0]
+	if len(revision.Paragraphs) != 1 || len(revision.Targets) != len(turns) ||
+		revision.Paragraphs[0].Text != complete || len(revision.Paragraphs[0].TargetIDs) != len(turns) ||
+		!slices.Contains(revision.Paragraphs[0].TargetIDs, lastID) {
+		t.Fatal("repeated prose should appear once, with the new detail and all attached sources")
+	}
+	first, second := snapshot, snapshot
+	first.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[:10]}
+	second.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[10:]}
+	plan.Sections = []Snapshot{first, second}
+	result, _, err = decodeFinalOrganization(body, plan, cached, true)
+	if err != nil || result == nil || len(result.Revisions) != 2 ||
+		len(result.Revisions[0].Paragraphs) != 1 || len(result.Revisions[1].Paragraphs) != 1 {
+		t.Fatal("paragraphs separated by protected manuscript content must remain independent")
+	}
+}
+
+func TestFinalOrganizationKeepsSimilarParagraphsWithDifferentFacts(t *testing.T) {
+	const first = "今天我们去图书馆查一份历史地图，借阅票价是4.5元，可以用到周五。"
+	paragraphs := []PolishParagraph{
+		{Text: first, Style: "body"},
+		{Text: strings.Replace(first, "4.5", "45", 1), Style: "body"},
+		{Text: strings.Replace(first, "可以", "不可以", 1), Style: "body"},
+	}
+	if result := coalesceFinalParagraphs(paragraphs); len(result) != len(paragraphs) {
+		t.Fatal("similar statements with different quantities or qualifications must remain")
+	}
+}
+
 func TestFinalOrganizationAcceptsReviewedParaphraseButRejectsMissingNarrative(t *testing.T) {
 	snapshot := comparisonSnapshot([]string{
 		"天刚亮，我们就带着装备走到排练室签到。",

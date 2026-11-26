@@ -393,6 +393,7 @@ func decodeFinalOrganization(text string, plan OrganizationPlan, previous *final
 			revision.Targets = append(revision.Targets, draft.members...)
 		}
 		if len(revision.Targets) > 0 {
+			revision.Paragraphs = coalesceFinalParagraphs(revision.Paragraphs)
 			result.Revisions = append(result.Revisions, revision)
 			for _, paragraph := range revision.Paragraphs {
 				body = append(body, paragraph.Text)
@@ -411,6 +412,68 @@ func decodeFinalOrganization(text string, plan OrganizationPlan, previous *final
 	result.Metadata = finalMetadata(plan.Metadata, output.Title, output.AlternativeTitles, output.Tags, output.RecommendedTags,
 		output.ExistingBookRecommendations, output.NewBookSuggestions, output.IllustrationSuggestion, body)
 	return result, nil, nil
+}
+
+func coalesceFinalParagraphs(paragraphs []PolishParagraph) []PolishParagraph {
+	result := paragraphs[:0]
+	for _, next := range paragraphs {
+		last := len(result) - 1
+		if last < 0 || result[last].Style != "body" || next.Style != "body" {
+			result = append(result, next)
+			continue
+		}
+		keep := result[last]
+		if !finalParagraphContains(keep.Text, next.Text) {
+			if !finalParagraphContains(next.Text, keep.Text) {
+				result = append(result, next)
+				continue
+			}
+			keep = next
+		}
+		// Keep both edit groups attached to the surviving paragraph and its recording.
+		keep.TargetIDs = slices.Clone(result[last].TargetIDs)
+		for _, id := range next.TargetIDs {
+			if !slices.Contains(keep.TargetIDs, id) {
+				keep.TargetIDs = append(keep.TargetIDs, id)
+			}
+		}
+		result[last] = keep
+	}
+	return result
+}
+
+func finalParagraphContains(full, repeated string) bool {
+	if utf8.RuneCountInString(repeated) < 24 {
+		return false
+	}
+	haystack, needle := polishSourceSentences(full), polishSourceSentences(repeated)
+	if len(needle) == 0 || len(haystack) < len(needle) {
+		return full == repeated
+	}
+	for i, sentence := range needle {
+		needle[i] = finalSentenceKey(sentence)
+	}
+	for i, sentence := range haystack {
+		haystack[i] = finalSentenceKey(sentence)
+	}
+	for start := 0; start+len(needle) <= len(haystack); start++ {
+		if slices.Equal(haystack[start:start+len(needle)], needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func finalSentenceKey(sentence string) string {
+	key := strings.Join(strings.Fields(sentence), " ")
+	for _, when := range []string{"上次", "这次", "那次", "那天", "当天", "今天", "昨天", "前天"} {
+		for _, subject := range []string{"我们", "我"} {
+			if rest, ok := strings.CutPrefix(key, when+subject); ok {
+				return subject + when + rest
+			}
+		}
+	}
+	return key
 }
 
 func (review *finalOrganizationReview) addIssue(number int, reason string, missing []string, paragraphs []PolishParagraph) {
