@@ -75,7 +75,7 @@ sections 的每个数组是一个独立正文区间，不能把内容移过区�
 用 omissions 标明因无关现场插话、旁人闲谈或纯对话过程而略过的原话。source 填本组内对应发言的 number。text 逐字复制该来源里唯一出现的原话；整条无关就引用整条，同条有相关内容就只引用无关片段。每条来源至多标一次。消重和普通润色无需标注。只有组内所有来源都已标明省略，或整组只有无意义的口语，且没有 current 时，paragraphs 才可留空。有关的事实和观点必须进入正文。
 在同一结果里给出一个简洁标题和至多三个备选。suggestLibrary 为真时，提取至多八个扁平标签，优先复用已有标签，跳过拒绝标签；推荐至多三个已有书册，已有书册的 bookID 使用输入中从 1 开始的书册编号字符串，另可建议至多两个新书册。suggestIllustration 为真且有合适画面时，给出配图场景和一至三条逐字出现在输出正文中的来源短句，省略敏感地址及联系方式。可选建议证据不足时留空，优先保证正文完整。`
 
-func prepareFinalOrganization(p OrganizationPlan, retry bool, settings *promptconfig.Journal, version string) (PreparedRewrite, error) {
+func prepareFinalOrganization(p OrganizationPlan, retry bool, selected map[string][]PolishOmission, settings *promptconfig.Journal, version string) (PreparedRewrite, error) {
 	if len(p.Sections) == 0 || p.Metadata == nil {
 		return PreparedRewrite{}, ErrInvalid
 	}
@@ -100,6 +100,11 @@ func prepareFinalOrganization(p OrganizationPlan, retry bool, settings *promptco
 				}
 			}
 			for index, turn := range polishSources(PolishRequest{Targets: targets[span.start:span.end]}) {
+				// Keep source numbers stable when the retry hides verified omissions.
+				value := strings.TrimSpace(retainedPolishSourceText(turn, selected[turn.ID]))
+				if value == "" {
+					continue
+				}
 				key := turn.PersonID
 				if key == "" {
 					key = turn.Speaker
@@ -112,12 +117,12 @@ func prepareFinalOrganization(p OrganizationPlan, retry bool, settings *promptco
 					label = strconv.Itoa(speakerNumbers[key])
 				}
 				if !counted[turn.ID] {
-					sourceRunes += utf8.RuneCountInString(turn.Text)
+					sourceRunes += utf8.RuneCountInString(value)
 					counted[turn.ID] = true
 				}
 				author := section.Polish.Narrator != nil && turn.PersonID == section.Polish.Narrator.PersonID
 				input.Sources = append(input.Sources, finalOrganizationSource{
-					Number: index + 1, Text: turn.Text, Speaker: label, Name: turn.Person, Author: author, Start: turn.StartMilliseconds})
+					Number: index + 1, Text: value, Speaker: label, Name: turn.Person, Author: author, Start: turn.StartMilliseconds})
 			}
 			input.Current = strings.Join(retained, "\n")
 			editable = append(editable, input)
@@ -142,7 +147,7 @@ func prepareFinalOrganization(p OrganizationPlan, retry bool, settings *promptco
 		instructions += "\n成稿附加要求（遵守正文要求、原文依据和输出协议）：" + settings.Voice.PolishPrompt
 	}
 	if retry {
-		instructions += "\n根据本次 sections 的原始发言从头起稿。逐个核对 target，在各自的正文区间写全与讲述有关的时间、地点、人物、数字、看法和限定条件。沿用可核对事实的核心词。明确无关的内容仍按 omissions 处理。可以省略额外建议。"
+		instructions += "\n根据本次 sections 的原始发言从头起稿。逐个核对 target，写全所有相关事实、限制、旁人补充和作者主动另记的事。明确无关的内容仍按 omissions 处理。已经核对省去的原话不会再提供，来源编号可能跳过。若 sources 和 current 都为空，仍输出该 target 和空 paragraphs。可以省略额外建议。"
 	}
 	instructions += journalNarrativeFocusInstructions + "\n输出前检查正文中的口误：" + proseSelfCorrectionInstructions
 	parameters := settings.Voice.Parameters
@@ -252,7 +257,7 @@ func finalTargetNumber(id string) int {
 	return number
 }
 
-func decodeFinalOrganization(text string, plan OrganizationPlan, retry bool) (*FinalOrganizationResult, error) {
+func decodeFinalOrganization(text string, plan OrganizationPlan, retry bool, selected map[string][]PolishOmission) (*FinalOrganizationResult, error) {
 	var output struct {
 		Groups                      []json.RawMessage                 `json:"groups"`
 		Title                       json.RawMessage                   `json:"title"`
@@ -332,11 +337,14 @@ func decodeFinalOrganization(text string, plan OrganizationPlan, retry bool) (*F
 			}
 			group := groups[number]
 			request := PolishRequest{Targets: members, Narrator: revision.Narrator}
-			omissions, omitted, err := group.validateOmissions(request)
+			omissions, omitted, err := group.validateOmissions(request, selected)
 			if err != nil {
 				return nil, err
 			}
 			for _, omission := range omissions {
+				if selected != nil {
+					selected[omission.SourceID] = []PolishOmission{omission}
+				}
 				if omitted[omission.SourceID] {
 					revision.Omissions = append(revision.Omissions, omission)
 				}
@@ -485,12 +493,15 @@ func finalParagraphs(proposed []PolishParagraph, targets []PolishTarget) ([]Poli
 	return paragraphs, ""
 }
 
-func (g finalOrganizationGroup) validateOmissions(request PolishRequest) ([]PolishOmission, map[string]bool, error) {
-	if len(g.Omissions) == 0 {
+func (g finalOrganizationGroup) validateOmissions(request PolishRequest, selected map[string][]PolishOmission) ([]PolishOmission, map[string]bool, error) {
+	if len(g.Omissions) == 0 && len(selected) == 0 {
 		return nil, nil, nil
 	}
 	sources := polishSources(request)
 	omissions := make([]PolishOmission, 0, len(g.Omissions))
+	for _, source := range sources {
+		omissions = append(omissions, selected[source.ID]...)
+	}
 	for _, item := range g.Omissions {
 		if item.Source < 1 || item.Source > len(sources) {
 			return nil, nil, polishInvalid("final_omission_source")

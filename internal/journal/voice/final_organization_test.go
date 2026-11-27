@@ -162,7 +162,7 @@ func TestFinalOrganizationRejectsMissingAndDuplicateGroups(t *testing.T) {
 		result, err := decodeFinalOrganization(fmt.Sprintf(`{"groups":[
 			{"target":%q,"paragraphs":[{"text":"早晨去河边看白鹭，三只白鹭在浅滩上觅食。","style":"body"}]},
 			{"target":"T2","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}],
-			"title":"清晨沿河散步"}`, badID), plan, false)
+			"title":"清晨沿河散步"}`, badID), plan, false, nil)
 		if result != nil || polishValidationCode(err) != "final_output_missing_group" {
 			t.Fatalf("an invalid source reference must not publish an incomplete draft: %v", err)
 		}
@@ -182,7 +182,7 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 	result, err := decodeFinalOrganization(`{"groups":[
 		{"target":"T1","paragraphs":[{"text":"早晨去河边观察白鹭。","style":"body"}]},
 		{"target":"T2","paragraphs":[]},
-		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan, false)
+		{"target":"T3","paragraphs":[{"text":"回程在图书馆还了画册。","style":"body"}]}]}`, plan, false, nil)
 	if err != nil || len(result.Revisions) != 3 || result.PreservedSource {
 		t.Fatalf("the complete draft should omit an isolated filler block: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestFinalOrganizationOmitsOnlyVerifiedSpeech(t *testing.T) {
 		{"target":"T1","paragraphs":[{"text":%q,"style":"body"}],"omissions":[{"source":2,"text":%q}]},
 		{"target":"T2","paragraphs":[],"omissions":[{"source":1,"text":%q}]}]}`,
 		"我去南仓看了排练室。"+detail, aside, unrelated)
-	got, err := decodeFinalOrganization(draft, plan, false)
+	got, err := decodeFinalOrganization(draft, plan, false, nil)
 	if err != nil || len(got.Revisions) != 2 {
 		t.Fatalf("selective draft should apply both sections: %v", err)
 	}
@@ -232,11 +232,72 @@ func TestFinalOrganizationOmitsOnlyVerifiedSpeech(t *testing.T) {
 		{"missing relevant detail", detail, "", "final_output_unanchored_group"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := decodeFinalOrganization(strings.Replace(draft, tc.from, tc.to, 1), plan, false)
+			got, err := decodeFinalOrganization(strings.Replace(draft, tc.from, tc.to, 1), plan, false, nil)
 			if got != nil || polishValidationCode(err) != tc.code {
 				t.Fatalf("wanted %s, got %v", tc.code, err)
 			}
 		})
+	}
+}
+
+func TestFinalOrganizationRetryKeepsVerifiedOmissions(t *testing.T) {
+	const opening = "排练室下午两点开门。"
+	const interruption = "哎哟，鞋里进沙子了。"
+	const mixedDetail = "门口可以停三辆自行车。"
+	const mixedInterruption = "桌上的咖啡洒了。"
+	const ending = "晚上我还想去河边散步。"
+	snapshot := comparisonSnapshot([]string{opening, interruption, mixedDetail + mixedInterruption, ending}, true)
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
+	var calls atomic.Int32
+	model := syntheticFinalModel(t, &calls, func(_ *http.Request, body map[string]json.RawMessage) string {
+		var raw string
+		var input struct {
+			Sections [][]finalOrganizationTarget
+		}
+		if json.Unmarshal(body["input"], &raw) != nil || json.Unmarshal([]byte(raw), &input) != nil ||
+			len(input.Sections) != 1 || len(input.Sections[0]) != 1 {
+			t.Error("invalid recording request")
+			return ""
+		}
+		sources := input.Sections[0][0].Sources
+		if calls.Load() == 1 {
+			return fmt.Sprintf(`{"groups":[{"target":"T1","paragraphs":[{"text":%q,"style":"body"}],
+				"omissions":[{"source":2,"text":%q},{"source":3,"text":%q}]}]}`, opening, interruption, mixedInterruption)
+		}
+		if len(sources) != 3 || sources[1].Number != 3 || sources[1].Text != mixedDetail ||
+			sources[2].Number != 4 || sources[2].Text != ending || strings.Contains(raw, interruption) || strings.Contains(raw, mixedInterruption) {
+			t.Error("the retry must use original material with only verified excerpts removed")
+		}
+		return fmt.Sprintf(`{"groups":[{"target":"T1","paragraphs":[{"text":%q,"style":"body"}],"omissions":[]}]}`,
+			opening+mixedDetail+ending)
+	})
+	service, store, now := syntheticFinalWorker(t, plan, model)
+	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if store.job.State != "queued" || len(store.job.Progress.Omitted) != 2 || len(store.job.Progress.Results) != 0 {
+		t.Fatal("only verified omissions can survive an incomplete first draft")
+	}
+	progress, err := json.Marshal(store.job.Progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.job.Progress = OrganizationState{}
+	if err := json.Unmarshal(progress, &store.job.Progress); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(2 * time.Second)
+	if err := service.Process(t.Context(), store.job.OwnerID, store.job.ID); err != nil {
+		t.Fatal(err)
+	}
+	job := store.job
+	if job.State != "succeeded" || calls.Load() != 2 || len(job.Progress.Results) != 1 || len(job.Progress.Omitted) != 0 {
+		t.Fatalf("expected only the complete draft to be published, got %s", job.State)
+	}
+	got := job.Progress.Results[0]
+	if len(got.Omissions) != 1 || got.Omissions[0].Text != interruption ||
+		got.Targets[2].Turns[0].Text != mixedDetail+mixedInterruption {
+		t.Fatal("the result must retain the original utterances and authorize only whole-source omissions")
 	}
 }
 
@@ -252,7 +313,7 @@ func TestFinalOrganizationChecksEvidenceWithinEachProtectedSection(t *testing.T)
 	const draft = `{"groups":[
 		{"target":"T1","paragraphs":[{"text":"午后我们沿着溪岸散步。","style":"body"}]},
 		{"target":"T2","paragraphs":[{"text":"我们约了周五在文化馆练习合唱。朋友提议周日把花盆搬到阳台。","style":"body"}]}]}`
-	result, err := decodeFinalOrganization(draft, plan, false)
+	result, err := decodeFinalOrganization(draft, plan, false, nil)
 	if err != nil || len(result.Revisions[0].Targets) != len(turns) {
 		t.Fatalf("a fact expressed in a neighboring group in the same section must count: %v", err)
 	}
@@ -260,7 +321,7 @@ func TestFinalOrganizationChecksEvidenceWithinEachProtectedSection(t *testing.T)
 	first.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[:10]}
 	second.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[10:]}
 	plan.Sections = []Snapshot{first, second}
-	result, err = decodeFinalOrganization(draft, plan, false)
+	result, err = decodeFinalOrganization(draft, plan, false, nil)
 	if result != nil || polishValidationCode(err) != "final_output_unanchored_group" {
 		t.Fatal("success across a hand-edited boundary must not hide an omission")
 	}
@@ -280,7 +341,7 @@ func TestFinalOrganizationCoalescesRepeatedParagraphsInCompletedDraft(t *testing
 	body := fmt.Sprintf(`{"groups":[
 		{"target":"T1","paragraphs":[{"style":"body","text":%q}]},
 		{"target":"T2","paragraphs":[{"style":"body","text":%q}]}]}`, complete, turns[0]+turns[10])
-	result, err := decodeFinalOrganization(body, plan, true)
+	result, err := decodeFinalOrganization(body, plan, true, nil)
 	if err != nil || result == nil || len(result.Revisions) != 1 {
 		t.Fatalf("could not combine the recording draft: %v", err)
 	}
@@ -294,7 +355,7 @@ func TestFinalOrganizationCoalescesRepeatedParagraphsInCompletedDraft(t *testing
 	first.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[:10]}
 	second.Polish = &PolishRequest{Targets: snapshot.Polish.Targets[10:]}
 	plan.Sections = []Snapshot{first, second}
-	result, err = decodeFinalOrganization(body, plan, true)
+	result, err = decodeFinalOrganization(body, plan, true, nil)
 	if err != nil || result == nil || len(result.Revisions) != 2 ||
 		len(result.Revisions[0].Paragraphs) != 1 || len(result.Revisions[1].Paragraphs) != 1 {
 		t.Fatal("paragraphs separated by protected manuscript content must remain independent")
@@ -321,16 +382,16 @@ func TestFinalOrganizationAcceptsReviewedParaphraseButRejectsMissingNarrative(t 
 	}, false)
 	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot}, Metadata: &FinalOrganizationContext{}}
 	const paraphrase = `{"groups":[{"target":"T1","paragraphs":[{"style":"body","text":"天刚亮，我们就带着装备走到排练室签到。我们把五把椅子摆成一排，然后试了灯光。街上的风吹得人直打哆嗦。"}]}]}`
-	result, err := decodeFinalOrganization(paraphrase, plan, false)
+	result, err := decodeFinalOrganization(paraphrase, plan, false, nil)
 	if result != nil || polishValidationCode(err) != "final_output_unanchored_group" {
 		t.Fatal("ambiguous source coverage should trigger a complete retry")
 	}
-	result, err = decodeFinalOrganization(paraphrase, plan, true)
+	result, err = decodeFinalOrganization(paraphrase, plan, true, nil)
 	if err != nil || result == nil || len(result.Revisions[0].Targets) != 3 {
 		t.Fatalf("the reviewed draft should allow a natural paraphrase: %v", err)
 	}
 	const incomplete = `{"groups":[{"target":"T1","paragraphs":[{"style":"body","text":"天刚亮，我们就带着装备走到排练室签到。"}]}]}`
-	result, err = decodeFinalOrganization(incomplete, plan, true)
+	result, err = decodeFinalOrganization(incomplete, plan, true, nil)
 	if result != nil || err == nil {
 		t.Fatal("a repair that drops most recording facts must still fail")
 	}

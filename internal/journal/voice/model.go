@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 type RewriteResult struct {
 	FinalOrganization         *FinalOrganizationResult `json:"-"`
+	finalOmissions            map[string][]PolishOmission
 	Identity                  *IdentityRevision
 	Polish                    *PolishRevision
 	OutputText                string `json:"-"`
@@ -256,9 +258,17 @@ func (m ArkRewriter) Rewrite(ctx context.Context, s Snapshot, tr int) (result Re
 	}
 	result.OutputText = text
 	if s.finalOrganization != nil {
-		final, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalRetry)
+		selected := maps.Clone(s.finalOmissions)
+		if selected == nil {
+			selected = map[string][]PolishOmission{}
+		}
+		final, err := decodeFinalOrganization(text, *s.finalOrganization, s.finalRetry, selected)
 		if err != nil {
-			result.Diagnostics.ValidationCode = polishValidationCode(err)
+			code := polishValidationCode(err)
+			if code == "final_output_unanchored_group" || code == "final_output_missing_group" {
+				result.finalOmissions = selected
+			}
+			result.Diagnostics.ValidationCode = code
 			return failedRewrite(result, "voice_rewrite_invalid_result", "validate_final_organization", err, started)
 		}
 		result.FinalOrganization = final
@@ -405,7 +415,7 @@ func PrepareRewrite(ctx context.Context, s Snapshot, tr int, model string) (Prep
 		return PreparedRewrite{}, ErrInvalid
 	}
 	if s.finalOrganization != nil {
-		return prepareFinalOrganization(*s.finalOrganization, s.finalRetry, settings, version)
+		return prepareFinalOrganization(*s.finalOrganization, s.finalRetry, s.finalOmissions, settings, version)
 	}
 	if err := s.Validate(); err != nil {
 		return PreparedRewrite{}, err
