@@ -52,7 +52,8 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 			return ""
 		}
 		first := input.Sections[0][0]
-		if first.ID != "T1" || first.Sources[0].Speaker == first.Sources[1].Speaker || first.Sources[1].Name != "妻子" {
+		if first.ID != "T1" || first.Sources[0].Speaker == first.Sources[1].Speaker || first.Sources[1].Name != "妻子" ||
+			!first.Sources[0].Author || first.Sources[1].Author || first.Sources[1].Number != 2 {
 			t.Error("speaker names or distinctions were removed")
 		}
 		if strings.Contains(raw, plan.Metadata.Title) || strings.Contains(raw, plan.Metadata.BodyContext) {
@@ -79,7 +80,7 @@ func TestFinalOrganizationRetriesAnIncompleteDraftBeforePublishing(t *testing.T)
 				if target.ID == "T1" && calls.Load() == 1 {
 					prose = append(prose, firstDraftOnly)
 				}
-				groups = append(groups, finalOrganizationGroup{target.ID, []PolishParagraph{{Text: strings.Join(prose, ""), Style: "body"}}})
+				groups = append(groups, finalOrganizationGroup{Target: target.ID, Paragraphs: []PolishParagraph{{Text: strings.Join(prose, ""), Style: "body"}}})
 			}
 		}
 		result, _ := json.Marshal(map[string]any{"groups": groups, "title": "河边的白鹭", "alternativeTitles": []any{true, "河边观察"},
@@ -190,6 +191,52 @@ func TestFinalOrganizationOmitsFillerBetweenProtectedSections(t *testing.T) {
 		SourceID: targets[1].Turns[0].ID, Text: targets[1].Turns[0].Text, Reason: "speechDisfluency",
 	}}) {
 		t.Fatal("the original source must remain linked to the omitted speech")
+	}
+}
+
+func TestFinalOrganizationOmitsOnlyVerifiedSpeech(t *testing.T) {
+	const aside = "哎哟，手被柜门夹了，好疼。"
+	const unrelated = "楼下还有一个装咖啡的杯套。"
+	const detail = "从车站走过去要十分钟。"
+	snapshot := comparisonSnapshot([]string{"我去南仓看了排练室。", detail + aside, unrelated}, true)
+	targets := snapshot.Polish.Targets
+	otherSection := snapshot
+	otherSection.Polish = &PolishRequest{Targets: targets[2:]}
+	snapshot.Polish.Targets = targets[:2]
+	plan := OrganizationPlan{Version: FinalOrganizationVersion, Sections: []Snapshot{snapshot, otherSection}, Metadata: &FinalOrganizationContext{}}
+	if err := plan.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	draft := fmt.Sprintf(`{"groups":[
+		{"target":"T1","paragraphs":[{"text":%q,"style":"body"}],"omissions":[{"source":2,"text":%q}]},
+		{"target":"T2","paragraphs":[],"omissions":[{"source":1,"text":%q}]}]}`,
+		"我去南仓看了排练室。"+detail, aside, unrelated)
+	got, err := decodeFinalOrganization(draft, plan, false)
+	if err != nil || len(got.Revisions) != 2 {
+		t.Fatalf("selective draft should apply both sections: %v", err)
+	}
+	main, omitted := got.Revisions[0], got.Revisions[1]
+	if len(main.Targets) != 2 || len(main.Omissions) != 0 || len(main.Paragraphs) != 1 || !strings.Contains(main.Paragraphs[0].Text, detail) ||
+		main.Targets[1].Turns[0].Text != detail+aside {
+		t.Fatal("omitting a local excerpt must retain the useful detail and the complete source turn")
+	}
+	if len(omitted.Paragraphs) != 0 || !slices.Equal(omitted.Omissions, []PolishOmission{{
+		SourceID: targets[2].Turns[0].ID, Text: unrelated, Reason: "situationalInterruption",
+	}}) {
+		t.Fatal("only a whole verified turn can be removed from the body and recalled from the recording")
+	}
+	for _, tc := range []struct{ name, from, to, code string }{
+		{"foreign source", `"source":1`, `"source":2`, "final_omission_source"},
+		{"changed quote", aside, "手有点疼。", "omission_quote"},
+		{"partial removal of blank group", unrelated, "一个装咖啡的杯套。", "final_output_missing_group"},
+		{"missing relevant detail", detail, "", "final_output_unanchored_group"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := decodeFinalOrganization(strings.Replace(draft, tc.from, tc.to, 1), plan, false)
+			if got != nil || polishValidationCode(err) != tc.code {
+				t.Fatalf("wanted %s, got %v", tc.code, err)
+			}
+		})
 	}
 }
 

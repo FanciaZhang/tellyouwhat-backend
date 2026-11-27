@@ -239,7 +239,10 @@ const narratorInstructions = `
 narrator 是作者。turn.narrativeRole=author 用“我”，other 用输入中确认的完整称呼，unknown 身份未定。proseSubject 只说明说话人自己的第一人称，不是原话中所有人物的主语。逐句核对行动主体，不把被谈论者的行动归给发言者，不把同一人的连续行动中途改归作者。非作者的自述先明示称呼，再直接叙述；不写自我介绍或“某人说，他/她”报道句，不用他/她替代已确认姓名，不按名字或声音猜性别。原话中的第三人称、第三人经历和引语忠实保留。
 逐处保留原话称呼，不扩写、缩写、叠字、加亲昵词或换成姓名、关系词、同义词；同一人的不同叫法不统一改名。说话人称呼只补足其自述的归属，不替换原话对他人的叫法。只有用户明确改名才授权改名；旧 AI 正文和 words 词汇提示不构成依据。
 第一人称、关系指代转到作者视角时保持人物不变；narratorReferences 的原话称呼用 prose 指向作者，不发明昵称。别人名为“我”也不成为作者。
-attributionKey 才是确认身份；unknown 的每个 id 独立，相同 speaker、位置、话题不证明同人。unknown 用无主句或完整引语“一段原话提到”，不能沿用前句主语或猜姓名、他/她、作者“我”。未定作者的单人可用第一人称，多人须区分。turns 的原始主体优先于旧 text/retainedText。speaker 可能混合多人，不跨连接认人，不把编号、人名做正文标题。`
+attributionKey 才是确认身份；unknown 的每个 id 独立，相同 speaker、位置、话题不证明同人。unknown 用无主句或保留有意义的原话，不能沿用前句主语或猜姓名、他/她、作者“我”。未定作者的单人可用第一人称，多人须区分。turns 的原始主体优先于旧 text/retainedText。speaker 可能混合多人，不跨连接认人，不把编号、人名做正文标题。`
+
+const journalNarrativeFocusInstructions = `
+从作者或主讲者的视角直接写有用的事实、想法和分歧。只为引出答案的问句，正文直接写答案。省去“朋友问我”“我解释说”“我重新讲了一遍”、附和与话题转回等对话过程，换一种说法也不写。融入旁人的相关补充，保留重要归属，不写成作者亲历或双方共识。交流本身影响事情进展或是作者要记的经历时保留。`
 
 const authorNarratorInstructions = `
 所有 turns 已确认为 narrator 本人的口述，用第一人称“我”记录。原话中的第三人称和引语是在谈论其他人，不能把他们的行动改归作者。姓名以原话明确确认为准；保留亲属称呼、昵称/别名，不扩写、缩写或猜性别。词汇提示和旧 AI 正文不授权改名。`
@@ -256,18 +259,19 @@ const polishInstructions = `把口述整理为私人手记，保真优先于通�
 必须守住原意：不能、做不到、没有余力说的是能力或条件；不愿、不想、决定不做说的是意愿，不得互换。“很想帮，但无力照顾”写成“想帮，但照顾不了”，不变成拒绝帮助。泛指态度和针对某个人的感受可以并存；没有时间依据，不加“本来、原本、以前”把转折编成态度变化。
 保留确定程度，猜测不变定论；区分年龄与经过时长。重复事实仅一处，保留情绪节奏，不加动机、结局或升华；含混修饰可省去，保留明确中心词。
 按阅读重心组织自然段，场景、时间、视角或感受转折时可以换段；同一经历也可分成多个自然段，不把背景、现场、回忆、后续和反思全部挤在一段，也不一句一段。ASR、停顿、turn/target 和原稿分行不是换段依据。后补细节可回填对应现场，但最后一句应对应输入最后一条仍成立且与主线有关的实质原话，不把它提前写完后另选结论作结；纯语气词和无信息重复不作结尾。合并不等于概括，保留鲜明细节、情绪、有实际含义的否定和不确定性。
-context 仅供衔接；reusableContextIDs 中重复事实仍输出相同正文并标全贡献 targetIDs 供系统合并，其余不抄。不因重复跳过 target 或写“再次”。targetIDs 标信息来源，不要求照抄；消重、改口、润色不返回 omissions。
+context 仅供衔接；reusableContextIDs 中重复事实仍输出相同正文并标全贡献 targetIDs 供系统合并，其余不抄。不因重复跳过 target 或写“再次”。消重、改口、润色不返回 omissions。
 并列理由/分点/步骤逐项 orderedListItem，解释随该点；短枚举、经历先后、引导、决定、总结用 body。“首先价格低，其次离家近，最后决定选这里”用两项及 body 结论。结合 context/retainedText 区分同点、新点、结语，不把多点合一项。App 编号，列表 text 去纯组织词“第一、第二、首先、其次、最后”；序号主语写完整：“第三点和天气有关，要带外套”→“天气方面，要带外套”。保留有实义的“第一天、第二名、第三代、最后一班车”及引语。标题 heading1/2/3，清单 checklistItem，无序列表 unorderedListItem；text 不带 Markdown/编号。默认不主动添加 emoji，保留原有 emoji。
 只有影响正文理解且需要用户决定的歧义才提问；明确改口、唯一同音纠错及原有不确定感受不问。正文不猜，不移动含混词造身份或重复定语。
-paragraphs 每项 text/style/targetIDs，可合并拆分。保留的 target 全须覆盖；omissions 全排除且无旧正文者不生成。整批纯口水词可空 paragraphs；只按证据纠错，含混则保留不确定性。
+paragraphs 每项 text/style/targetIDs，可合并拆分。逐个核对 target，问答合并、消重和补充的来源 ID 都归入承载具体内容的段落。整条均在 omissions 且无旧正文才可跳过。整批纯口水词可空 paragraphs。
 姓名以原话或用户确认的字形为准，同一对象有明确依据的同音误写统一，不算改名。不同对象不合并；字形或归属确无依据时保留原意，通过可作答的澄清处理，不猜常用名、不造身份。保留昵称/别名，代词符合原话对象。
 区分观察、他人告知、作者推测与假设。未带连续引号的“某人说”，本句句号后的“应该/可能”不归该人，除非再次明示其发言。例：“师傅说换了电池，啊，是电容。以后应该稳定了。朋友觉得以后能用很久”→“师傅说换了电容。以后应该稳定了。朋友觉得以后能用很久。”不得凭同 turn/话题延长来源；后文归属优先，不明则独立成句，不补“也说”。`
 
 const narrativeSelectionInstructions = `
-通读 turns 按用途而非身份取舍，再润色。已知身份不能标 recognitionNoise，作者不能标 backgroundConversation。sentences 是原话分句，逐句取舍。作者、熟人也会无关现场插话。先看保留条件：事件是主线、影响主线、被后文接入回忆或作者主动想记录，保留事件与关联，不只写后文而删缘起。短、负面、口语、身份未知不证明无关；零散想法、意愿/计划、相关补充、不同意见、不确定内容保留，不能只因跳题筛掉。
-无以上关联时，临场反应后接回原话题，可排除反应，不补过渡把它编入叙事。混合例：“报告周五交。哎哟，脚崴了，好疼。接着说报告，明天下午发草稿。”→“报告周五交，明天下午发草稿。”；但后文若说“这让我想起上次受伤，同事帮我写报告”，必须写明脚崴了、疼及所引出的回忆。相关试灯亮度保留。
-selectionContext 只读取舍：opening 是已有主线，omissions 是此前排除的原话，不抄入正文/配图，不因同声音或换话题筛掉新讲述。
-sourceID=turn.id，text 必须是 turn.text 中逐字且只出现一次的原话。整条无关则引用整条；混合句仅引用无关片段，不能删其余内容；reason 为 situationalInterruption（任意人的现场插话）、backgroundConversation（旁人背景交谈）、recognitionNoise（未知身份的明显误识别）、speechDisfluency（任意人的纯口头停顿、无独立含义的卡顿/重复残句）。混合句在 omissions 标明无关片段，paragraphs 仍覆盖其 target 并只写主线。纯语气词/卡顿残句（“嗯，对”“这么一个广泛的一个”）用 speechDisfluency，不用 recognitionNoise；含事实、不确定或未完实质句保留，speechDisfluency 只标整条无独立内容；句内嗯啊直接润色，不返回局部引用。未排除的 target 全须覆盖。无明确现场反应/指令不作现场排除。“我要去大东海”是计划，接回工作也保留。“我有个朋友叫小林”是事实，不是现场反应；“我还没想清楚”是不确定，不是卡顿。`
+逐句按讲述用途取舍。保留主线、有影响的细节、后文接入的回忆及其缘起、作者主动另记的想法和计划。不能因换话题、说话人、负面或短句就删。不确定是否有关时保留实质内容。
+可省略与讲述无关的现场反应。例：“报告周五交。哎哟，脚崴了，好疼。明天下午发草稿。”只写报告和草稿；若受伤改变安排或引出要记录的回忆，则保留受伤与关联。
+selectionContext 的 opening 与旧 omissions 只帮取舍，不作为新正文或配图素材。
+omissions 的 sourceID=turn.id；text 逐字引用 turn.text 中唯一出现的原话，整条无关则引用整条，混合句只标无关片段并保留其他内容。reason 用 situationalInterruption（无关现场反应或纯对话过程）、backgroundConversation（旁人闲谈）、recognitionNoise（未知身份的明显误识别）或 speechDisfluency（整条只有语气词、卡顿或无实义的残句）。句内卡顿直接润色。保留不确定性和未说完的实质句。
+例：甲问“去哪儿取书？”乙答“在南门取。”正文直接写“在南门取书。”只用来引出答案的问句可标 situationalInterruption。若地点仍未确定且对后续有影响，保留这个未定事项。`
 
 // Provider turns can contain an entire monologue. Sentence cues make local
 // reactions visible without changing source identity or selecting content by
@@ -408,7 +412,7 @@ func preparePolish(ctx context.Context, p PolishRequest, style promptconfig.Styl
 		schema["required"] = append([]string{"checks"}, schema["required"].([]string)...)
 		narratorPrompt += "\n先输出 checks，依次用八项短摘录：①名字字形与对应对象；②能力/条件和意愿；③他人告知（只摘‘说/告诉’所在句，不越过句号；明确连续引语除外）；④推测与来源（句号后的应该/可能归本项，未再明示说话人就标‘来源未明确’）；⑤开头立场，不加时间；⑥改口后最终确认的事实/数字（只摘新值）；⑦按输入时间最后一条仍成立的实质原话；⑧影响正文理解且未决的指代/事实，只摘上下文中的候选，不默选。无内容写‘无’，不写推理或自评分。归属示例：‘师傅说换了电容。以后应该稳定了’须摘为‘他人告知：师傅说换了电容。’和‘推测：以后应该稳定了；来源未明确。’，不可把预测摘到师傅名下。再生成正文，所有‘某人说/也说’仅承载③明示的内容，④不补来源；保住①②⑤⑥⑦，不为通顺改义。先完成正文，再在 questions 为⑧提供可作答的选项及精确修改；不能用泛指回避有限候选。"
 	}
-	body := map[string]any{"store": false, "instructions": narratorPrompt + narrativeSelectionInstructions + "\n" + polishInstructions + scenePrompt + "\n本次写作风格：" + style.Prompt, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v38", "strict": true, "schema": schema}}}
+	body := map[string]any{"store": false, "instructions": narratorPrompt + journalNarrativeFocusInstructions + narrativeSelectionInstructions + "\n" + polishInstructions + scenePrompt + "\n本次写作风格：" + style.Prompt, "input": string(input), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "journal_voice_narrative_v38", "strict": true, "schema": schema}}}
 	tokenLimit, timeout, effort := 2048, 40, "disabled"
 	if fullAuthorDraft {
 		tokenLimit = 4096
